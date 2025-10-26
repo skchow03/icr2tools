@@ -138,21 +138,21 @@ class Config:
     radar_player_color: str = _parser.get("radar", "player_color", fallback="0,255,0,255")
     radar_ai_color: str = _parser.get("radar", "ai_color", fallback="255,255,255,255")
     radar_background: str = _parser.get("radar", "background", fallback="0,0,0,128")
-    radar_range_forward = _parser.getint("radar", "range_forward_lengths", fallback=2)
-    radar_range_rear = _parser.getint("radar", "range_rear_lengths", fallback=1)
-    radar_range_side = _parser.getint("radar", "range_side_widths", fallback=5)
-    radar_ai_ahead_color = _parser.get("radar", "ai_ahead_color", fallback="0,128,255,255")
-    radar_ai_behind_color = _parser.get("radar", "ai_behind_color", fallback="255,64,64,255")
-    radar_ai_alongside_color = _parser.get("radar", "ai_alongside_color", fallback="255,255,0,255")
-    radar_symbol = _parser.get("radar", "symbol", fallback="rectangle")
-    radar_show_speeds = _parser.getboolean("radar", "show_speeds", fallback=False)
+    radar_range_forward: int = _parser.getint("radar", "range_forward_lengths", fallback=2)
+    radar_range_rear: int = _parser.getint("radar", "range_rear_lengths", fallback=1)
+    radar_range_side: int = _parser.getint("radar", "range_side_widths", fallback=5)
+    radar_ai_ahead_color: str = _parser.get("radar", "ai_ahead_color", fallback="0,128,255,255")
+    radar_ai_behind_color: str = _parser.get("radar", "ai_behind_color", fallback="255,64,64,255")
+    radar_ai_alongside_color: str = _parser.get("radar", "ai_alongside_color", fallback="255,255,0,255")
+    radar_symbol: str = _parser.get("radar", "symbol", fallback="rectangle")
+    radar_show_speeds: bool = _parser.getboolean("radar", "show_speeds", fallback=False)
 
     # Paths
     game_exe: str = _parser.get("paths", "game_exe", fallback="")
 
     def __post_init__(self):
         version = _parser.get("memory", "version", fallback="REND32A").upper()
-        self.version = version   # <-- add this
+        self.version = version
         if version not in OFFSETS:
             raise ValueError(f"Unsupported memory version: {version}")
         for k, v in OFFSETS[version].items():
