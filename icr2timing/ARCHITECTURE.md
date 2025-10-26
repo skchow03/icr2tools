@@ -1,116 +1,140 @@
-# ICR2 Timing Overlay – Architecture
+# ICR2Tools Architecture
 
-This document explains how the app is structured and how the pieces fit together.
+This document is written for new contributors (human or AI) who need context about how the
+ICR2Tools repository fits together. It focuses on the two packages that ship in this repo:
 
----
-
-## 🔄 High-Level Flow
-
-1. **Game running in DOSBox**  
-   - ICR2 (DOS or Rendition build) is launched in DOSBox.  
-   - The app will attach to the DOSBox process by searching window titles (`window_keywords`).
-
-2. **Attach + Memory base detection (`core/icr2_memory.py`)**  
-   - The app finds DOSBox’s PID and opens it with `pymem`.  
-   - In Rendition mode: scans process memory for the string `"license with Bob"`, subtracts a fixed offset to compute the EXE base.  
-   - In DOS mode: uses flat offsets (exe_base = 0).  
-   - Provides a typed `read()` API (e.g. `i32`, `u16`, `bytes`).
-
-3. **Offsets + Config (`core/config.py`)**  
-   - `Config` loads settings from `settings.ini`.  
-   - Selects the correct offset map for either `DOS` or `REND32A`.  
-   - Also supplies UI defaults (fonts, colors, radar size, etc.).
-
-4. **Reading structured state (`core/reader.py`)**  
-   - Wraps `ICR2Memory` to interpret raw bytes into structured objects:  
-     - `Driver` (name, number)  
-     - `CarState` (lap count, gaps, DLAT/DLONG, fuel, pit/retire status)  
-     - `RaceState` (order, bests, all cars combined)
-
-5. **Updating loop (`updater/updater.py`)**  
-   - `RaceUpdater` runs in its own Qt thread.  
-   - Polls `MemoryReader` at a configurable interval (`poll_ms`).  
-   - Emits Qt signals with updated `RaceState`.  
-   - On error, emits error signals to overlays/control panel.
-
-6. **Overlays (various in `overlays/`)**  
-   - Subclass `BaseOverlay` (abstract interface with `on_state_updated`).  
-   - Examples:  
-     - `running_order_overlay.py` → timing table overlay  
-     - `proximity_overlay.py` → radar  
-     - `track_map_overlay.py` → track bubble map  
-   - Each overlay paints itself using `RaceState` snapshots.  
-   - Best laps and gap formatting handled by helpers (`best_laps.py`, `gap_utils.py`).
-
-7. **Control Panel (`ui/control_panel.py`)**  
-   - Qt main window created in `main.py`.  
-   - Loads `.ui` layout file from Qt Designer.  
-   - Provides buttons to toggle overlays (show/hide), radar, and track map.  
-   - Manages profiles (via `profile_manager.py`) to persist layout and last session state.
+* **`icr2_core/`** – a reusable Python package that knows how to talk to IndyCar Racing II
+  (memory access, binary formats, track helpers).
+* **`icr2timing/`** – the Qt-based live timing overlay application that players see on screen.
 
 ---
 
-## 📂 Folders & Responsibilities
+## 🗺️ Repository Topology
 
-### Root
-- **main.py**: Application entry point. Creates `ICR2Memory`, `MemoryReader`, `RaceUpdater`, `ControlPanel`.
+```
+icr2tools/
+├── icr2_core/               # Shared library imported by all tooling
+│   ├── icr2_memory.py       # Process attach + typed memory reads
+│   ├── reader.py            # Turns raw memory into structured RaceState objects
+│   ├── model.py             # Dataclasses representing drivers, cars, races
+│   ├── trk/                 # Track (.trk) parsing, geometry helpers, exporters
+│   └── dat/                 # DAT archive helpers (e.g. unpackdat.py)
+├── icr2timing/              # GUI overlay application
+│   ├── main.py              # Entry point; wires memory + updater + UI
+│   ├── core/                # Config, version metadata, telemetry helpers
+│   ├── updater/             # Worker thread + overlay manager coordination
+│   ├── overlays/            # Individual overlay widgets (timing table, radar, track map, etc.)
+│   ├── analysis/            # Pure functions for formatting gaps, best laps, name transforms
+│   └── ui/                  # Qt Designer .ui file, control panel glue, profile manager
+└── setup.py / setup.cfg     # Editable install entry for icr2_core
+```
 
-### core/
-- **config.py**: Loads offsets, colors, fonts, INI paths. Chooses offsets by version.  
-- **icr2_memory.py**: Process attach + low-level typed memory reader.  
-- **reader.py**: High-level API to produce `RaceState` objects.  
-- **model.py**: Data containers for drivers, cars, race.
-
-### updater/
-- **updater.py**: Background Qt thread to poll memory → emit updates.
-
-### overlays/
-- **base_overlay.py**: Abstract base interface for all overlays.  
-- **overlay_table_window.py**: Generic table window with styling.  
-- **running_order_overlay.py**: Timing overlay (positions, gaps, laps, PBs).  
-- **proximity_overlay.py**: Radar overlay (nearby cars).  
-- **track_map_overlay.py**: Track outline overlay with moving car bubbles.  
-- **overlay_manager.py**: Manages all overlays together (show/hide/reset).
-
-### ui/
-- **control_panel.py**: Main Qt window with buttons + profile integration.  
-- **control_panel.ui**: Designer XML layout.
-
-### utils/
-- **gap_utils.py**: Formats gaps/intervals/pitting/retirement text.  
-- **name_utils.py**: Splits names, generates abbreviations.  
-- **trk_utils.py**: DLONG/DLAT to world coordinates, geometry helpers.  
-- **trk_classes.py**: Parser for `.trk` binary track files.  
-- **utils.py**: Misc math/helpers.
-
-### other/
-- **best_laps.py**: Tracks best laps per-driver and global best.  
-- **profile_manager.py**: Load/save overlay profiles.  
-- **settings.ini**: Central config file.  
-- **unpackdat.py**: Extracts `.dat` game archives.  
-- **track_loader.py**: Loads track data for overlays.
+The overlay imports heavily from `icr2_core`. Most code lives in plain Python modules so that it can be
+reused by other tools (for example, the track-map overlay reuses the general-purpose `icr2_core.trk` loader).
 
 ---
 
-## 🧩 How It All Fits Together
+## 🔄 End-to-End Flow (Timing Overlay)
 
-- **main.py** starts → attaches memory → spawns updater thread.  
-- **RaceUpdater** runs continuously:  
-  - Reads offsets → builds `RaceState` → emits signals.  
-- **Overlays** subscribe to signals → repaint themselves live.  
-- **Control Panel** toggles overlays and stores preferences.  
-- **Config** + `settings.ini` unify version offsets, UI, and file paths.
+1. **Application bootstrap (`icr2timing/main.py`)**
+   * Configures logging, creates a `QApplication`, and repeatedly tries to create `ICR2Memory` until DOSBox is found.
+   * Initializes `Config` (memory map + UI defaults) and constructs the shared `MemoryReader` and `RaceUpdater`.
+   * Builds the `ControlPanel` main window, wires Qt signals, and starts the updater worker thread.
+
+2. **Process attachment & raw reads (`icr2_core/icr2_memory.py`)**
+   * Uses Win32 window enumeration + signature scanning to discover the DOSBox process and calculate the base address
+     for the active ICR2 executable (supports `REND32A`, `DOS`, and `WINDY`).
+   * Exposes a typed `read(offset, type, count)` API and helpers like `BulkReader` for efficient block reads.
+   * Cleans up Windows handles when the app exits.
+
+3. **Configuration (`icr2timing/core/config.py`)**
+   * Loads `settings.ini` alongside the executable for overrides (memory version, colors, fonts, radar sizes, poll rate).
+   * Provides memory offsets for each supported game build and column sizing defaults for overlays.
+
+4. **State decoding (`icr2_core/reader.py`)**
+   * Pulls raw bytes through `ICR2Memory` and translates them into immutable dataclasses from `icr2_core/model.py`:
+     * `Driver` – identity data such as name and car number.
+     * `CarState` – lap counts, deltas, DLAT/DLONG coordinates, fuel, retirement status, raw 0x214 block, etc.
+     * `RaceState` – aggregate snapshot (order, totals, driver/car maps, track length & name).
+   * Handles quirks like unsigned clock wraparound when calculating lap times and sentinel values for invalid data.
+
+5. **Polling loop (`icr2timing/updater/updater.py`)**
+   * `RaceUpdater` lives in its own `QThread` and owns a high-precision `QTimer`.
+   * On every tick it calls `MemoryReader.read_race_state()` and emits Qt signals:
+     * `state_updated(RaceState)` – consumed by overlays and the control panel.
+     * `error(str)` – routed to UI so the user can see transient read failures.
+
+6. **Presentation layer**
+   * **Control panel (`icr2timing/ui/control_panel.py`)**
+     * Hosts buttons/toggles, wiring to `OverlayManager`, radar settings, lap logger controls, and profile persistence.
+     * Manages the lifetime of non-table overlays (radar, track map, individual car telemetry) and the lap logger.
+   * **Overlay manager (`icr2timing/updater/overlay_manager.py`)**
+     * Keeps a registry of `BaseOverlay` implementations and handles global show/hide/reset commands.
+   * **Overlays (`icr2timing/overlays/`)**
+     * `running_order_overlay.py` – table overlay rendering the timing grid via `OverlayTableWindow`.
+     * `proximity_overlay.py` – radar view that visualises car proximity using DLAT/DLONG deltas and Config radar options.
+     * `track_map_overlay.py` – draws the track outline by loading `.trk` geometry through `icr2_core.trk.track_loader`.
+     * `individual_car_overlay.py` – single-car telemetry panel that surfaces extended `CarState.values` columns.
+     * Each overlay implements `BaseOverlay` (`widget()`, `on_state_updated`, `on_error`).
+
+7. **Supporting services**
+   * **Analysis helpers (`icr2timing/analysis/`)**: pure functions for lap classification (`best_laps.py`), gap formatting
+     (`gap_utils.py`), and name formatting (`name_utils.py`).
+   * **Profiles (`icr2timing/ui/profile_manager.py`)**: saves overlay layout, column choices, and radar preferences to
+     `profiles.ini`, including support for custom columns (label + raw memory index).
+   * **Telemetry lap logger (`icr2timing/core/telemetry_laps.py`)**: optional CSV writer triggered from the control panel
+     that logs each completed lap using `RaceState` data.
 
 ---
 
-## ⚙️ Current Supported Modes
+## 🧱 Core Data Model (`icr2_core/model.py`)
 
-- **REND32A** (Rendition ICR2, cart.exe)  
-  - Uses signature scan + offset correction.  
-- **DOS** (DOS ICR2, indycar.exe)  
-  - Uses flat offsets from Ghidra analysis.  
-  - No signature scan needed (exe_base = 0).
+* `Driver`: struct index, HTML-escaped name, and optional car number.
+* `CarState`: exposes lap counts, last-lap timing, fuel, DLAT/DLONG, status, and the entire 0x214 raw block so overlays
+  can extract extra metrics without altering the reader.
+* `RaceState`: contains counts, running order, driver/car maps, and optional track metadata (length and name). This object
+  is considered immutable; overlays should treat each emission as a snapshot.
+
+Because `RaceState` is serialisable (pure Python types), it is safe to emit across Qt threads or persist for later analysis.
 
 ---
 
-This layered architecture keeps **memory handling**, **UI overlays**, and **persistence** separated, making it easier to add new overlays, adjust offsets for new builds, or customize the UI without breaking the rest of the system.
+## ⚙️ Configuration & Assets
+
+* **`settings.ini`** – shipped next to the binary; controls memory version, polling interval, UI theme, radar dimensions,
+  and default executable path. Both `ICR2Memory` and `Config` read from this file.
+* **`profiles.ini`** – stored beside the executable; `ProfileManager` maintains sections per layout and a `__last_session__`
+  snapshot restored at boot.
+* **`assets/`** – contains the overlay icon (`icon.ico`) and any additional resources packaged with the PyInstaller build.
+
+---
+
+## ➕ Extending the System
+
+### Adding a new memory field
+1. Add constants or offsets to `icr2timing/core/config.py` if the field is version-dependent.
+2. Update `MemoryReader` to populate the field into `CarState` (or a new dataclass).
+3. Surface the data in overlays by reading from `RaceState.car_states[struct_idx]`.
+
+### Creating a new overlay widget
+1. Subclass `BaseOverlay` (see `overlays/base_overlay.py`) and implement `widget()`, `on_state_updated`, and `on_error`.
+2. Instantiate the overlay in `ControlPanel` (or register with `OverlayManager` if it should participate in global toggles).
+3. Wire `RaceUpdater.state_updated` and `.error` signals to the new overlay.
+4. Optionally expose controls in the control panel UI (Qt Designer file + associated slots).
+
+### Reusing core helpers in other tools
+* Any standalone script can `pip install -e .` from the repo root to import `icr2_core` directly.
+* Track processing utilities live under `icr2_core/trk/` and do not depend on Qt, making them safe for headless scripts.
+
+---
+
+## 🧭 Key Entry Points for ChatGPT
+
+* Launching the overlay: `icr2timing/main.py` → `main()`.
+* Memory attach/read pipeline: `icr2_core/icr2_memory.py` → `ICR2Memory`, `icr2_core/reader.py` → `MemoryReader.read_race_state()`.
+* UI control hub: `icr2timing/ui/control_panel.py` → `ControlPanel`.
+* Extensible overlays: `icr2timing/overlays/` (start with `running_order_overlay.py`).
+* Configuration knobs: `icr2timing/core/config.py`, `icr2timing/settings.ini`, `icr2timing/profiles.ini`.
+
+Use this map to orient yourself before making changes; most features span both the memory reader (`icr2_core`) and the
+presentation layer (`icr2timing`).
