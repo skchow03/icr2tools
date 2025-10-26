@@ -1,0 +1,6 @@
+setup.cfg
+setup.py
+icr2_core.egg-info/PKG-INFO
+icr2_core.egg-info/SOURCES.txt
+icr2_core.egg-info/dependency_links.txt
+icr2_core.egg-info/top_level.txt

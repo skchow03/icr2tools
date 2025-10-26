@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: icr2_core
+Version: 0.5.0
+Summary: Shared core library for IndyCar Racing II modding tools (memory, config, TRK, MIP, DAT)
+Author: SK Chow
+License: MIT
+Requires-Python: >=3.9

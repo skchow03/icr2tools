@@ -1,0 +1,40 @@
+# --- Python caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environments ---
+venv/
+env/
+
+# --- Build & distribution outputs (PyInstaller, cx_Freeze, etc.) ---
+build/
+dist/
+*.spec
+*.pkg
+*.exe
+
+# --- Log files ---
+*.log
+timing_log.txt
+
+# --- VS Code settings ---
+.vscode/
+*.code-workspace
+
+# --- Temporary / generated data ---
+*.tmp
+*.bak
+*.old
+
+# --- Windows junk ---
+Thumbs.db
+Desktop.ini
+
+# --- Your app-specific folders ---
+ICR2Timing.spec
+ICR2Timing.pkg
+
+# --- Optional: telemetry exports or CSVs ---
+telemetry_laps/
+*.csv

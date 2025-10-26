@@ -1,0 +1,760 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ControlPanel</class>
+ <widget class="QMainWindow" name="ControlPanel">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>597</width>
+    <height>614</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="windowTitle">
+   <string>ICR2 Timing Control</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="mainLayout">
+    <item>
+     <layout class="QVBoxLayout" name="leftCol">
+      <item>
+       <widget class="QGroupBox" name="generalGroup">
+        <property name="title">
+         <string>General</string>
+        </property>
+        <layout class="QVBoxLayout" name="generalLayout">
+         <item>
+          <widget class="QPushButton" name="btnSelectExe">
+           <property name="toolTip">
+            <string>Select INDYCAR.EXE or CART.EXE to connect the app to the game</string>
+           </property>
+           <property name="text">
+            <string>Specify Game EXE Path</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblExePath">
+           <property name="text">
+            <string>No EXE selected</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="aboutButton">
+           <property name="text">
+            <string>About</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnQuit">
+           <property name="text">
+            <string>Quit</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="profilesGroup">
+        <property name="title">
+         <string>Profiles</string>
+        </property>
+        <layout class="QVBoxLayout" name="profilesLayout">
+         <item>
+          <widget class="QComboBox" name="profileCombo"/>
+         </item>
+         <item>
+          <widget class="QPushButton" name="addProfileBtn">
+           <property name="text">
+            <string>Add New Profile</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="saveProfileBtn">
+           <property name="text">
+            <string>Save to Current</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="deleteProfileBtn">
+           <property name="text">
+            <string>Delete Current Profile</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="perfGroup">
+        <property name="title">
+         <string>Performance</string>
+        </property>
+        <layout class="QFormLayout" name="perfLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="lblPoll">
+           <property name="text">
+            <string>Polling rate (ms)</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QSpinBox" name="spinPoll">
+           <property name="minimum">
+            <number>10</number>
+           </property>
+           <property name="maximum">
+            <number>2000</number>
+           </property>
+           <property name="singleStep">
+            <number>10</number>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="cbOBSCapture">
+        <property name="text">
+         <string>OBS Capture Mode</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="leftSpacer">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <layout class="QVBoxLayout" name="rightCol">
+      <item>
+       <widget class="QTabWidget" name="tabWidget">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>3</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="currentIndex">
+         <number>0</number>
+        </property>
+        <widget class="QWidget" name="tabLiveTiming">
+         <attribute name="title">
+          <string>🕒 Live Timing</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="liveTimingLayout" stretch="0,0,0,3,0,0">
+          <item>
+           <widget class="QPushButton" name="btnToggleOverlay">
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="toolTip">
+             <string>Show or hide the main timing overlay</string>
+            </property>
+            <property name="text">
+             <string>Show Overlay</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnReset">
+            <property name="toolTip">
+             <string>Reset all personal and global best laps</string>
+            </property>
+            <property name="text">
+             <string>Reset Best Laps</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="colsLayout">
+            <item>
+             <widget class="QLabel" name="lblCols">
+              <property name="text">
+               <string>Number of Columns</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="comboCols"/>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="cbAutosize">
+              <property name="text">
+               <string>Auto-size Window</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnResizeOnce">
+              <property name="text">
+               <string>Resize Columns Now</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QScrollArea" name="fieldsScroll">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>3</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <widget class="QWidget" name="fieldsContainer">
+             <property name="geometry">
+              <rect>
+               <x>0</x>
+               <y>0</y>
+               <width>395</width>
+               <height>69</height>
+              </rect>
+             </property>
+             <layout class="QVBoxLayout" name="fieldsLayout"/>
+            </widget>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="lapAndNamesLayout">
+            <item>
+             <widget class="QGroupBox" name="lapGroup">
+              <property name="title">
+               <string>Lap Display Units</string>
+              </property>
+              <layout class="QHBoxLayout" name="lapLayout">
+               <item>
+                <widget class="QRadioButton" name="radioTime">
+                 <property name="text">
+                  <string>Time</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QRadioButton" name="radioSpeed">
+                 <property name="text">
+                  <string>Speed (mph)</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="namesGroup">
+              <property name="title">
+               <string>Display Options</string>
+              </property>
+              <layout class="QVBoxLayout" name="namesLayout">
+               <item>
+                <widget class="QCheckBox" name="cbAbbrev">
+                 <property name="text">
+                  <string>Use 3-letter Driver Abbreviations</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="cbSortBest">
+                 <property name="text">
+                  <string>Sort by Best Lap</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="customFieldsGroup">
+            <property name="title">
+             <string>Custom Fields (Advanced)</string>
+            </property>
+            <layout class="QVBoxLayout" name="customFieldsLayout">
+             <item>
+              <layout class="QHBoxLayout" name="addFieldLayout">
+               <item>
+                <widget class="QLineEdit" name="custLabel">
+                 <property name="placeholderText">
+                  <string>Label (e.g. DLAT)</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QSpinBox" name="custIndex">
+                 <property name="toolTip">
+                  <string>Enter raw car-state index (0–132)</string>
+                 </property>
+                 <property name="minimum">
+                  <number>0</number>
+                 </property>
+                 <property name="maximum">
+                  <number>133</number>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <layout class="QHBoxLayout" name="customFieldButtons">
+               <item>
+                <widget class="QPushButton" name="btnAddField">
+                 <property name="text">
+                  <string>Add Field</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btnRemoveField">
+                 <property name="text">
+                  <string>Remove Field</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <widget class="QListWidget" name="customFieldList">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="selectionMode">
+                <enum>QAbstractItemView::SingleSelection</enum>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="tabTrackMap">
+         <attribute name="title">
+          <string>🗺️ Track Map</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="trackMapLayout">
+          <item>
+           <widget class="QPushButton" name="btnTrackMap">
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="toolTip">
+             <string>Toggle the track map overlay</string>
+            </property>
+            <property name="text">
+             <string>Show Track Map</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QFormLayout" name="mapSettings">
+            <item row="0" column="0">
+             <widget class="QLabel" name="lblMapScale">
+              <property name="text">
+               <string>Map Scale</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QSlider" name="sliderMapScale">
+              <property name="minimum">
+               <number>10</number>
+              </property>
+              <property name="maximum">
+               <number>200</number>
+              </property>
+              <property name="singleStep">
+               <number>5</number>
+              </property>
+              <property name="value">
+               <number>50</number>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="lblLineThickness">
+              <property name="text">
+               <string>Line Thickness</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QSlider" name="sliderLineThickness">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="lblBubbleSize">
+              <property name="text">
+               <string>Bubble Size</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QSlider" name="sliderBubbleSize">
+              <property name="minimum">
+               <number>2</number>
+              </property>
+              <property name="maximum">
+               <number>20</number>
+              </property>
+              <property name="value">
+               <number>4</number>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="cbShowNumbers">
+            <property name="text">
+             <string>Show Car Numbers</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="cbColorByLP">
+            <property name="text">
+             <string>Color Cars by LP Line</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="tabRadar">
+         <attribute name="title">
+          <string>📡 Radar</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="radarLayout">
+          <item>
+           <widget class="QPushButton" name="btnRadar">
+            <property name="toolTip">
+             <string>Toggle the proximity radar overlay</string>
+            </property>
+            <property name="text">
+             <string>Show Radar</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QFormLayout" name="radarSettingsForm">
+            <item row="0" column="0">
+             <widget class="QLabel" name="lblRadarWidth">
+              <property name="text">
+               <string>Radar Width</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QSpinBox" name="spinRadarWidth">
+              <property name="minimum">
+               <number>100</number>
+              </property>
+              <property name="maximum">
+               <number>1200</number>
+              </property>
+              <property name="value">
+               <number>300</number>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="lblRadarHeight">
+              <property name="text">
+               <string>Radar Height</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QSpinBox" name="spinRadarHeight">
+              <property name="minimum">
+               <number>100</number>
+              </property>
+              <property name="maximum">
+               <number>1200</number>
+              </property>
+              <property name="value">
+               <number>300</number>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="lblForwardRange">
+              <property name="text">
+               <string>Forward Range (car lengths)</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QDoubleSpinBox" name="spinRadarForward">
+              <property name="decimals">
+               <number>0</number>
+              </property>
+              <property name="minimum">
+               <double>1.000000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>100.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.500000000000000</double>
+              </property>
+              <property name="value">
+               <double>2.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="lblRearRange">
+              <property name="text">
+               <string>Rear Range (car lengths)</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QDoubleSpinBox" name="spinRadarRear">
+              <property name="decimals">
+               <number>0</number>
+              </property>
+              <property name="minimum">
+               <double>1.000000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>100.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.500000000000000</double>
+              </property>
+              <property name="value">
+               <double>1.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="lblSideRange">
+              <property name="text">
+               <string>Side Range (car widths)</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QDoubleSpinBox" name="spinRadarSide">
+              <property name="decimals">
+               <number>0</number>
+              </property>
+              <property name="minimum">
+               <double>1.000000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>100.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.500000000000000</double>
+              </property>
+              <property name="value">
+               <double>5.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0">
+             <widget class="QLabel" name="lblRadarSymbol">
+              <property name="text">
+               <string>Car Symbol</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
+             <widget class="QComboBox" name="comboRadarSymbol">
+              <item>
+               <property name="text">
+                <string>Rectangle</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Circle</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Arrow</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QGridLayout" name="radarColorGrid">
+            <item row="0" column="0">
+             <widget class="QLabel" name="lblPlayerColor">
+              <property name="text">
+               <string>Player Color</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QPushButton" name="btnPlayerColor">
+              <property name="text">
+               <string>Pick</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="lblAheadColor">
+              <property name="text">
+               <string>Ahead Color</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QPushButton" name="btnAheadColor">
+              <property name="text">
+               <string>Pick</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="lblBehindColor">
+              <property name="text">
+               <string>Behind Color</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QPushButton" name="btnBehindColor">
+              <property name="text">
+               <string>Pick</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="lblAlongColor">
+              <property name="text">
+               <string>Alongside Color</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QPushButton" name="btnAlongColor">
+              <property name="text">
+               <string>Pick</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="tabTelemetry">
+         <attribute name="title">
+          <string>📊 Telemetry</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="telemetryLayout">
+          <item>
+           <widget class="QPushButton" name="btnLapLogger">
+            <property name="text">
+             <string>Start Recording</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="groupBox">
+            <property name="title">
+             <string>Individual car telemetry (for research purposes)</string>
+            </property>
+            <widget class="QPushButton" name="btnToggleIndividualTelemetry">
+             <property name="geometry">
+              <rect>
+               <x>170</x>
+               <y>50</y>
+               <width>211</width>
+               <height>23</height>
+              </rect>
+             </property>
+             <property name="text">
+              <string>Show telemetry overlay</string>
+             </property>
+            </widget>
+            <widget class="QWidget" name="horizontalLayoutWidget">
+             <property name="geometry">
+              <rect>
+               <x>0</x>
+               <y>50</y>
+               <width>160</width>
+               <height>31</height>
+              </rect>
+             </property>
+             <layout class="QHBoxLayout" name="horizontalLayout">
+              <item>
+               <widget class="QLabel" name="label">
+                <property name="text">
+                 <string>Select car #</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QComboBox" name="selectIndividualCar"/>
+              </item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
