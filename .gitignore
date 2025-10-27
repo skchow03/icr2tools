@@ -26,3 +26,4 @@ venv/
 # OS files
 Thumbs.db
 .DS_Store
+icr2timing/profiles.ini
