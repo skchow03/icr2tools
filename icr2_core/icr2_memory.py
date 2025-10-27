@@ -1,9 +1,9 @@
 """
-icr2_memory.py — Minimal, efficient typed memory reader for ICR2 inside DOSBox.
+icr2_memory.py — Minimal, efficient typed memory reader/writer for ICR2 inside DOSBox.
 
 What this module does:
   • Attaches to DOSBox by window-title keywords and computes the ICR2 EXE base via signature scan.
-  • Provides one unified, typed read API: read(offset, type, count=1).
+  • Provides unified, typed read/write APIs: read(offset, type, count=1) and write(...).
   • Provides BulkReader to prefetch a contiguous region once and slice many fields (zero extra syscalls).
   • Provides read_blocks() for N×K table layouts with optional stride/padding.
   • Cleans up process handles and supports `with ICR2Memory(...) as mem:`.
@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 import ctypes
 import ctypes.wintypes
 import struct
+from collections.abc import Iterable
 from typing import List, Optional, Tuple
 
 import pymem
@@ -262,6 +263,38 @@ class ICR2Memory:
         raw = self.pm.read_bytes(addr, size * count)
         full_fmt = "<" + (fmt[1:] * count)
         return list(struct.unpack(full_fmt, raw))
+
+    def write(self, exe_offset: int, type_name: str, value) -> None:
+        """
+        Write bytes or typed values to memory at exe_offset.
+
+        * type_name == 'bytes': value must be bytes-like.
+        * Otherwise value can be a single scalar or an iterable of scalars matching
+          the struct format defined in TYPE_MAP.
+        """
+        if self.exe_base is None or self.pm is None:
+            raise RuntimeError("Process not attached")
+
+        addr = self.exe_base + int(exe_offset)
+
+        if type_name == 'bytes':
+            data = bytes(value)
+        else:
+            fmt, _ = self.TYPE_MAP[type_name]
+            if isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray, str)):
+                values = list(value)
+                if not values:
+                    return
+                inner_fmt = fmt[1:]
+                full_fmt = "<" + (inner_fmt * len(values))
+                data = struct.pack(full_fmt, *values)
+            else:
+                data = struct.pack(fmt, value)
+
+        if not data:
+            return
+
+        self.pm.write_bytes(addr, data, len(data))
 
     # ----------------------------
     # Bulk prefetch (contiguous)
