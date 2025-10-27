@@ -12,7 +12,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -36,6 +36,107 @@ class CarDisplayInfo:
     label: str
 
 
+@dataclass
+class ValueRange:
+    """Tracks the observed minimum and maximum for a given value index."""
+
+    minimum: Optional[int] = None
+    maximum: Optional[int] = None
+
+    def update(self, value: int) -> None:
+        if self.minimum is None or value < self.minimum:
+            self.minimum = value
+        if self.maximum is None or value > self.maximum:
+            self.maximum = value
+
+
+class ValueBarDelegate(QtWidgets.QStyledItemDelegate):
+    """Item delegate that renders a bi-directional bar for numeric values."""
+
+    def __init__(
+        self,
+        range_provider: Callable[[int], Tuple[Optional[int], Optional[int]]],
+        parent: Optional[QtWidgets.QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._range_provider = range_provider
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        opt = QtWidgets.QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        style = opt.widget.style() if opt.widget is not None else QtWidgets.QApplication.style()
+        original_text = opt.text
+        opt.text = ""
+        style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+
+        value = index.data(QtCore.Qt.UserRole)
+        if value is None:
+            try:
+                value = int(original_text)
+            except (TypeError, ValueError):
+                value = None
+
+        rect = opt.rect.adjusted(4, 4, -4, -4)
+        if value is not None and rect.width() > 0 and rect.height() > 0:
+            min_val, max_val = self._range_provider(index.row())
+            min_val = min_val if min_val is not None else 0
+            max_val = max_val if max_val is not None else 0
+
+            negative_span = abs(min(0, min_val))
+            positive_span = max(0, max_val)
+
+            center_x = rect.center().x()
+            left_width_available = center_x - rect.left()
+            right_width_available = rect.right() - center_x
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+
+            if value >= 0 and positive_span > 0 and right_width_available > 0:
+                ratio = min(1.0, value / positive_span) if positive_span else 0.0
+                width = int(round(ratio * right_width_available))
+                if width > 0:
+                    bar_rect = QtCore.QRect(center_x, rect.top(), width, rect.height())
+                    bar_color = QtGui.QColor(76, 175, 80)
+                    if opt.state & QtWidgets.QStyle.State_Selected:
+                        bar_color = bar_color.lighter(125)
+                    painter.fillRect(bar_rect, bar_color)
+            elif value < 0 and negative_span > 0 and left_width_available > 0:
+                ratio = min(1.0, abs(value) / negative_span) if negative_span else 0.0
+                width = int(round(ratio * left_width_available))
+                if width > 0:
+                    bar_rect = QtCore.QRect(center_x - width, rect.top(), width, rect.height())
+                    bar_color = QtGui.QColor(244, 67, 54)
+                    if opt.state & QtWidgets.QStyle.State_Selected:
+                        bar_color = bar_color.lighter(125)
+                    painter.fillRect(bar_rect, bar_color)
+
+            zero_pen = QtGui.QPen(opt.palette.mid().color())
+            if opt.state & QtWidgets.QStyle.State_Selected:
+                zero_pen.setColor(opt.palette.highlightedText().color())
+            painter.setPen(zero_pen)
+            painter.drawLine(center_x, rect.top(), center_x, rect.bottom())
+
+            painter.restore()
+
+        text_rect = opt.rect.adjusted(6, 0, -6, 0)
+        painter.save()
+        text_color = (
+            opt.palette.highlightedText().color()
+            if opt.state & QtWidgets.QStyle.State_Selected
+            else opt.palette.text().color()
+        )
+        painter.setPen(text_color)
+        painter.drawText(text_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight, original_text)
+        painter.restore()
+
+
 class CarDataEditor(QtWidgets.QMainWindow):
     """Main window that shows all per-car fields and lets the user edit them."""
 
@@ -51,6 +152,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._updating_table = False
         self._values_per_car = cfg.car_state_size // 4
         self._locked_values: Dict[int, Dict[int, int]] = {}
+        self._value_ranges: Dict[int, List[ValueRange]] = {}
 
         self.setWindowTitle("ICR2 Car Data Editor")
         self.resize(640, 720)
@@ -109,6 +211,8 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self._table.itemChanged.connect(self._on_item_changed)
+        self._value_delegate = ValueBarDelegate(self._get_value_range_for_row, self._table)
+        self._table.setItemDelegateForColumn(1, self._value_delegate)
 
         font = QtGui.QFont(self._cfg.font_family, max(8, self._cfg.font_size))
         self._table.setFont(font)
@@ -199,6 +303,12 @@ class CarDataEditor(QtWidgets.QMainWindow):
 
         current_idx = self._current_struct_index
         self._car_infos = new_infos
+        valid_structs = {info.struct_index for info in new_infos}
+        self._value_ranges = {
+            struct_index: ranges
+            for struct_index, ranges in self._value_ranges.items()
+            if struct_index in valid_structs
+        }
         self._car_combo.blockSignals(True)
         self._car_combo.clear()
         for info in new_infos:
@@ -227,9 +337,11 @@ class CarDataEditor(QtWidgets.QMainWindow):
             for row_idx in range(self._values_per_car):
                 item = self._table.item(row_idx, 1)
                 if item is not None:
+                    item.setData(QtCore.Qt.UserRole, 0)
                     item.setText("0")
         finally:
             self._updating_table = False
+        self._table.viewport().update()
 
     def _refresh_table(self) -> None:
         if self._latest_state is None or self._current_struct_index is None:
@@ -257,9 +369,13 @@ class CarDataEditor(QtWidgets.QMainWindow):
                     locked = self._locked_values.get(self._current_struct_index)
                     if locked is not None and row_idx in locked:
                         val = locked[row_idx]
+                if self._current_struct_index is not None:
+                    self._update_value_range(self._current_struct_index, row_idx, val)
+                item.setData(QtCore.Qt.UserRole, val)
                 item.setText(str(val))
         finally:
             self._updating_table = False
+        self._table.viewport().update()
 
     # ------------------------------------------------------------------
     def _parse_input_value(self, text: str) -> Optional[int]:
@@ -305,6 +421,15 @@ class CarDataEditor(QtWidgets.QMainWindow):
         if self._freeze_checkbox.isChecked():
             locked_for_struct = self._locked_values.setdefault(self._current_struct_index, {})
             locked_for_struct[row_idx] = new_val
+
+        if self._current_struct_index is not None:
+            self._update_value_range(self._current_struct_index, row_idx, new_val)
+        self._updating_table = True
+        try:
+            item.setData(QtCore.Qt.UserRole, new_val)
+        finally:
+            self._updating_table = False
+        self._table.viewport().update()
 
         self._status.showMessage(
             f"Field {row_idx} updated to {new_val} for struct {self._current_struct_index}",
@@ -352,6 +477,30 @@ class CarDataEditor(QtWidgets.QMainWindow):
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         super().closeEvent(event)
+
+
+    def _get_ranges_for_struct(self, struct_index: int) -> List[ValueRange]:
+        ranges = self._value_ranges.get(struct_index)
+        if ranges is None or len(ranges) != self._values_per_car:
+            ranges = [ValueRange() for _ in range(self._values_per_car)]
+            self._value_ranges[struct_index] = ranges
+        return ranges
+
+    def _get_value_range_for_row(
+        self, row_idx: int
+    ) -> Tuple[Optional[int], Optional[int]]:
+        if self._current_struct_index is None:
+            return (None, None)
+        ranges = self._value_ranges.get(self._current_struct_index)
+        if ranges is None or not (0 <= row_idx < len(ranges)):
+            return (None, None)
+        info = ranges[row_idx]
+        return (info.minimum, info.maximum)
+
+    def _update_value_range(self, struct_index: int, row_idx: int, value: int) -> None:
+        ranges = self._get_ranges_for_struct(struct_index)
+        if 0 <= row_idx < len(ranges):
+            ranges[row_idx].update(value)
 
 
 # ----------------------------------------------------------------------
