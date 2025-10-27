@@ -12,7 +12,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -50,6 +50,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._current_struct_index: Optional[int] = None
         self._updating_table = False
         self._values_per_car = cfg.car_state_size // 4
+        self._locked_values: Dict[int, Dict[int, int]] = {}
 
         self.setWindowTitle("ICR2 Car Data Editor")
         self.resize(640, 720)
@@ -92,6 +93,13 @@ class CarDataEditor(QtWidgets.QMainWindow):
         )
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
+
+        self._freeze_checkbox = QtWidgets.QCheckBox("Freeze edited values")
+        self._freeze_checkbox.setToolTip(
+            "When enabled, edited values are written back to memory every update."
+        )
+        self._freeze_checkbox.toggled.connect(self._on_freeze_toggled)
+        layout.addWidget(self._freeze_checkbox)
 
         self._table = QtWidgets.QTableWidget(self._values_per_car, 2, self)
         self._table.setHorizontalHeaderLabels(["Index", "Value"])
@@ -159,6 +167,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
         )
         self._update_car_list(state)
         self._refresh_table()
+        self._apply_locked_values()
 
     @QtCore.pyqtSlot(str)
     def on_error(self, message: str) -> None:
@@ -241,6 +250,13 @@ class CarDataEditor(QtWidgets.QMainWindow):
                 if item is None:
                     continue
                 val = values[row_idx] if row_idx < len(values) else 0
+                if (
+                    self._freeze_checkbox.isChecked()
+                    and self._current_struct_index is not None
+                ):
+                    locked = self._locked_values.get(self._current_struct_index)
+                    if locked is not None and row_idx in locked:
+                        val = locked[row_idx]
                 item.setText(str(val))
         finally:
             self._updating_table = False
@@ -286,12 +302,54 @@ class CarDataEditor(QtWidgets.QMainWindow):
             self._refresh_table()
             return
 
+        if self._freeze_checkbox.isChecked():
+            locked_for_struct = self._locked_values.setdefault(self._current_struct_index, {})
+            locked_for_struct[row_idx] = new_val
+
         self._status.showMessage(
             f"Field {row_idx} updated to {new_val} for struct {self._current_struct_index}",
             2000,
         )
 
     # ------------------------------------------------------------------
+    def _on_freeze_toggled(self, enabled: bool) -> None:
+        if not enabled:
+            self._locked_values.clear()
+            self._status.showMessage("Value freezing disabled", 2000)
+            self._refresh_table()
+        else:
+            self._status.showMessage(
+                "Value freezing enabled. Edited values will be reapplied each update.",
+                4000,
+            )
+
+    def _apply_locked_values(self) -> None:
+        if not self._freeze_checkbox.isChecked():
+            return
+        state = self._latest_state
+        if state is None:
+            return
+
+        for struct_index, row_map in list(self._locked_values.items()):
+            if not row_map:
+                continue
+            if struct_index not in state.car_states:
+                continue
+            for row_idx, value in row_map.items():
+                exe_offset = (
+                    self._cfg.car_state_base
+                    + struct_index * self._cfg.car_state_size
+                    + row_idx * 4
+                )
+                try:
+                    self._mem.write(exe_offset, "i32", value)
+                except Exception as exc:
+                    log.exception("Failed to maintain frozen car data value")
+                    self._status.showMessage(
+                        f"Freeze write failed for struct {struct_index}, field {row_idx}: {exc}",
+                        5000,
+                    )
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         super().closeEvent(event)
 
