@@ -71,4 +71,5 @@ class RaceState:
     car_states: Dict[int, CarState]
     track_length: float = 0.0   # miles, derived from memory
     track_name: str = ""   # e.g. "INDY500"
+    session_timer_ms: Optional[int] = None  # session-wide clock in milliseconds
 

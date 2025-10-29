@@ -107,6 +107,18 @@ class MemoryReader:
             raise ReadError(f"invalid total_laps {v} at 0x{self._cfg.laps_addr:X}")
         return v
 
+    def read_session_timer_ms(self) -> Optional[int]:
+        """Return the session timer in milliseconds if available."""
+        addr = getattr(self._cfg, "session_timer_addr", 0) or 0
+        if addr <= 0:
+            return None
+
+        raw = self._read_i32(addr)
+        if raw is None:
+            return None
+
+        return int(raw) & 0xFFFFFFFF
+
     def _read_names_full(self, raw_count: int) -> Dict[int, str]:
         """
         Read contiguous name slots sized to raw_count and return a map struct_index -> name.
@@ -450,6 +462,7 @@ class MemoryReader:
 
             track_length = self.read_track_length_miles()
             track_name = self.read_current_track()
+            session_timer_ms = self.read_session_timer_ms()
 
             if self._last_read_error is not None:
                 log.info(f"Memory read recovered after {self._read_error_count} failures")
@@ -465,6 +478,7 @@ class MemoryReader:
                 car_states={k: v for k, v in car_states_map.items()},
                 track_length=track_length,
                 track_name=track_name,
+                session_timer_ms=session_timer_ms,
             )
         except Exception as e:
             err_str = str(e)

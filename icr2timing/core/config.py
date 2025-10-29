@@ -34,6 +34,7 @@ OFFSETS = {
         "car_state_base":   0xD5638,
         "track_length_addr":0xDFFB4,
         "current_track_addr":0xE2EE9,
+        "session_timer_addr":0xDC61C,
     },
     "WINDY": {
         "run_order_base":   0x50FD64,
@@ -61,6 +62,7 @@ class Config:
     car_state_base: int = 0
     track_length_addr: int = 0
     current_track_addr: int = 0
+    session_timer_addr: int = 0
     version: str = ""
 
     # Common fields
