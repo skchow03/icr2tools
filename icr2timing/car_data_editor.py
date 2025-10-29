@@ -23,6 +23,7 @@ if __package__ is None:
 from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
 from icr2_core.model import RaceState
 from icr2_core.reader import MemoryReader
+from icr2timing.core.car_data_recorder import CarDataRecorder
 from icr2timing.core.config import Config
 from icr2timing.updater.updater import RaceUpdater
 
@@ -153,6 +154,10 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._values_per_car = cfg.car_state_size // 4
         self._locked_values: Dict[int, Dict[int, int]] = {}
         self._value_ranges: Dict[int, List[ValueRange]] = {}
+        self._recorder: Optional[CarDataRecorder] = None
+        self._record_output_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "car_data_recordings"
+        )
 
         self.setWindowTitle("ICR2 Car Data Editor")
         self.resize(640, 720)
@@ -203,6 +208,31 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._freeze_checkbox.toggled.connect(self._on_freeze_toggled)
         layout.addWidget(self._freeze_checkbox)
 
+        record_row = QtWidgets.QHBoxLayout()
+        record_row.setSpacing(6)
+
+        record_row.addWidget(QtWidgets.QLabel("Recording:"))
+
+        self._record_button = QtWidgets.QPushButton("Start")
+        self._record_button.clicked.connect(self._toggle_recording)
+        record_row.addWidget(self._record_button)
+
+        record_row.addWidget(QtWidgets.QLabel("Every"))
+        self._record_every_spin = QtWidgets.QSpinBox()
+        self._record_every_spin.setRange(1, 9999)
+        self._record_every_spin.setValue(1)
+        self._record_every_spin.setToolTip("Record one row every N updates")
+        self._record_every_spin.valueChanged.connect(self._on_record_every_changed)
+        record_row.addWidget(self._record_every_spin)
+
+        record_row.addWidget(QtWidgets.QLabel("frame(s)"))
+
+        self._record_status_label = QtWidgets.QLabel("Not recording")
+        self._record_status_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        record_row.addWidget(self._record_status_label, 1)
+
+        layout.addLayout(record_row)
+
         self._table = QtWidgets.QTableWidget(self._values_per_car, 2, self)
         self._table.setHorizontalHeaderLabels(["Index", "Value"])
         self._table.verticalHeader().setVisible(False)
@@ -250,6 +280,15 @@ class CarDataEditor(QtWidgets.QMainWindow):
         if struct_index == self._current_struct_index:
             return
         self._current_struct_index = struct_index
+        if self._recorder is not None:
+            try:
+                self._recorder.change_car_index(struct_index)
+            except Exception as exc:
+                log.exception("Failed to switch recorder car index")
+                self._status.showMessage(f"Recorder error: {exc}", 5000)
+                self._stop_recording(save_message=False)
+            else:
+                self._update_record_status()
         self._refresh_table()
 
     def _select_previous_car(self) -> None:
@@ -272,6 +311,13 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._update_car_list(state)
         self._refresh_table()
         self._apply_locked_values()
+        if self._recorder is not None:
+            try:
+                self._recorder.record_state(state)
+            except Exception as exc:
+                log.exception("Failed to record car data")
+                self._status.showMessage(f"Recorder error: {exc}", 5000)
+                self._stop_recording(save_message=False)
 
     @QtCore.pyqtSlot(str)
     def on_error(self, message: str) -> None:
@@ -476,7 +522,72 @@ class CarDataEditor(QtWidgets.QMainWindow):
                     )
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._stop_recording(save_message=False)
         super().closeEvent(event)
+
+    def _toggle_recording(self) -> None:
+        if self._recorder is None:
+            self._start_recording()
+        else:
+            self._stop_recording()
+
+    def _start_recording(self) -> None:
+        if self._current_struct_index is None:
+            self._status.showMessage("Select a car to record", 3000)
+            return
+        every_n = max(1, int(self._record_every_spin.value()))
+        try:
+            self._recorder = CarDataRecorder(
+                output_dir=self._record_output_dir,
+                car_index=self._current_struct_index,
+                values_per_car=self._values_per_car,
+                every_n=every_n,
+            )
+        except Exception as exc:
+            self._recorder = None
+            log.exception("Failed to start car data recording")
+            self._status.showMessage(f"Unable to start recording: {exc}", 5000)
+            return
+
+        self._record_button.setText("Stop")
+        self._update_record_status()
+        filename = self._recorder.filename
+        if filename:
+            self._status.showMessage(f"Recording car data to {filename}", 5000)
+
+    def _stop_recording(self, save_message: bool = True) -> None:
+        if self._recorder is None:
+            return
+        filename = self._recorder.filename
+        try:
+            self._recorder.close()
+        finally:
+            self._recorder = None
+        self._record_button.setText("Start")
+        self._record_status_label.setText("Not recording")
+        if save_message and filename:
+            self._status.showMessage(f"Recording saved to {filename}", 5000)
+
+    def _update_record_status(self) -> None:
+        if self._recorder is None:
+            self._record_status_label.setText("Not recording")
+            return
+        filename = os.path.basename(self._recorder.filename or "")
+        every_n = self._recorder.every_n
+        self._record_status_label.setText(
+            f"Recording {filename or '(unknown)'} every {every_n} frame(s)"
+        )
+
+    def _on_record_every_changed(self, value: int) -> None:
+        if self._recorder is not None:
+            try:
+                self._recorder.set_every_n(value)
+            except Exception as exc:
+                log.exception("Failed to update recorder interval")
+                self._status.showMessage(f"Recorder error: {exc}", 5000)
+                self._stop_recording(save_message=False)
+                return
+            self._update_record_status()
 
 
     def _get_ranges_for_struct(self, struct_index: int) -> List[ValueRange]:
