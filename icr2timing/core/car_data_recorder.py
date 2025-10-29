@@ -48,7 +48,7 @@ class CarDataRecorder:
         self.filename = os.path.join(self.output_dir, filename)
         self._file = open(self.filename, "w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._file)
-        header = ["frame", "timestamp", "car_index", "car_number"]
+        header = ["frame", "timestamp_ms", "car_index", "car_number"]
         header.extend(f"value_{i:03d}" for i in range(self.values_per_car))
         self._writer.writerow(header)
         self._file.flush()
@@ -74,9 +74,15 @@ class CarDataRecorder:
 
         self._frames_written += 1
 
+        session_timer_ms = getattr(state, "session_timer_ms", None)
+        if session_timer_ms is not None:
+            timestamp_value = str(int(session_timer_ms) & 0xFFFFFFFF)
+        else:
+            timestamp_value = datetime.now().isoformat(timespec="milliseconds")
+
         row = [
             self._frames_written,
-            datetime.now().isoformat(timespec="milliseconds"),
+            timestamp_value,
             self.car_index,
             getattr(car_state, "car_number", ""),
         ]
