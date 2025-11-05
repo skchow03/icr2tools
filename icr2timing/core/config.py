@@ -114,6 +114,10 @@ class Config:
         "Fuel": 38,
         "DLONG": 65,
         "DLAT": 65,
+        "Lead": 50,
+        "SincePit": 70,
+        "PitRel": 65,
+        "Qual": 65,
         "default": 50,
     })
 

@@ -25,6 +25,12 @@ from overlays.base_overlay import BaseOverlay
 cfg = Config()
 PLAYER_STRUCT_IDX = 1
 
+CAR_STATE_INDEX_QUALIFYING_TIME = 34
+CAR_STATE_INDEX_LAPS_LEAD = 36
+CAR_STATE_INDEX_LAPS_SINCE_PIT = 38
+CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
+
+
 AVAILABLE_FIELDS = [
     ("Pos", "position"),
     ("Car#", "car_number"),
@@ -38,6 +44,10 @@ AVAILABLE_FIELDS = [
     ("Fuel", "fuel_laps"),
     ("DLONG", "dlong"),
     ("DLAT", "dlat"),
+    ("Lead", "laps_lead"),
+    ("SincePit", "laps_since_pit"),
+    ("PitRel", "pit_release_timer"),
+    ("Qual", "qualifying_time"),
 ]
 
 
@@ -159,6 +169,30 @@ class RunningOrderOverlayTable(QtCore.QObject):
 
                 global_row = row + (table_idx * rows_per_table)
 
+                pit_release_txt = ""
+                if car_state and len(car_state.values) > CAR_STATE_INDEX_PIT_RELEASE_TIMER:
+                    raw_pit_release = car_state.values[CAR_STATE_INDEX_PIT_RELEASE_TIMER]
+                    if raw_pit_release > 0:
+                        pit_release_txt = self._best_tracker.format_ms(raw_pit_release)
+                    elif raw_pit_release < 0:
+                        pit_release_txt = str(raw_pit_release)
+
+                qualifying_txt = ""
+                if car_state and len(car_state.values) > CAR_STATE_INDEX_QUALIFYING_TIME:
+                    raw_qual = car_state.values[CAR_STATE_INDEX_QUALIFYING_TIME]
+                    if raw_qual > 0:
+                        qualifying_txt = self._best_tracker.format_ms(raw_qual)
+                    elif raw_qual < 0:
+                        qualifying_txt = str(raw_qual)
+
+                laps_lead_val = ""
+                if car_state and len(car_state.values) > CAR_STATE_INDEX_LAPS_LEAD:
+                    laps_lead_val = car_state.values[CAR_STATE_INDEX_LAPS_LEAD]
+
+                laps_since_pit_val = ""
+                if car_state and len(car_state.values) > CAR_STATE_INDEX_LAPS_SINCE_PIT:
+                    laps_since_pit_val = car_state.values[CAR_STATE_INDEX_LAPS_SINCE_PIT]
+
                 values = {
                     "position": (global_row + 1, None),
                     "car_number": (driver.car_number if driver else "", None),
@@ -172,6 +206,10 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     "fuel_laps": (getattr(car_state, "fuel_laps_remaining", ""), None) if car_state else ("", None),
                     "dlong": (getattr(car_state, "dlong", ""), None) if car_state else ("", None),
                     "dlat": (getattr(car_state, "dlat", ""), None) if car_state else ("", None),
+                    "laps_lead": (laps_lead_val, None),
+                    "laps_since_pit": (laps_since_pit_val, None),
+                    "pit_release_timer": (pit_release_txt, None),
+                    "qualifying_time": (qualifying_txt, None),
                 }
 
                 for lbl, idx in self._custom_fields:
