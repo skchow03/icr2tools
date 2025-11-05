@@ -118,6 +118,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.btnLapLogger.setText("Enable Lap Logger")
         self._recording_file = None
         self.btnReleaseAllCars.clicked.connect(self._release_all_cars)
+        self.btnForcePitStops.clicked.connect(self._force_all_cars_to_pit)
 
 
         # --- Profile Manager ---
@@ -738,6 +739,41 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.statusbar.showMessage(f"Pit release set to 1 for {updated} cars", 3000)
         else:
             self.statusbar.showMessage("No eligible cars found to release", 3000)
+
+    def _force_all_cars_to_pit(self):
+        """Force fuel remaining to 1 lap for all cars in the current state."""
+        if not self._mem:
+            self.statusbar.showMessage("Force pit unavailable: no memory connection", 5000)
+            return
+
+        state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
+        if state is None:
+            self.statusbar.showMessage("No telemetry state available yet", 3000)
+            return
+
+        base = self._cfg.car_state_base
+        stride = self._cfg.car_state_size
+        field_offset = self._cfg.fuel_laps_remaining
+        field_index = field_offset // 4
+
+        updated = 0
+        try:
+            for struct_idx, car_state in state.car_states.items():
+                values = getattr(car_state, "values", [])
+                if not car_state or len(values) <= field_index:
+                    continue
+                exe_offset = base + struct_idx * stride + field_offset
+                self._mem.write(exe_offset, "i32", 1)
+                updated += 1
+        except Exception as exc:
+            log.exception("Failed to force all cars to pit")
+            self.statusbar.showMessage(f"Failed to force pit stops: {exc}", 5000)
+            return
+
+        if updated:
+            self.statusbar.showMessage(f"Fuel set to 1 lap for {updated} cars", 3000)
+        else:
+            self.statusbar.showMessage("No eligible cars found to adjust fuel", 3000)
 
     def set_obs_capture_mode(self, enabled: bool):
         """
