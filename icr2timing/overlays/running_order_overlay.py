@@ -172,16 +172,18 @@ class RunningOrderOverlayTable(QtCore.QObject):
                 pit_release_txt = ""
                 if car_state and len(car_state.values) > CAR_STATE_INDEX_PIT_RELEASE_TIMER:
                     raw_pit_release = car_state.values[CAR_STATE_INDEX_PIT_RELEASE_TIMER]
-                    if raw_pit_release > 0:
-                        pit_release_txt = self._best_tracker.format_ms(raw_pit_release)
-                    elif raw_pit_release < 0:
+                    if raw_pit_release != 0:
                         pit_release_txt = str(raw_pit_release)
 
                 qualifying_txt = ""
                 if car_state and len(car_state.values) > CAR_STATE_INDEX_QUALIFYING_TIME:
                     raw_qual = car_state.values[CAR_STATE_INDEX_QUALIFYING_TIME]
                     if raw_qual > 0:
-                        qualifying_txt = self._best_tracker.format_ms(raw_qual)
+                        if self._display_mode == "speed" and self._track_length:
+                            speed = self._track_length * 3_600_000 / raw_qual
+                            qualifying_txt = f"{speed:.3f}"
+                        else:
+                            qualifying_txt = self._best_tracker.format_ms(raw_qual)
                     elif raw_qual < 0:
                         qualifying_txt = str(raw_qual)
 
