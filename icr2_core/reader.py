@@ -222,15 +222,11 @@ class MemoryReader:
             else:
                 laps_left = int.from_bytes(raw4, 'little', signed=False)
 
-            # current_lap (field 38)
-            start_ll = base + self._cfg.current_lap
-            raw4 = blob[start_ll:start_ll+4]
-            if len(raw4) < 4:
-                current_lap = 0
-            else:
-                current_lap = int.from_bytes(raw4, 'little', signed=False) - 1
-            if current_lap < 0:
-                current_lap = 0
+            laps_completed = total_laps - laps_left
+            if laps_completed < 0:
+                laps_completed = 0
+            elif laps_completed > total_laps:
+                laps_completed = total_laps
 
             # lap clock start (field 22 or cfg.field_lap_clock_start)
             start_clock = base + self._cfg.field_lap_clock_start
@@ -308,13 +304,6 @@ class MemoryReader:
                 last_lap_ms = (clock_end - clock_start) & 0xFFFFFFFF
                 last_lap_valid = True
 
-            # Old way to compute laps run
-            # completed = total_laps - laps_left
-            # if completed < 0:
-            #     completed = 0
-            # if completed > total_laps:
-            #     completed = total_laps
-
             # NEW: full 0x214 block decoded as signed i32s for research/custom fields
             values: List[int] = [
                 int.from_bytes(blob[base + i*4: base + (i+1)*4], 'little', signed=True)
@@ -324,7 +313,7 @@ class MemoryReader:
             out[struct_idx] = CarState(
                 struct_index=struct_idx,
                 laps_left=laps_left,
-                laps_completed=current_lap,
+                laps_completed=laps_completed,
                 last_lap_ms=last_lap_ms,
                 last_lap_valid=last_lap_valid,
                 laps_down=laps_down,
