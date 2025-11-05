@@ -95,7 +95,7 @@ def main():
     updater = RaceUpdater(reader, poll_ms=cfg.poll_ms)
 
     # Control panel (owns overlay + signal wiring)
-    panel = ControlPanel(updater)
+    panel = ControlPanel(updater, mem=mem, cfg=cfg)
     panel.show()
 
     # Thread for updater

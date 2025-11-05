@@ -704,6 +704,16 @@
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="btnReleaseAllCars">
+            <property name="toolTip">
+             <string>Set pit release countdown to 1 for every car</string>
+            </property>
+            <property name="text">
+             <string>Release all cars</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QGroupBox" name="groupBox">
             <property name="title">
              <string>Individual car telemetry (for research purposes)</string>

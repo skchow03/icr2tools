@@ -23,17 +23,24 @@ from core.config import Config
 from core.version import __version__
 from core.telemetry_laps import TelemetryLapLogger
 
+
+CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
+
+
 class ControlPanel(QtWidgets.QMainWindow):
     exe_path_changed = QtCore.pyqtSignal(str)
 
-    def __init__(self, updater):
+    def __init__(self, updater, mem=None, cfg=None):
         super().__init__()
         uic.loadUi(
-            os.path.join(os.path.dirname(__file__), "control_panel.ui"), 
+            os.path.join(os.path.dirname(__file__), "control_panel.ui"),
             self
         )
 
         self.updater = updater
+        self._mem = mem
+        self._cfg = cfg or Config()
+        self._latest_state = None
 
         # --- Overlay Manager ---
         self.manager = OverlayManager()
@@ -47,22 +54,22 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.error.connect(self.prox_overlay.on_error)
 
         # After creating self.prox_overlay
-        cfg = self.prox_overlay.cfg
+        radar_cfg = self.prox_overlay.cfg
 
-        self._set_button_color(self.btnPlayerColor, cfg.radar_player_color)
-        self._set_button_color(self.btnAheadColor, cfg.radar_ai_ahead_color)
-        self._set_button_color(self.btnBehindColor, cfg.radar_ai_behind_color)
-        self._set_button_color(self.btnAlongColor, cfg.radar_ai_alongside_color)
+        self._set_button_color(self.btnPlayerColor, radar_cfg.radar_player_color)
+        self._set_button_color(self.btnAheadColor, radar_cfg.radar_ai_ahead_color)
+        self._set_button_color(self.btnBehindColor, radar_cfg.radar_ai_behind_color)
+        self._set_button_color(self.btnAlongColor, radar_cfg.radar_ai_alongside_color)
 
-        self.spinRadarWidth.setValue(cfg.radar_width)
-        self.spinRadarHeight.setValue(cfg.radar_height)
+        self.spinRadarWidth.setValue(radar_cfg.radar_width)
+        self.spinRadarHeight.setValue(radar_cfg.radar_height)
 
-        self.spinRadarForward.setValue(cfg.radar_range_forward)
-        self.spinRadarRear.setValue(cfg.radar_range_rear)
-        self.spinRadarSide.setValue(cfg.radar_range_side)
+        self.spinRadarForward.setValue(radar_cfg.radar_range_forward)
+        self.spinRadarRear.setValue(radar_cfg.radar_range_rear)
+        self.spinRadarSide.setValue(radar_cfg.radar_range_side)
 
         # symbol dropdown
-        self.comboRadarSymbol.setCurrentText(cfg.radar_symbol.capitalize())
+        self.comboRadarSymbol.setCurrentText(radar_cfg.radar_symbol.capitalize())
 
 
         # --- Radar Settings connections ---   
@@ -110,6 +117,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.btnLapLogger.clicked.connect(self._toggle_lap_logger)
         self.btnLapLogger.setText("Enable Lap Logger")
         self._recording_file = None
+        self.btnReleaseAllCars.clicked.connect(self._release_all_cars)
 
 
         # --- Profile Manager ---
@@ -433,6 +441,7 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _on_state_updated_update_carlist(self, state):
         """Update car list only if the set of car numbers has changed."""
+        self._latest_state = state
         # Build a snapshot of current car numbers
         current_numbers = [
             str(driver.car_number)
@@ -696,6 +705,39 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Refresh status bar to reflect current state
         self._update_status()
+
+    def _release_all_cars(self):
+        """Force pit release countdown to 1 for all cars in the current state."""
+        if not self._mem:
+            self.statusbar.showMessage("Pit release unavailable: no memory connection", 5000)
+            return
+
+        state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
+        if state is None:
+            self.statusbar.showMessage("No telemetry state available yet", 3000)
+            return
+
+        base = self._cfg.car_state_base
+        stride = self._cfg.car_state_size
+        field_offset = CAR_STATE_INDEX_PIT_RELEASE_TIMER * 4
+
+        updated = 0
+        try:
+            for struct_idx, car_state in state.car_states.items():
+                if not car_state or len(getattr(car_state, "values", [])) <= CAR_STATE_INDEX_PIT_RELEASE_TIMER:
+                    continue
+                exe_offset = base + struct_idx * stride + field_offset
+                self._mem.write(exe_offset, "i32", 1)
+                updated += 1
+        except Exception as exc:
+            log.exception("Failed to release all cars from pits")
+            self.statusbar.showMessage(f"Failed to release all cars: {exc}", 5000)
+            return
+
+        if updated:
+            self.statusbar.showMessage(f"Pit release set to 1 for {updated} cars", 3000)
+        else:
+            self.statusbar.showMessage("No eligible cars found to release", 3000)
 
     def set_obs_capture_mode(self, enabled: bool):
         """
