@@ -714,6 +714,16 @@
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="btnForcePitStops">
+            <property name="toolTip">
+             <string>Set remaining fuel to 1 lap for every car</string>
+            </property>
+            <property name="text">
+             <string>Force pit stops</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QGroupBox" name="groupBox">
             <property name="title">
              <string>Individual car telemetry (for research purposes)</string>
