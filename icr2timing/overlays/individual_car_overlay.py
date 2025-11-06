@@ -203,6 +203,24 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         metrics = QtGui.QFontMetrics(font)
         self._table.verticalHeader().setDefaultSectionSize(metrics.height() + 6)
 
+        self._value_delegate = ValueBarDelegate(self._value_range_for_row, self._table)
+        self._table.setItemDelegateForColumn(1, self._value_delegate)
+
+        for row_idx in range(self._values_per_car):
+            index_item = QtWidgets.QTableWidgetItem(f"{row_idx:03d}")
+            index_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            value_item = QtWidgets.QTableWidgetItem("0")
+            value_item.setFlags(
+                QtCore.Qt.ItemIsSelectable
+                | QtCore.Qt.ItemIsEnabled
+                | QtCore.Qt.ItemIsEditable
+            )
+            value_item.setData(QtCore.Qt.UserRole, 0)
+            self._table.setItem(row_idx, 0, index_item)
+            self._table.setItem(row_idx, 1, value_item)
+
+        self._table.itemChanged.connect(self._on_item_changed)
+
     def _background_rgb(self) -> str:
         try:
             components = [int(part.strip()) for part in self._cfg.background_rgba.split(",")]
@@ -222,24 +240,6 @@ class IndividualCarOverlay(QtWidgets.QWidget):
 
         rgb = [max(0, min(255, value)) for value in components[:3]]
         return ", ".join(str(value) for value in rgb)
-
-        self._value_delegate = ValueBarDelegate(self._value_range_for_row, self._table)
-        self._table.setItemDelegateForColumn(1, self._value_delegate)
-
-        for row_idx in range(self._values_per_car):
-            index_item = QtWidgets.QTableWidgetItem(f"{row_idx:03d}")
-            index_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-            value_item = QtWidgets.QTableWidgetItem("0")
-            value_item.setFlags(
-                QtCore.Qt.ItemIsSelectable
-                | QtCore.Qt.ItemIsEnabled
-                | QtCore.Qt.ItemIsEditable
-            )
-            value_item.setData(QtCore.Qt.UserRole, 0)
-            self._table.setItem(row_idx, 0, index_item)
-            self._table.setItem(row_idx, 1, value_item)
-
-        self._table.itemChanged.connect(self._on_item_changed)
 
     # ------------------------------------------------------------------
     def widget(self):
