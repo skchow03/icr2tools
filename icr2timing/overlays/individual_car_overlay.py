@@ -90,6 +90,10 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             default_record_output_dir(), self._values_per_car, self._field_definitions
         )
 
+        self._resize_throttle_ms = max(250, getattr(self._cfg, "resize_throttle_ms", 333))
+        self._last_resize_time = QtCore.QElapsedTimer()
+        self._last_resize_time.start()
+
         flags = QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
 
@@ -190,13 +194,6 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._table.setRowCount(self._rows_per_column)
         self._table.setHorizontalHeaderLabels(headers)
         self._table.verticalHeader().setVisible(False)
-        header = self._table.horizontalHeader()
-        for group in range(self._columns):
-            base = group * 3
-            header.setSectionResizeMode(base, QtWidgets.QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(base + 1, QtWidgets.QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(base + 2, QtWidgets.QHeaderView.ResizeToContents)
-
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
@@ -256,8 +253,25 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                         placeholder.setFlags(QtCore.Qt.NoItemFlags)
                         self._table.setItem(row_idx, base_col + offset, placeholder)
 
-        self._table.resizeColumnsToContents()
+        self._autosize_all_columns_once()
         self._table.itemChanged.connect(self._on_item_changed)
+
+    def _autosize_all_columns_once(self) -> None:
+        header = self._table.horizontalHeader()
+        if header is None:
+            return
+        for column in range(self._table.columnCount()):
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeToContents)
+            self._table.resizeColumnToContents(column)
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.Fixed)
+
+    def _autosize_single_column(self, column: int) -> None:
+        header = self._table.horizontalHeader()
+        if header is None or not (0 <= column < self._table.columnCount()):
+            return
+        header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeToContents)
+        self._table.resizeColumnToContents(column)
+        header.setSectionResizeMode(column, QtWidgets.QHeaderView.Fixed)
 
     # ------------------------------------------------------------------
     def widget(self):
@@ -331,7 +345,9 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._updating_table = False
             self._table.setUpdatesEnabled(True)
         self._table.viewport().update()
-        self._table.resizeColumnsToContents()
+        if self._last_resize_time.hasExpired(self._resize_throttle_ms):
+            self._autosize_all_columns_once()
+            self._last_resize_time.restart()
 
     def _refresh_table(self) -> None:
         if self._latest_state is None:
@@ -345,6 +361,9 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         values = car_state.values
         self._table.setUpdatesEnabled(False)
         self._updating_table = True
+        metrics = self._table.fontMetrics()
+        advance = getattr(metrics, "horizontalAdvance", metrics.width)
+        needs_resize = False
         try:
             for field_index, item in self._value_items.items():
                 val = values[field_index] if field_index < len(values) else 0
@@ -358,10 +377,18 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                 text_val = str(val)
                 if item.text() != text_val:
                     item.setText(text_val)
+                    if not needs_resize:
+                        col_width = self._table.columnWidth(item.column())
+                        text_width = advance(text_val) + 12
+                        if text_width > col_width:
+                            needs_resize = True
         finally:
             self._updating_table = False
             self._table.setUpdatesEnabled(True)
         self._table.viewport().update()
+        if needs_resize and self._last_resize_time.hasExpired(self._resize_throttle_ms):
+            self._autosize_all_columns_once()
+            self._last_resize_time.restart()
 
     def _apply_locked_values(self) -> None:
         if not self._freeze_checkbox.isChecked():
@@ -438,7 +465,8 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         finally:
             self._updating_table = False
         self._table.viewport().update()
-        self._table.resizeColumnsToContents()
+        self._autosize_single_column(item.column())
+        self._last_resize_time.restart()
 
         definition = (
             self._field_definitions[field_index]
