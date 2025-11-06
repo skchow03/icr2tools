@@ -67,7 +67,11 @@ class ValueBarDelegate(QtWidgets.QStyledItemDelegate):
 
         rect = opt.rect.adjusted(4, 4, -4, -4)
         if value is not None and rect.width() > 0 and rect.height() > 0:
-            min_val, max_val = self._range_provider(index.row())
+            data_index = index.data(QtCore.Qt.UserRole + 1)
+            if isinstance(data_index, int):
+                min_val, max_val = self._range_provider(data_index)
+            else:
+                min_val, max_val = self._range_provider(index.row())
             min_val = min_val if min_val is not None else 0
             max_val = max_val if max_val is not None else 0
 

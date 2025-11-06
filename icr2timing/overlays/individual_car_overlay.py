@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -21,6 +22,8 @@ from ui.car_value_helpers import (
 )
 
 log = logging.getLogger(__name__)
+
+FIELD_INDEX_ROLE = QtCore.Qt.UserRole + 1
 
 
 class DraggableTable(QtWidgets.QTableWidget):
@@ -166,38 +169,33 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._table = DraggableTable(self, enable_drag=False)
         self._configure_table()
         frame_layout.addWidget(self._table, 1)
-
-        background_rgb = self._background_rgb()
-        frame.setStyleSheet(
-            f"""
-            QFrame#overlayContainer {{
-                background-color: rgb({background_rgb});
-                color: {self._cfg.text_color};
-                border-radius: 6px;
-            }}
-            QLabel, QCheckBox {{
-                color: {self._cfg.text_color};
-            }}
-            QPushButton {{
-                color: {self._cfg.text_color};
-            }}
-            QTableWidget {{
-                background-color: rgb({background_rgb});
-                color: {self._cfg.text_color};
-                gridline-color: {self._cfg.grid_color};
-            }}
-        """
-        )
+        self.resize(self.sizeHint())
 
     def _configure_table(self) -> None:
-        self._table.setColumnCount(3)
-        self._table.setRowCount(self._values_per_car)
-        self._table.setHorizontalHeaderLabels(["Index", "Field", "Value"])
+        self._columns = 3
+        self._rows_per_column = int(math.ceil(self._values_per_car / self._columns))
+        self._value_columns = [2 + group * 3 for group in range(self._columns)]
+
+        headers = []
+        for group in range(self._columns):
+            headers.extend(
+                [
+                    f"Index {group + 1}",
+                    f"Field {group + 1}",
+                    f"Value {group + 1}",
+                ]
+            )
+
+        self._table.setColumnCount(len(headers))
+        self._table.setRowCount(self._rows_per_column)
+        self._table.setHorizontalHeaderLabels(headers)
         self._table.verticalHeader().setVisible(False)
         header = self._table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        for group in range(self._columns):
+            base = group * 3
+            header.setSectionResizeMode(base, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(base + 1, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(base + 2, QtWidgets.QHeaderView.ResizeToContents)
 
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -208,20 +206,31 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         metrics = QtGui.QFontMetrics(font)
         self._table.verticalHeader().setDefaultSectionSize(metrics.height() + 6)
 
-        self._value_delegate = ValueBarDelegate(self._value_range_for_row, self._table)
-        self._table.setItemDelegateForColumn(2, self._value_delegate)
+        self._value_delegate = ValueBarDelegate(self._value_range_for_field, self._table)
+        for column in self._value_columns:
+            self._table.setItemDelegateForColumn(column, self._value_delegate)
 
-        for row_idx in range(self._values_per_car):
-            definition = self._field_definitions[row_idx]
+        self._value_items: Dict[int, QtWidgets.QTableWidgetItem] = {}
+
+        for field_index in range(self._values_per_car):
+            group = field_index // self._rows_per_column
+            row_idx = field_index % self._rows_per_column
+            base_col = group * 3
+
+            definition = self._field_definitions[field_index]
             index_item = QtWidgets.QTableWidgetItem(f"{definition.index:03d}")
             index_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
             tooltip = definition.description or ""
             if tooltip:
                 index_item.setToolTip(tooltip)
+            self._table.setItem(row_idx, base_col, index_item)
+
             name_item = QtWidgets.QTableWidgetItem(definition.name)
             name_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
             if tooltip:
                 name_item.setToolTip(tooltip)
+            self._table.setItem(row_idx, base_col + 1, name_item)
+
             value_item = QtWidgets.QTableWidgetItem("0")
             value_item.setFlags(
                 QtCore.Qt.ItemIsSelectable
@@ -229,33 +238,26 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                 | QtCore.Qt.ItemIsEditable
             )
             value_item.setData(QtCore.Qt.UserRole, 0)
+            value_item.setData(FIELD_INDEX_ROLE, field_index)
             if tooltip:
                 value_item.setToolTip(tooltip)
-            self._table.setItem(row_idx, 0, index_item)
-            self._table.setItem(row_idx, 1, name_item)
-            self._table.setItem(row_idx, 2, value_item)
+            self._table.setItem(row_idx, base_col + 2, value_item)
+            self._value_items[field_index] = value_item
 
+        for row_idx in range(self._rows_per_column):
+            for group in range(self._columns):
+                field_index = group * self._rows_per_column + row_idx
+                if field_index < self._values_per_car:
+                    continue
+                base_col = group * 3
+                for offset in range(3):
+                    if self._table.item(row_idx, base_col + offset) is None:
+                        placeholder = QtWidgets.QTableWidgetItem("")
+                        placeholder.setFlags(QtCore.Qt.NoItemFlags)
+                        self._table.setItem(row_idx, base_col + offset, placeholder)
+
+        self._table.resizeColumnsToContents()
         self._table.itemChanged.connect(self._on_item_changed)
-
-    def _background_rgb(self) -> str:
-        try:
-            components = [int(part.strip()) for part in self._cfg.background_rgba.split(",")]
-        except ValueError:
-            log.warning(
-                "Invalid background_rgba value '%s'; falling back to opaque black.",
-                self._cfg.background_rgba,
-            )
-            components = [0, 0, 0]
-
-        if len(components) < 3:
-            log.warning(
-                "background_rgba value '%s' did not contain RGB components; using black.",
-                self._cfg.background_rgba,
-            )
-            components = [0, 0, 0]
-
-        rgb = [max(0, min(255, value)) for value in components[:3]]
-        return ", ".join(str(value) for value in rgb)
 
     # ------------------------------------------------------------------
     def widget(self):
@@ -319,14 +321,13 @@ class IndividualCarOverlay(QtWidgets.QWidget):
     def _clear_values(self) -> None:
         self._updating_table = True
         try:
-            for row_idx in range(self._values_per_car):
-                item = self._table.item(row_idx, 2)
-                if item is not None:
-                    item.setData(QtCore.Qt.UserRole, 0)
-                    item.setText("0")
+            for item in self._value_items.values():
+                item.setData(QtCore.Qt.UserRole, 0)
+                item.setText("0")
         finally:
             self._updating_table = False
         self._table.viewport().update()
+        self._table.resizeColumnsToContents()
 
     def _refresh_table(self) -> None:
         if self._latest_state is None:
@@ -340,16 +341,13 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         values = car_state.values
         self._updating_table = True
         try:
-            for row_idx in range(self._values_per_car):
-                item = self._table.item(row_idx, 2)
-                if item is None:
-                    continue
-                val = values[row_idx] if row_idx < len(values) else 0
+            for field_index, item in self._value_items.items():
+                val = values[field_index] if field_index < len(values) else 0
                 if self._freeze_checkbox.isChecked():
-                    locked_val = self._locked_values.get(self._car_index, row_idx)
+                    locked_val = self._locked_values.get(self._car_index, field_index)
                     if locked_val is not None:
                         val = locked_val
-                self._range_tracker.update(self._car_index, row_idx, val)
+                self._range_tracker.update(self._car_index, field_index, val)
                 item.setData(QtCore.Qt.UserRole, val)
                 item.setText(str(val))
         finally:
@@ -381,17 +379,20 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                     )
 
     # ------------------------------------------------------------------
-    def _value_range_for_row(self, row_idx: int) -> Tuple[Optional[int], Optional[int]]:
-        return self._range_tracker.get(self._car_index, row_idx)
+    def _value_range_for_field(self, field_index: int) -> Tuple[Optional[int], Optional[int]]:
+        return self._range_tracker.get(self._car_index, field_index)
 
     @QtCore.pyqtSlot(QtWidgets.QTableWidgetItem)
     def _on_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._updating_table:
             return
-        if item.column() != 2:
+        if item.column() not in self._value_columns:
             return
 
-        row_idx = item.row()
+        field_index = item.data(FIELD_INDEX_ROLE)
+        if not isinstance(field_index, int):
+            return
+
         new_val = parse_input_value(item.text())
         if new_val is None:
             self._show_status("Invalid number", 3000)
@@ -406,7 +407,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         exe_offset = (
             self._cfg.car_state_base
             + self._car_index * self._cfg.car_state_size
-            + row_idx * 4
+            + field_index * 4
         )
 
         try:
@@ -418,9 +419,9 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             return
 
         if self._freeze_checkbox.isChecked():
-            self._locked_values.set(self._car_index, row_idx, new_val)
+            self._locked_values.set(self._car_index, field_index, new_val)
 
-        self._range_tracker.update(self._car_index, row_idx, new_val)
+        self._range_tracker.update(self._car_index, field_index, new_val)
         self._updating_table = True
         try:
             item.setData(QtCore.Qt.UserRole, new_val)
@@ -428,9 +429,17 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         finally:
             self._updating_table = False
         self._table.viewport().update()
+        self._table.resizeColumnsToContents()
 
+        definition = (
+            self._field_definitions[field_index]
+            if 0 <= field_index < len(self._field_definitions)
+            else None
+        )
+        label = definition.name if definition is not None else str(field_index)
         self._show_status(
-            f"Field {row_idx} updated to {new_val} for struct {self._car_index}", 2000
+            f"Field {field_index} ({label}) updated to {new_val} for struct {self._car_index}",
+            2000,
         )
 
     def _on_freeze_toggled(self, enabled: bool) -> None:
