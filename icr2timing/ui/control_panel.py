@@ -179,6 +179,8 @@ class ControlPanel(QtWidgets.QMainWindow):
             cb = QtWidgets.QCheckBox(field.label, self.fieldsContainer)
             cb.setChecked(True)
             cb.stateChanged.connect(self._update_fields)
+            if field.tooltip:
+                cb.setToolTip(field.tooltip)
             self.fieldsLayout.addWidget(cb)
             self.field_checks[field.key] = cb
 
@@ -557,6 +559,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             item = QtWidgets.QListWidgetItem(f"{label} ({idx})")
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
             item.setCheckState(QtCore.Qt.Checked)
+            item.setToolTip(f"Car data struct index {idx} (custom field)")
             self.customFieldList.addItem(item)
 
 
@@ -667,6 +670,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         item = QtWidgets.QListWidgetItem(f"{label} ({index})")
         item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
         item.setCheckState(QtCore.Qt.Checked)
+        item.setToolTip(f"Car data struct index {index} (custom field)")
         self.customFieldList.addItem(item)
 
         # Clear inputs
