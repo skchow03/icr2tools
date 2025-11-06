@@ -23,6 +23,7 @@ if __package__ is None:
 from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
 from icr2_core.model import RaceState
 from icr2_core.reader import MemoryReader
+from icr2timing.core.car_field_definitions import CarFieldDefinition, ensure_field_definitions
 from icr2timing.core.config import Config
 from ui.car_value_helpers import (
     CarValueRecorderController,
@@ -67,10 +68,13 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._updating_table = False
         self._values_per_car = cfg.car_state_size // 4
         self._locked_values = FrozenValueStore()
+        self._field_definitions: List[CarFieldDefinition] = ensure_field_definitions(
+            self._values_per_car
+        )
         self._range_tracker = ValueRangeTracker(self._values_per_car)
         self._record_output_dir = default_record_output_dir()
         self._recorder_ctrl = CarValueRecorderController(
-            self._record_output_dir, self._values_per_car
+            self._record_output_dir, self._values_per_car, self._field_definitions
         )
 
         self._build_ui()
@@ -141,8 +145,8 @@ class CarDataEditorWidget(QtWidgets.QWidget):
 
         layout.addLayout(record_row)
 
-        self._table = QtWidgets.QTableWidget(self._values_per_car, 2, self)
-        self._table.setHorizontalHeaderLabels(["Index", "Value"])
+        self._table = QtWidgets.QTableWidget(self._values_per_car, 3, self)
+        self._table.setHorizontalHeaderLabels(["Index", "Field", "Value"])
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -150,24 +154,39 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
         self._table.itemChanged.connect(self._on_item_changed)
         self._value_delegate = ValueBarDelegate(self._get_value_range_for_row, self._table)
-        self._table.setItemDelegateForColumn(1, self._value_delegate)
+        self._table.setItemDelegateForColumn(2, self._value_delegate)
 
         font = QtGui.QFont(self._cfg.font_family, max(8, self._cfg.font_size))
         self._table.setFont(font)
         metrics = QtGui.QFontMetrics(font)
         self._table.verticalHeader().setDefaultSectionSize(metrics.height() + 6)
 
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+
         for row_idx in range(self._values_per_car):
-            index_item = QtWidgets.QTableWidgetItem(f"{row_idx:03d}")
+            definition = self._field_definitions[row_idx]
+            index_item = QtWidgets.QTableWidgetItem(f"{definition.index:03d}")
             index_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            tooltip = definition.description or ""
+            if tooltip:
+                index_item.setToolTip(tooltip)
+            name_item = QtWidgets.QTableWidgetItem(definition.name)
+            name_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            if tooltip:
+                name_item.setToolTip(tooltip)
             self._table.setItem(row_idx, 0, index_item)
+            self._table.setItem(row_idx, 1, name_item)
             value_item = QtWidgets.QTableWidgetItem("0")
             value_item.setFlags(
                 QtCore.Qt.ItemIsSelectable
                 | QtCore.Qt.ItemIsEnabled
                 | QtCore.Qt.ItemIsEditable
             )
-            self._table.setItem(row_idx, 1, value_item)
+            if tooltip:
+                value_item.setToolTip(tooltip)
+            self._table.setItem(row_idx, 2, value_item)
 
         layout.addWidget(self._table, 1)
 
@@ -305,7 +324,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._updating_table = True
         try:
             for row_idx in range(self._values_per_car):
-                item = self._table.item(row_idx, 1)
+                item = self._table.item(row_idx, 2)
                 if item is not None:
                     item.setData(QtCore.Qt.UserRole, 0)
                     item.setText("0")
@@ -328,7 +347,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._updating_table = True
         try:
             for row_idx in range(self._values_per_car):
-                item = self._table.item(row_idx, 1)
+                item = self._table.item(row_idx, 2)
                 if item is None:
                     continue
                 val = values[row_idx] if row_idx < len(values) else 0
@@ -359,7 +378,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
     def _on_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._updating_table:
             return
-        if item.column() != 1:
+        if item.column() != 2:
             return
         row_idx = item.row()
         if self._current_struct_index is None:
@@ -477,14 +496,28 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._update_record_status()
         filename = self._recorder_ctrl.filename
         if filename:
-            self._show_status(f"Recording car data to {filename}", 5000)
+            metadata = self._recorder_ctrl.metadata_filename
+            if metadata:
+                self._show_status(
+                    f"Recording car data to {filename} (metadata: {metadata})",
+                    5000,
+                )
+            else:
+                self._show_status(f"Recording car data to {filename}", 5000)
 
     def _stop_recording(self, save_message: bool = True) -> None:
+        metadata = self._recorder_ctrl.metadata_filename
         filename = self._recorder_ctrl.stop()
         self._record_button.setText("Start")
         self._record_status_label.setText("Not recording")
         if save_message and filename:
-            self._show_status(f"Recording saved to {filename}", 5000)
+            if metadata:
+                self._show_status(
+                    f"Recording saved to {filename} (metadata: {metadata})",
+                    5000,
+                )
+            else:
+                self._show_status(f"Recording saved to {filename}", 5000)
 
     def _update_record_status(self) -> None:
         recorder = self._recorder_ctrl.recorder
