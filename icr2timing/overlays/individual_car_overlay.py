@@ -23,22 +23,31 @@ log = logging.getLogger(__name__)
 
 
 class DraggableTable(QtWidgets.QTableWidget):
-    """QTableWidget variant that drags the parent overlay when left-clicked."""
+    """QTableWidget that optionally drags the parent overlay when left-clicked."""
 
-    def __init__(self, parent_overlay: QtWidgets.QWidget):
+    def __init__(self, parent_overlay: QtWidgets.QWidget, enable_drag: bool) -> None:
         super().__init__(parent_overlay)
         self._parent_overlay = parent_overlay
+        self._enable_drag = enable_drag
         self._drag_pos: Optional[QtCore.QPoint] = None
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
-        if event.button() == QtCore.Qt.LeftButton and self.itemAt(event.pos()) is None:
+        if (
+            self._enable_drag
+            and event.button() == QtCore.Qt.LeftButton
+            and self.itemAt(event.pos()) is None
+        ):
             self._drag_pos = event.globalPos() - self._parent_overlay.frameGeometry().topLeft()
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
-        if self._drag_pos is not None and event.buttons() & QtCore.Qt.LeftButton:
+        if (
+            self._enable_drag
+            and self._drag_pos is not None
+            and event.buttons() & QtCore.Qt.LeftButton
+        ):
             self._parent_overlay.move(event.globalPos() - self._drag_pos)
             event.accept()
             return
@@ -74,13 +83,8 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             default_record_output_dir(), self._values_per_car
         )
 
-        flags = (
-            QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.Tool
-            | QtCore.Qt.WindowStaysOnTopHint
-        )
+        flags = QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
 
         self._build_ui()
         self._update_enabled_state()
@@ -155,14 +159,15 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._record_status_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         record_row.addWidget(self._record_status_label, 1)
 
-        self._table = DraggableTable(self)
+        self._table = DraggableTable(self, enable_drag=False)
         self._configure_table()
         frame_layout.addWidget(self._table, 1)
 
+        background_rgb = self._background_rgb()
         frame.setStyleSheet(
             f"""
             QFrame#overlayContainer {{
-                background: rgba({self._cfg.background_rgba});
+                background-color: rgb({background_rgb});
                 color: {self._cfg.text_color};
                 border-radius: 6px;
             }}
@@ -173,7 +178,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                 color: {self._cfg.text_color};
             }}
             QTableWidget {{
-                background: rgba({self._cfg.background_rgba});
+                background-color: rgb({background_rgb});
                 color: {self._cfg.text_color};
                 gridline-color: {self._cfg.grid_color};
             }}
@@ -197,6 +202,26 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._table.setFont(font)
         metrics = QtGui.QFontMetrics(font)
         self._table.verticalHeader().setDefaultSectionSize(metrics.height() + 6)
+
+    def _background_rgb(self) -> str:
+        try:
+            components = [int(part.strip()) for part in self._cfg.background_rgba.split(",")]
+        except ValueError:
+            log.warning(
+                "Invalid background_rgba value '%s'; falling back to opaque black.",
+                self._cfg.background_rgba,
+            )
+            components = [0, 0, 0]
+
+        if len(components) < 3:
+            log.warning(
+                "background_rgba value '%s' did not contain RGB components; using black.",
+                self._cfg.background_rgba,
+            )
+            components = [0, 0, 0]
+
+        rgb = [max(0, min(255, value)) for value in components[:3]]
+        return ", ".join(str(value) for value in rgb)
 
         self._value_delegate = ValueBarDelegate(self._value_range_for_row, self._table)
         self._table.setItemDelegateForColumn(1, self._value_delegate)
