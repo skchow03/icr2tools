@@ -138,14 +138,22 @@ class ValueBarDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
 
-class CarDataEditor(QtWidgets.QMainWindow):
-    """Main window that shows all per-car fields and lets the user edit them."""
+class CarDataEditorWidget(QtWidgets.QWidget):
+    """Widget that shows all per-car fields and lets the user edit them."""
 
-    def __init__(self, updater: RaceUpdater, mem: ICR2Memory, cfg: Config):
-        super().__init__()
+    def __init__(
+        self,
+        updater: RaceUpdater,
+        mem: Optional[ICR2Memory],
+        cfg: Config,
+        status_callback: Optional[Callable[[str, int], None]] = None,
+        parent: Optional[QtWidgets.QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
         self._updater = updater
         self._mem = mem
         self._cfg = cfg
+        self._status_callback = status_callback
 
         self._latest_state: Optional[RaceState] = None
         self._car_infos: List[CarDisplayInfo] = []
@@ -159,18 +167,12 @@ class CarDataEditor(QtWidgets.QMainWindow):
             os.path.dirname(os.path.abspath(__file__)), "car_data_recordings"
         )
 
-        self.setWindowTitle("ICR2 Car Data Editor")
-        self.resize(640, 720)
-
         self._build_ui()
-
-        updater.state_updated.connect(self.on_state_updated)
-        updater.error.connect(self.on_error)
+        self._update_enabled_state()
 
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
-        central = QtWidgets.QWidget(self)
-        layout = QtWidgets.QVBoxLayout(central)
+        layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
@@ -263,11 +265,30 @@ class CarDataEditor(QtWidgets.QMainWindow):
 
         layout.addWidget(self._table, 1)
 
-        self._status = QtWidgets.QStatusBar()
-        self.setStatusBar(self._status)
+    # ------------------------------------------------------------------
+    def _show_status(self, message: str, timeout_ms: int = 0) -> None:
+        if self._status_callback is not None:
+            try:
+                self._status_callback(message, timeout_ms)
+            except TypeError:
+                # Some callbacks (like QStatusBar.showMessage) accept default timeout arg only
+                self._status_callback(message)  # type: ignore[misc]
 
-        central.setLayout(layout)
-        self.setCentralWidget(central)
+    def _update_enabled_state(self) -> None:
+        has_mem = self._mem is not None
+        widgets = [
+            self._car_combo,
+            self._prev_btn,
+            self._next_btn,
+            self._freeze_checkbox,
+            self._record_button,
+            self._record_every_spin,
+            self._table,
+        ]
+        for widget in widgets:
+            widget.setEnabled(has_mem)
+        if not has_mem:
+            self._record_status_label.setText("Not connected to memory")
 
     # ------------------------------------------------------------------
     @QtCore.pyqtSlot(int)
@@ -285,7 +306,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
                 self._recorder.change_car_index(struct_index)
             except Exception as exc:
                 log.exception("Failed to switch recorder car index")
-                self._status.showMessage(f"Recorder error: {exc}", 5000)
+                self._show_status(f"Recorder error: {exc}", 5000)
                 self._stop_recording(save_message=False)
             else:
                 self._update_record_status()
@@ -305,7 +326,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(object)
     def on_state_updated(self, state: RaceState) -> None:
         self._latest_state = state
-        self._status.showMessage(
+        self._show_status(
             f"Track: {state.track_name or 'UNKNOWN'} | Cars: {state.display_count}", 3000
         )
         self._update_car_list(state)
@@ -316,12 +337,12 @@ class CarDataEditor(QtWidgets.QMainWindow):
                 self._recorder.record_state(state)
             except Exception as exc:
                 log.exception("Failed to record car data")
-                self._status.showMessage(f"Recorder error: {exc}", 5000)
+                self._show_status(f"Recorder error: {exc}", 5000)
                 self._stop_recording(save_message=False)
 
     @QtCore.pyqtSlot(str)
     def on_error(self, message: str) -> None:
-        self._status.showMessage(f"Error: {message}", 5000)
+        self._show_status(f"Error: {message}", 5000)
 
     # ------------------------------------------------------------------
     def _update_car_list(self, state: RaceState) -> None:
@@ -395,7 +416,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
 
         car = self._latest_state.car_states.get(self._current_struct_index)
         if car is None:
-            self._status.showMessage(
+            self._show_status(
                 f"Struct {self._current_struct_index} not present in memory", 3000
             )
             return
@@ -446,7 +467,12 @@ class CarDataEditor(QtWidgets.QMainWindow):
 
         new_val = self._parse_input_value(item.text())
         if new_val is None:
-            self._status.showMessage("Invalid number", 3000)
+            self._show_status("Invalid number", 3000)
+            self._refresh_table()
+            return
+
+        if self._mem is None:
+            self._show_status("Memory connection not available", 3000)
             self._refresh_table()
             return
 
@@ -460,7 +486,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
             self._mem.write(exe_offset, "i32", new_val)
         except Exception as exc:
             log.exception("Failed to write car data value")
-            self._status.showMessage(f"Write failed: {exc}", 5000)
+            self._show_status(f"Write failed: {exc}", 5000)
             self._refresh_table()
             return
 
@@ -477,7 +503,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
             self._updating_table = False
         self._table.viewport().update()
 
-        self._status.showMessage(
+        self._show_status(
             f"Field {row_idx} updated to {new_val} for struct {self._current_struct_index}",
             2000,
         )
@@ -486,10 +512,10 @@ class CarDataEditor(QtWidgets.QMainWindow):
     def _on_freeze_toggled(self, enabled: bool) -> None:
         if not enabled:
             self._locked_values.clear()
-            self._status.showMessage("Value freezing disabled", 2000)
+            self._show_status("Value freezing disabled", 2000)
             self._refresh_table()
         else:
-            self._status.showMessage(
+            self._show_status(
                 "Value freezing enabled. Edited values will be reapplied each update.",
                 4000,
             )
@@ -499,6 +525,8 @@ class CarDataEditor(QtWidgets.QMainWindow):
             return
         state = self._latest_state
         if state is None:
+            return
+        if self._mem is None:
             return
 
         for struct_index, row_map in list(self._locked_values.items()):
@@ -516,7 +544,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
                     self._mem.write(exe_offset, "i32", value)
                 except Exception as exc:
                     log.exception("Failed to maintain frozen car data value")
-                    self._status.showMessage(
+                    self._show_status(
                         f"Freeze write failed for struct {struct_index}, field {row_idx}: {exc}",
                         5000,
                     )
@@ -533,7 +561,10 @@ class CarDataEditor(QtWidgets.QMainWindow):
 
     def _start_recording(self) -> None:
         if self._current_struct_index is None:
-            self._status.showMessage("Select a car to record", 3000)
+            self._show_status("Select a car to record", 3000)
+            return
+        if self._mem is None:
+            self._show_status("Memory connection not available", 3000)
             return
         every_n = max(1, int(self._record_every_spin.value()))
         try:
@@ -546,14 +577,14 @@ class CarDataEditor(QtWidgets.QMainWindow):
         except Exception as exc:
             self._recorder = None
             log.exception("Failed to start car data recording")
-            self._status.showMessage(f"Unable to start recording: {exc}", 5000)
+            self._show_status(f"Unable to start recording: {exc}", 5000)
             return
 
         self._record_button.setText("Stop")
         self._update_record_status()
         filename = self._recorder.filename
         if filename:
-            self._status.showMessage(f"Recording car data to {filename}", 5000)
+            self._show_status(f"Recording car data to {filename}", 5000)
 
     def _stop_recording(self, save_message: bool = True) -> None:
         if self._recorder is None:
@@ -566,7 +597,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
         self._record_button.setText("Start")
         self._record_status_label.setText("Not recording")
         if save_message and filename:
-            self._status.showMessage(f"Recording saved to {filename}", 5000)
+            self._show_status(f"Recording saved to {filename}", 5000)
 
     def _update_record_status(self) -> None:
         if self._recorder is None:
@@ -584,7 +615,7 @@ class CarDataEditor(QtWidgets.QMainWindow):
                 self._recorder.set_every_n(value)
             except Exception as exc:
                 log.exception("Failed to update recorder interval")
-                self._status.showMessage(f"Recorder error: {exc}", 5000)
+                self._show_status(f"Recorder error: {exc}", 5000)
                 self._stop_recording(save_message=False)
                 return
             self._update_record_status()
@@ -612,6 +643,39 @@ class CarDataEditor(QtWidgets.QMainWindow):
         ranges = self._get_ranges_for_struct(struct_index)
         if 0 <= row_idx < len(ranges):
             ranges[row_idx].update(value)
+
+    # ------------------------------------------------------------------
+    def shutdown(self) -> None:
+        self._stop_recording(save_message=False)
+
+
+class CarDataEditor(QtWidgets.QMainWindow):
+    """Main window wrapper that embeds :class:`CarDataEditorWidget`."""
+
+    def __init__(self, updater: RaceUpdater, mem: ICR2Memory, cfg: Config):
+        super().__init__()
+        self._updater = updater
+
+        self.setWindowTitle("ICR2 Car Data Editor")
+        self.resize(640, 720)
+
+        status_bar = self.statusBar()
+        self._widget = CarDataEditorWidget(
+            updater,
+            mem,
+            cfg,
+            status_callback=status_bar.showMessage,
+            parent=self,
+        )
+        self.setCentralWidget(self._widget)
+
+        if self._updater is not None:
+            self._updater.state_updated.connect(self._widget.on_state_updated)
+            self._updater.error.connect(self._widget.on_error)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._widget.shutdown()
+        super().closeEvent(event)
 
 
 # ----------------------------------------------------------------------

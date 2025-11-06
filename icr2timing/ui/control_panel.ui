@@ -695,7 +695,7 @@
          <attribute name="title">
           <string>📊 Telemetry</string>
          </attribute>
-         <layout class="QVBoxLayout" name="telemetryLayout">
+         <layout class="QVBoxLayout" name="telemetryLayout" stretch="0,0,0,0,1">
           <item>
            <widget class="QPushButton" name="btnLapLogger">
             <property name="text">
@@ -728,41 +728,63 @@
             <property name="title">
              <string>Individual car telemetry (for research purposes)</string>
             </property>
-            <widget class="QPushButton" name="btnToggleIndividualTelemetry">
-             <property name="geometry">
-              <rect>
-               <x>170</x>
-               <y>50</y>
-               <width>211</width>
-               <height>23</height>
-              </rect>
+            <layout class="QVBoxLayout" name="individualTelemetryLayout">
+             <item>
+              <layout class="QHBoxLayout" name="individualTelemetrySelectorLayout">
+               <item>
+                <widget class="QLabel" name="label">
+                 <property name="text">
+                  <string>Select car #</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QComboBox" name="selectIndividualCar"/>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnToggleIndividualTelemetry">
+               <property name="text">
+                <string>Show telemetry overlay</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="carDataEditorContainer">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>1</verstretch>
+             </sizepolicy>
+            </property>
+            <layout class="QVBoxLayout" name="carDataEditorLayout">
+             <property name="spacing">
+              <number>0</number>
              </property>
-             <property name="text">
-              <string>Show telemetry overlay</string>
+             <property name="contentsMargins">
+              <left>0</left>
+              <top>0</top>
+              <right>0</right>
+              <bottom>0</bottom>
              </property>
-            </widget>
-            <widget class="QWidget" name="horizontalLayoutWidget">
-             <property name="geometry">
-              <rect>
-               <x>0</x>
-               <y>50</y>
-               <width>160</width>
-               <height>31</height>
-              </rect>
-             </property>
-             <layout class="QHBoxLayout" name="horizontalLayout">
-              <item>
-               <widget class="QLabel" name="label">
-                <property name="text">
-                 <string>Select car #</string>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QComboBox" name="selectIndividualCar"/>
-              </item>
-             </layout>
-            </widget>
+             <item>
+              <spacer name="carDataEditorSpacer">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>20</width>
+                 <height>40</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
            </widget>
           </item>
          </layout>
