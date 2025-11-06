@@ -319,13 +319,17 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._title_label.setText(" - ".join(bits))
 
     def _clear_values(self) -> None:
+        self._table.setUpdatesEnabled(False)
         self._updating_table = True
         try:
             for item in self._value_items.values():
-                item.setData(QtCore.Qt.UserRole, 0)
-                item.setText("0")
+                if item.data(QtCore.Qt.UserRole) != 0:
+                    item.setData(QtCore.Qt.UserRole, 0)
+                if item.text() != "0":
+                    item.setText("0")
         finally:
             self._updating_table = False
+            self._table.setUpdatesEnabled(True)
         self._table.viewport().update()
         self._table.resizeColumnsToContents()
 
@@ -339,6 +343,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             return
 
         values = car_state.values
+        self._table.setUpdatesEnabled(False)
         self._updating_table = True
         try:
             for field_index, item in self._value_items.items():
@@ -348,10 +353,14 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                     if locked_val is not None:
                         val = locked_val
                 self._range_tracker.update(self._car_index, field_index, val)
-                item.setData(QtCore.Qt.UserRole, val)
-                item.setText(str(val))
+                if item.data(QtCore.Qt.UserRole) != val:
+                    item.setData(QtCore.Qt.UserRole, val)
+                text_val = str(val)
+                if item.text() != text_val:
+                    item.setText(text_val)
         finally:
             self._updating_table = False
+            self._table.setUpdatesEnabled(True)
         self._table.viewport().update()
 
     def _apply_locked_values(self) -> None:
