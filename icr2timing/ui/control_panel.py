@@ -447,27 +447,32 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _on_state_updated_update_carlist(self, state):
         """Update car list only if the set of car numbers has changed."""
         self._latest_state = state
-        # Build a snapshot of current car numbers
-        current_numbers = [
-            str(driver.car_number)
-            for driver in state.drivers.values()
+        # Build a snapshot of current car numbers and names
+        current_snapshot = [
+            (driver.car_number, driver.name or "")
+            for _, driver in sorted(state.drivers.items())
             if driver and driver.car_number is not None
         ]
 
         # if no change, do nothing
-        if getattr(self, "_last_car_numbers", None) == current_numbers:
+        if getattr(self, "_last_car_snapshot", None) == current_snapshot:
             return
 
         # store new set and repopulate
-        self._last_car_numbers = current_numbers
+        self._last_car_snapshot = current_snapshot
 
         self.selectIndividualCar.blockSignals(True)
         self.selectIndividualCar.clear()
-        for idx, driver in state.drivers.items():
+        for idx, driver in sorted(state.drivers.items()):
             if not driver or driver.car_number is None:
                 continue
-            # text is car number only, data is struct index
-            self.selectIndividualCar.addItem(str(driver.car_number), idx)
+            name = (driver.name or "").strip()
+            if name:
+                display_text = f"{driver.car_number} - {name}"
+            else:
+                display_text = str(driver.car_number)
+            # text includes car number (and name when available); data is struct index
+            self.selectIndividualCar.addItem(display_text, idx)
         self.selectIndividualCar.blockSignals(False)
 
 
