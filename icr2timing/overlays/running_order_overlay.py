@@ -247,8 +247,6 @@ class RunningOrderOverlayTable(QtCore.QObject):
                         item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor(cfg.player_row)))
-                    if field.tooltip:
-                        item.setToolTip(field.tooltip)
 
                     table.setItem(row, col, item)
                     col += 1
@@ -258,7 +256,6 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     item = QtWidgets.QTableWidgetItem(str(txt))
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor("#444")))
-                    item.setToolTip(f"Car data struct index {idx} (custom field)")
                     table.setItem(row, col, item)
                     col += 1
 
@@ -341,19 +338,15 @@ class RunningOrderOverlayTable(QtCore.QObject):
     def _rebuild_headers(self):
         base_fields = [field for field in AVAILABLE_FIELDS if field.key in self._enabled_fields]
         labels = [field.label for field in base_fields]
-        tooltips = [field.tooltip for field in base_fields]
-        for lbl, idx in self._custom_fields:
+        for lbl, _ in self._custom_fields:
             labels.append(lbl)
-            tooltips.append(f"Car data struct index {idx} (custom field)")
 
         for t in self._overlay.tables:
             t.setColumnCount(len(labels))
             header = t.horizontalHeader()
             header.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
-            for i, (lbl, tooltip) in enumerate(zip(labels, tooltips)):
+            for i, lbl in enumerate(labels):
                 header_item = QtWidgets.QTableWidgetItem(lbl)
-                if tooltip:
-                    header_item.setToolTip(tooltip)
                 t.setHorizontalHeaderItem(i, header_item)
                 width = cfg.col_widths.get(lbl, cfg.col_widths.get("default", 50))
                 t.setColumnWidth(i, width)
