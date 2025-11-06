@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, Iterable, Optional, Sequence, Tuple, TYPE_CHECKING
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2timing.core.car_data_recorder import CarDataRecorder
+from icr2timing.core.car_field_definitions import (
+    CarFieldDefinition,
+    ensure_field_definitions,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from icr2_core.model import RaceState
@@ -193,9 +197,17 @@ class FrozenValueStore:
 class CarValueRecorderController:
     """Thin wrapper around :class:`CarDataRecorder` for reuse between widgets."""
 
-    def __init__(self, output_dir: str, values_per_car: int) -> None:
+    def __init__(
+        self,
+        output_dir: str,
+        values_per_car: int,
+        field_definitions: Optional[Sequence[CarFieldDefinition]] = None,
+    ) -> None:
         self._output_dir = os.path.abspath(output_dir)
         self._values_per_car = values_per_car
+        if field_definitions is None:
+            field_definitions = ensure_field_definitions(values_per_car)
+        self._field_definitions: Tuple[CarFieldDefinition, ...] = tuple(field_definitions)
         self._recorder: Optional[CarDataRecorder] = None
         self._last_every_n = 1
 
@@ -206,6 +218,12 @@ class CarValueRecorderController:
     @property
     def filename(self) -> Optional[str]:
         return None if self._recorder is None else self._recorder.filename
+
+    @property
+    def metadata_filename(self) -> Optional[str]:
+        if self._recorder is None:
+            return None
+        return getattr(self._recorder, "metadata_filename", None)
 
     @property
     def every_n(self) -> int:
@@ -221,6 +239,7 @@ class CarValueRecorderController:
             car_index=car_index,
             values_per_car=self._values_per_car,
             every_n=self._last_every_n,
+            field_definitions=self._field_definitions,
         )
         return self._recorder
 

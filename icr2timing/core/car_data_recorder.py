@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Iterable, Optional, Sequence
 
 from icr2_core.model import RaceState
+
+from icr2timing.core.car_field_definitions import (
+    CarFieldDefinition,
+    ensure_field_definitions,
+)
 
 
 class CarDataRecorder:
@@ -18,6 +24,7 @@ class CarDataRecorder:
         car_index: int,
         values_per_car: int = 133,
         every_n: int = 1,
+        field_definitions: Optional[Sequence[CarFieldDefinition]] = None,
     ) -> None:
         self.output_dir = os.path.abspath(output_dir)
         self.values_per_car = values_per_car
@@ -27,6 +34,12 @@ class CarDataRecorder:
         self._writer: Optional[csv.writer] = None
         self._file = None
         self.filename: Optional[str] = None
+        if field_definitions is None:
+            field_definitions = ensure_field_definitions(values_per_car)
+        self._field_definitions: Sequence[CarFieldDefinition] = self._normalize_definitions(
+            field_definitions
+        )
+        self.metadata_filename: Optional[str] = None
         os.makedirs(self.output_dir, exist_ok=True)
         self.change_car_index(car_index)
 
@@ -49,9 +62,10 @@ class CarDataRecorder:
         self._file = open(self.filename, "w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._file)
         header = ["frame", "timestamp_ms", "car_index", "car_number"]
-        header.extend(f"value_{i:03d}" for i in range(self.values_per_car))
+        header.extend(self._header_labels())
         self._writer.writerow(header)
         self._file.flush()
+        self._write_metadata_file()
 
     def record_state(self, state: RaceState) -> None:
         """Record the current state for the configured car if interval matches."""
@@ -107,3 +121,43 @@ class CarDataRecorder:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
+
+    # ------------------------------------------------------------------
+    def _normalize_definitions(
+        self, definitions: Sequence[CarFieldDefinition]
+    ) -> Sequence[CarFieldDefinition]:
+        by_index = {definition.index: definition for definition in definitions}
+        fallback = ensure_field_definitions(self.values_per_car)
+        ordered = []
+        for idx in range(self.values_per_car):
+            ordered.append(by_index.get(idx) or fallback[idx])
+        return tuple(ordered)
+
+    def _header_labels(self) -> Iterable[str]:
+        for definition in self._field_definitions:
+            name = definition.name.strip() or f"value_{definition.index:03d}"
+            safe_name = name.replace(" ", "_")
+            yield f"{definition.index:03d}_{safe_name}"
+
+    def _write_metadata_file(self) -> None:
+        if not self.filename:
+            self.metadata_filename = None
+            return
+
+        metadata = {
+            "car_index": self.car_index,
+            "values_per_car": self.values_per_car,
+            "fields": [
+                {
+                    "index": definition.index,
+                    "name": definition.name,
+                    "description": definition.description,
+                }
+                for definition in self._field_definitions
+            ],
+        }
+
+        metadata_path = f"{self.filename}.meta.json"
+        with open(metadata_path, "w", encoding="utf-8") as meta_file:
+            json.dump(metadata, meta_file, indent=2)
+        self.metadata_filename = metadata_path

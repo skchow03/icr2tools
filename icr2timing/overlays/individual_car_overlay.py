@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
+from core.car_field_definitions import CarFieldDefinition, ensure_field_definitions
 from core.config import Config
 from ui.car_value_helpers import (
     CarValueRecorderController,
@@ -77,10 +78,13 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._values_per_car = self._cfg.car_state_size // 4
         self._latest_state: Optional[RaceState] = None
         self._updating_table = False
+        self._field_definitions: Tuple[CarFieldDefinition, ...] = tuple(
+            ensure_field_definitions(self._values_per_car)
+        )
         self._range_tracker = ValueRangeTracker(self._values_per_car)
         self._locked_values = FrozenValueStore()
         self._recorder_ctrl = CarValueRecorderController(
-            default_record_output_dir(), self._values_per_car
+            default_record_output_dir(), self._values_per_car, self._field_definitions
         )
 
         flags = QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint
@@ -186,13 +190,14 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         )
 
     def _configure_table(self) -> None:
-        self._table.setColumnCount(2)
+        self._table.setColumnCount(3)
         self._table.setRowCount(self._values_per_car)
-        self._table.setHorizontalHeaderLabels(["Index", "Value"])
+        self._table.setHorizontalHeaderLabels(["Index", "Field", "Value"])
         self._table.verticalHeader().setVisible(False)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
 
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -204,11 +209,19 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._table.verticalHeader().setDefaultSectionSize(metrics.height() + 6)
 
         self._value_delegate = ValueBarDelegate(self._value_range_for_row, self._table)
-        self._table.setItemDelegateForColumn(1, self._value_delegate)
+        self._table.setItemDelegateForColumn(2, self._value_delegate)
 
         for row_idx in range(self._values_per_car):
-            index_item = QtWidgets.QTableWidgetItem(f"{row_idx:03d}")
+            definition = self._field_definitions[row_idx]
+            index_item = QtWidgets.QTableWidgetItem(f"{definition.index:03d}")
             index_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            tooltip = definition.description or ""
+            if tooltip:
+                index_item.setToolTip(tooltip)
+            name_item = QtWidgets.QTableWidgetItem(definition.name)
+            name_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            if tooltip:
+                name_item.setToolTip(tooltip)
             value_item = QtWidgets.QTableWidgetItem("0")
             value_item.setFlags(
                 QtCore.Qt.ItemIsSelectable
@@ -216,8 +229,11 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                 | QtCore.Qt.ItemIsEditable
             )
             value_item.setData(QtCore.Qt.UserRole, 0)
+            if tooltip:
+                value_item.setToolTip(tooltip)
             self._table.setItem(row_idx, 0, index_item)
-            self._table.setItem(row_idx, 1, value_item)
+            self._table.setItem(row_idx, 1, name_item)
+            self._table.setItem(row_idx, 2, value_item)
 
         self._table.itemChanged.connect(self._on_item_changed)
 
@@ -304,7 +320,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._updating_table = True
         try:
             for row_idx in range(self._values_per_car):
-                item = self._table.item(row_idx, 1)
+                item = self._table.item(row_idx, 2)
                 if item is not None:
                     item.setData(QtCore.Qt.UserRole, 0)
                     item.setText("0")
@@ -325,7 +341,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._updating_table = True
         try:
             for row_idx in range(self._values_per_car):
-                item = self._table.item(row_idx, 1)
+                item = self._table.item(row_idx, 2)
                 if item is None:
                     continue
                 val = values[row_idx] if row_idx < len(values) else 0
@@ -372,7 +388,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
     def _on_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._updating_table:
             return
-        if item.column() != 1:
+        if item.column() != 2:
             return
 
         row_idx = item.row()
@@ -450,14 +466,28 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._update_record_status()
         filename = self._recorder_ctrl.filename
         if filename:
-            self._show_status(f"Recording car data to {filename}", 5000)
+            metadata = self._recorder_ctrl.metadata_filename
+            if metadata:
+                self._show_status(
+                    f"Recording car data to {filename} (metadata: {metadata})",
+                    5000,
+                )
+            else:
+                self._show_status(f"Recording car data to {filename}", 5000)
 
     def _stop_recording(self, save_message: bool = True) -> None:
+        metadata = self._recorder_ctrl.metadata_filename
         filename = self._recorder_ctrl.stop()
         self._record_button.setText("Start")
         self._record_status_label.setText("Not recording")
         if save_message and filename:
-            self._show_status(f"Recording saved to {filename}", 5000)
+            if metadata:
+                self._show_status(
+                    f"Recording saved to {filename} (metadata: {metadata})",
+                    5000,
+                )
+            else:
+                self._show_status(f"Recording saved to {filename}", 5000)
 
     def _update_record_status(self) -> None:
         recorder = self._recorder_ctrl.recorder
