@@ -5,7 +5,7 @@ Controller: renders RaceState into an OverlayTableWindow.
 Applies lap formatting, gaps, best-lap colors, abbreviations, etc.
 """
 
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, NamedTuple
 import math
 from PyQt5 import QtCore, QtWidgets, QtGui
 
@@ -27,28 +27,45 @@ PLAYER_STRUCT_IDX = 1
 
 CAR_STATE_INDEX_QUALIFYING_TIME = 34
 CAR_STATE_INDEX_LAPS_LEAD = 36
-CAR_STATE_INDEX_LAPS_SINCE_PIT = 38
+CAR_STATE_INDEX_LAPS_SINCE_YELLOW = 38
 CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
 
 
+class OverlayField(NamedTuple):
+    label: str
+    key: str
+    tooltip: str
+
+
 AVAILABLE_FIELDS = [
-    ("Pos", "position"),
-    ("Car#", "car_number"),
-    ("Driver", "driver"),
-    ("Laps", "laps"),
-    ("Gap", "gap"),
-    ("Last", "last"),
-    ("Best", "best"),
-    ("BestGap", "best_gap"),
-    ("LP", "lp"),
-    ("Fuel", "fuel_laps"),
-    ("DLONG", "dlong"),
-    ("DLAT", "dlat"),
-    ("Lead", "laps_lead"),
-    ("SincePit", "laps_since_pit"),
-    ("PitRel", "pit_release_timer"),
-    ("Qual", "qualifying_time"),
+    OverlayField("Pos", "position", "Calculated 1-based position in running order."),
+    OverlayField("Car#", "car_number", "Driver entry number (not from car data struct)."),
+    OverlayField("Driver", "driver", "Driver name (not from car data struct)."),
+    OverlayField(
+        "Laps",
+        "laps",
+        "Calculated from total laps minus struct index 32 (laps left).",
+    ),
+    OverlayField("Gap", "gap", "Calculated gap to leader."),
+    OverlayField(
+        "Last",
+        "last",
+        "Calculated from lap clock start (index 23) and end (index 22).",
+    ),
+    OverlayField("Best", "best", "Calculated personal-best lap."),
+    OverlayField("BestGap", "best_gap", "Calculated delta to overall best lap."),
+    OverlayField("LP", "lp", "Struct index 52 (current LP line)."),
+    OverlayField("Fuel", "fuel_laps", "Struct index 35 (fuel laps remaining)."),
+    OverlayField("DLONG", "dlong", "Struct index 31 (distance along track)."),
+    OverlayField("DLAT", "dlat", "Struct index 11 (distance from track center)."),
+    OverlayField("Lead", "laps_lead", "Struct index 36 (laps led)."),
+    OverlayField("SinceYL", "laps_since_yellow", "Struct index 38 (laps since last yellow)."),
+    OverlayField("PitRel", "pit_release_timer", "Struct index 98 (pit release timer)."),
+    OverlayField("Qual", "qualifying_time", "Struct index 34 (qualifying time)."),
 ]
+
+
+AVAILABLE_KEYS = {field.key for field in AVAILABLE_FIELDS}
 
 
 class RunningOrderOverlayTable(QtCore.QObject):
@@ -57,7 +74,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
         self._overlay = OverlayTableWindow(font_family, font_size, n_columns=n_columns)
         self._best_tracker = BestLapTracker()
         self._last_state: Optional[RaceState] = None
-        self._enabled_fields: List[str] = [k for _, k in AVAILABLE_FIELDS]
+        self._enabled_fields: List[str] = [field.key for field in AVAILABLE_FIELDS]
         self._use_abbrev: bool = False
         self._sort_by_best: bool = False
         self._display_mode: str = "time"   # or "speed"
@@ -191,9 +208,9 @@ class RunningOrderOverlayTable(QtCore.QObject):
                 if car_state and len(car_state.values) > CAR_STATE_INDEX_LAPS_LEAD:
                     laps_lead_val = car_state.values[CAR_STATE_INDEX_LAPS_LEAD]
 
-                laps_since_pit_val = ""
-                if car_state and len(car_state.values) > CAR_STATE_INDEX_LAPS_SINCE_PIT:
-                    laps_since_pit_val = car_state.values[CAR_STATE_INDEX_LAPS_SINCE_PIT]
+                laps_since_yellow_val = ""
+                if car_state and len(car_state.values) > CAR_STATE_INDEX_LAPS_SINCE_YELLOW:
+                    laps_since_yellow_val = car_state.values[CAR_STATE_INDEX_LAPS_SINCE_YELLOW]
 
                 values = {
                     "position": (global_row + 1, None),
@@ -209,7 +226,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     "dlong": (getattr(car_state, "dlong", ""), None) if car_state else ("", None),
                     "dlat": (getattr(car_state, "dlat", ""), None) if car_state else ("", None),
                     "laps_lead": (laps_lead_val, None),
-                    "laps_since_pit": (laps_since_pit_val, None),
+                    "laps_since_yellow": (laps_since_yellow_val, None),
                     "pit_release_timer": (pit_release_txt, None),
                     "qualifying_time": (qualifying_txt, None),
                 }
@@ -221,24 +238,27 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     values[lbl] = (val, None)
 
                 col = 0
-                for lbl, key in AVAILABLE_FIELDS:
-                    if key not in self._enabled_fields:
+                for field in AVAILABLE_FIELDS:
+                    if field.key not in self._enabled_fields:
                         continue
-                    txt, color = values[key]
+                    txt, color = values[field.key]
                     item = QtWidgets.QTableWidgetItem(str(txt))
                     if color:
                         item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor(cfg.player_row)))
+                    if field.tooltip:
+                        item.setToolTip(field.tooltip)
 
                     table.setItem(row, col, item)
                     col += 1
 
-                for lbl, _ in self._custom_fields:
+                for lbl, idx in self._custom_fields:
                     txt, color = values[lbl]
                     item = QtWidgets.QTableWidgetItem(str(txt))
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor("#444")))
+                    item.setToolTip(f"Car data struct index {idx} (custom field)")
                     table.setItem(row, col, item)
                     col += 1
 
@@ -272,7 +292,14 @@ class RunningOrderOverlayTable(QtCore.QObject):
             self.on_state_updated(self._last_state, update_bests=False)
 
     def set_enabled_fields(self, fields: List[str]):
-        self._enabled_fields = fields
+        requested = set()
+        for key in fields:
+            if key == "laps_since_pit":
+                key = "laps_since_yellow"
+            if key in AVAILABLE_KEYS:
+                requested.add(key)
+        normalized = [field.key for field in AVAILABLE_FIELDS if field.key in requested]
+        self._enabled_fields = normalized
         self._rebuild_headers()
         if self._last_state:
             self.on_state_updated(self._last_state, update_bests=False)
@@ -312,19 +339,24 @@ class RunningOrderOverlayTable(QtCore.QObject):
             self.on_state_updated(self._last_state, update_bests=False)
 
     def _rebuild_headers(self):
-        labels = [lbl for lbl, key in AVAILABLE_FIELDS if key in self._enabled_fields]
-        labels.extend(lbl for lbl, _ in self._custom_fields)  # add customs
+        base_fields = [field for field in AVAILABLE_FIELDS if field.key in self._enabled_fields]
+        labels = [field.label for field in base_fields]
+        tooltips = [field.tooltip for field in base_fields]
+        for lbl, idx in self._custom_fields:
+            labels.append(lbl)
+            tooltips.append(f"Car data struct index {idx} (custom field)")
+
         for t in self._overlay.tables:
             t.setColumnCount(len(labels))
-            t.setHorizontalHeaderLabels(labels)
             header = t.horizontalHeader()
             header.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
-            for i, lbl in enumerate(labels):
-                if lbl in cfg.col_widths:
-                    w = cfg.col_widths[lbl]
-                else:
-                    w = cfg.col_widths["default"]
-                t.setColumnWidth(i, w)
+            for i, (lbl, tooltip) in enumerate(zip(labels, tooltips)):
+                header_item = QtWidgets.QTableWidgetItem(lbl)
+                if tooltip:
+                    header_item.setToolTip(tooltip)
+                t.setHorizontalHeaderItem(i, header_item)
+                width = cfg.col_widths.get(lbl, cfg.col_widths.get("default", 50))
+                t.setColumnWidth(i, width)
 
     def set_autosize_enabled(self, enabled: bool):
         """Toggle automatic window resizing after each update."""

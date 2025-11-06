@@ -116,6 +116,7 @@ class Config:
         "DLAT": 65,
         "Lead": 50,
         "SincePit": 70,
+        "SinceYL": 70,
         "PitRel": 65,
         "Qual": 65,
         "default": 50,
