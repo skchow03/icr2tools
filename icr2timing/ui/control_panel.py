@@ -19,7 +19,6 @@ from ui.profile_manager import ProfileManager, Profile, LAST_SESSION_KEY
 from overlays.proximity_overlay import ProximityOverlay
 from overlays.track_map_overlay import TrackMapOverlay
 from overlays.individual_car_overlay import IndividualCarOverlay
-from car_data_editor import CarDataEditorWidget
 from core.config import Config
 from core.version import __version__
 from core.telemetry_laps import TelemetryLapLogger
@@ -42,7 +41,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._mem = mem
         self._cfg = cfg or Config()
         self._latest_state = None
-        self._car_data_editor_widget = None
 
         # --- Overlay Manager ---
         self.manager = OverlayManager()
@@ -104,7 +102,10 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.error.connect(self.track_overlay.on_error)
 
         # Individual car overlay
-        self.indiv_overlay = IndividualCarOverlay()
+        self.indiv_overlay = IndividualCarOverlay(
+            mem=self._mem, cfg=self._cfg, status_callback=self.statusbar.showMessage
+        )
+        self.indiv_overlay.set_status_callback(self.statusbar.showMessage)
         if self.updater:
             self.updater.state_updated.connect(self.indiv_overlay.on_state_updated)
             self.updater.error.connect(self.indiv_overlay.on_error)
@@ -121,30 +122,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._recording_file = None
         self.btnReleaseAllCars.clicked.connect(self._release_all_cars)
         self.btnForcePitStops.clicked.connect(self._force_all_cars_to_pit)
-
-        if self.updater and self._mem:
-            container_layout = getattr(self, "carDataEditorLayout", None)
-            container_parent = getattr(self, "carDataEditorContainer", None)
-            if isinstance(container_layout, QtWidgets.QLayout):
-                while container_layout.count():
-                    item = container_layout.takeAt(0)
-                    widget = item.widget()
-                    if widget is not None:
-                        widget.deleteLater()
-                self._car_data_editor_widget = CarDataEditorWidget(
-                    self.updater,
-                    self._mem,
-                    self._cfg,
-                    status_callback=self.statusbar.showMessage,
-                    parent=container_parent,
-                )
-                container_layout.addWidget(self._car_data_editor_widget)
-                self.updater.state_updated.connect(
-                    self._car_data_editor_widget.on_state_updated
-                )
-                self.updater.error.connect(self._car_data_editor_widget.on_error)
-            else:
-                log.warning("Car data editor container layout missing; widget not created")
 
         # --- Profile Manager ---
         self.profiles = ProfileManager()
@@ -410,7 +387,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         if idx_data is None:
             return
 
-        self.indiv_overlay.car_index = idx_data
+        self.indiv_overlay.set_car_index(idx_data)
 
         if self.indiv_overlay.isVisible():
             self.indiv_overlay.hide()
@@ -1024,12 +1001,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         )
         self.profiles.save_last_session(profile)
 
-        if self._car_data_editor_widget is not None:
-            try:
-                self._car_data_editor_widget.shutdown()
-            except Exception:
-                log.exception('Failed to shut down car data editor widget')
-
         # --- Stop updater thread cleanly ---
         if self.updater:
             try:
@@ -1051,6 +1022,12 @@ class ControlPanel(QtWidgets.QMainWindow):
         try:
             if self.prox_overlay and self.prox_overlay.isVisible():
                 self.prox_overlay.close()
+        except Exception:
+            pass
+
+        try:
+            if self.indiv_overlay and self.indiv_overlay.isVisible():
+                self.indiv_overlay.close()
         except Exception:
             pass
 

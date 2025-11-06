@@ -12,7 +12,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -23,8 +23,15 @@ if __package__ is None:
 from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
 from icr2_core.model import RaceState
 from icr2_core.reader import MemoryReader
-from icr2timing.core.car_data_recorder import CarDataRecorder
 from icr2timing.core.config import Config
+from ui.car_value_helpers import (
+    CarValueRecorderController,
+    FrozenValueStore,
+    ValueBarDelegate,
+    ValueRangeTracker,
+    default_record_output_dir,
+    parse_input_value,
+)
 from icr2timing.updater.updater import RaceUpdater
 
 
@@ -35,107 +42,6 @@ log = logging.getLogger(__name__)
 class CarDisplayInfo:
     struct_index: int
     label: str
-
-
-@dataclass
-class ValueRange:
-    """Tracks the observed minimum and maximum for a given value index."""
-
-    minimum: Optional[int] = None
-    maximum: Optional[int] = None
-
-    def update(self, value: int) -> None:
-        if self.minimum is None or value < self.minimum:
-            self.minimum = value
-        if self.maximum is None or value > self.maximum:
-            self.maximum = value
-
-
-class ValueBarDelegate(QtWidgets.QStyledItemDelegate):
-    """Item delegate that renders a bi-directional bar for numeric values."""
-
-    def __init__(
-        self,
-        range_provider: Callable[[int], Tuple[Optional[int], Optional[int]]],
-        parent: Optional[QtWidgets.QWidget] = None,
-    ) -> None:
-        super().__init__(parent)
-        self._range_provider = range_provider
-
-    def paint(
-        self,
-        painter: QtGui.QPainter,
-        option: QtWidgets.QStyleOptionViewItem,
-        index: QtCore.QModelIndex,
-    ) -> None:
-        opt = QtWidgets.QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-
-        style = opt.widget.style() if opt.widget is not None else QtWidgets.QApplication.style()
-        original_text = opt.text
-        opt.text = ""
-        style.drawControl(QtWidgets.QStyle.CE_ItemViewItem, opt, painter, opt.widget)
-
-        value = index.data(QtCore.Qt.UserRole)
-        if value is None:
-            try:
-                value = int(original_text)
-            except (TypeError, ValueError):
-                value = None
-
-        rect = opt.rect.adjusted(4, 4, -4, -4)
-        if value is not None and rect.width() > 0 and rect.height() > 0:
-            min_val, max_val = self._range_provider(index.row())
-            min_val = min_val if min_val is not None else 0
-            max_val = max_val if max_val is not None else 0
-
-            negative_span = abs(min(0, min_val))
-            positive_span = max(0, max_val)
-
-            center_x = rect.center().x()
-            left_width_available = center_x - rect.left()
-            right_width_available = rect.right() - center_x
-
-            painter.save()
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-
-            if value >= 0 and positive_span > 0 and right_width_available > 0:
-                ratio = min(1.0, value / positive_span) if positive_span else 0.0
-                width = int(round(ratio * right_width_available))
-                if width > 0:
-                    bar_rect = QtCore.QRect(center_x, rect.top(), width, rect.height())
-                    bar_color = QtGui.QColor(76, 175, 80)
-                    if opt.state & QtWidgets.QStyle.State_Selected:
-                        bar_color = bar_color.lighter(125)
-                    painter.fillRect(bar_rect, bar_color)
-            elif value < 0 and negative_span > 0 and left_width_available > 0:
-                ratio = min(1.0, abs(value) / negative_span) if negative_span else 0.0
-                width = int(round(ratio * left_width_available))
-                if width > 0:
-                    bar_rect = QtCore.QRect(center_x - width, rect.top(), width, rect.height())
-                    bar_color = QtGui.QColor(244, 67, 54)
-                    if opt.state & QtWidgets.QStyle.State_Selected:
-                        bar_color = bar_color.lighter(125)
-                    painter.fillRect(bar_rect, bar_color)
-
-            zero_pen = QtGui.QPen(opt.palette.mid().color())
-            if opt.state & QtWidgets.QStyle.State_Selected:
-                zero_pen.setColor(opt.palette.highlightedText().color())
-            painter.setPen(zero_pen)
-            painter.drawLine(center_x, rect.top(), center_x, rect.bottom())
-
-            painter.restore()
-
-        text_rect = opt.rect.adjusted(6, 0, -6, 0)
-        painter.save()
-        text_color = (
-            opt.palette.highlightedText().color()
-            if opt.state & QtWidgets.QStyle.State_Selected
-            else opt.palette.text().color()
-        )
-        painter.setPen(text_color)
-        painter.drawText(text_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight, original_text)
-        painter.restore()
 
 
 class CarDataEditorWidget(QtWidgets.QWidget):
@@ -160,11 +66,11 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._current_struct_index: Optional[int] = None
         self._updating_table = False
         self._values_per_car = cfg.car_state_size // 4
-        self._locked_values: Dict[int, Dict[int, int]] = {}
-        self._value_ranges: Dict[int, List[ValueRange]] = {}
-        self._recorder: Optional[CarDataRecorder] = None
-        self._record_output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "car_data_recordings"
+        self._locked_values = FrozenValueStore()
+        self._range_tracker = ValueRangeTracker(self._values_per_car)
+        self._record_output_dir = default_record_output_dir()
+        self._recorder_ctrl = CarValueRecorderController(
+            self._record_output_dir, self._values_per_car
         )
 
         self._build_ui()
@@ -301,9 +207,9 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         if struct_index == self._current_struct_index:
             return
         self._current_struct_index = struct_index
-        if self._recorder is not None:
+        if self._recorder_ctrl.recorder is not None:
             try:
-                self._recorder.change_car_index(struct_index)
+                self._recorder_ctrl.change_car_index(struct_index)
             except Exception as exc:
                 log.exception("Failed to switch recorder car index")
                 self._show_status(f"Recorder error: {exc}", 5000)
@@ -332,9 +238,9 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._update_car_list(state)
         self._refresh_table()
         self._apply_locked_values()
-        if self._recorder is not None:
+        if self._recorder_ctrl.recorder is not None:
             try:
-                self._recorder.record_state(state)
+                self._recorder_ctrl.record_state(state)
             except Exception as exc:
                 log.exception("Failed to record car data")
                 self._show_status(f"Recorder error: {exc}", 5000)
@@ -371,11 +277,8 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         current_idx = self._current_struct_index
         self._car_infos = new_infos
         valid_structs = {info.struct_index for info in new_infos}
-        self._value_ranges = {
-            struct_index: ranges
-            for struct_index, ranges in self._value_ranges.items()
-            if struct_index in valid_structs
-        }
+        self._range_tracker.retain_structs(valid_structs)
+        self._locked_values.retain_structs(valid_structs)
         self._car_combo.blockSignals(True)
         self._car_combo.clear()
         for info in new_infos:
@@ -433,11 +336,15 @@ class CarDataEditorWidget(QtWidgets.QWidget):
                     self._freeze_checkbox.isChecked()
                     and self._current_struct_index is not None
                 ):
-                    locked = self._locked_values.get(self._current_struct_index)
-                    if locked is not None and row_idx in locked:
-                        val = locked[row_idx]
+                    locked_val = self._locked_values.get(
+                        self._current_struct_index, row_idx
+                    )
+                    if locked_val is not None:
+                        val = locked_val
                 if self._current_struct_index is not None:
-                    self._update_value_range(self._current_struct_index, row_idx, val)
+                    self._range_tracker.update(
+                        self._current_struct_index, row_idx, val
+                    )
                 item.setData(QtCore.Qt.UserRole, val)
                 item.setText(str(val))
         finally:
@@ -446,14 +353,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------
     def _parse_input_value(self, text: str) -> Optional[int]:
-        text = text.strip()
-        if not text:
-            return None
-        try:
-            # Allow 0x.. hex or plain integers
-            return int(text, 0)
-        except ValueError:
-            return None
+        return parse_input_value(text)
 
     @QtCore.pyqtSlot(QtWidgets.QTableWidgetItem)
     def _on_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
@@ -491,11 +391,10 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             return
 
         if self._freeze_checkbox.isChecked():
-            locked_for_struct = self._locked_values.setdefault(self._current_struct_index, {})
-            locked_for_struct[row_idx] = new_val
+            self._locked_values.set(self._current_struct_index, row_idx, new_val)
 
         if self._current_struct_index is not None:
-            self._update_value_range(self._current_struct_index, row_idx, new_val)
+            self._range_tracker.update(self._current_struct_index, row_idx, new_val)
         self._updating_table = True
         try:
             item.setData(QtCore.Qt.UserRole, new_val)
@@ -529,7 +428,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         if self._mem is None:
             return
 
-        for struct_index, row_map in list(self._locked_values.items()):
+        for struct_index, row_map in self._locked_values.iter_structs():
             if not row_map:
                 continue
             if struct_index not in state.car_states:
@@ -554,7 +453,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         super().closeEvent(event)
 
     def _toggle_recording(self) -> None:
-        if self._recorder is None:
+        if self._recorder_ctrl.recorder is None:
             self._start_recording()
         else:
             self._stop_recording()
@@ -568,81 +467,52 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             return
         every_n = max(1, int(self._record_every_spin.value()))
         try:
-            self._recorder = CarDataRecorder(
-                output_dir=self._record_output_dir,
-                car_index=self._current_struct_index,
-                values_per_car=self._values_per_car,
-                every_n=every_n,
-            )
+            self._recorder_ctrl.start(self._current_struct_index, every_n=every_n)
         except Exception as exc:
-            self._recorder = None
             log.exception("Failed to start car data recording")
             self._show_status(f"Unable to start recording: {exc}", 5000)
             return
 
         self._record_button.setText("Stop")
         self._update_record_status()
-        filename = self._recorder.filename
+        filename = self._recorder_ctrl.filename
         if filename:
             self._show_status(f"Recording car data to {filename}", 5000)
 
     def _stop_recording(self, save_message: bool = True) -> None:
-        if self._recorder is None:
-            return
-        filename = self._recorder.filename
-        try:
-            self._recorder.close()
-        finally:
-            self._recorder = None
+        filename = self._recorder_ctrl.stop()
         self._record_button.setText("Start")
         self._record_status_label.setText("Not recording")
         if save_message and filename:
             self._show_status(f"Recording saved to {filename}", 5000)
 
     def _update_record_status(self) -> None:
-        if self._recorder is None:
+        recorder = self._recorder_ctrl.recorder
+        if recorder is None:
             self._record_status_label.setText("Not recording")
             return
-        filename = os.path.basename(self._recorder.filename or "")
-        every_n = self._recorder.every_n
+        filename = os.path.basename(self._recorder_ctrl.filename or "")
+        every_n = recorder.every_n
         self._record_status_label.setText(
             f"Recording {filename or '(unknown)'} every {every_n} frame(s)"
         )
 
     def _on_record_every_changed(self, value: int) -> None:
-        if self._recorder is not None:
-            try:
-                self._recorder.set_every_n(value)
-            except Exception as exc:
-                log.exception("Failed to update recorder interval")
-                self._show_status(f"Recorder error: {exc}", 5000)
-                self._stop_recording(save_message=False)
-                return
+        try:
+            self._recorder_ctrl.set_every_n(value)
+        except Exception as exc:
+            log.exception("Failed to update recorder interval")
+            self._show_status(f"Recorder error: {exc}", 5000)
+            self._stop_recording(save_message=False)
+            return
+        if self._recorder_ctrl.recorder is not None:
             self._update_record_status()
 
-
-    def _get_ranges_for_struct(self, struct_index: int) -> List[ValueRange]:
-        ranges = self._value_ranges.get(struct_index)
-        if ranges is None or len(ranges) != self._values_per_car:
-            ranges = [ValueRange() for _ in range(self._values_per_car)]
-            self._value_ranges[struct_index] = ranges
-        return ranges
 
     def _get_value_range_for_row(
         self, row_idx: int
     ) -> Tuple[Optional[int], Optional[int]]:
-        if self._current_struct_index is None:
-            return (None, None)
-        ranges = self._value_ranges.get(self._current_struct_index)
-        if ranges is None or not (0 <= row_idx < len(ranges)):
-            return (None, None)
-        info = ranges[row_idx]
-        return (info.minimum, info.maximum)
-
-    def _update_value_range(self, struct_index: int, row_idx: int, value: int) -> None:
-        ranges = self._get_ranges_for_struct(struct_index)
-        if 0 <= row_idx < len(ranges):
-            ranges[row_idx].update(value)
+        return self._range_tracker.get(self._current_struct_index, row_idx)
 
     # ------------------------------------------------------------------
     def shutdown(self) -> None:
