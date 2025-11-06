@@ -175,12 +175,12 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Columns & layout
         self.field_checks = {}
-        for label, key in AVAILABLE_FIELDS:
-            cb = QtWidgets.QCheckBox(label, self.fieldsContainer)
+        for field in AVAILABLE_FIELDS:
+            cb = QtWidgets.QCheckBox(field.label, self.fieldsContainer)
             cb.setChecked(True)
             cb.stateChanged.connect(self._update_fields)
             self.fieldsLayout.addWidget(cb)
-            self.field_checks[key] = cb
+            self.field_checks[field.key] = cb
 
         # Combo for columns (1–4)
         for i in range(1, 5):
@@ -502,7 +502,8 @@ class ControlPanel(QtWidgets.QMainWindow):
             self._apply_profile_object(prof)
 
     def _apply_profile_object(self, prof: Profile):
-        label_to_key = {lbl: key for lbl, key in AVAILABLE_FIELDS}
+        label_to_key = {field.label: field.key for field in AVAILABLE_FIELDS}
+        label_to_key["SincePit"] = "laps_since_yellow"
         wanted_keys = {label_to_key.get(lbl) for lbl in prof.columns if lbl in label_to_key}
 
         # Columns
@@ -565,7 +566,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             return
 
         # Columns
-        key_to_label = {key: lbl for lbl, key in AVAILABLE_FIELDS}
+        key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         selected_labels = [key_to_label[k] for k, cb in self.field_checks.items() if cb.isChecked()]
 
         # Custom fields (only save checked)
@@ -627,7 +628,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         if not ok or not name.strip():
             return
 
-        key_to_label = {key: lbl for lbl, key in AVAILABLE_FIELDS}
+        key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         enabled_keys = self.ro_overlay.get_enabled_fields()
         selected_labels = [key_to_label[k] for k in enabled_keys if k in key_to_label]
 
@@ -979,7 +980,7 @@ class ControlPanel(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         # --- Save last session profile ---
         from overlays.running_order_overlay import AVAILABLE_FIELDS
-        key_to_label = {key: lbl for lbl, key in AVAILABLE_FIELDS}
+        key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         enabled_keys = self.ro_overlay.get_enabled_fields()
         selected_labels = [key_to_label[k] for k in enabled_keys if k in key_to_label]
 
