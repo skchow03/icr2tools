@@ -38,6 +38,9 @@ class OverlayField(NamedTuple):
     tooltip: str
 
 
+POSITION_INDICATOR_LABEL = "Δ"
+
+
 AVAILABLE_FIELDS = [
     OverlayField("Pos", "position", "Calculated 1-based position in running order."),
     OverlayField("Car#", "car_number", "Driver entry number (not from car data struct)."),
@@ -266,12 +269,13 @@ class RunningOrderOverlayTable(QtCore.QObject):
                 if car_state and len(car_state.values) > CAR_STATE_INDEX_LAPS_SINCE_YELLOW:
                     laps_since_yellow_val = car_state.values[CAR_STATE_INDEX_LAPS_SINCE_YELLOW]
 
+                position_indicator_icon = self._get_position_indicator_icon(
+                    struct_idx, now_monotonic
+                )
+
                 values = {
-                    "position": (
-                        global_row + 1,
-                        None,
-                        self._get_position_indicator_icon(struct_idx, now_monotonic),
-                    ),
+                    "position": (global_row + 1, None),
+                    "position_indicator": ("", None, position_indicator_icon),
                     "car_number": (driver.car_number if driver else "", None),
                     "driver": (names_map.get(struct_idx, driver.name if driver else ""), None),
                     "laps": (car_state.laps_completed if car_state else "", None),
@@ -296,6 +300,10 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     values[lbl] = (val, None)
 
                 col = 0
+                include_indicator_column = (
+                    self._position_indicator_enabled and "position" in self._enabled_fields
+                )
+
                 for field in AVAILABLE_FIELDS:
                     if field.key not in self._enabled_fields:
                         continue
@@ -320,6 +328,32 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     else:
                         item.setBackground(QtGui.QBrush())
                     col += 1
+
+                    if field.key == "position" and include_indicator_column:
+                        indicator_txt, indicator_color, indicator_icon = values[
+                            "position_indicator"
+                        ]
+                        indicator_item = self._get_or_create_item(table, row, col)
+                        indicator_item.setText(
+                            "" if indicator_txt is None else str(indicator_txt)
+                        )
+                        if indicator_color:
+                            indicator_item.setForeground(
+                                QtGui.QBrush(QtGui.QColor(indicator_color))
+                            )
+                        else:
+                            indicator_item.setForeground(QtGui.QBrush())
+                        if indicator_icon:
+                            indicator_item.setIcon(indicator_icon)
+                        else:
+                            indicator_item.setIcon(QtGui.QIcon())
+                        if struct_idx == PLAYER_STRUCT_IDX:
+                            indicator_item.setBackground(
+                                QtGui.QBrush(QtGui.QColor(cfg.player_row))
+                            )
+                        else:
+                            indicator_item.setBackground(QtGui.QBrush())
+                        col += 1
 
                 for lbl, idx in self._custom_fields:
                     txt, color = values[lbl]
@@ -416,7 +450,15 @@ class RunningOrderOverlayTable(QtCore.QObject):
 
     def _rebuild_headers(self):
         base_fields = [field for field in AVAILABLE_FIELDS if field.key in self._enabled_fields]
-        labels = [(field.label, field.key) for field in base_fields]
+        include_indicator_column = self._position_indicator_enabled and any(
+            field.key == "position" for field in base_fields
+        )
+
+        labels = []
+        for field in base_fields:
+            labels.append((field.label, field.key))
+            if field.key == "position" and include_indicator_column:
+                labels.append((POSITION_INDICATOR_LABEL, "position_indicator"))
         for lbl, _ in self._custom_fields:
             labels.append((lbl, None))
 
@@ -430,6 +472,8 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     display_label = f"{base_label} ▲"
                 elif key == "position" and not self._sort_by_best:
                     display_label = f"{base_label} ▲"
+                elif key == "position_indicator":
+                    display_label = base_label
 
                 header_item = QtWidgets.QTableWidgetItem(display_label)
                 t.setHorizontalHeaderItem(i, header_item)
@@ -479,6 +523,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
         self._position_indicator_enabled = enabled
         if not enabled:
             self._position_changes.clear()
+        self._rebuild_headers()
         if self._last_state:
             self.on_state_updated(self._last_state, update_bests=False)
 

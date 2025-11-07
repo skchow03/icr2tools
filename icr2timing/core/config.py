@@ -103,6 +103,7 @@ class Config:
     # Overlay column widths
     col_widths: Dict[str, int] = field(default_factory=lambda: {
         "Pos": 28,
+        "Δ": 20,
         "Car#": 38,
         "Driver_full": 100,
         "Driver_abbrev": 50,
