@@ -74,6 +74,8 @@ reused by other tools (for example, the track-map overlay reuses the general-pur
      * `running_order_overlay.py` – table overlay rendering the timing grid via `OverlayTableWindow`.
      * `proximity_overlay.py` – radar view that visualises car proximity using DLAT/DLONG deltas and Config radar options.
      * `track_map_overlay.py` – draws the track outline by loading `.trk` geometry through `icr2_core.trk.track_loader`.
+     * `experimental_track_surface_overlay.py` – experimental window that expands each TRK ground f-section into a filled
+       polygon coloured by surface type (asphalt, concrete, grass, sand, etc.).
      * `individual_car_overlay.py` – single-car telemetry panel that surfaces extended `CarState.values` columns.
      * Each overlay implements `BaseOverlay` (`widget()`, `on_state_updated`, `on_error`).
 

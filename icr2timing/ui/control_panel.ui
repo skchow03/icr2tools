@@ -365,7 +365,23 @@
          </attribute>
          <layout class="QVBoxLayout" name="trackMapLayout">
           <item>
-           <widget class="QPushButton" name="btnTrackMap">
+          <widget class="QPushButton" name="btnTrackMap">
+           <property name="font">
+            <font>
+             <weight>75</weight>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="toolTip">
+            <string>Toggle the track map overlay</string>
+           </property>
+           <property name="text">
+            <string>Show Track Map</string>
+           </property>
+          </widget>
+         </item>
+          <item>
+           <widget class="QPushButton" name="btnSurfaceOverlay">
             <property name="font">
              <font>
               <weight>75</weight>
@@ -373,10 +389,10 @@
              </font>
             </property>
             <property name="toolTip">
-             <string>Toggle the track map overlay</string>
+             <string>Toggle the experimental ground-surface overlay</string>
             </property>
             <property name="text">
-             <string>Show Track Map</string>
+             <string>Show Surface Overlay</string>
             </property>
            </widget>
           </item>
