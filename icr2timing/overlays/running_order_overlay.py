@@ -16,7 +16,10 @@ log = logging.getLogger(__name__)
 from icr2_core.model import RaceState
 from icr2timing.analysis.best_laps import BestLapTracker
 from icr2timing.analysis.name_utils import compute_compact_names, compute_abbreviations
-from icr2timing.analysis.gap_utils import compute_gaps_display
+from icr2timing.analysis.gap_utils import (
+    compute_gaps_display,
+    compute_intervals_display,
+)
 from icr2timing.core.config import Config
 from icr2timing.overlays.overlay_table_window import OverlayTableWindow
 from icr2timing.overlays.base_overlay import BaseOverlay
@@ -56,6 +59,7 @@ AVAILABLE_FIELDS = [
         "Calculated from total laps minus struct index 32 (laps left).",
     ),
     OverlayField("Gap", "gap", "Calculated gap to leader."),
+    OverlayField("Int", "interval", "Calculated interval to car ahead."),
     OverlayField(
         "Last",
         "last",
@@ -135,6 +139,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
             else compute_compact_names(state)
         )
         gaps_display = compute_gaps_display(state)
+        intervals_display = compute_intervals_display(state)
 
         order = list(state.order)
         now_monotonic = time.monotonic()
@@ -245,8 +250,11 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     best_gap_txt = ""
 
 
-                # gap
+                # gap and interval
                 gap_txt, gap_color = gaps_display.get(struct_idx, ("", None))
+                interval_txt, interval_color = intervals_display.get(
+                    struct_idx, ("", None)
+                )
 
                 global_row = row + (table_idx * rows_per_table)
 
@@ -287,6 +295,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     "driver": (names_map.get(struct_idx, driver.name if driver else ""), None),
                     "laps": (car_state.laps_completed if car_state else "", None),
                     "gap": (gap_txt, gap_color),
+                    "interval": (interval_txt, interval_color),
                     "last": (last_txt, last_color),
                     "best": (best_txt, None),
                     "best_gap": (best_gap_txt, None),
