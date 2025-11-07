@@ -18,6 +18,7 @@ from overlays.running_order_overlay import RunningOrderOverlayTable, AVAILABLE_F
 from ui.profile_manager import ProfileManager, Profile, LAST_SESSION_KEY
 from overlays.proximity_overlay import ProximityOverlay
 from overlays.track_map_overlay import TrackMapOverlay
+from overlays.experimental_track_surface_overlay import ExperimentalTrackSurfaceOverlay
 from overlays.individual_car_overlay import IndividualCarOverlay
 from core.config import Config
 from core.version import __version__
@@ -101,6 +102,13 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.state_updated.connect(self.track_overlay.on_state_updated)
             self.updater.error.connect(self.track_overlay.on_error)
 
+        # Experimental surface overlay
+        self.surface_overlay = ExperimentalTrackSurfaceOverlay()
+        self.surface_overlay.set_scale_factor(self.track_overlay._scale_factor)
+        if self.updater:
+            self.updater.state_updated.connect(self.surface_overlay.on_state_updated)
+            self.updater.error.connect(self.surface_overlay.on_error)
+
         # Individual car overlay
         self.indiv_overlay = IndividualCarOverlay(
             mem=self._mem, cfg=self._cfg, status_callback=self.statusbar.showMessage
@@ -134,6 +142,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.btnQuit.clicked.connect(self.close)
         self.btnRadar.clicked.connect(self._toggle_radar)
         self.btnTrackMap.clicked.connect(self._toggle_track_map)
+        self.btnSurfaceOverlay.clicked.connect(self._toggle_surface_overlay)
 
         # Profiles
         self.profileCombo.currentTextChanged.connect(self._load_profile)
@@ -216,9 +225,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.sliderMapScale.setMinimum(10)
         self.sliderMapScale.setMaximum(200)
         self.sliderMapScale.setValue(int(self.track_overlay._scale_factor * 100))
-        self.sliderMapScale.valueChanged.connect(
-            lambda val: self.track_overlay.set_scale_factor(val / 100.0)
-        )
+        self.sliderMapScale.valueChanged.connect(self._on_map_scale_changed)
 
         # Show car numbers checkbox
         self.cbShowNumbers.setChecked(self.track_overlay._show_numbers)
@@ -364,6 +371,11 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.ro_overlay.widget().raise_()
             self.btnToggleOverlay.setText("Hide Overlay")
 
+    def _on_map_scale_changed(self, val: int):
+        scale = max(10, min(200, val)) / 100.0
+        self.track_overlay.set_scale_factor(scale)
+        self.surface_overlay.set_scale_factor(scale)
+
     def _toggle_radar(self):
         if self.prox_overlay.isVisible():
             self.prox_overlay.hide()
@@ -382,6 +394,16 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.track_overlay.raise_()
             self.track_overlay.activateWindow()
             self.btnTrackMap.setText("Hide Track Map")
+
+    def _toggle_surface_overlay(self):
+        if self.surface_overlay.isVisible():
+            self.surface_overlay.hide()
+            self.btnSurfaceOverlay.setText("Show Surface Overlay")
+        else:
+            self.surface_overlay.show()
+            self.surface_overlay.raise_()
+            self.surface_overlay.activateWindow()
+            self.btnSurfaceOverlay.setText("Hide Surface Overlay")
     def _toggle_indiv_overlay(self):
         idx_data = self.selectIndividualCar.currentData()
         if idx_data is None:
