@@ -118,42 +118,153 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             return []
 
         strips: List[SurfaceStrip] = []
-        for sect in self.trk.sects:
+        for sect_idx, sect in enumerate(self.trk.sects):
             if sect.ground_fsects <= 0:
                 continue
 
-            # Determine sampling resolution for the section
-            segments = max(4, min(96, int(max(1, sect.length // 8000)) + 3))
-            sample_range = range(segments + 1)
-
-            for g_idx in range(sect.ground_fsects):
-                start_val = sect.ground_dlat_start[g_idx]
-                end_val = sect.ground_dlat_end[g_idx]
-
-                if start_val == end_val:
-                    continue
-
-                inner, outer = sorted((start_val, end_val))
-
-                inner_points: List[Tuple[float, float]] = []
-                outer_points: List[Tuple[float, float]] = []
-
-                for step in sample_range:
-                    subsect = step / segments
-                    dlong = sect.start_dlong + sect.length * subsect
-
-                    ix, iy, _ = getxyz(self.trk, dlong, inner, self.cline)
-                    ox, oy, _ = getxyz(self.trk, dlong, outer, self.cline)
-
-                    inner_points.append((ix, iy))
-                    outer_points.append((ox, oy))
-
-                polygon = list(inner_points) + list(reversed(outer_points))
-                strips.append(
-                    SurfaceStrip(points=polygon, ground_type=sect.ground_type[g_idx])
+            if sect.type == 1:
+                start_dlong = sect.start_dlong
+                end_dlong = sect.start_dlong + sect.length
+                strips.extend(
+                    self._build_section_quads(
+                        sect_idx,
+                        start_dlong,
+                        end_dlong,
+                        num_subsects=1,
+                    )
+                )
+            else:
+                num_subsects = max(1, round(sect.length / 60000))
+                strips.extend(
+                    self._build_section_quads(
+                        sect_idx,
+                        sect.start_dlong,
+                        sect.start_dlong + sect.length,
+                        num_subsects=num_subsects,
+                    )
                 )
 
         return strips
+
+    def _build_section_quads(
+        self,
+        sect_idx: int,
+        start_dlong: float,
+        end_dlong: float,
+        num_subsects: int,
+    ) -> List[SurfaceStrip]:
+        """Generate quadrilateral strips for a section or subsection.
+
+        The implementation mirrors the original ``trk23d`` tool which produced
+        OBJ meshes via ``csv2obj``: each ground f-section is represented by a
+        quad whose corners are sampled with :func:`getxyz` at the subsection
+        bounds.  Curves are split into smaller slices to maintain fidelity.
+        """
+
+        if not self.trk:
+            return []
+
+        sect = self.trk.sects[sect_idx]
+        if sect.ground_fsects <= 0:
+            return []
+
+        cline = self.cline
+        strips: List[SurfaceStrip] = []
+
+        # Pre-compute DLAT steps for the outermost boundary which acts as the
+        # left edge of the first quad within each subsection.
+        left_boundary_start = sect.bound_dlat_start[sect.num_bounds - 1]
+        left_boundary_end = sect.bound_dlat_end[sect.num_bounds - 1]
+
+        # Guard against zero-length sections which could happen on malformed
+        # tracks.  The TRK data is integral so we rely on integer arithmetic
+        # when possible to avoid accumulation errors.
+        if num_subsects <= 0:
+            num_subsects = 1
+
+        subsection_length = (end_dlong - start_dlong) / num_subsects
+        left_increment = (left_boundary_end - left_boundary_start) / num_subsects
+
+        for sub_idx in range(num_subsects):
+            sub_start_dlong = start_dlong + subsection_length * sub_idx
+            # Ensure the final slice terminates exactly at the section end to
+            # match the behaviour in ``trk23d``.
+            if sub_idx == num_subsects - 1:
+                sub_end_dlong = end_dlong
+            else:
+                sub_end_dlong = start_dlong + subsection_length * (sub_idx + 1)
+
+            left_start = left_boundary_start + left_increment * sub_idx
+            left_end = left_boundary_start + left_increment * (sub_idx + 1)
+
+            for ground_idx in range(sect.ground_fsects - 1, -1, -1):
+                right_start_total = sect.ground_dlat_start[ground_idx]
+                right_end_total = sect.ground_dlat_end[ground_idx]
+                right_span = right_end_total - right_start_total
+
+                # Interpolate the ground surface DLATs for this subsection.
+                right_start = right_start_total + right_span * (sub_idx / num_subsects)
+                right_end = right_start_total + right_span * ((sub_idx + 1) / num_subsects)
+
+                polygon = self._quad_polygon(
+                    sub_start_dlong,
+                    sub_end_dlong,
+                    left_start,
+                    left_end,
+                    right_start,
+                    right_end,
+                    cline,
+                )
+
+                # Skip degenerate quads that collapse into a line.
+                if self._polygon_area(polygon) <= 1e-3:
+                    continue
+
+                strips.append(
+                    SurfaceStrip(
+                        points=polygon,
+                        ground_type=sect.ground_type[ground_idx],
+                    )
+                )
+
+                # The right edge of the current quad becomes the left edge of
+                # the next quad in this subsection, replicating ``trk23d``.
+                left_start = right_start
+                left_end = right_end
+
+        return strips
+
+    def _quad_polygon(
+        self,
+        start_dlong: float,
+        end_dlong: float,
+        left_start: float,
+        left_end: float,
+        right_start: float,
+        right_end: float,
+        cline: Sequence[Tuple[float, float]],
+    ) -> List[Tuple[float, float]]:
+        if not self.trk:
+            return []
+
+        ls_x, ls_y, _ = getxyz(self.trk, start_dlong, left_start, cline)
+        le_x, le_y, _ = getxyz(self.trk, end_dlong, left_end, cline)
+        rs_x, rs_y, _ = getxyz(self.trk, start_dlong, right_start, cline)
+        re_x, re_y, _ = getxyz(self.trk, end_dlong, right_end, cline)
+
+        # Ensure winding order is consistent (counter-clockwise) for rendering.
+        return [(ls_x, ls_y), (le_x, le_y), (re_x, re_y), (rs_x, rs_y)]
+
+    @staticmethod
+    def _polygon_area(points: Sequence[Tuple[float, float]]) -> float:
+        if len(points) < 3:
+            return 0.0
+
+        area = 0.0
+        for idx, (x1, y1) in enumerate(points):
+            x2, y2 = points[(idx + 1) % len(points)]
+            area += x1 * y2 - x2 * y1
+        return abs(area) * 0.5
 
     def _compute_bounds(self) -> Tuple[float, float, float, float] | None:
         points: List[Tuple[float, float]] = []
