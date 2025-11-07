@@ -220,27 +220,28 @@
            </layout>
           </item>
           <item>
-           <widget class="QScrollArea" name="fieldsScroll">
+           <widget class="QListWidget" name="fieldsList">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
               <horstretch>0</horstretch>
               <verstretch>3</verstretch>
              </sizepolicy>
             </property>
-            <property name="widgetResizable">
+            <property name="alternatingRowColors">
              <bool>true</bool>
             </property>
-            <widget class="QWidget" name="fieldsContainer">
-             <property name="geometry">
-              <rect>
-               <x>0</x>
-               <y>0</y>
-               <width>395</width>
-               <height>69</height>
-              </rect>
-             </property>
-             <layout class="QVBoxLayout" name="fieldsLayout"/>
-            </widget>
+            <property name="dragDropMode">
+             <enum>QAbstractItemView::InternalMove</enum>
+            </property>
+            <property name="defaultDropAction">
+             <enum>Qt::MoveAction</enum>
+            </property>
+            <property name="movement">
+             <enum>QListView::Snap</enum>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::NoSelection</enum>
+            </property>
            </widget>
           </item>
           <item>
