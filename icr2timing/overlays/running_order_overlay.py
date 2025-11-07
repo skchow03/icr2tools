@@ -70,6 +70,7 @@ AVAILABLE_FIELDS = [
 
 
 AVAILABLE_KEYS = {field.key for field in AVAILABLE_FIELDS}
+AVAILABLE_FIELDS_BY_KEY = {field.key: field for field in AVAILABLE_FIELDS}
 
 
 class RunningOrderOverlayTable(QtCore.QObject):
@@ -450,7 +451,11 @@ class RunningOrderOverlayTable(QtCore.QObject):
             self.on_state_updated(self._last_state, update_bests=False)
 
     def _rebuild_headers(self):
-        base_fields = [field for field in AVAILABLE_FIELDS if field.key in self._enabled_fields]
+        base_fields = []
+        for key in self._enabled_fields:
+            field = AVAILABLE_FIELDS_BY_KEY.get(key)
+            if field:
+                base_fields.append(field)
         include_indicator_column = self._position_indicator_enabled and any(
             field.key == "position" for field in base_fields
         )
