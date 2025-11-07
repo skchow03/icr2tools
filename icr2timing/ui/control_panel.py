@@ -1041,8 +1041,22 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # --- Close overlays so they don't keep the process alive ---
         try:
+            if self.ro_overlay:
+                ro_widget = self.ro_overlay.widget()
+                if ro_widget and ro_widget.isVisible():
+                    ro_widget.close()
+        except Exception:
+            pass
+
+        try:
             if self.track_overlay and self.track_overlay.isVisible():
                 self.track_overlay.close()
+        except Exception:
+            pass
+
+        try:
+            if self.surface_overlay and self.surface_overlay.isVisible():
+                self.surface_overlay.close()
         except Exception:
             pass
 
