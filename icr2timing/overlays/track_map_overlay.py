@@ -40,9 +40,12 @@ class TrackMapOverlay(QtWidgets.QWidget):
 
         self._last_state: RaceState | None = None
         self._drag_pos: QtCore.QPoint | None = None
+        self._config = Config()
+
         self.trk = None
         self.cline = []
         self._sampled_pts = []
+        self._sampled_bounds: tuple[float, float, float, float] | None = None
 
         self.installEventFilter(self)
 
@@ -50,7 +53,7 @@ class TrackMapOverlay(QtWidgets.QWidget):
     # Helpers
     # -----------------------------
     def _load_track(self, track_name: str):
-        exe_path = Config().game_exe
+        exe_path = self._config.game_exe
         if not exe_path:
             raise RuntimeError("Game EXE not set in settings.ini")
 
@@ -67,6 +70,7 @@ class TrackMapOverlay(QtWidgets.QWidget):
     def _sample_centerline(self, step: int = 10000):
         if not self.trk:
             self._sampled_pts = []
+            self._sampled_bounds = None
             return
 
         pts = []
@@ -79,16 +83,26 @@ class TrackMapOverlay(QtWidgets.QWidget):
             pts.append(pts[0])
 
         self._sampled_pts = pts
+        if pts:
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            self._sampled_bounds = (
+                min(xs),
+                max(xs),
+                min(ys),
+                max(ys),
+            )
+        else:
+            self._sampled_bounds = None
         log.info(f"[TrackMapOverlay] Sampled {len(self._sampled_pts)} points")
 
     def _autosize_window(self, margin: int = 20):
-        if not self._sampled_pts:
+        if not self._sampled_pts or not self._sampled_bounds:
             return
 
-        xs = [p[0] for p in self._sampled_pts]
-        ys = [p[1] for p in self._sampled_pts]
-        track_w = max(xs) - min(xs)
-        track_h = max(ys) - min(ys)
+        min_x, max_x, min_y, max_y = self._sampled_bounds
+        track_w = max_x - min_x
+        track_h = max_y - min_y
 
         if track_w <= 0 or track_h <= 0:
             return
@@ -127,7 +141,7 @@ class TrackMapOverlay(QtWidgets.QWidget):
             # Only reload when the track name really changes
             if getattr(self, "_loaded_track_name", None) != current_name:
                 self._loaded_track_name = current_name
-                exe_path = Config().game_exe
+                exe_path = self._config.game_exe
                 exe_dir = os.path.dirname(exe_path) if exe_path else "(none)"
                 log.info(f"[TrackMapOverlay] Loading track from: {exe_dir}\\TRACKS\\{current_name.lower()}")
                 self._load_track(current_name)
@@ -142,6 +156,7 @@ class TrackMapOverlay(QtWidgets.QWidget):
                 self._last_error_msg = str(e)
             self.trk = None
             self._sampled_pts = []
+            self._sampled_bounds = None
 
 
     def on_error(self, msg: str):
@@ -153,6 +168,7 @@ class TrackMapOverlay(QtWidgets.QWidget):
             log = logging.getLogger(__name__)
             log.error(f"[TrackMapOverlay] on_error: {msg}")
             self._last_error_msg = msg
+        self._sampled_bounds = None
         self.update()
 
 
@@ -173,21 +189,23 @@ class TrackMapOverlay(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 128))
 
-        if not self._sampled_pts:
+        if not self._sampled_pts or not self._sampled_bounds:
             painter.setPen(QtGui.QPen(QtGui.QColor("red"), 2))
             painter.drawText(10, 20, "Track map not loaded")
             return
 
-        xs = [p[0] for p in self._sampled_pts]
-        ys = [p[1] for p in self._sampled_pts]
-        min_x, max_x = min(xs), max(xs)
-        min_y, max_y = min(ys), max(ys)
+        min_x, max_x, min_y, max_y = self._sampled_bounds
 
         w, h = self.width(), self.height()
         margin = 20
 
         track_w = max_x - min_x
         track_h = max_y - min_y
+
+        if track_w <= 0 or track_h <= 0:
+            painter.setPen(QtGui.QPen(QtGui.QColor("red"), 2))
+            painter.drawText(10, 20, "Track bounds invalid")
+            return
 
         sx = (w - margin * 2) / track_w
         sy = (h - margin * 2) / track_h
@@ -214,8 +232,7 @@ class TrackMapOverlay(QtWidgets.QWidget):
 
         # --- Draw cars ---
         if self._last_state and self.trk:
-            cfg = Config()
-            player_idx = cfg.player_index
+            player_idx = self._config.player_index
 
             if self._show_numbers:
                 painter.setFont(QtGui.QFont("Arial", 8, QtGui.QFont.Bold))
