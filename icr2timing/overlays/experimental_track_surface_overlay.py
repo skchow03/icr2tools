@@ -10,7 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
 from icr2_core.trk.track_loader import load_trk_from_folder
-from icr2_core.trk.trk_utils import getxyz, get_cline_pos
+from icr2_core.trk.trk_utils import getxyz, get_cline_pos, color_from_ground_type
 from core.config import Config
 
 log = logging.getLogger(__name__)
@@ -37,12 +37,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
     a polygon.  Each polygon is coloured by its ground type, allowing a quick
     inspection of asphalt, concrete, grass, gravel and other surfaces.
     """
-
-    ASPHALT_TYPES = {38, 46, 54}
-    GRASS_TYPES = {6, 14, 22, 30}
-
-    ASPHALT_COLOR = "#9e9e9e"
-    GRASS_COLOR = "#2e7d32"
 
     LP_COLORS = {
         0: ("Race", QtGui.QColor.fromHsv(0, 0, 255)),
@@ -396,12 +390,16 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             self._draw_lp_legend(painter)
 
     def _color_for_ground(self, ground_type: int) -> QtGui.QColor:
-        if ground_type in self.ASPHALT_TYPES:
-            return QtGui.QColor(self.ASPHALT_COLOR)
-        if ground_type in self.GRASS_TYPES:
-            return QtGui.QColor(self.GRASS_COLOR)
-        # Default to asphalt for any unrecognised surface to avoid alternating colours.
-        return QtGui.QColor(self.ASPHALT_COLOR)
+        """Return a consistent colour for each ground surface type.
+
+        The TRK loader already exposes :func:`color_from_ground_type`, which
+        centralises the surface palette for exporters and tooling.  Re-using it
+        here ensures the advanced map shows a single, predictable colour for
+        every ground type instead of alternating between sections.
+        """
+
+        color_name = color_from_ground_type(ground_type)
+        return QtGui.QColor(color_name)
 
     def _draw_cars(
         self,
