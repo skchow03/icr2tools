@@ -13,16 +13,21 @@ from PyQt5 import QtWidgets, QtCore, uic, QtGui
 import logging
 log = logging.getLogger(__name__)
 
-from updater.overlay_manager import OverlayManager
-from overlays.running_order_overlay import RunningOrderOverlayTable, AVAILABLE_FIELDS
-from ui.profile_manager import ProfileManager, Profile, LAST_SESSION_KEY
-from overlays.proximity_overlay import ProximityOverlay
-from overlays.track_map_overlay import TrackMapOverlay
-from overlays.experimental_track_surface_overlay import ExperimentalTrackSurfaceOverlay
-from overlays.individual_car_overlay import IndividualCarOverlay
-from core.config import Config
-from core.version import __version__
-from core.telemetry_laps import TelemetryLapLogger
+from icr2timing.updater.overlay_manager import OverlayManager
+from icr2timing.overlays.running_order_overlay import (
+    RunningOrderOverlayTable,
+    AVAILABLE_FIELDS,
+)
+from icr2timing.ui.profile_manager import ProfileManager, Profile, LAST_SESSION_KEY
+from icr2timing.overlays.proximity_overlay import ProximityOverlay
+from icr2timing.overlays.track_map_overlay import TrackMapOverlay
+from icr2timing.overlays.experimental_track_surface_overlay import (
+    ExperimentalTrackSurfaceOverlay,
+)
+from icr2timing.overlays.individual_car_overlay import IndividualCarOverlay
+from icr2timing.core.config import Config
+from icr2timing.core.version import __version__
+from icr2timing.core.telemetry_laps import TelemetryLapLogger
 
 
 CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
@@ -293,7 +298,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.statusbar.showMessage(f"Game EXE set: {os.path.basename(path)}")
 
         # ✅ Update global Config() instances in memory
-        from core import config as cfgmod
+        from icr2timing.core import config as cfgmod
         cfgmod._parser.set("paths", "game_exe", path)
         cfgmod._parser.write(open(cfgmod._cfgfile, "w"))
 
@@ -712,7 +717,7 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _toggle_lap_logger(self):
         """Enable/disable lap telemetry logging."""
-        from core.telemetry_laps import TelemetryLapLogger
+        from icr2timing.core.telemetry_laps import TelemetryLapLogger
 
         if self._lap_logger_enabled:
             # --- Disable current logger ---
@@ -816,7 +821,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         Preserves visibility, transparency, and unique window titles.
         """
         from PyQt5 import QtCore
-        from core.config import Config
+        from icr2timing.core.config import Config
 
         overlays = [
             self.ro_overlay.widget(),
@@ -862,7 +867,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             # --- Radar-specific transparency handling ---
             if hasattr(o, "cfg"):
                 try:
-                    from core.config import Config
+                    from icr2timing.core.config import Config
                     o.cfg = Config()
                     o._update_ranges_from_cfg()
                     if translucent:
@@ -987,7 +992,7 @@ class ControlPanel(QtWidgets.QMainWindow):
     # -------------------------------
     def closeEvent(self, event):
         # --- Save last session profile ---
-        from overlays.running_order_overlay import AVAILABLE_FIELDS
+        from icr2timing.overlays.running_order_overlay import AVAILABLE_FIELDS
         key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         enabled_keys = self.ro_overlay.get_enabled_fields()
         selected_labels = [key_to_label[k] for k in enabled_keys if k in key_to_label]

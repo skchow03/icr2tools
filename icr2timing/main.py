@@ -10,11 +10,11 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from collections import deque
 from PyQt5 import QtWidgets, QtCore
 from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
-from core.config import Config
+from icr2timing.core.config import Config
 from icr2_core.reader import MemoryReader
-from updater.updater import RaceUpdater
-from ui.control_panel import ControlPanel
-from core.version import __version__
+from icr2timing.updater.updater import RaceUpdater
+from icr2timing.ui.control_panel import ControlPanel
+from icr2timing.core.version import __version__
 from PyQt5.QtGui import QIcon
 
 base_dir = os.path.dirname(sys.argv[0])

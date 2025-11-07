@@ -4,11 +4,11 @@ import os
 import logging
 log = logging.getLogger(__name__)
 
-from overlays.base_overlay import BaseOverlay
+from icr2timing.overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
 from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.trk_utils import getxyz, get_cline_pos
-from core.config import Config
+from icr2timing.core.config import Config
 
 
 

@@ -8,7 +8,7 @@ Now returns plain strings and optional color hints instead of HTML.
 from typing import Dict, Optional, Tuple
 
 from icr2_core.model import RaceState, CarState
-from core.config import Config
+from icr2timing.core.config import Config
 
 
 cfg = Config() 

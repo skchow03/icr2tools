@@ -9,7 +9,7 @@ from typing import Optional, List
 import math
 from PyQt5 import QtCore, QtWidgets, QtGui
 
-from core.config import Config
+from icr2timing.core.config import Config
 
 cfg = Config()
 

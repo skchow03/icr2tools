@@ -6,7 +6,7 @@ Formats lap times into text + color for overlay.
 """
 
 from typing import Dict, Optional
-from core.config import Config
+from icr2timing.core.config import Config
 
 cfg = Config()   
 

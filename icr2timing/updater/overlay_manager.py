@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 
 from typing import List
 
-from overlays.base_overlay import BaseOverlay
+from icr2timing.overlays.base_overlay import BaseOverlay
 
 
 
