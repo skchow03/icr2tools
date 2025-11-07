@@ -94,6 +94,14 @@ class RunningOrderOverlayTable(QtCore.QObject):
     def widget(self):
         return self._overlay
 
+    def _get_or_create_item(self, table: QtWidgets.QTableWidget, row: int, col: int) -> QtWidgets.QTableWidgetItem:
+        """Return an existing table item or create one if missing."""
+        item = table.item(row, col)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            table.setItem(row, col, item)
+        return item
+
     def on_state_updated(self, state: RaceState, update_bests: bool = True):
         if self._showing_error:
             self._rebuild_headers()
@@ -249,21 +257,30 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     if field.key not in self._enabled_fields:
                         continue
                     txt, color = values[field.key]
-                    item = QtWidgets.QTableWidgetItem(str(txt))
+                    item = self._get_or_create_item(table, row, col)
+                    item.setText("" if txt is None else str(txt))
                     if color:
                         item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
+                    else:
+                        item.setForeground(QtGui.QBrush())
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor(cfg.player_row)))
-
-                    table.setItem(row, col, item)
+                    else:
+                        item.setBackground(QtGui.QBrush())
                     col += 1
 
                 for lbl, idx in self._custom_fields:
                     txt, color = values[lbl]
-                    item = QtWidgets.QTableWidgetItem(str(txt))
+                    item = self._get_or_create_item(table, row, col)
+                    item.setText("" if txt is None else str(txt))
+                    if color:
+                        item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
+                    else:
+                        item.setForeground(QtGui.QBrush())
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor("#444")))
-                    table.setItem(row, col, item)
+                    else:
+                        item.setBackground(QtGui.QBrush())
                     col += 1
 
         # --- Auto-size logic with throttling ---
