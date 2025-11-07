@@ -56,7 +56,7 @@ class ProfileManager:
         base_dir = os.path.dirname(sys.argv[0])
         self._cfgfile = ini_path or os.path.join(base_dir, "profiles.ini")
         self._parser = configparser.ConfigParser()
-        self._parser.read(self._cfgfile)
+        self._parser.read(self._cfgfile, encoding="utf-8")
 
     # -------------------------
     # Query
@@ -179,14 +179,14 @@ class ProfileManager:
         else:
             self._parser[profile.name]["custom_fields"] = ""
 
-        with open(self._cfgfile, "w") as f:
+        with open(self._cfgfile, "w", encoding="utf-8") as f:
             self._parser.write(f)
 
     def delete(self, name: str) -> bool:
         if name not in self._parser:
             return False
         self._parser.remove_section(name)
-        with open(self._cfgfile, "w") as f:
+        with open(self._cfgfile, "w", encoding="utf-8") as f:
             self._parser.write(f)
         return True
 
