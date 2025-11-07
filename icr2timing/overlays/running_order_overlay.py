@@ -401,13 +401,14 @@ class RunningOrderOverlayTable(QtCore.QObject):
             self.on_state_updated(self._last_state, update_bests=False)
 
     def set_enabled_fields(self, fields: List[str]):
-        requested = set()
+        normalized: List[str] = []
+        seen = set()
         for key in fields:
             if key == "laps_since_pit":
                 key = "laps_since_yellow"
-            if key in AVAILABLE_KEYS:
-                requested.add(key)
-        normalized = [field.key for field in AVAILABLE_FIELDS if field.key in requested]
+            if key in AVAILABLE_KEYS and key not in seen:
+                normalized.append(key)
+                seen.add(key)
         self._enabled_fields = normalized
         self._rebuild_headers()
         if self._last_state:

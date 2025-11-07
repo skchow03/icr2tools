@@ -183,15 +183,27 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.radioSpeed.toggled.connect(self._update_display_mode)
 
         # Columns & layout
-        self.field_checks = {}
+        self.fieldsList.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        self.fieldsList.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self.fieldsList.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._suppress_field_updates = True
+        self.fieldsList.clear()
         for field in AVAILABLE_FIELDS:
-            cb = QtWidgets.QCheckBox(field.label, self.fieldsContainer)
-            cb.setChecked(True)
-            cb.stateChanged.connect(self._update_fields)
+            item = QtWidgets.QListWidgetItem(field.label)
+            item.setFlags(
+                item.flags()
+                | QtCore.Qt.ItemIsUserCheckable
+                | QtCore.Qt.ItemIsDragEnabled
+            )
+            item.setCheckState(QtCore.Qt.Checked)
+            item.setData(QtCore.Qt.UserRole, field.key)
             if field.tooltip:
-                cb.setToolTip(field.tooltip)
-            self.fieldsLayout.addWidget(cb)
-            self.field_checks[field.key] = cb
+                item.setToolTip(field.tooltip)
+            self.fieldsList.addItem(item)
+        self._suppress_field_updates = False
+        self.fieldsList.itemChanged.connect(self._on_field_item_changed)
+        if self.fieldsList.model() is not None:
+            self.fieldsList.model().rowsMoved.connect(self._on_fields_reordered)
 
         # Combo for columns (1–4)
         for i in range(1, 5):
@@ -458,8 +470,33 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.spinPosChangeDuration.setEnabled(enabled)
         self.lblPositionIndicatorDuration.setEnabled(enabled)
 
+    def _collect_field_keys(self, include_unchecked: bool = False):
+        keys = []
+        for i in range(self.fieldsList.count()):
+            item = self.fieldsList.item(i)
+            if item is None:
+                continue
+            key = item.data(QtCore.Qt.UserRole)
+            if not key:
+                continue
+            if include_unchecked or item.checkState() == QtCore.Qt.Checked:
+                keys.append(key)
+        return keys
+
+    def _on_field_item_changed(self, _item):
+        if getattr(self, "_suppress_field_updates", False):
+            return
+        self._update_fields()
+
+    def _on_fields_reordered(self, *args):
+        if getattr(self, "_suppress_field_updates", False):
+            return
+        self._update_fields()
+
     def _update_fields(self):
-        enabled = [k for k, cb in self.field_checks.items() if cb.isChecked()]
+        if getattr(self, "_suppress_field_updates", False):
+            return
+        enabled = self._collect_field_keys()
         self.ro_overlay.set_enabled_fields(enabled)
 
     def _update_display_mode(self):
@@ -538,16 +575,49 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _apply_profile_object(self, prof: Profile):
         label_to_key = {field.label: field.key for field in AVAILABLE_FIELDS}
         label_to_key["SincePit"] = "laps_since_yellow"
-        wanted_keys = {label_to_key.get(lbl) for lbl in prof.columns if lbl in label_to_key}
+        ordered_keys = []
+        seen_keys = set()
+        for lbl in prof.columns:
+            key = label_to_key.get(lbl)
+            if key and key not in seen_keys:
+                ordered_keys.append(key)
+                seen_keys.add(key)
 
         # Columns
-        for k, cb in self.field_checks.items():
-            cb.setChecked(k in wanted_keys)
+        self._suppress_field_updates = True
+        key_to_item = {}
+        for i in range(self.fieldsList.count()):
+            item = self.fieldsList.item(i)
+            if item is None:
+                continue
+            key = item.data(QtCore.Qt.UserRole)
+            if key:
+                key_to_item[key] = item
+
+        insert_row = 0
+        for key in ordered_keys:
+            item = key_to_item.get(key)
+            if item is None:
+                continue
+            current_row = self.fieldsList.row(item)
+            moved_item = self.fieldsList.takeItem(current_row)
+            self.fieldsList.insertItem(insert_row, moved_item)
+            insert_row += 1
+
+        for i in range(self.fieldsList.count()):
+            item = self.fieldsList.item(i)
+            if item is None:
+                continue
+            key = item.data(QtCore.Qt.UserRole)
+            item.setCheckState(
+                QtCore.Qt.Checked if key in ordered_keys else QtCore.Qt.Unchecked
+            )
+
+        self._suppress_field_updates = False
+        self._update_fields()
 
         if prof.n_columns != (self.comboCols.currentIndex() + 1):
             self.comboCols.setCurrentIndex(prof.n_columns - 1)
-        else:
-            self.ro_overlay.set_enabled_fields(list(wanted_keys))
 
         if prof.display_mode == "speed":
             self.radioSpeed.setChecked(True)
@@ -612,7 +682,8 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Columns
         key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
-        selected_labels = [key_to_label[k] for k, cb in self.field_checks.items() if cb.isChecked()]
+        ordered_keys = self._collect_field_keys()
+        selected_labels = [key_to_label[k] for k in ordered_keys if k in key_to_label]
 
         # Custom fields (only save checked)
         custom_fields = []
@@ -1029,10 +1100,9 @@ class ControlPanel(QtWidgets.QMainWindow):
     # -------------------------------
     def closeEvent(self, event):
         # --- Save last session profile ---
-        from icr2timing.overlays.running_order_overlay import AVAILABLE_FIELDS
         key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
-        enabled_keys = self.ro_overlay.get_enabled_fields()
-        selected_labels = [key_to_label[k] for k in enabled_keys if k in key_to_label]
+        ordered_keys = self._collect_field_keys()
+        selected_labels = [key_to_label[k] for k in ordered_keys if k in key_to_label]
 
         custom_fields = []
         for i in range(self.customFieldList.count()):
