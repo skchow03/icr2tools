@@ -185,7 +185,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         # Columns & layout
         self.fieldsList.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         self.fieldsList.setDefaultDropAction(QtCore.Qt.MoveAction)
-        self.fieldsList.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.fieldsList.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._suppress_field_updates = True
         self.fieldsList.clear()
         for field in AVAILABLE_FIELDS:
@@ -204,6 +204,9 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.fieldsList.itemChanged.connect(self._on_field_item_changed)
         if self.fieldsList.model() is not None:
             self.fieldsList.model().rowsMoved.connect(self._on_fields_reordered)
+
+        self.btnFieldUp.clicked.connect(lambda: self._move_selected_field(-1))
+        self.btnFieldDown.clicked.connect(lambda: self._move_selected_field(1))
 
         # Combo for columns (1–4)
         for i in range(1, 5):
@@ -482,6 +485,28 @@ class ControlPanel(QtWidgets.QMainWindow):
             if include_unchecked or item.checkState() == QtCore.Qt.Checked:
                 keys.append(key)
         return keys
+
+    def _move_selected_field(self, direction: int):
+        if getattr(self, "_suppress_field_updates", False):
+            return
+
+        current_row = self.fieldsList.currentRow()
+        if current_row < 0:
+            return
+
+        target_row = current_row + direction
+        if target_row < 0 or target_row >= self.fieldsList.count():
+            return
+
+        self._suppress_field_updates = True
+        item = self.fieldsList.takeItem(current_row)
+        if item is None:
+            self._suppress_field_updates = False
+            return
+        self.fieldsList.insertItem(target_row, item)
+        self.fieldsList.setCurrentRow(target_row)
+        self._suppress_field_updates = False
+        self._on_fields_reordered()
 
     def _on_field_item_changed(self, _item):
         if getattr(self, "_suppress_field_updates", False):

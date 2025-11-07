@@ -220,29 +220,83 @@
            </layout>
           </item>
           <item>
-           <widget class="QListWidget" name="fieldsList">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-              <horstretch>0</horstretch>
-              <verstretch>3</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="alternatingRowColors">
-             <bool>true</bool>
-            </property>
-            <property name="dragDropMode">
-             <enum>QAbstractItemView::InternalMove</enum>
-            </property>
-            <property name="defaultDropAction">
-             <enum>Qt::MoveAction</enum>
-            </property>
-            <property name="movement">
-             <enum>QListView::Snap</enum>
-            </property>
-            <property name="selectionMode">
-             <enum>QAbstractItemView::NoSelection</enum>
-            </property>
-           </widget>
+           <layout class="QHBoxLayout" name="fieldsListLayout">
+            <item>
+             <widget class="QListWidget" name="fieldsList">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>3</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="alternatingRowColors">
+               <bool>true</bool>
+              </property>
+              <property name="dragDropMode">
+               <enum>QAbstractItemView::InternalMove</enum>
+              </property>
+              <property name="defaultDropAction">
+               <enum>Qt::MoveAction</enum>
+              </property>
+              <property name="movement">
+               <enum>QListView::Snap</enum>
+              </property>
+              <property name="selectionMode">
+               <enum>QAbstractItemView::SingleSelection</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="fieldsReorderButtons">
+              <item>
+               <spacer name="fieldsReorderSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>20</width>
+                  <height>10</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btnFieldUp">
+                <property name="toolTip">
+                 <string>Move the selected field up</string>
+                </property>
+                <property name="text">
+                 <string>Move Up</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="btnFieldDown">
+                <property name="toolTip">
+                 <string>Move the selected field down</string>
+                </property>
+                <property name="text">
+                 <string>Move Down</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="fieldsReorderSpacerBottom">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>20</width>
+                  <height>40</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+           </layout>
           </item>
           <item>
            <layout class="QHBoxLayout" name="lapAndNamesLayout">
