@@ -288,9 +288,43 @@
                  </property>
                 </widget>
                </item>
-              </layout>
-             </widget>
-            </item>
+               <item>
+                <widget class="QCheckBox" name="cbShowPositionChanges">
+                 <property name="text">
+                  <string>Show position change indicator</string>
+                 </property>
+                 <property name="checked">
+                  <bool>true</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <layout class="QHBoxLayout" name="positionIndicatorLayout">
+                 <item>
+                  <widget class="QLabel" name="lblPositionIndicatorDuration">
+                   <property name="text">
+                    <string>Position change indicator duration (s)</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QSpinBox" name="spinPosChangeDuration">
+                   <property name="minimum">
+                    <number>1</number>
+                   </property>
+                   <property name="maximum">
+                    <number>15</number>
+                   </property>
+                   <property name="value">
+                    <number>5</number>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+             </layout>
+            </widget>
+           </item>
            </layout>
           </item>
           <item>
