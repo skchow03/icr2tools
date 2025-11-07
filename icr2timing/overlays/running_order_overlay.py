@@ -81,6 +81,8 @@ class RunningOrderOverlayTable(QtCore.QObject):
         self._track_length: Optional[float] = None
         self._custom_fields: List[Tuple[str, int]] = []
         self._autosize_enabled: bool = True
+        self._showing_error: bool = False
+        self._last_error_msg: Optional[str] = None
 
         # NEW: track last resize time for throttling
         self._last_resize_time = QtCore.QTime.currentTime()
@@ -93,6 +95,11 @@ class RunningOrderOverlayTable(QtCore.QObject):
         return self._overlay
 
     def on_state_updated(self, state: RaceState, update_bests: bool = True):
+        if self._showing_error:
+            self._rebuild_headers()
+            self._showing_error = False
+            self._last_error_msg = None
+
         self._last_state = state
         self._track_length = state.track_length or None
         if update_bests:
@@ -279,6 +286,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
             t.setHorizontalHeaderLabels(["Error"])
             t.setItem(0, 0, QtWidgets.QTableWidgetItem(msg))
         self._overlay.resize_to_fit()
+        self._showing_error = True
 
 
 
