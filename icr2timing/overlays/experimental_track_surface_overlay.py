@@ -446,11 +446,9 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
                     driver = self._last_state.drivers.get(idx)
                     if driver and driver.car_number is not None:
                         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
-                        painter.drawText(
-                            point.x() + radius + 2,
-                            point.y() - radius - 2,
-                            str(driver.car_number),
-                        )
+                        text_x = int(round(point.x() + radius + 2))
+                        text_y = int(round(point.y() - radius - 2))
+                        painter.drawText(text_x, text_y, str(driver.car_number))
             except Exception as exc:  # pragma: no cover - defensive logging
                 log.error(
                     "[ExperimentalTrackSurfaceOverlay] ERROR drawing car %s: %s",
