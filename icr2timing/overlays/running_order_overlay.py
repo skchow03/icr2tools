@@ -328,6 +328,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
 
     def set_sort_by_best(self, enabled: bool):
         self._sort_by_best = enabled
+        self._rebuild_headers()
         if self._last_state:
             self.on_state_updated(self._last_state, update_bests=False)
 
@@ -362,18 +363,24 @@ class RunningOrderOverlayTable(QtCore.QObject):
 
     def _rebuild_headers(self):
         base_fields = [field for field in AVAILABLE_FIELDS if field.key in self._enabled_fields]
-        labels = [field.label for field in base_fields]
+        labels = [(field.label, field.key) for field in base_fields]
         for lbl, _ in self._custom_fields:
-            labels.append(lbl)
+            labels.append((lbl, None))
 
         for t in self._overlay.tables:
             t.setColumnCount(len(labels))
             header = t.horizontalHeader()
             header.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
-            for i, lbl in enumerate(labels):
-                header_item = QtWidgets.QTableWidgetItem(lbl)
+            for i, (base_label, key) in enumerate(labels):
+                display_label = base_label
+                if key == "best" and self._sort_by_best:
+                    display_label = f"{base_label} ▲"
+                elif key == "position" and not self._sort_by_best:
+                    display_label = f"{base_label} ▲"
+
+                header_item = QtWidgets.QTableWidgetItem(display_label)
                 t.setHorizontalHeaderItem(i, header_item)
-                width = cfg.col_widths.get(lbl, cfg.col_widths.get("default", 50))
+                width = cfg.col_widths.get(base_label, cfg.col_widths.get("default", 50))
                 t.setColumnWidth(i, width)
 
     def set_autosize_enabled(self, enabled: bool):
