@@ -214,6 +214,30 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
                                     intervals[struct_idx] = ("", None)
                                 continue
 
+                            is_first_lap_down_car = (
+                                lap_diff == 1
+                                and ahead_laps_down == 0
+                                and car_laps_down == 1
+                            )
+
+                            if is_first_lap_down_car:
+                                if (
+                                    car_state.lap_end_clock is not None
+                                    and ahead_state.lap_end_clock is not None
+                                ):
+                                    diff_clock = (
+                                        car_state.lap_end_clock
+                                        - ahead_state.lap_end_clock
+                                    ) & 0xFFFFFFFF
+                                    if diff_clock > 0x7FFFFFFF:
+                                        diff_clock -= 0x100000000
+                                    diff_clock = abs(diff_clock)
+                                    time_text = format_time_diff(diff_clock)
+                                    intervals[struct_idx] = (time_text, None)
+                                else:
+                                    intervals[struct_idx] = ("", None)
+                                continue
+
                             lap_text = f"-{lap_diff}L"
                             if (
                                 car_state.lap_end_clock is not None
