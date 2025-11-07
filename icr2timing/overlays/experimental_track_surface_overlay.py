@@ -70,7 +70,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
 
         self.trk = None
         self.cline: List[Tuple[float, float]] = []
-        self._centerline_points: List[Tuple[float, float]] = []
         self._surface_mesh: List[SurfaceStrip] = []
         self._bounds: Tuple[float, float, float, float] | None = None
 
@@ -94,24 +93,9 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         self.trk = load_trk_from_folder(track_folder)
         self.cline = get_cline_pos(self.trk)
 
-        self._centerline_points = self._sample_centerline()
         self._surface_mesh = self._build_surface_mesh()
         self._bounds = self._compute_bounds()
         self._autosize_window()
-
-    def _sample_centerline(self, step: int = 10000) -> List[Tuple[float, float]]:
-        if not self.trk:
-            return []
-
-        pts: List[Tuple[float, float]] = []
-        dlong = 0
-        while dlong <= self.trk.trklength:
-            x, y, _ = getxyz(self.trk, dlong, 0, self.cline)
-            pts.append((x, y))
-            dlong += step
-        if pts and pts[0] != pts[-1]:
-            pts.append(pts[0])
-        return pts
 
     def _build_surface_mesh(self) -> List[SurfaceStrip]:
         if not self.trk:
@@ -270,8 +254,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         points: List[Tuple[float, float]] = []
         for strip in self._surface_mesh:
             points.extend(strip.points)
-        points.extend(self._centerline_points)
-
         if not points:
             return None
 
@@ -335,7 +317,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
                 self._last_error_msg = str(exc)
             self.trk = None
             self._surface_mesh = []
-            self._centerline_points = []
             self._bounds = None
             self.update()
 
@@ -403,20 +384,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             painter.setBrush(QtGui.QBrush(fill_color))
             painter.setPen(QtGui.QPen(outline, 1.5))
             painter.drawPolygon(polygon)
-
-        # Overlay the sampled centreline
-        if self._centerline_points:
-            pen = QtGui.QPen(QtGui.QColor("white"), 1.5)
-            pen.setStyle(QtCore.Qt.DashLine)
-            painter.setPen(pen)
-            path = QtGui.QPainterPath()
-            for i, (x, y) in enumerate(self._centerline_points):
-                pt = self._map_point(x, y, scale, offsets)
-                if i == 0:
-                    path.moveTo(pt)
-                else:
-                    path.lineTo(pt)
-            painter.drawPath(path)
 
         self._draw_legend(painter)
 
