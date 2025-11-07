@@ -10,6 +10,8 @@ import configparser
 from dataclasses import dataclass
 import profile
 from typing import List, Optional, Tuple
+
+from icr2timing.overlays.running_order_overlay import POSITION_INDICATOR_LABEL
 import sys
 
 
@@ -85,9 +87,32 @@ class ProfileManager:
             except ValueError:
                 continue
 
+        raw_columns = [c.strip() for c in sec.get("columns", "").split(",") if c.strip()]
+        columns: List[str] = []
+        seen_labels = set()
+        for label in raw_columns:
+            if label and label not in seen_labels:
+                columns.append(label)
+                seen_labels.add(label)
+
+        indicator_flag = sec.getboolean("position_indicator_enabled", fallback=None)
+        if indicator_flag is None:
+            indicator_flag = True
+        if indicator_flag:
+            if POSITION_INDICATOR_LABEL not in columns:
+                try:
+                    insert_at = columns.index("Pos") + 1
+                except ValueError:
+                    insert_at = len(columns)
+                columns.insert(insert_at, POSITION_INDICATOR_LABEL)
+        else:
+            columns = [label for label in columns if label != POSITION_INDICATOR_LABEL]
+
+        indicator_enabled = POSITION_INDICATOR_LABEL in columns
+
         return Profile(
             name=name,
-            columns=[c.strip() for c in sec.get("columns", "").split(",") if c.strip()],
+            columns=columns,
             n_columns=sec.getint("n_columns", fallback=2),
             display_mode=sec.get("display_mode", fallback="time"),
             sort_by_best=sec.getboolean("sort_by_best", fallback=False),
@@ -113,7 +138,7 @@ class ProfileManager:
             radar_ai_behind_color=sec.get("radar_ai_behind_color", fallback="255,64,64,255"),
             radar_ai_alongside_color=sec.get("radar_ai_alongside_color", fallback="255,255,0,255"),
             position_indicator_duration=sec.getfloat("position_indicator_duration", fallback=5.0),
-            position_indicator_enabled=sec.getboolean("position_indicator_enabled", fallback=True),
+            position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,
         )
 
@@ -143,8 +168,9 @@ class ProfileManager:
         self._parser[profile.name]["radar_ai_ahead_color"] = profile.radar_ai_ahead_color
         self._parser[profile.name]["radar_ai_behind_color"] = profile.radar_ai_behind_color
         self._parser[profile.name]["radar_ai_alongside_color"] = profile.radar_ai_alongside_color
+        indicator_enabled = POSITION_INDICATOR_LABEL in profile.columns
         self._parser[profile.name]["position_indicator_duration"] = str(profile.position_indicator_duration)
-        self._parser[profile.name]["position_indicator_enabled"] = "true" if profile.position_indicator_enabled else "false"
+        self._parser[profile.name]["position_indicator_enabled"] = "true" if indicator_enabled else "false"
         # ✅ Save custom fields
         if profile.custom_fields:
             self._parser[profile.name]["custom_fields"] = ";".join(
@@ -195,7 +221,7 @@ class ProfileManager:
             radar_ai_behind_color=profile.radar_ai_behind_color,
             radar_ai_alongside_color=profile.radar_ai_alongside_color,
             position_indicator_duration=profile.position_indicator_duration,
-            position_indicator_enabled=profile.position_indicator_enabled,
+            position_indicator_enabled=POSITION_INDICATOR_LABEL in profile.columns,
             custom_fields=profile.custom_fields,
         )
         if self._parser.has_section(LAST_SESSION_KEY):

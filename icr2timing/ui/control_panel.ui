@@ -344,16 +344,6 @@
                 </widget>
                </item>
                <item>
-                <widget class="QCheckBox" name="cbShowPositionChanges">
-                 <property name="text">
-                  <string>Show position change indicator</string>
-                 </property>
-                 <property name="checked">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
                 <layout class="QHBoxLayout" name="positionIndicatorLayout">
                  <item>
                   <widget class="QLabel" name="lblPositionIndicatorDuration">

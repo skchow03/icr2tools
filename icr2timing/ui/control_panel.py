@@ -159,22 +159,12 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.cbAbbrev.stateChanged.connect(self._update_abbrev)
         self.cbSortBest.stateChanged.connect(self._update_sorting)
 
-        self.cbShowPositionChanges.setChecked(
-            self.ro_overlay.are_position_indicators_enabled()
-        )
-        self.cbShowPositionChanges.toggled.connect(
-            self._update_position_indicator_enabled
-        )
-
         # Position change indicator duration
         self.spinPosChangeDuration.setValue(
             int(round(self.ro_overlay.get_position_indicator_duration()))
         )
         self.spinPosChangeDuration.valueChanged.connect(
             lambda v: self.ro_overlay.set_position_indicator_duration(v)
-        )
-        self._update_position_indicator_enabled(
-            self.cbShowPositionChanges.isChecked()
         )
 
         # Lap display
@@ -207,6 +197,8 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         self.btnFieldUp.clicked.connect(lambda: self._move_selected_field(-1))
         self.btnFieldDown.clicked.connect(lambda: self._move_selected_field(1))
+
+        self._update_indicator_controls()
 
         # Combo for columns (1–4)
         for i in range(1, 5):
@@ -468,10 +460,10 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _update_abbrev(self):
         self.ro_overlay.set_use_abbreviations(self.cbAbbrev.isChecked())
 
-    def _update_position_indicator_enabled(self, enabled: bool):
-        self.ro_overlay.set_position_indicators_enabled(enabled)
-        self.spinPosChangeDuration.setEnabled(enabled)
-        self.lblPositionIndicatorDuration.setEnabled(enabled)
+    def _update_indicator_controls(self):
+        indicator_enabled = "position_indicator" in self.ro_overlay.get_enabled_fields()
+        self.spinPosChangeDuration.setEnabled(indicator_enabled)
+        self.lblPositionIndicatorDuration.setEnabled(indicator_enabled)
 
     def _collect_field_keys(self, include_unchecked: bool = False):
         keys = []
@@ -523,6 +515,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             return
         enabled = self._collect_field_keys()
         self.ro_overlay.set_enabled_fields(enabled)
+        self._update_indicator_controls()
 
     def _update_display_mode(self):
         mode = "time" if self.radioTime.isChecked() else "speed"
@@ -653,11 +646,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.cbAbbrev.setChecked(prof.use_abbrev)
         self.cbAutosize.setChecked(self.ro_overlay._autosize_enabled)
 
-        self.cbShowPositionChanges.blockSignals(True)
-        self.cbShowPositionChanges.setChecked(prof.position_indicator_enabled)
-        self.cbShowPositionChanges.blockSignals(False)
-        self._update_position_indicator_enabled(prof.position_indicator_enabled)
-
         self.spinPosChangeDuration.blockSignals(True)
         self.spinPosChangeDuration.setValue(int(round(prof.position_indicator_duration)))
         self.spinPosChangeDuration.blockSignals(False)
@@ -709,6 +697,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         ordered_keys = self._collect_field_keys()
         selected_labels = [key_to_label[k] for k in ordered_keys if k in key_to_label]
+        indicator_enabled = "position_indicator" in ordered_keys
 
         # Custom fields (only save checked)
         custom_fields = []
@@ -733,7 +722,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_y=self.prox_overlay.y(),
             radar_visible=self.prox_overlay.isVisible(),
             position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=self.cbShowPositionChanges.isChecked(),
+            position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,
         )
 
@@ -774,6 +763,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         enabled_keys = self.ro_overlay.get_enabled_fields()
         selected_labels = [key_to_label[k] for k in enabled_keys if k in key_to_label]
+        indicator_enabled = "position_indicator" in enabled_keys
 
         profile = Profile(
             name=name.strip(),
@@ -785,7 +775,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             window_x=self.ro_overlay.widget().x(),
             window_y=self.ro_overlay.widget().y(),
             position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=self.cbShowPositionChanges.isChecked(),
+            position_indicator_enabled=indicator_enabled,
         )
         # Radar state
         profile.radar_x = self.prox_overlay.x()
@@ -1128,6 +1118,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
         ordered_keys = self._collect_field_keys()
         selected_labels = [key_to_label[k] for k in ordered_keys if k in key_to_label]
+        indicator_enabled = "position_indicator" in ordered_keys
 
         custom_fields = []
         for i in range(self.customFieldList.count()):
@@ -1162,7 +1153,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
             radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=self.cbShowPositionChanges.isChecked(),
+            position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,   # ✅ new
         )
         self.profiles.save_last_session(profile)
