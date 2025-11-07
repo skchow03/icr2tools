@@ -205,7 +205,8 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
                             else:
                                 interval_text = ""
                         else:
-                            lap_text = f"-{lap_diff}L"
+                            adjusted_lap_diff = max(lap_diff - 1, 1)
+                            lap_text = f"-{adjusted_lap_diff}L"
                             if (
                                 car_state.lap_end_clock is not None
                                 and ahead_state.lap_end_clock is not None

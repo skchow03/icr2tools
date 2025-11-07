@@ -236,6 +236,58 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
         self.assertEqual(gap_text, "+0.400")
         self.assertNotIn("L", gap_text)
 
+    def test_lap_gap_text_subtracts_one_for_multiple_laps_down(self):
+        ahead_state = CarState(
+            struct_index=0,
+            laps_left=0,
+            laps_completed=150,
+            last_lap_ms=60000,
+            last_lap_valid=True,
+            laps_down=1,
+            lap_end_clock=None,
+            lap_start_clock=None,
+            car_status=0,
+            current_lp=0,
+            fuel_laps_remaining=0,
+            dlat=0,
+            dlong=0,
+            values=[0] * 133,
+        )
+
+        car_state = CarState(
+            struct_index=1,
+            laps_left=0,
+            laps_completed=148,
+            last_lap_ms=60500,
+            last_lap_valid=True,
+            laps_down=3,
+            lap_end_clock=None,
+            lap_start_clock=None,
+            car_status=0,
+            current_lp=0,
+            fuel_laps_remaining=0,
+            dlat=0,
+            dlong=0,
+            values=[0] * 133,
+        )
+
+        race_state = RaceState(
+            raw_count=2,
+            display_count=2,
+            total_laps=200,
+            order=[0, 1],
+            drivers={},
+            car_states={
+                0: ahead_state,
+                1: car_state,
+            },
+        )
+
+        intervals = compute_intervals_display(race_state)
+        gap_text, _ = intervals[1]
+
+        self.assertEqual(gap_text, "-1L")
+
 
 if __name__ == "__main__":
     unittest.main()
