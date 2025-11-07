@@ -127,110 +127,60 @@ def compute_gaps_display(state: RaceState) -> Dict[int, Tuple[str, Optional[str]
         return {idx: ("", None) for idx in getattr(state, "car_states", {}).keys()}
 
 
-def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional[str]]]:
-    """Return mapping struct_idx -> (text, color_hex) for intervals to car ahead."""
+def compute_intervals_display(state: RaceState, _last_intervals_cache: dict = {}) -> Dict[int, Tuple[str, Optional[str]]]:
+    """
+    Return mapping struct_idx -> (interval_to_car_ahead_text, color).
+    Now holds each car's previous interval until that car crosses the line (laps_completed changes),
+    preventing flicker between -1L and time gaps as cars straddle the finish line.
+    """
+    intervals: Dict[int, Tuple[str, Optional[str]]] = {}
+    prev_active: Optional[CarState] = None
 
-    intervals: Dict[int, Tuple[str, Optional[str]]] = {
-        idx: ("", None) for idx in getattr(state, "car_states", {}).keys()
-    }
+    for struct_idx in state.order:
+        car = state.car_states.get(struct_idx)
+        if not car:
+            continue
 
-    try:
-        previous_active_state: Optional[CarState] = None
+        text, color = "", None
 
-        for struct_idx in state.order:
-            if struct_idx is None:
-                continue
+        # reuse cached value if we haven't finished a new lap yet
+        last_entry = _last_intervals_cache.get(struct_idx)
+        last_lap = last_entry[2] if last_entry else None
+        if last_lap is not None and last_lap == car.laps_completed:
+            # keep showing old interval text and color
+            intervals[struct_idx] = (last_entry[0], last_entry[1])
+            if car.car_status == 0 and getattr(car, "current_lp", 0) != 3:
+                prev_active = car
+            continue
 
-            car_state = state.car_states.get(struct_idx)
-            if not car_state:
-                continue
+        # pitting/retired logic
+        if getattr(car, "current_lp", 0) == 3 and car.car_status == 0:
+            text, color = "Pitting", COLOR_PITTING
+        else:
+            retired = get_retirement_reason(car.car_status)
+            if retired:
+                text, color = retired, COLOR_RETIRED
+            elif prev_active is not None:
+                ahead = prev_active
+                lap_diff = ahead.laps_completed - car.laps_completed
 
-            interval_text = ""
-            interval_color: Optional[str] = None
+                if lap_diff == 0:
+                    if car.lap_end_clock is not None and ahead.lap_end_clock is not None:
+                        diff = (car.lap_end_clock - ahead.lap_end_clock) & 0xFFFFFFFF
+                        if diff > 0x7FFFFFFF:
+                            diff -= 0x100000000
+                        if diff < 0:
+                            diff = 0
+                        text = format_time_diff(diff)
+                elif lap_diff > 0:
+                    text = f"-{lap_diff}L"
 
-            if getattr(car_state, "current_lp", None) == 3 and car_state.car_status == 0:
-                interval_text = "Pitting"
-                interval_color = COLOR_PITTING
-            else:
-                retirement_reason = get_retirement_reason(car_state.car_status)
-                if retirement_reason:
-                    interval_text = retirement_reason
-                    interval_color = COLOR_RETIRED
-                else:
-                    if previous_active_state is None:
-                        interval_text = ""
-                    else:
-                        ahead_state = previous_active_state
+        intervals[struct_idx] = (text, color)
+        # store for next frame (text, color, laps_completed)
+        _last_intervals_cache[struct_idx] = (text, color, car.laps_completed)
 
-                        ahead_laps_down = getattr(ahead_state, "laps_down", None)
-                        car_laps_down = getattr(car_state, "laps_down", None)
+        # update ahead reference
+        if car.car_status == 0 and getattr(car, "current_lp", 0) != 3:
+            prev_active = car
 
-                        if (
-                            ahead_laps_down is not None
-                            and car_laps_down is not None
-                        ):
-                            lap_diff = car_laps_down - ahead_laps_down
-                        else:
-                            lap_diff = (
-                                ahead_state.laps_completed - car_state.laps_completed
-                            )
-
-                        if lap_diff < 0:
-                            interval_text = ""
-                        elif lap_diff == 0:
-                            if (
-                                car_state.lap_end_clock is not None
-                                and ahead_state.lap_end_clock is not None
-                            ):
-                                diff_clock = (
-                                    car_state.lap_end_clock - ahead_state.lap_end_clock
-                                ) & 0xFFFFFFFF
-                                if diff_clock > 0x7FFFFFFF:
-                                    diff_clock -= 0x100000000
-                                interval_text = format_time_diff(diff_clock)
-                            else:
-                                interval_text = ""
-                        elif lap_diff == 1:
-                            if (
-                                car_state.lap_end_clock is not None
-                                and ahead_state.lap_end_clock is not None
-                            ):
-                                diff_clock = (
-                                    car_state.lap_end_clock - ahead_state.lap_end_clock
-                                ) & 0xFFFFFFFF
-                                if diff_clock > 0x7FFFFFFF:
-                                    diff_clock -= 0x100000000
-                                diff_clock = abs(diff_clock)
-                                interval_text = format_time_diff(diff_clock)
-                            else:
-                                interval_text = ""
-                        else:
-                            adjusted_lap_diff = max(lap_diff - 1, 1)
-                            lap_text = f"-{adjusted_lap_diff}L"
-                            if (
-                                car_state.lap_end_clock is not None
-                                and ahead_state.lap_end_clock is not None
-                            ):
-                                diff_clock = (
-                                    car_state.lap_end_clock - ahead_state.lap_end_clock
-                                ) & 0xFFFFFFFF
-                                if diff_clock > 0x7FFFFFFF:
-                                    diff_clock -= 0x100000000
-                                diff_clock = abs(diff_clock)
-                                time_text = format_time_diff(diff_clock)
-                                interval_text = (
-                                    f"{lap_text} {time_text}" if time_text else lap_text
-                                )
-                            else:
-                                interval_text = lap_text
-
-            intervals[struct_idx] = (interval_text, interval_color)
-
-            if car_state.car_status == 0:
-                previous_active_state = car_state
-
-        return intervals
-
-    except Exception as e:
-        print(f"[gap_utils] Error in compute_intervals_display: {e}")
-        return intervals
+    return intervals
