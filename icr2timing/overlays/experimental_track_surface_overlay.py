@@ -10,7 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
 from icr2_core.trk.track_loader import load_trk_from_folder
-from icr2_core.trk.trk_utils import getxyz, get_cline_pos, color_from_ground_type
+from icr2_core.trk.trk_utils import getxyz, get_cline_pos
 from core.config import Config
 
 log = logging.getLogger(__name__)
@@ -38,14 +38,18 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
     inspection of asphalt, concrete, grass, gravel and other surfaces.
     """
 
-    LEGEND_LABELS = {
-        6: "Grass",
-        14: "Dry grass",
-        22: "Dirt",
-        30: "Sand",
-        38: "Concrete",
-        46: "Asphalt",
-        54: "Paint",
+    ASPHALT_TYPES = {38, 46, 54}
+    GRASS_TYPES = {6, 14, 22, 30}
+
+    ASPHALT_COLOR = "#9e9e9e"
+    GRASS_COLOR = "#2e7d32"
+
+    LP_COLORS = {
+        0: ("Race", QtGui.QColor.fromHsv(0, 0, 255)),
+        1: ("Pass 1", QtGui.QColor.fromHsv(120, 255, 255)),
+        2: ("Pass 2", QtGui.QColor.fromHsv(240, 255, 255)),
+        3: ("Pit", QtGui.QColor.fromHsv(60, 255, 255)),
+        4: ("Pace", QtGui.QColor.fromHsv(300, 255, 255)),
     }
 
     def __init__(self):
@@ -64,6 +68,9 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
 
         self._scale_factor = 0.5
         self._margin = 24
+        self._show_numbers = True
+        self._color_by_lp = False
+        self._bubble_size = 4
 
         self._last_state: RaceState | None = None
         self._drag_pos: QtCore.QPoint | None = None
@@ -369,8 +376,7 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
 
         # Draw surface strips
         for strip in self._surface_mesh:
-            color_name = color_from_ground_type(strip.ground_type) or "#808080"
-            base_color = QtGui.QColor(color_name)
+            base_color = self._color_for_ground(strip.ground_type)
             fill_color = QtGui.QColor(base_color)
             fill_color.setAlpha(180)
 
@@ -385,43 +391,84 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(outline, 1.5))
             painter.drawPolygon(polygon)
 
-        self._draw_legend(painter)
+        self._draw_cars(painter, scale, offsets)
+        if self._color_by_lp:
+            self._draw_lp_legend(painter)
 
-    def _draw_legend(self, painter: QtGui.QPainter) -> None:
-        used_types = sorted({strip.ground_type for strip in self._surface_mesh})
-        if not used_types:
+    def _color_for_ground(self, ground_type: int) -> QtGui.QColor:
+        if ground_type in self.ASPHALT_TYPES:
+            return QtGui.QColor(self.ASPHALT_COLOR)
+        if ground_type in self.GRASS_TYPES:
+            return QtGui.QColor(self.GRASS_COLOR)
+        # Default to asphalt for any unrecognised surface to avoid alternating colours.
+        return QtGui.QColor(self.ASPHALT_COLOR)
+
+    def _draw_cars(
+        self,
+        painter: QtGui.QPainter,
+        scale: float,
+        offsets: Tuple[float, float],
+    ) -> None:
+        if not self._last_state or not self.trk:
             return
 
-        font = QtGui.QFont("Arial", 8)
-        painter.setFont(font)
-        line_height = 16
-        box_size = 12
-        margin = 10
-        x = margin
-        y = margin
+        cfg = Config()
+        player_idx = cfg.player_index
 
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(QtGui.QColor(0, 0, 0, 160))
-        legend_height = line_height * len(used_types) + 10
-        legend_width = 140
-        painter.drawRoundedRect(x - 6, y - 6, legend_width, legend_height, 6, 6)
+        if self._show_numbers:
+            painter.setFont(QtGui.QFont("Arial", 8, QtGui.QFont.Bold))
 
-        for idx, ground_type in enumerate(used_types):
-            color_name = color_from_ground_type(ground_type) or "#808080"
-            color = QtGui.QColor(color_name)
-            color.setAlpha(200)
+        for idx, car_state in self._last_state.car_states.items():
+            try:
+                x, y, _ = getxyz(self.trk, car_state.dlong, car_state.dlat, self.cline)
+                point = self._map_point(x, y, scale, offsets)
 
+                lp = getattr(car_state, "current_lp", 0) or 0
+
+                if self._color_by_lp:
+                    _, color = self.LP_COLORS.get(
+                        lp,
+                        ("Other", QtGui.QColor.fromHsv((lp * 40) % 360, 255, 255)),
+                    )
+                    radius = self._bubble_size
+                elif idx == player_idx:
+                    color = QtGui.QColor("lime")
+                    radius = self._bubble_size * 2
+                else:
+                    color = QtGui.QColor("cyan")
+                    radius = self._bubble_size
+
+                painter.setBrush(QtGui.QBrush(color))
+                painter.setPen(QtGui.QPen(QtGui.QColor("black")))
+                painter.drawEllipse(point, radius, radius)
+
+                if self._show_numbers:
+                    driver = self._last_state.drivers.get(idx)
+                    if driver and driver.car_number is not None:
+                        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+                        painter.drawText(
+                            point.x() + radius + 2,
+                            point.y() - radius - 2,
+                            str(driver.car_number),
+                        )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                log.error(
+                    "[ExperimentalTrackSurfaceOverlay] ERROR drawing car %s: %s",
+                    idx,
+                    exc,
+                )
+
+    def _draw_lp_legend(self, painter: QtGui.QPainter) -> None:
+        painter.setFont(QtGui.QFont("Arial", 8))
+        x0, y0 = 10, 10
+        line_height = 14
+
+        for i, (label, color) in enumerate(self.LP_COLORS.values()):
             painter.setBrush(color)
             painter.setPen(QtGui.QPen(QtGui.QColor("black")))
-            painter.drawRect(x, y + idx * line_height, box_size, box_size)
-
-            label = self.LEGEND_LABELS.get(ground_type, f"Type {ground_type}")
+            painter.drawRect(x0, y0 + i * line_height, 12, 12)
             painter.setPen(QtGui.QPen(QtGui.QColor("white")))
-            painter.drawText(
-                x + box_size + 6,
-                y + idx * line_height + box_size - 2,
-                label,
-            )
+            painter.drawText(x0 + 18, y0 + 10 + i * line_height - 2, label)
 
     # ------------------------------------------------------------------
     # Public setters
@@ -429,6 +476,18 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
     def set_scale_factor(self, factor: float) -> None:
         self._scale_factor = max(0.1, min(3.0, factor))
         self._autosize_window()
+        self.update()
+
+    def set_show_numbers(self, enabled: bool) -> None:
+        self._show_numbers = enabled
+        self.update()
+
+    def set_color_by_lp(self, enabled: bool) -> None:
+        self._color_by_lp = enabled
+        self.update()
+
+    def set_bubble_size(self, size: int) -> None:
+        self._bubble_size = max(1, size)
         self.update()
 
     # ------------------------------------------------------------------
