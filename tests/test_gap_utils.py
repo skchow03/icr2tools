@@ -182,6 +182,60 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
         self.assertEqual(first_gap, "+0.500")
         self.assertEqual(second_gap, "+0.300")
 
+    def test_gap_between_lapped_cars_uses_time_when_one_lap_apart(self):
+        first_lap_down = CarState(
+            struct_index=0,
+            laps_left=0,
+            laps_completed=150,
+            last_lap_ms=60000,
+            last_lap_valid=True,
+            laps_down=1,
+            lap_end_clock=200000,
+            lap_start_clock=195000,
+            car_status=0,
+            current_lp=0,
+            fuel_laps_remaining=0,
+            dlat=0,
+            dlong=0,
+            values=[0] * 133,
+        )
+
+        second_lap_down = CarState(
+            struct_index=1,
+            laps_left=0,
+            laps_completed=149,
+            last_lap_ms=60250,
+            last_lap_valid=True,
+            laps_down=2,
+            lap_end_clock=200400,
+            lap_start_clock=195150,
+            car_status=0,
+            current_lp=0,
+            fuel_laps_remaining=0,
+            dlat=0,
+            dlong=0,
+            values=[0] * 133,
+        )
+
+        race_state = RaceState(
+            raw_count=2,
+            display_count=2,
+            total_laps=200,
+            order=[0, 1],
+            drivers={},
+            car_states={
+                0: first_lap_down,
+                1: second_lap_down,
+            },
+        )
+
+        intervals = compute_intervals_display(race_state)
+
+        gap_text, _ = intervals[1]
+
+        self.assertEqual(gap_text, "+0.400")
+        self.assertNotIn("L", gap_text)
+
 
 if __name__ == "__main__":
     unittest.main()
