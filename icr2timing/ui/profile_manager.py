@@ -37,6 +37,8 @@ class Profile:
     radar_ai_ahead_color: str = "0,128,255,255"
     radar_ai_behind_color: str = "255,64,64,255"
     radar_ai_alongside_color: str = "255,255,0,255"
+    position_indicator_duration: float = 5.0
+    position_indicator_enabled: bool = True
     custom_fields: List[Tuple[str, int]] = None   # ✅ NEW
 
     def __post_init__(self):
@@ -110,6 +112,8 @@ class ProfileManager:
             radar_ai_ahead_color=sec.get("radar_ai_ahead_color", fallback="0,128,255,255"),
             radar_ai_behind_color=sec.get("radar_ai_behind_color", fallback="255,64,64,255"),
             radar_ai_alongside_color=sec.get("radar_ai_alongside_color", fallback="255,255,0,255"),
+            position_indicator_duration=sec.getfloat("position_indicator_duration", fallback=5.0),
+            position_indicator_enabled=sec.getboolean("position_indicator_enabled", fallback=True),
             custom_fields=custom_fields,
         )
 
@@ -139,6 +143,8 @@ class ProfileManager:
         self._parser[profile.name]["radar_ai_ahead_color"] = profile.radar_ai_ahead_color
         self._parser[profile.name]["radar_ai_behind_color"] = profile.radar_ai_behind_color
         self._parser[profile.name]["radar_ai_alongside_color"] = profile.radar_ai_alongside_color
+        self._parser[profile.name]["position_indicator_duration"] = str(profile.position_indicator_duration)
+        self._parser[profile.name]["position_indicator_enabled"] = "true" if profile.position_indicator_enabled else "false"
         # ✅ Save custom fields
         if profile.custom_fields:
             self._parser[profile.name]["custom_fields"] = ";".join(
@@ -188,6 +194,8 @@ class ProfileManager:
             radar_ai_ahead_color=profile.radar_ai_ahead_color,
             radar_ai_behind_color=profile.radar_ai_behind_color,
             radar_ai_alongside_color=profile.radar_ai_alongside_color,
+            position_indicator_duration=profile.position_indicator_duration,
+            position_indicator_enabled=profile.position_indicator_enabled,
             custom_fields=profile.custom_fields,
         )
         if self._parser.has_section(LAST_SESSION_KEY):

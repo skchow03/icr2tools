@@ -5,8 +5,9 @@ Controller: renders RaceState into an OverlayTableWindow.
 Applies lap formatting, gaps, best-lap colors, abbreviations, etc.
 """
 
-from typing import Optional, List, Tuple, NamedTuple
+from typing import Optional, List, Tuple, NamedTuple, Dict
 import math
+import time
 from PyQt5 import QtCore, QtWidgets, QtGui
 
 import logging
@@ -88,6 +89,13 @@ class RunningOrderOverlayTable(QtCore.QObject):
         self._last_resize_time = QtCore.QTime.currentTime()
         self._resize_throttle_ms = cfg.resize_throttle_ms
 
+        # Track recent position changes for indicator arrows
+        self._last_positions: Dict[int, int] = {}
+        self._position_changes: Dict[int, Tuple[str, float]] = {}
+        self._position_indicator_duration: float = 5.0
+        self._position_indicator_enabled: bool = True
+        self._indicator_icons: Dict[str, QtGui.QIcon] = {}
+
         self._rebuild_headers()
 
     # --- BaseOverlay API ---
@@ -121,6 +129,37 @@ class RunningOrderOverlayTable(QtCore.QObject):
         gaps_display = compute_gaps_display(state)
 
         order = list(state.order)
+        now_monotonic = time.monotonic()
+
+        new_positions: Dict[int, int] = {}
+        for pos, struct_idx in enumerate(order, start=1):
+            if struct_idx is None:
+                continue
+            new_positions[struct_idx] = pos
+
+        if self._position_indicator_enabled and self._last_positions:
+            for struct_idx, new_pos in new_positions.items():
+                prev_pos = self._last_positions.get(struct_idx)
+                if prev_pos is None or prev_pos == new_pos:
+                    continue
+                direction = "gain" if new_pos < prev_pos else "loss"
+                self._position_changes[struct_idx] = (direction, now_monotonic)
+        elif not self._position_indicator_enabled:
+            self._position_changes.clear()
+
+        self._last_positions = new_positions
+
+        if self._position_indicator_enabled:
+            expiry = self._position_indicator_duration
+            to_remove = [
+                struct_idx
+                for struct_idx, (_, ts) in self._position_changes.items()
+                if struct_idx not in new_positions or (now_monotonic - ts) > expiry
+            ]
+            for struct_idx in to_remove:
+                self._position_changes.pop(struct_idx, None)
+        else:
+            self._position_changes.clear()
 
         # --- Safe sort by best lap ---
         if self._sort_by_best:
@@ -228,7 +267,11 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     laps_since_yellow_val = car_state.values[CAR_STATE_INDEX_LAPS_SINCE_YELLOW]
 
                 values = {
-                    "position": (global_row + 1, None),
+                    "position": (
+                        global_row + 1,
+                        None,
+                        self._get_position_indicator_icon(struct_idx, now_monotonic),
+                    ),
                     "car_number": (driver.car_number if driver else "", None),
                     "driver": (names_map.get(struct_idx, driver.name if driver else ""), None),
                     "laps": (car_state.laps_completed if car_state else "", None),
@@ -256,13 +299,22 @@ class RunningOrderOverlayTable(QtCore.QObject):
                 for field in AVAILABLE_FIELDS:
                     if field.key not in self._enabled_fields:
                         continue
-                    txt, color = values[field.key]
+                    value_entry = values[field.key]
+                    if len(value_entry) == 3:
+                        txt, color, icon = value_entry
+                    else:
+                        txt, color = value_entry
+                        icon = None
                     item = self._get_or_create_item(table, row, col)
                     item.setText("" if txt is None else str(txt))
                     if color:
                         item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
                     else:
                         item.setForeground(QtGui.QBrush())
+                    if icon:
+                        item.setIcon(icon)
+                    else:
+                        item.setIcon(QtGui.QIcon())
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor(cfg.player_row)))
                     else:
@@ -277,6 +329,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
                         item.setForeground(QtGui.QBrush(QtGui.QColor(color)))
                     else:
                         item.setForeground(QtGui.QBrush())
+                    item.setIcon(QtGui.QIcon())
                     if struct_idx == PLAYER_STRUCT_IDX:
                         item.setBackground(QtGui.QBrush(QtGui.QColor("#444")))
                     else:
@@ -398,6 +451,72 @@ class RunningOrderOverlayTable(QtCore.QObject):
     def get_enabled_fields(self) -> List[str]:
         """Return the active overlay field keys in order."""
         return list(self._enabled_fields)
+
+    def set_position_indicator_duration(self, seconds: float):
+        seconds = max(1.0, min(15.0, float(seconds)))
+        self._position_indicator_duration = seconds
+
+    def get_position_indicator_duration(self) -> float:
+        return self._position_indicator_duration
+
+    def _get_position_indicator_icon(self, struct_idx: int, now_monotonic: float) -> Optional[QtGui.QIcon]:
+        if not self._position_indicator_enabled:
+            return None
+
+        change = self._position_changes.get(struct_idx)
+        if not change:
+            return None
+        direction, timestamp = change
+        if (now_monotonic - timestamp) > self._position_indicator_duration:
+            self._position_changes.pop(struct_idx, None)
+            return None
+        return self._build_indicator_icon(direction)
+
+    def set_position_indicators_enabled(self, enabled: bool):
+        enabled = bool(enabled)
+        if self._position_indicator_enabled == enabled:
+            return
+        self._position_indicator_enabled = enabled
+        if not enabled:
+            self._position_changes.clear()
+        if self._last_state:
+            self.on_state_updated(self._last_state, update_bests=False)
+
+    def are_position_indicators_enabled(self) -> bool:
+        return self._position_indicator_enabled
+
+    def _build_indicator_icon(self, direction: str) -> QtGui.QIcon:
+        if direction in self._indicator_icons:
+            return self._indicator_icons[direction]
+
+        size = 12
+        pixmap = QtGui.QPixmap(size, size)
+        pixmap.fill(QtCore.Qt.transparent)
+
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        if direction == "gain":
+            color = QtGui.QColor(0, 200, 0)
+            points = [
+                QtCore.QPointF(size / 2, size * 0.15),
+                QtCore.QPointF(size * 0.85, size * 0.85),
+                QtCore.QPointF(size * 0.15, size * 0.85),
+            ]
+        else:
+            color = QtGui.QColor(220, 40, 40)
+            points = [
+                QtCore.QPointF(size * 0.15, size * 0.15),
+                QtCore.QPointF(size * 0.85, size * 0.15),
+                QtCore.QPointF(size / 2, size * 0.85),
+            ]
+        painter.setBrush(QtGui.QBrush(color))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawPolygon(QtGui.QPolygonF(points))
+        painter.end()
+
+        icon = QtGui.QIcon(pixmap)
+        self._indicator_icons[direction] = icon
+        return icon
 
 # Register class as a virtual subclass of BaseOverlay
 BaseOverlay.register(RunningOrderOverlayTable)

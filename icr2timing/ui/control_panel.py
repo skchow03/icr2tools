@@ -159,6 +159,24 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.cbAbbrev.stateChanged.connect(self._update_abbrev)
         self.cbSortBest.stateChanged.connect(self._update_sorting)
 
+        self.cbShowPositionChanges.setChecked(
+            self.ro_overlay.are_position_indicators_enabled()
+        )
+        self.cbShowPositionChanges.toggled.connect(
+            self._update_position_indicator_enabled
+        )
+
+        # Position change indicator duration
+        self.spinPosChangeDuration.setValue(
+            int(round(self.ro_overlay.get_position_indicator_duration()))
+        )
+        self.spinPosChangeDuration.valueChanged.connect(
+            lambda v: self.ro_overlay.set_position_indicator_duration(v)
+        )
+        self._update_position_indicator_enabled(
+            self.cbShowPositionChanges.isChecked()
+        )
+
         # Lap display
         self.radioTime.setChecked(True)
         self.radioTime.toggled.connect(self._update_display_mode)
@@ -435,6 +453,11 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _update_abbrev(self):
         self.ro_overlay.set_use_abbreviations(self.cbAbbrev.isChecked())
 
+    def _update_position_indicator_enabled(self, enabled: bool):
+        self.ro_overlay.set_position_indicators_enabled(enabled)
+        self.spinPosChangeDuration.setEnabled(enabled)
+        self.lblPositionIndicatorDuration.setEnabled(enabled)
+
     def _update_fields(self):
         enabled = [k for k, cb in self.field_checks.items() if cb.isChecked()]
         self.ro_overlay.set_enabled_fields(enabled)
@@ -535,6 +558,16 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.cbAbbrev.setChecked(prof.use_abbrev)
         self.cbAutosize.setChecked(self.ro_overlay._autosize_enabled)
 
+        self.cbShowPositionChanges.blockSignals(True)
+        self.cbShowPositionChanges.setChecked(prof.position_indicator_enabled)
+        self.cbShowPositionChanges.blockSignals(False)
+        self._update_position_indicator_enabled(prof.position_indicator_enabled)
+
+        self.spinPosChangeDuration.blockSignals(True)
+        self.spinPosChangeDuration.setValue(int(round(prof.position_indicator_duration)))
+        self.spinPosChangeDuration.blockSignals(False)
+        self.ro_overlay.set_position_indicator_duration(prof.position_indicator_duration)
+
         self.ro_overlay.widget().move(prof.window_x, prof.window_y)
 
         if self.ro_overlay._last_state:
@@ -603,6 +636,8 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_x=self.prox_overlay.x(),
             radar_y=self.prox_overlay.y(),
             radar_visible=self.prox_overlay.isVisible(),
+            position_indicator_duration=self.spinPosChangeDuration.value(),
+            position_indicator_enabled=self.cbShowPositionChanges.isChecked(),
             custom_fields=custom_fields,
         )
 
@@ -653,6 +688,8 @@ class ControlPanel(QtWidgets.QMainWindow):
             use_abbrev=self.cbAbbrev.isChecked(),
             window_x=self.ro_overlay.widget().x(),
             window_y=self.ro_overlay.widget().y(),
+            position_indicator_duration=self.spinPosChangeDuration.value(),
+            position_indicator_enabled=self.cbShowPositionChanges.isChecked(),
         )
         # Radar state
         profile.radar_x = self.prox_overlay.x()
@@ -1029,6 +1066,8 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
             radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
             radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
+            position_indicator_duration=self.spinPosChangeDuration.value(),
+            position_indicator_enabled=self.cbShowPositionChanges.isChecked(),
             custom_fields=custom_fields,   # ✅ new
         )
         self.profiles.save_last_session(profile)
