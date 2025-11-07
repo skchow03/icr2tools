@@ -11,9 +11,9 @@
 # All parameters read from [radar] in settings.ini via Config().
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-from overlays.base_overlay import BaseOverlay
+from icr2timing.overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
-from core.config import Config
+from icr2timing.core.config import Config
 
 # ------------------------------------------------------------
 # Helpers

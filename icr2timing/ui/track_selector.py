@@ -1,6 +1,6 @@
 import os
 from PyQt5 import QtWidgets, QtCore
-from core.config import Config
+from icr2timing.core.config import Config
 
 
 class TrackSelector(QtWidgets.QWidget):

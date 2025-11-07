@@ -25,7 +25,7 @@ from icr2_core.model import RaceState
 from icr2_core.reader import MemoryReader
 from icr2timing.core.car_field_definitions import CarFieldDefinition, ensure_field_definitions
 from icr2timing.core.config import Config
-from ui.car_value_helpers import (
+from icr2timing.ui.car_value_helpers import (
     CarValueRecorderController,
     FrozenValueStore,
     ValueBarDelegate,

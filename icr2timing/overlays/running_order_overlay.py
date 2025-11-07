@@ -13,12 +13,12 @@ import logging
 log = logging.getLogger(__name__)
 
 from icr2_core.model import RaceState
-from analysis.best_laps import BestLapTracker
-from analysis.name_utils import compute_compact_names, compute_abbreviations
-from analysis.gap_utils import compute_gaps_display
-from core.config import Config
-from overlays.overlay_table_window import OverlayTableWindow
-from overlays.base_overlay import BaseOverlay
+from icr2timing.analysis.best_laps import BestLapTracker
+from icr2timing.analysis.name_utils import compute_compact_names, compute_abbreviations
+from icr2timing.analysis.gap_utils import compute_gaps_display
+from icr2timing.core.config import Config
+from icr2timing.overlays.overlay_table_window import OverlayTableWindow
+from icr2timing.overlays.base_overlay import BaseOverlay
 
 
 
@@ -187,7 +187,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
                             if diff <= 0:
                                 best_gap_txt = ""
                             else:
-                                from analysis.gap_utils import format_time_diff
+                                from icr2timing.analysis.gap_utils import format_time_diff
                                 best_gap_txt = format_time_diff(diff)
                         else:
                             best_gap_txt = ""
