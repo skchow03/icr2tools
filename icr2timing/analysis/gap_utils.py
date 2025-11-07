@@ -145,15 +145,20 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
             if not car_state:
                 continue
 
+            interval_text = ""
+            interval_color: Optional[str] = None
+
             if getattr(car_state, "current_lp", None) == 3 and car_state.car_status == 0:
-                intervals[struct_idx] = ("Pitting", COLOR_PITTING)
+                interval_text = "Pitting"
+                interval_color = COLOR_PITTING
             else:
                 retirement_reason = get_retirement_reason(car_state.car_status)
                 if retirement_reason:
-                    intervals[struct_idx] = (retirement_reason, COLOR_RETIRED)
+                    interval_text = retirement_reason
+                    interval_color = COLOR_RETIRED
                 else:
                     if previous_active_state is None:
-                        intervals[struct_idx] = ("", None)
+                        interval_text = ""
                     else:
                         ahead_state = previous_active_state
 
@@ -171,7 +176,7 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
                             )
 
                         if lap_diff < 0:
-                            intervals[struct_idx] = ("", None)
+                            interval_text = ""
                         elif lap_diff == 0:
                             if (
                                 car_state.lap_end_clock is not None
@@ -182,15 +187,10 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
                                 ) & 0xFFFFFFFF
                                 if diff_clock > 0x7FFFFFFF:
                                     diff_clock -= 0x100000000
-                                intervals[struct_idx] = (
-                                    format_time_diff(diff_clock),
-                                    None,
-                                )
+                                interval_text = format_time_diff(diff_clock)
                             else:
-                                intervals[struct_idx] = ("", None)
+                                interval_text = ""
                         else:
-                            # Only display a lap deficit if the trailing car is
-                            # actually further behind relative to the leader.
                             if (
                                 ahead_laps_down is not None
                                 and car_laps_down is not None
@@ -206,21 +206,14 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
                                     ) & 0xFFFFFFFF
                                     if diff_clock > 0x7FFFFFFF:
                                         diff_clock -= 0x100000000
-                                    intervals[struct_idx] = (
-                                        format_time_diff(diff_clock),
-                                        None,
-                                    )
+                                    interval_text = format_time_diff(diff_clock)
                                 else:
-                                    intervals[struct_idx] = ("", None)
-                                continue
-
-                            is_first_lap_down_car = (
+                                    interval_text = ""
+                            elif (
                                 lap_diff == 1
                                 and ahead_laps_down == 0
                                 and car_laps_down == 1
-                            )
-
-                            if is_first_lap_down_car:
+                            ):
                                 if (
                                     car_state.lap_end_clock is not None
                                     and ahead_state.lap_end_clock is not None
@@ -232,30 +225,29 @@ def compute_intervals_display(state: RaceState) -> Dict[int, Tuple[str, Optional
                                     if diff_clock > 0x7FFFFFFF:
                                         diff_clock -= 0x100000000
                                     diff_clock = abs(diff_clock)
-                                    time_text = format_time_diff(diff_clock)
-                                    intervals[struct_idx] = (time_text, None)
+                                    interval_text = format_time_diff(diff_clock)
                                 else:
-                                    intervals[struct_idx] = ("", None)
-                                continue
-
-                            lap_text = f"-{lap_diff}L"
-                            if (
-                                car_state.lap_end_clock is not None
-                                and ahead_state.lap_end_clock is not None
-                            ):
-                                diff_clock = (
-                                    car_state.lap_end_clock - ahead_state.lap_end_clock
-                                ) & 0xFFFFFFFF
-                                if diff_clock > 0x7FFFFFFF:
-                                    diff_clock -= 0x100000000
-                                diff_clock = abs(diff_clock)
-                                time_text = format_time_diff(diff_clock)
-                                if time_text:
-                                    intervals[struct_idx] = (f"{lap_text} {time_text}", None)
-                                else:
-                                    intervals[struct_idx] = (lap_text, None)
+                                    interval_text = ""
                             else:
-                                intervals[struct_idx] = (lap_text, None)
+                                lap_text = f"-{lap_diff}L"
+                                if (
+                                    car_state.lap_end_clock is not None
+                                    and ahead_state.lap_end_clock is not None
+                                ):
+                                    diff_clock = (
+                                        car_state.lap_end_clock - ahead_state.lap_end_clock
+                                    ) & 0xFFFFFFFF
+                                    if diff_clock > 0x7FFFFFFF:
+                                        diff_clock -= 0x100000000
+                                    diff_clock = abs(diff_clock)
+                                    time_text = format_time_diff(diff_clock)
+                                    interval_text = (
+                                        f"{lap_text} {time_text}" if time_text else lap_text
+                                    )
+                                else:
+                                    interval_text = lap_text
+
+            intervals[struct_idx] = (interval_text, interval_color)
 
             if car_state.car_status == 0:
                 previous_active_state = car_state
