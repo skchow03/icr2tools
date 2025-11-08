@@ -105,6 +105,20 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._update_title()
 
     # ------------------------------------------------------------------
+    def set_backend(self, mem=None, cfg: Optional[Config] = None) -> None:
+        """Update the memory/config references after reconnecting."""
+        if mem is not None:
+            self._mem = mem
+        if cfg is not None:
+            self._cfg = cfg
+            self._values_per_car = self._cfg.car_state_size // 4
+            self._field_definitions = tuple(ensure_field_definitions(self._values_per_car))
+            self._range_tracker = ValueRangeTracker(self._values_per_car)
+            self._locked_values = FrozenValueStore()
+            self._configure_table()
+            self._update_title()
+
+    # ------------------------------------------------------------------
     @property
     def car_index(self) -> int:
         return self._car_index

@@ -124,6 +124,13 @@ class TrackMapOverlay(QtWidgets.QWidget):
         self.resize(window_w, window_h)
         #print(f"[TrackMapOverlay] Resized overlay to {window_w} x {window_h} (aspect {aspect:.2f}, scale {self._scale_factor})")
 
+    def apply_config(self, cfg: Config):
+        """Replace the active Config reference and clear cached track data."""
+        self._config = cfg
+        self._loaded_track_name = None
+        self.trk = None
+        self._sampled_pts = []
+        self._sampled_bounds = None
 
     # -----------------------------
     # BaseOverlay API

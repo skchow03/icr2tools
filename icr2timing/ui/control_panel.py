@@ -6,7 +6,7 @@ Uses OverlayManager (multi-overlay) + ProfileManager.
 """
 
 import time
-import os, configparser, sys
+import os
 from PyQt5 import QtWidgets, QtCore, uic, QtGui
 
 
@@ -25,9 +25,11 @@ from icr2timing.overlays.experimental_track_surface_overlay import (
     ExperimentalTrackSurfaceOverlay,
 )
 from icr2timing.overlays.individual_car_overlay import IndividualCarOverlay
-from icr2timing.core.config import Config
+from icr2timing.core.config import Config, reload_settings
+from icr2timing.core.installations import InstallationManager, Installation
 from icr2timing.core.version import __version__
 from icr2timing.core.telemetry_laps import TelemetryLapLogger
+from icr2timing.ui.installation_editor import InstallationEditorDialog
 
 
 CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
@@ -35,6 +37,7 @@ CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
 
 class ControlPanel(QtWidgets.QMainWindow):
     exe_path_changed = QtCore.pyqtSignal(str)
+    installation_switch_requested = QtCore.pyqtSignal(str, str)
 
     def __init__(self, updater, mem=None, cfg=None):
         super().__init__()
@@ -43,10 +46,15 @@ class ControlPanel(QtWidgets.QMainWindow):
             self
         )
 
-        self.updater = updater
-        self._mem = mem
+        self.updater = None
+        self._mem = None
         self._cfg = cfg or Config()
         self._latest_state = None
+        self._updater_thread = None
+
+        self.installations = InstallationManager()
+        self._running_installation_key = self.installations.get_active_key()
+        self._suppress_installation_events = False
 
         # --- Overlay Manager ---
         self.manager = OverlayManager()
@@ -55,9 +63,6 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Radar handled separately (not added to OverlayManager)
         self.prox_overlay = ProximityOverlay()
-        if self.updater:
-            self.updater.state_updated.connect(self.prox_overlay.on_state_updated)
-            self.updater.error.connect(self.prox_overlay.on_error)
 
         # After creating self.prox_overlay
         radar_cfg = self.prox_overlay.cfg
@@ -97,31 +102,20 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.btnBehindColor.clicked.connect(lambda: self._pick_radar_color("behind"))
         self.btnAlongColor.clicked.connect(lambda: self._pick_radar_color("alongside"))
 
-        if self.updater:
-            self.manager.connect_updater(self.updater)
-            self.updater.error.connect(self._on_error_from_updater)
+        # Updater connections handled in attach_runtime()
 
         # Track map overlay
         self.track_overlay = TrackMapOverlay()
-        if self.updater:
-            self.updater.state_updated.connect(self.track_overlay.on_state_updated)
-            self.updater.error.connect(self.track_overlay.on_error)
 
         # Experimental surface overlay
         self.surface_overlay = ExperimentalTrackSurfaceOverlay()
         self.surface_overlay.set_scale_factor(self.track_overlay._scale_factor)
-        if self.updater:
-            self.updater.state_updated.connect(self.surface_overlay.on_state_updated)
-            self.updater.error.connect(self.surface_overlay.on_error)
 
         # Individual car overlay
         self.indiv_overlay = IndividualCarOverlay(
-            mem=self._mem, cfg=self._cfg, status_callback=self.statusbar.showMessage
+            mem=None, cfg=self._cfg, status_callback=self.statusbar.showMessage
         )
         self.indiv_overlay.set_status_callback(self.statusbar.showMessage)
-        if self.updater:
-            self.updater.state_updated.connect(self.indiv_overlay.on_state_updated)
-            self.updater.error.connect(self.indiv_overlay.on_error)
 
         self.btnToggleIndividualTelemetry.clicked.connect(self._toggle_indiv_overlay)
         self.selectIndividualCar.currentIndexChanged.connect(self._on_select_individual_car)
@@ -223,8 +217,6 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Other
         self.aboutButton.clicked.connect(self.show_about_dialog)
-        if self.updater:
-            self.updater.state_updated.connect(self._on_state_updated_update_carlist)
 
         self.cbOBSCapture.stateChanged.connect(
             lambda s: self.set_obs_capture_mode(s == QtCore.Qt.Checked)
@@ -246,9 +238,14 @@ class ControlPanel(QtWidgets.QMainWindow):
         # Initialize overlay fields
         self._update_fields()
 
-        # --- Game EXE selection ---
+        # --- Installation controls ---
+        self.comboInstallations.currentIndexChanged.connect(self._on_installation_changed)
+        self.btnAddInstallation.clicked.connect(self._add_installation)
+        self.btnEditInstallation.clicked.connect(self._edit_installation)
         self.btnSelectExe.clicked.connect(self._choose_exe)
-        self.lblExePath.setText(self._current_exe_path())
+        self._refresh_installations(self.installations.get_active_key())
+
+        self.attach_runtime(updater, mem, self._cfg)
 
         # --- Track Map Settings tab connections ---
         # Scale slider (value is 10–200, map to 0.1–2.0 scale factor)
@@ -292,23 +289,112 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.prox_overlay.update()  # ✅ force redraw using loaded settings
 
     # -------------------------------
-    # EXE path handling
+    # Installation handling
     # -------------------------------
-    def _current_exe_path(self) -> str:
-        cfg = Config()
-        return cfg.game_exe or "No EXE selected"
+    def _refresh_installations(self, select_key: str | None = None):
+        installs = self.installations.list_installations()
+        if select_key is None:
+            select_key = self.installations.get_active_key()
 
-    def _save_exe_path(self, path: str):
-        cfgfile = os.path.join(os.path.dirname(sys.argv[0]), "settings.ini")
-        parser = configparser.ConfigParser()
-        parser.read(cfgfile)
-        if "paths" not in parser:
-            parser.add_section("paths")
-        parser["paths"]["game_exe"] = path
-        with open(cfgfile, "w") as f:
-            parser.write(f)
+        self._suppress_installation_events = True
+        self.comboInstallations.clear()
+        for inst in installs:
+            self.comboInstallations.addItem(inst.name, inst.key)
+        if select_key:
+            idx = self.comboInstallations.findData(select_key)
+            if idx >= 0:
+                self.comboInstallations.setCurrentIndex(idx)
+        self._suppress_installation_events = False
+
+        active = self.installations.get_installation(select_key) if select_key else None
+        self._apply_installation(active)
+
+    def _apply_installation(self, installation: Installation | None):
+        if not installation:
+            self.lblExePath.setText("No EXE selected")
+            self.lblExePath.setToolTip("")
+            self.lblInstallDetails.setText("Version: — | Keywords: —")
+            return
+
+        exe_path = installation.exe_path or ""
+        display_path = exe_path or "No EXE selected"
+        self.lblExePath.setText(display_path)
+        self.lblExePath.setToolTip(exe_path)
+
+        keywords = installation.keywords or []
+        keyword_text = ", ".join(keywords) if keywords else "—"
+        details = f"Version: {installation.version.upper()} | Keywords: {keyword_text}"
+        self.lblInstallDetails.setText(details)
+
+    def _on_installation_changed(self, index: int):
+        if self._suppress_installation_events:
+            return
+        key = self.comboInstallations.itemData(index)
+        if not key:
+            return
+        previous = self._running_installation_key
+        self._request_installation_switch(key, previous)
+
+    def _request_installation_switch(self, key: str, previous: str | None):
+        inst = self.installations.set_active(key)
+        reload_settings()
+        self._apply_installation(inst)
+
+        if not previous or previous == key:
+            self._running_installation_key = key
+            return
+
+        self.installation_switch_requested.emit(key, previous)
+
+    def _add_installation(self):
+        dialog = InstallationEditorDialog(self)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        data = dialog.result_payload()
+        inst = self.installations.add_installation(
+            data["name"], data["exe_path"], data["version"], data["keywords"]
+        )
+        reload_settings()
+        self._refresh_installations(select_key=inst.key)
+        previous = self._running_installation_key
+        self._request_installation_switch(inst.key, previous)
+        self.statusbar.showMessage(f"Added installation: {inst.name}", 4000)
+
+    def _edit_installation(self):
+        key = self.comboInstallations.currentData()
+        if not key:
+            return
+        inst = self.installations.get_installation(key)
+        if not inst:
+            return
+
+        dialog = InstallationEditorDialog(self, installation=inst)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        data = dialog.result_payload()
+        updated = self.installations.update_installation(
+            key,
+            name=data["name"],
+            exe_path=data["exe_path"],
+            version=data["version"],
+            keywords=data["keywords"],
+        )
+        reload_settings()
+        self._refresh_installations(select_key=key)
+
+        if updated and self._running_installation_key == key:
+            self._apply_runtime_config(Config())
+            setattr(self.track_overlay, "_last_load_failed", False)
+        if updated:
+            self.statusbar.showMessage(f"Updated installation: {updated.name}", 4000)
 
     def _choose_exe(self):
+        key = self.comboInstallations.currentData()
+        if not key:
+            return
+
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Select INDYCAR.EXE or CART.EXE",
@@ -318,23 +404,109 @@ class ControlPanel(QtWidgets.QMainWindow):
         if not path:
             return
 
-        self._save_exe_path(path)
-        self.lblExePath.setText(path)
-        self.statusbar.showMessage(f"Game EXE set: {os.path.basename(path)}")
+        updated = self.installations.update_installation(key, exe_path=path)
+        reload_settings()
+        self._refresh_installations(select_key=key)
 
-        # ✅ Update global Config() instances in memory
-        from icr2timing.core import config as cfgmod
-        cfgmod._parser.set("paths", "game_exe", path)
-        cfgmod._parser.write(open(cfgmod._cfgfile, "w"))
+        if updated and self._running_installation_key == key:
+            self._apply_runtime_config(Config())
+            setattr(self.track_overlay, "_last_load_failed", False)
 
-        # clear mute so TrackMapOverlay can retry loading
-        self.track_overlay._last_load_failed = False
-
-        # Also patch the live default Config in memory
-        cfgmod.Config.game_exe = path
         self.exe_path_changed.emit(path)
+        base = os.path.basename(path)
+        self.statusbar.showMessage(f"Game EXE set: {base}", 4000)
+        log.info(f"[ControlPanel] Updated game_exe for installation '{key}' to: {path}")
 
-        log.info(f"[ControlPanel] Updated game_exe in live config to: {path}")
+    def confirm_installation_switch(self, key: str):
+        self._running_installation_key = key
+        inst = self.installations.get_installation(key)
+        self._apply_installation(inst)
+        if inst:
+            self.statusbar.showMessage(f"Switched to installation: {inst.name}", 4000)
+
+    def revert_installation_switch(self, key: str):
+        self.installations.set_active(key)
+        reload_settings()
+        self._refresh_installations(select_key=key)
+        self._running_installation_key = key
+
+    def _apply_runtime_config(self, cfg: Config):
+        self._cfg = cfg
+        self.prox_overlay.apply_config(cfg)
+        self.track_overlay.apply_config(cfg)
+        self.indiv_overlay.set_backend(self._mem, cfg)
+        self._sync_radar_ui_from_overlay()
+
+    def _disconnect_runtime_signals(self):
+        if not self.updater:
+            return
+        try:
+            self.manager.disconnect_updater(self.updater)
+        except Exception:
+            pass
+
+        slots = [
+            self.prox_overlay.on_state_updated,
+            self.track_overlay.on_state_updated,
+            self.surface_overlay.on_state_updated,
+            self.indiv_overlay.on_state_updated,
+            self._on_state_updated_update_carlist,
+        ]
+        for slot in slots:
+            try:
+                self.updater.state_updated.disconnect(slot)
+            except Exception:
+                pass
+
+        error_slots = [
+            self.prox_overlay.on_error,
+            self.track_overlay.on_error,
+            self.surface_overlay.on_error,
+            self.indiv_overlay.on_error,
+            self._on_error_from_updater,
+        ]
+        for slot in error_slots:
+            try:
+                self.updater.error.disconnect(slot)
+            except Exception:
+                pass
+
+        if self._lap_logger_enabled and self.lap_logger:
+            try:
+                self.updater.state_updated.disconnect(self.lap_logger.on_state_updated)
+            except Exception:
+                pass
+
+    def attach_runtime(self, updater, mem, cfg=None, thread=None):
+        self._disconnect_runtime_signals()
+        self.updater = updater
+        self._mem = mem
+        self._updater_thread = thread
+        runtime_cfg = cfg or Config()
+        self._apply_runtime_config(runtime_cfg)
+
+        if self.updater:
+            self.manager.connect_updater(self.updater)
+            self.updater.state_updated.connect(self.prox_overlay.on_state_updated)
+            self.updater.error.connect(self.prox_overlay.on_error)
+            self.updater.state_updated.connect(self.track_overlay.on_state_updated)
+            self.updater.error.connect(self.track_overlay.on_error)
+            self.updater.state_updated.connect(self.surface_overlay.on_state_updated)
+            self.updater.error.connect(self.surface_overlay.on_error)
+            self.updater.state_updated.connect(self.indiv_overlay.on_state_updated)
+            self.updater.error.connect(self.indiv_overlay.on_error)
+            self.updater.state_updated.connect(self._on_state_updated_update_carlist)
+            self.updater.error.connect(self._on_error_from_updater)
+            if self._lap_logger_enabled and self.lap_logger:
+                self.updater.state_updated.connect(self.lap_logger.on_state_updated)
+
+        self.spinPoll.setValue(self.updater._poll_ms if self.updater else 250)
+
+    def detach_runtime(self):
+        self._disconnect_runtime_signals()
+        self.updater = None
+        self._mem = None
+        self._updater_thread = None
 
 
     # -------------------------------
@@ -721,6 +893,17 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_x=self.prox_overlay.x(),
             radar_y=self.prox_overlay.y(),
             radar_visible=self.prox_overlay.isVisible(),
+            radar_width=self.prox_overlay.width(),
+            radar_height=self.prox_overlay.height(),
+            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
+            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
+            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_symbol=self.prox_overlay.symbol,
+            radar_show_speeds=self.prox_overlay.show_speeds,
+            radar_player_color=self.prox_overlay.cfg.radar_player_color,
+            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,
@@ -774,13 +957,24 @@ class ControlPanel(QtWidgets.QMainWindow):
             use_abbrev=self.cbAbbrev.isChecked(),
             window_x=self.ro_overlay.widget().x(),
             window_y=self.ro_overlay.widget().y(),
+            radar_x=self.prox_overlay.x(),
+            radar_y=self.prox_overlay.y(),
+            radar_visible=self.prox_overlay.isVisible(),
+            radar_width=self.prox_overlay.width(),
+            radar_height=self.prox_overlay.height(),
+            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
+            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
+            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_symbol=self.prox_overlay.symbol,
+            radar_show_speeds=self.prox_overlay.show_speeds,
+            radar_player_color=self.prox_overlay.cfg.radar_player_color,
+            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
         )
         # Radar state
-        profile.radar_x = self.prox_overlay.x()
-        profile.radar_y = self.prox_overlay.y()
-        profile.radar_visible = self.prox_overlay.isVisible()
 
         self.profiles.save(profile)
 
