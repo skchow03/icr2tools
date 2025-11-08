@@ -86,6 +86,12 @@ class ProximityOverlay(QtWidgets.QWidget):
         self.symbol = getattr(c, "radar_symbol", "rectangle").lower()
         self.show_speeds = getattr(c, "radar_show_speeds", False)
 
+    def apply_config(self, cfg: Config):
+        """Replace the backing Config and refresh derived values."""
+        self.cfg = cfg
+        self._update_ranges_from_cfg()
+        self.update()
+
     # --------------------------------------------------------
     # Runtime mutators (for ControlPanel live updates)
     # --------------------------------------------------------
