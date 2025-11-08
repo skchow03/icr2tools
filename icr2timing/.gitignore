@@ -26,7 +26,6 @@ timing_log.txt
 *.tmp
 *.bak
 *.old
-profiles.ini
 
 # --- Windows junk ---
 Thumbs.db
