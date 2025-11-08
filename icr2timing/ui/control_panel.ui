@@ -30,12 +30,44 @@
         </property>
         <layout class="QVBoxLayout" name="generalLayout">
          <item>
-          <widget class="QPushButton" name="btnSelectExe">
-           <property name="toolTip">
-            <string>Select INDYCAR.EXE or CART.EXE to connect the app to the game</string>
-           </property>
+          <layout class="QHBoxLayout" name="installationRow">
+           <item>
+            <widget class="QLabel" name="lblInstallation">
+             <property name="text">
+              <string>Installation</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="comboInstallations"/>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="installationButtons">
+           <item>
+            <widget class="QPushButton" name="btnAddInstallation">
+             <property name="text">
+              <string>Add…</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnEditInstallation">
+             <property name="text">
+              <string>Edit…</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblInstallDetails">
            <property name="text">
-            <string>Specify Game EXE Path</string>
+            <string>Version: — | Keywords: —</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
@@ -43,6 +75,19 @@
           <widget class="QLabel" name="lblExePath">
            <property name="text">
             <string>No EXE selected</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnSelectExe">
+           <property name="toolTip">
+            <string>Select INDYCAR.EXE or CART.EXE to connect the app to the game</string>
+           </property>
+           <property name="text">
+            <string>Change Game EXE…</string>
            </property>
           </widget>
          </item>

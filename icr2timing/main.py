@@ -66,68 +66,105 @@ def main():
 
     app.setQuitOnLastWindowClosed(True)
 
-    cfg = Config()
-    mem = None
+    def build_runtime():
+        local_cfg = Config()
+        mem_obj = None
+        while mem_obj is None:
+            try:
+                mem_obj = ICR2Memory(verbose=False)
+            except WindowNotFoundError as e:
+                reply = QtWidgets.QMessageBox.critical(
+                    None,
+                    "ICR2 Timing Overlay",
+                    str(e),
+                    QtWidgets.QMessageBox.Retry | QtWidgets.QMessageBox.Cancel,
+                    QtWidgets.QMessageBox.Retry,
+                )
+                if reply == QtWidgets.QMessageBox.Cancel:
+                    return None
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    None,
+                    "ICR2 Timing Overlay",
+                    f"Unexpected error: {e}"
+                )
+                return None
 
-    # --- Retry loop ---
-    while mem is None:
+        reader_obj = MemoryReader(mem_obj, local_cfg)
+        updater_obj = RaceUpdater(reader_obj, poll_ms=local_cfg.poll_ms)
+        thread_obj = QtCore.QThread()
+        updater_obj.moveToThread(thread_obj)
+        return local_cfg, mem_obj, reader_obj, updater_obj, thread_obj
+
+    def start_runtime(updater_obj, thread_obj):
+        if not updater_obj or not thread_obj:
+            return
+        thread_obj.start()
+        QtCore.QMetaObject.invokeMethod(updater_obj, "start", QtCore.Qt.QueuedConnection)
+
+    def stop_runtime(updater_obj, thread_obj, mem_obj):
         try:
-            mem = ICR2Memory(verbose=False)
-        except WindowNotFoundError as e:
-            reply = QtWidgets.QMessageBox.critical(
-                None,
-                "ICR2 Timing Overlay",
-                str(e),
-                QtWidgets.QMessageBox.Retry | QtWidgets.QMessageBox.Cancel,
-                QtWidgets.QMessageBox.Retry,
-            )
-            if reply == QtWidgets.QMessageBox.Cancel:
-                sys.exit(1)
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                None,
-                "ICR2 Timing Overlay",
-                f"Unexpected error: {e}"
-            )
-            sys.exit(1)
-
-    reader = MemoryReader(mem, cfg)
-    updater = RaceUpdater(reader, poll_ms=cfg.poll_ms)
-
-    # Control panel (owns overlay + signal wiring)
-    panel = ControlPanel(updater, mem=mem, cfg=cfg)
-    panel.show()
-
-    # Thread for updater
-    thread = QtCore.QThread()
-    updater.moveToThread(thread)
-
-    def cleanup():
-        try:
-            if updater and thread.isRunning():
+            if updater_obj and thread_obj and thread_obj.isRunning():
                 QtCore.QMetaObject.invokeMethod(
-                    updater, "stop", QtCore.Qt.BlockingQueuedConnection
+                    updater_obj, "stop", QtCore.Qt.BlockingQueuedConnection
                 )
         except Exception:
             pass
         try:
-            if thread.isRunning():
-                thread.quit()
-                if not thread.wait(2000):
-                    print("Warning: Worker thread did not stop cleanly")
-                    thread.terminate()
-                    thread.wait(1000)
+            if thread_obj and thread_obj.isRunning():
+                thread_obj.quit()
+                if not thread_obj.wait(2000):
+                    logging.getLogger(__name__).warning(
+                        "Worker thread did not stop cleanly; terminating"
+                    )
+                    thread_obj.terminate()
+                    thread_obj.wait(1000)
         except Exception:
             pass
         try:
-            mem.close()
+            if mem_obj:
+                mem_obj.close()
         except Exception:
             pass
 
-    app.aboutToQuit.connect(cleanup)
+    runtime = build_runtime()
+    if runtime is None:
+        sys.exit(1)
 
-    thread.start()
-    QtCore.QMetaObject.invokeMethod(updater, "start", QtCore.Qt.QueuedConnection)
+    cfg, mem, reader, updater, thread = runtime
+
+    panel = ControlPanel(updater, mem=mem, cfg=cfg)
+    panel.show()
+
+    # ensure panel knows about the worker thread
+    panel.attach_runtime(updater, mem, cfg, thread)
+
+    start_runtime(updater, thread)
+
+    def handle_installation_switch(new_key: str, previous_key: str):
+        nonlocal cfg, mem, reader, updater, thread
+
+        new_runtime = build_runtime()
+        if new_runtime is None:
+            panel.revert_installation_switch(previous_key)
+            return
+
+        new_cfg, new_mem, new_reader, new_updater, new_thread = new_runtime
+
+        panel.attach_runtime(new_updater, new_mem, new_cfg, new_thread)
+        start_runtime(new_updater, new_thread)
+
+        stop_runtime(updater, thread, mem)
+
+        cfg, mem, reader, updater, thread = new_cfg, new_mem, new_reader, new_updater, new_thread
+        panel.confirm_installation_switch(new_key)
+
+    panel.installation_switch_requested.connect(handle_installation_switch)
+
+    def cleanup():
+        stop_runtime(updater, thread, mem)
+
+    app.aboutToQuit.connect(cleanup)
 
     sys.exit(app.exec_())
 

@@ -33,6 +33,8 @@ import win32process
 import os, configparser
 import sys
 
+from icr2timing.core.installations import InstallationManager
+
 # ----------------------------
 # Config
 # ----------------------------
@@ -41,6 +43,7 @@ _cfgdir = os.path.dirname(sys.argv[0])
 _cfgfile = os.path.join(_cfgdir, "settings.ini")
 _parser = configparser.ConfigParser()
 _parser.read(_cfgfile)
+_install_manager = InstallationManager()
 
 # ----------------------------
 # Win32 virtual memory basics
@@ -166,8 +169,13 @@ class ICR2Memory:
                  verbose: bool = True):
 
         # Load from INI
-        ini_version = _parser.get("memory", "version", fallback=None)
-        ini_keywords = _parser.get("memory", "window_keywords", fallback="")
+        active_install = _install_manager.get_installation(_install_manager.get_active_key() or "")
+        if active_install:
+            ini_version = active_install.version
+            ini_keywords = ", ".join(active_install.keywords)
+        else:
+            ini_version = _parser.get("memory", "version", fallback=None)
+            ini_keywords = _parser.get("memory", "window_keywords", fallback="")
 
         v = (version or ini_version or "REND32A").upper()
         if window_keywords is None:

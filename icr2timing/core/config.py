@@ -4,14 +4,23 @@ Supports multiple ICR2 versions (REND32A, DOS).
 """
 
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, List
 import configparser, os, sys
+
+from icr2timing.core.installations import InstallationManager
 
 # Load INI file if present
 _cfgdir = os.path.dirname(sys.argv[0])
 _cfgfile = os.path.join(_cfgdir, "settings.ini")
 _parser = configparser.ConfigParser()
 _parser.read(_cfgfile)
+
+_install_manager = InstallationManager()
+
+
+def reload_settings() -> None:
+    """Reload the underlying ConfigParser from disk."""
+    _parser.read(_cfgfile)
 
 # --- Version-specific memory maps ---
 OFFSETS = {
@@ -157,9 +166,20 @@ class Config:
 
     # Paths
     game_exe: str = _parser.get("paths", "game_exe", fallback="")
+    window_keywords: List[str] = field(default_factory=list)
 
     def __post_init__(self):
-        version = _parser.get("memory", "version", fallback="REND32A").upper()
+        inst = _install_manager.get_installation(_install_manager.get_active_key() or "")
+        if inst:
+            version = (inst.version or "REND32A").upper()
+            self.game_exe = inst.exe_path
+            self.window_keywords = list(inst.keywords)
+        else:
+            version = _parser.get("memory", "version", fallback="REND32A").upper()
+            keywords_raw = _parser.get("memory", "window_keywords", fallback="")
+            self.window_keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+            self.game_exe = _parser.get("paths", "game_exe", fallback="")
+
         self.version = version
         if version not in OFFSETS:
             raise ValueError(f"Unsupported memory version: {version}")
