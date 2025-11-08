@@ -2,30 +2,22 @@ from __future__ import annotations
 
 import os
 import logging
-from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2timing.overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
 from icr2_core.trk.track_loader import load_trk_from_folder
+from icr2_core.trk.surface_mesh import (
+    GroundSurfaceStrip,
+    build_ground_surface_mesh,
+    compute_mesh_bounds,
+)
 from icr2_core.trk.trk_utils import getxyz, get_cline_pos, color_from_ground_type
 from icr2timing.core.config import Config
 
 log = logging.getLogger(__name__)
-
-
-@dataclass
-class SurfaceStrip:
-    """Represents a single ground f-section rendered as a polygon."""
-    points: Sequence[Tuple[float, float]]
-    ground_type: int
-
-    def bounds(self) -> Tuple[float, float, float, float]:
-        xs = [p[0] for p in self.points]
-        ys = [p[1] for p in self.points]
-        return min(xs), max(xs), min(ys), max(ys)
 
 
 class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
@@ -64,7 +56,7 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
 
         self.trk = None
         self.cline: List[Tuple[float, float]] = []
-        self._surface_mesh: List[SurfaceStrip] = []
+        self._surface_mesh: List[GroundSurfaceStrip] = []
         self._bounds: Tuple[float, float, float, float] | None = None
 
         # Cached pixmap to avoid repainting thousands of polygons every frame
@@ -88,136 +80,10 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         self.trk = load_trk_from_folder(track_folder)
         self.cline = get_cline_pos(self.trk)
 
-        self._surface_mesh = self._build_surface_mesh()
-        self._bounds = self._compute_bounds()
+        self._surface_mesh = build_ground_surface_mesh(self.trk, self.cline)
+        self._bounds = compute_mesh_bounds(self._surface_mesh)
         self._cached_surface_pixmap = None  # invalidate cache
         self._autosize_window()
-
-    def _build_surface_mesh(self) -> List[SurfaceStrip]:
-        if not self.trk:
-            return []
-
-        strips: List[SurfaceStrip] = []
-        for sect_idx, sect in enumerate(self.trk.sects):
-            if sect.ground_fsects <= 0:
-                continue
-
-            num_subsects = (
-                1 if sect.type == 1 else max(1, round(sect.length / 60000))
-            )
-            strips.extend(
-                self._build_section_quads(
-                    sect_idx,
-                    sect.start_dlong,
-                    sect.start_dlong + sect.length,
-                    num_subsects=num_subsects,
-                )
-            )
-
-        return strips
-
-    def _build_section_quads(
-        self,
-        sect_idx: int,
-        start_dlong: float,
-        end_dlong: float,
-        num_subsects: int,
-    ) -> List[SurfaceStrip]:
-        if not self.trk:
-            return []
-
-        sect = self.trk.sects[sect_idx]
-        if sect.ground_fsects <= 0:
-            return []
-
-        cline = self.cline
-        strips: List[SurfaceStrip] = []
-
-        left_boundary_start = sect.bound_dlat_start[sect.num_bounds - 1]
-        left_boundary_end = sect.bound_dlat_end[sect.num_bounds - 1]
-        subsection_length = (end_dlong - start_dlong) / max(1, num_subsects)
-        left_increment = (left_boundary_end - left_boundary_start) / max(1, num_subsects)
-
-        for sub_idx in range(num_subsects):
-            sub_start_dlong = start_dlong + subsection_length * sub_idx
-            sub_end_dlong = (
-                end_dlong if sub_idx == num_subsects - 1
-                else start_dlong + subsection_length * (sub_idx + 1)
-            )
-            left_start = left_boundary_start + left_increment * sub_idx
-            left_end = left_boundary_start + left_increment * (sub_idx + 1)
-
-            for ground_idx in range(sect.ground_fsects - 1, -1, -1):
-                right_start_total = sect.ground_dlat_start[ground_idx]
-                right_end_total = sect.ground_dlat_end[ground_idx]
-                right_span = right_end_total - right_start_total
-
-                right_start = right_start_total + right_span * (sub_idx / num_subsects)
-                right_end = right_start_total + right_span * ((sub_idx + 1) / num_subsects)
-
-                polygon = self._quad_polygon(
-                    sub_start_dlong,
-                    sub_end_dlong,
-                    left_start,
-                    left_end,
-                    right_start,
-                    right_end,
-                    cline,
-                )
-
-                if self._polygon_area(polygon) <= 1e-3:
-                    continue
-
-                strips.append(
-                    SurfaceStrip(
-                        points=polygon,
-                        ground_type=sect.ground_type[ground_idx],
-                    )
-                )
-
-                left_start = right_start
-                left_end = right_end
-
-        return strips
-
-    def _quad_polygon(
-        self,
-        start_dlong: float,
-        end_dlong: float,
-        left_start: float,
-        left_end: float,
-        right_start: float,
-        right_end: float,
-        cline: Sequence[Tuple[float, float]],
-    ) -> List[Tuple[float, float]]:
-        if not self.trk:
-            return []
-
-        ls_x, ls_y, _ = getxyz(self.trk, start_dlong, left_start, cline)
-        le_x, le_y, _ = getxyz(self.trk, end_dlong, left_end, cline)
-        rs_x, rs_y, _ = getxyz(self.trk, start_dlong, right_start, cline)
-        re_x, re_y, _ = getxyz(self.trk, end_dlong, right_end, cline)
-        return [(ls_x, ls_y), (le_x, le_y), (re_x, re_y), (rs_x, rs_y)]
-
-    @staticmethod
-    def _polygon_area(points: Sequence[Tuple[float, float]]) -> float:
-        if len(points) < 3:
-            return 0.0
-        area = 0.0
-        for idx, (x1, y1) in enumerate(points):
-            x2, y2 = points[(idx + 1) % len(points)]
-            area += x1 * y2 - x2 * y1
-        return abs(area) * 0.5
-
-    def _compute_bounds(self) -> Tuple[float, float, float, float] | None:
-        points: List[Tuple[float, float]] = []
-        for strip in self._surface_mesh:
-            points.extend(strip.points)
-        if not points:
-            return None
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        return min(xs), max(xs), min(ys), max(ys)
 
     def _autosize_window(self) -> None:
         if not self._bounds:

@@ -13,6 +13,7 @@ from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.trk_classes import TRKFile
 
 from .geometry import TrackWireframe, build_track_wireframe
+from .surface_view import TrackSurfaceView
 from .track_catalog import TrackDiscoveryError, TrackMetadata, discover_tracks
 
 
@@ -237,8 +238,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         info_layout.addWidget(length_label, 1, 0)
         info_layout.addWidget(self.length_value, 1, 1)
 
-        # 3D view
-        self.view = Track3DView()
+        # Visualisations
+        self.surface_view = TrackSurfaceView()
+        self.wireframe_view = Track3DView()
+
+        self.view_tabs = QtWidgets.QTabWidget()
+        self.view_tabs.addTab(self.surface_view, "Surface map")
+        self.view_tabs.addTab(self.wireframe_view, "3D wireframe")
 
         # Status label
         self.status_label = QtWidgets.QLabel()
@@ -247,7 +253,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         layout.addLayout(dir_layout)
         layout.addLayout(track_layout)
         layout.addLayout(info_layout)
-        layout.addWidget(self.view, 1)
+        layout.addWidget(self.view_tabs, 1)
         layout.addWidget(self.status_label)
 
         self.setCentralWidget(central)
@@ -277,7 +283,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Tracks not found", str(exc))
             self._set_status(str(exc))
             self.track_combo.clear()
-            self.view.set_wireframe(None)
+            self.surface_view.set_track(None)
+            self.wireframe_view.set_wireframe(None)
             self.name_value.setText("—")
             self.length_value.setText("—")
             return
@@ -287,7 +294,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "No tracks", msg)
             self._set_status(msg)
             self.track_combo.clear()
-            self.view.set_wireframe(None)
+            self.surface_view.set_track(None)
+            self.wireframe_view.set_wireframe(None)
             self.name_value.setText("—")
             self.length_value.setText("—")
             return
@@ -318,11 +326,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "Track load failed", str(exc))
             self._set_status(f"Failed to load {metadata.display_name}: {exc}")
-            self.view.set_wireframe(None)
+            self.surface_view.set_track(None)
+            self.wireframe_view.set_wireframe(None)
             return
 
         wireframe = build_track_wireframe(trk)
-        self.view.set_wireframe(wireframe)
+        self.surface_view.set_track(trk)
+        self.wireframe_view.set_wireframe(wireframe)
 
         length_miles = _compute_track_length_miles(trk, metadata.txt_length_miles)
 
@@ -342,7 +352,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.length_value.setText("—")
 
         self._set_status(
-            f"Loaded track '{metadata.display_name}'. Double-click the view to reset the camera."
+            "Loaded track '{}' — switch between the Surface map and 3D wireframe tabs. "
+            "Double-click the 3D view to reset the camera."
+            .format(metadata.display_name)
         )
 
     def _set_status(self, message: str):
