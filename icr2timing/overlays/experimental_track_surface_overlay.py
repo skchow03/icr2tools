@@ -19,7 +19,6 @@ log = logging.getLogger(__name__)
 @dataclass
 class SurfaceStrip:
     """Represents a single ground f-section rendered as a polygon."""
-
     points: Sequence[Tuple[float, float]]
     ground_type: int
 
@@ -30,13 +29,7 @@ class SurfaceStrip:
 
 
 class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
-    """Visualises TRK ground f-sections as filled polygons.
-
-    The widget mirrors the behaviour of :class:`TrackMapOverlay`, but instead of
-    rendering only the sampled centreline it expands every ground f-section into
-    a polygon.  Each polygon is coloured by its ground type, allowing a quick
-    inspection of asphalt, concrete, grass, gravel and other surfaces.
-    """
+    """Visualises TRK ground f-sections as filled polygons (cached)."""
 
     LP_COLORS = {
         0: ("Race", QtGui.QColor.fromHsv(0, 0, 255)),
@@ -74,6 +67,10 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         self._surface_mesh: List[SurfaceStrip] = []
         self._bounds: Tuple[float, float, float, float] | None = None
 
+        # Cached pixmap to avoid repainting thousands of polygons every frame
+        self._cached_surface_pixmap: QtGui.QPixmap | None = None
+        self._pixmap_size: QtCore.QSize | None = None
+
         self.installEventFilter(self)
 
     # ------------------------------------------------------------------
@@ -86,16 +83,14 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
 
         exe_dir = os.path.dirname(exe_path)
         track_folder = os.path.join(exe_dir, "TRACKS", track_name.lower())
-        log.info(
-            "[ExperimentalTrackSurfaceOverlay] Loading track from: %s",
-            track_folder,
-        )
+        log.info("[ExperimentalTrackSurfaceOverlay] Loading track from: %s", track_folder)
 
         self.trk = load_trk_from_folder(track_folder)
         self.cline = get_cline_pos(self.trk)
 
         self._surface_mesh = self._build_surface_mesh()
         self._bounds = self._compute_bounds()
+        self._cached_surface_pixmap = None  # invalidate cache
         self._autosize_window()
 
     def _build_surface_mesh(self) -> List[SurfaceStrip]:
@@ -107,27 +102,17 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             if sect.ground_fsects <= 0:
                 continue
 
-            if sect.type == 1:
-                start_dlong = sect.start_dlong
-                end_dlong = sect.start_dlong + sect.length
-                strips.extend(
-                    self._build_section_quads(
-                        sect_idx,
-                        start_dlong,
-                        end_dlong,
-                        num_subsects=1,
-                    )
+            num_subsects = (
+                1 if sect.type == 1 else max(1, round(sect.length / 60000))
+            )
+            strips.extend(
+                self._build_section_quads(
+                    sect_idx,
+                    sect.start_dlong,
+                    sect.start_dlong + sect.length,
+                    num_subsects=num_subsects,
                 )
-            else:
-                num_subsects = max(1, round(sect.length / 60000))
-                strips.extend(
-                    self._build_section_quads(
-                        sect_idx,
-                        sect.start_dlong,
-                        sect.start_dlong + sect.length,
-                        num_subsects=num_subsects,
-                    )
-                )
+            )
 
         return strips
 
@@ -138,14 +123,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         end_dlong: float,
         num_subsects: int,
     ) -> List[SurfaceStrip]:
-        """Generate quadrilateral strips for a section or subsection.
-
-        The implementation mirrors the original ``trk23d`` tool which produced
-        OBJ meshes via ``csv2obj``: each ground f-section is represented by a
-        quad whose corners are sampled with :func:`getxyz` at the subsection
-        bounds.  Curves are split into smaller slices to maintain fidelity.
-        """
-
         if not self.trk:
             return []
 
@@ -156,29 +133,17 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         cline = self.cline
         strips: List[SurfaceStrip] = []
 
-        # Pre-compute DLAT steps for the outermost boundary which acts as the
-        # left edge of the first quad within each subsection.
         left_boundary_start = sect.bound_dlat_start[sect.num_bounds - 1]
         left_boundary_end = sect.bound_dlat_end[sect.num_bounds - 1]
-
-        # Guard against zero-length sections which could happen on malformed
-        # tracks.  The TRK data is integral so we rely on integer arithmetic
-        # when possible to avoid accumulation errors.
-        if num_subsects <= 0:
-            num_subsects = 1
-
-        subsection_length = (end_dlong - start_dlong) / num_subsects
-        left_increment = (left_boundary_end - left_boundary_start) / num_subsects
+        subsection_length = (end_dlong - start_dlong) / max(1, num_subsects)
+        left_increment = (left_boundary_end - left_boundary_start) / max(1, num_subsects)
 
         for sub_idx in range(num_subsects):
             sub_start_dlong = start_dlong + subsection_length * sub_idx
-            # Ensure the final slice terminates exactly at the section end to
-            # match the behaviour in ``trk23d``.
-            if sub_idx == num_subsects - 1:
-                sub_end_dlong = end_dlong
-            else:
-                sub_end_dlong = start_dlong + subsection_length * (sub_idx + 1)
-
+            sub_end_dlong = (
+                end_dlong if sub_idx == num_subsects - 1
+                else start_dlong + subsection_length * (sub_idx + 1)
+            )
             left_start = left_boundary_start + left_increment * sub_idx
             left_end = left_boundary_start + left_increment * (sub_idx + 1)
 
@@ -187,7 +152,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
                 right_end_total = sect.ground_dlat_end[ground_idx]
                 right_span = right_end_total - right_start_total
 
-                # Interpolate the ground surface DLATs for this subsection.
                 right_start = right_start_total + right_span * (sub_idx / num_subsects)
                 right_end = right_start_total + right_span * ((sub_idx + 1) / num_subsects)
 
@@ -201,7 +165,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
                     cline,
                 )
 
-                # Skip degenerate quads that collapse into a line.
                 if self._polygon_area(polygon) <= 1e-3:
                     continue
 
@@ -212,8 +175,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
                     )
                 )
 
-                # The right edge of the current quad becomes the left edge of
-                # the next quad in this subsection, replicating ``trk23d``.
                 left_start = right_start
                 left_end = right_end
 
@@ -236,15 +197,12 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         le_x, le_y, _ = getxyz(self.trk, end_dlong, left_end, cline)
         rs_x, rs_y, _ = getxyz(self.trk, start_dlong, right_start, cline)
         re_x, re_y, _ = getxyz(self.trk, end_dlong, right_end, cline)
-
-        # Ensure winding order is consistent (counter-clockwise) for rendering.
         return [(ls_x, ls_y), (le_x, le_y), (re_x, re_y), (rs_x, rs_y)]
 
     @staticmethod
     def _polygon_area(points: Sequence[Tuple[float, float]]) -> float:
         if len(points) < 3:
             return 0.0
-
         area = 0.0
         for idx, (x1, y1) in enumerate(points):
             x2, y2 = points[(idx + 1) % len(points)]
@@ -257,7 +215,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             points.extend(strip.points)
         if not points:
             return None
-
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
         return min(xs), max(xs), min(ys), max(ys)
@@ -265,7 +222,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
     def _autosize_window(self) -> None:
         if not self._bounds:
             return
-
         min_x, max_x, min_y, max_y = self._bounds
         track_w = max_x - min_x
         track_h = max_y - min_y
@@ -274,17 +230,14 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
 
         aspect = track_w / track_h if track_h else 1
         base_size = 600
-
         if aspect >= 1:
             window_w = base_size
             window_h = base_size / aspect
         else:
             window_w = base_size * aspect
             window_h = base_size
-
         window_w = int(window_w * self._scale_factor) + self._margin * 2
         window_h = int(window_h * self._scale_factor) + self._margin * 2
-
         self.resize(window_w, window_h)
 
     # ------------------------------------------------------------------
@@ -302,34 +255,25 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             if getattr(self, "_loaded_track_name", None) != current_name:
                 self._loaded_track_name = current_name
                 self._load_track(current_name)
-                log.info(
-                    "[ExperimentalTrackSurfaceOverlay] Loaded track: %s",
-                    current_name,
-                )
+                log.info("[ExperimentalTrackSurfaceOverlay] Loaded track: %s", current_name)
 
             self._last_state = state
             self.update()
-        except Exception as exc:  # pragma: no cover - defensive logging
-            if getattr(self, "_last_error_msg", None) != str(exc):
-                log.error(
-                    "[ExperimentalTrackSurfaceOverlay] Track load failed: %s",
-                    exc,
-                )
-                self._last_error_msg = str(exc)
+        except Exception as exc:
+            log.error("[ExperimentalTrackSurfaceOverlay] Track load failed: %s", exc)
             self.trk = None
             self._surface_mesh = []
             self._bounds = None
+            self._cached_surface_pixmap = None
             self.update()
 
     def on_error(self, msg: str) -> None:
         self._last_state = None
-        if getattr(self, "_last_error_msg", None) != msg:
-            log.error("[ExperimentalTrackSurfaceOverlay] on_error: %s", msg)
-            self._last_error_msg = msg
+        log.error("[ExperimentalTrackSurfaceOverlay] on_error: %s", msg)
         self.update()
 
     # ------------------------------------------------------------------
-    # Painting helpers
+    # Painting
     # ------------------------------------------------------------------
     def _map_point(self, x: float, y: float, scale: float, offsets: Tuple[float, float]) -> QtCore.QPointF:
         px = x * scale + offsets[0]
@@ -339,7 +283,6 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
     def _compute_transform(self) -> Tuple[float, Tuple[float, float]] | None:
         if not self._bounds:
             return None
-
         min_x, max_x, min_y, max_y = self._bounds
         track_w = max_x - min_x
         track_h = max_y - min_y
@@ -347,87 +290,75 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
             return None
 
         w, h = self.width(), self.height()
-        scale_x = (w - self._margin * 2) / track_w if track_w else 1
-        scale_y = (h - self._margin * 2) / track_h if track_h else 1
+        scale_x = (w - self._margin * 2) / track_w
+        scale_y = (h - self._margin * 2) / track_h
         scale = min(scale_x, scale_y)
-
         x_offset = (w - track_w * scale) / 2 - min_x * scale
         y_offset = (h - track_h * scale) / 2 - min_y * scale
         return scale, (x_offset, y_offset)
 
-    def paintEvent(self, event):  # noqa: D401 - Qt override
+    def _render_surface_to_pixmap(self) -> QtGui.QPixmap:
+        """Render the static ground polygons into a pixmap (cached)."""
+        pixmap = QtGui.QPixmap(self.size())
+        pixmap.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        transform = self._compute_transform()
+        if not transform:
+            return pixmap
+        scale, offsets = transform
+        for strip in self._surface_mesh:
+            base_color = self._color_for_ground(strip.ground_type)
+            fill = QtGui.QColor(base_color)
+            fill.setAlpha(180)
+            outline = base_color.darker(125)
+            poly = QtGui.QPolygonF([self._map_point(x, y, scale, offsets) for x, y in strip.points])
+            painter.setBrush(QtGui.QBrush(fill))
+            painter.setPen(QtGui.QPen(outline, 1))
+            painter.drawPolygon(poly)
+        painter.end()
+        return pixmap
+
+    def paintEvent(self, event):
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 160))
 
-        transform = self._compute_transform()
-        if transform is None or not self._surface_mesh:
+        if not self._surface_mesh or not self._bounds:
             painter.setPen(QtGui.QPen(QtGui.QColor("red"), 2))
             painter.drawText(12, 24, "Surface map not available")
             return
 
-        scale, offsets = transform
+        if self._cached_surface_pixmap is None or self._pixmap_size != self.size():
+            self._cached_surface_pixmap = self._render_surface_to_pixmap()
+            self._pixmap_size = self.size()
 
-        # Draw surface strips
-        for strip in self._surface_mesh:
-            base_color = self._color_for_ground(strip.ground_type)
-            fill_color = QtGui.QColor(base_color)
-            fill_color.setAlpha(180)
+        painter.drawPixmap(0, 0, self._cached_surface_pixmap)
 
-            outline = QtGui.QColor(base_color)
-            outline = outline.darker(125)
-
-            polygon = QtGui.QPolygonF(
-                [self._map_point(x, y, scale, offsets) for x, y in strip.points]
-            )
-
-            painter.setBrush(QtGui.QBrush(fill_color))
-            painter.setPen(QtGui.QPen(outline, 1.5))
-            painter.drawPolygon(polygon)
-
-        self._draw_cars(painter, scale, offsets)
+        transform = self._compute_transform()
+        if transform:
+            self._draw_cars(painter, *transform)
         if self._color_by_lp:
             self._draw_lp_legend(painter)
 
     def _color_for_ground(self, ground_type: int) -> QtGui.QColor:
-        """Return a consistent colour for each ground surface type.
-
-        The TRK loader already exposes :func:`color_from_ground_type`, which
-        centralises the surface palette for exporters and tooling.  Re-using it
-        here ensures the advanced map shows a single, predictable colour for
-        every ground type instead of alternating between sections.
-        """
-
         color_name = color_from_ground_type(ground_type)
         return QtGui.QColor(color_name)
 
-    def _draw_cars(
-        self,
-        painter: QtGui.QPainter,
-        scale: float,
-        offsets: Tuple[float, float],
-    ) -> None:
+    def _draw_cars(self, painter: QtGui.QPainter, scale: float, offsets: Tuple[float, float]) -> None:
         if not self._last_state or not self.trk:
             return
-
         cfg = Config()
         player_idx = cfg.player_index
-
         if self._show_numbers:
             painter.setFont(QtGui.QFont("Arial", 8, QtGui.QFont.Bold))
 
         for idx, car_state in self._last_state.car_states.items():
             try:
                 x, y, _ = getxyz(self.trk, car_state.dlong, car_state.dlat, self.cline)
-                point = self._map_point(x, y, scale, offsets)
-
+                pt = self._map_point(x, y, scale, offsets)
                 lp = getattr(car_state, "current_lp", 0) or 0
-
                 if self._color_by_lp:
-                    _, color = self.LP_COLORS.get(
-                        lp,
-                        ("Other", QtGui.QColor.fromHsv((lp * 40) % 360, 255, 255)),
-                    )
+                    _, color = self.LP_COLORS.get(lp, ("Other", QtGui.QColor.fromHsv((lp * 40) % 360, 255, 255)))
                     radius = self._bubble_size
                 elif idx == player_idx:
                     color = QtGui.QColor("lime")
@@ -435,30 +366,20 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
                 else:
                     color = QtGui.QColor("cyan")
                     radius = self._bubble_size
-
                 painter.setBrush(QtGui.QBrush(color))
                 painter.setPen(QtGui.QPen(QtGui.QColor("black")))
-                painter.drawEllipse(point, radius, radius)
-
+                painter.drawEllipse(pt, radius, radius)
                 if self._show_numbers:
                     driver = self._last_state.drivers.get(idx)
                     if driver and driver.car_number is not None:
                         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
-                        text_x = int(round(point.x() + radius + 2))
-                        text_y = int(round(point.y() - radius - 2))
-                        painter.drawText(text_x, text_y, str(driver.car_number))
-            except Exception as exc:  # pragma: no cover - defensive logging
-                log.error(
-                    "[ExperimentalTrackSurfaceOverlay] ERROR drawing car %s: %s",
-                    idx,
-                    exc,
-                )
+                        painter.drawText(int(pt.x() + radius + 2), int(pt.y() - radius - 2), str(driver.car_number))
+            except Exception as exc:
+                log.error("[ExperimentalTrackSurfaceOverlay] ERROR drawing car %s: %s", idx, exc)
 
     def _draw_lp_legend(self, painter: QtGui.QPainter) -> None:
         painter.setFont(QtGui.QFont("Arial", 8))
-        x0, y0 = 10, 10
-        line_height = 14
-
+        x0, y0, line_height = 10, 10, 14
         for i, (label, color) in enumerate(self.LP_COLORS.values()):
             painter.setBrush(color)
             painter.setPen(QtGui.QPen(QtGui.QColor("black")))
@@ -472,6 +393,7 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
     def set_scale_factor(self, factor: float) -> None:
         self._scale_factor = max(0.1, min(3.0, factor))
         self._autosize_window()
+        self._cached_surface_pixmap = None
         self.update()
 
     def set_show_numbers(self, enabled: bool) -> None:
@@ -487,19 +409,14 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         self.update()
 
     # ------------------------------------------------------------------
-    # Dragging support
+    # Dragging
     # ------------------------------------------------------------------
     def eventFilter(self, source, event):
-        if (
-            event.type() == QtCore.QEvent.MouseButtonPress
-            and event.button() == QtCore.Qt.LeftButton
-        ):
+        if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
             self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
             return True
-        elif event.type() == QtCore.QEvent.MouseMove and (
-            event.buttons() & QtCore.Qt.LeftButton
-        ):
+        elif event.type() == QtCore.QEvent.MouseMove and (event.buttons() & QtCore.Qt.LeftButton):
             if self._drag_pos is not None:
                 self.move(event.globalPos() - self._drag_pos)
                 event.accept()
