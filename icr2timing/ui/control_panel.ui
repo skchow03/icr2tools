@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>597</width>
-    <height>614</height>
+    <width>602</width>
+    <height>648</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -158,7 +158,7 @@
          </sizepolicy>
         </property>
         <property name="currentIndex">
-         <number>3</number>
+         <number>1</number>
         </property>
         <widget class="QWidget" name="tabLiveTiming">
          <attribute name="title">
@@ -229,20 +229,20 @@
                 <verstretch>3</verstretch>
                </sizepolicy>
               </property>
-              <property name="alternatingRowColors">
-               <bool>true</bool>
-              </property>
               <property name="dragDropMode">
                <enum>QAbstractItemView::InternalMove</enum>
               </property>
               <property name="defaultDropAction">
                <enum>Qt::MoveAction</enum>
               </property>
-              <property name="movement">
-               <enum>QListView::Snap</enum>
+              <property name="alternatingRowColors">
+               <bool>true</bool>
               </property>
               <property name="selectionMode">
                <enum>QAbstractItemView::SingleSelection</enum>
+              </property>
+              <property name="movement">
+               <enum>QListView::Snap</enum>
               </property>
              </widget>
             </item>
@@ -367,9 +367,9 @@
                  </item>
                 </layout>
                </item>
-             </layout>
-            </widget>
-           </item>
+              </layout>
+             </widget>
+            </item>
            </layout>
           </item>
           <item>
@@ -444,21 +444,21 @@
          </attribute>
          <layout class="QVBoxLayout" name="trackMapLayout">
           <item>
-          <widget class="QPushButton" name="btnTrackMap">
-           <property name="font">
-            <font>
-             <weight>75</weight>
-             <bold>true</bold>
-            </font>
-           </property>
-           <property name="toolTip">
-            <string>Toggle the track map overlay</string>
-           </property>
-           <property name="text">
-            <string>Show Track Map</string>
-           </property>
-          </widget>
-         </item>
+           <widget class="QPushButton" name="btnTrackMap">
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="toolTip">
+             <string>Toggle the track map overlay</string>
+            </property>
+            <property name="text">
+             <string>Show Track Map</string>
+            </property>
+           </widget>
+          </item>
           <item>
            <widget class="QPushButton" name="btnSurfaceOverlay">
             <property name="font">
