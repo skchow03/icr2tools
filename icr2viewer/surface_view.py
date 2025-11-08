@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -26,11 +27,22 @@ class TrackSurfaceView(QtWidgets.QWidget):
         self._surface_mesh: List[GroundSurfaceStrip] = []
         self._bounds: Tuple[float, float, float, float] | None = None
 
-        self._cached_surface_pixmap: QtGui.QPixmap | None = None
-        self._pixmap_size: QtCore.QSize | None = None
-
         self._margin = 24
         self._show_centerline = True
+
+        self._center: Tuple[float, float] = (0.0, 0.0)
+        self._fit_scale = 1.0
+        self._zoom = 1.0
+        self._rotation = 0.0
+        self._pan = QtCore.QPointF(0.0, 0.0)
+        self._last_pos: Optional[QtCore.QPoint] = None
+        self._drag_mode: Optional[str] = None
+
+        self._fill_layers: List[Tuple[QtGui.QBrush, QtGui.QPainterPath]] = []
+        self._centerline_path = QtGui.QPainterPath()
+
+        self.setMouseTracking(True)
+        self.setFocusPolicy(QtCore.Qt.ClickFocus)
 
     # ------------------------------------------------------------------
     # Qt overrides
@@ -53,8 +65,11 @@ class TrackSurfaceView(QtWidgets.QWidget):
             self._cline = get_cline_pos(trk)
             self._surface_mesh = build_ground_surface_mesh(trk, self._cline)
             self._bounds = compute_mesh_bounds(self._surface_mesh)
-
-        self._invalidate_cache()
+            if self._bounds:
+                min_x, max_x, min_y, max_y = self._bounds
+                self._center = ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
+        self._rebuild_geometry()
+        self._reset_view()
 
     def set_show_centerline(self, enabled: bool) -> None:
         self._show_centerline = bool(enabled)
@@ -63,92 +78,127 @@ class TrackSurfaceView(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _invalidate_cache(self) -> None:
-        self._cached_surface_pixmap = None
-        self._pixmap_size = None
+    def _rebuild_geometry(self) -> None:
+        self._fill_layers = []
+        self._centerline_path = QtGui.QPainterPath()
+
+        if not self._surface_mesh:
+            self.update()
+            return
+
+        color_paths: "OrderedDict[int, QtGui.QPainterPath]" = OrderedDict()
+        for strip in self._surface_mesh:
+            if strip.ground_type not in color_paths:
+                path = QtGui.QPainterPath()
+                path.setFillRule(QtCore.Qt.WindingFill)
+                color_paths[strip.ground_type] = path
+            path = color_paths[strip.ground_type]
+            polygon = QtGui.QPolygonF(
+                [QtCore.QPointF(float(x), float(y)) for x, y in strip.points]
+            )
+            path.addPolygon(polygon)
+
+        for ground_type, path in color_paths.items():
+            fill_color = QtGui.QColor(color_from_ground_type(ground_type))
+            fill_color.setAlpha(200)
+            self._fill_layers.append((QtGui.QBrush(fill_color), path))
+
+        if self._cline:
+            points = [QtCore.QPointF(float(x), float(y)) for x, y in self._cline]
+            if points:
+                self._centerline_path = QtGui.QPainterPath(points[0])
+                for pt in points[1:]:
+                    self._centerline_path.lineTo(pt)
         self.update()
 
-    def _compute_transform(self) -> Tuple[float, Tuple[float, float]] | None:
+    def _reset_view(self) -> None:
+        self._zoom = 1.0
+        self._rotation = 0.0
+        self._pan = QtCore.QPointF(0.0, 0.0)
+        self._update_fit_scale()
+        self.update()
+
+    def _update_fit_scale(self) -> None:
         if not self._bounds:
-            return None
+            self._fit_scale = 1.0
+            return
 
         min_x, max_x, min_y, max_y = self._bounds
         track_w = max_x - min_x
         track_h = max_y - min_y
         if track_w <= 0 or track_h <= 0:
+            self._fit_scale = 1.0
+            return
+
+        available_w = max(1, self.width() - self._margin * 2)
+        available_h = max(1, self.height() - self._margin * 2)
+        scale_x = available_w / track_w
+        scale_y = available_h / track_h
+        self._fit_scale = max(1e-6, min(scale_x, scale_y))
+
+    def _current_scale(self) -> float:
+        return self._fit_scale * self._zoom
+
+    def _build_transform(self) -> QtGui.QTransform | None:
+        if not self._bounds:
             return None
 
-        w, h = self.width(), self.height()
-        scale_x = (w - self._margin * 2) / track_w
-        scale_y = (h - self._margin * 2) / track_h
-        scale = min(scale_x, scale_y)
-        x_offset = (w - track_w * scale) / 2 - min_x * scale
-        y_offset = (h - track_h * scale) / 2 - min_y * scale
-        return scale, (x_offset, y_offset)
+        transform = QtGui.QTransform()
+        transform.translate(self.width() / 2 + self._pan.x(), self.height() / 2 + self._pan.y())
+        transform.scale(self._current_scale(), -self._current_scale())
+        transform.rotateRadians(self._rotation)
+        transform.translate(-self._center[0], -self._center[1])
+        return transform
 
-    def _render_surface_pixmap(self) -> QtGui.QPixmap:
-        pixmap = QtGui.QPixmap(self.size())
-        pixmap.fill(QtCore.Qt.transparent)
+    # ------------------------------------------------------------------
+    # Interaction
+    # ------------------------------------------------------------------
+    def wheelEvent(self, event: QtGui.QWheelEvent):  # noqa: N802
+        delta = event.angleDelta().y() / 120.0
+        factor = 1.15 ** delta
+        self._zoom = max(0.05, min(25.0, self._zoom * factor))
+        self.update()
 
-        transform = self._compute_transform()
-        if not transform:
-            return pixmap
+    def mousePressEvent(self, event: QtGui.QMouseEvent):  # noqa: N802
+        if event.button() == QtCore.Qt.LeftButton:
+            self._drag_mode = "rotate"
+        elif event.button() == QtCore.Qt.RightButton:
+            self._drag_mode = "pan"
+        else:
+            self._drag_mode = None
 
-        scale, offsets = transform
-        height = self.height()
+        if self._drag_mode:
+            self._last_pos = event.pos()
+            event.accept()
 
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-
-        for strip in self._surface_mesh:
-            base_color = QtGui.QColor(color_from_ground_type(strip.ground_type))
-            fill = QtGui.QColor(base_color)
-            fill.setAlpha(200)
-            outline = base_color.darker(130)
-            polygon = QtGui.QPolygonF(
-                [self._map_point(x, y, scale, offsets, height) for x, y in strip.points]
-            )
-            painter.setBrush(QtGui.QBrush(fill))
-            painter.setPen(QtGui.QPen(outline, 1))
-            painter.drawPolygon(polygon)
-
-        painter.end()
-        return pixmap
-
-    @staticmethod
-    def _map_point(
-        x: float,
-        y: float,
-        scale: float,
-        offsets: Tuple[float, float],
-        height: int,
-    ) -> QtCore.QPointF:
-        px = x * scale + offsets[0]
-        py = y * scale + offsets[1]
-        return QtCore.QPointF(px, height - py)
-
-    def _draw_centerline(
-        self,
-        painter: QtGui.QPainter,
-        scale: float,
-        offsets: Tuple[float, float],
-    ) -> None:
-        if not self._cline:
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):  # noqa: N802
+        if not self._drag_mode or self._last_pos is None:
             return
 
-        height = self.height()
-        points = [self._map_point(x, y, scale, offsets, height) for x, y in self._cline]
-        if not points:
-            return
+        dx = event.x() - self._last_pos.x()
+        dy = event.y() - self._last_pos.y()
 
-        path = QtGui.QPainterPath(points[0])
-        for pt in points[1:]:
-            path.lineTo(pt)
+        if self._drag_mode == "rotate":
+            self._rotation += dx * 0.01
+        elif self._drag_mode == "pan":
+            self._pan += QtCore.QPointF(dx, dy)
 
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#FF7043"), 2))
-        painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawPath(path)
+        self._last_pos = event.pos()
+        self.update()
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):  # noqa: N802
+        self._drag_mode = None
+        self._last_pos = None
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent):  # noqa: N802
+        self._reset_view()
+        event.accept()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent):  # noqa: N802
+        super().resizeEvent(event)
+        self._update_fit_scale()
+        self.update()
 
     # ------------------------------------------------------------------
     # Painting
@@ -166,15 +216,25 @@ class TrackSurfaceView(QtWidgets.QWidget):
             )
             return
 
-        if self._cached_surface_pixmap is None or self._pixmap_size != self.size():
-            self._cached_surface_pixmap = self._render_surface_pixmap()
-            self._pixmap_size = self.size()
+        transform = self._build_transform()
+        if not transform:
+            return
 
-        painter.drawPixmap(0, 0, self._cached_surface_pixmap)
+        painter.save()
+        painter.setTransform(transform)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.setPen(QtCore.Qt.NoPen)
 
-        if self._show_centerline:
-            transform = self._compute_transform()
-            if transform:
-                scale, offsets = transform
-                self._draw_centerline(painter, scale, offsets)
+        for brush, path in self._fill_layers:
+            painter.fillPath(path, brush)
+
+        if self._show_centerline and not self._centerline_path.isEmpty():
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            pen = QtGui.QPen(QtGui.QColor("#FF7043"), 2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawPath(self._centerline_path)
+
+        painter.restore()
 
