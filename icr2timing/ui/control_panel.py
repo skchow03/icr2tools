@@ -721,6 +721,17 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_x=self.prox_overlay.x(),
             radar_y=self.prox_overlay.y(),
             radar_visible=self.prox_overlay.isVisible(),
+            radar_width=self.prox_overlay.width(),
+            radar_height=self.prox_overlay.height(),
+            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
+            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
+            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_symbol=self.prox_overlay.symbol,
+            radar_show_speeds=self.prox_overlay.show_speeds,
+            radar_player_color=self.prox_overlay.cfg.radar_player_color,
+            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,
@@ -774,13 +785,24 @@ class ControlPanel(QtWidgets.QMainWindow):
             use_abbrev=self.cbAbbrev.isChecked(),
             window_x=self.ro_overlay.widget().x(),
             window_y=self.ro_overlay.widget().y(),
+            radar_x=self.prox_overlay.x(),
+            radar_y=self.prox_overlay.y(),
+            radar_visible=self.prox_overlay.isVisible(),
+            radar_width=self.prox_overlay.width(),
+            radar_height=self.prox_overlay.height(),
+            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
+            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
+            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_symbol=self.prox_overlay.symbol,
+            radar_show_speeds=self.prox_overlay.show_speeds,
+            radar_player_color=self.prox_overlay.cfg.radar_player_color,
+            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
         )
         # Radar state
-        profile.radar_x = self.prox_overlay.x()
-        profile.radar_y = self.prox_overlay.y()
-        profile.radar_visible = self.prox_overlay.isVisible()
 
         self.profiles.save(profile)
 
