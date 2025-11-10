@@ -408,7 +408,8 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._cfg = cfg
         self.prox_overlay.apply_config(cfg)
         self.track_overlay.apply_config(cfg)
-        self.indiv_overlay.set_backend(self._mem, cfg)
+        detected_version = getattr(self._mem, "detected_version", None)
+        self.indiv_overlay.set_backend(self._mem, cfg, version=detected_version)
         self._sync_radar_ui_from_overlay()
         self._update_helper_buttons_enabled()
 

@@ -78,8 +78,13 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         super().__init__()
         self._cfg = cfg or Config()
         self._mem = mem
+        detected_version = getattr(mem, "detected_version", None)
+        self._mem_version: Optional[str] = (
+            str(detected_version).upper() if detected_version else None
+        )
         self._status_callback = status_callback
         self._car_index = int(car_index)
+        self._freeze_warning_message: Optional[str] = None
 
         self._values_per_car = self._cfg.car_state_size // 4
         self._latest_state: Optional[RaceState] = None
@@ -105,10 +110,21 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._update_title()
 
     # ------------------------------------------------------------------
-    def set_backend(self, mem=None, cfg: Optional[Config] = None) -> None:
+    def set_backend(
+        self,
+        mem=None,
+        cfg: Optional[Config] = None,
+        version: Optional[str] = None,
+    ) -> None:
         """Update the memory/config references after reconnecting."""
         if mem is not None:
             self._mem = mem
+        if version is None and mem is not None:
+            version = getattr(mem, "detected_version", None)
+        if version is not None:
+            self._mem_version = str(version).upper()
+        elif mem is None:
+            self._mem_version = None
         if cfg is not None:
             self._cfg = cfg
             self._values_per_car = self._cfg.car_state_size // 4
@@ -117,6 +133,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._locked_values = FrozenValueStore()
             self._configure_table()
             self._update_title()
+        self._update_enabled_state()
 
     # ------------------------------------------------------------------
     @property
@@ -407,10 +424,33 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._autosize_all_columns_once()
             self._last_resize_time.restart()
 
+    def _freeze_versions_match(self) -> bool:
+        if not self._mem_version:
+            return True
+        expected = str(getattr(self._cfg, "version", "") or "").upper()
+        return expected == self._mem_version.upper()
+
+    def _freeze_unavailable_message(self) -> str:
+        detected = (self._mem_version or "unknown").upper()
+        expected = str(getattr(self._cfg, "version", "unknown") or "unknown").upper()
+        return (
+            "Freeze mode unavailable: detected build "
+            f"'{detected}' incompatible with configuration '{expected}'."
+        )
+
+    def _set_freeze_warning(self, message: Optional[str]) -> None:
+        if message and message != self._freeze_warning_message:
+            self._show_status(message, 5000)
+        self._freeze_warning_message = message
+
     def _apply_locked_values(self) -> None:
         if not self._freeze_checkbox.isChecked():
             return
         if self._mem is None or self._latest_state is None:
+            return
+
+        if not self._freeze_versions_match():
+            self._set_freeze_warning(self._freeze_unavailable_message())
             return
 
         for struct_index, row_map in self._locked_values.iter_structs():
@@ -576,15 +616,29 @@ class IndividualCarOverlay(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     def _update_enabled_state(self) -> None:
         editable = self._mem is not None
+        version_ok = self._freeze_versions_match()
         triggers = (
             QtWidgets.QAbstractItemView.DoubleClicked
             if editable
             else QtWidgets.QAbstractItemView.NoEditTriggers
         )
         self._table.setEditTriggers(triggers)
-        self._freeze_checkbox.setEnabled(editable)
-        if not editable:
+
+        freeze_enabled = editable and version_ok
+        self._freeze_checkbox.setEnabled(freeze_enabled)
+        if not freeze_enabled and self._freeze_checkbox.isChecked():
             self._freeze_checkbox.setChecked(False)
+
+        if editable and not version_ok:
+            self._set_freeze_warning(self._freeze_unavailable_message())
+            self._freeze_checkbox.setToolTip(
+                "Freeze mode is unavailable for the detected game build."
+            )
+        else:
+            self._set_freeze_warning(None)
+            self._freeze_checkbox.setToolTip(
+                "When enabled, edited values are re-applied to memory on each update."
+            )
 
     def _show_status(self, message: str, timeout_ms: int) -> None:
         if self._status_callback is not None:
