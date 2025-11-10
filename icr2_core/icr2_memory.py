@@ -181,6 +181,8 @@ class ICR2Memory:
         if window_keywords is None:
             window_keywords = [k.strip() for k in ini_keywords.split(",") if k.strip()]
 
+        self.detected_version: Optional[str] = None
+
         log.info(f"Initializing memory reader for version: {v}")
         if v == "REND32A":
             window_keywords = window_keywords or ["dosbox", "cart"]
@@ -229,6 +231,7 @@ class ICR2Memory:
         self.exe_base = hit - int(signature_offset)
         self.pid = info['pid']
         self.window_title = info['title']
+        self.detected_version = v
 
         log.info(f"Signature found at 0x{hit:08X}, EXE base set to 0x{self.exe_base:08X}")
 

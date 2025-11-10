@@ -130,6 +130,8 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.btnReleaseAllCars.clicked.connect(self._release_all_cars)
         self.btnForcePitStops.clicked.connect(self._force_all_cars_to_pit)
 
+        self._last_helper_warning_reason = None
+
         # --- Profile Manager ---
         self.profiles = ProfileManager()
         self.profileCombo.addItems(self.profiles.list_profiles())
@@ -408,6 +410,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.track_overlay.apply_config(cfg)
         self.indiv_overlay.set_backend(self._mem, cfg)
         self._sync_radar_ui_from_overlay()
+        self._update_helper_buttons_enabled()
 
     def _disconnect_runtime_signals(self):
         if not self.updater:
@@ -456,6 +459,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._updater_thread = thread
         runtime_cfg = cfg or Config()
         self._apply_runtime_config(runtime_cfg)
+        self._update_helper_buttons_enabled()
 
         if self.updater:
             self.manager.connect_updater(self.updater)
@@ -479,6 +483,41 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.updater = None
         self._mem = None
         self._updater_thread = None
+        self._update_helper_buttons_enabled()
+
+
+    def _helpers_support_state(self):
+        if not self._mem:
+            return False, "no-mem"
+        detected = getattr(self._mem, "detected_version", None)
+        expected = getattr(self._cfg, "version", None)
+        if not detected or not expected:
+            return False, "unknown"
+        if str(detected).upper() != str(expected).upper():
+            return False, "mismatch"
+        return True, ""
+
+    def _show_helper_block_message(self, reason: str, action: str) -> None:
+        if reason == "no-mem":
+            self.statusbar.showMessage(f"{action} unavailable: no memory connection", 5000)
+            return
+        if reason == "mismatch":
+            detected = str(getattr(self._mem, "detected_version", "unknown"))
+            expected = str(getattr(self._cfg, "version", "unknown"))
+            self.statusbar.showMessage(
+                f"{action} unavailable: layout '{detected.upper()}' incompatible with configuration '{expected.upper()}'",
+                7000,
+            )
+            return
+        self.statusbar.showMessage(f"{action} unavailable: helper version not detected", 5000)
+
+    def _update_helper_buttons_enabled(self) -> None:
+        supported, reason = self._helpers_support_state()
+        self.btnReleaseAllCars.setEnabled(supported)
+        self.btnForcePitStops.setEnabled(supported)
+        if not supported and reason in {"mismatch", "unknown"} and reason != self._last_helper_warning_reason:
+            self._show_helper_block_message(reason, "Pit helpers")
+        self._last_helper_warning_reason = None if supported else reason
 
 
     # -------------------------------
@@ -1037,8 +1076,9 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _release_all_cars(self):
         """Force pit release countdown to 1 for all cars in the current state."""
-        if not self._mem:
-            self.statusbar.showMessage("Pit release unavailable: no memory connection", 5000)
+        supported, reason = self._helpers_support_state()
+        if not supported:
+            self._show_helper_block_message(reason, "Pit release")
             return
 
         state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
@@ -1070,8 +1110,9 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _force_all_cars_to_pit(self):
         """Force fuel remaining to 1 lap for all cars in the current state."""
-        if not self._mem:
-            self.statusbar.showMessage("Force pit unavailable: no memory connection", 5000)
+        supported, reason = self._helpers_support_state()
+        if not supported:
+            self._show_helper_block_message(reason, "Force pit")
             return
 
         state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
