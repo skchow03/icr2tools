@@ -27,6 +27,7 @@ from icr2timing.ui.car_value_helpers import (
 log = logging.getLogger(__name__)
 
 FIELD_INDEX_ROLE = QtCore.Qt.UserRole + 1
+SUPPORTED_MEMORY_LAYOUTS = {"REND32A"}
 
 
 class DraggableTable(QtWidgets.QTableWidget):
@@ -85,6 +86,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._status_callback = status_callback
         self._car_index = int(car_index)
         self._freeze_warning_message: Optional[str] = None
+        self._layout_warning_message: Optional[str] = None
 
         self._values_per_car = self._cfg.car_state_size // 4
         self._latest_state: Optional[RaceState] = None
@@ -134,6 +136,10 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._configure_table()
             self._update_title()
         self._update_enabled_state()
+        if self._mem is not None and not self._backend_is_supported():
+            self._set_layout_warning(self._unsupported_layout_message())
+        else:
+            self._set_layout_warning(None)
 
     # ------------------------------------------------------------------
     @property
@@ -430,6 +436,17 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         expected = str(getattr(self._cfg, "version", "") or "").upper()
         return expected == self._mem_version.upper()
 
+    def _backend_is_supported(self) -> bool:
+        if self._mem is None:
+            return False
+        if not self._mem_version:
+            return False
+        expected = str(getattr(self._cfg, "version", "") or "").upper()
+        version = self._mem_version.upper()
+        if version != expected:
+            return False
+        return version in SUPPORTED_MEMORY_LAYOUTS
+
     def _freeze_unavailable_message(self) -> str:
         detected = (self._mem_version or "unknown").upper()
         expected = str(getattr(self._cfg, "version", "unknown") or "unknown").upper()
@@ -438,15 +455,31 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             f"'{detected}' incompatible with configuration '{expected}'."
         )
 
+    def _unsupported_layout_message(self) -> str:
+        detected = (self._mem_version or "unknown").upper()
+        return (
+            "Editing disabled: layout "
+            f"'{detected}' is not yet supported for individual car editing."
+        )
+
     def _set_freeze_warning(self, message: Optional[str]) -> None:
         if message and message != self._freeze_warning_message:
             self._show_status(message, 5000)
         self._freeze_warning_message = message
 
+    def _set_layout_warning(self, message: Optional[str]) -> None:
+        if message and message != self._layout_warning_message:
+            self._show_status(message, 5000)
+        self._layout_warning_message = message
+
     def _apply_locked_values(self) -> None:
         if not self._freeze_checkbox.isChecked():
             return
         if self._mem is None or self._latest_state is None:
+            return
+
+        if not self._backend_is_supported():
+            self._set_freeze_warning(self._unsupported_layout_message())
             return
 
         if not self._freeze_versions_match():
@@ -615,7 +648,7 @@ class IndividualCarOverlay(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------
     def _update_enabled_state(self) -> None:
-        editable = self._mem is not None
+        editable = self._mem is not None and self._backend_is_supported()
         version_ok = self._freeze_versions_match()
         triggers = (
             QtWidgets.QAbstractItemView.DoubleClicked
@@ -629,7 +662,12 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         if not freeze_enabled and self._freeze_checkbox.isChecked():
             self._freeze_checkbox.setChecked(False)
 
-        if editable and not version_ok:
+        if self._mem is not None and not self._backend_is_supported():
+            self._set_freeze_warning(self._unsupported_layout_message())
+            self._freeze_checkbox.setToolTip(
+                "Freeze mode is unavailable: unsupported memory layout."
+            )
+        elif editable and not version_ok:
             self._set_freeze_warning(self._freeze_unavailable_message())
             self._freeze_checkbox.setToolTip(
                 "Freeze mode is unavailable for the detected game build."
@@ -639,6 +677,11 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._freeze_checkbox.setToolTip(
                 "When enabled, edited values are re-applied to memory on each update."
             )
+
+        if self._mem is not None and not self._backend_is_supported():
+            self._set_layout_warning(self._unsupported_layout_message())
+        else:
+            self._set_layout_warning(None)
 
     def _show_status(self, message: str, timeout_ms: int) -> None:
         if self._status_callback is not None:

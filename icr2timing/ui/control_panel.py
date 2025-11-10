@@ -34,6 +34,8 @@ from icr2timing.ui.installation_editor import InstallationEditorDialog
 
 CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
 
+SAFE_HELPER_LAYOUTS = {"REND32A"}
+
 
 class ControlPanel(QtWidgets.QMainWindow):
     exe_path_changed = QtCore.pyqtSignal(str)
@@ -494,8 +496,12 @@ class ControlPanel(QtWidgets.QMainWindow):
         expected = getattr(self._cfg, "version", None)
         if not detected or not expected:
             return False, "unknown"
-        if str(detected).upper() != str(expected).upper():
+        detected_norm = str(detected).upper()
+        expected_norm = str(expected).upper()
+        if detected_norm != expected_norm:
             return False, "mismatch"
+        if expected_norm not in SAFE_HELPER_LAYOUTS:
+            return False, "unsupported"
         return True, ""
 
     def _show_helper_block_message(self, reason: str, action: str) -> None:
@@ -510,13 +516,24 @@ class ControlPanel(QtWidgets.QMainWindow):
                 7000,
             )
             return
+        if reason == "unsupported":
+            detected = str(getattr(self._mem, "detected_version", "unknown"))
+            self.statusbar.showMessage(
+                f"{action} unavailable: layout '{detected.upper()}' is not yet supported",
+                7000,
+            )
+            return
         self.statusbar.showMessage(f"{action} unavailable: helper version not detected", 5000)
 
     def _update_helper_buttons_enabled(self) -> None:
         supported, reason = self._helpers_support_state()
         self.btnReleaseAllCars.setEnabled(supported)
         self.btnForcePitStops.setEnabled(supported)
-        if not supported and reason in {"mismatch", "unknown"} and reason != self._last_helper_warning_reason:
+        if (
+            not supported
+            and reason in {"mismatch", "unknown", "unsupported"}
+            and reason != self._last_helper_warning_reason
+        ):
             self._show_helper_block_message(reason, "Pit helpers")
         self._last_helper_warning_reason = None if supported else reason
 
