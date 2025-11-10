@@ -242,7 +242,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.comboInstallations.currentIndexChanged.connect(self._on_installation_changed)
         self.btnAddInstallation.clicked.connect(self._add_installation)
         self.btnEditInstallation.clicked.connect(self._edit_installation)
-        self.btnSelectExe.clicked.connect(self._choose_exe)
         self._refresh_installations(self.installations.get_active_key())
 
         self.attach_runtime(updater, mem, self._cfg)
@@ -389,33 +388,6 @@ class ControlPanel(QtWidgets.QMainWindow):
             setattr(self.track_overlay, "_last_load_failed", False)
         if updated:
             self.statusbar.showMessage(f"Updated installation: {updated.name}", 4000)
-
-    def _choose_exe(self):
-        key = self.comboInstallations.currentData()
-        if not key:
-            return
-
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Select INDYCAR.EXE or CART.EXE",
-            "",
-            "Executable Files (*.exe);;All Files (*)"
-        )
-        if not path:
-            return
-
-        updated = self.installations.update_installation(key, exe_path=path)
-        reload_settings()
-        self._refresh_installations(select_key=key)
-
-        if updated and self._running_installation_key == key:
-            self._apply_runtime_config(Config())
-            setattr(self.track_overlay, "_last_load_failed", False)
-
-        self.exe_path_changed.emit(path)
-        base = os.path.basename(path)
-        self.statusbar.showMessage(f"Game EXE set: {base}", 4000)
-        log.info(f"[ControlPanel] Updated game_exe for installation '{key}' to: {path}")
 
     def confirm_installation_switch(self, key: str):
         self._running_installation_key = key
