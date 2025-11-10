@@ -82,16 +82,6 @@
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnSelectExe">
-           <property name="toolTip">
-            <string>Select INDYCAR.EXE or CART.EXE to connect the app to the game</string>
-           </property>
-           <property name="text">
-            <string>Change Game EXE…</string>
-           </property>
-          </widget>
-         </item>
-         <item>
           <widget class="QPushButton" name="aboutButton">
            <property name="text">
             <string>About</string>
