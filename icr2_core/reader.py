@@ -342,7 +342,7 @@ class MemoryReader:
     def read_current_track(self) -> str:
         """
         Detect current track folder name.
-        - WINDY: read integer track index at 0x527D58 and map to the
+        - WINDY101: read integer track index at 0x527D58 and map to the
           alphabetical list of track folders (sorted by TNAME).
           Returns the track's subfolder name (e.g. 'CLEVLAND').
         - DOS/REND32A: read string at current_track_addr.
@@ -350,7 +350,7 @@ class MemoryReader:
         version = getattr(self._cfg, "version", "").upper()
 
         # --- WINDY mode ---
-        if version == "WINDY":
+        if version == "WINDY101":
             idx = self._mem.read(0x527D58, "i32")
 
             # Use cached list if available and index unchanged

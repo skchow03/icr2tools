@@ -9,7 +9,7 @@ What this module does:
   • Cleans up process handles and supports `with ICR2Memory(...) as mem:`.
 
 Configurable via settings.ini:
-  • exe_info.version = REND32A, DOS, or WINDY
+  • exe_info.version = REND32A, DOS102, or WINDY101
   • exe_info.window_keywords = comma-separated window title substrings (case-insensitive)
 
 Signature bytes/offset are **not** configurable — they are fixed internally.
@@ -191,7 +191,7 @@ class ICR2Memory:
 
         v = (version or ini_version or "REND32A").upper()
         normalized_version = {
-            "WINDY101": "WINDY",
+            "WINDY101": "WINDY101",
         }.get(v, v)
         if window_keywords is None:
             window_keywords = [k.strip() for k in ini_keywords.split(",") if k.strip()]
