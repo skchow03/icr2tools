@@ -6,12 +6,12 @@ Encapsulates load/save/delete logic and returns Profile objects.
 """
 
 import os
-import configparser
 from dataclasses import dataclass
 import profile
 from typing import List, Optional, Tuple
 
 from icr2timing.overlays.running_order_overlay import POSITION_INDICATOR_LABEL
+from icr2timing.utils.ini_preserver import update_ini_file
 import sys
 
 
@@ -55,6 +55,8 @@ class ProfileManager:
     def __init__(self, ini_path: Optional[str] = None):
         base_dir = os.path.dirname(sys.argv[0])
         self._cfgfile = ini_path or os.path.join(base_dir, "profiles.ini")
+        import configparser
+
         self._parser = configparser.ConfigParser()
         self._parser.read(self._cfgfile, encoding="utf-8")
 
@@ -147,47 +149,48 @@ class ProfileManager:
         if profile.name not in self._parser:
             self._parser.add_section(profile.name)
 
-        self._parser[profile.name]["columns"] = ",".join(profile.columns)
-        self._parser[profile.name]["n_columns"] = str(profile.n_columns)
-        self._parser[profile.name]["display_mode"] = profile.display_mode
-        self._parser[profile.name]["sort_by_best"] = "true" if profile.sort_by_best else "false"
-        self._parser[profile.name]["use_abbrev"] = "true" if profile.use_abbrev else "false"
-        self._parser[profile.name]["window_x"] = str(profile.window_x)
-        self._parser[profile.name]["window_y"] = str(profile.window_y)
-        self._parser[profile.name]["radar_x"] = str(profile.radar_x)
-        self._parser[profile.name]["radar_y"] = str(profile.radar_y)
-        self._parser[profile.name]["radar_visible"] = "true" if profile.radar_visible else "false"
-        self._parser[profile.name]["radar_width"] = str(profile.radar_width)
-        self._parser[profile.name]["radar_height"] = str(profile.radar_height)
-        self._parser[profile.name]["radar_range_forward"] = str(profile.radar_range_forward)
-        self._parser[profile.name]["radar_range_rear"] = str(profile.radar_range_rear)
-        self._parser[profile.name]["radar_range_side"] = str(profile.radar_range_side)
-        self._parser[profile.name]["radar_symbol"] = profile.radar_symbol
-        self._parser[profile.name]["radar_show_speeds"] = "true" if profile.radar_show_speeds else "false"
-        self._parser[profile.name]["radar_player_color"] = profile.radar_player_color
-        self._parser[profile.name]["radar_ai_ahead_color"] = profile.radar_ai_ahead_color
-        self._parser[profile.name]["radar_ai_behind_color"] = profile.radar_ai_behind_color
-        self._parser[profile.name]["radar_ai_alongside_color"] = profile.radar_ai_alongside_color
         indicator_enabled = POSITION_INDICATOR_LABEL in profile.columns
-        self._parser[profile.name]["position_indicator_duration"] = str(profile.position_indicator_duration)
-        self._parser[profile.name]["position_indicator_enabled"] = "true" if indicator_enabled else "false"
-        # ✅ Save custom fields
-        if profile.custom_fields:
-            self._parser[profile.name]["custom_fields"] = ";".join(
+        section_values = {
+            "columns": ",".join(profile.columns),
+            "n_columns": str(profile.n_columns),
+            "display_mode": profile.display_mode,
+            "sort_by_best": "true" if profile.sort_by_best else "false",
+            "use_abbrev": "true" if profile.use_abbrev else "false",
+            "window_x": str(profile.window_x),
+            "window_y": str(profile.window_y),
+            "radar_x": str(profile.radar_x),
+            "radar_y": str(profile.radar_y),
+            "radar_visible": "true" if profile.radar_visible else "false",
+            "radar_width": str(profile.radar_width),
+            "radar_height": str(profile.radar_height),
+            "radar_range_forward": str(profile.radar_range_forward),
+            "radar_range_rear": str(profile.radar_range_rear),
+            "radar_range_side": str(profile.radar_range_side),
+            "radar_symbol": profile.radar_symbol,
+            "radar_show_speeds": "true" if profile.radar_show_speeds else "false",
+            "radar_player_color": profile.radar_player_color,
+            "radar_ai_ahead_color": profile.radar_ai_ahead_color,
+            "radar_ai_behind_color": profile.radar_ai_behind_color,
+            "radar_ai_alongside_color": profile.radar_ai_alongside_color,
+            "position_indicator_duration": str(profile.position_indicator_duration),
+            "position_indicator_enabled": "true" if indicator_enabled else "false",
+            "custom_fields": ";".join(
                 f"{label}:{idx}" for label, idx in profile.custom_fields
             )
-        else:
-            self._parser[profile.name]["custom_fields"] = ""
+            if profile.custom_fields
+            else "",
+        }
 
-        with open(self._cfgfile, "w", encoding="utf-8") as f:
-            self._parser.write(f)
+        for key, value in section_values.items():
+            self._parser[profile.name][key] = value
+
+        update_ini_file(self._cfgfile, {profile.name: section_values})
 
     def delete(self, name: str) -> bool:
         if name not in self._parser:
             return False
         self._parser.remove_section(name)
-        with open(self._cfgfile, "w", encoding="utf-8") as f:
-            self._parser.write(f)
+        update_ini_file(self._cfgfile, remove_sections=[name])
         return True
 
     # -------------------------

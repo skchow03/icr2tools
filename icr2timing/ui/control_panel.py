@@ -6,7 +6,7 @@ Uses OverlayManager (multi-overlay) + ProfileManager.
 """
 
 import time
-import os, configparser, sys
+import os, sys
 from PyQt5 import QtWidgets, QtCore, uic, QtGui
 
 
@@ -29,6 +29,7 @@ from icr2timing.overlays.individual_car_overlay import IndividualCarOverlay
 from icr2timing.core.config import Config
 from icr2timing.core.version import __version__
 from icr2timing.core.telemetry_laps import TelemetryLapLogger
+from icr2timing.utils.ini_preserver import update_ini_file
 
 
 CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
@@ -301,13 +302,7 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _save_exe_path(self, path: str):
         cfgfile = os.path.join(os.path.dirname(sys.argv[0]), "settings.ini")
-        parser = configparser.ConfigParser()
-        parser.read(cfgfile)
-        if "paths" not in parser:
-            parser.add_section("paths")
-        parser["paths"]["game_exe"] = path
-        with open(cfgfile, "w") as f:
-            parser.write(f)
+        update_ini_file(cfgfile, {"paths": {"game_exe": path}})
 
     def _choose_exe(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -325,8 +320,11 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # ✅ Update global Config() instances in memory
         from icr2timing.core import config as cfgmod
+
+        if not cfgmod._parser.has_section("paths"):
+            cfgmod._parser.add_section("paths")
         cfgmod._parser.set("paths", "game_exe", path)
-        cfgmod._parser.write(open(cfgmod._cfgfile, "w"))
+        update_ini_file(cfgmod._cfgfile, {"paths": {"game_exe": path}})
 
         # clear mute so TrackMapOverlay can retry loading
         self.track_overlay._last_load_failed = False
