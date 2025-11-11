@@ -13,6 +13,21 @@ _cfgfile = os.path.join(_cfgdir, "settings.ini")
 _parser = configparser.ConfigParser()
 _parser.read(_cfgfile)
 
+EXE_INFO_SECTION = "exe_info"
+
+
+def _get_exe_info_option(option: str, fallback: str = "") -> str:
+    """Return an option from the [exe_info] section with legacy fallbacks."""
+
+    for section in (EXE_INFO_SECTION, "memory"):
+        if _parser.has_option(section, option):
+            return _parser.get(section, option)
+
+    if option == "game_exe" and _parser.has_option("paths", option):
+        return _parser.get("paths", option)
+
+    return fallback
+
 # --- Version-specific memory maps ---
 OFFSETS = {
     "REND32A": {
@@ -156,10 +171,10 @@ class Config:
     radar_show_speeds: bool = _parser.getboolean("radar", "show_speeds", fallback=False)
 
     # Paths
-    game_exe: str = _parser.get("paths", "game_exe", fallback="")
+    game_exe: str = _get_exe_info_option("game_exe", fallback="")
 
     def __post_init__(self):
-        version = _parser.get("memory", "version", fallback="REND32A").upper()
+        version = _get_exe_info_option("version", fallback="REND32A").upper()
         self.version = version
         if version not in OFFSETS:
             raise ValueError(f"Unsupported memory version: {version}")
