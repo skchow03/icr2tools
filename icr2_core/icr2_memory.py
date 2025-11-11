@@ -201,11 +201,11 @@ class ICR2Memory:
             window_keywords = window_keywords or ["dosbox", "cart"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("B1C0C", 16)
-        elif normalized_version == "DOS":
+        elif normalized_version == "DOS102":
             window_keywords = window_keywords or ["dosbox", "indycar"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("A0D78", 16)
-        elif normalized_version == "WINDY":
+        elif normalized_version == "WINDY101":
             window_keywords = window_keywords or ["cart racing"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("4E2199", 16)
