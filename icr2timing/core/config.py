@@ -17,11 +17,12 @@ EXE_INFO_SECTION = "exe_info"
 
 # Known EXE file sizes and their associated ICR2 versions.
 EXE_VERSIONS = {
-    1142387: "DOS",
-    1916928: "WINDY",
-    1109095: "REND32A",
+    1142371: "DOS100",
+    1142387: "DOS102",
+    1247899: "REND102",
+    1916928: "WINDY101",
+    1109095: "REND32A"
 }
-
 
 def _get_exe_info_option(option: str, fallback: str = "") -> str:
     """Return an option from the [exe_info] section with legacy fallbacks."""
@@ -47,7 +48,7 @@ OFFSETS = {
         "track_length_addr":0x000F15BC,
         "current_track_addr":0x000F823D,
     },
-    "DOS": {
+    "DOS102": {
         "run_order_base":   0xDAA1C,
         "car_numbers_base": 0xCB700,
         "driver_names_base":0xCAD8E,
@@ -58,7 +59,7 @@ OFFSETS = {
         "current_track_addr":0xE2EE9,
         "session_timer_addr":0xDC61C,
     },
-    "WINDY": {
+    "WINDY101": {
         "run_order_base":   0x50FD64,
         # "car_numbers_base": 0x51511C,
         # "driver_names_base":0x51539C,
@@ -184,7 +185,7 @@ class Config:
         version = _get_exe_info_option("version", fallback="REND32A").upper()
         self.version = version
         if version not in OFFSETS:
-            raise ValueError(f"Unsupported memory version: {version}")
+            raise ValueError(f"Unsupported memory version: {version}. Current supported versions are: DOS102, REND32A, WINDY101.")
 
         if self.game_exe:
             try:

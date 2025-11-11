@@ -198,18 +198,18 @@ class ICR2Memory:
             window_keywords = window_keywords or ["dosbox", "cart"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("B1C0C", 16)
-        elif v == "DOS":
+        elif v == "DOS102":
             window_keywords = window_keywords or ["dosbox", "indycar"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("A0D78", 16)
-        elif v == "WINDY":
+        elif v == "WINDY101":
             window_keywords = window_keywords or ["cart racing"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("4E2199", 16)
 
         else:
             log.warning(f"Unsupported version '{v}' in settings.ini")
-            raise ValueError("version must be 'DOS' or 'REND32A' or 'WINDY")
+            raise ValueError("version must be 'DOS102' or 'REND32A' or 'WINDY101")
 
         log.info(f"Searching for window with keywords {window_keywords}")
         info = find_pid_by_window_title(window_keywords)
