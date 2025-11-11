@@ -302,7 +302,7 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _save_exe_path(self, path: str):
         cfgfile = os.path.join(os.path.dirname(sys.argv[0]), "settings.ini")
-        update_ini_file(cfgfile, {"paths": {"game_exe": path}})
+        update_ini_file(cfgfile, {"exe_info": {"game_exe": path}})
 
     def _choose_exe(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -321,10 +321,10 @@ class ControlPanel(QtWidgets.QMainWindow):
         # ✅ Update global Config() instances in memory
         from icr2timing.core import config as cfgmod
 
-        if not cfgmod._parser.has_section("paths"):
-            cfgmod._parser.add_section("paths")
-        cfgmod._parser.set("paths", "game_exe", path)
-        update_ini_file(cfgmod._cfgfile, {"paths": {"game_exe": path}})
+        if not cfgmod._parser.has_section(cfgmod.EXE_INFO_SECTION):
+            cfgmod._parser.add_section(cfgmod.EXE_INFO_SECTION)
+        cfgmod._parser.set(cfgmod.EXE_INFO_SECTION, "game_exe", path)
+        update_ini_file(cfgmod._cfgfile, {cfgmod.EXE_INFO_SECTION: {"game_exe": path}})
 
         # clear mute so TrackMapOverlay can retry loading
         self.track_overlay._last_load_failed = False

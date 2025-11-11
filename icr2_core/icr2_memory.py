@@ -9,8 +9,8 @@ What this module does:
   • Cleans up process handles and supports `with ICR2Memory(...) as mem:`.
 
 Configurable via settings.ini:
-  • memory.version = REND32A or DOS
-  • memory.window_keywords = comma-separated window title substrings (case-insensitive)
+  • exe_info.version = REND32A, DOS, or WINDY
+  • exe_info.window_keywords = comma-separated window title substrings (case-insensitive)
 
 Signature bytes/offset are **not** configurable — they are fixed internally.
 """
@@ -41,6 +41,21 @@ _cfgdir = os.path.dirname(sys.argv[0])
 _cfgfile = os.path.join(_cfgdir, "settings.ini")
 _parser = configparser.ConfigParser()
 _parser.read(_cfgfile)
+
+EXE_INFO_SECTION = "exe_info"
+
+
+def _get_exe_info_option(option: str, fallback: Optional[str] = None) -> Optional[str]:
+    """Return an option from the [exe_info] section with legacy fallbacks."""
+
+    for section in (EXE_INFO_SECTION, "memory"):
+        if _parser.has_option(section, option):
+            return _parser.get(section, option)
+
+    if option == "game_exe" and _parser.has_option("paths", option):
+        return _parser.get("paths", option)
+
+    return fallback
 
 # ----------------------------
 # Win32 virtual memory basics
@@ -171,8 +186,8 @@ class ICR2Memory:
                  verbose: bool = True):
 
         # Load from INI
-        ini_version = _parser.get("memory", "version", fallback=None)
-        ini_keywords = _parser.get("memory", "window_keywords", fallback="")
+        ini_version = _get_exe_info_option("version")
+        ini_keywords = _get_exe_info_option("window_keywords", fallback="") or ""
 
         v = (version or ini_version or "REND32A").upper()
         if window_keywords is None:

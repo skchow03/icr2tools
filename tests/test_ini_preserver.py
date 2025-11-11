@@ -10,14 +10,14 @@ def _read(path: Path) -> str:
 def test_update_preserves_comments(tmp_path: Path):
     ini = tmp_path / "settings.ini"
     ini.write_text(
-        """; global comment\n[paths]\n; keep me\ngame_exe = OLD.EXE ; trailing\n\n[overlay]\n# numbers\npoll_ms = 250\n""",
+        """; global comment\n[exe_info]\n; keep me\ngame_exe = OLD.EXE ; trailing\n\n[overlay]\n# numbers\npoll_ms = 250\n""",
         encoding="utf-8",
     )
 
     update_ini_file(
         str(ini),
         {
-            "paths": {"game_exe": "NEW.EXE"},
+            "exe_info": {"game_exe": "NEW.EXE"},
             "overlay": {"poll_ms": "333", "font_size": "10"},
         },
     )
