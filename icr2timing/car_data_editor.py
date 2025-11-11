@@ -20,7 +20,11 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 if __package__ is None:
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
+from icr2_core.icr2_memory import (
+    ICR2Memory,
+    MemoryWritesDisabledError,
+    WindowNotFoundError,
+)
 from icr2_core.model import RaceState
 from icr2_core.reader import MemoryReader
 from icr2timing.core.car_field_definitions import CarFieldDefinition, ensure_field_definitions
@@ -189,6 +193,32 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             self._table.setItem(row_idx, 2, value_item)
 
         layout.addWidget(self._table, 1)
+
+    def _require_writes_enabled(self, purpose: str) -> bool:
+        if self._mem is None:
+            return False
+        if self._mem.writes_enabled:
+            return True
+
+        message = (
+            "Memory writes are disabled for this session.\n\n"
+            f"Enable writes to {purpose}. "
+            "Only proceed if you understand the risks."
+        )
+        reply = QtWidgets.QMessageBox.warning(
+            self,
+            "Enable memory writes?",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._mem.enable_writes()
+            self._show_status("Memory writes enabled for this session", 4000)
+            return True
+
+        self._show_status("Memory writes remain disabled", 4000)
+        return False
 
     # ------------------------------------------------------------------
     def _show_status(self, message: str, timeout_ms: int = 0) -> None:
@@ -395,6 +425,10 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             self._refresh_table()
             return
 
+        if not self._require_writes_enabled("edit car data values"):
+            self._refresh_table()
+            return
+
         exe_offset = (
             self._cfg.car_state_base
             + self._current_struct_index * self._cfg.car_state_size
@@ -403,6 +437,10 @@ class CarDataEditorWidget(QtWidgets.QWidget):
 
         try:
             self._mem.write(exe_offset, "i32", new_val)
+        except MemoryWritesDisabledError:
+            self._show_status("Memory writes remain disabled", 4000)
+            self._refresh_table()
+            return
         except Exception as exc:
             log.exception("Failed to write car data value")
             self._show_status(f"Write failed: {exc}", 5000)
@@ -433,6 +471,16 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             self._show_status("Value freezing disabled", 2000)
             self._refresh_table()
         else:
+            if not self._require_writes_enabled(
+                "reapply frozen values on every update"
+            ):
+                try:
+                    self._freeze_checkbox.blockSignals(True)
+                    self._freeze_checkbox.setChecked(False)
+                finally:
+                    self._freeze_checkbox.blockSignals(False)
+                self._locked_values.clear()
+                return
             self._show_status(
                 "Value freezing enabled. Edited values will be reapplied each update.",
                 4000,
@@ -445,6 +493,8 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         if state is None:
             return
         if self._mem is None:
+            return
+        if not self._mem.writes_enabled:
             return
 
         for struct_index, row_map in self._locked_values.iter_structs():
@@ -460,6 +510,12 @@ class CarDataEditorWidget(QtWidgets.QWidget):
                 )
                 try:
                     self._mem.write(exe_offset, "i32", value)
+                except MemoryWritesDisabledError:
+                    self._show_status(
+                        "Memory writes remain disabled; frozen values were not applied",
+                        4000,
+                    )
+                    return
                 except Exception as exc:
                     log.exception("Failed to maintain frozen car data value")
                     self._show_status(

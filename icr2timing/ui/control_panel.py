@@ -13,6 +13,7 @@ from PyQt5 import QtWidgets, QtCore, uic, QtGui
 import logging
 log = logging.getLogger(__name__)
 
+from icr2_core.icr2_memory import MemoryWritesDisabledError
 from icr2timing.updater.overlay_manager import OverlayManager
 from icr2timing.overlays.running_order_overlay import (
     RunningOrderOverlayTable,
@@ -891,10 +892,41 @@ class ControlPanel(QtWidgets.QMainWindow):
         # Refresh status bar to reflect current state
         self._update_status()
 
+    def _ensure_memory_writes_enabled(self, purpose: str) -> bool:
+        if self._mem is None:
+            return False
+        if self._mem.writes_enabled:
+            return True
+
+        message = (
+            "Memory writes are currently disabled for this session.\n\n"
+            f"Enabling writes will allow the tool to {purpose}. "
+            "Only proceed if you understand the risks."
+        )
+        reply = QtWidgets.QMessageBox.warning(
+            self,
+            "Enable memory writes?",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._mem.enable_writes()
+            self.statusbar.showMessage(
+                "Memory writes enabled for this session", 5000
+            )
+            return True
+
+        self.statusbar.showMessage("Memory writes remain disabled", 5000)
+        return False
+
     def _release_all_cars(self):
         """Force pit release countdown to 1 for all cars in the current state."""
         if not self._mem:
             self.statusbar.showMessage("Pit release unavailable: no memory connection", 5000)
+            return
+
+        if not self._ensure_memory_writes_enabled("set pit release timers to 1"):
             return
 
         state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
@@ -914,6 +946,9 @@ class ControlPanel(QtWidgets.QMainWindow):
                 exe_offset = base + struct_idx * stride + field_offset
                 self._mem.write(exe_offset, "i32", 1)
                 updated += 1
+        except MemoryWritesDisabledError:
+            self.statusbar.showMessage("Memory writes remain disabled", 5000)
+            return
         except Exception as exc:
             log.exception("Failed to release all cars from pits")
             self.statusbar.showMessage(f"Failed to release all cars: {exc}", 5000)
@@ -928,6 +963,9 @@ class ControlPanel(QtWidgets.QMainWindow):
         """Force fuel remaining to 1 lap for all cars in the current state."""
         if not self._mem:
             self.statusbar.showMessage("Force pit unavailable: no memory connection", 5000)
+            return
+
+        if not self._ensure_memory_writes_enabled("set every car's fuel to 1 lap"):
             return
 
         state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
@@ -949,6 +987,9 @@ class ControlPanel(QtWidgets.QMainWindow):
                 exe_offset = base + struct_idx * stride + field_offset
                 self._mem.write(exe_offset, "i32", 1)
                 updated += 1
+        except MemoryWritesDisabledError:
+            self.statusbar.showMessage("Memory writes remain disabled", 5000)
+            return
         except Exception as exc:
             log.exception("Failed to force all cars to pit")
             self.statusbar.showMessage(f"Failed to force pit stops: {exc}", 5000)
