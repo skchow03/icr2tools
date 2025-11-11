@@ -24,6 +24,14 @@ EXE_VERSIONS = {
     1109095: "REND32A"
 }
 
+# Some INI configurations use more specific build tags that map onto the
+# canonical memory maps above. These aliases keep backwards compatibility
+# while letting newer builds opt-in to stricter validation.
+VERSION_ALIASES = {
+    "WINDY101": "WINDY",
+}
+
+
 def _get_exe_info_option(option: str, fallback: str = "") -> str:
     """Return an option from the [exe_info] section with legacy fallbacks."""
 
@@ -183,9 +191,10 @@ class Config:
 
     def __post_init__(self):
         version = _get_exe_info_option("version", fallback="REND32A").upper()
+        normalized_version = VERSION_ALIASES.get(version, version)
         self.version = version
-        if version not in OFFSETS:
-            raise ValueError(f"Unsupported memory version: {version}. Current supported versions are: DOS102, REND32A, WINDY101.")
+        if normalized_version not in OFFSETS:
+            raise ValueError(f"Unsupported memory version: {version}")
 
         if self.game_exe:
             try:
@@ -204,12 +213,13 @@ class Config:
                     f"Unrecognized game_exe '{self.game_exe}' size {size} bytes. Known versions: {known}"
                 )
 
-            if exe_version.upper() != version:
+            normalized_exe_version = VERSION_ALIASES.get(exe_version.upper(), exe_version.upper())
+            if normalized_exe_version != normalized_version:
                 raise ValueError(
                     "settings.ini version "
                     f"'{version}' does not match executable '{self.game_exe}' "
                     f"({exe_version} build, {size} bytes)"
                 )
 
-        for k, v in OFFSETS[version].items():
+        for k, v in OFFSETS[normalized_version].items():
             object.__setattr__(self, k, v)

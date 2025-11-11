@@ -36,3 +36,11 @@ def test_config_rejects_unknown_executable_size(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="Unrecognized game_exe"):
         cfg.Config(game_exe=str(exe_path))
+
+
+def test_config_accepts_windy101_alias(tmp_path, monkeypatch):
+    exe_path = tmp_path / "cart.exe"
+    exe_path.write_bytes(b"\0" * 1916928)
+    _set_version(monkeypatch, "WINDY101")
+
+    cfg.Config(game_exe=str(exe_path))

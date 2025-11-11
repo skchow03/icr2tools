@@ -190,19 +190,22 @@ class ICR2Memory:
         ini_keywords = _get_exe_info_option("window_keywords", fallback="") or ""
 
         v = (version or ini_version or "REND32A").upper()
+        normalized_version = {
+            "WINDY101": "WINDY",
+        }.get(v, v)
         if window_keywords is None:
             window_keywords = [k.strip() for k in ini_keywords.split(",") if k.strip()]
 
         log.info(f"Initializing memory reader for version: {v}")
-        if v == "REND32A":
+        if normalized_version == "REND32A":
             window_keywords = window_keywords or ["dosbox", "cart"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("B1C0C", 16)
-        elif v == "DOS102":
+        elif normalized_version == "DOS":
             window_keywords = window_keywords or ["dosbox", "indycar"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("A0D78", 16)
-        elif v == "WINDY101":
+        elif normalized_version == "WINDY":
             window_keywords = window_keywords or ["cart racing"]
             signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
             signature_offset = int("4E2199", 16)
@@ -246,6 +249,24 @@ class ICR2Memory:
         self._writes_enabled = False
 
         log.info(f"Signature found at 0x{hit:08X}, EXE base set to 0x{self.exe_base:08X}")
+
+        if v == "WINDY101":
+            windy101_signature = bytes.fromhex(
+                "43 41 52 54 20 52 61 63 69 6E 67 20 66 6F 72 20 57 69 6E 64 6F 77 73"
+            )
+            check_offset = int("4FC884", 16)
+            try:
+                data = self.pm.read_bytes(self.exe_base + check_offset, len(windy101_signature))
+            except Exception as exc:
+                raise RuntimeError(
+                    "Failed to read WINDY101 verification bytes from process memory"
+                ) from exc
+
+            if data != windy101_signature:
+                raise RuntimeError(
+                    "WINDY101 executable signature mismatch at 0x4FC884"
+                )
+            log.info("Verified WINDY101 memory signature at 0x4FC884")
 
     # --- lifecycle / context management ---
 
