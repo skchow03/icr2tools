@@ -141,6 +141,11 @@ class WindowNotFoundError(RuntimeError):
     pass
 
 
+class MemoryWritesDisabledError(RuntimeError):
+    """Raised when attempting to write while session writes are disabled."""
+    pass
+
+
 
 # ----------------------------
 # Main reader
@@ -222,6 +227,9 @@ class ICR2Memory:
         self.pid = info['pid']
         self.window_title = info['title']
 
+        # Memory writes start disabled each session and require explicit opt-in.
+        self._writes_enabled = False
+
         log.info(f"Signature found at 0x{hit:08X}, EXE base set to 0x{self.exe_base:08X}")
 
     # --- lifecycle / context management ---
@@ -247,6 +255,25 @@ class ICR2Memory:
     def __exit__(self, exc_type, exc, tb) -> bool:
         self.close()
         return False
+
+    # --- write control ---
+
+    @property
+    def writes_enabled(self) -> bool:
+        """Return whether writes are permitted for this session."""
+        return bool(getattr(self, "_writes_enabled", False))
+
+    def enable_writes(self) -> None:
+        """Allow memory writes for the remainder of this session."""
+        self._writes_enabled = True
+
+    def disable_writes(self) -> None:
+        """Disallow memory writes until explicitly re-enabled."""
+        self._writes_enabled = False
+
+    def set_writes_enabled(self, enabled: bool) -> None:
+        """Helper for toggling write permissions from UI code."""
+        self._writes_enabled = bool(enabled)
 
     # --- typed read ---
 
@@ -274,6 +301,11 @@ class ICR2Memory:
         """
         if self.exe_base is None or self.pm is None:
             raise RuntimeError("Process not attached")
+
+        if not self.writes_enabled:
+            raise MemoryWritesDisabledError(
+                "Memory writes are disabled for this session."
+            )
 
         addr = self.exe_base + int(exe_offset)
 

@@ -8,6 +8,7 @@ from typing import Callable, Dict, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from icr2_core.icr2_memory import MemoryWritesDisabledError
 from icr2timing.overlays.base_overlay import BaseOverlay
 from icr2_core.model import RaceState
 from icr2timing.core.car_field_definitions import (
@@ -177,6 +178,32 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         self._configure_table()
         frame_layout.addWidget(self._table, 1)
         self.resize(self.sizeHint())
+
+    def _require_writes_enabled(self, purpose: str) -> bool:
+        if self._mem is None:
+            return False
+        if self._mem.writes_enabled:
+            return True
+
+        message = (
+            "Memory writes are disabled for this session.\n\n"
+            f"Enable writes to {purpose}. "
+            "Only proceed if you understand the risks."
+        )
+        reply = QtWidgets.QMessageBox.warning(
+            self,
+            "Enable memory writes?",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._mem.enable_writes()
+            self._show_status("Memory writes enabled for this session", 4000)
+            return True
+
+        self._show_status("Memory writes remain disabled", 4000)
+        return False
 
     def _configure_table(self) -> None:
         self._columns = 3
@@ -398,6 +425,8 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             return
         if self._mem is None or self._latest_state is None:
             return
+        if not self._mem.writes_enabled:
+            return
 
         for struct_index, row_map in self._locked_values.iter_structs():
             if not row_map or struct_index not in self._latest_state.car_states:
@@ -410,6 +439,12 @@ class IndividualCarOverlay(QtWidgets.QWidget):
                 )
                 try:
                     self._mem.write(exe_offset, "i32", value)
+                except MemoryWritesDisabledError:
+                    self._show_status(
+                        "Memory writes remain disabled; frozen values were not applied",
+                        4000,
+                    )
+                    return
                 except Exception as exc:  # pragma: no cover - defensive
                     log.exception("Failed to maintain frozen overlay value")
                     self._show_status(
@@ -443,6 +478,10 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._refresh_table()
             return
 
+        if not self._require_writes_enabled("edit car telemetry values"):
+            self._refresh_table()
+            return
+
         exe_offset = (
             self._cfg.car_state_base
             + self._car_index * self._cfg.car_state_size
@@ -451,6 +490,10 @@ class IndividualCarOverlay(QtWidgets.QWidget):
 
         try:
             self._mem.write(exe_offset, "i32", new_val)
+        except MemoryWritesDisabledError:
+            self._show_status("Memory writes remain disabled", 4000)
+            self._refresh_table()
+            return
         except Exception as exc:  # pragma: no cover - defensive
             log.exception("Failed to write car data value from overlay")
             self._show_status(f"Write failed: {exc}", 5000)
@@ -488,6 +531,16 @@ class IndividualCarOverlay(QtWidgets.QWidget):
             self._show_status("Value freezing disabled", 2000)
             self._refresh_table()
         else:
+            if not self._require_writes_enabled(
+                "reapply frozen overlay values on every update"
+            ):
+                try:
+                    self._freeze_checkbox.blockSignals(True)
+                    self._freeze_checkbox.setChecked(False)
+                finally:
+                    self._freeze_checkbox.blockSignals(False)
+                self._locked_values.clear()
+                return
             self._show_status(
                 "Value freezing enabled. Edited values will be reapplied each update.",
                 4000,
