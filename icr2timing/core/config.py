@@ -15,6 +15,13 @@ _parser.read(_cfgfile)
 
 EXE_INFO_SECTION = "exe_info"
 
+# Known EXE file sizes and their associated ICR2 versions.
+EXE_VERSIONS = {
+    1142387: "DOS",
+    1916928: "WINDY",
+    1109095: "REND32A",
+}
+
 
 def _get_exe_info_option(option: str, fallback: str = "") -> str:
     """Return an option from the [exe_info] section with legacy fallbacks."""
@@ -178,5 +185,30 @@ class Config:
         self.version = version
         if version not in OFFSETS:
             raise ValueError(f"Unsupported memory version: {version}")
+
+        if self.game_exe:
+            try:
+                size = os.path.getsize(self.game_exe)
+            except OSError as exc:
+                raise ValueError(
+                    f"Configured game_exe '{self.game_exe}' is not accessible: {exc.strerror or exc}"
+                ) from exc
+
+            exe_version = EXE_VERSIONS.get(size)
+            if exe_version is None:
+                known = ", ".join(
+                    f"{name} ({bytes_} bytes)" for bytes_, name in sorted(EXE_VERSIONS.items())
+                )
+                raise ValueError(
+                    f"Unrecognized game_exe '{self.game_exe}' size {size} bytes. Known versions: {known}"
+                )
+
+            if exe_version.upper() != version:
+                raise ValueError(
+                    "settings.ini version "
+                    f"'{version}' does not match executable '{self.game_exe}' "
+                    f"({exe_version} build, {size} bytes)"
+                )
+
         for k, v in OFFSETS[version].items():
             object.__setattr__(self, k, v)
