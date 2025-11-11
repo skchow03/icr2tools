@@ -28,7 +28,7 @@ EXE_VERSIONS = {
 # canonical memory maps above. These aliases keep backwards compatibility
 # while letting newer builds opt-in to stricter validation.
 VERSION_ALIASES = {
-    "WINDY101": "WINDY",
+    "WINDY101": "WINDY101",
 }
 
 
