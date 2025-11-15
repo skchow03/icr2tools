@@ -190,25 +190,20 @@ class ICR2Memory:
         ini_keywords = _get_exe_info_option("window_keywords", fallback="") or ""
 
         v = (version or ini_version or "REND32A").upper()
-        normalized_version = {
-            "WINDY101": "WINDY101",
-        }.get(v, v)
+
         if window_keywords is None:
             window_keywords = [k.strip() for k in ini_keywords.split(",") if k.strip()]
 
         log.info(f"Initializing memory reader for version: {v}")
-        if normalized_version == "REND32A":
-            window_keywords = window_keywords or ["dosbox", "cart"]
-            signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
-            signature_offset = int("B1C0C", 16)
-        elif normalized_version == "DOS102":
-            window_keywords = window_keywords or ["dosbox", "indycar"]
-            signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
-            signature_offset = int("A0D78", 16)
-        elif normalized_version == "WINDY101":
-            window_keywords = window_keywords or ["cart racing"]
-            signature_bytes = bytes.fromhex("6C 69 63 65 6E 73 65 20 77 69 74 68 20 42 6F 62")
-            signature_offset = int("4E2199", 16)
+        if v == "REND32A":
+            signature_bytes = bytes.fromhex("52 4E 31 20 42 75 69 6C 64 20 23 36 31")
+            signature_offset = int("B08D9", 16)
+        elif v == "DOS102":
+            signature_bytes = bytes.fromhex("55 6E 61 62 6C 65 20 74 6F 20 66 69 6E 64 20 49 6E 64 79 43 61 72 2E 65 78 65")
+            signature_offset = int("A4120", 16)
+        elif v == "WINDY101":
+            signature_bytes = bytes.fromhex("57 69 6E 64 79 54 69 6D 65 72 50 68 79 73 53 65 6D 61 70 68 6F 72 65 00")
+            signature_offset = int("4f5a7c", 16)
 
         else:
             log.warning(f"Unsupported version '{v}' in settings.ini")
@@ -248,25 +243,9 @@ class ICR2Memory:
         # Memory writes start disabled each session and require explicit opt-in.
         self._writes_enabled = False
 
+        log.info(f"Signature offset is {signature_offset:08X}")
+
         log.info(f"Signature found at 0x{hit:08X}, EXE base set to 0x{self.exe_base:08X}")
-
-        if v == "WINDY101":
-            windy101_signature = bytes.fromhex(
-                "43 41 52 54 20 52 61 63 69 6E 67 20 66 6F 72 20 57 69 6E 64 6F 77 73"
-            )
-            check_offset = int("4FC884", 16)
-            try:
-                data = self.pm.read_bytes(self.exe_base + check_offset, len(windy101_signature))
-            except Exception as exc:
-                raise RuntimeError(
-                    "Failed to read WINDY101 verification bytes from process memory"
-                ) from exc
-
-            if data != windy101_signature:
-                raise RuntimeError(
-                    "WINDY101 executable signature mismatch at 0x4FC884"
-                )
-            log.info("Verified WINDY101 memory signature at 0x4FC884")
 
     # --- lifecycle / context management ---
 
