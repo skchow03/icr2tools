@@ -48,77 +48,70 @@ icr2tools/
 
 ### `icr2_core/`
 
-* **`icr2_memory.ICR2Memory`** attaches to DOSBox/ICR2 processes by scanning window titles and
-  signature bytes, supports all known executables (`REND32A`, `DOS`, `WINDY`), and exposes
-  typed `read`/`write` helpers plus `BulkReader`/`read_blocks` for efficient structured reads.
-  Configuration (window keywords, version) is pulled from `settings.ini` when parameters are
-  omitted, and Windows handles are released cleanly on shutdown.【F:icr2_core/icr2_memory.py†L1-L129】【F:icr2_core/icr2_memory.py†L130-L221】
-* **`reader.MemoryReader`** orchestrates the higher-level decoding: it reads counts, driver
-  names, car numbers, and the raw 0x214 telemetry block; computes lap counts, lap times, gaps,
-  and status flags; and assembles immutable `Driver`, `CarState`, and `RaceState` instances.
-  It also fetches track length/name (with WINDY-specific caching logic) and raises `ReadError`
-  on failure so the UI can surface transient issues.【F:icr2_core/reader.py†L1-L206】【F:icr2_core/reader.py†L207-L432】
-* **`model.py`** defines frozen dataclasses for `Driver`, `CarState`, and `RaceState`, making
-  snapshots trivially thread-safe and serialisable across Qt signal boundaries.【F:icr2_core/model.py†L1-L54】【F:icr2_core/model.py†L55-L85】
-* **Track utilities (`trk/`)** expose loaders (`track_loader.py`), geometry classes, surface mesh
-  generators, and exporters used by overlays like the track map and surface visualiser.
-* **`dat/unpackdat.py`** is a stand-alone helper for extracting `.DAT` resource archives shipped
-  with the game.
+* **`icr2_memory.ICR2Memory`** attaches to DOSBox/ICR2 processes by scanning window titles and signature bytes, supports all known executables (`REND32A`, `DOS`, `WINDY`), and exposes typed `read`/`write` helpers plus `BulkReader`/`read_blocks` for efficient structured reads. Configuration (window keywords, version) is pulled from `settings.ini` when parameters are omitted, and Windows handles are released cleanly on shutdown.【F:icr2_core/icr2_memory.py†L1-L200】
+* **`reader.MemoryReader`** orchestrates the higher-level decoding: it reads counts, driver names, car numbers, and the raw 0x214 telemetry block; computes lap counts, lap times, gaps, and status flags; and assembles immutable `Driver`, `CarState`, and `RaceState` instances. It also fetches track length/name (with WINDY-specific caching logic) and raises `ReadError` on failure so the UI can surface transient issues.【F:icr2_core/reader.py†L1-L206】【F:icr2_core/reader.py†L207-L432】
+* **`model.py`** defines frozen dataclasses for `Driver`, `CarState`, and `RaceState`, making snapshots trivially thread-safe and serialisable across Qt signal boundaries.【F:icr2_core/model.py†L1-L54】【F:icr2_core/model.py†L55-L85】
+* **Track utilities (`trk/`)** provide `load_trk_from_folder` (detect `.DAT` versus `.TRK` payloads), helpers for sampling centrelines, and `surface_mesh.build_ground_surface_mesh` which emits per-f-section quads plus cached bounds for rendering overlays like the track map and surface visualiser.【F:icr2_core/trk/track_loader.py†L1-L21】【F:icr2_core/trk/surface_mesh.py†L1-L188】
+* **`dat/unpackdat.py`** is a stand-alone helper for extracting `.DAT` resource archives shipped with the game or for in-memory extraction when the track loader needs embedded `.TRK` payloads.【F:icr2_core/dat/unpackdat.py†L1-L118】
 
 ### `icr2timing/`
 
-* **Entry point (`main.py`)** configures logging (with a capped on-disk handler), boots the
-  Qt application, retries `ICR2Memory` attachment via message boxes, and wires a shared
-  `MemoryReader`/`RaceUpdater` into the `ControlPanel` before starting the worker thread.
-  The app icon is loaded from `assets/icon.ico` for both frozen and development builds.【F:icr2timing/main.py†L1-L115】
-* **Core utilities (`core/`)** include:
-  * `config.Config` – thin facade over the shared `ConfigStore`, letting legacy callers fetch the
-    current settings, subscribe to change signals, or persist overrides without holding a direct
-    reference to the store.【F:icr2timing/core/config.py†L1-L34】
-  * `config_store.ConfigStore` – a `QObject` singleton that loads `settings.ini`, applies the
-    correct memory offsets for the detected executable, exposes a `ConfigModel` with overlay
-    defaults (fonts, colours, radar geometry, column widths), and emits
-    `config_changed`/`overlay_setting_changed` when `reload()`/`save()` mutates runtime state so
-    overlays can hot-reload UI tweaks.【F:icr2timing/core/config_store.py†L1-L200】【F:icr2timing/core/config_store.py†L242-L304】
-  * `config_backend.ConfigBackend` – handles INI parsing/persistence, version alias resolution,
-    executable validation, and comment-preserving saves via the shared INI writer so that
-    `settings.ini` edits never discard user annotations.【F:icr2timing/core/config_backend.py†L1-L113】
-  * `car_field_definitions.py` – metadata for the 133 telemetry integers powering custom table
-    columns and editors.【F:icr2timing/core/car_field_definitions.py†L1-L78】
-  * `car_data_recorder.py` – CSV recorder for per-car telemetry slices, keeping metadata files
-    alongside logs for later analysis.【F:icr2timing/core/car_data_recorder.py†L1-L120】
-  * `telemetry_laps.py` – session-wide lap logger that appends to a timestamped CSV whenever
-    a car completes a lap.【F:icr2timing/core/telemetry_laps.py†L1-L63】
-  * `version.py` – single-source version string for the overlay executable.【F:icr2timing/core/version.py†L1-L1】
-* **Analysis helpers (`analysis/`)** provide deterministic formatting and classification logic:
-  `best_laps.py` tracks personal/global bests, `gap_utils.py` renders gaps/intervals while
-  handling retirements and pit status, and `name_utils.py` applies display tweaks.【F:icr2timing/analysis/best_laps.py†L1-L54】【F:icr2timing/analysis/gap_utils.py†L1-L131】
-* **Updater (`updater/`)** houses `RaceUpdater`, the worker-side `QObject` that runs a precise
-  `QTimer`, emits `state_updated`/`error`, and stops itself if the process disappears, plus
-  `OverlayManager` for show/hide/reset orchestration across overlays.【F:icr2timing/updater/updater.py†L1-L125】【F:icr2timing/updater/overlay_manager.py†L1-L77】
-* **Overlays (`overlays/`)** share a `BaseOverlay` contract and optional helpers in
-  `overlay_table_window.py`. `running_order_overlay.py` drives the flagship timing table: it
-  maintains a configurable column list (including the Δ position indicator), tracks best laps,
-  honours profile-defined custom telemetry fields, and listens to `ConfigStore` signals so
-  fonts/colours/resize throttling update live.【F:icr2timing/overlays/running_order_overlay.py†L1-L200】
-  Additional overlays (proximity radar, track map, experimental surface visualiser, individual
-  telemetry panel) respond to updater signals and use the shared geometry/analysis helpers.
-* **UI layer (`ui/`)** contains:
-  * `control_panel.py` – the main window built from `control_panel.ui`. It owns overlay
-    instances, hooks up radar controls, manages the lap logger and profile persistence, and
-    forwards updater signals to overlays that are not centrally managed (e.g. radar, individual
-    telemetry).【F:icr2timing/ui/control_panel.py†L1-L149】
-  * `profile_manager.py` – reads/writes `profiles.ini`, handles custom telemetry columns, and
-    preserves radar/window placement per layout.【F:icr2timing/ui/profile_manager.py†L1-L120】
-  * `car_value_helpers.py` – shared widgets/controllers for recording and editing raw telemetry
-    values (reused by the individual-car overlay and the car data editor).
-  * `track_selector.py` – helper widget listing track folders based on the configured game
-    executable path, emitting signals on selection.【F:icr2timing/ui/track_selector.py†L1-L52】
-* **Standalone tooling**:
-  * `car_data_editor.py` spins up the same memory reader/updater pipeline in a dedicated
-    widget, letting users inspect and overwrite individual telemetry values with live writes
-    back to the game process.【F:icr2timing/car_data_editor.py†L1-L104】
-  * `convert_icon.py` and `build.bat` support packaging the PyInstaller executable.
+#### Entry point & bootstrap
+
+* **`main.py`** configures logging (with a capped on-disk handler), boots the Qt application, retries `ICR2Memory` attachment via message boxes, and wires a shared `MemoryReader` and `RaceUpdater` into the `ControlPanel` before starting the worker thread. The app icon is loaded from `assets/icon.ico` for both frozen and development builds.【F:icr2timing/main.py†L1-L133】
+
+#### Core utilities (`core/`)
+
+* `config.Config` – thin facade over the shared `ConfigStore`, letting legacy callers fetch the current settings, subscribe to change signals, or persist overrides without holding a direct reference to the store.【F:icr2timing/core/config.py†L1-L37】
+* `config_store.ConfigStore` – a `QObject` singleton that loads `settings.ini`, applies the correct memory offsets for the detected executable, exposes a `ConfigModel` with overlay defaults (fonts, colours, radar geometry, column widths), and emits `config_changed`/`overlay_setting_changed` when `reload()`/`save()` mutates runtime state so overlays can hot-reload UI tweaks.【F:icr2timing/core/config_store.py†L1-L200】【F:icr2timing/core/config_store.py†L201-L304】
+* `config_backend.ConfigBackend` – handles INI parsing/persistence, version alias resolution, executable validation, and comment-preserving saves via the shared INI writer so that `settings.ini` edits never discard user annotations.【F:icr2timing/core/config_backend.py†L1-L113】
+* `car_field_definitions.py` – metadata for the 133 telemetry integers powering custom table columns and editors (indexes, names, and descriptions).【F:icr2timing/core/car_field_definitions.py†L1-L78】
+* `car_data_recorder.py` – CSV recorder for per-car telemetry slices, keeping metadata files alongside logs for later analysis and exposing methods to rotate car targets mid-session.【F:icr2timing/core/car_data_recorder.py†L1-L163】
+* `telemetry_laps.py` – session-wide lap logger that appends to a timestamped CSV whenever a car completes a lap, deduplicating laps via `lap_end_clock` tracking.【F:icr2timing/core/telemetry_laps.py†L1-L73】
+* `version.py` – single-source version string for the overlay executable.【F:icr2timing/core/version.py†L1-L1】
+
+#### Analysis helpers (`analysis/`)
+
+* `best_laps.BestLapTracker` tracks per-driver and global best laps, formats outputs as time or speed, and colour-codes purple/green for global/personal records.【F:icr2timing/analysis/best_laps.py†L1-L78】
+* `gap_utils` renders gap/interval strings, highlights pitting/retired cars, and caches previous intervals to prevent flicker at the line.【F:icr2timing/analysis/gap_utils.py†L1-L191】
+* `name_utils` splits driver names into first/last components, generates compact displays, and builds 3-letter abbreviations with collision handling for overlays and telemetry CSVs.【F:icr2timing/analysis/name_utils.py†L1-L147】
+
+#### Updater & worker infrastructure (`updater/`)
+
+* `RaceUpdater` lives in a worker `QThread`, runs a precise `QTimer`, emits `state_updated` and `error` signals, dynamically adjusts polling frequency, and shuts down when the DOSBox process exits.【F:icr2timing/updater/updater.py†L1-L150】
+* `OverlayManager` maintains the overlay registry, wires/disconnects updater signals, handles `show_all`/`hide_all`/`toggle`, and propagates personal-best resets across overlays.【F:icr2timing/updater/overlay_manager.py†L1-L60】
+
+#### Overlay suite (`overlays/`)
+
+* All overlays implement the `BaseOverlay` ABC, guaranteeing a widget handle plus `on_state_updated`/`on_error` hooks.【F:icr2timing/overlays/base_overlay.py†L1-L27】
+* `running_order_overlay.py` drives the flagship timing table: it keeps column metadata, tracks best laps, manages Δ position indicators with expirations, honours custom `CarState.values` fields, and optionally sorts by personal bests while ensuring the player car stays visible.【F:icr2timing/overlays/running_order_overlay.py†L1-L200】
+* `proximity_overlay.py` renders a configurable radar with persistent config-backed size, ranges, symbol styles, colours, and optional speed readouts; setters persist changes via `Config.save` so the UI controls can drive it live.【F:icr2timing/overlays/proximity_overlay.py†L1-L200】
+* `track_map_overlay.py` loads TRK files via the shared loader, samples centrelines, autosizes the window, and paints cars/racing lines in sync with telemetry snapshots.【F:icr2timing/overlays/track_map_overlay.py†L1-L200】
+* `experimental_track_surface_overlay.py` caches ground-surface meshes built from TRK sections and renders them as filled polygons, reloading whenever the track name changes.【F:icr2timing/overlays/experimental_track_surface_overlay.py†L1-L200】
+* `individual_car_overlay.py` exposes a draggable, editable table of all 133 car-state fields, reuses the shared value recorder/range tracking helpers, and can write values back to memory (with confirmation) for live experimentation.【F:icr2timing/overlays/individual_car_overlay.py†L1-L200】
+
+#### UI layer & services (`ui/`)
+
+* `control_panel.py` (Qt Designer `.ui` driven) orchestrates overlay lifecycles, radar controls, telemetry utilities, updater connections, and profile persistence, wiring each subsection to the relevant PyQt widgets and hooking into the updater signals.【F:icr2timing/ui/control_panel.py†L1-L200】
+* Section helpers (`control_sections.py`) encapsulate button groups for overlays, radar settings, and telemetry controls, emitting intent-specific signals and syncing with the config store so UI feedback stays coherent.【F:icr2timing/ui/control_sections.py†L1-L200】
+* `profile_manager.py` models saved layouts (columns, radar placement, custom telemetry fields), injects the position-indicator column when enabled, and persists updates through the INI preserver so user comments survive saves.【F:icr2timing/ui/profile_manager.py†L1-L195】
+* Backend helpers in `services.py` cover lap-logger toggles, pit-release/fuel-write commands, and session snapshots for profile auto-save, keeping non-UI code testable.【F:icr2timing/ui/services.py†L1-L200】
+* `car_value_helpers.py` provides the reusable recording controller, value-range tracker, frozen value store, delegate painting, and parsing helpers used by the individual car overlay and the stand-alone editor.【F:icr2timing/ui/car_value_helpers.py†L1-L200】
+* `track_selector.py` surfaces game tracks based on `settings.ini`'s `game_exe` path, emitting a signal whenever a user chooses a new folder for tooling that needs to open TRK files.【F:icr2timing/ui/track_selector.py†L1-L69】
+
+#### Persistence & utilities
+
+* `utils/ini_preserver.py` performs targeted INI edits without clobbering comments, inserting or removing sections/assignments in-place for both `settings.ini` and `profiles.ini`. This helper underpins `ConfigBackend` and `ProfileManager`.【F:icr2timing/utils/ini_preserver.py†L1-L170】
+* `profiles.ini` and `settings.ini` are therefore kept readable even when overlays or services constantly update runtime parameters.
+
+#### Stand-alone tooling & editors
+
+* `car_data_editor.py` boots the same memory reader/updater pipeline inside a dedicated widget, presents car selection + editable 133-field table, and streams recordings via the shared recorder helpers so users can tweak memory without running the main overlay.【F:icr2timing/car_data_editor.py†L1-L200】
+* `convert_icon.py` and `build.bat` support packaging the PyInstaller executable.
+
+#### Tests (`tests/`)
+
+* The `tests/` package exercises config loading, INI preservation, overlay control sections, and service classes; for example, `tests/test_ui_services.py` verifies the lap logger controller, pit commands, and session persistence glue without spinning up Qt.【F:tests/test_ui_services.py†L1-L200】
 
 ---
 
