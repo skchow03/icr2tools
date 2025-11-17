@@ -19,7 +19,7 @@ from icr2timing.overlays.running_order_overlay import (
     RunningOrderOverlayTable,
     AVAILABLE_FIELDS,
 )
-from icr2timing.ui.profile_manager import ProfileManager, Profile, LAST_SESSION_KEY
+from icr2timing.ui.profile_manager import ProfileManager, Profile
 from icr2timing.ui.control_sections import (
     OverlayControlsSection,
     ProfileManagementSection,
@@ -34,10 +34,12 @@ from icr2timing.overlays.experimental_track_surface_overlay import (
 from icr2timing.overlays.individual_car_overlay import IndividualCarOverlay
 from icr2timing.core.config import Config
 from icr2timing.core.version import __version__
-from icr2timing.core.telemetry_laps import TelemetryLapLogger
-
-
-CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
+from icr2timing.ui.services import (
+    LapLoggerController,
+    PitCommandService,
+    SessionPersistence,
+    SessionSnapshot,
+)
 
 
 class ControlPanel(QtWidgets.QMainWindow):
@@ -113,9 +115,6 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.error.connect(self.indiv_overlay.on_error)
 
         # --- Telemetry Lap Logger ---
-        self.lap_logger = None
-        self._lap_logger_enabled = False
-        self._recording_file = None
         self.telemetry_controls = TelemetryControlsSection(
             btn_lap_logger=self.btnLapLogger,
             btn_release_all=self.btnReleaseAllCars,
@@ -310,6 +309,20 @@ class ControlPanel(QtWidgets.QMainWindow):
         )
 
 
+        # Backend services
+        self.lap_logger_controller = LapLoggerController(
+            updater=self.updater,
+            status_callback=self.statusbar.showMessage,
+        )
+        self.pit_command_service = PitCommandService(
+            mem=self._mem,
+            cfg=self._cfg,
+            state_provider=self._current_state,
+            confirm_enable_writes=self._prompt_enable_writes,
+            status_callback=self.statusbar.showMessage,
+        )
+        self.session_persistence = SessionPersistence(self.profiles)
+
         # Restore last session
         last = self.profiles.load_last_session()
         if last:
@@ -388,8 +401,13 @@ class ControlPanel(QtWidgets.QMainWindow):
         track = getattr(self.ro_overlay._last_state, "track_name", "")
 
         msg = f"v{__version__} | Track length: {miles:.3f} mi | Track: {track}"
-        if self._recording_file:
-            msg += f" | Recording → {self._recording_file}"
+        recording_file = (
+            self.lap_logger_controller.recording_file
+            if hasattr(self, "lap_logger_controller")
+            else None
+        )
+        if recording_file:
+            msg += f" | Recording → {recording_file}"
         self.statusbar.showMessage(msg)
 
     def show_about_dialog(self):
@@ -829,42 +847,11 @@ class ControlPanel(QtWidgets.QMainWindow):
             widget.raise_()
 
     def _toggle_lap_logger(self):
-        """Enable/disable lap telemetry logging."""
-        from icr2timing.core.telemetry_laps import TelemetryLapLogger
-
-        if self._lap_logger_enabled:
-            # --- Disable current logger ---
-            try:
-                log.info(f"[ControlPanel] Disabling Lap Logger")
-                self.updater.state_updated.disconnect(self.lap_logger.on_state_updated)
-            except Exception:
-                pass
-            self._lap_logger_enabled = False
-            self._recording_file = None
-
-        else:
-            # --- Create a new logger and enable it ---
-            self.lap_logger = TelemetryLapLogger("telemetry_laps")
-            try:
-                self.updater.state_updated.connect(self.lap_logger.on_state_updated)
-                self._lap_logger_enabled = True
-                self._recording_file = self.lap_logger.get_filename()
-            except Exception as e:
-                log.error(f"[ControlPanel] Error enabling Lap Logger: {e}")
-                self._lap_logger_enabled = False
-                self._recording_file = None
-
-        self.telemetry_controls.set_lap_logger_enabled(self._lap_logger_enabled)
-
-        # Refresh status bar to reflect current state
+        enabled = self.lap_logger_controller.toggle()
+        self.telemetry_controls.set_lap_logger_enabled(enabled)
         self._update_status()
 
-    def _ensure_memory_writes_enabled(self, purpose: str) -> bool:
-        if self._mem is None:
-            return False
-        if self._mem.writes_enabled:
-            return True
-
+    def _prompt_enable_writes(self, purpose: str) -> bool:
         message = (
             "Memory writes are currently disabled for this session.\n\n"
             f"Enabling writes will allow the tool to {purpose}. "
@@ -877,95 +864,13 @@ class ControlPanel(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No,
         )
-        if reply == QtWidgets.QMessageBox.Yes:
-            self._mem.enable_writes()
-            self.statusbar.showMessage(
-                "Memory writes enabled for this session", 5000
-            )
-            return True
-
-        self.statusbar.showMessage("Memory writes remain disabled", 5000)
-        return False
+        return reply == QtWidgets.QMessageBox.Yes
 
     def _release_all_cars(self):
-        """Force pit release countdown to 1 for all cars in the current state."""
-        if not self._mem:
-            self.statusbar.showMessage("Pit release unavailable: no memory connection", 5000)
-            return
-
-        if not self._ensure_memory_writes_enabled("set pit release timers to 1"):
-            return
-
-        state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
-        if state is None:
-            self.statusbar.showMessage("No telemetry state available yet", 3000)
-            return
-
-        base = self._cfg.car_state_base
-        stride = self._cfg.car_state_size
-        field_offset = CAR_STATE_INDEX_PIT_RELEASE_TIMER * 4
-
-        updated = 0
-        try:
-            for struct_idx, car_state in state.car_states.items():
-                if not car_state or len(getattr(car_state, "values", [])) <= CAR_STATE_INDEX_PIT_RELEASE_TIMER:
-                    continue
-                exe_offset = base + struct_idx * stride + field_offset
-                self._mem.write(exe_offset, "i32", 1)
-                updated += 1
-        except MemoryWritesDisabledError:
-            self.statusbar.showMessage("Memory writes remain disabled", 5000)
-            return
-        except Exception as exc:
-            log.exception("Failed to release all cars from pits")
-            self.statusbar.showMessage(f"Failed to release all cars: {exc}", 5000)
-            return
-
-        if updated:
-            self.statusbar.showMessage(f"Pit release set to 1 for {updated} cars", 3000)
-        else:
-            self.statusbar.showMessage("No eligible cars found to release", 3000)
+        self.pit_command_service.release_all_cars()
 
     def _force_all_cars_to_pit(self):
-        """Force fuel remaining to 1 lap for all cars in the current state."""
-        if not self._mem:
-            self.statusbar.showMessage("Force pit unavailable: no memory connection", 5000)
-            return
-
-        if not self._ensure_memory_writes_enabled("set every car's fuel to 1 lap"):
-            return
-
-        state = self._latest_state or getattr(self.ro_overlay, "_last_state", None)
-        if state is None:
-            self.statusbar.showMessage("No telemetry state available yet", 3000)
-            return
-
-        base = self._cfg.car_state_base
-        stride = self._cfg.car_state_size
-        field_offset = self._cfg.fuel_laps_remaining
-        field_index = field_offset // 4
-
-        updated = 0
-        try:
-            for struct_idx, car_state in state.car_states.items():
-                values = getattr(car_state, "values", [])
-                if not car_state or len(values) <= field_index:
-                    continue
-                exe_offset = base + struct_idx * stride + field_offset
-                self._mem.write(exe_offset, "i32", 1)
-                updated += 1
-        except MemoryWritesDisabledError:
-            self.statusbar.showMessage("Memory writes remain disabled", 5000)
-            return
-        except Exception as exc:
-            log.exception("Failed to force all cars to pit")
-            self.statusbar.showMessage(f"Failed to force pit stops: {exc}", 5000)
-            return
-
-        if updated:
-            self.statusbar.showMessage(f"Fuel set to 1 lap for {updated} cars", 3000)
-        else:
-            self.statusbar.showMessage("No eligible cars found to adjust fuel", 3000)
+        self.pit_command_service.force_all_cars_to_pit()
 
     def set_obs_capture_mode(self, enabled: bool):
         """
@@ -1060,6 +965,8 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _on_config_changed(self, cfg):
         self._cfg = cfg
         self.lblExePath.setText(self._current_exe_path())
+        if hasattr(self, "pit_command_service"):
+            self.pit_command_service.update_config(cfg)
 
     def _on_select_individual_car(self, car_index):
         """When user picks a new car number, update overlay's car index."""
@@ -1078,49 +985,8 @@ class ControlPanel(QtWidgets.QMainWindow):
     # Close event = save last session
     # -------------------------------
     def closeEvent(self, event):
-        # --- Save last session profile ---
-        key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
-        ordered_keys = self._collect_field_keys()
-        selected_labels = [key_to_label[k] for k in ordered_keys if k in key_to_label]
-        indicator_enabled = "position_indicator" in ordered_keys
-
-        custom_fields = []
-        for i in range(self.customFieldList.count()):
-            item = self.customFieldList.item(i)
-            text = item.text()
-            label, idx_str = text.split(" (")
-            idx = int(idx_str.rstrip(")"))
-            if item.checkState() == QtCore.Qt.Checked:
-                custom_fields.append((label, idx))
-
-        profile = Profile(
-            name=LAST_SESSION_KEY,
-            columns=selected_labels,
-            n_columns=self.comboCols.itemData(self.comboCols.currentIndex()),
-            display_mode="speed" if self.radioSpeed.isChecked() else "time",
-            sort_by_best=self.cbSortBest.isChecked(),
-            use_abbrev=self.cbAbbrev.isChecked(),
-            window_x=self.ro_overlay.widget().x(),
-            window_y=self.ro_overlay.widget().y(),
-            radar_x=self.prox_overlay.x(),
-            radar_y=self.prox_overlay.y(),
-            radar_visible=self.prox_overlay.isVisible(),
-            radar_width=self.prox_overlay.width(),
-            radar_height=self.prox_overlay.height(),
-            radar_range_forward=self._cfg.radar_range_forward,
-            radar_range_rear=self._cfg.radar_range_rear,
-            radar_range_side=self._cfg.radar_range_side,
-            radar_symbol=self.prox_overlay.symbol,
-            radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self._cfg.radar_player_color,
-            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
-            position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=indicator_enabled,
-            custom_fields=custom_fields,   # ✅ new
-        )
-        self.profiles.save_last_session(profile)
+        snapshot = self._build_session_snapshot()
+        self.session_persistence.save_last_session(snapshot)
 
         # --- Stop updater thread cleanly ---
         if self.updater:
@@ -1168,3 +1034,47 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Call parent closeEvent
         super().closeEvent(event)
+
+    def _build_session_snapshot(self) -> SessionSnapshot:
+        ordered_keys = self._collect_field_keys()
+        indicator_enabled = "position_indicator" in ordered_keys
+
+        custom_fields = []
+        for i in range(self.customFieldList.count()):
+            item = self.customFieldList.item(i)
+            text = item.text()
+            label, idx_str = text.split(" (")
+            idx = int(idx_str.rstrip(")"))
+            if item.checkState() == QtCore.Qt.Checked:
+                custom_fields.append((label, idx))
+
+        return SessionSnapshot(
+            ordered_field_keys=ordered_keys,
+            custom_fields=custom_fields,
+            n_columns=self.comboCols.itemData(self.comboCols.currentIndex()),
+            display_mode="speed" if self.radioSpeed.isChecked() else "time",
+            sort_by_best=self.cbSortBest.isChecked(),
+            use_abbrev=self.cbAbbrev.isChecked(),
+            ro_window_x=self.ro_overlay.widget().x(),
+            ro_window_y=self.ro_overlay.widget().y(),
+            radar_x=self.prox_overlay.x(),
+            radar_y=self.prox_overlay.y(),
+            radar_visible=self.prox_overlay.isVisible(),
+            radar_width=self.prox_overlay.width(),
+            radar_height=self.prox_overlay.height(),
+            radar_range_forward=self._cfg.radar_range_forward,
+            radar_range_rear=self._cfg.radar_range_rear,
+            radar_range_side=self._cfg.radar_range_side,
+            radar_symbol=self.prox_overlay.symbol,
+            radar_show_speeds=self.prox_overlay.show_speeds,
+            radar_player_color=self._cfg.radar_player_color,
+            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
+            position_indicator_duration=self.spinPosChangeDuration.value(),
+            position_indicator_enabled=indicator_enabled,
+            available_fields=AVAILABLE_FIELDS,
+        )
+
+    def _current_state(self):
+        return self._latest_state or getattr(self.ro_overlay, "_last_state", None)

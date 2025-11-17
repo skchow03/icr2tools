@@ -21,8 +21,12 @@ from icr2timing.analysis.gap_utils import (
     compute_intervals_display,
 )
 from icr2timing.core.config import Config
-from icr2timing.overlays.overlay_table_window import OverlayTableWindow
 from icr2timing.overlays.base_overlay import BaseOverlay
+from icr2timing.overlays.constants import (
+    CAR_STATE_INDEX_PIT_RELEASE_TIMER,
+    POSITION_INDICATOR_LABEL,
+)
+from icr2timing.overlays.overlay_table_window import OverlayTableWindow
 
 
 
@@ -31,16 +35,10 @@ PLAYER_STRUCT_IDX = 1
 CAR_STATE_INDEX_QUALIFYING_TIME = 34
 CAR_STATE_INDEX_LAPS_LEAD = 36
 CAR_STATE_INDEX_LAPS_SINCE_YELLOW = 38
-CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
-
-
 class OverlayField(NamedTuple):
     label: str
     key: str
     tooltip: str
-
-
-POSITION_INDICATOR_LABEL = "Δ"
 
 
 AVAILABLE_FIELDS = [
