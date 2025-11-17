@@ -64,12 +64,15 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         self._pixmap_size: QtCore.QSize | None = None
 
         self.installEventFilter(self)
+        self._store = Config.store()
+        self._config = self._store.config
+        self._store.config_changed.connect(self._on_config_changed)
 
     # ------------------------------------------------------------------
     # Track loading & preprocessing
     # ------------------------------------------------------------------
     def _load_track(self, track_name: str) -> None:
-        exe_path = Config().game_exe
+        exe_path = self._config.game_exe
         if not exe_path:
             raise RuntimeError("Game EXE not set in settings.ini")
 
@@ -137,6 +140,12 @@ class ExperimentalTrackSurfaceOverlay(QtWidgets.QWidget):
         self._last_state = None
         log.error("[ExperimentalTrackSurfaceOverlay] on_error: %s", msg)
         self.update()
+
+    def _on_config_changed(self, cfg):
+        previous_exe = getattr(self, "_config", cfg).game_exe if hasattr(self, "_config") else ""
+        self._config = cfg
+        if cfg.game_exe != previous_exe:
+            self._loaded_track_name = None
 
     # ------------------------------------------------------------------
     # Painting

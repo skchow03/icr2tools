@@ -77,7 +77,9 @@ class IndividualCarOverlay(QtWidgets.QWidget):
         car_index: int = 1,
     ) -> None:
         super().__init__()
-        self._cfg = cfg or Config()
+        self._store = Config.store()
+        self._cfg = cfg or self._store.config
+        self._store.config_changed.connect(self._on_config_changed)
         self._mem = mem
         self._status_callback = status_callback
         self._car_index = int(car_index)
@@ -628,6 +630,9 @@ class IndividualCarOverlay(QtWidgets.QWidget):
     def _show_status(self, message: str, timeout_ms: int) -> None:
         if self._status_callback is not None:
             self._status_callback(message, timeout_ms)
+
+    def _on_config_changed(self, cfg):
+        self._cfg = cfg
 
 
 BaseOverlay.register(IndividualCarOverlay)

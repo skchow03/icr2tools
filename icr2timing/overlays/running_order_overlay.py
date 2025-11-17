@@ -26,7 +26,6 @@ from icr2timing.overlays.base_overlay import BaseOverlay
 
 
 
-cfg = Config()
 PLAYER_STRUCT_IDX = 1
 
 CAR_STATE_INDEX_QUALIFYING_TIME = 34
@@ -83,8 +82,14 @@ AVAILABLE_FIELDS_BY_KEY = {field.key: field for field in AVAILABLE_FIELDS}
 
 
 class RunningOrderOverlayTable(QtCore.QObject):
-    def __init__(self, font_family=cfg.font_family, font_size=cfg.font_size, n_columns: int = 2):
+    def __init__(self, font_family=None, font_size=None, n_columns: int = 2):
         super().__init__()
+        self._store = Config.store()
+        self._cfg = self._store.config
+        self._store.config_changed.connect(self._on_config_changed)
+        self._store.overlay_setting_changed.connect(self._on_overlay_settings_changed)
+        font_family = font_family or self._cfg.font_family
+        font_size = font_size or self._cfg.font_size
         self._overlay = OverlayTableWindow(font_family, font_size, n_columns=n_columns)
         self._best_tracker = BestLapTracker()
         self._last_state: Optional[RaceState] = None
@@ -100,7 +105,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
 
         # NEW: track last resize time for throttling
         self._last_resize_time = QtCore.QTime.currentTime()
-        self._resize_throttle_ms = cfg.resize_throttle_ms
+        self._resize_throttle_ms = self._cfg.resize_throttle_ms
 
         # Track recent position changes for indicator arrows
         self._last_positions: Dict[int, int] = {}
@@ -338,7 +343,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     else:
                         item.setIcon(QtGui.QIcon())
                     if struct_idx == PLAYER_STRUCT_IDX:
-                        item.setBackground(QtGui.QBrush(QtGui.QColor(cfg.player_row)))
+                        item.setBackground(QtGui.QBrush(QtGui.QColor(self._cfg.player_row)))
                     else:
                         item.setBackground(QtGui.QBrush())
                     col += 1
@@ -464,7 +469,9 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     display_label = f"{base_label} ▲"
                 header_item = QtWidgets.QTableWidgetItem(display_label)
                 t.setHorizontalHeaderItem(i, header_item)
-                width = cfg.col_widths.get(base_label, cfg.col_widths.get("default", 50))
+                width = self._cfg.col_widths.get(
+                    base_label, self._cfg.col_widths.get("default", 50)
+                )
                 t.setColumnWidth(i, width)
 
     def set_autosize_enabled(self, enabled: bool):
@@ -558,6 +565,13 @@ class RunningOrderOverlayTable(QtCore.QObject):
         icon = QtGui.QIcon(pixmap)
         self._indicator_icons[direction] = icon
         return icon
+
+    def _on_config_changed(self, cfg):
+        self._cfg = cfg
+
+    def _on_overlay_settings_changed(self, section: str) -> None:
+        if section == "overlay":
+            self._resize_throttle_ms = self._cfg.resize_throttle_ms
 
 # Register class as a virtual subclass of BaseOverlay
 BaseOverlay.register(RunningOrderOverlayTable)

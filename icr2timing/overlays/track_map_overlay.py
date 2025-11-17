@@ -40,7 +40,9 @@ class TrackMapOverlay(QtWidgets.QWidget):
 
         self._last_state: RaceState | None = None
         self._drag_pos: QtCore.QPoint | None = None
-        self._config = Config()
+        self._store = Config.store()
+        self._config = self._store.config
+        self._store.config_changed.connect(self._on_config_changed)
 
         self.trk = None
         self.cline = []
@@ -170,6 +172,12 @@ class TrackMapOverlay(QtWidgets.QWidget):
             self._last_error_msg = msg
         self._sampled_bounds = None
         self.update()
+
+    def _on_config_changed(self, cfg):
+        previous_exe = self._config.game_exe
+        self._config = cfg
+        if cfg.game_exe != previous_exe:
+            self._loaded_track_name = None
 
 
     # -----------------------------

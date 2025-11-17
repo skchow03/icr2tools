@@ -51,7 +51,7 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
             },
         )
 
-        intervals = compute_intervals_display(race_state)
+        intervals = compute_intervals_display(race_state, {})
         interval_text, _ = intervals[1]
 
         self.assertEqual(interval_text, "+0.200")
@@ -103,7 +103,7 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
             },
         )
 
-        intervals = compute_intervals_display(race_state)
+        intervals = compute_intervals_display(race_state, {})
         interval_text, _ = intervals[1]
 
         self.assertEqual(interval_text, "+0.500")
@@ -174,7 +174,7 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
             },
         )
 
-        intervals = compute_intervals_display(race_state)
+        intervals = compute_intervals_display(race_state, {})
 
         first_gap, _ = intervals[1]
         second_gap, _ = intervals[2]
@@ -229,7 +229,7 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
             },
         )
 
-        intervals = compute_intervals_display(race_state)
+        intervals = compute_intervals_display(race_state, {})
 
         gap_text, _ = intervals[1]
 
@@ -283,7 +283,7 @@ class ComputeIntervalsDisplayTests(unittest.TestCase):
             },
         )
 
-        intervals = compute_intervals_display(race_state)
+        intervals = compute_intervals_display(race_state, {})
         gap_text, _ = intervals[1]
 
         self.assertEqual(gap_text, "-1L")

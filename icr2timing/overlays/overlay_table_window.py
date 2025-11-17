@@ -11,13 +11,14 @@ from PyQt5 import QtCore, QtWidgets, QtGui
 
 from icr2timing.core.config import Config
 
-cfg = Config()
-
 class OverlayTableWindow(QtWidgets.QWidget):
     """Borderless translucent window holding one or more QTableWidgets, draggable."""
 
     def __init__(self, font_family="Arial", font_size=10, n_columns: int = 2):
         super().__init__()
+        self._store = Config.store()
+        self._cfg = self._store.config
+        self._store.overlay_setting_changed.connect(self._on_overlay_settings_changed)
         flags = (
             QtCore.Qt.FramelessWindowHint
             | QtCore.Qt.Tool
@@ -58,28 +59,7 @@ class OverlayTableWindow(QtWidgets.QWidget):
         t.verticalHeader().setMinimumSectionSize(row_h)
 
         # stylesheet + filler background fix
-        t.setStyleSheet(
-            f"""
-            QTableWidget {{
-                background: rgba({cfg.background_rgba});
-                color: {cfg.text_color};
-                gridline-color: {cfg.grid_color};
-            }}
-            QHeaderView::section {{
-                background: {cfg.header_bg};
-                color: {cfg.header_fg};
-                padding: 0px 2px;
-                margin: 0px;
-            }}
-            QHeaderView {{
-                background: {cfg.header_bg};
-            }}
-            QTableWidget::item {{
-                padding: 0px;
-                margin: 0px;
-            }}
-            """
-        )
+        self._apply_stylesheet(t)
 
 
         header = t.horizontalHeader()
@@ -146,7 +126,7 @@ class OverlayTableWindow(QtWidgets.QWidget):
             total_h = max(total_h, h)
 
         spacing = self.layout().spacing() * (len(self.tables) - 1)
-        self.resize(total_w + spacing + cfg.fudge_px, total_h)
+        self.resize(total_w + spacing + self._cfg.fudge_px, total_h)
 
     def autosize_columns_to_contents(self):
         """Resize each column to fit its contents once, then resize the window."""
@@ -154,3 +134,49 @@ class OverlayTableWindow(QtWidgets.QWidget):
             for c in range(t.columnCount()):
                 t.resizeColumnToContents(c)
         self.resize_to_fit()
+
+    def _apply_stylesheet(self, table: QtWidgets.QTableWidget) -> None:
+        cfg = self._cfg
+        table.setStyleSheet(
+            f"""
+            QTableWidget {{
+                background: rgba({cfg.background_rgba});
+                color: {cfg.text_color};
+                gridline-color: {cfg.grid_color};
+            }}
+            QHeaderView::section {{
+                background: {cfg.header_bg};
+                color: {cfg.header_fg};
+                padding: 0px 2px;
+                margin: 0px;
+            }}
+            QHeaderView {{
+                background: {cfg.header_bg};
+            }}
+            QTableWidget::item {{
+                padding: 0px;
+                margin: 0px;
+            }}
+            """
+        )
+
+    def _refresh_fonts(self) -> None:
+        cfg = self._cfg
+        for table in self.tables:
+            f = QtGui.QFont(cfg.font_family)
+            f.setPointSize(cfg.font_size)
+            table.setFont(f)
+            table.horizontalHeader().setFont(f)
+            fm = QtGui.QFontMetrics(f)
+            row_h = fm.height() + 2
+            table.verticalHeader().setDefaultSectionSize(row_h)
+            table.verticalHeader().setMinimumSectionSize(row_h)
+
+    def _on_overlay_settings_changed(self, section: str) -> None:
+        if section not in {"overlay", "colors"}:
+            return
+        self._cfg = self._store.config
+        if section == "overlay":
+            self._refresh_fonts()
+        for table in self.tables:
+            self._apply_stylesheet(table)
