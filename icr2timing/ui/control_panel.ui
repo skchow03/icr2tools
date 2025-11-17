@@ -166,29 +166,35 @@
          </attribute>
          <layout class="QVBoxLayout" name="liveTimingLayout" stretch="0,0,0,3,0,0">
           <item>
-           <widget class="QPushButton" name="btnToggleOverlay">
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="toolTip">
-             <string>Show or hide the main timing overlay</string>
-            </property>
-            <property name="text">
-             <string>Show Overlay</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btnReset">
-            <property name="toolTip">
-             <string>Reset all personal and global best laps</string>
-            </property>
-            <property name="text">
-             <string>Reset Best Laps</string>
-            </property>
+           <widget class="QWidget" name="overlayControlsWidget">
+            <layout class="QVBoxLayout" name="overlayControlsLayout">
+             <item>
+              <widget class="QPushButton" name="btnToggleOverlay">
+               <property name="font">
+                <font>
+                 <weight>75</weight>
+                 <bold>true</bold>
+                </font>
+               </property>
+               <property name="toolTip">
+                <string>Show or hide the main timing overlay</string>
+               </property>
+               <property name="text">
+                <string>Show Overlay</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnReset">
+               <property name="toolTip">
+                <string>Reset all personal and global best laps</string>
+               </property>
+               <property name="text">
+                <string>Reset Best Laps</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </widget>
           </item>
           <item>
@@ -802,57 +808,63 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="btnLapLogger">
-            <property name="text">
-             <string>Start Recording</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btnReleaseAllCars">
-            <property name="toolTip">
-             <string>Set pit release countdown to 1 for every car</string>
-            </property>
-            <property name="text">
-             <string>Release all cars</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btnForcePitStops">
-            <property name="toolTip">
-             <string>Set remaining fuel to 1 lap for every car</string>
-            </property>
-            <property name="text">
-             <string>Force pit stops</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QGroupBox" name="groupBox">
-            <property name="title">
-             <string>Individual car telemetry (for research purposes)</string>
-            </property>
-            <layout class="QVBoxLayout" name="individualTelemetryLayout">
+           <widget class="QWidget" name="telemetryControlsWidget">
+            <layout class="QVBoxLayout" name="telemetryControlsLayout">
              <item>
-              <layout class="QHBoxLayout" name="individualTelemetrySelectorLayout">
-               <item>
-                <widget class="QLabel" name="label">
-                 <property name="text">
-                  <string>Select car #</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QComboBox" name="selectIndividualCar"/>
-               </item>
-              </layout>
+              <widget class="QPushButton" name="btnLapLogger">
+               <property name="text">
+                <string>Start Recording</string>
+               </property>
+              </widget>
              </item>
              <item>
-              <widget class="QPushButton" name="btnToggleIndividualTelemetry">
-               <property name="text">
-                <string>Show telemetry overlay</string>
+              <widget class="QPushButton" name="btnReleaseAllCars">
+               <property name="toolTip">
+                <string>Set pit release countdown to 1 for every car</string>
                </property>
+               <property name="text">
+                <string>Release all cars</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnForcePitStops">
+               <property name="toolTip">
+                <string>Set remaining fuel to 1 lap for every car</string>
+               </property>
+               <property name="text">
+                <string>Force pit stops</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="groupBox">
+               <property name="title">
+                <string>Individual car telemetry (for research purposes)</string>
+               </property>
+               <layout class="QVBoxLayout" name="individualTelemetryLayout">
+                <item>
+                 <layout class="QHBoxLayout" name="individualTelemetrySelectorLayout">
+                  <item>
+                   <widget class="QLabel" name="label">
+                    <property name="text">
+                     <string>Select car #</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QComboBox" name="selectIndividualCar"/>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="btnToggleIndividualTelemetry">
+                  <property name="text">
+                   <string>Show telemetry overlay</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
               </widget>
              </item>
             </layout>
