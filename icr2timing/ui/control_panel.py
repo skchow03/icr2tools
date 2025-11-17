@@ -14,11 +14,11 @@ import logging
 log = logging.getLogger(__name__)
 
 from icr2_core.icr2_memory import MemoryWritesDisabledError
-from icr2timing.updater.overlay_manager import OverlayManager
 from icr2timing.overlays.running_order_overlay import (
     RunningOrderOverlayTable,
     AVAILABLE_FIELDS,
 )
+from icr2timing.ui.overlay_controller import OverlayController
 from icr2timing.ui.profile_manager import ProfileManager, Profile
 from icr2timing.ui.control_sections import (
     OverlayControlsSection,
@@ -60,15 +60,10 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._latest_state = None
 
         # --- Overlay Manager ---
-        self.manager = OverlayManager()
         self.ro_overlay = RunningOrderOverlayTable()
-        self.manager.add_overlay(self.ro_overlay)
 
         # Radar handled separately (not added to OverlayManager)
         self.prox_overlay = ProximityOverlay()
-        if self.updater:
-            self.updater.state_updated.connect(self.prox_overlay.on_state_updated)
-            self.updater.error.connect(self.prox_overlay.on_error)
 
         # After creating self.prox_overlay
         self.radar_settings = RadarSettingsSection(
@@ -88,31 +83,32 @@ class ControlPanel(QtWidgets.QMainWindow):
             color_button_setter=self._set_button_color,
         )
 
-        if self.updater:
-            self.manager.connect_updater(self.updater)
-            self.updater.error.connect(self._on_error_from_updater)
-
         # Track map overlay
         self.track_overlay = TrackMapOverlay()
-        if self.updater:
-            self.updater.state_updated.connect(self.track_overlay.on_state_updated)
-            self.updater.error.connect(self.track_overlay.on_error)
 
         # Experimental surface overlay
         self.surface_overlay = ExperimentalTrackSurfaceOverlay()
         self.surface_overlay.set_scale_factor(self.track_overlay._scale_factor)
-        if self.updater:
-            self.updater.state_updated.connect(self.surface_overlay.on_state_updated)
-            self.updater.error.connect(self.surface_overlay.on_error)
 
         # Individual car overlay
         self.indiv_overlay = IndividualCarOverlay(
             mem=self._mem, cfg=self._cfg, status_callback=self.statusbar.showMessage
         )
         self.indiv_overlay.set_status_callback(self.statusbar.showMessage)
+
+        self.overlay_controller = OverlayController(
+            updater=self.updater,
+            config_store=self._config_store,
+            running_order_overlay=self.ro_overlay,
+            radar_overlay=self.prox_overlay,
+            track_overlay=self.track_overlay,
+            surface_overlay=self.surface_overlay,
+            individual_overlay=self.indiv_overlay,
+            running_order_state_handler=self._on_state_updated_with_fps,
+        )
+
         if self.updater:
-            self.updater.state_updated.connect(self.indiv_overlay.on_state_updated)
-            self.updater.error.connect(self.indiv_overlay.on_error)
+            self.updater.error.connect(self._on_error_from_updater)
 
         # --- Telemetry Lap Logger ---
         self.telemetry_controls = TelemetryControlsSection(
@@ -153,7 +149,9 @@ class ControlPanel(QtWidgets.QMainWindow):
             btn_surface_overlay=self.btnSurfaceOverlay,
             parent=self,
         )
-        self.overlay_controls.toggle_overlay_requested.connect(self._toggle_overlay)
+        self.overlay_controls.toggle_overlay_requested.connect(
+            self._toggle_running_order_overlay
+        )
         self.overlay_controls.reset_requested.connect(self._reset_pbs)
         self.overlay_controls.quit_requested.connect(self.close)
         self.overlay_controls.radar_toggle_requested.connect(self._toggle_radar)
@@ -252,7 +250,9 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.state_updated.connect(self._on_state_updated_update_carlist)
 
         self.cbOBSCapture.stateChanged.connect(
-            lambda s: self.set_obs_capture_mode(s == QtCore.Qt.Checked)
+            lambda s: self.overlay_controller.set_obs_capture_mode(
+                s == QtCore.Qt.Checked
+            )
         )
 
 
@@ -382,7 +382,6 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     @QtCore.pyqtSlot(str)
     def _on_error_from_updater(self, msg: str):
-        self.ro_overlay.on_error(msg)
         self.statusbar.showMessage(f"Error: {msg}")
 
     def _update_fps_label(self):
@@ -422,14 +421,9 @@ class ControlPanel(QtWidgets.QMainWindow):
     # -------------------------------
     # Overlay actions
     # -------------------------------
-    def _toggle_overlay(self):
-        if self.ro_overlay.widget().isVisible():
-            self.ro_overlay.widget().hide()
-            self.overlay_controls.set_overlay_visible(False)
-        else:
-            self.ro_overlay.widget().show()
-            self.ro_overlay.widget().raise_()
-            self.overlay_controls.set_overlay_visible(True)
+    def _toggle_running_order_overlay(self):
+        visible = self.overlay_controller.toggle_running_order()
+        self.overlay_controls.set_overlay_visible(bool(visible))
 
     def _on_map_scale_changed(self, val: int):
         scale = max(10, min(200, val)) / 100.0
@@ -437,52 +431,30 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.surface_overlay.set_scale_factor(scale)
 
     def _toggle_radar(self):
-        if self.prox_overlay.isVisible():
-            self.prox_overlay.hide()
-            self.overlay_controls.set_radar_visible(False)
-        else:
-            self.prox_overlay.show()
-            self.prox_overlay.raise_()
-            self.overlay_controls.set_radar_visible(True)
+        visible = self.overlay_controller.toggle_radar()
+        self.overlay_controls.set_radar_visible(bool(visible))
 
     def _toggle_track_map(self):
-        if self.track_overlay.isVisible():
-            self.track_overlay.hide()
-            self.overlay_controls.set_track_map_visible(False)
-        else:
-            self.track_overlay.show()
-            self.track_overlay.raise_()
-            self.track_overlay.activateWindow()
-            self.overlay_controls.set_track_map_visible(True)
+        visible = self.overlay_controller.toggle_track_map()
+        self.overlay_controls.set_track_map_visible(bool(visible))
 
     def _toggle_surface_overlay(self):
-        if self.surface_overlay.isVisible():
-            self.surface_overlay.hide()
-            self.overlay_controls.set_surface_overlay_visible(False)
-        else:
-            self.surface_overlay.show()
-            self.surface_overlay.raise_()
-            self.surface_overlay.activateWindow()
-            self.overlay_controls.set_surface_overlay_visible(True)
+        visible = self.overlay_controller.toggle_surface_overlay()
+        self.overlay_controls.set_surface_overlay_visible(bool(visible))
     def _toggle_indiv_overlay(self):
         idx_data = self.telemetry_controls.current_car_index()
         if idx_data is None:
             return
 
-        self.indiv_overlay.set_car_index(idx_data)
-
-        if self.indiv_overlay.isVisible():
-            self.indiv_overlay.hide()
-            self.telemetry_controls.set_individual_overlay_visible(False)
-        else:
-            self.indiv_overlay.show()
-            self.indiv_overlay.raise_()
-            self.telemetry_controls.set_individual_overlay_visible(True)
+        visible = self.overlay_controller.toggle_individual_overlay(idx_data)
+        if visible is None:
+            return
+        self.telemetry_controls.set_individual_overlay_visible(bool(visible))
 
 
 
     def _reset_pbs(self):
-        self.manager.reset_pbs()
+        self.overlay_controller.reset_personal_bests()
 
     def _update_sorting(self):
         self.ro_overlay.set_sort_by_best(self.cbSortBest.isChecked())
@@ -566,13 +538,13 @@ class ControlPanel(QtWidgets.QMainWindow):
             return
         old_geom = self.ro_overlay.widget().geometry()
         was_visible = self.ro_overlay.widget().isVisible()
-        self.manager.remove_overlay(self.ro_overlay)
-        self.ro_overlay.widget().close()
+        old_widget = self.ro_overlay.widget()
+        old_widget.close()
         new_ro = RunningOrderOverlayTable(n_columns=val)
         self.ro_overlay = new_ro
-        self.manager.add_overlay(new_ro)
-        if self.updater:
-            self.manager.connect_updater(self.updater)
+        self.overlay_controller.replace_running_order_overlay(
+            new_ro, state_handler=self._on_state_updated_with_fps
+        )
         self._update_fields()
         if old_geom is not None:
             self.ro_overlay.widget().setGeometry(old_geom)
@@ -839,13 +811,6 @@ class ControlPanel(QtWidgets.QMainWindow):
 
 
 
-    def _toggle_widget(self, widget):
-        if widget.isVisible():
-            widget.hide()
-        else:
-            widget.show()
-            widget.raise_()
-
     def _toggle_lap_logger(self):
         enabled = self.lap_logger_controller.toggle()
         self.telemetry_controls.set_lap_logger_enabled(enabled)
@@ -871,85 +836,6 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _force_all_cars_to_pit(self):
         self.pit_command_service.force_all_cars_to_pit()
-
-    def set_obs_capture_mode(self, enabled: bool):
-        """
-        Toggle overlays between translucent always-on-top 'overlay' mode (for Windy)
-        and opaque 'OBS capture' mode (for streaming).
-        Preserves visibility, transparency, and unique window titles.
-        """
-        from PyQt5 import QtCore
-
-        overlays = [
-            self.ro_overlay.widget(),
-            self.prox_overlay,
-            self.track_overlay,
-        ]
-
-        for o in overlays:
-            if o is None:
-                continue
-
-            was_visible = o.isVisible()
-            geom = o.geometry()
-            o.hide()
-
-            if enabled:
-                # --- OBS capture mode ---
-                flags = QtCore.Qt.FramelessWindowHint | QtCore.Qt.Window
-                translucent = False
-            else:
-                # --- Normal overlay mode (above Windy) ---
-                flags = (
-                    QtCore.Qt.FramelessWindowHint
-                    | QtCore.Qt.Tool
-                    | QtCore.Qt.WindowStaysOnTopHint
-                )
-                translucent = True
-
-            o.setWindowFlags(flags)
-            o.setAttribute(QtCore.Qt.WA_TranslucentBackground, translucent)
-
-            # --- Give each overlay a unique title for OBS ---
-            if enabled:
-                if o is self.ro_overlay.widget():
-                    o.setWindowTitle("ICR2 Timing - Running Order")
-                elif o is self.track_overlay:
-                    o.setWindowTitle("ICR2 Timing - Track Map")
-                elif o is self.prox_overlay:
-                    o.setWindowTitle("ICR2 Timing - Radar")
-            else:
-                o.setWindowTitle("")
-
-            # --- Radar-specific transparency handling ---
-            if hasattr(o, "cfg"):
-                try:
-                    o.cfg = self._config_store.config
-                    o._update_ranges_from_cfg()
-                    if translucent:
-                        o.background.setAlpha(128)
-                    else:
-                        o.background.setAlpha(255)
-                except Exception as e:
-                    print(f"[ControlPanel] Radar transparency update failed: {e}")
-
-            # --- Force DWM surface rebuild so transparency resets correctly ---
-            o.setGeometry(geom)
-            if was_visible:
-                o.show()
-                o.raise_()
-                o.repaint()
-            else:
-                o.show()
-                o.repaint()
-                o.hide()
-
-        mode = "OBS Capture" if enabled else "Overlay"
-        self.statusbar.showMessage(f"Switched to {mode} mode")
-
-
-
-
 
     def _set_button_color(self, button: QtWidgets.QPushButton, rgba_str: str):
         """Color the button using an rgba string like '255,0,0,255'."""
