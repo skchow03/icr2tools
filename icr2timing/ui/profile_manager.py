@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import profile
 from typing import List, Optional, Tuple
 
-from icr2timing.overlays.running_order_overlay import POSITION_INDICATOR_LABEL
+from icr2timing.overlays.constants import POSITION_INDICATOR_LABEL
 from icr2timing.utils.ini_preserver import update_ini_file
 import sys
 
