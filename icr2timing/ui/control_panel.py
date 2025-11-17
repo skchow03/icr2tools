@@ -7,7 +7,7 @@ Uses OverlayManager (multi-overlay) + ProfileManager.
 
 import time
 import os, sys
-from PyQt5 import QtWidgets, QtCore, uic, QtGui
+from PyQt5 import QtWidgets, QtCore, uic
 
 
 import logging
@@ -20,6 +20,12 @@ from icr2timing.overlays.running_order_overlay import (
     AVAILABLE_FIELDS,
 )
 from icr2timing.ui.profile_manager import ProfileManager, Profile, LAST_SESSION_KEY
+from icr2timing.ui.control_sections import (
+    OverlayControlsSection,
+    ProfileManagementSection,
+    RadarSettingsSection,
+    TelemetryControlsSection,
+)
 from icr2timing.overlays.proximity_overlay import ProximityOverlay
 from icr2timing.overlays.track_map_overlay import TrackMapOverlay
 from icr2timing.overlays.experimental_track_surface_overlay import (
@@ -49,7 +55,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._config_store = Config.store()
         self._cfg = cfg or self._config_store.config
         self._config_store.config_changed.connect(self._on_config_changed)
-        self._config_store.overlay_setting_changed.connect(self._on_overlay_settings_changed)
         self._latest_state = None
 
         # --- Overlay Manager ---
@@ -64,42 +69,22 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.error.connect(self.prox_overlay.on_error)
 
         # After creating self.prox_overlay
-        radar_cfg = self._cfg
-
-        self._set_button_color(self.btnPlayerColor, radar_cfg.radar_player_color)
-        self._set_button_color(self.btnAheadColor, radar_cfg.radar_ai_ahead_color)
-        self._set_button_color(self.btnBehindColor, radar_cfg.radar_ai_behind_color)
-        self._set_button_color(self.btnAlongColor, radar_cfg.radar_ai_alongside_color)
-
-        self.spinRadarWidth.setValue(radar_cfg.radar_width)
-        self.spinRadarHeight.setValue(radar_cfg.radar_height)
-
-        self.spinRadarForward.setValue(radar_cfg.radar_range_forward)
-        self.spinRadarRear.setValue(radar_cfg.radar_range_rear)
-        self.spinRadarSide.setValue(radar_cfg.radar_range_side)
-
-        # symbol dropdown
-        self.comboRadarSymbol.setCurrentText(radar_cfg.radar_symbol.capitalize())
-
-
-        # --- Radar Settings connections ---   
-        self.spinRadarWidth.valueChanged.connect(lambda v: self.prox_overlay.set_size(v, self.spinRadarHeight.value()))
-        self.spinRadarHeight.valueChanged.connect(lambda v: self.prox_overlay.set_size(self.spinRadarWidth.value(), v))
-
-        self.spinRadarForward.valueChanged.connect(lambda v: self.prox_overlay.set_range(forward=v))
-        self.spinRadarRear.valueChanged.connect(lambda v: self.prox_overlay.set_range(rear=v))
-        self.spinRadarSide.valueChanged.connect(lambda v: self.prox_overlay.set_range(side=v))
-
-        self.comboRadarSymbol.currentTextChanged.connect(
-            lambda t: self.prox_overlay.set_symbol(t.lower())
+        self.radar_settings = RadarSettingsSection(
+            overlay=self.prox_overlay,
+            config_store=self._config_store,
+            parent=self,
+            spin_width=self.spinRadarWidth,
+            spin_height=self.spinRadarHeight,
+            spin_forward=self.spinRadarForward,
+            spin_rear=self.spinRadarRear,
+            spin_side=self.spinRadarSide,
+            combo_symbol=self.comboRadarSymbol,
+            btn_player_color=self.btnPlayerColor,
+            btn_ahead_color=self.btnAheadColor,
+            btn_behind_color=self.btnBehindColor,
+            btn_along_color=self.btnAlongColor,
+            color_button_setter=self._set_button_color,
         )
-
-
-        # color pickers
-        self.btnPlayerColor.clicked.connect(lambda: self._pick_radar_color("player"))
-        self.btnAheadColor.clicked.connect(lambda: self._pick_radar_color("ahead"))
-        self.btnBehindColor.clicked.connect(lambda: self._pick_radar_color("behind"))
-        self.btnAlongColor.clicked.connect(lambda: self._pick_radar_color("alongside"))
 
         if self.updater:
             self.manager.connect_updater(self.updater)
@@ -127,37 +112,74 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.state_updated.connect(self.indiv_overlay.on_state_updated)
             self.updater.error.connect(self.indiv_overlay.on_error)
 
-        self.btnToggleIndividualTelemetry.clicked.connect(self._toggle_indiv_overlay)
-        self.selectIndividualCar.currentIndexChanged.connect(self._on_select_individual_car)
-
-
         # --- Telemetry Lap Logger ---
         self.lap_logger = None
         self._lap_logger_enabled = False
-        self.btnLapLogger.clicked.connect(self._toggle_lap_logger)
-        self.btnLapLogger.setText("Enable Lap Logger")
         self._recording_file = None
-        self.btnReleaseAllCars.clicked.connect(self._release_all_cars)
-        self.btnForcePitStops.clicked.connect(self._force_all_cars_to_pit)
+        self.telemetry_controls = TelemetryControlsSection(
+            btn_lap_logger=self.btnLapLogger,
+            btn_release_all=self.btnReleaseAllCars,
+            btn_force_pits=self.btnForcePitStops,
+            btn_toggle_individual=self.btnToggleIndividualTelemetry,
+            select_individual_car=self.selectIndividualCar,
+            parent=self,
+        )
+        self.telemetry_controls.lap_logger_toggle_requested.connect(
+            self._toggle_lap_logger
+        )
+        self.telemetry_controls.release_all_cars_requested.connect(
+            self._release_all_cars
+        )
+        self.telemetry_controls.force_all_cars_requested.connect(
+            self._force_all_cars_to_pit
+        )
+        self.telemetry_controls.individual_overlay_toggle_requested.connect(
+            self._toggle_indiv_overlay
+        )
+        self.telemetry_controls.individual_car_selected.connect(
+            self._on_select_individual_car
+        )
 
         # --- Profile Manager ---
         self.profiles = ProfileManager()
-        self.profileCombo.addItems(self.profiles.list_profiles())
 
         # --- Connect signals ---
         # Overlay controls
-        self.btnToggleOverlay.clicked.connect(self._toggle_overlay)
-        self.btnReset.clicked.connect(self._reset_pbs)
-        self.btnQuit.clicked.connect(self.close)
-        self.btnRadar.clicked.connect(self._toggle_radar)
-        self.btnTrackMap.clicked.connect(self._toggle_track_map)
-        self.btnSurfaceOverlay.clicked.connect(self._toggle_surface_overlay)
+        self.overlay_controls = OverlayControlsSection(
+            btn_toggle_overlay=self.btnToggleOverlay,
+            btn_reset=self.btnReset,
+            btn_quit=self.btnQuit,
+            btn_radar=self.btnRadar,
+            btn_track_map=self.btnTrackMap,
+            btn_surface_overlay=self.btnSurfaceOverlay,
+            parent=self,
+        )
+        self.overlay_controls.toggle_overlay_requested.connect(self._toggle_overlay)
+        self.overlay_controls.reset_requested.connect(self._reset_pbs)
+        self.overlay_controls.quit_requested.connect(self.close)
+        self.overlay_controls.radar_toggle_requested.connect(self._toggle_radar)
+        self.overlay_controls.track_map_toggle_requested.connect(
+            self._toggle_track_map
+        )
+        self.overlay_controls.surface_overlay_toggle_requested.connect(
+            self._toggle_surface_overlay
+        )
 
         # Profiles
-        self.profileCombo.currentTextChanged.connect(self._load_profile)
-        self.addProfileBtn.clicked.connect(self._add_new_profile)
-        self.saveProfileBtn.clicked.connect(self._save_current_profile)
-        self.deleteProfileBtn.clicked.connect(self._delete_current_profile)
+        self.profile_controls = ProfileManagementSection(
+            manager=self.profiles,
+            combo=self.profileCombo,
+            add_button=self.addProfileBtn,
+            save_button=self.saveProfileBtn,
+            delete_button=self.deleteProfileBtn,
+            parent=self,
+        )
+        self.profile_controls.profile_selected.connect(self._load_profile)
+        self.profile_controls.add_requested.connect(self._add_new_profile)
+        self.profile_controls.save_requested.connect(self._save_current_profile)
+        self.profile_controls.delete_requested.connect(
+            self._delete_current_profile
+        )
 
         # Driver names / sorting
         self.cbAbbrev.stateChanged.connect(self._update_abbrev)
@@ -292,7 +314,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         last = self.profiles.load_last_session()
         if last:
             self._apply_profile_object(last)
-            self._sync_radar_ui_from_store()
+            self.radar_settings.sync_from_store()
             self.prox_overlay.update()  # ✅ force redraw using loaded settings
 
     # -------------------------------
@@ -385,11 +407,11 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _toggle_overlay(self):
         if self.ro_overlay.widget().isVisible():
             self.ro_overlay.widget().hide()
-            self.btnToggleOverlay.setText("Show Overlay")
+            self.overlay_controls.set_overlay_visible(False)
         else:
             self.ro_overlay.widget().show()
             self.ro_overlay.widget().raise_()
-            self.btnToggleOverlay.setText("Hide Overlay")
+            self.overlay_controls.set_overlay_visible(True)
 
     def _on_map_scale_changed(self, val: int):
         scale = max(10, min(200, val)) / 100.0
@@ -399,33 +421,33 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _toggle_radar(self):
         if self.prox_overlay.isVisible():
             self.prox_overlay.hide()
-            self.btnRadar.setText("Show Radar")
+            self.overlay_controls.set_radar_visible(False)
         else:
             self.prox_overlay.show()
             self.prox_overlay.raise_()
-            self.btnRadar.setText("Hide Radar")
+            self.overlay_controls.set_radar_visible(True)
 
     def _toggle_track_map(self):
         if self.track_overlay.isVisible():
             self.track_overlay.hide()
-            self.btnTrackMap.setText("Show Track Map")
+            self.overlay_controls.set_track_map_visible(False)
         else:
             self.track_overlay.show()
             self.track_overlay.raise_()
             self.track_overlay.activateWindow()
-            self.btnTrackMap.setText("Hide Track Map")
+            self.overlay_controls.set_track_map_visible(True)
 
     def _toggle_surface_overlay(self):
         if self.surface_overlay.isVisible():
             self.surface_overlay.hide()
-            self.btnSurfaceOverlay.setText("Show Surface Overlay")
+            self.overlay_controls.set_surface_overlay_visible(False)
         else:
             self.surface_overlay.show()
             self.surface_overlay.raise_()
             self.surface_overlay.activateWindow()
-            self.btnSurfaceOverlay.setText("Hide Surface Overlay")
+            self.overlay_controls.set_surface_overlay_visible(True)
     def _toggle_indiv_overlay(self):
-        idx_data = self.selectIndividualCar.currentData()
+        idx_data = self.telemetry_controls.current_car_index()
         if idx_data is None:
             return
 
@@ -433,11 +455,11 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         if self.indiv_overlay.isVisible():
             self.indiv_overlay.hide()
-            self.btnToggleIndividualTelemetry.setText("Show telemetry overlay")
+            self.telemetry_controls.set_individual_overlay_visible(False)
         else:
             self.indiv_overlay.show()
             self.indiv_overlay.raise_()
-            self.btnToggleIndividualTelemetry.setText("Hide telemetry overlay")
+            self.telemetry_controls.set_individual_overlay_visible(True)
 
 
 
@@ -542,33 +564,7 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _on_state_updated_update_carlist(self, state):
         """Update car list only if the set of car numbers has changed."""
         self._latest_state = state
-        # Build a snapshot of current car numbers and names
-        current_snapshot = [
-            (driver.car_number, driver.name or "")
-            for _, driver in sorted(state.drivers.items())
-            if driver and driver.car_number is not None
-        ]
-
-        # if no change, do nothing
-        if getattr(self, "_last_car_snapshot", None) == current_snapshot:
-            return
-
-        # store new set and repopulate
-        self._last_car_snapshot = current_snapshot
-
-        self.selectIndividualCar.blockSignals(True)
-        self.selectIndividualCar.clear()
-        for idx, driver in sorted(state.drivers.items()):
-            if not driver or driver.car_number is None:
-                continue
-            name = (driver.name or "").strip()
-            if name:
-                display_text = f"{driver.car_number} - {name}"
-            else:
-                display_text = str(driver.car_number)
-            # text includes car number (and name when available); data is struct index
-            self.selectIndividualCar.addItem(display_text, idx)
-        self.selectIndividualCar.blockSignals(False)
+        self.telemetry_controls.update_car_list(state)
 
 
 
@@ -647,25 +643,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.ro_overlay.on_state_updated(self.ro_overlay._last_state, update_bests=False)
 
         # Restore radar geometry & settings
-        self.prox_overlay.move(prof.radar_x, prof.radar_y)
-        self.prox_overlay.resize(prof.radar_width, prof.radar_height)
-        self.prox_overlay.set_range(
-            forward=prof.radar_range_forward,
-            rear=prof.radar_range_rear,
-            side=prof.radar_range_side,
-        )
-        self.prox_overlay.set_symbol(prof.radar_symbol)
-        self.prox_overlay.set_show_speeds(prof.radar_show_speeds)
-        self.prox_overlay.set_colors(
-            player=prof.radar_player_color,
-            ahead=prof.radar_ai_ahead_color,
-            behind=prof.radar_ai_behind_color,
-            alongside=prof.radar_ai_alongside_color,
-        )
-        self._set_button_color(self.btnPlayerColor, prof.radar_player_color)
-        self._set_button_color(self.btnAheadColor, prof.radar_ai_ahead_color)
-        self._set_button_color(self.btnBehindColor, prof.radar_ai_behind_color)
-        self._set_button_color(self.btnAlongColor, prof.radar_ai_alongside_color)
+        self.radar_settings.apply_profile(prof)
 
         # ✅ Custom fields
         self.customFieldList.clear()
@@ -862,7 +840,6 @@ class ControlPanel(QtWidgets.QMainWindow):
             except Exception:
                 pass
             self._lap_logger_enabled = False
-            self.btnLapLogger.setText("Enable Lap Logger")
             self._recording_file = None
 
         else:
@@ -871,12 +848,13 @@ class ControlPanel(QtWidgets.QMainWindow):
             try:
                 self.updater.state_updated.connect(self.lap_logger.on_state_updated)
                 self._lap_logger_enabled = True
-                self.btnLapLogger.setText("Disable Lap Logger")
                 self._recording_file = self.lap_logger.get_filename()
             except Exception as e:
                 log.error(f"[ControlPanel] Error enabling Lap Logger: {e}")
                 self._lap_logger_enabled = False
                 self._recording_file = None
+
+        self.telemetry_controls.set_lap_logger_enabled(self._lap_logger_enabled)
 
         # Refresh status bar to reflect current state
         self._update_status()
@@ -1083,89 +1061,11 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._cfg = cfg
         self.lblExePath.setText(self._current_exe_path())
 
-    def _on_overlay_settings_changed(self, section: str):
-        if section == "radar":
-            self._sync_radar_ui_from_store()
-
-
-    def _pick_radar_color(self, which: str):
-        # Get current color from overlay config
-        cfg = self._config_store.config
-        if which == "player":
-            current = cfg.radar_player_color
-        elif which == "ahead":
-            current = cfg.radar_ai_ahead_color
-        elif which == "behind":
-            current = cfg.radar_ai_behind_color
-        elif which == "alongside":
-            current = cfg.radar_ai_alongside_color
-        else:
-            current = "255,255,255,255"
-
-        # Parse "r,g,b,a" → QColor
-        parts = [int(x) for x in current.split(",")]
-        while len(parts) < 4:
-            parts.append(255)
-        initial_color = QtGui.QColor(*parts)
-
-        # Open color dialog with that as default
-        color = QtWidgets.QColorDialog.getColor(initial_color, self, f"Select {which} color")
-        if not color.isValid():
-            return
-
-        # Convert to string and apply
-        rgba_str = f"{color.red()},{color.green()},{color.blue()},{color.alpha()}"
-
-        if which == "player":
-            self.prox_overlay.set_colors(player=rgba_str)
-            self._set_button_color(self.btnPlayerColor, rgba_str)
-        elif which == "ahead":
-            self.prox_overlay.set_colors(ahead=rgba_str)
-            self._set_button_color(self.btnAheadColor, rgba_str)
-        elif which == "behind":
-            self.prox_overlay.set_colors(behind=rgba_str)
-            self._set_button_color(self.btnBehindColor, rgba_str)
-        elif which == "alongside":
-            self.prox_overlay.set_colors(alongside=rgba_str)
-            self._set_button_color(self.btnAlongColor, rgba_str)
-
-    def _sync_radar_ui_from_store(self):
-        """Update all radar tab widgets to match the overlay's current config."""
-        cfg = self._config_store.config
-
-        # Size
-        blocker_w = QtCore.QSignalBlocker(self.spinRadarWidth)
-        blocker_h = QtCore.QSignalBlocker(self.spinRadarHeight)
-        self.spinRadarWidth.setValue(cfg.radar_width)
-        self.spinRadarHeight.setValue(cfg.radar_height)
-        del blocker_w, blocker_h
-
-        # Ranges
-        blocker_f = QtCore.QSignalBlocker(self.spinRadarForward)
-        blocker_r = QtCore.QSignalBlocker(self.spinRadarRear)
-        blocker_s = QtCore.QSignalBlocker(self.spinRadarSide)
-        self.spinRadarForward.setValue(cfg.radar_range_forward)
-        self.spinRadarRear.setValue(cfg.radar_range_rear)
-        self.spinRadarSide.setValue(cfg.radar_range_side)
-        del blocker_f, blocker_r, blocker_s
-
-        # Symbol
-        blocker_symbol = QtCore.QSignalBlocker(self.comboRadarSymbol)
-        self.comboRadarSymbol.setCurrentText(cfg.radar_symbol.capitalize())
-        del blocker_symbol
-
-        # Colors
-        self._set_button_color(self.btnPlayerColor, cfg.radar_player_color)
-        self._set_button_color(self.btnAheadColor, cfg.radar_ai_ahead_color)
-        self._set_button_color(self.btnBehindColor, cfg.radar_ai_behind_color)
-        self._set_button_color(self.btnAlongColor, cfg.radar_ai_alongside_color)
-
-    def _on_select_individual_car(self, index):
+    def _on_select_individual_car(self, car_index):
         """When user picks a new car number, update overlay's car index."""
-        idx_data = self.selectIndividualCar.itemData(index)
-        if idx_data is None:
+        if car_index is None:
             return
-        self.indiv_overlay.set_car_index(idx_data)
+        self.indiv_overlay.set_car_index(car_index)
 
 
     # -------------------------------
