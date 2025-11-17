@@ -30,6 +30,7 @@ icr2tools/
 │   ├── updater/             # Worker thread + overlay manager coordination
 │   ├── overlays/            # Overlay widgets (timing table, radar, track map, etc.)
 │   ├── ui/                  # Control panel glue, profile manager, value editors, .ui file
+│   ├── utils/               # Shared INI-preserving helpers
 │   ├── assets/              # Icon and bundled resources
 │   ├── car_data_editor.py   # Stand-alone telemetry editor built on the same pipeline
 │   ├── convert_icon.py      # Utility for regenerating the overlay icon
@@ -71,8 +72,17 @@ icr2tools/
   `MemoryReader`/`RaceUpdater` into the `ControlPanel` before starting the worker thread.
   The app icon is loaded from `assets/icon.ico` for both frozen and development builds.【F:icr2timing/main.py†L1-L115】
 * **Core utilities (`core/`)** include:
-  * `config.Config` – centralises memory offsets, INI overrides, UI defaults, color palette,
-    radar sizing, and executable paths for each supported game version.【F:icr2timing/core/config.py†L1-L128】
+  * `config.Config` – thin facade over the shared `ConfigStore`, letting legacy callers fetch the
+    current settings, subscribe to change signals, or persist overrides without holding a direct
+    reference to the store.【F:icr2timing/core/config.py†L1-L34】
+  * `config_store.ConfigStore` – a `QObject` singleton that loads `settings.ini`, applies the
+    correct memory offsets for the detected executable, exposes a `ConfigModel` with overlay
+    defaults (fonts, colours, radar geometry, column widths), and emits
+    `config_changed`/`overlay_setting_changed` when `reload()`/`save()` mutates runtime state so
+    overlays can hot-reload UI tweaks.【F:icr2timing/core/config_store.py†L1-L200】【F:icr2timing/core/config_store.py†L242-L304】
+  * `config_backend.ConfigBackend` – handles INI parsing/persistence, version alias resolution,
+    executable validation, and comment-preserving saves via the shared INI writer so that
+    `settings.ini` edits never discard user annotations.【F:icr2timing/core/config_backend.py†L1-L113】
   * `car_field_definitions.py` – metadata for the 133 telemetry integers powering custom table
     columns and editors.【F:icr2timing/core/car_field_definitions.py†L1-L78】
   * `car_data_recorder.py` – CSV recorder for per-car telemetry slices, keeping metadata files
@@ -87,9 +97,12 @@ icr2tools/
   `QTimer`, emits `state_updated`/`error`, and stops itself if the process disappears, plus
   `OverlayManager` for show/hide/reset orchestration across overlays.【F:icr2timing/updater/updater.py†L1-L125】【F:icr2timing/updater/overlay_manager.py†L1-L77】
 * **Overlays (`overlays/`)** share a `BaseOverlay` contract and optional helpers in
-  `overlay_table_window.py`. Implementations include the timing table, proximity radar, track
-  map, experimental surface visualiser, and individual telemetry panel – each responding to
-  updater signals and reading from `RaceState` snapshots.
+  `overlay_table_window.py`. `running_order_overlay.py` drives the flagship timing table: it
+  maintains a configurable column list (including the Δ position indicator), tracks best laps,
+  honours profile-defined custom telemetry fields, and listens to `ConfigStore` signals so
+  fonts/colours/resize throttling update live.【F:icr2timing/overlays/running_order_overlay.py†L1-L200】
+  Additional overlays (proximity radar, track map, experimental surface visualiser, individual
+  telemetry panel) respond to updater signals and use the shared geometry/analysis helpers.
 * **UI layer (`ui/`)** contains:
   * `control_panel.py` – the main window built from `control_panel.ui`. It owns overlay
     instances, hooks up radar controls, manages the lap logger and profile persistence, and
@@ -153,11 +166,16 @@ icr2tools/
 ## ⚙️ Configuration, Persistence & Assets
 
 * **`settings.ini`** (in `icr2timing/`) controls memory version, polling interval, fonts, colour
-  palette, radar geometry, and optional paths like `game_exe`. Both `ICR2Memory` and
-  `Config` read from this file at import/initialisation time.【F:icr2timing/core/config.py†L1-L128】【F:icr2_core/icr2_memory.py†L14-L39】
+  palette, radar geometry, and optional paths like `game_exe`. `ConfigStore` loads the file via
+  `ConfigBackend`, verifies the configured executable, applies the right offsets, and emits
+  change notifications so overlays update instantly, while `ICR2Memory` still honours the same
+  version/path hints during attachment.【F:icr2timing/core/config_store.py†L197-L304】【F:icr2timing/core/config_backend.py†L31-L113】【F:icr2_core/icr2_memory.py†L14-L39】
 * **`profiles.ini`** stores overlay layouts. `ProfileManager` loads/saves entries, injects the
-  position-change indicator column when enabled, and persists radar/overlay placement along
-  with custom telemetry columns bound to `CarState.values` indices.【F:icr2timing/ui/profile_manager.py†L1-L120】
+  position-change indicator column when enabled, persists radar/overlay placement, and keeps
+  per-profile custom telemetry columns bound to `CarState.values` indices.【F:icr2timing/ui/profile_manager.py†L1-L194】
+* **INI persistence (`icr2timing/utils/ini_preserver.py`)** centralises comment-friendly writes
+  for both configuration files, allowing targeted key/section edits without clobbering user
+  annotations – the helper is reused by `ConfigBackend` and `ProfileManager`.【F:icr2timing/utils/ini_preserver.py†L1-L170】【F:icr2timing/core/config_backend.py†L31-L60】【F:icr2timing/ui/profile_manager.py†L13-L194】
 * **Telemetry logging** – The control panel can toggle the lap logger (`TelemetryLapLogger`)
   and car data recorder (`CarDataRecorder`), producing timestamped CSV + metadata files for
   offline analysis.【F:icr2timing/ui/control_panel.py†L77-L149】【F:icr2timing/core/car_data_recorder.py†L13-L120】
