@@ -164,16 +164,21 @@ def compute_intervals_display(state: RaceState, _last_intervals_cache: dict = {}
                 ahead = prev_active
                 lap_diff = ahead.laps_completed - car.laps_completed
 
-                if lap_diff == 0:
-                    if car.lap_end_clock is not None and ahead.lap_end_clock is not None:
-                        diff = (car.lap_end_clock - ahead.lap_end_clock) & 0xFFFFFFFF
+                if lap_diff <= 1:
+                    ref_clock = ahead.lap_end_clock
+                    if ref_clock is None and lap_diff == 1:
+                        ref_clock = ahead.lap_start_clock
+                    if car.lap_end_clock is not None and ref_clock is not None:
+                        diff = (car.lap_end_clock - ref_clock) & 0xFFFFFFFF
                         if diff > 0x7FFFFFFF:
                             diff -= 0x100000000
                         if diff < 0:
                             diff = 0
                         text = format_time_diff(diff)
-                elif lap_diff > 0:
-                    text = f"-{lap_diff}L"
+                    else:
+                        text = f"-{max(lap_diff, 0)}L"
+                elif lap_diff > 1:
+                    text = f"-{lap_diff - 1}L"
 
         intervals[struct_idx] = (text, color)
         # store for next frame (text, color, laps_completed)

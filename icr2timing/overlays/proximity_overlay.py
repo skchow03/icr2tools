@@ -44,7 +44,10 @@ class ProximityOverlay(QtWidgets.QWidget):
 
     def __init__(self):
         super().__init__()
-        self.cfg = Config()
+        self._store = Config.store()
+        self.cfg = self._store.config
+        self._store.config_changed.connect(self._on_config_changed)
+        self._store.overlay_setting_changed.connect(self._on_overlay_changed)
 
         flags = (
             QtCore.Qt.FramelessWindowHint
@@ -89,38 +92,57 @@ class ProximityOverlay(QtWidgets.QWidget):
     # --------------------------------------------------------
     # Runtime mutators (for ControlPanel live updates)
     # --------------------------------------------------------
-    def set_size(self, w: int, h: int):
-        self.resize(clamp(w, 100, 1200), clamp(h, 100, 1200))
-        self.update()
-
-    def set_range(self, forward=None, rear=None, side=None):
-        if forward is not None:
-            self.cfg.radar_range_forward = forward
-        if rear is not None:
-            self.cfg.radar_range_rear = rear
-        if side is not None:
-            self.cfg.radar_range_side = side
+    def _on_config_changed(self, cfg):
+        self.cfg = cfg
+        self.resize(self.cfg.radar_width, self.cfg.radar_height)
         self._update_ranges_from_cfg()
         self.update()
 
-    def set_symbol(self, style: str):
-        self.symbol = style.lower()
+    def _on_overlay_changed(self, section: str):
+        if section != "radar":
+            return
+        self.cfg = self._store.config
+        self.resize(self.cfg.radar_width, self.cfg.radar_height)
+        self._update_ranges_from_cfg()
         self.update()
+
+    # --------------------------------------------------------
+    # Runtime mutators (persist via ConfigStore)
+    # --------------------------------------------------------
+    def set_size(self, w: int, h: int):
+        w = clamp(w, 100, 1200)
+        h = clamp(h, 100, 1200)
+        Config.save({"radar": {"width": w, "height": h}})
+
+    def set_range(self, forward=None, rear=None, side=None):
+        updates = {}
+        if forward is not None:
+            updates["range_forward_lengths"] = clamp(forward, 1, 10)
+        if rear is not None:
+            updates["range_rear_lengths"] = clamp(rear, 1, 10)
+        if side is not None:
+            updates["range_side_widths"] = clamp(side, 1, 20)
+        if updates:
+            Config.save({"radar": updates})
+
+    def set_symbol(self, style: str):
+        Config.save({"radar": {"symbol": style.lower()}})
 
     def set_show_speeds(self, enabled: bool):
-        self.show_speeds = bool(enabled)
-        self.update()
+        Config.save({"radar": {"show_speeds": "1" if enabled else "0"}})
 
     def set_colors(self, player=None, ahead=None, behind=None, alongside=None):
+        updates = {}
         if player:
-            self.color_player = parse_rgba(player)
+            updates["player_color"] = player
         if ahead:
-            self.color_ahead = parse_rgba(ahead)
+            updates["ai_ahead_color"] = ahead
         if behind:
-            self.color_behind = parse_rgba(behind)
+            updates["ai_behind_color"] = behind
         if alongside:
-            self.color_along = parse_rgba(alongside)
-        self.update()
+            updates["ai_alongside_color"] = alongside
+        if updates:
+            Config.save({"radar": updates})
 
     # --------------------------------------------------------
     # BaseOverlay API

@@ -2,45 +2,42 @@ import configparser
 
 import pytest
 
-from icr2timing.core import config as cfg
+from icr2timing.core.config_backend import ConfigBackend
+from icr2timing.core.config_store import ConfigStore
 
 
-def _set_version(monkeypatch, version: str) -> None:
-    parser = configparser.ConfigParser()
-    parser.add_section(cfg.EXE_INFO_SECTION)
-    parser.set(cfg.EXE_INFO_SECTION, "version", version)
-    monkeypatch.setattr(cfg, "_parser", parser)
+def _write_ini(tmp_path, version: str, exe_path: str) -> str:
+    ini_path = tmp_path / "settings.ini"
+    ini_path.write_text(
+        "[exe_info]\n" f"version={version}\n" f"game_exe={exe_path}\n",
+        encoding="utf-8",
+    )
+    return str(ini_path)
 
 
-def test_config_accepts_matching_executable(tmp_path, monkeypatch):
+def _load_store(tmp_path, version: str, exe_size: int) -> ConfigStore:
     exe_path = tmp_path / "cart.exe"
-    exe_path.write_bytes(b"\0" * 1109095)
-    _set_version(monkeypatch, "REND32A")
+    exe_path.write_bytes(b"\0" * exe_size)
+    ini_path = _write_ini(tmp_path, version, str(exe_path))
+    backend = ConfigBackend(ini_path)
+    return ConfigStore(backend=backend)
 
-    cfg.Config(game_exe=str(exe_path))
+
+def test_config_accepts_matching_executable(tmp_path):
+    store = _load_store(tmp_path, "REND32A", 1109095)
+    assert store.config.game_exe.endswith("cart.exe")
 
 
-def test_config_rejects_mismatched_executable(tmp_path, monkeypatch):
-    exe_path = tmp_path / "cart.exe"
-    exe_path.write_bytes(b"\0" * 1142387)
-    _set_version(monkeypatch, "REND32A")
-
+def test_config_rejects_mismatched_executable(tmp_path):
     with pytest.raises(ValueError, match="does not match executable"):
-        cfg.Config(game_exe=str(exe_path))
+        _load_store(tmp_path, "REND32A", 1142387)
 
 
-def test_config_rejects_unknown_executable_size(tmp_path, monkeypatch):
-    exe_path = tmp_path / "cart.exe"
-    exe_path.write_bytes(b"\0" * 123)
-    _set_version(monkeypatch, "DOS")
-
+def test_config_rejects_unknown_executable_size(tmp_path):
     with pytest.raises(ValueError, match="Unrecognized game_exe"):
-        cfg.Config(game_exe=str(exe_path))
+        _load_store(tmp_path, "REND32A", 123)
 
 
-def test_config_accepts_windy101_alias(tmp_path, monkeypatch):
-    exe_path = tmp_path / "cart.exe"
-    exe_path.write_bytes(b"\0" * 1916928)
-    _set_version(monkeypatch, "WINDY101")
-
-    cfg.Config(game_exe=str(exe_path))
+def test_config_accepts_windy101_alias(tmp_path):
+    store = _load_store(tmp_path, "WINDY101", 1916928)
+    assert store.config.version == "WINDY101"

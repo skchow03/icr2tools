@@ -29,7 +29,6 @@ from icr2timing.overlays.individual_car_overlay import IndividualCarOverlay
 from icr2timing.core.config import Config
 from icr2timing.core.version import __version__
 from icr2timing.core.telemetry_laps import TelemetryLapLogger
-from icr2timing.utils.ini_preserver import update_ini_file
 
 
 CAR_STATE_INDEX_PIT_RELEASE_TIMER = 98
@@ -47,7 +46,10 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         self.updater = updater
         self._mem = mem
-        self._cfg = cfg or Config()
+        self._config_store = Config.store()
+        self._cfg = cfg or self._config_store.config
+        self._config_store.config_changed.connect(self._on_config_changed)
+        self._config_store.overlay_setting_changed.connect(self._on_overlay_settings_changed)
         self._latest_state = None
 
         # --- Overlay Manager ---
@@ -62,7 +64,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.updater.error.connect(self.prox_overlay.on_error)
 
         # After creating self.prox_overlay
-        radar_cfg = self.prox_overlay.cfg
+        radar_cfg = self._cfg
 
         self._set_button_color(self.btnPlayerColor, radar_cfg.radar_player_color)
         self._set_button_color(self.btnAheadColor, radar_cfg.radar_ai_ahead_color)
@@ -290,19 +292,18 @@ class ControlPanel(QtWidgets.QMainWindow):
         last = self.profiles.load_last_session()
         if last:
             self._apply_profile_object(last)
-            self._sync_radar_ui_from_overlay()   # ✅ new line
+            self._sync_radar_ui_from_store()
             self.prox_overlay.update()  # ✅ force redraw using loaded settings
 
     # -------------------------------
     # EXE path handling
     # -------------------------------
     def _current_exe_path(self) -> str:
-        cfg = Config()
+        cfg = self._cfg
         return cfg.game_exe or "No EXE selected"
 
     def _save_exe_path(self, path: str):
-        cfgfile = os.path.join(os.path.dirname(sys.argv[0]), "settings.ini")
-        update_ini_file(cfgfile, {"exe_info": {"game_exe": path}})
+        Config.save({"exe_info": {"game_exe": path}})
 
     def _choose_exe(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -318,19 +319,9 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.lblExePath.setText(path)
         self.statusbar.showMessage(f"Game EXE set: {os.path.basename(path)}")
 
-        # ✅ Update global Config() instances in memory
-        from icr2timing.core import config as cfgmod
-
-        if not cfgmod._parser.has_section(cfgmod.EXE_INFO_SECTION):
-            cfgmod._parser.add_section(cfgmod.EXE_INFO_SECTION)
-        cfgmod._parser.set(cfgmod.EXE_INFO_SECTION, "game_exe", path)
-        update_ini_file(cfgmod._cfgfile, {cfgmod.EXE_INFO_SECTION: {"game_exe": path}})
-
         # clear mute so TrackMapOverlay can retry loading
         self.track_overlay._last_load_failed = False
 
-        # Also patch the live default Config in memory
-        cfgmod.Config.game_exe = path
         self.exe_path_changed.emit(path)
 
         log.info(f"[ControlPanel] Updated game_exe in live config to: {path}")
@@ -722,15 +713,15 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_visible=self.prox_overlay.isVisible(),
             radar_width=self.prox_overlay.width(),
             radar_height=self.prox_overlay.height(),
-            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
-            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
-            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_range_forward=self._cfg.radar_range_forward,
+            radar_range_rear=self._cfg.radar_range_rear,
+            radar_range_side=self._cfg.radar_range_side,
             radar_symbol=self.prox_overlay.symbol,
             radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self.prox_overlay.cfg.radar_player_color,
-            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
+            radar_player_color=self._cfg.radar_player_color,
+            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,
@@ -789,15 +780,15 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_visible=self.prox_overlay.isVisible(),
             radar_width=self.prox_overlay.width(),
             radar_height=self.prox_overlay.height(),
-            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
-            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
-            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_range_forward=self._cfg.radar_range_forward,
+            radar_range_rear=self._cfg.radar_range_rear,
+            radar_range_side=self._cfg.radar_range_side,
             radar_symbol=self.prox_overlay.symbol,
             radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self.prox_overlay.cfg.radar_player_color,
-            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
+            radar_player_color=self._cfg.radar_player_color,
+            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
         )
@@ -1005,7 +996,6 @@ class ControlPanel(QtWidgets.QMainWindow):
         Preserves visibility, transparency, and unique window titles.
         """
         from PyQt5 import QtCore
-        from icr2timing.core.config import Config
 
         overlays = [
             self.ro_overlay.widget(),
@@ -1051,8 +1041,7 @@ class ControlPanel(QtWidgets.QMainWindow):
             # --- Radar-specific transparency handling ---
             if hasattr(o, "cfg"):
                 try:
-                    from icr2timing.core.config import Config
-                    o.cfg = Config()
+                    o.cfg = self._config_store.config
                     o._update_ranges_from_cfg()
                     if translucent:
                         o.background.setAlpha(128)
@@ -1090,9 +1079,18 @@ class ControlPanel(QtWidgets.QMainWindow):
             button.setStyleSheet("")
 
 
+    def _on_config_changed(self, cfg):
+        self._cfg = cfg
+        self.lblExePath.setText(self._current_exe_path())
+
+    def _on_overlay_settings_changed(self, section: str):
+        if section == "radar":
+            self._sync_radar_ui_from_store()
+
+
     def _pick_radar_color(self, which: str):
         # Get current color from overlay config
-        cfg = self.prox_overlay.cfg
+        cfg = self._config_store.config
         if which == "player":
             current = cfg.radar_player_color
         elif which == "ahead":
@@ -1121,35 +1119,40 @@ class ControlPanel(QtWidgets.QMainWindow):
         if which == "player":
             self.prox_overlay.set_colors(player=rgba_str)
             self._set_button_color(self.btnPlayerColor, rgba_str)
-            cfg.radar_player_color = rgba_str
         elif which == "ahead":
             self.prox_overlay.set_colors(ahead=rgba_str)
             self._set_button_color(self.btnAheadColor, rgba_str)
-            cfg.radar_ai_ahead_color = rgba_str
         elif which == "behind":
             self.prox_overlay.set_colors(behind=rgba_str)
             self._set_button_color(self.btnBehindColor, rgba_str)
-            cfg.radar_ai_behind_color = rgba_str
         elif which == "alongside":
             self.prox_overlay.set_colors(alongside=rgba_str)
             self._set_button_color(self.btnAlongColor, rgba_str)
-            cfg.radar_ai_alongside_color = rgba_str
 
-    def _sync_radar_ui_from_overlay(self):
+    def _sync_radar_ui_from_store(self):
         """Update all radar tab widgets to match the overlay's current config."""
-        cfg = self.prox_overlay.cfg
+        cfg = self._config_store.config
 
         # Size
-        self.spinRadarWidth.setValue(self.prox_overlay.width())
-        self.spinRadarHeight.setValue(self.prox_overlay.height())
+        blocker_w = QtCore.QSignalBlocker(self.spinRadarWidth)
+        blocker_h = QtCore.QSignalBlocker(self.spinRadarHeight)
+        self.spinRadarWidth.setValue(cfg.radar_width)
+        self.spinRadarHeight.setValue(cfg.radar_height)
+        del blocker_w, blocker_h
 
         # Ranges
+        blocker_f = QtCore.QSignalBlocker(self.spinRadarForward)
+        blocker_r = QtCore.QSignalBlocker(self.spinRadarRear)
+        blocker_s = QtCore.QSignalBlocker(self.spinRadarSide)
         self.spinRadarForward.setValue(cfg.radar_range_forward)
         self.spinRadarRear.setValue(cfg.radar_range_rear)
         self.spinRadarSide.setValue(cfg.radar_range_side)
+        del blocker_f, blocker_r, blocker_s
 
         # Symbol
+        blocker_symbol = QtCore.QSignalBlocker(self.comboRadarSymbol)
         self.comboRadarSymbol.setCurrentText(cfg.radar_symbol.capitalize())
+        del blocker_symbol
 
         # Colors
         self._set_button_color(self.btnPlayerColor, cfg.radar_player_color)
@@ -1204,15 +1207,15 @@ class ControlPanel(QtWidgets.QMainWindow):
             radar_visible=self.prox_overlay.isVisible(),
             radar_width=self.prox_overlay.width(),
             radar_height=self.prox_overlay.height(),
-            radar_range_forward=self.prox_overlay.cfg.radar_range_forward,
-            radar_range_rear=self.prox_overlay.cfg.radar_range_rear,
-            radar_range_side=self.prox_overlay.cfg.radar_range_side,
+            radar_range_forward=self._cfg.radar_range_forward,
+            radar_range_rear=self._cfg.radar_range_rear,
+            radar_range_side=self._cfg.radar_range_side,
             radar_symbol=self.prox_overlay.symbol,
             radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self.prox_overlay.cfg.radar_player_color,
-            radar_ai_ahead_color=self.prox_overlay.cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self.prox_overlay.cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self.prox_overlay.cfg.radar_ai_alongside_color,
+            radar_player_color=self._cfg.radar_player_color,
+            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
+            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
+            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
             position_indicator_duration=self.spinPosChangeDuration.value(),
             position_indicator_enabled=indicator_enabled,
             custom_fields=custom_fields,   # ✅ new

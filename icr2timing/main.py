@@ -66,7 +66,7 @@ def main():
 
     app.setQuitOnLastWindowClosed(True)
 
-    cfg = Config()
+    cfg = Config.current()
     mem = None
 
     # --- Retry loop ---

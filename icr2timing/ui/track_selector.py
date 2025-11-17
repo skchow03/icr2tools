@@ -34,7 +34,7 @@ class TrackSelector(QtWidgets.QWidget):
     # Populate list of tracks from EXE path
     # --------------------------------------
     def populate_tracks(self):
-        cfg = Config()
+        cfg = Config.current()
         exe_path = cfg.game_exe
         self.combo.clear()
 
