@@ -20,6 +20,7 @@ from icr2timing.overlays.running_order_overlay import (
 )
 from icr2timing.ui.overlay_controller import OverlayController
 from icr2timing.ui.profile_manager import ProfileManager, Profile
+from icr2timing.ui.control_panel_presenter import ControlPanelPresenter
 from icr2timing.ui.control_sections import (
     OverlayControlsSection,
     ProfileManagementSection,
@@ -38,7 +39,6 @@ from icr2timing.ui.services import (
     LapLoggerController,
     PitCommandService,
     SessionPersistence,
-    SessionSnapshot,
 )
 
 
@@ -138,6 +138,26 @@ class ControlPanel(QtWidgets.QMainWindow):
         # --- Profile Manager ---
         self.profiles = ProfileManager()
 
+        self.presenter = ControlPanelPresenter(
+            parent=self,
+            profile_manager=self.profiles,
+            running_order_overlay=self.ro_overlay,
+            profile_combo=self.profileCombo,
+            fields_list=self.fieldsList,
+            custom_field_list=self.customFieldList,
+            spin_pos_change_duration=self.spinPosChangeDuration,
+            indicator_label=self.lblPositionIndicatorDuration,
+            combo_columns=self.comboCols,
+            radio_time=self.radioTime,
+            radio_speed=self.radioSpeed,
+            cb_sort_best=self.cbSortBest,
+            cb_abbrev=self.cbAbbrev,
+            prox_overlay=self.prox_overlay,
+            cfg=self._cfg,
+            cust_label_edit=self.custLabel,
+            cust_index_spin=self.custIndex,
+        )
+
         # --- Connect signals ---
         # Overlay controls
         self.overlay_controls = OverlayControlsSection(
@@ -172,10 +192,10 @@ class ControlPanel(QtWidgets.QMainWindow):
             parent=self,
         )
         self.profile_controls.profile_selected.connect(self._load_profile)
-        self.profile_controls.add_requested.connect(self._add_new_profile)
-        self.profile_controls.save_requested.connect(self._save_current_profile)
+        self.profile_controls.add_requested.connect(self.presenter.add_new_profile)
+        self.profile_controls.save_requested.connect(self.presenter.save_current_profile)
         self.profile_controls.delete_requested.connect(
-            self._delete_current_profile
+            self.presenter.delete_current_profile
         )
 
         # Driver names / sorting
@@ -221,7 +241,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self.btnFieldUp.clicked.connect(lambda: self._move_selected_field(-1))
         self.btnFieldDown.clicked.connect(lambda: self._move_selected_field(1))
 
-        self._update_indicator_controls()
+        self.presenter.update_indicator_controls()
 
         # Combo for columns (1–4)
         for i in range(1, 5):
@@ -235,9 +255,9 @@ class ControlPanel(QtWidgets.QMainWindow):
         )
 
         # Custom fields
-        self.btnAddField.clicked.connect(self._on_add_field)
-        self.btnRemoveField.clicked.connect(self._on_remove_field)
-        self.customFieldList.itemChanged.connect(self._on_custom_field_toggled)
+        self.btnAddField.clicked.connect(self.presenter.add_custom_field)
+        self.btnRemoveField.clicked.connect(self.presenter.remove_selected_custom_fields)
+        self.customFieldList.itemChanged.connect(self.presenter.handle_custom_field_toggled)
         
 
         # Polling
@@ -462,24 +482,6 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _update_abbrev(self):
         self.ro_overlay.set_use_abbreviations(self.cbAbbrev.isChecked())
 
-    def _update_indicator_controls(self):
-        indicator_enabled = "position_indicator" in self.ro_overlay.get_enabled_fields()
-        self.spinPosChangeDuration.setEnabled(indicator_enabled)
-        self.lblPositionIndicatorDuration.setEnabled(indicator_enabled)
-
-    def _collect_field_keys(self, include_unchecked: bool = False):
-        keys = []
-        for i in range(self.fieldsList.count()):
-            item = self.fieldsList.item(i)
-            if item is None:
-                continue
-            key = item.data(QtCore.Qt.UserRole)
-            if not key:
-                continue
-            if include_unchecked or item.checkState() == QtCore.Qt.Checked:
-                keys.append(key)
-        return keys
-
     def _move_selected_field(self, direction: int):
         if getattr(self, "_suppress_field_updates", False):
             return
@@ -515,9 +517,9 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _update_fields(self):
         if getattr(self, "_suppress_field_updates", False):
             return
-        enabled = self._collect_field_keys()
+        enabled = self.presenter.collect_field_keys()
         self.ro_overlay.set_enabled_fields(enabled)
-        self._update_indicator_controls()
+        self.presenter.update_indicator_controls()
 
     def _update_display_mode(self):
         mode = "time" if self.radioTime.isChecked() else "speed"
@@ -542,6 +544,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         old_widget.close()
         new_ro = RunningOrderOverlayTable(n_columns=val)
         self.ro_overlay = new_ro
+        self.presenter.set_running_order_overlay(new_ro)
         self.overlay_controller.replace_running_order_overlay(
             new_ro, state_handler=self._on_state_updated_with_fps
         )
@@ -646,169 +649,6 @@ class ControlPanel(QtWidgets.QMainWindow):
             self.customFieldList.addItem(item)
 
 
-    def _save_current_profile(self):
-        profile_name = self.profileCombo.currentText().strip()
-        if not profile_name:
-            return
-
-        # Columns
-        key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
-        ordered_keys = self._collect_field_keys()
-        selected_labels = [key_to_label[k] for k in ordered_keys if k in key_to_label]
-        indicator_enabled = "position_indicator" in ordered_keys
-
-        # Custom fields (only save checked)
-        custom_fields = []
-        for i in range(self.customFieldList.count()):
-            item = self.customFieldList.item(i)
-            text = item.text()
-            label, idx_str = text.split(" (")
-            idx = int(idx_str.rstrip(")"))
-            if item.checkState() == QtCore.Qt.Checked:
-                custom_fields.append((label, idx))
-
-        profile = Profile(
-            name=profile_name,
-            columns=selected_labels,
-            n_columns=self.comboCols.itemData(self.comboCols.currentIndex()),
-            display_mode="speed" if self.radioSpeed.isChecked() else "time",
-            sort_by_best=self.cbSortBest.isChecked(),
-            use_abbrev=self.cbAbbrev.isChecked(),
-            window_x=self.ro_overlay.widget().x(),
-            window_y=self.ro_overlay.widget().y(),
-            radar_x=self.prox_overlay.x(),
-            radar_y=self.prox_overlay.y(),
-            radar_visible=self.prox_overlay.isVisible(),
-            radar_width=self.prox_overlay.width(),
-            radar_height=self.prox_overlay.height(),
-            radar_range_forward=self._cfg.radar_range_forward,
-            radar_range_rear=self._cfg.radar_range_rear,
-            radar_range_side=self._cfg.radar_range_side,
-            radar_symbol=self.prox_overlay.symbol,
-            radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self._cfg.radar_player_color,
-            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
-            position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=indicator_enabled,
-            custom_fields=custom_fields,
-        )
-
-        self.profiles.save(profile)
-        if profile_name not in [self.profileCombo.itemText(i) for i in range(self.profileCombo.count())]:
-            self.profileCombo.addItem(profile_name)
-        self.profileCombo.setCurrentText(profile_name)
-
-        QtWidgets.QMessageBox.information(
-            self,
-            "Profile Saved",
-            f"Current settings have been saved to profile '{profile_name}'."
-        )
-
-    def _delete_current_profile(self):
-        profile_name = self.profileCombo.currentText()
-        if not profile_name:
-            return
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Delete Profile",
-            f"Delete profile '{profile_name}'?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No
-        )
-        if reply == QtWidgets.QMessageBox.Yes and self.profiles.delete(profile_name):
-            idx = self.profileCombo.findText(profile_name)
-            if idx >= 0:
-                self.profileCombo.removeItem(idx)
-
-    def _add_new_profile(self):
-        """Create a new profile from current settings."""
-        # Ask the user for a name
-        name, ok = QtWidgets.QInputDialog.getText(self, "New Profile", "Enter profile name:")
-        if not ok or not name.strip():
-            return
-
-        key_to_label = {field.key: field.label for field in AVAILABLE_FIELDS}
-        enabled_keys = self.ro_overlay.get_enabled_fields()
-        selected_labels = [key_to_label[k] for k in enabled_keys if k in key_to_label]
-        indicator_enabled = "position_indicator" in enabled_keys
-
-        profile = Profile(
-            name=name.strip(),
-            columns=selected_labels,
-            n_columns=self.comboCols.itemData(self.comboCols.currentIndex()),
-            display_mode="speed" if self.radioSpeed.isChecked() else "time",
-            sort_by_best=self.cbSortBest.isChecked(),
-            use_abbrev=self.cbAbbrev.isChecked(),
-            window_x=self.ro_overlay.widget().x(),
-            window_y=self.ro_overlay.widget().y(),
-            radar_x=self.prox_overlay.x(),
-            radar_y=self.prox_overlay.y(),
-            radar_visible=self.prox_overlay.isVisible(),
-            radar_width=self.prox_overlay.width(),
-            radar_height=self.prox_overlay.height(),
-            radar_range_forward=self._cfg.radar_range_forward,
-            radar_range_rear=self._cfg.radar_range_rear,
-            radar_range_side=self._cfg.radar_range_side,
-            radar_symbol=self.prox_overlay.symbol,
-            radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self._cfg.radar_player_color,
-            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
-            position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=indicator_enabled,
-        )
-        # Radar state
-
-        self.profiles.save(profile)
-
-        if name not in [self.profileCombo.itemText(i) for i in range(self.profileCombo.count())]:
-            self.profileCombo.addItem(name)
-        self.profileCombo.setCurrentText(name)
-
-
-    def _on_add_field(self):
-        label = self.custLabel.text().strip()
-        index = self.custIndex.value()
-        if not label:
-            return
-
-        # Add to overlay immediately
-        self.ro_overlay.add_custom_field(label, index)
-
-        # Add to QListWidget with a checkbox
-        item = QtWidgets.QListWidgetItem(f"{label} ({index})")
-        item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        item.setCheckState(QtCore.Qt.Checked)
-        item.setToolTip(f"Car data struct index {index} (custom field)")
-        self.customFieldList.addItem(item)
-
-        # Clear inputs
-        self.custLabel.clear()
-        self.custIndex.setValue(0)
-
-    def _on_remove_field(self):
-        for item in self.customFieldList.selectedItems():
-            text = item.text()
-            label = text.split(" (")[0]
-            # Remove from overlay and from list
-            self.ro_overlay.remove_custom_field(label)
-            self.customFieldList.takeItem(self.customFieldList.row(item))
-
-
-    def _on_custom_field_toggled(self, item: QtWidgets.QListWidgetItem):
-        text = item.text()
-        label, idx_str = text.split(" (")
-        idx = int(idx_str.rstrip(")"))
-
-        if item.checkState() == QtCore.Qt.Checked:
-            self.ro_overlay.add_custom_field(label, idx)
-        else:
-            # Don’t forget: we’re only hiding it, not deleting the entry
-            self.ro_overlay.remove_custom_field(label)
-
 
 
     def _toggle_lap_logger(self):
@@ -850,6 +690,7 @@ class ControlPanel(QtWidgets.QMainWindow):
 
     def _on_config_changed(self, cfg):
         self._cfg = cfg
+        self.presenter.update_config(cfg)
         self.lblExePath.setText(self._current_exe_path())
         if hasattr(self, "pit_command_service"):
             self.pit_command_service.update_config(cfg)
@@ -871,7 +712,7 @@ class ControlPanel(QtWidgets.QMainWindow):
     # Close event = save last session
     # -------------------------------
     def closeEvent(self, event):
-        snapshot = self._build_session_snapshot()
+        snapshot = self.presenter.build_session_snapshot()
         self.session_persistence.save_last_session(snapshot)
 
         # --- Stop updater thread cleanly ---
@@ -920,47 +761,6 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         # Call parent closeEvent
         super().closeEvent(event)
-
-    def _build_session_snapshot(self) -> SessionSnapshot:
-        ordered_keys = self._collect_field_keys()
-        indicator_enabled = "position_indicator" in ordered_keys
-
-        custom_fields = []
-        for i in range(self.customFieldList.count()):
-            item = self.customFieldList.item(i)
-            text = item.text()
-            label, idx_str = text.split(" (")
-            idx = int(idx_str.rstrip(")"))
-            if item.checkState() == QtCore.Qt.Checked:
-                custom_fields.append((label, idx))
-
-        return SessionSnapshot(
-            ordered_field_keys=ordered_keys,
-            custom_fields=custom_fields,
-            n_columns=self.comboCols.itemData(self.comboCols.currentIndex()),
-            display_mode="speed" if self.radioSpeed.isChecked() else "time",
-            sort_by_best=self.cbSortBest.isChecked(),
-            use_abbrev=self.cbAbbrev.isChecked(),
-            ro_window_x=self.ro_overlay.widget().x(),
-            ro_window_y=self.ro_overlay.widget().y(),
-            radar_x=self.prox_overlay.x(),
-            radar_y=self.prox_overlay.y(),
-            radar_visible=self.prox_overlay.isVisible(),
-            radar_width=self.prox_overlay.width(),
-            radar_height=self.prox_overlay.height(),
-            radar_range_forward=self._cfg.radar_range_forward,
-            radar_range_rear=self._cfg.radar_range_rear,
-            radar_range_side=self._cfg.radar_range_side,
-            radar_symbol=self.prox_overlay.symbol,
-            radar_show_speeds=self.prox_overlay.show_speeds,
-            radar_player_color=self._cfg.radar_player_color,
-            radar_ai_ahead_color=self._cfg.radar_ai_ahead_color,
-            radar_ai_behind_color=self._cfg.radar_ai_behind_color,
-            radar_ai_alongside_color=self._cfg.radar_ai_alongside_color,
-            position_indicator_duration=self.spinPosChangeDuration.value(),
-            position_indicator_enabled=indicator_enabled,
-            available_fields=AVAILABLE_FIELDS,
-        )
 
     def _current_state(self):
         return self._latest_state or getattr(self.ro_overlay, "_last_state", None)
