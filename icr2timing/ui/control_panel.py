@@ -13,7 +13,6 @@ from PyQt5 import QtWidgets, QtCore, uic
 import logging
 log = logging.getLogger(__name__)
 
-from icr2_core.icr2_memory import MemoryWritesDisabledError
 from icr2timing.overlays.running_order_overlay import (
     RunningOrderOverlayTable,
     AVAILABLE_FIELDS,
@@ -35,11 +34,7 @@ from icr2timing.overlays.experimental_track_surface_overlay import (
 from icr2timing.overlays.individual_car_overlay import IndividualCarOverlay
 from icr2timing.core.config import Config
 from icr2timing.core.version import __version__
-from icr2timing.ui.services import (
-    LapLoggerController,
-    PitCommandService,
-    SessionPersistence,
-)
+from icr2timing.ui.services import TelemetryServiceController
 
 
 class ControlPanel(QtWidgets.QMainWindow):
@@ -107,6 +102,9 @@ class ControlPanel(QtWidgets.QMainWindow):
             running_order_state_handler=self._on_state_updated_with_fps,
         )
 
+        # Profile / session managers
+        self.profiles = ProfileManager()
+
         if self.updater:
             self.updater.error.connect(self._on_error_from_updater)
 
@@ -119,24 +117,23 @@ class ControlPanel(QtWidgets.QMainWindow):
             select_individual_car=self.selectIndividualCar,
             parent=self,
         )
-        self.telemetry_controls.lap_logger_toggle_requested.connect(
-            self._toggle_lap_logger
+
+        self.telemetry_controller = TelemetryServiceController(
+            updater=self.updater,
+            mem=self._mem,
+            cfg=self._cfg,
+            telemetry_controls=self.telemetry_controls,
+            profile_manager=self.profiles,
+            state_provider=self._current_state,
+            status_callback=self.statusbar.showMessage,
+            parent=self,
         )
-        self.telemetry_controls.release_all_cars_requested.connect(
-            self._release_all_cars
+        self.telemetry_controller.individual_overlay_toggle_requested.connect(
+            self._on_individual_overlay_toggle_requested
         )
-        self.telemetry_controls.force_all_cars_requested.connect(
-            self._force_all_cars_to_pit
-        )
-        self.telemetry_controls.individual_overlay_toggle_requested.connect(
-            self._toggle_indiv_overlay
-        )
-        self.telemetry_controls.individual_car_selected.connect(
+        self.telemetry_controller.individual_car_selected.connect(
             self._on_select_individual_car
         )
-
-        # --- Profile Manager ---
-        self.profiles = ProfileManager()
 
         self.presenter = ControlPanelPresenter(
             parent=self,
@@ -329,22 +326,8 @@ class ControlPanel(QtWidgets.QMainWindow):
         )
 
 
-        # Backend services
-        self.lap_logger_controller = LapLoggerController(
-            updater=self.updater,
-            status_callback=self.statusbar.showMessage,
-        )
-        self.pit_command_service = PitCommandService(
-            mem=self._mem,
-            cfg=self._cfg,
-            state_provider=self._current_state,
-            confirm_enable_writes=self._prompt_enable_writes,
-            status_callback=self.statusbar.showMessage,
-        )
-        self.session_persistence = SessionPersistence(self.profiles)
-
         # Restore last session
-        last = self.profiles.load_last_session()
+        last = self.telemetry_controller.load_last_session()
         if last:
             self._apply_profile_object(last)
             self.radar_settings.sync_from_store()
@@ -420,10 +403,9 @@ class ControlPanel(QtWidgets.QMainWindow):
         track = getattr(self.ro_overlay._last_state, "track_name", "")
 
         msg = f"v{__version__} | Track length: {miles:.3f} mi | Track: {track}"
+        controller = getattr(self, "telemetry_controller", None)
         recording_file = (
-            self.lap_logger_controller.recording_file
-            if hasattr(self, "lap_logger_controller")
-            else None
+            controller.lap_logger_recording_file if controller else None
         )
         if recording_file:
             msg += f" | Recording → {recording_file}"
@@ -461,15 +443,14 @@ class ControlPanel(QtWidgets.QMainWindow):
     def _toggle_surface_overlay(self):
         visible = self.overlay_controller.toggle_surface_overlay()
         self.overlay_controls.set_surface_overlay_visible(bool(visible))
-    def _toggle_indiv_overlay(self):
-        idx_data = self.telemetry_controls.current_car_index()
+    @QtCore.pyqtSlot(object)
+    def _on_individual_overlay_toggle_requested(self, idx_data):
         if idx_data is None:
             return
-
         visible = self.overlay_controller.toggle_individual_overlay(idx_data)
         if visible is None:
             return
-        self.telemetry_controls.set_individual_overlay_visible(bool(visible))
+        self.telemetry_controller.set_individual_overlay_visible(bool(visible))
 
 
 
@@ -647,36 +628,6 @@ class ControlPanel(QtWidgets.QMainWindow):
             item.setCheckState(QtCore.Qt.Checked)
             item.setToolTip(f"Car data struct index {idx} (custom field)")
             self.customFieldList.addItem(item)
-
-
-
-
-    def _toggle_lap_logger(self):
-        enabled = self.lap_logger_controller.toggle()
-        self.telemetry_controls.set_lap_logger_enabled(enabled)
-        self._update_status()
-
-    def _prompt_enable_writes(self, purpose: str) -> bool:
-        message = (
-            "Memory writes are currently disabled for this session.\n\n"
-            f"Enabling writes will allow the tool to {purpose}. "
-            "Only proceed if you understand the risks."
-        )
-        reply = QtWidgets.QMessageBox.warning(
-            self,
-            "Enable memory writes?",
-            message,
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        return reply == QtWidgets.QMessageBox.Yes
-
-    def _release_all_cars(self):
-        self.pit_command_service.release_all_cars()
-
-    def _force_all_cars_to_pit(self):
-        self.pit_command_service.force_all_cars_to_pit()
-
     def _set_button_color(self, button: QtWidgets.QPushButton, rgba_str: str):
         """Color the button using an rgba string like '255,0,0,255'."""
         try:
@@ -692,8 +643,8 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._cfg = cfg
         self.presenter.update_config(cfg)
         self.lblExePath.setText(self._current_exe_path())
-        if hasattr(self, "pit_command_service"):
-            self.pit_command_service.update_config(cfg)
+        if hasattr(self, "telemetry_controller"):
+            self.telemetry_controller.update_config(cfg)
 
     def _on_select_individual_car(self, car_index):
         """When user picks a new car number, update overlay's car index."""
@@ -713,18 +664,8 @@ class ControlPanel(QtWidgets.QMainWindow):
     # -------------------------------
     def closeEvent(self, event):
         snapshot = self.presenter.build_session_snapshot()
-        self.session_persistence.save_last_session(snapshot)
-
-        # --- Stop updater thread cleanly ---
-        if self.updater:
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    self.updater,
-                    "stop",
-                    QtCore.Qt.QueuedConnection
-                )
-            except Exception as e:
-                print(f"[ControlPanel] Error stopping updater: {e}")
+        self.telemetry_controller.save_last_session(snapshot)
+        self.telemetry_controller.shutdown()
 
         # --- Close overlays so they don't keep the process alive ---
         try:

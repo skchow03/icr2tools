@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence, Tuple
 
+from PyQt5 import QtCore, QtWidgets
+
 try:  # pragma: no cover - optional dependency for unit tests
     from icr2_core.icr2_memory import MemoryWritesDisabledError
 except ModuleNotFoundError:  # pragma: no cover - fallback when pymem missing
@@ -306,3 +308,127 @@ class SessionPersistence:
 
         self._profiles.save_last_session(profile)
         return profile
+
+
+class TelemetryServiceController(QtCore.QObject):
+    """Coordinates telemetry-related services and UI wiring."""
+
+    individual_overlay_toggle_requested = QtCore.pyqtSignal(object)
+    individual_car_selected = QtCore.pyqtSignal(int)
+
+    def __init__(
+        self,
+        *,
+        updater,
+        mem,
+        cfg,
+        telemetry_controls,
+        profile_manager: ProfileManager,
+        state_provider: Optional[StateProvider] = None,
+        status_callback: Optional[StatusCallback] = None,
+        parent: Optional[QtCore.QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._updater = updater
+        self._mem = mem
+        self._cfg = cfg
+        self._status = status_callback or (lambda msg, timeout=0: None)
+        self._telemetry_controls = telemetry_controls
+        self._state_provider = state_provider or (lambda: None)
+        self._profile_manager = profile_manager
+        self._session_persistence = SessionPersistence(profile_manager)
+        self._lap_logger = LapLoggerController(
+            updater=self._updater,
+            status_callback=self._status,
+        )
+        self._pit_command_service = PitCommandService(
+            mem=self._mem,
+            cfg=self._cfg,
+            state_provider=self._state_provider,
+            confirm_enable_writes=self._prompt_enable_writes,
+            status_callback=self._status,
+        )
+
+        telemetry_controls.lap_logger_toggle_requested.connect(
+            self._on_toggle_lap_logger
+        )
+        telemetry_controls.release_all_cars_requested.connect(
+            self._pit_command_service.release_all_cars
+        )
+        telemetry_controls.force_all_cars_requested.connect(
+            self._pit_command_service.force_all_cars_to_pit
+        )
+        telemetry_controls.individual_overlay_toggle_requested.connect(
+            self._on_individual_overlay_toggle_requested
+        )
+        telemetry_controls.individual_car_selected.connect(
+            self.individual_car_selected.emit
+        )
+
+    # ------------------------------------------------------------------
+    def update_config(self, cfg) -> None:
+        self._cfg = cfg
+        self._pit_command_service.update_config(cfg)
+
+    # ------------------------------------------------------------------
+    def load_last_session(self) -> Optional[Profile]:
+        return self._profile_manager.load_last_session()
+
+    def save_last_session(self, snapshot: SessionSnapshot) -> Profile:
+        return self._session_persistence.save_last_session(snapshot)
+
+    # ------------------------------------------------------------------
+    def set_individual_overlay_visible(self, visible: bool) -> None:
+        self._telemetry_controls.set_individual_overlay_visible(visible)
+
+    @property
+    def lap_logger_recording_file(self) -> Optional[str]:
+        return self._lap_logger.recording_file
+
+    # ------------------------------------------------------------------
+    def shutdown(self) -> None:
+        try:
+            self._lap_logger.disable()
+        except Exception:  # pragma: no cover - defensive
+            pass
+        self._stop_updater_thread()
+
+    def _stop_updater_thread(self) -> None:
+        if not self._updater:
+            return
+        try:
+            QtCore.QMetaObject.invokeMethod(
+                self._updater,
+                "stop",
+                QtCore.Qt.QueuedConnection,
+            )
+        except Exception as exc:  # pragma: no cover - log but keep closing
+            log.warning("Failed to stop updater cleanly: %s", exc)
+
+    # ------------------------------------------------------------------
+    def _on_toggle_lap_logger(self) -> None:
+        enabled = self._lap_logger.toggle()
+        self._telemetry_controls.set_lap_logger_enabled(enabled)
+
+    def _on_individual_overlay_toggle_requested(self) -> None:
+        idx_data = self._telemetry_controls.current_car_index()
+        if idx_data is None:
+            self._status("Select a car before toggling telemetry overlay", 3000)
+            return
+        self.individual_overlay_toggle_requested.emit(idx_data)
+
+    def _prompt_enable_writes(self, purpose: str) -> bool:
+        message = (
+            "Memory writes are currently disabled for this session.\n\n"
+            f"Enabling writes will allow the tool to {purpose}. "
+            "Only proceed if you understand the risks."
+        )
+        parent_widget = self.parent() if isinstance(self.parent(), QtWidgets.QWidget) else None
+        reply = QtWidgets.QMessageBox.warning(
+            parent_widget,
+            "Enable memory writes?",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return reply == QtWidgets.QMessageBox.Yes
