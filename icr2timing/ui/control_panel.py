@@ -40,7 +40,7 @@ from icr2timing.ui.services import TelemetryServiceController
 class ControlPanel(QtWidgets.QMainWindow):
     exe_path_changed = QtCore.pyqtSignal(str)
 
-    def __init__(self, updater, mem=None, cfg=None):
+    def __init__(self, updater, mem=None, cfg=None, shutdown_hook=None):
         super().__init__()
         uic.loadUi(
             os.path.join(os.path.dirname(__file__), "control_panel.ui"),
@@ -53,6 +53,7 @@ class ControlPanel(QtWidgets.QMainWindow):
         self._cfg = cfg or self._config_store.config
         self._config_store.config_changed.connect(self._on_config_changed)
         self._latest_state = None
+        self._shutdown_hook = shutdown_hook
 
         # --- Overlay Manager ---
         self.ro_overlay = RunningOrderOverlayTable()
@@ -663,6 +664,11 @@ class ControlPanel(QtWidgets.QMainWindow):
     # Close event = save last session
     # -------------------------------
     def closeEvent(self, event):
+        if self._shutdown_hook:
+            try:
+                self._shutdown_hook()
+            finally:
+                self._shutdown_hook = None
         snapshot = self.presenter.build_session_snapshot()
         self.telemetry_controller.save_last_session(snapshot)
         self.telemetry_controller.shutdown()
