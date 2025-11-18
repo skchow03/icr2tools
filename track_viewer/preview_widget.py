@@ -12,7 +12,7 @@ from icr2_core.trk.surface_mesh import (
     build_ground_surface_mesh,
     compute_mesh_bounds,
 )
-from icr2_core.trk.trk_utils import get_cline_pos, color_from_ground_type
+from icr2_core.trk.trk_utils import get_cline_pos, color_from_ground_type, getxyz
 
 
 class TrackPreviewWidget(QtWidgets.QFrame):
@@ -33,6 +33,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cline: List[Tuple[float, float]] = []
         self._surface_mesh: List[GroundSurfaceStrip] = []
         self._bounds: Tuple[float, float, float, float] | None = None
+        self._sampled_centerline: List[Tuple[float, float]] = []
+        self._sampled_bounds: Tuple[float, float, float, float] | None = None
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
@@ -53,6 +55,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cline = []
         self._surface_mesh = []
         self._bounds = None
+        self._sampled_centerline = []
+        self._sampled_bounds = None
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
@@ -102,7 +106,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self.trk = trk
         self._cline = cline
         self._surface_mesh = surface_mesh
-        self._bounds = bounds
+        sampled, sampled_bounds = self._sample_centerline(trk, cline)
+        self._sampled_centerline = sampled
+        self._sampled_bounds = sampled_bounds
+        self._bounds = self._merge_bounds(bounds, sampled_bounds)
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = track_folder
@@ -143,6 +150,44 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         scale_x = available_w / track_w
         scale_y = available_h / track_h
         return min(scale_x, scale_y)
+
+    def _sample_centerline(
+        self,
+        trk,
+        cline: List[Tuple[float, float]],
+        step: int = 10000,
+    ) -> Tuple[List[Tuple[float, float]], Tuple[float, float, float, float] | None]:
+        if not trk or not cline:
+            return [], None
+
+        pts: List[Tuple[float, float]] = []
+        dlong = 0
+        while dlong <= trk.trklength:
+            x, y, _ = getxyz(trk, dlong, 0, cline)
+            pts.append((x, y))
+            dlong += step
+
+        if pts and pts[0] != pts[-1]:
+            pts.append(pts[0])
+
+        bounds = None
+        if pts:
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            bounds = (min(xs), max(xs), min(ys), max(ys))
+        return pts, bounds
+
+    def _merge_bounds(
+        self, *bounds: Tuple[float, float, float, float] | None
+    ) -> Tuple[float, float, float, float] | None:
+        valid = [b for b in bounds if b]
+        if not valid:
+            return None
+        min_x = min(b[0] for b in valid)
+        max_x = max(b[1] for b in valid)
+        min_y = min(b[2] for b in valid)
+        max_y = max(b[3] for b in valid)
+        return (min_x, max_x, min_y, max_y)
 
     def _update_fit_scale(self) -> None:
         fit = self._calculate_fit_scale()
@@ -229,10 +274,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         painter.drawPixmap(0, 0, self._cached_surface_pixmap)
 
         transform = self._current_transform()
-        if self._show_center_line and self._cline and transform:
+        if self._show_center_line and self._sampled_centerline and transform:
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             scale, offsets = transform
-            points = [self._map_point(x, y, scale, offsets) for x, y in self._cline]
+            points = [
+                self._map_point(x, y, scale, offsets)
+                for x, y in self._sampled_centerline
+            ]
             painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
             painter.drawPolyline(QtGui.QPolygonF(points))
 
