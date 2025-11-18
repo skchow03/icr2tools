@@ -95,7 +95,7 @@ icr2tools/
 * `control_panel.py` (Qt Designer `.ui` driven) orchestrates overlay lifecycles, radar controls, telemetry utilities, updater connections, and profile persistence, wiring each subsection to the relevant PyQt widgets and hooking into the updater signals.【F:icr2timing/ui/control_panel.py†L1-L200】
 * Section helpers (`control_sections.py`) encapsulate button groups for overlays, radar settings, and telemetry controls, emitting intent-specific signals and syncing with the config store so UI feedback stays coherent.【F:icr2timing/ui/control_sections.py†L1-L200】
 * `profile_manager.py` models saved layouts (columns, radar placement, custom telemetry fields), injects the position-indicator column when enabled, and persists updates through the INI preserver so user comments survive saves.【F:icr2timing/ui/profile_manager.py†L1-L195】
-* Backend helpers in `services.py` cover lap-logger toggles, pit-release/fuel-write commands, and session snapshots for profile auto-save, keeping non-UI code testable.【F:icr2timing/ui/services.py†L1-L200】
+* Backend helpers in `services.py` now include `LapLoggerController`, `PitCommandService`, `SessionPersistence`, and the high-level `TelemetryServiceController`. Together they attach/detach the lap logger, gate pit-release/fuel writes behind confirmations, persist the "last session" profile, and wire telemetry controls to updater signals while handling shutdown prompts in one place – keeping heavy logic out of the Qt widgets for easier testing.【F:icr2timing/ui/services.py†L1-L220】【F:icr2timing/ui/services.py†L244-L440】
 * `car_value_helpers.py` provides the reusable recording controller, value-range tracker, frozen value store, delegate painting, and parsing helpers used by the individual car overlay and the stand-alone editor.【F:icr2timing/ui/car_value_helpers.py†L1-L200】
 * `track_selector.py` surfaces game tracks based on `settings.ini`'s `game_exe` path, emitting a signal whenever a user chooses a new folder for tooling that needs to open TRK files.【F:icr2timing/ui/track_selector.py†L1-L69】
 
@@ -169,9 +169,10 @@ icr2tools/
 * **INI persistence (`icr2timing/utils/ini_preserver.py`)** centralises comment-friendly writes
   for both configuration files, allowing targeted key/section edits without clobbering user
   annotations – the helper is reused by `ConfigBackend` and `ProfileManager`.【F:icr2timing/utils/ini_preserver.py†L1-L170】【F:icr2timing/core/config_backend.py†L31-L60】【F:icr2timing/ui/profile_manager.py†L13-L194】
-* **Telemetry logging** – The control panel can toggle the lap logger (`TelemetryLapLogger`)
-  and car data recorder (`CarDataRecorder`), producing timestamped CSV + metadata files for
-  offline analysis.【F:icr2timing/ui/control_panel.py†L77-L149】【F:icr2timing/core/car_data_recorder.py†L13-L120】
+* **Telemetry logging** – The telemetry service toggles the lap logger (`TelemetryLapLogger`)
+  and car data recorder (`CarDataRecorder`), each keeping CSV handles open with optional
+  `flush_every` thresholds so long runs can trade durability vs. throughput while still
+  emitting timestamped logs and metadata for offline analysis.【F:icr2timing/ui/services.py†L319-L418】【F:icr2timing/core/telemetry_laps.py†L18-L116】【F:icr2timing/core/car_data_recorder.py†L18-L190】
 * **Assets/packaging** – `assets/icon.ico` is loaded by the Qt app; `build.bat` wraps PyInstaller,
   and `convert_icon.py` regenerates icons from source artwork.
 
@@ -206,6 +207,9 @@ icr2tools/
 
 * Unit tests live under `tests/` and currently exercise gap/interval formatting plus profile
   encoding to catch regressions in overlay output and persistence expectations.【F:tests/test_gap_utils.py†L1-L88】【F:tests/test_profile_manager_encoding.py†L1-L120】
+* `tests/test_ui_services.py` covers `LapLoggerController`, `PitCommandService`, and
+  `SessionPersistence`, so telemetry toggles, pit commands, and session snapshots stay
+  correct without spinning up Qt widgets.【F:tests/test_ui_services.py†L1-L200】
 * The repository is Windows-centric (uses Win32 APIs and PyQt5). Non-Windows environments can
   still run pure-Python helpers and tests, but memory attachment requires Windows with DOSBox.
 
