@@ -18,15 +18,15 @@ so the overlay can show arbitrary indices as custom columns.
 import logging
 log = logging.getLogger(__name__)
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 import html
 
 from icr2_core.icr2_memory import ICR2Memory
 from icr2timing.core.config import Config
 from icr2_core.model import Driver, CarState, RaceState
-
-import os
-import re
+from icr2_core.memory_io import read_i32 as default_read_i32, read_i32_list as default_read_i32_list
+from icr2_core.car_state_decoder import decode_car_states
+from icr2_core.track_detector import TrackDetector
 
 class ReadError(RuntimeError):
     """Raised when a required read is missing or invalid."""
@@ -40,11 +40,16 @@ class MemoryReader:
     It is constructed with an ICR2Memory instance and a Config instance.
     """
 
-    _cached_tracks = None
-    _cached_index = None
-    
-
-    def __init__(self, mem: ICR2Memory, cfg: Config):
+    def __init__(
+        self,
+        mem: ICR2Memory,
+        cfg: Config,
+        *,
+        track_detector: Optional[TrackDetector] = None,
+        read_i32_fn: Callable[[ICR2Memory, int], Optional[int]] = default_read_i32,
+        read_i32_list_fn: Callable[[ICR2Memory, int, int], List[int]] = default_read_i32_list,
+        car_state_decoder: Callable[[bytes, Config, int], Dict[int, CarState]] = decode_car_states,
+    ):
 
         log.info("Initializing MemoryReader")
 
@@ -52,46 +57,14 @@ class MemoryReader:
         self._cfg = cfg
         self._last_read_error: Optional[str] = None
         self._read_error_count = 0
-
-    # --- low-level reading helpers ---
-
-    def _read_i32(self, addr: int) -> Optional[int]:
-        """Read a single i32 from memory. Returns None on short/absent reads."""
-        raw = self._mem.read(addr, 'i32', count=1)
-        if raw is None:
-            return None
-        if isinstance(raw, int):
-            return raw
-        if isinstance(raw, (bytes, bytearray)):
-            if len(raw) < 4:
-                return None
-            return int.from_bytes(raw[:4], 'little', signed=False)
-        try:
-            # sequence (list/tuple)
-            return int(raw[0]) if raw else None
-        except Exception:
-            return None
-
-    def _read_i32_list(self, addr: int, count: int) -> List[int]:
-        """Read up to count i32s and return as list (may be shorter)."""
-        raw = self._mem.read(addr, 'i32', count=count)
-        if raw is None:
-            return []
-        if isinstance(raw, int):
-            return [raw]
-        if isinstance(raw, (bytes, bytearray)):
-            n = len(raw) // 4
-            return [int.from_bytes(raw[i*4:(i+1)*4], 'little', signed=False) for i in range(n)]
-        try:
-            return [int(x) for x in raw]
-        except Exception:
-            return []
-
-    # --- higher-level readers used for RaceState ---
+        self._track_detector = track_detector or TrackDetector(mem, cfg, ReadError)
+        self._read_i32_fn = read_i32_fn
+        self._read_i32_list_fn = read_i32_list_fn
+        self._car_state_decoder = car_state_decoder
 
     def read_raw_car_count(self) -> int:
         """Read raw car count (including pace car). Raise ReadError on failure."""
-        v = self._read_i32(self._cfg.cars_addr)
+        v = self._read_i32_fn(self._mem, self._cfg.cars_addr)
         if v is None:
             raise ReadError(f"no car-count at 0x{self._cfg.cars_addr:X}")
         if v <= 0 or v > self._cfg.max_cars:
@@ -100,7 +73,7 @@ class MemoryReader:
 
     def read_total_laps(self) -> int:
         """Read total race laps from memory. Raise ReadError on failure."""
-        v = self._read_i32(self._cfg.laps_addr)
+        v = self._read_i32_fn(self._mem, self._cfg.laps_addr)
         if v is None:
             raise ReadError(f"no laps at 0x{self._cfg.laps_addr:X}")
         if v <= 0 or v > self._cfg.max_laps:
@@ -113,7 +86,7 @@ class MemoryReader:
         if addr <= 0:
             return None
 
-        raw = self._read_i32(addr)
+        raw = self._read_i32_fn(self._mem, addr)
         if raw is None:
             return None
 
@@ -153,7 +126,8 @@ class MemoryReader:
         IMPORTANT: respects numbers_index_base and numbers_shift from Config.
         """
         # read a bit extra to be safe if shift is negative
-        vals = self._read_i32_list(
+        vals = self._read_i32_list_fn(
+            self._mem,
             self._cfg.car_numbers_base,
             raw_count + abs(self._cfg.numbers_shift) + 4
         )
@@ -172,7 +146,7 @@ class MemoryReader:
         IMPORTANT: respects order_index_base; also drops pace car (struct index 0)
         and returns exactly display_count entries (padded with None).
         """
-        vals = self._read_i32_list(self._cfg.run_order_base, raw_count)
+        vals = self._read_i32_list_fn(self._mem, self._cfg.run_order_base, raw_count)
         out: List[Optional[int]] = []
         for v in vals:
             idx = (v - 1) if self._cfg.order_index_base == 1 else v
@@ -206,133 +180,13 @@ class MemoryReader:
         if len(blob) < total_bytes:
             blob = blob.ljust(total_bytes, b'\x00')
 
-        # known sentinel: 0xFF000000 (unsigned) often appears as -16777216 if interpreted signed
-        SENTINEL_UNSIGNED = 0xFF000000
-        SENTINEL_SIGNED = -16777216
-
-        out: Dict[int, CarState] = {}
-        for struct_idx in range(raw_count):
-            base = struct_idx * self._cfg.car_state_size
-
-            # laps_left (field 32)
-            start_ll = base + self._cfg.field_laps_left
-            raw4 = blob[start_ll:start_ll+4]
-            if len(raw4) < 4:
-                laps_left = 0
-            else:
-                laps_left = int.from_bytes(raw4, 'little', signed=False)
-
-            laps_completed = total_laps - laps_left
-            if laps_completed < 0:
-                laps_completed = 0
-            elif laps_completed > total_laps:
-                laps_completed = total_laps
-
-            # lap clock start (field 22 or cfg.field_lap_clock_start)
-            start_clock = base + self._cfg.field_lap_clock_start
-            raw4_start = blob[start_clock:start_clock+4]
-            if len(raw4_start) < 4:
-                clock_start = None
-            else:
-                clock_start_val = int.from_bytes(raw4_start, 'little', signed=False)
-                signed_start = int.from_bytes(raw4_start, 'little', signed=True)
-                if clock_start_val == SENTINEL_UNSIGNED or signed_start == SENTINEL_SIGNED:
-                    clock_start = None
-                else:
-                    clock_start = clock_start_val
-
-            # lap clock end (field 23 or cfg.field_lap_clock_end)
-            end_clock = base + self._cfg.field_lap_clock_end
-            raw4_end = blob[end_clock:end_clock+4]
-            if len(raw4_end) < 4:
-                clock_end = None
-            else:
-                clock_end_val = int.from_bytes(raw4_end, 'little', signed=False)
-                signed_end = int.from_bytes(raw4_end, 'little', signed=True)
-                if clock_end_val == SENTINEL_UNSIGNED or signed_end == SENTINEL_SIGNED:
-                    clock_end = None
-                else:
-                    clock_end = clock_end_val
-
-            # laps down (field 24)
-            laps_down_offset = base + self._cfg.field_laps_down
-            raw4_laps_down = blob[laps_down_offset:laps_down_offset+4]
-            if len(raw4_laps_down) < 4:
-                laps_down = 0
-            else:
-                laps_down = int.from_bytes(raw4_laps_down, 'little', signed=False)
-                # Clamp to reasonable range - field 24 should be 0 for lead lap, positive for laps down
-                if laps_down > 100:  # sanity check
-                    laps_down = 0
-
-            # possibly LP line (field 52)
-            car_offset = base + self._cfg.current_lp
-            raw4_current_lp = blob[car_offset:car_offset+4]
-            current_lp = int.from_bytes(raw4_current_lp, 'little', signed=False)
-
-            # fuel laps remaining (field 35)
-            fuel_offset = base + self._cfg.fuel_laps_remaining
-            raw4_fuel = blob[fuel_offset:fuel_offset+4]
-            fuel_laps_remaining = int.from_bytes(raw4_fuel, 'little', signed=False)
-
-            # car status (field 37)
-            car_status_offset = base + self._cfg.car_status
-            raw4_car_status = blob[car_status_offset:car_status_offset+4]
-            if len(raw4_car_status) < 4:
-                car_status = 0
-            else:
-                car_status = int.from_bytes(raw4_car_status, 'little', signed=False)
-                # Clamp to reasonable range - should be 0-16 based on retirement reasons
-                if car_status > 16:
-                    car_status = 0
-
-            # DLAT (field 11)
-            dlat_offset = base + self._cfg.dlat
-            raw4_dlat = blob[dlat_offset:dlat_offset+4]
-            dlat = int.from_bytes(raw4_dlat, 'little', signed=True) if len(raw4_dlat) == 4 else 0
-
-            # DLONG (field 31)
-            dlong_offset = base + self._cfg.dlong
-            raw4_dlong = blob[dlong_offset:dlong_offset+4]
-            dlong = int.from_bytes(raw4_dlong, 'little', signed=True) if len(raw4_dlong) == 4 else 0
-
-            # compute last_lap_ms if both clocks are valid; otherwise mark invalid
-            if clock_start is None or clock_end is None:
-                last_lap_ms = 0
-                last_lap_valid = False
-            else:
-                last_lap_ms = (clock_end - clock_start) & 0xFFFFFFFF
-                last_lap_valid = True
-
-            # NEW: full 0x214 block decoded as signed i32s for research/custom fields
-            values: List[int] = [
-                int.from_bytes(blob[base + i*4: base + (i+1)*4], 'little', signed=True)
-                for i in range(self._cfg.car_state_size // 4)
-            ]
-
-            out[struct_idx] = CarState(
-                struct_index=struct_idx,
-                laps_left=laps_left,
-                laps_completed=laps_completed,
-                last_lap_ms=last_lap_ms,
-                last_lap_valid=last_lap_valid,
-                laps_down=laps_down,
-                lap_end_clock=clock_end,
-                lap_start_clock=clock_start,
-                car_status=car_status,
-                current_lp=current_lp,
-                fuel_laps_remaining=fuel_laps_remaining,
-                dlat=dlat,
-                dlong=dlong,
-                values=values,  # <-- keep the raw block too
-            )
-        return out
+        return self._car_state_decoder(blob, self._cfg, total_laps)
 
     # --- public API ---
 
     def read_track_length_miles(self) -> float:
         """Read track length from memory and convert to miles."""
-        v = self._read_i32(self._cfg.track_length_addr)
+        v = self._read_i32_fn(self._mem, self._cfg.track_length_addr)
         if v is None or v <= 0:
             return 0.0
         inches = v / 500.0
@@ -347,77 +201,7 @@ class MemoryReader:
           Returns the track's subfolder name (e.g. 'CLEVLAND').
         - DOS/REND32A: read string at current_track_addr.
         """
-        version = getattr(self._cfg, "version", "").upper()
-
-        # --- WINDY mode ---
-        if version == "WINDY101":
-            idx = self._mem.read(0x527D58, "i32")
-
-            # Use cached list if available and index unchanged
-            if (
-                hasattr(self, "_cached_tracks")
-                and hasattr(self, "_cached_index")
-                and self._cached_tracks is not None
-                and idx == self._cached_index
-            ):
-                try:
-                    return self._cached_tracks[idx][0]  # folder name
-                except Exception:
-                    pass  # rebuild if cache invalid
-
-            exe_path = self._cfg.game_exe
-            if not exe_path:
-                raise ReadError("game_exe not set in settings.ini")
-
-            tracks_root = os.path.join(os.path.dirname(exe_path), "TRACKS")
-            if not os.path.isdir(tracks_root):
-                raise ReadError(f"TRACKS folder not found: {tracks_root}")
-
-            # Build alphabetical list from TNAME lines
-            tname_pattern = re.compile(r"^\s*TNAME\s+(.+)$", re.IGNORECASE | re.MULTILINE)
-            track_entries = []
-
-            for sub in os.listdir(tracks_root):
-                sub_path = os.path.join(tracks_root, sub)
-                if not os.path.isdir(sub_path):
-                    continue
-                txt_path = os.path.join(sub_path, f"{sub}.TXT")
-                if not os.path.isfile(txt_path):
-                    continue
-                try:
-                    with open(txt_path, "r", errors="ignore") as f:
-                        txt = f.read()
-                    m = tname_pattern.search(txt)
-                    if not m:
-                        continue
-                    display_name = m.group(1).strip()
-                    track_entries.append((sub, display_name))
-                except Exception:
-                    continue
-
-            if not track_entries:
-                raise ReadError("no valid tracks found under TRACKS folder")
-
-            # Sort alphabetically by display name, but we’ll return folder name
-            track_entries.sort(key=lambda x: x[1].lower())
-
-            if not (0 <= idx < len(track_entries)):
-                raise ReadError(f"track index {idx} out of range")
-
-            # Cache list and index
-            self._cached_tracks = track_entries
-            self._cached_index = idx
-
-            return track_entries[idx][0]  # folder name
-
-        # --- DOS / REND32A fallback ---
-        raw = self._mem.read(self._cfg.current_track_addr, 'bytes', count=256)
-        if raw is None:
-            raise ReadError(f"no track name at 0x{self._cfg.current_track_addr:X}")
-
-        blob = bytes(raw) if isinstance(raw, (bytes, bytearray)) else bytes(raw or b"")
-        name_raw = blob.split(b'\x00', 1)[0]
-        return name_raw.decode('ascii', errors='ignore').strip()
+        return self._track_detector.read_current_track()
 
 
 
