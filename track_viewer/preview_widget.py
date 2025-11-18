@@ -36,6 +36,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
+        self._show_center_line = True
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -63,6 +64,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._last_mouse_pos = None
         self._status_message = message
         self.update()
+
+    # ------------------------------------------------------------------
+    # Center line controls
+    # ------------------------------------------------------------------
+    def set_show_center_line(self, show: bool) -> None:
+        """Enable or disable rendering of the track center line."""
+
+        if self._show_center_line != show:
+            self._show_center_line = show
+            self.update()
+
+    def center_line_visible(self) -> bool:
+        return self._show_center_line
 
     def load_track(self, track_folder: Path) -> None:
         """Load and render the contents of a track folder."""
@@ -213,6 +227,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._pixmap_size = self.size()
 
         painter.drawPixmap(0, 0, self._cached_surface_pixmap)
+
+        transform = self._current_transform()
+        if self._show_center_line and self._cline and transform:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            scale, offsets = transform
+            points = [self._map_point(x, y, scale, offsets) for x, y in self._cline]
+            painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
+            painter.drawPolyline(QtGui.QPolygonF(points))
+
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         painter.drawText(12, 20, self._status_message)
 

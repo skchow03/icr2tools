@@ -45,6 +45,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self._center_line_button = QtWidgets.QPushButton("Hide Center Line")
+        self._center_line_button.setCheckable(True)
+        self._center_line_button.setChecked(True)
+        self._center_line_button.toggled.connect(self._toggle_center_line)
+        self._toggle_center_line(self._center_line_button.isChecked())
 
         layout = QtWidgets.QVBoxLayout()
         header = QtWidgets.QHBoxLayout()
@@ -52,6 +57,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         header.addWidget(self._path_display, stretch=1)
         header.addWidget(self._browse_button)
         layout.addLayout(header)
+
+        controls = QtWidgets.QHBoxLayout()
+        controls.addStretch(1)
+        controls.addWidget(self._center_line_button)
+        layout.addLayout(controls)
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
@@ -135,3 +145,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
 
         self.visualization_widget.load_track(folder)
+
+    def _toggle_center_line(self, enabled: bool) -> None:
+        text = "Hide Center Line" if enabled else "Show Center Line"
+        self._center_line_button.setText(text)
+        self.visualization_widget.set_show_center_line(enabled)
