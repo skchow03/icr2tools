@@ -6,6 +6,8 @@ from typing import List, Optional
 
 from PyQt5 import QtWidgets, QtCore
 
+from track_viewer.preview_widget import TrackPreviewWidget
+
 
 class TrackViewerApp(QtWidgets.QApplication):
     """Thin wrapper that stores shared state for the viewer."""
@@ -39,11 +41,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._browse_button.clicked.connect(self._select_installation_path)
 
         self._track_list = QtWidgets.QListWidget()
-        self._track_list.currentTextChanged.connect(self._update_visualization)
+        self._track_list.currentItemChanged.connect(self._on_track_selected)
 
-        self.visualization_widget = QtWidgets.QLabel("Select a track to preview.")
-        self.visualization_widget.setAlignment(QtCore.Qt.AlignCenter)
-        self.visualization_widget.setMinimumHeight(180)
+        self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
 
         layout = QtWidgets.QVBoxLayout()
@@ -79,33 +79,59 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._path_display.setText(str(self.app_state.installation_path))
             self._load_tracks()
 
-    def _load_tracks(self) -> None:
+    def _tracks_root(self) -> Optional[Path]:
         if not self.app_state.installation_path:
-            return
+            return None
+        candidates = [
+            self.app_state.installation_path / "TRACKS",
+            self.app_state.installation_path / "tracks",
+        ]
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_dir():
+                return candidate
+        return None
 
-        track_dir = self.app_state.installation_path / "tracks"
-        tracks: List[str] = []
-        if track_dir.exists() and track_dir.is_dir():
-            for path in sorted(track_dir.glob("*.trk")):
-                tracks.append(path.name)
-
-        self.app_state.update_tracks(tracks)
+    def _load_tracks(self) -> None:
+        track_root = self._tracks_root()
         self._track_list.clear()
-        if not tracks:
-            self._track_list.addItem("(No .TRK files found)")
+        self.visualization_widget.clear()
+
+        if not track_root:
+            self.app_state.update_tracks([])
+            self._track_list.addItem("(TRACKS folder not found)")
             self._track_list.setEnabled(False)
-        else:
-            self._track_list.setEnabled(True)
-            self._track_list.addItems(tracks)
-            self._track_list.setCurrentRow(0)
-
-    def _update_visualization(self, track_name: str) -> None:
-        if not track_name:
-            return
-        if track_name.startswith("("):
-            self.visualization_widget.setText("Select a valid track file to preview.")
             return
 
-        self.visualization_widget.setText(
-            f"Preview for {track_name}\n\n" "Rendering coming soon…"
-        )
+        folders = [
+            path
+            for path in sorted(track_root.iterdir(), key=lambda p: p.name.lower())
+            if path.is_dir()
+        ]
+        self.app_state.update_tracks([folder.name for folder in folders])
+        if not folders:
+            self._track_list.addItem("(No track folders found)")
+            self._track_list.setEnabled(False)
+            return
+
+        self._track_list.setEnabled(True)
+        for folder in folders:
+            item = QtWidgets.QListWidgetItem(folder.name)
+            item.setData(QtCore.Qt.UserRole, folder)
+            self._track_list.addItem(item)
+        self._track_list.setCurrentRow(0)
+
+    def _on_track_selected(
+        self,
+        current: Optional[QtWidgets.QListWidgetItem],
+        _previous: Optional[QtWidgets.QListWidgetItem],
+    ) -> None:
+        if not current:
+            self.visualization_widget.clear()
+            return
+
+        folder = current.data(QtCore.Qt.UserRole)
+        if not isinstance(folder, Path):
+            self.visualization_widget.clear("Select a valid track folder.")
+            return
+
+        self.visualization_widget.load_track(folder)
