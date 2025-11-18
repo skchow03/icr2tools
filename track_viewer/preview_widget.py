@@ -37,6 +37,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
 
+        self._view_center: Tuple[float, float] | None = None
+        self._fit_scale: float | None = None
+        self._current_scale: float | None = None
+        self._user_transform_active = False
+        self._is_panning = False
+        self._last_mouse_pos: QtCore.QPoint | None = None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -48,6 +55,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
+        self._view_center = None
+        self._fit_scale = None
+        self._current_scale = None
+        self._user_transform_active = False
+        self._is_panning = False
+        self._last_mouse_pos = None
         self._status_message = message
         self.update()
 
@@ -80,17 +93,28 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._pixmap_size = None
         self._current_track = track_folder
         self._status_message = f"Loaded {track_folder.name}" if track_folder else ""
+        self._view_center = self._default_center()
+        self._user_transform_active = False
+        self._update_fit_scale()
         self.update()
 
     # ------------------------------------------------------------------
     # Painting helpers
     # ------------------------------------------------------------------
-    def _map_point(self, x: float, y: float, scale: float, offsets: Tuple[float, float]) -> QtCore.QPointF:
+    def _map_point(
+        self, x: float, y: float, scale: float, offsets: Tuple[float, float]
+    ) -> QtCore.QPointF:
         px = x * scale + offsets[0]
         py = y * scale + offsets[1]
         return QtCore.QPointF(px, self.height() - py)
 
-    def _compute_transform(self) -> Tuple[float, Tuple[float, float]] | None:
+    def _default_center(self) -> Tuple[float, float] | None:
+        if not self._bounds:
+            return None
+        min_x, max_x, min_y, max_y = self._bounds
+        return ((min_x + max_x) / 2, (min_y + max_y) / 2)
+
+    def _calculate_fit_scale(self) -> float | None:
         if not self._bounds:
             return None
         min_x, max_x, min_y, max_y = self._bounds
@@ -98,22 +122,63 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         track_h = max_y - min_y
         if track_w <= 0 or track_h <= 0:
             return None
-
         margin = 24
         w, h = self.width(), self.height()
-        scale_x = (w - margin * 2) / track_w
-        scale_y = (h - margin * 2) / track_h
-        scale = min(scale_x, scale_y)
-        x_offset = (w - track_w * scale) / 2 - min_x * scale
-        y_offset = (h - track_h * scale) / 2 - min_y * scale
-        return scale, (x_offset, y_offset)
+        available_w = max(w - margin * 2, 1)
+        available_h = max(h - margin * 2, 1)
+        scale_x = available_w / track_w
+        scale_y = available_h / track_h
+        return min(scale_x, scale_y)
+
+    def _update_fit_scale(self) -> None:
+        fit = self._calculate_fit_scale()
+        self._fit_scale = fit
+        if fit is not None and not self._user_transform_active:
+            self._current_scale = fit
+            if self._view_center is None:
+                self._view_center = self._default_center()
+            self._invalidate_cache()
+
+    def _current_transform(self) -> Tuple[float, Tuple[float, float]] | None:
+        if not self._bounds:
+            return None
+        if self._current_scale is None:
+            self._update_fit_scale()
+        if self._current_scale is None:
+            return None
+        center = self._view_center or self._default_center()
+        if center is None:
+            return None
+        w, h = self.width(), self.height()
+        offsets = (w / 2 - center[0] * self._current_scale, h / 2 - center[1] * self._current_scale)
+        return self._current_scale, offsets
+
+    def _invalidate_cache(self) -> None:
+        self._cached_surface_pixmap = None
+        self._pixmap_size = None
+
+    def _map_to_track(self, point: QtCore.QPointF) -> Tuple[float, float] | None:
+        transform = self._current_transform()
+        if not transform:
+            return None
+        scale, offsets = transform
+        x = (point.x() - offsets[0]) / scale
+        py = self.height() - point.y()
+        y = (py - offsets[1]) / scale
+        return x, y
+
+    def _clamp_scale(self, scale: float) -> float:
+        base = self._fit_scale or self._current_scale or 1.0
+        min_scale = base * 0.1
+        max_scale = base * 25.0
+        return max(min_scale, min(max_scale, scale))
 
     def _render_surface_to_pixmap(self) -> QtGui.QPixmap:
         pixmap = QtGui.QPixmap(self.size())
         pixmap.fill(QtCore.Qt.transparent)
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-        transform = self._compute_transform()
+        transform = self._current_transform()
         if not transform:
             painter.end()
             return pixmap
@@ -154,4 +219,71 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._pixmap_size = None
         self._cached_surface_pixmap = None
+        self._update_fit_scale()
         super().resizeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Interaction handlers
+    # ------------------------------------------------------------------
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401 - Qt signature
+        if not self._surface_mesh or not self._bounds:
+            return
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        if self._view_center is None:
+            self._view_center = self._default_center()
+        if self._view_center is None or self._current_scale is None:
+            return
+        factor = 1.15 if delta > 0 else 1 / 1.15
+        new_scale = self._clamp_scale(self._current_scale * factor)
+        cursor_track = self._map_to_track(event.pos())
+        if cursor_track is None:
+            cursor_track = self._view_center
+        w, h = self.width(), self.height()
+        px, py = event.pos().x(), event.pos().y()
+        cx = cursor_track[0] - (px - w / 2) / new_scale
+        cy = cursor_track[1] + (py - h / 2) / new_scale
+        self._view_center = (cx, cy)
+        self._current_scale = new_scale
+        self._user_transform_active = True
+        self._invalidate_cache()
+        self.update()
+        event.accept()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+            self._is_panning = True
+            self._last_mouse_pos = event.pos()
+            self._user_transform_active = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if self._is_panning and self._last_mouse_pos is not None:
+            transform = self._current_transform()
+            if transform:
+                if self._view_center is None:
+                    self._view_center = self._default_center()
+                if self._view_center is not None:
+                    scale, _ = transform
+                    delta = event.pos() - self._last_mouse_pos
+                    self._last_mouse_pos = event.pos()
+                    cx, cy = self._view_center
+                    cx -= delta.x() / scale
+                    cy += delta.y() / scale
+                    self._view_center = (cx, cy)
+                    self._invalidate_cache()
+                    self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.LeftButton and self._is_panning:
+            self._is_panning = False
+            self._last_mouse_pos = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
