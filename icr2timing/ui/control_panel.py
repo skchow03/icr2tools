@@ -11,7 +11,7 @@ from PyQt5 import QtWidgets, QtCore, uic
 
 
 import logging
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 from icr2timing.overlays.running_order_overlay import (
     RunningOrderOverlayTable,
@@ -363,7 +363,7 @@ class ControlPanel(QtWidgets.QMainWindow):
 
         self.exe_path_changed.emit(path)
 
-        log.info(f"[ControlPanel] Updated game_exe in live config to: {path}")
+        logger.info(f"[ControlPanel] Updated game_exe in live config to: {path}")
 
 
     # -------------------------------
@@ -664,13 +664,16 @@ class ControlPanel(QtWidgets.QMainWindow):
     # Close event = save last session
     # -------------------------------
     def closeEvent(self, event):
+        logger.debug("ControlPanel.closeEvent start")
         if self._shutdown_hook:
             try:
                 self._shutdown_hook()
             finally:
                 self._shutdown_hook = None
+        logger.debug("Building and saving session snapshot")
         snapshot = self.presenter.build_session_snapshot()
         self.telemetry_controller.save_last_session(snapshot)
+        logger.debug("Shutting down telemetry controller")
         self.telemetry_controller.shutdown()
 
         # --- Close overlays so they don't keep the process alive ---
@@ -678,36 +681,42 @@ class ControlPanel(QtWidgets.QMainWindow):
             if self.ro_overlay:
                 ro_widget = self.ro_overlay.widget()
                 if ro_widget and ro_widget.isVisible():
+                    logger.debug("Closing running order overlay")
                     ro_widget.close()
         except Exception:
-            pass
+            logger.exception("Error closing running order overlay")
 
         try:
             if self.track_overlay and self.track_overlay.isVisible():
+                logger.debug("Closing track overlay")
                 self.track_overlay.close()
         except Exception:
-            pass
+            logger.exception("Error closing track overlay")
 
         try:
             if self.surface_overlay and self.surface_overlay.isVisible():
+                logger.debug("Closing surface overlay")
                 self.surface_overlay.close()
         except Exception:
-            pass
+            logger.exception("Error closing surface overlay")
 
         try:
             if self.prox_overlay and self.prox_overlay.isVisible():
+                logger.debug("Closing radar overlay")
                 self.prox_overlay.close()
         except Exception:
-            pass
+            logger.exception("Error closing radar overlay")
 
         try:
             if self.indiv_overlay and self.indiv_overlay.isVisible():
+                logger.debug("Closing individual overlay")
                 self.indiv_overlay.close()
         except Exception:
-            pass
+            logger.exception("Error closing individual overlay")
 
         # Call parent closeEvent
         super().closeEvent(event)
+        logger.debug("ControlPanel.closeEvent complete")
 
     def _current_state(self):
         return self._latest_state or getattr(self.ro_overlay, "_last_state", None)

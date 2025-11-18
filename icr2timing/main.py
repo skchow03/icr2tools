@@ -47,7 +47,9 @@ logging.basicConfig(
     handlers=[log_handler, stream_handler],
 )
 
-logging.getLogger(__name__).info(f"Starting ICR2 Timing Overlay {__version__}")
+logger = logging.getLogger(__name__)
+
+logger.info(f"Starting ICR2 Timing Overlay {__version__}")
 
 
 
@@ -103,24 +105,32 @@ def main():
     def stop_worker_thread():
         nonlocal shutdown_done
         if shutdown_done:
+            logger.debug("stop_worker_thread already executed")
             return
+        logger.debug("stop_worker_thread entered")
         shutdown_done = True
         try:
             if updater:
+                logger.debug("Invoking updater.stop via queued connection")
                 QtCore.QMetaObject.invokeMethod(
                     updater, "stop", QtCore.Qt.BlockingQueuedConnection
                 )
         except Exception:
-            pass
+            logger.exception("Failed while stopping updater")
         try:
             if thread.isRunning():
+                logger.debug("Calling thread.quit()")
                 thread.quit()
+                logger.debug("thread.quit() invoked")
+                logger.debug("Waiting for worker thread to exit")
                 if not thread.wait(2000):
-                    print("Warning: Worker thread did not stop cleanly")
+                    logger.debug("Worker thread timeout; terminating")
                     thread.terminate()
                     thread.wait(1000)
+                else:
+                    logger.debug("Worker thread exited cleanly")
         except Exception:
-            pass
+            logger.exception("Error while stopping worker thread")
 
     # Control panel (owns overlay + signal wiring)
     panel = ControlPanel(updater, mem=mem, cfg=cfg, shutdown_hook=stop_worker_thread)
@@ -129,9 +139,10 @@ def main():
     def cleanup():
         stop_worker_thread()
         try:
+            logger.debug("Closing ICR2Memory in cleanup")
             mem.close()
         except Exception:
-            pass
+            logger.exception("Error while closing ICR2Memory")
 
     app.aboutToQuit.connect(cleanup)
 
