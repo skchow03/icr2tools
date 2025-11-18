@@ -25,6 +25,7 @@ class CarDataRecorder:
         values_per_car: int = 133,
         every_n: int = 1,
         field_definitions: Optional[Sequence[CarFieldDefinition]] = None,
+        flush_every: Optional[int] = None,
     ) -> None:
         self.output_dir = os.path.abspath(output_dir)
         self.values_per_car = values_per_car
@@ -34,6 +35,8 @@ class CarDataRecorder:
         self._writer: Optional[csv.writer] = None
         self._file = None
         self.filename: Optional[str] = None
+        self._flush_every = self._normalize_flush_every(flush_every)
+        self._rows_since_flush = 0
         if field_definitions is None:
             field_definitions = ensure_field_definitions(values_per_car)
         self._field_definitions: Sequence[CarFieldDefinition] = self._normalize_definitions(
@@ -61,10 +64,11 @@ class CarDataRecorder:
         self.filename = os.path.join(self.output_dir, filename)
         self._file = open(self.filename, "w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._file)
+        self._rows_since_flush = 0
         header = ["frame", "timestamp_ms", "car_index", "car_number"]
         header.extend(self._header_labels())
         self._writer.writerow(header)
-        self._file.flush()
+        self._after_write()
         self._write_metadata_file()
 
     def record_state(self, state: RaceState) -> None:
@@ -102,16 +106,23 @@ class CarDataRecorder:
         ]
         row.extend(values)
         self._writer.writerow(row)
-        self._file.flush()
+        self._after_write()
 
     def close(self) -> None:
         self._close_file()
+
+    def flush(self) -> None:
+        if self._file is None:
+            return
+        self._file.flush()
+        self._rows_since_flush = 0
 
     def _close_file(self) -> None:
         if self._writer is not None:
             self._writer = None
         if self._file is not None:
             try:
+                self.flush()
                 self._file.close()
             finally:
                 self._file = None
@@ -161,3 +172,19 @@ class CarDataRecorder:
         with open(metadata_path, "w", encoding="utf-8") as meta_file:
             json.dump(metadata, meta_file, indent=2)
         self.metadata_filename = metadata_path
+
+    def _normalize_flush_every(self, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return None
+        return normalized if normalized > 0 else None
+
+    def _after_write(self) -> None:
+        if self._flush_every is None:
+            return
+        self._rows_since_flush += 1
+        if self._rows_since_flush >= self._flush_every:
+            self.flush()

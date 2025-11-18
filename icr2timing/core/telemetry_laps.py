@@ -16,7 +16,7 @@ from icr2_core.model import RaceState
 
 
 class TelemetryLapLogger:
-    def __init__(self, base_name: str = "telemetry_laps"):
+    def __init__(self, base_name: str = "telemetry_laps", flush_every: Optional[int] = None):
         # Create timestamped filename
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.file_path = f"{base_name}_{timestamp}.csv"
@@ -24,6 +24,8 @@ class TelemetryLapLogger:
         self._file: Optional[TextIO] = None
         self._writer: Optional[csv.writer] = None
         self._last_end_clock = {}  # struct_idx -> previous lap_end_clock
+        self._flush_every = self._normalize_flush_every(flush_every)
+        self._rows_since_flush = 0
 
         # Ensure folder exists if base_name includes directories
         folder = os.path.dirname(self.file_path)
@@ -34,7 +36,7 @@ class TelemetryLapLogger:
         self._file = open(self.file_path, "w", newline="")
         self._writer = csv.writer(self._file)
         self._writer.writerow(["timestamp_s", "car_number", "lap", "last_lap_ms"])
-        self._file.flush()
+        self._after_write()
 
         log.info(f"[LapLogger] Logging to {self.file_path}")
 
@@ -71,8 +73,7 @@ class TelemetryLapLogger:
                 timestamp = round((car.lap_end_clock or 0) / 1000.0, 3)
 
                 self._writer.writerow([timestamp, car_number, lap_num, lap_time])
-                if self._file:
-                    self._file.flush()
+                self._after_write()
 
                 #print(f"[LapLogger] Lap {lap_num} - #{car_number} {name} ({lap_time} ms, t={timestamp}s)")
 
@@ -84,12 +85,34 @@ class TelemetryLapLogger:
 
         try:
             if self._file:
-                self._file.flush()
+                self.flush()
                 self._file.close()
         finally:
             self._file = None
             self._writer = None
             self._last_end_clock = {}
+
+    def flush(self) -> None:
+        if not self._file:
+            return
+        self._file.flush()
+        self._rows_since_flush = 0
+
+    def _normalize_flush_every(self, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return None
+        return normalized if normalized > 0 else None
+
+    def _after_write(self) -> None:
+        if self._flush_every is None:
+            return
+        self._rows_since_flush += 1
+        if self._rows_since_flush >= self._flush_every:
+            self.flush()
 
     def __enter__(self):  # pragma: no cover - convenience only
         return self
