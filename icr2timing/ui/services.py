@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback when pymem missing
     class MemoryWritesDisabledError(RuntimeError):
         pass
 
-from icr2timing.core.telemetry_laps import TelemetryLapLogger
+from icr2timing.core.telemetry.telemetry_laps import TelemetryLapLogger
 from icr2timing.overlays.constants import CAR_STATE_INDEX_PIT_RELEASE_TIMER
 from icr2timing.ui.profile_manager import LAST_SESSION_KEY, Profile, ProfileManager
 

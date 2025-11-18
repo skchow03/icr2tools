@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Iterable, Optional, Sequence, Tuple, TYP
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from icr2timing.core.car_data_recorder import CarDataRecorder
+from icr2timing.core.telemetry.car_data_recorder import CarDataRecorder
 from icr2timing.core.car_field_definitions import (
     CarFieldDefinition,
     ensure_field_definitions,
