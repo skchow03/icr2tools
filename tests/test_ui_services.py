@@ -29,6 +29,7 @@ class DummyUpdater:
 class DummyLogger:
     def __init__(self):
         self.connected = False
+        self.closed = False
 
     def on_state_updated(self, *_):  # pragma: no cover - not invoked in unit tests
         self.connected = True
@@ -36,14 +37,24 @@ class DummyLogger:
     def get_filename(self):
         return "telemetry_laps/test.csv"
 
+    def close(self):
+        self.closed = True
+
 
 def test_lap_logger_controller_toggle():
     updater = DummyUpdater()
     messages = []
+    created = []
+
+    def factory():
+        logger = DummyLogger()
+        created.append(logger)
+        return logger
+
     controller = LapLoggerController(
         updater=updater,
         status_callback=lambda msg, timeout=0: messages.append((msg, timeout)),
-        logger_factory=DummyLogger,
+        logger_factory=factory,
     )
 
     assert controller.toggle() is True
@@ -56,6 +67,7 @@ def test_lap_logger_controller_toggle():
     assert controller.recording_file is None
     assert updater.state_updated._callbacks == []
     assert len(messages) >= 2
+    assert created and created[0].closed is True
 
 
 def test_lap_logger_controller_handles_factory_errors():
