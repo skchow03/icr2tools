@@ -94,17 +94,19 @@ def main():
     reader = MemoryReader(mem, cfg)
     updater = RaceUpdater(reader, poll_ms=cfg.poll_ms)
 
-    # Control panel (owns overlay + signal wiring)
-    panel = ControlPanel(updater, mem=mem, cfg=cfg)
-    panel.show()
-
     # Thread for updater
     thread = QtCore.QThread()
     updater.moveToThread(thread)
 
-    def cleanup():
+    shutdown_done = False
+
+    def stop_worker_thread():
+        nonlocal shutdown_done
+        if shutdown_done:
+            return
+        shutdown_done = True
         try:
-            if updater and thread.isRunning():
+            if updater:
                 QtCore.QMetaObject.invokeMethod(
                     updater, "stop", QtCore.Qt.BlockingQueuedConnection
                 )
@@ -119,6 +121,13 @@ def main():
                     thread.wait(1000)
         except Exception:
             pass
+
+    # Control panel (owns overlay + signal wiring)
+    panel = ControlPanel(updater, mem=mem, cfg=cfg, shutdown_hook=stop_worker_thread)
+    panel.show()
+
+    def cleanup():
+        stop_worker_thread()
         try:
             mem.close()
         except Exception:
