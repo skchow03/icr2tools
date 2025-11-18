@@ -66,8 +66,8 @@ icr2tools/
 * `config_store.ConfigStore` – a `QObject` singleton that loads `settings.ini`, applies the correct memory offsets for the detected executable, exposes a `ConfigModel` with overlay defaults (fonts, colours, radar geometry, column widths), and emits `config_changed`/`overlay_setting_changed` when `reload()`/`save()` mutates runtime state so overlays can hot-reload UI tweaks.【F:icr2timing/core/config_store.py†L1-L200】【F:icr2timing/core/config_store.py†L201-L304】
 * `config_backend.ConfigBackend` – handles INI parsing/persistence, version alias resolution, executable validation, and comment-preserving saves via the shared INI writer so that `settings.ini` edits never discard user annotations.【F:icr2timing/core/config_backend.py†L1-L113】
 * `car_field_definitions.py` – metadata for the 133 telemetry integers powering custom table columns and editors (indexes, names, and descriptions).【F:icr2timing/core/car_field_definitions.py†L1-L78】
-* `car_data_recorder.py` – CSV recorder for per-car telemetry slices, keeping metadata files alongside logs for later analysis and exposing methods to rotate car targets mid-session.【F:icr2timing/core/car_data_recorder.py†L1-L163】
-* `telemetry_laps.py` – session-wide lap logger that appends to a timestamped CSV whenever a car completes a lap, deduplicating laps via `lap_end_clock` tracking.【F:icr2timing/core/telemetry_laps.py†L1-L73】
+* `car_data_recorder.py` – CSV recorder for per-car telemetry slices, keeping metadata files alongside logs for later analysis and exposing methods to rotate car targets mid-session.【F:icr2timing/core/telemetry/car_data_recorder.py†L1-L163】
+* `telemetry_laps.py` – session-wide lap logger that appends to a timestamped CSV whenever a car completes a lap, deduplicating laps via `lap_end_clock` tracking.【F:icr2timing/core/telemetry/telemetry_laps.py†L1-L73】
 * `version.py` – single-source version string for the overlay executable.【F:icr2timing/core/version.py†L1-L1】
 
 #### Analysis helpers (`analysis/`)
@@ -172,7 +172,7 @@ icr2tools/
 * **Telemetry logging** – The telemetry service toggles the lap logger (`TelemetryLapLogger`)
   and car data recorder (`CarDataRecorder`), each keeping CSV handles open with optional
   `flush_every` thresholds so long runs can trade durability vs. throughput while still
-  emitting timestamped logs and metadata for offline analysis.【F:icr2timing/ui/services.py†L319-L418】【F:icr2timing/core/telemetry_laps.py†L18-L116】【F:icr2timing/core/car_data_recorder.py†L18-L190】
+  emitting timestamped logs and metadata for offline analysis.【F:icr2timing/ui/services.py†L319-L418】【F:icr2timing/core/telemetry/telemetry_laps.py†L18-L116】【F:icr2timing/core/telemetry/car_data_recorder.py†L18-L190】
 * **Assets/packaging** – `assets/icon.ico` is loaded by the Qt app; `build.bat` wraps PyInstaller,
   and `convert_icon.py` regenerates icons from source artwork.
 
