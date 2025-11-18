@@ -109,6 +109,12 @@ class LapLoggerController:
         except Exception:  # pragma: no cover - disconnect best effort
             pass
 
+        if self._lap_logger:
+            try:
+                self._lap_logger.close()
+            except Exception:  # pragma: no cover - defensive close
+                log.debug("Lap logger close failed", exc_info=True)
+
         self._lap_logger = None
         self._enabled = False
         self._recording_file = None
