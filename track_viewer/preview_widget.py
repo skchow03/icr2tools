@@ -8,9 +8,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import (
     CameraPosition,
-    CameraSegmentRange,
     load_cam_positions,
-    load_scr_segments,
 )
 from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.surface_mesh import (
@@ -63,7 +61,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
         self._cameras: List[CameraPosition] = []
-        self._camera_segments: List[CameraSegmentRange] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -89,7 +86,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags = []
         self._selected_flag = None
         self._cameras = []
-        self._camera_segments = []
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
@@ -157,7 +153,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
-        self._camera_segments = []
         if not track_folder:
             return
         try:
@@ -165,17 +160,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         except Exception:
             return
         cam_path = track_folder / f"{track_name}.cam"
-        scr_path = track_folder / f"{track_name}.scr"
         if cam_path.exists():
             try:
                 self._cameras = load_cam_positions(cam_path)
             except Exception:  # pragma: no cover - best effort diagnostics
                 self._cameras = []
-        if scr_path.exists():
-            try:
-                self._camera_segments = load_scr_segments(scr_path)
-            except Exception:  # pragma: no cover - best effort diagnostics
-                self._camera_segments = []
 
     # ------------------------------------------------------------------
     # Painting helpers
@@ -313,41 +302,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         painter.end()
         return pixmap
 
-    def _sample_segment_points(
-        self, start_dlong: int, end_dlong: int, step: int = 5000
-    ) -> List[Tuple[float, float]]:
-        if not self.trk or not self._cline:
-            return []
-        trklength = getattr(self.trk, "trklength", 0)
-        if trklength <= 0:
-            return []
-        start = start_dlong % trklength
-        end = end_dlong % trklength
-        ranges: List[Tuple[int, int]] = []
-        if start == end:
-            ranges.append((start, start))
-        elif start < end:
-            ranges.append((start, end))
-        else:
-            ranges.append((start, trklength))
-            ranges.append((0, end))
-
-        points: List[Tuple[float, float]] = []
-        step = max(1, step)
-        for seg_start, seg_end in ranges:
-            dlong = seg_start
-            while True:
-                x, y, _ = getxyz(self.trk, dlong, 0, self._cline)
-                if not points or points[-1] != (x, y):
-                    points.append((x, y))
-                if seg_start == seg_end or dlong >= seg_end:
-                    break
-                next_dlong = min(seg_end, dlong + step)
-                if next_dlong == dlong:
-                    break
-                dlong = next_dlong
-        return points
-
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -379,7 +333,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         if transform:
             if self._show_cameras:
-                self._draw_camera_segments(painter, transform)
                 self._draw_camera_positions(painter, transform)
             self._draw_flags(painter, transform)
 
@@ -544,40 +497,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.setPen(pen)
             painter.setBrush(QtGui.QBrush(color))
             painter.drawEllipse(point, 4, 4)
-
-    def _draw_camera_segments(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-    ) -> None:
-        if not self._camera_segments:
-            return
-        scale, offsets = transform
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        view_colors = {
-            1: QtGui.QColor("#00bcd4"),
-            2: QtGui.QColor("#e91e63"),
-        }
-        default_color = QtGui.QColor("#9c27b0")
-        for segment in self._camera_segments:
-            points = self._sample_segment_points(
-                segment.start_dlong,
-                segment.end_dlong,
-            )
-            if not points:
-                continue
-            mapped = [self._map_point(x, y, scale, offsets) for x, y in points]
-            color = view_colors.get(segment.view, default_color)
-            if len(mapped) == 1:
-                painter.setPen(QtGui.QPen(color, 0))
-                painter.setBrush(QtGui.QBrush(color))
-                painter.drawEllipse(mapped[0], 3, 3)
-            else:
-                pen = QtGui.QPen(color, 3)
-                pen.setCapStyle(QtCore.Qt.RoundCap)
-                painter.setPen(pen)
-                painter.setBrush(QtCore.Qt.NoBrush)
-                painter.drawPolyline(QtGui.QPolygonF(mapped))
 
     def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
         transform = self._current_transform()
