@@ -8,7 +8,9 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import (
     CameraPosition,
+    CameraSegmentRange,
     load_cam_positions,
+    load_scr_segments,
 )
 from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.surface_mesh import (
@@ -17,6 +19,7 @@ from icr2_core.trk.surface_mesh import (
     compute_mesh_bounds,
 )
 from icr2_core.trk.trk_utils import get_cline_pos, color_from_ground_type, getxyz
+from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 
 
 class TrackPreviewWidget(QtWidgets.QFrame):
@@ -24,7 +27,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     cursorPositionChanged = QtCore.pyqtSignal(object)
     selectedFlagChanged = QtCore.pyqtSignal(object)
-    camerasChanged = QtCore.pyqtSignal(list)
+    camerasChanged = QtCore.pyqtSignal(list, list)
     selectedCameraChanged = QtCore.pyqtSignal(object, object)
 
     def __init__(self) -> None:
@@ -63,6 +66,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
         self._cameras: List[CameraPosition] = []
+        self._camera_views: List[CameraViewListing] = []
         self._selected_camera: int | None = None
 
     # ------------------------------------------------------------------
@@ -89,11 +93,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags = []
         self._selected_flag = None
         self._cameras = []
+        self._camera_views = []
         self._selected_camera = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
-        self.camerasChanged.emit([])
+        self.camerasChanged.emit([], [])
         self.selectedCameraChanged.emit(None, None)
         self.update()
 
@@ -176,13 +181,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
+        self._camera_views = []
         if not track_folder:
-            self.camerasChanged.emit([])
+            self.camerasChanged.emit([], [])
             return
         try:
             track_name = track_folder.name
         except Exception:
-            self.camerasChanged.emit([])
+            self.camerasChanged.emit([], [])
             return
         cam_path = track_folder / f"{track_name}.cam"
         if cam_path.exists():
@@ -190,7 +196,44 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self._cameras = load_cam_positions(cam_path)
             except Exception:  # pragma: no cover - best effort diagnostics
                 self._cameras = []
-        self.camerasChanged.emit(self._cameras)
+        scr_path = track_folder / f"{track_name}.scr"
+        segments: List[CameraSegmentRange] = []
+        if scr_path.exists():
+            try:
+                segments = load_scr_segments(scr_path)
+            except Exception:  # pragma: no cover - best effort diagnostics
+                segments = []
+        self._camera_views = self._build_camera_views(segments)
+        self.camerasChanged.emit(self._cameras, self._camera_views)
+
+    def _build_camera_views(
+        self, segments: List[CameraSegmentRange]
+    ) -> List[CameraViewListing]:
+        if not segments:
+            return []
+        by_view: dict[int, List[CameraSegmentRange]] = {}
+        for segment in segments:
+            by_view.setdefault(segment.view, []).append(segment)
+        listings: List[CameraViewListing] = []
+        for view_index, entries in by_view.items():
+            view_entries: List[CameraViewEntry] = []
+            for segment in entries:
+                camera = None
+                if 0 <= segment.camera_id < len(self._cameras):
+                    camera = self._cameras[segment.camera_id]
+                view_entries.append(
+                    CameraViewEntry(
+                        camera_index=segment.camera_id,
+                        camera_type=camera.camera_type if camera else None,
+                        start_dlong=segment.start_dlong,
+                        end_dlong=segment.end_dlong,
+                        mark=segment.mark,
+                    )
+                )
+            listings.append(
+                CameraViewListing(label=f"TV{view_index}", entries=view_entries)
+            )
+        return listings
 
     # ------------------------------------------------------------------
     # Painting helpers
