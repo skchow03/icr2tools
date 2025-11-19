@@ -24,6 +24,77 @@ class TrackViewerApp(QtWidgets.QApplication):
         self.tracks = tracks
 
 
+class CoordinateSidebar(QtWidgets.QFrame):
+    """Utility sidebar that mirrors cursor and flag coordinates."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.setMinimumWidth(200)
+
+        self._cursor_x = self._create_readonly_field("–")
+        self._cursor_y = self._create_readonly_field("–")
+        self._flag_x = self._create_readonly_field("–")
+        self._flag_y = self._create_readonly_field("–")
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setSpacing(12)
+
+        cursor_title = QtWidgets.QLabel("Cursor position")
+        cursor_title.setStyleSheet("font-weight: bold")
+        layout.addWidget(cursor_title)
+        cursor_form = QtWidgets.QFormLayout()
+        cursor_form.addRow("X", self._cursor_x)
+        cursor_form.addRow("Y", self._cursor_y)
+        layout.addLayout(cursor_form)
+
+        flag_title = QtWidgets.QLabel("Selected flag")
+        flag_title.setStyleSheet("font-weight: bold")
+        layout.addWidget(flag_title)
+        flag_form = QtWidgets.QFormLayout()
+        flag_form.addRow("X", self._flag_x)
+        flag_form.addRow("Y", self._flag_y)
+        layout.addLayout(flag_form)
+
+        hint = QtWidgets.QLabel(
+            "Left click to drop/select flags.\n"
+            "Right click a flag to remove it."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #bbbbbb; font-size: 11px")
+        layout.addWidget(hint)
+
+        layout.addStretch(1)
+        self.setLayout(layout)
+
+    def update_cursor_position(self, coords: Optional[tuple[float, float]]) -> None:
+        if coords is None:
+            self._cursor_x.clear()
+            self._cursor_y.clear()
+            return
+        self._cursor_x.setText(self._format_value(coords[0]))
+        self._cursor_y.setText(self._format_value(coords[1]))
+
+    def update_flag_position(self, coords: Optional[tuple[float, float]]) -> None:
+        if coords is None:
+            self._flag_x.clear()
+            self._flag_y.clear()
+            return
+        self._flag_x.setText(self._format_value(coords[0]))
+        self._flag_y.setText(self._format_value(coords[1]))
+
+    def _create_readonly_field(self, placeholder: str) -> QtWidgets.QLineEdit:
+        field = QtWidgets.QLineEdit()
+        field.setReadOnly(True)
+        field.setPlaceholderText(placeholder)
+        field.setFocusPolicy(QtCore.Qt.ClickFocus)
+        return field
+
+    @staticmethod
+    def _format_value(value: float) -> str:
+        return f"{value:.2f}"
+
+
 class TrackViewerWindow(QtWidgets.QMainWindow):
     """Minimal placeholder UI that demonstrates shared state wiring."""
 
@@ -45,6 +116,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self._sidebar = CoordinateSidebar()
+        self.visualization_widget.cursorPositionChanged.connect(
+            self._sidebar.update_cursor_position
+        )
+        self.visualization_widget.selectedFlagChanged.connect(
+            self._sidebar.update_flag_position
+        )
         self._center_line_button = QtWidgets.QPushButton("Hide Center Line")
         self._center_line_button.setCheckable(True)
         self._center_line_button.setChecked(True)
@@ -67,7 +145,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         body.setOrientation(QtCore.Qt.Horizontal)
         body.addWidget(self._track_list)
         body.addWidget(self.visualization_widget)
-        body.setSizes([200, 500])
+        body.addWidget(self._sidebar)
+        body.setSizes([200, 420, 200])
         layout.addWidget(body, stretch=1)
 
         wrapper = QtWidgets.QWidget()
