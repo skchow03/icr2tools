@@ -18,10 +18,14 @@ from icr2_core.trk.trk_utils import get_cline_pos, color_from_ground_type, getxy
 class TrackPreviewWidget(QtWidgets.QFrame):
     """Renders the TRK ground surface similar to the timing overlay."""
 
+    cursorPositionChanged = QtCore.pyqtSignal(object)
+    selectedFlagChanged = QtCore.pyqtSignal(object)
+
     def __init__(self) -> None:
         super().__init__()
         self.setMinimumSize(320, 240)
         self.setAutoFillBackground(True)
+        self.setMouseTracking(True)
 
         palette = self.palette()
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor(24, 24, 24))
@@ -46,6 +50,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._user_transform_active = False
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
+        self._left_press_pos: QtCore.QPoint | None = None
+        self._dragged_during_press = False
+
+        self._flags: List[Tuple[float, float]] = []
+        self._selected_flag: int | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -66,7 +75,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._user_transform_active = False
         self._is_panning = False
         self._last_mouse_pos = None
+        self._left_press_pos = None
+        self._dragged_during_press = False
+        self._flags = []
+        self._selected_flag = None
         self._status_message = message
+        self.cursorPositionChanged.emit(None)
+        self.selectedFlagChanged.emit(None)
         self.update()
 
     # ------------------------------------------------------------------
@@ -117,6 +132,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._view_center = self._default_center()
         self._user_transform_active = False
         self._update_fit_scale()
+        self._flags = []
+        self._set_selected_flag(None)
         self.update()
 
     # ------------------------------------------------------------------
@@ -284,6 +301,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
             painter.drawPolyline(QtGui.QPolygonF(points))
 
+        if transform:
+            self._draw_flags(painter, transform)
+
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         painter.drawText(12, 20, self._status_message)
 
@@ -323,15 +343,23 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.RightButton and self._surface_mesh:
+            if self._handle_flag_removal(event.pos()):
+                event.accept()
+                return
+
         if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
+            self._left_press_pos = event.pos()
+            self._dragged_during_press = False
             self._user_transform_active = True
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        handled = False
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -341,6 +369,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     scale, _ = transform
                     delta = event.pos() - self._last_mouse_pos
                     self._last_mouse_pos = event.pos()
+                    if (
+                        not self._dragged_during_press
+                        and self._left_press_pos is not None
+                        and (event.pos() - self._left_press_pos).manhattanLength() > 4
+                    ):
+                        self._dragged_during_press = True
                     cx, cy = self._view_center
                     cx -= delta.x() / scale
                     cy += delta.y() / scale
@@ -348,13 +382,104 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     self._invalidate_cache()
                     self.update()
             event.accept()
-            return
-        super().mouseMoveEvent(event)
+            handled = True
+        self._update_cursor_position(event.pos())
+        if not handled:
+            super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if event.button() == QtCore.Qt.LeftButton and self._is_panning:
+        if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+            click_without_drag = not self._dragged_during_press
             self._is_panning = False
             self._last_mouse_pos = None
+            self._left_press_pos = None
+            self._dragged_during_press = False
+            if click_without_drag:
+                self._handle_primary_click(event.pos())
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: D401 - Qt signature
+        self.cursorPositionChanged.emit(None)
+        super().leaveEvent(event)
+
+    # ------------------------------------------------------------------
+    # Cursor & flag helpers
+    # ------------------------------------------------------------------
+    def _update_cursor_position(self, point: QtCore.QPointF) -> None:
+        if not self._surface_mesh or not self._bounds:
+            self.cursorPositionChanged.emit(None)
+            return
+        coords = self._map_to_track(point)
+        self.cursorPositionChanged.emit(coords)
+
+    def _draw_flags(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+    ) -> None:
+        if not self._flags:
+            return
+        scale, offsets = transform
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        radius = 6
+        for index, (fx, fy) in enumerate(self._flags):
+            point = self._map_point(fx, fy, scale, offsets)
+            color = QtGui.QColor("#ffcc33")
+            if index == self._selected_flag:
+                color = QtGui.QColor("#ff7f0e")
+            pen = QtGui.QPen(QtGui.QColor("black"))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(QtGui.QBrush(color))
+            painter.drawEllipse(point, radius, radius)
+            painter.setPen(QtGui.QPen(QtGui.QColor("black")))
+            painter.drawLine(point.x(), point.y() - radius - 4, point.x(), point.y() - radius)
+
+    def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
+        transform = self._current_transform()
+        if not transform:
+            return None
+        scale, offsets = transform
+        for index, (fx, fy) in enumerate(self._flags):
+            flag_point = self._map_point(fx, fy, scale, offsets)
+            if (flag_point - point).manhattanLength() <= radius:
+                return index
+        return None
+
+    def _handle_primary_click(self, point: QtCore.QPointF) -> None:
+        transform = self._current_transform()
+        if not transform:
+            return
+        flag_index = self._flag_at_point(point)
+        if flag_index is not None:
+            self._set_selected_flag(flag_index)
+            return
+        coords = self._map_to_track(point)
+        if coords is None:
+            return
+        self._flags.append(coords)
+        self._set_selected_flag(len(self._flags) - 1)
+        self.update()
+
+    def _handle_flag_removal(self, point: QtCore.QPointF) -> bool:
+        flag_index = self._flag_at_point(point)
+        if flag_index is None:
+            return False
+        del self._flags[flag_index]
+        if self._selected_flag is not None:
+            if self._selected_flag == flag_index:
+                self._set_selected_flag(None)
+            elif self._selected_flag > flag_index:
+                self._set_selected_flag(self._selected_flag - 1)
+        self.update()
+        return True
+
+    def _set_selected_flag(self, index: int | None) -> None:
+        self._selected_flag = index
+        coords = None
+        if index is not None and 0 <= index < len(self._flags):
+            coords = self._flags[index]
+        self.selectedFlagChanged.emit(coords)
+        self.update()
