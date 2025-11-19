@@ -198,16 +198,24 @@ class CoordinateSidebar(QtWidgets.QFrame):
         for view in views:
             tree = self._create_tv_tree()
             for entry in view.entries:
+                label_index = entry.display_index
+                if label_index is None:
+                    label_index = entry.camera_index
                 values = [
-                    f"#{entry.camera_index}",
+                    f"#{label_index}" if label_index is not None else "–",
                     f"{entry.camera_type}" if entry.camera_type is not None else "–",
                     self._format_dlong(entry.start_dlong),
                     self._format_dlong(entry.end_dlong),
                 ]
                 item = QtWidgets.QTreeWidgetItem(values)
-                item.setData(0, QtCore.Qt.UserRole, entry.camera_index)
+                if entry.camera_index is not None:
+                    item.setData(0, QtCore.Qt.UserRole, entry.camera_index)
+                    self._tv_camera_items.setdefault(
+                        entry.camera_index, (tree, item)
+                    )
+                else:
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
                 tree.addTopLevelItem(item)
-                self._tv_camera_items.setdefault(entry.camera_index, (tree, item))
             container = QtWidgets.QWidget()
             container_layout = QtWidgets.QVBoxLayout()
             container_layout.setContentsMargins(0, 0, 0, 0)

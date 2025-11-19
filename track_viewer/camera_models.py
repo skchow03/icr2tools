@@ -9,11 +9,12 @@ from typing import List, Optional
 class CameraViewEntry:
     """Single camera reference within a TV view listing."""
 
-    camera_index: int
+    camera_index: Optional[int]
     camera_type: Optional[int]
     start_dlong: Optional[int]
     end_dlong: Optional[int]
     mark: Optional[int] = None
+    display_index: Optional[int] = None
 
 
 @dataclass

@@ -68,6 +68,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cameras: List[CameraPosition] = []
         self._camera_views: List[CameraViewListing] = []
         self._camera_ranges: dict[int, List[Tuple[float, float]]] = {}
+        self._camera_lookup: dict[Tuple[int, int], int] = {}
         self._selected_camera: int | None = None
 
     # ------------------------------------------------------------------
@@ -96,6 +97,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cameras = []
         self._camera_views = []
         self._camera_ranges = {}
+        self._camera_lookup = {}
         self._selected_camera = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -185,6 +187,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cameras = []
         self._camera_views = []
         self._camera_ranges = {}
+        self._camera_lookup = {}
         if not track_folder:
             self.camerasChanged.emit([], [])
             return
@@ -206,6 +209,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 segments = load_scr_segments(scr_path)
             except Exception:  # pragma: no cover - best effort diagnostics
                 segments = []
+        self._camera_lookup = self._build_camera_lookup(self._cameras)
         self._camera_ranges = self._build_camera_ranges(segments)
         self._camera_views = self._build_camera_views(segments)
         self.camerasChanged.emit(self._cameras, self._camera_views)
@@ -222,10 +226,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             end = getattr(segment, "end_dlong", None)
             if start is None or end is None:
                 continue
+            camera_index = self._resolve_camera_index(segment)
+            if camera_index is None:
+                continue
             for normalized in self._normalize_segment_range(start, end, track_length):
                 if not normalized:
                     continue
-                ranges.setdefault(segment.camera_id, []).append(normalized)
+                ranges.setdefault(camera_index, []).append(normalized)
         return ranges
 
     @staticmethod
@@ -254,22 +261,53 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for view_index, entries in by_view.items():
             view_entries: List[CameraViewEntry] = []
             for segment in entries:
+                camera_index = self._resolve_camera_index(segment)
                 camera = None
-                if 0 <= segment.camera_id < len(self._cameras):
-                    camera = self._cameras[segment.camera_id]
+                if (
+                    camera_index is not None
+                    and 0 <= camera_index < len(self._cameras)
+                ):
+                    camera = self._cameras[camera_index]
                 view_entries.append(
                     CameraViewEntry(
-                        camera_index=segment.camera_id,
-                        camera_type=camera.camera_type if camera else None,
+                        camera_index=camera_index,
+                        camera_type=(
+                            camera.camera_type
+                            if camera
+                            else segment.mark
+                        ),
                         start_dlong=segment.start_dlong,
                         end_dlong=segment.end_dlong,
                         mark=segment.mark,
+                        display_index=(
+                            camera.index if camera else segment.camera_id
+                        ),
                     )
                 )
             listings.append(
                 CameraViewListing(label=f"TV{view_index}", entries=view_entries)
             )
         return listings
+
+    def _build_camera_lookup(
+        self, cameras: List[CameraPosition]
+    ) -> dict[Tuple[int, int], int]:
+        lookup: dict[Tuple[int, int], int] = {}
+        for idx, camera in enumerate(cameras):
+            key = (camera.camera_type, camera.index)
+            lookup[key] = idx
+        return lookup
+
+    def _resolve_camera_index(
+        self, segment: CameraSegmentRange
+    ) -> int | None:
+        key = (segment.mark, segment.camera_id)
+        camera_index = self._camera_lookup.get(key)
+        if camera_index is not None:
+            return camera_index
+        if 0 <= segment.camera_id < len(self._cameras):
+            return segment.camera_id
+        return None
 
     # ------------------------------------------------------------------
     # Painting helpers
