@@ -129,6 +129,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._center_line_button.toggled.connect(self._toggle_center_line)
         self._toggle_center_line(self._center_line_button.isChecked())
 
+        self._show_cameras_button = QtWidgets.QPushButton("Show Cameras")
+        self._show_cameras_button.setCheckable(True)
+        self._show_cameras_button.setChecked(True)
+        self._show_cameras_button.toggled.connect(
+            self.visualization_widget.set_show_cameras
+        )
+
         layout = QtWidgets.QVBoxLayout()
         header = QtWidgets.QHBoxLayout()
         header.addWidget(QtWidgets.QLabel("ICR2 Installation:"))
@@ -139,6 +146,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls = QtWidgets.QHBoxLayout()
         controls.addStretch(1)
         controls.addWidget(self._center_line_button)
+        controls.addWidget(self._show_cameras_button)
         layout.addLayout(controls)
 
         body = QtWidgets.QSplitter()

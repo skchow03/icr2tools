@@ -49,6 +49,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
         self._show_center_line = True
+        self._show_cameras = True
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -106,6 +107,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def center_line_visible(self) -> bool:
         return self._show_center_line
+
+    def set_show_cameras(self, show: bool) -> None:
+        """Enable or disable rendering of track camera overlays."""
+
+        if self._show_cameras != show:
+            self._show_cameras = show
+            self.update()
 
     def load_track(self, track_folder: Path) -> None:
         """Load and render the contents of a track folder."""
@@ -370,8 +378,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawPolyline(QtGui.QPolygonF(points))
 
         if transform:
-            self._draw_camera_segments(painter, transform)
-            self._draw_camera_positions(painter, transform)
+            if self._show_cameras:
+                self._draw_camera_segments(painter, transform)
+                self._draw_camera_positions(painter, transform)
             self._draw_flags(painter, transform)
 
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
