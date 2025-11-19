@@ -435,7 +435,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.setBrush(QtGui.QBrush(color))
             painter.drawEllipse(point, radius, radius)
             painter.setPen(QtGui.QPen(QtGui.QColor("black")))
-            painter.drawLine(point.x(), point.y() - radius - 4, point.x(), point.y() - radius)
+            flag_pole = QtCore.QLineF(
+                point.x(),
+                point.y() - radius - 4,
+                point.x(),
+                point.y() - radius,
+            )
+            painter.drawLine(flag_pole)
 
     def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
         transform = self._current_transform()
