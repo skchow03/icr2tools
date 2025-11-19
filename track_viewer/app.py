@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from PyQt5 import QtWidgets, QtCore
 
+from icr2_core.cam.helpers import CameraPosition
 from track_viewer.preview_widget import TrackPreviewWidget
 
 
@@ -25,17 +26,27 @@ class TrackViewerApp(QtWidgets.QApplication):
 
 
 class CoordinateSidebar(QtWidgets.QFrame):
-    """Utility sidebar that mirrors cursor and flag coordinates."""
+    """Utility sidebar that mirrors cursor, flag and camera details."""
+
+    cameraSelectionChanged = QtCore.pyqtSignal(object)
 
     def __init__(self) -> None:
         super().__init__()
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setMinimumWidth(200)
+        self.setMinimumWidth(220)
 
         self._cursor_x = self._create_readonly_field("–")
         self._cursor_y = self._create_readonly_field("–")
         self._flag_x = self._create_readonly_field("–")
         self._flag_y = self._create_readonly_field("–")
+        self._camera_list = QtWidgets.QListWidget()
+        self._camera_list.setMinimumHeight(120)
+        self._camera_list.currentRowChanged.connect(self._on_camera_selected)
+        self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
+        self._camera_details.setWordWrap(True)
+        self._camera_details.setAlignment(QtCore.Qt.AlignTop)
+        self._camera_details.setStyleSheet("font-size: 12px")
+        self._cameras: List[CameraPosition] = []
 
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(12)
@@ -64,6 +75,16 @@ class CoordinateSidebar(QtWidgets.QFrame):
         hint.setStyleSheet("color: #bbbbbb; font-size: 11px")
         layout.addWidget(hint)
 
+        camera_title = QtWidgets.QLabel("Track cameras")
+        camera_title.setStyleSheet("font-weight: bold")
+        layout.addWidget(camera_title)
+        layout.addWidget(self._camera_list)
+
+        details_title = QtWidgets.QLabel("Camera details")
+        details_title.setStyleSheet("font-weight: bold")
+        layout.addWidget(details_title)
+        layout.addWidget(self._camera_details)
+
         layout.addStretch(1)
         self.setLayout(layout)
 
@@ -82,6 +103,60 @@ class CoordinateSidebar(QtWidgets.QFrame):
             return
         self._flag_x.setText(self._format_value(coords[0]))
         self._flag_y.setText(self._format_value(coords[1]))
+
+    def set_cameras(self, cameras: List[CameraPosition]) -> None:
+        self._cameras = cameras
+        self._camera_list.blockSignals(True)
+        self._camera_list.clear()
+        if not cameras:
+            self._camera_list.addItem("(No cameras found)")
+            self._camera_list.setEnabled(False)
+            self._camera_details.setText(
+                "This track does not define any camera positions."
+            )
+            self._camera_list.setCurrentRow(-1)
+        else:
+            for cam in cameras:
+                label = f"#{cam.index} (type {cam.camera_type})"
+                item = QtWidgets.QListWidgetItem(label)
+                self._camera_list.addItem(item)
+            self._camera_list.setEnabled(True)
+            self._camera_list.setCurrentRow(-1)
+            self._camera_details.setText("Select a camera to inspect.")
+        self._camera_list.blockSignals(False)
+
+    def select_camera(self, index: int | None) -> None:
+        self._camera_list.blockSignals(True)
+        if index is None:
+            self._camera_list.setCurrentRow(-1)
+        else:
+            self._camera_list.setCurrentRow(index)
+        self._camera_list.blockSignals(False)
+
+    def update_selected_camera_details(
+        self, index: int | None, camera: Optional[CameraPosition]
+    ) -> None:
+        if camera is None:
+            self._camera_details.setText("Select a camera to inspect.")
+            if index is None:
+                self.select_camera(None)
+            return
+        details = [
+            f"Index: {camera.index}",
+            f"Type: {camera.camera_type}",
+            f"X: {camera.x}",
+            f"Y: {camera.y}",
+            f"Z: {camera.z}",
+        ]
+        self._camera_details.setText("\n".join(details))
+        if index is not None and self._camera_list.currentRow() != index:
+            self.select_camera(index)
+
+    def _on_camera_selected(self, index: int) -> None:
+        if not self._cameras or index < 0 or index >= len(self._cameras):
+            self.cameraSelectionChanged.emit(None)
+            return
+        self.cameraSelectionChanged.emit(index)
 
     def _create_readonly_field(self, placeholder: str) -> QtWidgets.QLineEdit:
         field = QtWidgets.QLineEdit()
@@ -123,6 +198,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.selectedFlagChanged.connect(
             self._sidebar.update_flag_position
         )
+        self.visualization_widget.camerasChanged.connect(self._sidebar.set_cameras)
+        self.visualization_widget.selectedCameraChanged.connect(
+            self._sidebar.update_selected_camera_details
+        )
+        self._sidebar.cameraSelectionChanged.connect(
+            self._handle_camera_selection_changed
+        )
+        self._sidebar.set_cameras([])
+        self._sidebar.update_selected_camera_details(None, None)
         self._center_line_button = QtWidgets.QPushButton("Hide Center Line")
         self._center_line_button.setCheckable(True)
         self._center_line_button.setChecked(True)
@@ -237,3 +321,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Center Line" if enabled else "Show Center Line"
         self._center_line_button.setText(text)
         self.visualization_widget.set_show_center_line(enabled)
+
+    def _handle_camera_selection_changed(self, index: Optional[int]) -> None:
+        self.visualization_widget.set_selected_camera(index)
