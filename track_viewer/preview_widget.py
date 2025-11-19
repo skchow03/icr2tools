@@ -67,6 +67,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_flag: int | None = None
         self._cameras: List[CameraPosition] = []
         self._camera_views: List[CameraViewListing] = []
+        self._camera_ranges: dict[int, List[Tuple[float, float]]] = {}
         self._selected_camera: int | None = None
 
     # ------------------------------------------------------------------
@@ -94,6 +95,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_flag = None
         self._cameras = []
         self._camera_views = []
+        self._camera_ranges = {}
         self._selected_camera = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -182,6 +184,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
         self._camera_views = []
+        self._camera_ranges = {}
         if not track_folder:
             self.camerasChanged.emit([], [])
             return
@@ -203,8 +206,41 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 segments = load_scr_segments(scr_path)
             except Exception:  # pragma: no cover - best effort diagnostics
                 segments = []
+        self._camera_ranges = self._build_camera_ranges(segments)
         self._camera_views = self._build_camera_views(segments)
         self.camerasChanged.emit(self._cameras, self._camera_views)
+
+    def _build_camera_ranges(
+        self, segments: List[CameraSegmentRange]
+    ) -> dict[int, List[Tuple[float, float]]]:
+        if not segments:
+            return {}
+        track_length = getattr(self.trk, "trklength", None)
+        ranges: dict[int, List[Tuple[float, float]]] = {}
+        for segment in segments:
+            start = getattr(segment, "start_dlong", None)
+            end = getattr(segment, "end_dlong", None)
+            if start is None or end is None:
+                continue
+            for normalized in self._normalize_segment_range(start, end, track_length):
+                if not normalized:
+                    continue
+                ranges.setdefault(segment.camera_id, []).append(normalized)
+        return ranges
+
+    @staticmethod
+    def _normalize_segment_range(
+        start: float, end: float, track_length: float | None
+    ) -> List[Tuple[float, float]]:
+        if track_length is None:
+            track_length = 0
+        if start == end:
+            if track_length:
+                return [(0, track_length)]
+            return []
+        if track_length and end < start:
+            return [(start, track_length), (0, end)]
+        return [(start, end)]
 
     def _build_camera_views(
         self, segments: List[CameraSegmentRange]
@@ -390,6 +426,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         painter.drawPixmap(0, 0, self._cached_surface_pixmap)
 
         transform = self._current_transform()
+        if transform:
+            self._draw_camera_segments(painter, transform)
+
         if self._show_center_line and self._sampled_centerline and transform:
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             scale, offsets = transform
@@ -543,6 +582,45 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 point.y() - radius,
             )
             painter.drawLine(flag_pole)
+
+    def _draw_camera_segments(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+    ) -> None:
+        if self._selected_camera is None:
+            return
+        ranges = self._camera_ranges.get(self._selected_camera)
+        if not ranges:
+            return
+        scale, offsets = transform
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        for strip in self._surface_mesh:
+            if not self._strip_overlaps_ranges(strip, ranges):
+                continue
+            base_color = QtGui.QColor(color_from_ground_type(strip.ground_type))
+            fill = QtGui.QColor(base_color)
+            fill = fill.lighter(160)
+            fill.setAlpha(230)
+            outline = QtGui.QColor(fill)
+            outline.setAlpha(255)
+            points = [self._map_point(x, y, scale, offsets) for x, y in strip.points]
+            painter.setBrush(QtGui.QBrush(fill))
+            painter.setPen(QtGui.QPen(outline, 1))
+            painter.drawPolygon(QtGui.QPolygonF(points))
+
+    @staticmethod
+    def _strip_overlaps_ranges(
+        strip: GroundSurfaceStrip, ranges: List[Tuple[float, float]]
+    ) -> bool:
+        start = getattr(strip, "start_dlong", None)
+        end = getattr(strip, "end_dlong", None)
+        if start is None or end is None:
+            return False
+        for range_start, range_end in ranges:
+            if start < range_end and end > range_start:
+                return True
+        return False
 
     def _draw_camera_positions(
         self,

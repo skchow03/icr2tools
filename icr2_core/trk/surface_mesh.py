@@ -18,6 +18,8 @@ class GroundSurfaceStrip:
 
     points: Tuple[Point2D, Point2D, Point2D, Point2D]
     ground_type: int
+    start_dlong: float
+    end_dlong: float
 
 
 def build_ground_surface_mesh(
@@ -150,6 +152,8 @@ def _build_section_quads(
                 GroundSurfaceStrip(
                     points=polygon,
                     ground_type=sect.ground_type[ground_idx],
+                    start_dlong=sub_start_dlong,
+                    end_dlong=sub_end_dlong,
                 )
             )
 
