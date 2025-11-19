@@ -9,6 +9,18 @@ from .binutils import chunk, read_int32_file
 
 
 @dataclass
+class Type6CameraParameters:
+    """Additional parameters available for type 6 cameras."""
+
+    middle_point: int
+    start_point: int
+    start_zoom: int
+    middle_point_zoom: int
+    end_point: int
+    end_zoom: int
+
+
+@dataclass
 class CameraPosition:
     """Simple representation of a camera defined inside a CAM file."""
 
@@ -17,6 +29,7 @@ class CameraPosition:
     x: int
     y: int
     z: int
+    type6: Type6CameraParameters | None = None
 
 
 @dataclass
@@ -67,6 +80,16 @@ def load_cam_positions(path: str | Path) -> List[CameraPosition]:
         for index, row in enumerate(rows):
             if len(row) < 4:
                 continue
+            type6_params = None
+            if camera_type == 6 and len(row) >= 9:
+                type6_params = Type6CameraParameters(
+                    middle_point=row[0],
+                    start_point=row[4],
+                    start_zoom=row[5],
+                    middle_point_zoom=row[6],
+                    end_point=row[7],
+                    end_zoom=row[8],
+                )
             positions.append(
                 CameraPosition(
                     camera_type=camera_type,
@@ -74,6 +97,7 @@ def load_cam_positions(path: str | Path) -> List[CameraPosition]:
                     x=row[1],
                     y=row[2],
                     z=row[3],
+                    type6=type6_params,
                 )
             )
 

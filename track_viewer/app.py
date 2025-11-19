@@ -148,6 +148,17 @@ class CoordinateSidebar(QtWidgets.QFrame):
             f"Y: {camera.y}",
             f"Z: {camera.z}",
         ]
+        if camera.camera_type == 6 and camera.type6 is not None:
+            details.extend(
+                [
+                    f"Middle point: {camera.type6.middle_point}",
+                    f"Start point: {camera.type6.start_point}",
+                    f"Start zoom: {camera.type6.start_zoom}",
+                    f"Middle point zoom: {camera.type6.middle_point_zoom}",
+                    f"End point: {camera.type6.end_point}",
+                    f"End zoom: {camera.type6.end_zoom}",
+                ]
+            )
         self._camera_details.setText("\n".join(details))
         if index is not None and self._camera_list.currentRow() != index:
             self.select_camera(index)
