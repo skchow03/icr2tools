@@ -24,6 +24,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     cursorPositionChanged = QtCore.pyqtSignal(object)
     selectedFlagChanged = QtCore.pyqtSignal(object)
+    camerasChanged = QtCore.pyqtSignal(list)
+    selectedCameraChanged = QtCore.pyqtSignal(object, object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -61,6 +63,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
         self._cameras: List[CameraPosition] = []
+        self._selected_camera: int | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -86,9 +89,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags = []
         self._selected_flag = None
         self._cameras = []
+        self._selected_camera = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
+        self.camerasChanged.emit([])
+        self.selectedCameraChanged.emit(None, None)
         self.update()
 
     # ------------------------------------------------------------------
@@ -110,6 +116,22 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._show_cameras != show:
             self._show_cameras = show
             self.update()
+
+    def cameras(self) -> List[CameraPosition]:
+        return list(self._cameras)
+
+    def set_selected_camera(self, index: int | None) -> None:
+        if index == self._selected_camera:
+            return
+        if index is not None:
+            if index < 0 or index >= len(self._cameras):
+                index = None
+        self._selected_camera = index
+        selected = None
+        if index is not None:
+            selected = self._cameras[index]
+        self.selectedCameraChanged.emit(index, selected)
+        self.update()
 
     def load_track(self, track_folder: Path) -> None:
         """Load and render the contents of a track folder."""
@@ -149,15 +171,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._flags = []
         self._set_selected_flag(None)
         self._load_track_cameras(track_folder)
+        self.set_selected_camera(None)
         self.update()
 
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
         if not track_folder:
+            self.camerasChanged.emit([])
             return
         try:
             track_name = track_folder.name
         except Exception:
+            self.camerasChanged.emit([])
             return
         cam_path = track_folder / f"{track_name}.cam"
         if cam_path.exists():
@@ -165,6 +190,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self._cameras = load_cam_positions(cam_path)
             except Exception:  # pragma: no cover - best effort diagnostics
                 self._cameras = []
+        self.camerasChanged.emit(self._cameras)
 
     # ------------------------------------------------------------------
     # Painting helpers
@@ -489,14 +515,20 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             6: QtGui.QColor("#ff9800"),
             7: QtGui.QColor("#4dd0e1"),
         }
-        for cam in self._cameras:
+        for index, cam in enumerate(self._cameras):
             point = self._map_point(cam.x, cam.y, scale, offsets)
             color = type_colors.get(cam.camera_type, QtGui.QColor("#ffffff"))
+            radius = 4
             pen = QtGui.QPen(QtGui.QColor("#111111"))
             pen.setWidth(1)
+            if index == self._selected_camera:
+                color = QtGui.QColor("#ff4081")
+                pen.setColor(QtGui.QColor("#ff4081"))
+                pen.setWidth(2)
+                radius = 6
             painter.setPen(pen)
             painter.setBrush(QtGui.QBrush(color))
-            painter.drawEllipse(point, 4, 4)
+            painter.drawEllipse(point, radius, radius)
 
     def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
         transform = self._current_transform()
