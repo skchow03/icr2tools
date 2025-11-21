@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -140,6 +140,24 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def cameras(self) -> List[CameraPosition]:
         return list(self._cameras)
+
+    def update_camera_dlongs(
+        self, camera_index: int, start_dlong: Optional[int], end_dlong: Optional[int]
+    ) -> None:
+        if camera_index < 0 or camera_index >= len(self._cameras):
+            return
+        camera = self._cameras[camera_index]
+        if camera.camera_type != 6 or camera.type6 is None:
+            return
+
+        if start_dlong is not None:
+            camera.type6.start_point = start_dlong
+        if end_dlong is not None:
+            camera.type6.end_point = end_dlong
+
+        if self._selected_camera == camera_index:
+            self._emit_selected_camera()
+        self.update()
 
     def set_selected_camera(self, index: int | None) -> None:
         if index == self._selected_camera:
