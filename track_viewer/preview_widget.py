@@ -151,14 +151,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     ) -> None:
         if camera_index < 0 or camera_index >= len(self._cameras):
             return
-        camera = self._cameras[camera_index]
-        if camera.camera_type != 6 or camera.type6 is None:
-            return
 
-        # Editing start/end values in the TV modes table should not alter the
-        # Type 6 zoom parameters. The table updates camera segment ranges
-        # directly, so we simply trigger a redraw without mutating the underlying
-        # camera definition.
+        # Editing start/end values in the TV modes table updates the segment
+        # ranges directly on the shared camera view entries. We only need to
+        # trigger a repaint so the centerline markers reflect the new values.
         if self._selected_camera == camera_index:
             self._emit_selected_camera()
         self.update()
@@ -473,7 +469,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawPolyline(QtGui.QPolygonF(points))
 
         if transform and self._show_center_line:
-            self._draw_type6_markers(painter, transform)
+            self._draw_camera_range_markers(painter, transform)
 
         if transform and self._nearest_centerline_point:
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -863,7 +859,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         painter.drawLine(QtCore.QLineF(start, end))
         painter.restore()
 
-    def _draw_type6_markers(
+    def _camera_view_ranges(self, camera_index: int) -> list[tuple[float, float]]:
+        ranges: list[tuple[float, float]] = []
+        for view in self._camera_views:
+            for entry in view.entries:
+                if entry.camera_index != camera_index:
+                    continue
+                if entry.start_dlong is None or entry.end_dlong is None:
+                    continue
+                ranges.append((float(entry.start_dlong), float(entry.end_dlong)))
+        return ranges
+
+    def _draw_camera_range_markers(
         self,
         painter: QtGui.QPainter,
         transform: Tuple[float, Tuple[float, float]],
@@ -872,13 +879,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
         if self._selected_camera < 0 or self._selected_camera >= len(self._cameras):
             return
-        camera = self._cameras[self._selected_camera]
-        if camera.camera_type != 6 or camera.type6 is None:
+
+        ranges = self._camera_view_ranges(self._selected_camera)
+        if not ranges:
             return
 
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        for dlong in (camera.type6.start_point, camera.type6.end_point):
-            self._draw_perpendicular_bar(painter, transform, float(dlong))
+        for start_dlong, end_dlong in ranges:
+            self._draw_perpendicular_bar(painter, transform, float(start_dlong))
+            self._draw_perpendicular_bar(painter, transform, float(end_dlong))
 
     def _draw_camera_symbol(
         self,
