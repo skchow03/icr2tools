@@ -270,8 +270,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
         return tree
 
     def _create_type6_table(self) -> QtWidgets.QTableWidget:
-        table = QtWidgets.QTableWidget(3, 2)
-        table.setHorizontalHeaderLabels(["DLONG", "Zoom factor"])
+        table = QtWidgets.QTableWidget(3, 3)
+        table.setHorizontalHeaderLabels(["DLONG", "Zoom factor", "Actions"])
         table.setVerticalHeaderLabels(["Start", "Middle", "End"])
         table.setAlternatingRowColors(True)
         table.horizontalHeader().setStretchLastSection(True)
@@ -288,6 +288,17 @@ class CoordinateSidebar(QtWidgets.QFrame):
                 item = QtWidgets.QTableWidgetItem()
                 item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
                 table.setItem(row, column, item)
+        start_button = QtWidgets.QPushButton("Use TV Start")
+        start_button.clicked.connect(lambda: self._apply_tv_dlong_to_row(0))
+        table.setCellWidget(0, 2, start_button)
+
+        average_button = QtWidgets.QPushButton("Average")
+        average_button.clicked.connect(self._apply_middle_average)
+        table.setCellWidget(1, 2, average_button)
+
+        end_button = QtWidgets.QPushButton("Use TV End")
+        end_button.clicked.connect(lambda: self._apply_tv_dlong_to_row(2))
+        table.setCellWidget(2, 2, end_button)
         return table
 
     def _populate_type6_table(self, params: Type6CameraParameters) -> None:
@@ -323,6 +334,50 @@ class CoordinateSidebar(QtWidgets.QFrame):
             return
         with QtCore.QSignalBlocker(self._type6_table):
             self._type6_table.item(row, column).setText(str(value))
+
+    def _apply_tv_dlong_to_row(self, row: int) -> None:
+        if self._type6_camera_index is None or not self._camera_views:
+            return
+        start_dlong, end_dlong = self._camera_tv_dlongs(self._type6_camera_index)
+        if row == 0:
+            value = start_dlong
+        elif row == 2:
+            value = end_dlong
+        else:
+            return
+        if value is None:
+            return
+        self._type6_table.item(row, 0).setText(str(value))
+
+    def _apply_middle_average(self) -> None:
+        if self._type6_camera_index is None:
+            return
+        start_item = self._type6_table.item(0, 0)
+        end_item = self._type6_table.item(2, 0)
+        if start_item is None or end_item is None:
+            return
+        try:
+            start_value = int(start_item.text())
+            end_value = int(end_item.text())
+        except ValueError:
+            return
+        middle_value = (start_value + end_value) // 2
+        self._type6_table.item(1, 0).setText(str(middle_value))
+
+    def _camera_tv_dlongs(self, camera_index: int) -> tuple[Optional[int], Optional[int]]:
+        start_dlong: Optional[int] = None
+        end_dlong: Optional[int] = None
+        for view in self._camera_views:
+            for entry in view.entries:
+                if entry.camera_index != camera_index:
+                    continue
+                if start_dlong is None:
+                    start_dlong = entry.start_dlong
+                if end_dlong is None:
+                    end_dlong = entry.end_dlong
+                if start_dlong is not None and end_dlong is not None:
+                    return start_dlong, end_dlong
+        return start_dlong, end_dlong
 
     def _handle_type6_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._type6_camera_index is None:
