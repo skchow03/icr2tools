@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 
-from icr2_core.cam.helpers import CameraPosition
+from icr2_core.cam.helpers import CameraPosition, Type6CameraParameters
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.preview_widget import TrackPreviewWidget
 
@@ -63,6 +63,13 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._camera_details.setWordWrap(True)
         self._camera_details.setAlignment(QtCore.Qt.AlignTop)
         self._camera_details.setStyleSheet("font-size: 12px")
+        self._type6_camera_index: int | None = None
+        self._type6_group = QtWidgets.QGroupBox("Type 6 parameters")
+        self._type6_group.setVisible(False)
+        self._type6_table = self._create_type6_table()
+        type6_group_layout = QtWidgets.QVBoxLayout()
+        type6_group_layout.addWidget(self._type6_table)
+        self._type6_group.setLayout(type6_group_layout)
         self._cameras: List[CameraPosition] = []
 
         layout = QtWidgets.QVBoxLayout()
@@ -104,6 +111,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         details_title.setStyleSheet("font-weight: bold")
         layout.addWidget(details_title)
         layout.addWidget(self._camera_details)
+        layout.addWidget(self._type6_group)
 
         layout.addStretch(1)
         self.setLayout(layout)
@@ -132,6 +140,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
     ) -> None:
         self._cameras = cameras
         self._camera_views = views
+        self._type6_camera_index = None
+        self._type6_group.setVisible(False)
         self._camera_list.blockSignals(True)
         self._camera_list.clear()
         if not cameras:
@@ -166,6 +176,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
     ) -> None:
         if camera is None:
             self._camera_details.setText("Select a camera to inspect.")
+            self._type6_camera_index = None
+            self._type6_group.setVisible(False)
             if index is None:
                 self.select_camera(None)
             return
@@ -177,29 +189,16 @@ class CoordinateSidebar(QtWidgets.QFrame):
             f"Z: {camera.z}",
         ]
 
-        details_html = "<br>".join(details)
-
         if camera.camera_type == 6 and camera.type6 is not None:
-            type6 = camera.type6
-            rows = [
-                ("Start", type6.start_point, type6.start_zoom),
-                ("Middle", type6.middle_point, type6.middle_point_zoom),
-                ("End", type6.end_point, type6.end_zoom),
-            ]
-            table_rows = "".join(
-                f"<tr><td><b>{label}</b></td><td>{dlong}</td><td>{zoom}</td></tr>"
-                for label, dlong, zoom in rows
-            )
-            type6_table = (
-                "<br><br><b>Type 6 parameters</b>"
-                "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse: collapse;\">"
-                "<tr><th></th><th>DLONG</th><th>Zoom</th></tr>"
-                f"{table_rows}"
-                "</table>"
-            )
-            details_html = f"{details_html}{type6_table}"
+            details.append("Type 6 parameters can be edited below.")
+            self._type6_camera_index = index if index is not None else camera.index
+            self._populate_type6_table(camera.type6)
+            self._type6_group.setVisible(True)
+        else:
+            self._type6_camera_index = None
+            self._type6_group.setVisible(False)
 
-        self._camera_details.setText(details_html)
+        self._camera_details.setText("<br>".join(details))
         if index is not None and self._camera_list.currentRow() != index:
             self.select_camera(index)
 
@@ -269,6 +268,108 @@ class CoordinateSidebar(QtWidgets.QFrame):
         tree.setItemDelegate(_TvCameraItemDelegate(self))
         tree.currentItemChanged.connect(self._handle_tv_camera_selected)
         return tree
+
+    def _create_type6_table(self) -> QtWidgets.QTableWidget:
+        table = QtWidgets.QTableWidget(3, 2)
+        table.setHorizontalHeaderLabels(["DLONG", "Zoom factor"])
+        table.setVerticalHeaderLabels(["Start", "Middle", "End"])
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
+        table.setItemDelegate(_Type6ItemDelegate(self))
+        table.itemChanged.connect(self._handle_type6_item_changed)
+        for row in range(3):
+            for column in range(2):
+                item = QtWidgets.QTableWidgetItem()
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+                table.setItem(row, column, item)
+        return table
+
+    def _populate_type6_table(self, params: Type6CameraParameters) -> None:
+        values = [
+            (params.start_point, params.start_zoom),
+            (params.middle_point, params.middle_point_zoom),
+            (params.end_point, params.end_zoom),
+        ]
+        with QtCore.QSignalBlocker(self._type6_table):
+            for row, (dlong, zoom) in enumerate(values):
+                self._type6_table.item(row, 0).setText(str(dlong))
+                self._type6_table.item(row, 1).setText(str(zoom))
+
+    def _restore_type6_value(self, row: int, column: int) -> None:
+        if self._type6_camera_index is None:
+            return
+        if self._type6_camera_index < 0 or self._type6_camera_index >= len(self._cameras):
+            return
+        camera = self._cameras[self._type6_camera_index]
+        if camera.type6 is None:
+            return
+        params = camera.type6
+        value_map = {
+            (0, 0): params.start_point,
+            (0, 1): params.start_zoom,
+            (1, 0): params.middle_point,
+            (1, 1): params.middle_point_zoom,
+            (2, 0): params.end_point,
+            (2, 1): params.end_zoom,
+        }
+        value = value_map.get((row, column))
+        if value is None:
+            return
+        with QtCore.QSignalBlocker(self._type6_table):
+            self._type6_table.item(row, column).setText(str(value))
+
+    def _handle_type6_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if self._type6_camera_index is None:
+            return
+        if self._type6_camera_index < 0 or self._type6_camera_index >= len(self._cameras):
+            return
+        camera = self._cameras[self._type6_camera_index]
+        if camera.type6 is None:
+            return
+        row = item.row()
+        column = item.column()
+        text = item.text().strip()
+        try:
+            value = int(text)
+        except ValueError:
+            self._restore_type6_value(row, column)
+            return
+
+        if column == 0:
+            if value < 0:
+                self._restore_type6_value(row, column)
+                return
+            if self._track_length is not None and value > self._track_length:
+                self._show_dlong_bounds_error()
+                self._restore_type6_value(row, column)
+                return
+
+        params = camera.type6
+        if row == 0:
+            if column == 0:
+                params.start_point = value
+            else:
+                params.start_zoom = value
+        elif row == 1:
+            if column == 0:
+                params.middle_point = value
+            else:
+                params.middle_point_zoom = value
+        elif row == 2:
+            if column == 0:
+                params.end_point = value
+            else:
+                params.end_zoom = value
+        else:
+            return
+
+        self._camera_details.setText(self._camera_details.text())
 
     def _handle_tv_camera_selected(
         self,
@@ -482,6 +583,22 @@ class _TvCameraItemDelegate(QtWidgets.QStyledItemDelegate):
             return None
         editor = QtWidgets.QLineEdit(parent)
         editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
+        return editor
+
+
+class _Type6ItemDelegate(QtWidgets.QStyledItemDelegate):
+    """Limits editing within the Type 6 parameter table."""
+
+    def __init__(self, sidebar: CoordinateSidebar) -> None:
+        super().__init__(sidebar)
+        self._sidebar = sidebar
+
+    def createEditor(self, parent, option, index):  # type: ignore[override]
+        editor = QtWidgets.QLineEdit(parent)
+        if index.column() == 0:
+            editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
+        else:
+            editor.setValidator(QtGui.QIntValidator(-2**31, 2**31 - 1, editor))
         return editor
 
 
