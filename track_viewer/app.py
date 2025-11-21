@@ -59,6 +59,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
             int, Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]
         ] = {}
         self._camera_views: List[CameraViewListing] = []
+        self._camera_table = self._create_camera_table()
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
         self._camera_details.setTextFormat(QtCore.Qt.RichText)
         self._camera_details.setWordWrap(True)
