@@ -155,11 +155,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if camera.camera_type != 6 or camera.type6 is None:
             return
 
-        if start_dlong is not None:
-            camera.type6.start_point = start_dlong
-        if end_dlong is not None:
-            camera.type6.end_point = end_dlong
-
+        # Editing start/end values in the TV modes table should not alter the
+        # Type 6 zoom parameters. The table updates camera segment ranges
+        # directly, so we simply trigger a redraw without mutating the underlying
+        # camera definition.
         if self._selected_camera == camera_index:
             self._emit_selected_camera()
         self.update()
