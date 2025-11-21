@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
 
-from .binutils import chunk, read_int32_file
+from .binutils import chunk, read_int32_bytes, read_int32_file
 
 
 @dataclass
@@ -48,10 +48,9 @@ def _normalize_path(path: str | Path) -> str:
     return str(path.expanduser().resolve())
 
 
-def load_cam_positions(path: str | Path) -> List[CameraPosition]:
-    """Parse a `.cam` binary and return the relevant camera positions."""
+def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
+    """Parse the integer contents of a CAM file into camera positions."""
 
-    values = read_int32_file(_normalize_path(path))
     if not values:
         return []
 
@@ -104,10 +103,23 @@ def load_cam_positions(path: str | Path) -> List[CameraPosition]:
     return positions
 
 
-def load_scr_segments(path: str | Path) -> List[CameraSegmentRange]:
-    """Parse `.scr` binary files into segment ranges per camera."""
+def load_cam_positions(path: str | Path) -> List[CameraPosition]:
+    """Parse a `.cam` binary and return the relevant camera positions."""
 
     values = read_int32_file(_normalize_path(path))
+    return _parse_cam_positions(values)
+
+
+def load_cam_positions_bytes(data: bytes) -> List[CameraPosition]:
+    """Parse a `.cam` payload loaded directly into memory."""
+
+    values = read_int32_bytes(data)
+    return _parse_cam_positions(values)
+
+
+def _parse_scr_segments(values: Sequence[int]) -> List[CameraSegmentRange]:
+    """Parse the integer contents of an SCR file into segment ranges."""
+
     if not values:
         return []
 
@@ -141,3 +153,17 @@ def load_scr_segments(path: str | Path) -> List[CameraSegmentRange]:
             )
 
     return segments
+
+
+def load_scr_segments(path: str | Path) -> List[CameraSegmentRange]:
+    """Parse `.scr` binary files into segment ranges per camera."""
+
+    values = read_int32_file(_normalize_path(path))
+    return _parse_scr_segments(values)
+
+
+def load_scr_segments_bytes(data: bytes) -> List[CameraSegmentRange]:
+    """Parse `.scr` payloads loaded directly into memory."""
+
+    values = read_int32_bytes(data)
+    return _parse_scr_segments(values)

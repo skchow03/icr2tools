@@ -10,8 +10,11 @@ from icr2_core.cam.helpers import (
     CameraPosition,
     CameraSegmentRange,
     load_cam_positions,
+    load_cam_positions_bytes,
     load_scr_segments,
+    load_scr_segments_bytes,
 )
+from icr2_core.dat.unpackdat import extract_file_bytes
 from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.surface_mesh import (
     GroundSurfaceStrip,
@@ -191,16 +194,32 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self.camerasChanged.emit([], [])
             return
         cam_path = track_folder / f"{track_name}.cam"
+        scr_path = track_folder / f"{track_name}.scr"
+        dat_files = list(track_folder.glob("*.dat"))
+        dat_path = dat_files[0] if dat_files else None
+
         if cam_path.exists():
             try:
                 self._cameras = load_cam_positions(cam_path)
             except Exception:  # pragma: no cover - best effort diagnostics
                 self._cameras = []
-        scr_path = track_folder / f"{track_name}.scr"
+        elif dat_path:
+            try:
+                cam_bytes = extract_file_bytes(str(dat_path), f"{track_name}.cam")
+                self._cameras = load_cam_positions_bytes(cam_bytes)
+            except Exception:  # pragma: no cover - best effort diagnostics
+                self._cameras = []
+
         segments: List[CameraSegmentRange] = []
         if scr_path.exists():
             try:
                 segments = load_scr_segments(scr_path)
+            except Exception:  # pragma: no cover - best effort diagnostics
+                segments = []
+        elif dat_path:
+            try:
+                scr_bytes = extract_file_bytes(str(dat_path), f"{track_name}.scr")
+                segments = load_scr_segments_bytes(scr_bytes)
             except Exception:  # pragma: no cover - best effort diagnostics
                 segments = []
         self._camera_views = self._build_camera_views(segments)
