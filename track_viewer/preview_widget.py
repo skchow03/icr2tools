@@ -66,6 +66,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._left_press_pos: QtCore.QPoint | None = None
         self._dragged_during_press = False
 
+        self._dragging_camera_index: int | None = None
+        self._camera_dragged = False
+
         self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
         self._cameras: List[CameraPosition] = []
@@ -93,6 +96,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._last_mouse_pos = None
         self._left_press_pos = None
         self._dragged_during_press = False
+        self._dragging_camera_index = None
+        self._camera_dragged = False
         self._flags = []
         self._selected_flag = None
         self._cameras = []
@@ -135,11 +140,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             if index < 0 or index >= len(self._cameras):
                 index = None
         self._selected_camera = index
+        self._emit_selected_camera()
+        self.update()
+
+    def _emit_selected_camera(self) -> None:
         selected = None
-        if index is not None:
+        index = self._selected_camera
+        if index is not None and 0 <= index < len(self._cameras):
             selected = self._cameras[index]
         self.selectedCameraChanged.emit(index, selected)
-        self.update()
 
     def load_track(self, track_folder: Path) -> None:
         """Load and render the contents of a track folder."""
@@ -469,6 +478,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 return
 
         if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+            if self._handle_camera_press(event.pos()):
+                event.accept()
+                return
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._left_press_pos = event.pos()
@@ -480,6 +492,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
         handled = False
+        if self._dragging_camera_index is not None:
+            self._update_camera_position(event.pos())
+            event.accept()
+            handled = True
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -509,6 +525,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
         if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+            if self._dragging_camera_index is not None:
+                self._dragging_camera_index = None
+                self._camera_dragged = False
+                event.accept()
+                return
             click_without_drag = not self._dragged_during_press
             self._is_panning = False
             self._last_mouse_pos = None
@@ -563,6 +584,44 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             )
             painter.drawLine(flag_pole)
 
+    def _camera_at_point(self, point: QtCore.QPointF, radius: int = 10) -> int | None:
+        transform = self._current_transform()
+        if not transform:
+            return None
+        scale, offsets = transform
+        for index, cam in enumerate(self._cameras):
+            camera_point = self._map_point(cam.x, cam.y, scale, offsets)
+            if (camera_point - point).manhattanLength() <= radius:
+                return index
+        return None
+
+    def _handle_camera_press(self, point: QtCore.QPointF) -> bool:
+        camera_index = self._camera_at_point(point)
+        if camera_index is None:
+            return False
+        self.set_selected_camera(camera_index)
+        self._dragging_camera_index = camera_index
+        self._camera_dragged = False
+        self._is_panning = False
+        self._dragged_during_press = False
+        return True
+
+    def _update_camera_position(self, point: QtCore.QPointF) -> None:
+        if self._dragging_camera_index is None:
+            return
+        coords = self._map_to_track(point)
+        if coords is None:
+            return
+        index = self._dragging_camera_index
+        if index < 0 or index >= len(self._cameras):
+            return
+        cam = self._cameras[index]
+        cam.x = int(round(coords[0]))
+        cam.y = int(round(coords[1]))
+        self._camera_dragged = True
+        self._emit_selected_camera()
+        self.update()
+
     def _draw_camera_positions(
         self,
         painter: QtGui.QPainter,
@@ -580,17 +639,46 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for index, cam in enumerate(self._cameras):
             point = self._map_point(cam.x, cam.y, scale, offsets)
             color = type_colors.get(cam.camera_type, QtGui.QColor("#ffffff"))
-            radius = 4
-            pen = QtGui.QPen(QtGui.QColor("#111111"))
-            pen.setWidth(1)
-            if index == self._selected_camera:
-                color = QtGui.QColor("#ff4081")
-                pen.setColor(QtGui.QColor("#ff4081"))
-                pen.setWidth(2)
-                radius = 6
-            painter.setPen(pen)
-            painter.setBrush(QtGui.QBrush(color))
-            painter.drawEllipse(point, radius, radius)
+            self._draw_camera_symbol(painter, point, color, index == self._selected_camera)
+
+    def _draw_camera_symbol(
+        self,
+        painter: QtGui.QPainter,
+        center: QtCore.QPointF,
+        base_color: QtGui.QColor,
+        selected: bool,
+    ) -> None:
+        painter.save()
+        painter.translate(center)
+        pen = QtGui.QPen(QtGui.QColor("#111111"))
+        pen.setWidth(1 if not selected else 2)
+        pen.setColor(base_color if not selected else QtGui.QColor("#ff4081"))
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QBrush(base_color))
+
+        body_width = 14
+        body_height = 9
+        lens_radius = 3
+        viewfinder_width = 5
+        viewfinder_height = 4
+
+        body_rect = QtCore.QRectF(
+            -body_width / 2, -body_height / 2, body_width, body_height
+        )
+        painter.drawRoundedRect(body_rect, 2, 2)
+
+        lens_center = QtCore.QPointF(body_width / 2 - lens_radius - 1, 0)
+        painter.drawEllipse(lens_center, lens_radius, lens_radius)
+
+        viewfinder_rect = QtCore.QRectF(
+            -body_width / 2,
+            -body_height / 2 - viewfinder_height + 1,
+            viewfinder_width,
+            viewfinder_height,
+        )
+        painter.drawRoundedRect(viewfinder_rect, 1.5, 1.5)
+
+        painter.restore()
 
     def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
         transform = self._current_transform()
@@ -606,6 +694,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _handle_primary_click(self, point: QtCore.QPointF) -> None:
         transform = self._current_transform()
         if not transform:
+            return
+        camera_index = self._camera_at_point(point)
+        if camera_index is not None:
+            self.set_selected_camera(camera_index)
             return
         flag_index = self._flag_at_point(point)
         if flag_index is not None:
