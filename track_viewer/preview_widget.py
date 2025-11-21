@@ -57,6 +57,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._current_track: Path | None = None
         self._show_center_line = True
         self._show_cameras = True
+        self._track_length: float | None = None
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -109,6 +110,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_camera = None
         self._nearest_centerline_point = None
         self._nearest_centerline_dlong = None
+        self._track_length = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
@@ -130,6 +132,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def center_line_visible(self) -> bool:
         return self._show_center_line
+
+    def track_length(self) -> Optional[int]:
+        return int(self._track_length) if self._track_length is not None else None
 
     def set_show_cameras(self, show: bool) -> None:
         """Enable or disable rendering of track camera overlays."""
@@ -198,6 +203,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
 
         self.trk = trk
+        self._track_length = float(trk.trklength)
         self._cline = cline
         self._surface_mesh = surface_mesh
         sampled, sampled_dlongs, sampled_bounds = self._sample_centerline(trk, cline)

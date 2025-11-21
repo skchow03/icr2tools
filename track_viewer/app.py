@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 
 from icr2_core.cam.helpers import CameraPosition
 from track_viewer.camera_models import CameraViewListing
@@ -36,6 +36,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         super().__init__()
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.setMinimumWidth(220)
+        self._track_length: int | None = None
 
         self._cursor_x = self._create_readonly_field("–")
         self._cursor_y = self._create_readonly_field("–")
@@ -106,6 +107,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         layout.addStretch(1)
         self.setLayout(layout)
+
+    def set_track_length(self, track_length: Optional[int]) -> None:
+        self._track_length = track_length if track_length is not None else None
 
     def update_cursor_position(self, coords: Optional[tuple[float, float]]) -> None:
         if coords is None:
@@ -262,6 +266,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
             | QtWidgets.QAbstractItemView.SelectedClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
         )
+        tree.setItemDelegate(_TvCameraItemDelegate(self))
         tree.currentItemChanged.connect(self._handle_tv_camera_selected)
         return tree
 
@@ -343,6 +348,12 @@ class CoordinateSidebar(QtWidgets.QFrame):
         try:
             new_value = int(text)
         except ValueError:
+            self._restore_tv_value(tree, item, column, entry)
+            return
+
+        if new_value < 0 or (
+            self._track_length is not None and new_value > self._track_length
+        ):
             self._restore_tv_value(tree, item, column, entry)
             return
 
@@ -445,6 +456,25 @@ class CoordinateSidebar(QtWidgets.QFrame):
     @staticmethod
     def _format_value(value: float) -> str:
         return f"{value:.2f}"
+
+
+class _TvCameraItemDelegate(QtWidgets.QStyledItemDelegate):
+    """Limits editing within the TV camera modes table."""
+
+    def __init__(self, sidebar: CoordinateSidebar) -> None:
+        super().__init__(sidebar)
+        self._sidebar = sidebar
+
+    def createEditor(self, parent, option, index):  # type: ignore[override]
+        if index.column() not in (2, 3):
+            return None
+        editor = QtWidgets.QLineEdit(parent)
+        max_dlong = self._sidebar._track_length
+        if max_dlong is not None:
+            editor.setValidator(QtGui.QIntValidator(0, max_dlong, editor))
+        else:
+            editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
+        return editor
 
 
 class TrackViewerWindow(QtWidgets.QMainWindow):
@@ -556,6 +586,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_root = self._tracks_root()
         self._track_list.clear()
         self.visualization_widget.clear()
+        self._sidebar.set_track_length(None)
 
         if not track_root:
             self.app_state.update_tracks([])
@@ -588,14 +619,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         if not current:
             self.visualization_widget.clear()
+            self._sidebar.set_track_length(None)
             return
 
         folder = current.data(QtCore.Qt.UserRole)
         if not isinstance(folder, Path):
             self.visualization_widget.clear("Select a valid track folder.")
+            self._sidebar.set_track_length(None)
             return
 
         self.visualization_widget.load_track(folder)
+        self._sidebar.set_track_length(self.visualization_widget.track_length())
 
     def _toggle_center_line(self, enabled: bool) -> None:
         text = "Hide Center Line" if enabled else "Show Center Line"
