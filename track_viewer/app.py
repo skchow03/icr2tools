@@ -351,9 +351,12 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self._restore_tv_value(tree, item, column, entry)
             return
 
-        if new_value < 0 or (
-            self._track_length is not None and new_value > self._track_length
-        ):
+        if new_value < 0:
+            self._restore_tv_value(tree, item, column, entry)
+            return
+
+        if self._track_length is not None and new_value > self._track_length:
+            self._show_dlong_bounds_error()
             self._restore_tv_value(tree, item, column, entry)
             return
 
@@ -439,6 +442,15 @@ class CoordinateSidebar(QtWidgets.QFrame):
         if start is None and end is None:
             return
         self.cameraDlongsUpdated.emit(camera_index, start, end)
+
+    def _show_dlong_bounds_error(self) -> None:
+        if self._track_length is None:
+            return
+        QtWidgets.QMessageBox.warning(
+            self,
+            "DLONG out of range",
+            f"DLONG cannot exceed the track length of {self._track_length}.",
+        )
 
     def _on_camera_selected(self, index: int) -> None:
         if not self._cameras or index < 0 or index >= len(self._cameras):
