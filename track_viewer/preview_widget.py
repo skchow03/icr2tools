@@ -50,6 +50,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._surface_mesh: List[GroundSurfaceStrip] = []
         self._bounds: Tuple[float, float, float, float] | None = None
         self._sampled_centerline: List[Tuple[float, float]] = []
+        self._sampled_dlongs: List[float] = []
         self._sampled_bounds: Tuple[float, float, float, float] | None = None
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
@@ -74,6 +75,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cameras: List[CameraPosition] = []
         self._camera_views: List[CameraViewListing] = []
         self._selected_camera: int | None = None
+        self._nearest_centerline_point: Tuple[float, float] | None = None
+        self._nearest_centerline_dlong: float | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -84,6 +87,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._surface_mesh = []
         self._bounds = None
         self._sampled_centerline = []
+        self._sampled_dlongs = []
         self._sampled_bounds = None
         self._cached_surface_pixmap = None
         self._pixmap_size = None
@@ -103,6 +107,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cameras = []
         self._camera_views = []
         self._selected_camera = None
+        self._nearest_centerline_point = None
+        self._nearest_centerline_dlong = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
@@ -118,6 +124,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         if self._show_center_line != show:
             self._show_center_line = show
+            if not show:
+                self._set_centerline_projection(None, None)
             self.update()
 
     def center_line_visible(self) -> bool:
@@ -174,8 +182,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self.trk = trk
         self._cline = cline
         self._surface_mesh = surface_mesh
-        sampled, sampled_bounds = self._sample_centerline(trk, cline)
+        sampled, sampled_dlongs, sampled_bounds = self._sample_centerline(trk, cline)
         self._sampled_centerline = sampled
+        self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = sampled_bounds
         self._bounds = self._merge_bounds(bounds, sampled_bounds)
         self._cached_surface_pixmap = None
@@ -300,26 +309,38 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         trk,
         cline: List[Tuple[float, float]],
         step: int = 10000,
-    ) -> Tuple[List[Tuple[float, float]], Tuple[float, float, float, float] | None]:
+    ) -> Tuple[
+        List[Tuple[float, float]],
+        List[float],
+        Tuple[float, float, float, float] | None,
+    ]:
         if not trk or not cline:
-            return [], None
+            return [], [], None
 
         pts: List[Tuple[float, float]] = []
+        dlongs: List[float] = []
         dlong = 0
-        while dlong <= trk.trklength:
+        while dlong < trk.trklength:
             x, y, _ = getxyz(trk, dlong, 0, cline)
             pts.append((x, y))
+            dlongs.append(dlong)
             dlong += step
+
+        if trk.trklength > 0:
+            x, y, _ = getxyz(trk, trk.trklength, 0, cline)
+            pts.append((x, y))
+            dlongs.append(float(trk.trklength))
 
         if pts and pts[0] != pts[-1]:
             pts.append(pts[0])
+            dlongs.append(float(trk.trklength))
 
         bounds = None
         if pts:
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
             bounds = (min(xs), max(xs), min(ys), max(ys))
-        return pts, bounds
+        return pts, dlongs, bounds
 
     def _merge_bounds(
         self, *bounds: Tuple[float, float, float, float] | None
@@ -428,6 +449,21 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
             painter.drawPolyline(QtGui.QPolygonF(points))
 
+        if transform and self._nearest_centerline_point:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            scale, offsets = transform
+            highlight = self._map_point(
+                self._nearest_centerline_point[0],
+                self._nearest_centerline_point[1],
+                scale,
+                offsets,
+            )
+            pen = QtGui.QPen(QtGui.QColor("#ff5252"))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(QtGui.QBrush(QtGui.QColor("#ff5252")))
+            painter.drawEllipse(highlight, 5, 5)
+
         if transform:
             if self._show_cameras:
                 self._draw_camera_positions(painter, transform)
@@ -435,6 +471,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         painter.drawText(12, 20, self._status_message)
+        if self._nearest_centerline_dlong is not None:
+            dlong_text = f"Centerline DLONG: {int(round(self._nearest_centerline_dlong))}"
+            painter.drawText(12, 36, dlong_text)
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._pixmap_size = None
@@ -543,6 +582,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def leaveEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self.cursorPositionChanged.emit(None)
+        self._set_centerline_projection(None, None)
         super().leaveEvent(event)
 
     # ------------------------------------------------------------------
@@ -551,9 +591,89 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _update_cursor_position(self, point: QtCore.QPointF) -> None:
         if not self._surface_mesh or not self._bounds:
             self.cursorPositionChanged.emit(None)
+            self._set_centerline_projection(None, None)
             return
         coords = self._map_to_track(point)
         self.cursorPositionChanged.emit(coords)
+        self._update_centerline_projection(point)
+
+    def _set_centerline_projection(
+        self, point: Tuple[float, float] | None, dlong: float | None
+    ) -> None:
+        if (
+            point == self._nearest_centerline_point
+            and dlong == self._nearest_centerline_dlong
+        ):
+            return
+        self._nearest_centerline_point = point
+        self._nearest_centerline_dlong = dlong
+        self.update()
+
+    def _update_centerline_projection(self, point: QtCore.QPointF | None) -> None:
+        if (
+            point is None
+            or not self._sampled_centerline
+            or not self._sampled_dlongs
+            or not self._show_center_line
+        ):
+            self._set_centerline_projection(None, None)
+            return
+
+        transform = self._current_transform()
+        if not transform or not self.trk:
+            self._set_centerline_projection(None, None)
+            return
+
+        cursor_track = self._map_to_track(point)
+        if cursor_track is None:
+            self._set_centerline_projection(None, None)
+            return
+
+        cursor_x, cursor_y = cursor_track
+        best_point: Tuple[float, float] | None = None
+        best_dlong: float | None = None
+        best_distance_sq = float("inf")
+
+        track_length = float(self.trk.trklength)
+        for index, start in enumerate(self._sampled_centerline):
+            end = self._sampled_centerline[(index + 1) % len(self._sampled_centerline)]
+            start_dlong = self._sampled_dlongs[index]
+            end_dlong = self._sampled_dlongs[(index + 1) % len(self._sampled_dlongs)]
+            dlong_delta = end_dlong - start_dlong
+            if dlong_delta <= 0:
+                dlong_delta += track_length
+
+            sx, sy = start
+            ex, ey = end
+            vx = ex - sx
+            vy = ey - sy
+            if vx == 0 and vy == 0:
+                continue
+            t = ((cursor_x - sx) * vx + (cursor_y - sy) * vy) / (vx * vx + vy * vy)
+            t = max(0.0, min(1.0, t))
+            proj_x = sx + vx * t
+            proj_y = sy + vy * t
+
+            distance_sq = (cursor_x - proj_x) ** 2 + (cursor_y - proj_y) ** 2
+            if distance_sq < best_distance_sq:
+                best_distance_sq = distance_sq
+                projected_dlong = start_dlong + dlong_delta * t
+                if projected_dlong >= track_length:
+                    projected_dlong -= track_length
+                best_point = (proj_x, proj_y)
+                best_dlong = projected_dlong
+
+        scale, offsets = transform
+        if best_point is None:
+            self._set_centerline_projection(None, None)
+            return
+
+        mapped_point = self._map_point(best_point[0], best_point[1], scale, offsets)
+        pixel_distance = (mapped_point - point).manhattanLength()
+        if pixel_distance > 16:
+            self._set_centerline_projection(None, None)
+            return
+        self._set_centerline_projection(best_point, best_dlong)
 
     def _draw_flags(
         self,
