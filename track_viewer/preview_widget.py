@@ -159,6 +159,22 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._emit_selected_camera()
         self.update()
 
+    def update_camera_position(
+        self, camera_index: int, x: Optional[int], y: Optional[int], z: Optional[int]
+    ) -> None:
+        if camera_index < 0 or camera_index >= len(self._cameras):
+            return
+        camera = self._cameras[camera_index]
+        if x is not None:
+            camera.x = int(x)
+        if y is not None:
+            camera.y = int(y)
+        if z is not None:
+            camera.z = int(z)
+        if self._selected_camera == camera_index:
+            self._emit_selected_camera()
+        self.update()
+
     def set_selected_camera(self, index: int | None) -> None:
         if index == self._selected_camera:
             return

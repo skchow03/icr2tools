@@ -31,6 +31,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
     cameraSelectionChanged = QtCore.pyqtSignal(object)
     cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
+    cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -45,6 +46,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._camera_list = QtWidgets.QListWidget()
         self._camera_list.setMinimumHeight(120)
         self._camera_list.currentRowChanged.connect(self._on_camera_selected)
+        self._camera_table = self._create_camera_table()
         self._tv_tabs_label = QtWidgets.QLabel("TV camera modes")
         self._tv_tabs_label.setStyleSheet("font-weight: bold")
         self._tv_tabs = QtWidgets.QTabWidget()
@@ -104,6 +106,11 @@ class CoordinateSidebar(QtWidgets.QFrame):
         layout.addWidget(camera_title)
         layout.addWidget(self._camera_list)
 
+        coords_title = QtWidgets.QLabel("World coordinates")
+        coords_title.setStyleSheet("font-weight: bold")
+        layout.addWidget(coords_title)
+        layout.addWidget(self._camera_table)
+
         layout.addWidget(self._tv_tabs_label)
         layout.addWidget(self._tv_tabs)
 
@@ -144,31 +151,43 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._type6_group.setVisible(False)
         self._camera_list.blockSignals(True)
         self._camera_list.clear()
+        self._camera_table.blockSignals(True)
+        self._camera_table.setRowCount(0)
         if not cameras:
             self._camera_list.addItem("(No cameras found)")
             self._camera_list.setEnabled(False)
+            self._camera_table.setEnabled(False)
             self._camera_details.setText(
                 "This track does not define any camera positions."
             )
             self._camera_list.setCurrentRow(-1)
+            self._camera_table.setCurrentCell(-1, -1)
         else:
             for cam in cameras:
                 label = f"#{cam.index} (type {cam.camera_type})"
                 item = QtWidgets.QListWidgetItem(label)
                 self._camera_list.addItem(item)
+            self._populate_camera_table(cameras)
             self._camera_list.setEnabled(True)
+            self._camera_table.setEnabled(True)
             self._camera_list.setCurrentRow(-1)
+            self._camera_table.setCurrentCell(-1, -1)
             self._camera_details.setText("Select a camera to inspect.")
         self._camera_list.blockSignals(False)
+        self._camera_table.blockSignals(False)
         self._update_tv_camera_tabs(views)
 
     def select_camera(self, index: int | None) -> None:
         self._camera_list.blockSignals(True)
+        self._camera_table.blockSignals(True)
         if index is None:
             self._camera_list.setCurrentRow(-1)
+            self._camera_table.setCurrentCell(-1, -1)
         else:
             self._camera_list.setCurrentRow(index)
+            self._camera_table.setCurrentCell(index, 0)
         self._camera_list.blockSignals(False)
+        self._camera_table.blockSignals(False)
         self._select_tv_camera_item(index)
 
     def update_selected_camera_details(
@@ -188,6 +207,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
             f"Y: {camera.y}",
             f"Z: {camera.z}",
         ]
+
+        self._populate_camera_table_row(index, camera)
+        self._select_camera_table_row(index)
 
         if camera.camera_type == 6 and camera.type6 is not None:
             details.append("Type 6 parameters can be edited below.")
@@ -269,6 +291,24 @@ class CoordinateSidebar(QtWidgets.QFrame):
         tree.currentItemChanged.connect(self._handle_tv_camera_selected)
         return tree
 
+    def _create_camera_table(self) -> QtWidgets.QTableWidget:
+        table = QtWidgets.QTableWidget(0, 5)
+        table.setHorizontalHeaderLabels(["ID", "Type", "X", "Y", "Z"])
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
+        table.setItemDelegate(_CameraCoordinateDelegate(self))
+        table.currentCellChanged.connect(self._handle_camera_table_selection)
+        table.itemChanged.connect(self._handle_camera_table_item_changed)
+        return table
+
     def _create_type6_table(self) -> QtWidgets.QTableWidget:
         table = QtWidgets.QTableWidget(3, 3)
         table.setHorizontalHeaderLabels(["DLONG", "Zoom factor", "Actions"])
@@ -300,6 +340,94 @@ class CoordinateSidebar(QtWidgets.QFrame):
         end_button.clicked.connect(lambda: self._apply_tv_dlong_to_row(2))
         table.setCellWidget(2, 2, end_button)
         return table
+
+    def _populate_camera_table(self, cameras: List[CameraPosition]) -> None:
+        self._camera_table.setRowCount(len(cameras))
+        for row, cam in enumerate(cameras):
+            id_item = QtWidgets.QTableWidgetItem(f"#{cam.index}")
+            id_item.setFlags(id_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            type_item = QtWidgets.QTableWidgetItem(str(cam.camera_type))
+            type_item.setFlags(type_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self._camera_table.setItem(row, 0, id_item)
+            self._camera_table.setItem(row, 1, type_item)
+            for column, value in enumerate((cam.x, cam.y, cam.z), start=2):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+                self._camera_table.setItem(row, column, item)
+
+    def _populate_camera_table_row(
+        self, index: int | None, camera: Optional[CameraPosition]
+    ) -> None:
+        if index is None or camera is None:
+            return
+        if index < 0 or index >= self._camera_table.rowCount():
+            return
+        with QtCore.QSignalBlocker(self._camera_table):
+            for column, value in enumerate((camera.x, camera.y, camera.z), start=2):
+                item = self._camera_table.item(index, column)
+                if item is not None:
+                    item.setText(str(value))
+
+    def _select_camera_table_row(self, index: int | None) -> None:
+        with QtCore.QSignalBlocker(self._camera_table):
+            if index is None:
+                self._camera_table.setCurrentCell(-1, -1)
+            else:
+                self._camera_table.setCurrentCell(index, 0)
+
+    def _restore_camera_table_value(self, row: int, column: int) -> None:
+        if row < 0 or row >= len(self._cameras):
+            return
+        camera = self._cameras[row]
+        if camera is None:
+            return
+        value_map = {2: camera.x, 3: camera.y, 4: camera.z}
+        if column not in value_map:
+            return
+        with QtCore.QSignalBlocker(self._camera_table):
+            item = self._camera_table.item(row, column)
+            if item is not None:
+                item.setText(str(value_map[column]))
+
+    def _handle_camera_table_selection(
+        self, current_row: int, _current_column: int, _prev_row: int, _prev_column: int
+    ) -> None:
+        if current_row < 0:
+            self.cameraSelectionChanged.emit(None)
+            return
+        if current_row >= len(self._cameras):
+            self.cameraSelectionChanged.emit(None)
+            return
+        self.cameraSelectionChanged.emit(current_row)
+
+    def _handle_camera_table_item_changed(
+        self, item: QtWidgets.QTableWidgetItem
+    ) -> None:
+        row = item.row()
+        column = item.column()
+        if column not in (2, 3, 4):
+            return
+        if row < 0 or row >= len(self._cameras):
+            return
+        camera = self._cameras[row]
+        if camera is None:
+            return
+        text = item.text().strip()
+        try:
+            value = int(text)
+        except ValueError:
+            self._restore_camera_table_value(row, column)
+            return
+
+        if column == 2:
+            camera.x = value
+        elif column == 3:
+            camera.y = value
+        else:
+            camera.z = value
+
+        self.update_selected_camera_details(row, camera)
+        self.cameraPositionUpdated.emit(row, camera.x, camera.y, camera.z)
 
     def _populate_type6_table(self, params: Type6CameraParameters) -> None:
         values = [
@@ -650,6 +778,21 @@ class _TvCameraItemDelegate(QtWidgets.QStyledItemDelegate):
         return editor
 
 
+class _CameraCoordinateDelegate(QtWidgets.QStyledItemDelegate):
+    """Provides validation for editable camera coordinate cells."""
+
+    def __init__(self, sidebar: CoordinateSidebar) -> None:
+        super().__init__(sidebar)
+        self._sidebar = sidebar
+
+    def createEditor(self, parent, option, index):  # type: ignore[override]
+        if index.column() not in (2, 3, 4):
+            return None
+        editor = QtWidgets.QLineEdit(parent)
+        editor.setValidator(QtGui.QIntValidator(-2**31, 2**31 - 1, editor))
+        return editor
+
+
 class _Type6ItemDelegate(QtWidgets.QStyledItemDelegate):
     """Limits editing within the Type 6 parameter table."""
 
@@ -703,6 +846,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._sidebar.cameraDlongsUpdated.connect(
             self._handle_camera_dlongs_updated
+        )
+        self._sidebar.cameraPositionUpdated.connect(
+            self._handle_camera_position_updated
         )
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
@@ -832,3 +978,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self, camera_index: int, start: Optional[int], end: Optional[int]
     ) -> None:
         self.visualization_widget.update_camera_dlongs(camera_index, start, end)
+
+    def _handle_camera_position_updated(
+        self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
+    ) -> None:
+        self.visualization_widget.update_camera_position(index, x, y, z)
