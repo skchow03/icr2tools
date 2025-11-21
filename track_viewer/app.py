@@ -481,11 +481,7 @@ class _TvCameraItemDelegate(QtWidgets.QStyledItemDelegate):
         if index.column() not in (2, 3):
             return None
         editor = QtWidgets.QLineEdit(parent)
-        max_dlong = self._sidebar._track_length
-        if max_dlong is not None:
-            editor.setValidator(QtGui.QIntValidator(0, max_dlong, editor))
-        else:
-            editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
+        editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
         return editor
 
 
