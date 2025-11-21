@@ -449,6 +449,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
             painter.drawPolyline(QtGui.QPolygonF(points))
 
+        if transform and self._show_center_line:
+            self._draw_type6_markers(painter, transform)
+
         if transform and self._nearest_centerline_point:
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
             scale, offsets = transform
@@ -760,6 +763,91 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             point = self._map_point(cam.x, cam.y, scale, offsets)
             color = type_colors.get(cam.camera_type, QtGui.QColor("#ffffff"))
             self._draw_camera_symbol(painter, point, color, index == self._selected_camera)
+
+    def _centerline_point_and_normal(
+        self, dlong: float
+    ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        if not self.trk or not self._cline:
+            return None
+        track_length = float(self.trk.trklength)
+        if track_length <= 0:
+            return None
+
+        def _wrap(value: float) -> float:
+            while value < 0:
+                value += track_length
+            while value >= track_length:
+                value -= track_length
+            return value
+
+        base = _wrap(float(dlong))
+        delta = max(50.0, track_length * 0.002)
+        prev_dlong = _wrap(base - delta)
+        next_dlong = _wrap(base + delta)
+
+        px, py, _ = getxyz(self.trk, prev_dlong, 0, self._cline)
+        nx, ny, _ = getxyz(self.trk, next_dlong, 0, self._cline)
+        cx, cy, _ = getxyz(self.trk, base, 0, self._cline)
+
+        vx = nx - px
+        vy = ny - py
+        length = (vx * vx + vy * vy) ** 0.5
+        if length == 0:
+            return None
+        normal = (-vy / length, vx / length)
+        return (cx, cy), normal
+
+    def _draw_perpendicular_bar(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+        dlong: float,
+    ) -> None:
+        mapping = self._centerline_point_and_normal(dlong)
+        if mapping is None:
+            return
+        (cx, cy), (nx, ny) = mapping
+        scale, offsets = transform
+        if scale == 0:
+            return
+
+        half_length_px = 10.0
+        half_length_track = half_length_px / scale
+        start = self._map_point(
+            cx - nx * half_length_track,
+            cy - ny * half_length_track,
+            scale,
+            offsets,
+        )
+        end = self._map_point(
+            cx + nx * half_length_track,
+            cy + ny * half_length_track,
+            scale,
+            offsets,
+        )
+        pen = QtGui.QPen(QtGui.QColor("#ff4081"), 3)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.save()
+        painter.setPen(pen)
+        painter.drawLine(QtCore.QLineF(start, end))
+        painter.restore()
+
+    def _draw_type6_markers(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+    ) -> None:
+        if self._selected_camera is None:
+            return
+        if self._selected_camera < 0 or self._selected_camera >= len(self._cameras):
+            return
+        camera = self._cameras[self._selected_camera]
+        if camera.camera_type != 6 or camera.type6 is None:
+            return
+
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        for dlong in (camera.type6.start_point, camera.type6.end_point):
+            self._draw_perpendicular_bar(painter, transform, float(dlong))
 
     def _draw_camera_symbol(
         self,
