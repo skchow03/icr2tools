@@ -30,6 +30,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
     """Utility sidebar that mirrors cursor, flag and camera details."""
 
     cameraSelectionChanged = QtCore.pyqtSignal(object)
+    cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -50,9 +51,12 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._tv_tabs.setVisible(False)
         self._tv_tabs_label.setVisible(False)
         self._tv_trees: List[QtWidgets.QTreeWidget] = []
+        self._tv_tree_views: Dict[QtWidgets.QTreeWidget, int] = {}
+        self._tv_tree_items: Dict[QtWidgets.QTreeWidget, List[QtWidgets.QTreeWidgetItem]] = {}
         self._tv_camera_items: Dict[
             int, Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]
         ] = {}
+        self._camera_views: List[CameraViewListing] = []
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
         self._camera_details.setTextFormat(QtCore.Qt.RichText)
         self._camera_details.setWordWrap(True)
@@ -123,6 +127,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self, cameras: List[CameraPosition], views: List[CameraViewListing]
     ) -> None:
         self._cameras = cameras
+        self._camera_views = views
         self._camera_list.blockSignals(True)
         self._camera_list.clear()
         if not cameras:
@@ -195,6 +200,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self.select_camera(index)
 
     def _update_tv_camera_tabs(self, views: List[CameraViewListing]) -> None:
+        self._tv_tree_views.clear()
+        self._tv_tree_items.clear()
         while self._tv_tabs.count():
             widget = self._tv_tabs.widget(0)
             self._tv_tabs.removeTab(0)
@@ -208,19 +215,27 @@ class CoordinateSidebar(QtWidgets.QFrame):
             return
         self._tv_tabs_label.setVisible(True)
         self._tv_tabs.setVisible(True)
-        for view in views:
+        for view_index, view in enumerate(views):
             tree = self._create_tv_tree()
-            for entry in view.entries:
-                values = [
-                    f"#{entry.camera_index}",
-                    f"{entry.camera_type}" if entry.camera_type is not None else "–",
-                    self._format_dlong(entry.start_dlong),
-                    self._format_dlong(entry.end_dlong),
-                ]
-                item = QtWidgets.QTreeWidgetItem(values)
-                item.setData(0, QtCore.Qt.UserRole, entry.camera_index)
-                tree.addTopLevelItem(item)
-                self._tv_camera_items.setdefault(entry.camera_index, (tree, item))
+            self._tv_tree_views[tree] = view_index
+            items: List[QtWidgets.QTreeWidgetItem] = []
+            with QtCore.QSignalBlocker(tree):
+                for entry_index, entry in enumerate(view.entries):
+                    values = [
+                        f"#{entry.camera_index}",
+                        f"{entry.camera_type}" if entry.camera_type is not None else "–",
+                        self._format_dlong(entry.start_dlong),
+                        self._format_dlong(entry.end_dlong),
+                    ]
+                    item = QtWidgets.QTreeWidgetItem(values)
+                    item.setData(0, QtCore.Qt.UserRole, entry.camera_index)
+                    item.setData(0, QtCore.Qt.UserRole + 1, view_index)
+                    item.setData(0, QtCore.Qt.UserRole + 2, entry_index)
+                    if entry.camera_type == 6:
+                        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+                    tree.addTopLevelItem(item)
+                    self._tv_camera_items.setdefault(entry.camera_index, (tree, item))
+                    items.append(item)
             container = QtWidgets.QWidget()
             container_layout = QtWidgets.QVBoxLayout()
             container_layout.setContentsMargins(0, 0, 0, 0)
@@ -228,6 +243,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
             container.setLayout(container_layout)
             self._tv_tabs.addTab(container, view.label)
             self._tv_trees.append(tree)
+            self._tv_tree_items[tree] = items
+            tree.itemChanged.connect(self._handle_tv_item_changed)
         self._tv_tabs.setCurrentIndex(0)
 
     def _create_tv_tree(self) -> QtWidgets.QTreeWidget:
@@ -240,6 +257,11 @@ class CoordinateSidebar(QtWidgets.QFrame):
         tree.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         tree.setUniformRowHeights(True)
         tree.setMinimumHeight(120)
+        tree.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
         tree.currentItemChanged.connect(self._handle_tv_camera_selected)
         return tree
 
@@ -288,6 +310,124 @@ class CoordinateSidebar(QtWidgets.QFrame):
         if value is None:
             return "–"
         return f"{value}"
+
+    def _handle_tv_item_changed(
+        self, item: QtWidgets.QTreeWidgetItem, column: int
+    ) -> None:
+        tree = self.sender()
+        if not isinstance(tree, QtWidgets.QTreeWidget):
+            return
+        if column not in (2, 3):
+            return
+
+        view_index = self._tv_tree_views.get(tree)
+        if view_index is None or view_index >= len(self._camera_views):
+            return
+
+        entry_index = item.data(0, QtCore.Qt.UserRole + 2)
+        if entry_index is None:
+            return
+        try:
+            entry_index = int(entry_index)
+        except (TypeError, ValueError):
+            return
+
+        view = self._camera_views[view_index]
+        if entry_index < 0 or entry_index >= len(view.entries):
+            return
+        entry = view.entries[entry_index]
+        if entry.camera_type != 6:
+            return
+
+        text = item.text(column).strip()
+        try:
+            new_value = int(text)
+        except ValueError:
+            self._restore_tv_value(tree, item, column, entry)
+            return
+
+        if column == 2:
+            entry.start_dlong = new_value
+            self._sync_camera_dlong(entry.camera_index, start=new_value, end=None)
+            self._align_previous_camera_end(tree, view_index, entry_index, new_value)
+        elif column == 3:
+            entry.end_dlong = new_value
+            self._sync_camera_dlong(entry.camera_index, start=None, end=new_value)
+            self._align_next_camera_start(tree, view_index, entry_index, new_value)
+        self._refresh_item_text(tree, item, column, new_value)
+
+    def _refresh_item_text(
+        self,
+        tree: QtWidgets.QTreeWidget,
+        item: QtWidgets.QTreeWidgetItem,
+        column: int,
+        value: int,
+    ) -> None:
+        with QtCore.QSignalBlocker(tree):
+            item.setText(column, self._format_dlong(value))
+
+    def _restore_tv_value(
+        self,
+        tree: QtWidgets.QTreeWidget,
+        item: QtWidgets.QTreeWidgetItem,
+        column: int,
+        entry: CameraViewEntry,
+    ) -> None:
+        if column == 2:
+            value = entry.start_dlong
+        else:
+            value = entry.end_dlong
+        with QtCore.QSignalBlocker(tree):
+            item.setText(column, self._format_dlong(value))
+
+    def _align_previous_camera_end(
+        self,
+        tree: QtWidgets.QTreeWidget,
+        view_index: int,
+        entry_index: int,
+        new_start: int,
+    ) -> None:
+        view = self._camera_views[view_index]
+        if not view.entries:
+            return
+        previous_index = (entry_index - 1) % len(view.entries)
+        previous_entry = view.entries[previous_index]
+        previous_entry.end_dlong = new_start
+        items = self._tv_tree_items.get(tree, [])
+        if previous_index < len(items):
+            previous_item = items[previous_index]
+            self._refresh_item_text(tree, previous_item, 3, new_start)
+        self._sync_camera_dlong(
+            previous_entry.camera_index, start=None, end=previous_entry.end_dlong
+        )
+
+    def _align_next_camera_start(
+        self,
+        tree: QtWidgets.QTreeWidget,
+        view_index: int,
+        entry_index: int,
+        new_end: int,
+    ) -> None:
+        view = self._camera_views[view_index]
+        if not view.entries:
+            return
+        next_index = (entry_index + 1) % len(view.entries)
+        next_entry = view.entries[next_index]
+        next_entry.start_dlong = new_end
+        items = self._tv_tree_items.get(tree, [])
+        if next_index < len(items):
+            next_item = items[next_index]
+            self._refresh_item_text(tree, next_item, 2, new_end)
+        self._sync_camera_dlong(
+            next_entry.camera_index, start=next_entry.start_dlong, end=None
+        )
+
+    def _sync_camera_dlong(
+        self, camera_index: int, start: Optional[int], end: Optional[int]
+    ) -> None:
+        if start is None and end is None:
+            return
+        self.cameraDlongsUpdated.emit(camera_index, start, end)
 
     def _on_camera_selected(self, index: int) -> None:
         if not self._cameras or index < 0 or index >= len(self._cameras):
@@ -341,6 +481,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._sidebar.cameraSelectionChanged.connect(
             self._handle_camera_selection_changed
+        )
+        self._sidebar.cameraDlongsUpdated.connect(
+            self._handle_camera_dlongs_updated
         )
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
@@ -461,3 +604,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_camera_selection_changed(self, index: Optional[int]) -> None:
         self.visualization_widget.set_selected_camera(index)
+
+    def _handle_camera_dlongs_updated(
+        self, camera_index: int, start: Optional[int], end: Optional[int]
+    ) -> None:
+        self.visualization_widget.update_camera_dlongs(camera_index, start, end)
