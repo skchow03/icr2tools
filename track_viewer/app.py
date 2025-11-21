@@ -361,7 +361,16 @@ class CoordinateSidebar(QtWidgets.QFrame):
             end_value = int(end_item.text())
         except ValueError:
             return
-        middle_value = (start_value + end_value) // 2
+
+        if self._track_length is not None and start_value > end_value:
+            lap_length = self._track_length
+            if lap_length <= 0:
+                return
+            total_distance = (lap_length - start_value) + end_value
+            midpoint_distance = total_distance // 2
+            middle_value = (start_value + midpoint_distance) % lap_length
+        else:
+            middle_value = (start_value + end_value) // 2
         self._type6_table.item(1, 0).setText(str(middle_value))
 
     def _camera_tv_dlongs(self, camera_index: int) -> tuple[Optional[int], Optional[int]]:
