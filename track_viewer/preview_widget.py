@@ -497,10 +497,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._draw_flags(painter, transform)
 
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
-        painter.drawText(12, 20, self._status_message)
+        y = 20
+        if self._track_length is not None:
+            track_length_text = (
+                f"Track length: {int(round(self._track_length))} DLONG"
+            )
+            painter.drawText(12, y, track_length_text)
+            y += 16
+        painter.drawText(12, y, self._status_message)
+        y += 16
         if self._nearest_centerline_dlong is not None:
             dlong_text = f"Centerline DLONG: {int(round(self._nearest_centerline_dlong))}"
-            painter.drawText(12, 36, dlong_text)
+            painter.drawText(12, y, dlong_text)
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._pixmap_size = None
