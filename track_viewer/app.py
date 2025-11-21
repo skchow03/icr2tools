@@ -54,6 +54,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
             int, Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]
         ] = {}
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
+        self._camera_details.setTextFormat(QtCore.Qt.RichText)
         self._camera_details.setWordWrap(True)
         self._camera_details.setAlignment(QtCore.Qt.AlignTop)
         self._camera_details.setStyleSheet("font-size: 12px")
@@ -166,18 +167,30 @@ class CoordinateSidebar(QtWidgets.QFrame):
             f"Y: {camera.y}",
             f"Z: {camera.z}",
         ]
+
+        details_html = "<br>".join(details)
+
         if camera.camera_type == 6 and camera.type6 is not None:
-            details.extend(
-                [
-                    f"Middle point: {camera.type6.middle_point}",
-                    f"Start point: {camera.type6.start_point}",
-                    f"Start zoom: {camera.type6.start_zoom}",
-                    f"Middle point zoom: {camera.type6.middle_point_zoom}",
-                    f"End point: {camera.type6.end_point}",
-                    f"End zoom: {camera.type6.end_zoom}",
-                ]
+            type6 = camera.type6
+            rows = [
+                ("Start", type6.start_point, type6.start_zoom),
+                ("Middle", type6.middle_point, type6.middle_point_zoom),
+                ("End", type6.end_point, type6.end_zoom),
+            ]
+            table_rows = "".join(
+                f"<tr><td><b>{label}</b></td><td>{dlong}</td><td>{zoom}</td></tr>"
+                for label, dlong, zoom in rows
             )
-        self._camera_details.setText("\n".join(details))
+            type6_table = (
+                "<br><br><b>Type 6 parameters</b>"
+                "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse: collapse;\">"
+                "<tr><th></th><th>DLONG</th><th>Zoom</th></tr>"
+                f"{table_rows}"
+                "</table>"
+            )
+            details_html = f"{details_html}{type6_table}"
+
+        self._camera_details.setText(details_html)
         if index is not None and self._camera_list.currentRow() != index:
             self.select_camera(index)
 
