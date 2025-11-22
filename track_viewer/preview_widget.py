@@ -250,7 +250,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 camera_type=6,
                 start_dlong=start_dlong,
                 end_dlong=end_dlong,
-                mark=None,
+                mark=6,
             ),
         )
         self._renumber_camera_type_indices()
