@@ -110,11 +110,17 @@ class CoordinateSidebar(QtWidgets.QFrame):
         coords_title.setStyleSheet("font-weight: bold")
         layout.addWidget(coords_title)
         layout.addWidget(self._camera_table)
-        layout.addWidget(self._type7_details)
-        layout.addWidget(self._type6_editor)
 
         layout.addStretch(1)
         self.setLayout(layout)
+
+    @property
+    def type6_editor(self) -> Type6Editor:
+        return self._type6_editor
+
+    @property
+    def type7_details(self) -> Type7Details:
+        return self._type7_details
 
     def set_track_length(self, track_length: Optional[int]) -> None:
         self._track_length = track_length if track_length is not None else None
@@ -278,6 +284,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self._sidebar = CoordinateSidebar()
+        left_sidebar = QtWidgets.QFrame()
+        left_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        left_layout = QtWidgets.QVBoxLayout()
+        left_layout.setSpacing(8)
+        track_label = QtWidgets.QLabel("Tracks")
+        track_label.setStyleSheet("font-weight: bold")
+        left_layout.addWidget(track_label)
+        left_layout.addWidget(self._track_list)
+        left_layout.addWidget(self._sidebar.type7_details)
+        left_layout.addWidget(self._sidebar.type6_editor)
+        left_layout.addStretch(1)
+        left_sidebar.setLayout(left_layout)
         self.visualization_widget.cursorPositionChanged.connect(
             self._sidebar.update_cursor_position
         )
@@ -334,10 +352,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
-        body.addWidget(self._track_list)
+        body.addWidget(left_sidebar)
         body.addWidget(self.visualization_widget)
         body.addWidget(self._sidebar)
-        body.setSizes([200, 420, 200])
+        body.setSizes([220, 420, 200])
         layout.addWidget(body, stretch=1)
 
         wrapper = QtWidgets.QWidget()
