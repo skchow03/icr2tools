@@ -24,7 +24,9 @@ class TvModesPanel(QtWidgets.QWidget):
         self._tv_trees: List[QtWidgets.QTreeWidget] = []
         self._tv_tree_views: Dict[QtWidgets.QTreeWidget, int] = {}
         self._tv_tree_items: Dict[QtWidgets.QTreeWidget, List[QtWidgets.QTreeWidgetItem]] = {}
-        self._tv_camera_items: Dict[int, Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]] = {}
+        self._tv_camera_items: Dict[
+            int, List[Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]]
+        ] = {}
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -72,7 +74,9 @@ class TvModesPanel(QtWidgets.QWidget):
                     if entry.camera_type == 6:
                         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
                     tree.addTopLevelItem(item)
-                    self._tv_camera_items.setdefault(entry.camera_index, (tree, item))
+                    self._tv_camera_items.setdefault(entry.camera_index, []).append(
+                        (tree, item)
+                    )
                     items.append(item)
             container = QtWidgets.QWidget()
             container_layout = QtWidgets.QVBoxLayout()
@@ -91,10 +95,23 @@ class TvModesPanel(QtWidgets.QWidget):
             tree.setCurrentItem(None)
         if index is None:
             return
-        tree_item = self._tv_camera_items.get(index)
-        if not tree_item:
+        tree_items = self._tv_camera_items.get(index)
+        if not tree_items:
             return
-        tree, item = tree_item
+        tree: Optional[QtWidgets.QTreeWidget] = None
+        item: Optional[QtWidgets.QTreeWidgetItem] = None
+        tab_index = self._tv_tabs.currentIndex()
+        if 0 <= tab_index < len(self._tv_trees):
+            current_tree = self._tv_trees[tab_index]
+            for candidate_tree, candidate_item in tree_items:
+                if candidate_tree is current_tree:
+                    tree = candidate_tree
+                    item = candidate_item
+                    break
+        if tree is None and tree_items:
+            tree, item = tree_items[0]
+        if tree is None or item is None:
+            return
         with QtCore.QSignalBlocker(tree):
             tree.setCurrentItem(item)
         try:
