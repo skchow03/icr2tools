@@ -1,6 +1,9 @@
 """Embedded surface preview widget for the standalone track viewer."""
 from __future__ import annotations
 
+import datetime
+import shutil
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -13,7 +16,10 @@ from icr2_core.cam.helpers import (
     load_cam_positions_bytes,
     load_scr_segments,
     load_scr_segments_bytes,
+    write_cam_positions,
+    write_scr_segments,
 )
+from icr2_core.dat import packdat, unpackdat
 from icr2_core.dat.unpackdat import extract_file_bytes
 from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.surface_mesh import (
@@ -55,6 +61,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
+        self._camera_source: str | None = None
+        self._dat_path: Path | None = None
         self._show_center_line = True
         self._show_cameras = True
         self._track_length: float | None = None
@@ -93,6 +101,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
+        self._camera_source = None
+        self._dat_path = None
         self._view_center = None
         self._fit_scale = None
         self._current_scale = None
@@ -235,6 +245,30 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self.set_selected_camera(None)
         self.update()
 
+    def save_cameras(self) -> tuple[bool, str]:
+        """Persist the current camera data back to disk."""
+
+        if self._current_track is None:
+            return False, "No track is currently loaded."
+
+        track_name = self._current_track.name
+        cam_path = self._current_track / f"{track_name}.cam"
+        scr_path = self._current_track / f"{track_name}.scr"
+
+        try:
+            self._backup_file(cam_path)
+            self._backup_file(scr_path)
+            write_cam_positions(cam_path, self._cameras)
+            write_scr_segments(scr_path, self._camera_views)
+            if self._camera_source == "dat" and self._dat_path is not None:
+                self._repack_dat(cam_path, scr_path)
+            self._status_message = f"Saved cameras for {track_name}"
+            self.update()
+        except Exception as exc:  # pragma: no cover - interactive feedback
+            return False, f"Failed to save cameras: {exc}"
+
+        return True, "Camera files saved successfully."
+
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
         self._camera_views = []
@@ -250,7 +284,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         scr_path = track_folder / f"{track_name}.scr"
         dat_files = list(track_folder.glob("*.dat"))
         dat_path = dat_files[0] if dat_files else None
+        self._dat_path = dat_path
+        self._camera_source = None
 
+        cam_from_dat = False
         if cam_path.exists():
             try:
                 self._cameras = load_cam_positions(cam_path)
@@ -260,10 +297,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             try:
                 cam_bytes = extract_file_bytes(str(dat_path), f"{track_name}.cam")
                 self._cameras = load_cam_positions_bytes(cam_bytes)
+                cam_from_dat = True
             except Exception:  # pragma: no cover - best effort diagnostics
                 self._cameras = []
 
         segments: List[CameraSegmentRange] = []
+        scr_from_dat = False
         if scr_path.exists():
             try:
                 segments = load_scr_segments(scr_path)
@@ -273,10 +312,53 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             try:
                 scr_bytes = extract_file_bytes(str(dat_path), f"{track_name}.scr")
                 segments = load_scr_segments_bytes(scr_bytes)
+                scr_from_dat = True
             except Exception:  # pragma: no cover - best effort diagnostics
                 segments = []
+        if cam_from_dat and scr_from_dat:
+            self._camera_source = "dat"
+        elif cam_path.exists() or scr_path.exists():
+            self._camera_source = "files"
+        elif dat_path:
+            self._camera_source = "dat"
         self._camera_views = self._build_camera_views(segments)
         self.camerasChanged.emit(self._cameras, self._camera_views)
+
+    def _backup_file(self, path: Path) -> Optional[Path]:
+        if not path.exists():
+            return None
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = path.with_suffix(path.suffix + f".bak.{timestamp}")
+        shutil.copy2(path, backup_path)
+        return backup_path
+
+    def _repack_dat(self, cam_path: Path, scr_path: Path) -> None:
+        if self._dat_path is None:
+            return
+        with tempfile.TemporaryDirectory() as tmpdir:
+            unpackdat.unpackdat(str(self._dat_path), output_folder=tmpdir)
+            packlist_path = Path(tmpdir) / "packlist.txt"
+            if not packlist_path.exists():
+                raise FileNotFoundError("packlist.txt not found when rebuilding DAT")
+            pack_entries = [
+                line.strip() for line in packlist_path.read_text().splitlines() if line.strip()
+            ]
+            cam_entry = next(
+                (name for name in pack_entries if name.lower() == cam_path.name.lower()),
+                cam_path.name,
+            )
+            scr_entry = next(
+                (name for name in pack_entries if name.lower() == scr_path.name.lower()),
+                scr_path.name,
+            )
+            if cam_entry not in pack_entries:
+                pack_entries.append(cam_entry)
+            if scr_entry not in pack_entries:
+                pack_entries.append(scr_entry)
+            packlist_path.write_text("\n".join(pack_entries) + "\n")
+            shutil.copy2(cam_path, Path(tmpdir) / cam_entry)
+            shutil.copy2(scr_path, Path(tmpdir) / scr_entry)
+            packdat.packdat(str(packlist_path), str(self._dat_path), backup=True)
 
     def _build_camera_views(
         self, segments: List[CameraSegmentRange]
@@ -303,7 +385,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     )
                 )
             listings.append(
-                CameraViewListing(label=f"TV{view_index}", entries=view_entries)
+                CameraViewListing(view=view_index, label=f"TV{view_index}", entries=view_entries)
             )
         return listings
 

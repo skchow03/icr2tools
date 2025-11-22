@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
 
-from .binutils import chunk, read_int32_bytes, read_int32_file
+from .binutils import chunk, read_int32_bytes, read_int32_file, write_int32_file
 
 
 @dataclass
@@ -30,6 +30,7 @@ class CameraPosition:
     y: int
     z: int
     type6: Type6CameraParameters | None = None
+    raw_values: tuple[int, ...] | None = None
 
 
 @dataclass
@@ -97,6 +98,7 @@ def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
                     y=row[2],
                     z=row[3],
                     type6=type6_params,
+                    raw_values=tuple(row),
                 )
             )
 
@@ -167,3 +169,57 @@ def load_scr_segments_bytes(data: bytes) -> List[CameraSegmentRange]:
 
     values = read_int32_bytes(data)
     return _parse_scr_segments(values)
+
+
+def _serialize_cam_rows(cameras: Sequence[CameraPosition]) -> List[int]:
+    grouped: dict[int, list[CameraPosition]] = {6: [], 2: [], 7: []}
+    for camera in cameras:
+        grouped.setdefault(camera.camera_type, []).append(camera)
+    values: List[int] = []
+    for camera_type, width in ((6, 9), (2, 9), (7, 12)):
+        entries = sorted(grouped.get(camera_type, []), key=lambda c: c.index)
+        values.append(len(entries))
+        for camera in entries:
+            row = list(camera.raw_values) if camera.raw_values else []
+            if len(row) < width:
+                row.extend([0] * (width - len(row)))
+            row[1:4] = [camera.x, camera.y, camera.z]
+            if camera_type == 6 and camera.type6 is not None:
+                row[0] = camera.type6.middle_point
+                row[4] = camera.type6.start_point
+                row[5] = camera.type6.start_zoom
+                row[6] = camera.type6.middle_point_zoom
+                row[7] = camera.type6.end_point
+                row[8] = camera.type6.end_zoom
+            values.extend(row[:width])
+    return values
+
+
+def write_cam_positions(path: str | Path, cameras: Sequence[CameraPosition]) -> None:
+    """Write camera definitions to a `.cam` file."""
+
+    rows = _serialize_cam_rows(cameras)
+    write_int32_file(_normalize_path(path), rows)
+
+
+def _serialize_scr_segments(views: Sequence["CameraViewListing"]) -> List[int]:
+    if not views:
+        return [0]
+    sorted_views = sorted(views, key=lambda v: v.view)
+    values: List[int] = [len(sorted_views)]
+    values.extend(len(view.entries) for view in sorted_views)
+    for view in sorted_views:
+        for entry in view.entries:
+            mark = entry.mark if entry.mark is not None else 0
+            camera_index = entry.camera_index if entry.camera_index is not None else 0
+            start = entry.start_dlong if entry.start_dlong is not None else 0
+            end = entry.end_dlong if entry.end_dlong is not None else 0
+            values.extend([mark, camera_index, start, end])
+    return values
+
+
+def write_scr_segments(path: str | Path, views: Sequence["CameraViewListing"]) -> None:
+    """Write camera segment mappings to a `.scr` file."""
+
+    rows = _serialize_scr_segments(views)
+    write_int32_file(_normalize_path(path), rows)
