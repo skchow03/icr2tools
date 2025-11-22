@@ -12,6 +12,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import (
     CameraPosition,
     CameraSegmentRange,
+    Type6CameraParameters,
     load_cam_positions,
     load_cam_positions_bytes,
     load_scr_segments,
@@ -196,6 +197,67 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_camera = index
         self._emit_selected_camera()
         self.update()
+
+    def add_type6_camera(self) -> tuple[bool, str]:
+        """Create a new type 6 camera relative to the current selection."""
+
+        if not self._cameras:
+            return False, "No cameras are loaded."
+        if self._selected_camera is None:
+            return False, "Select a camera before adding a new one."
+        view_entry = self._find_camera_entry(self._selected_camera)
+        if view_entry is None:
+            return False, "The selected camera is not part of any TV camera mode."
+
+        view_index, entry_index = view_entry
+        view = self._camera_views[view_index]
+        if not view.entries:
+            return False, "No TV camera entries are available to place the new camera."
+
+        base_camera = self._cameras[self._selected_camera]
+        new_global_index = len(self._cameras)
+        type6_index = sum(1 for cam in self._cameras if cam.camera_type == 6)
+        next_index = (entry_index + 1) % len(view.entries)
+        previous_entry = view.entries[entry_index]
+        next_entry = view.entries[next_index]
+        start_dlong = self._interpolated_dlong(
+            previous_entry.start_dlong, next_entry.start_dlong
+        )
+        end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong)
+        middle_point = self._interpolated_dlong(start_dlong, end_dlong) or 0
+
+        new_camera = CameraPosition(
+            camera_type=6,
+            index=type6_index,
+            x=base_camera.x + 60000,
+            y=base_camera.y + 60000,
+            z=base_camera.z,
+            type6=Type6CameraParameters(
+                middle_point=middle_point,
+                start_point=start_dlong or 0,
+                start_zoom=0,
+                middle_point_zoom=0,
+                end_point=end_dlong or (start_dlong or 0),
+                end_zoom=0,
+            ),
+            raw_values=tuple([0] * 9),
+        )
+        self._cameras.append(new_camera)
+        view.entries.insert(
+            next_index,
+            CameraViewEntry(
+                camera_index=new_global_index,
+                camera_type=6,
+                start_dlong=start_dlong,
+                end_dlong=end_dlong,
+                mark=None,
+            ),
+        )
+        self.set_selected_camera(new_global_index)
+        self.camerasChanged.emit(self._cameras, self._camera_views)
+        self._status_message = f"Added camera #{new_global_index} to {view.label}"
+        self.update()
+        return True, "Type 6 camera added."
 
     def _emit_selected_camera(self) -> None:
         selected = None
@@ -390,6 +452,29 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 CameraViewListing(view=view_index, label=f"TV{view_index}", entries=view_entries)
             )
         return listings
+
+    def _find_camera_entry(self, camera_index: int) -> tuple[int, int] | None:
+        for view_index, view in enumerate(self._camera_views):
+            for entry_index, entry in enumerate(view.entries):
+                if entry.camera_index == camera_index:
+                    return view_index, entry_index
+        return None
+
+    def _interpolated_dlong(
+        self, first: Optional[int], second: Optional[int]
+    ) -> Optional[int]:
+        if first is None and second is None:
+            return None
+        if first is None:
+            return second
+        if second is None:
+            return first
+        if self._track_length:
+            lap_length = int(self._track_length)
+            if lap_length > 0:
+                delta = (second - first) % lap_length
+                return (first + delta // 2) % lap_length
+        return (first + second) // 2
 
     # ------------------------------------------------------------------
     # Painting helpers
