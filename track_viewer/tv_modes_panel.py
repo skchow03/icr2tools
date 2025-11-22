@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from icr2_core.cam.helpers import CameraPosition
+
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 
 
@@ -18,6 +20,7 @@ class TvModesPanel(QtWidgets.QWidget):
         super().__init__(parent)
         self._track_length: Optional[int] = None
         self._views: List[CameraViewListing] = []
+        self._cameras: List[CameraPosition] = []
         self._tv_tabs = QtWidgets.QTabWidget()
         self._tv_tabs.setTabBarAutoHide(True)
         self._tv_tabs.setVisible(False)
@@ -40,8 +43,11 @@ class TvModesPanel(QtWidgets.QWidget):
     def set_track_length(self, length: Optional[int]) -> None:
         self._track_length = length
 
-    def set_views(self, views: List[CameraViewListing]) -> None:
+    def set_views(
+        self, views: List[CameraViewListing], cameras: Optional[List[CameraPosition]] = None
+    ) -> None:
         self._views = views
+        self._cameras = cameras or []
         self._tv_tree_views.clear()
         self._tv_tree_items.clear()
         while self._tv_tabs.count():
@@ -61,10 +67,8 @@ class TvModesPanel(QtWidgets.QWidget):
             items: List[QtWidgets.QTreeWidgetItem] = []
             with QtCore.QSignalBlocker(tree):
                 for entry_index, entry in enumerate(view.entries):
-                    display_index = entry.type_index
                     values = [
-                        f"#{display_index}" if display_index is not None else f"#{entry.camera_index}",
-                        f"{entry.camera_type}" if entry.camera_type is not None else "–",
+                        self._camera_label(entry),
                         self._format_dlong(entry.start_dlong),
                         self._format_dlong(entry.end_dlong),
                     ]
@@ -72,8 +76,7 @@ class TvModesPanel(QtWidgets.QWidget):
                     item.setData(0, QtCore.Qt.UserRole, entry.camera_index)
                     item.setData(0, QtCore.Qt.UserRole + 1, view_index)
                     item.setData(0, QtCore.Qt.UserRole + 2, entry_index)
-                    if entry.camera_type == 6:
-                        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+                    item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
                     tree.addTopLevelItem(item)
                     self._tv_camera_items.setdefault(entry.camera_index, []).append(
                         (tree, item)
@@ -89,6 +92,146 @@ class TvModesPanel(QtWidgets.QWidget):
             self._tv_tree_items[tree] = items
             tree.itemChanged.connect(self._handle_tv_item_changed)
         self._tv_tabs.setCurrentIndex(0)
+
+    def _camera_from_index(self, camera_index: Optional[int]) -> Optional[CameraPosition]:
+        if camera_index is None:
+            return None
+        if camera_index < 0 or camera_index >= len(self._cameras):
+            return None
+        return self._cameras[camera_index]
+
+    @staticmethod
+    def _camera_identifier(camera_type: Optional[int], type_index: Optional[int]) -> str:
+        type_label = f"Type {camera_type}" if camera_type is not None else "Type ?"
+        index_label = f"#{type_index}" if type_index is not None else "#?"
+        return f"{type_label} {index_label}"
+
+    def _camera_label(self, entry: CameraViewEntry) -> str:
+        camera = self._camera_from_index(entry.camera_index)
+        if camera is not None:
+            return self._camera_identifier(camera.camera_type, camera.index)
+        fallback_index = (
+            entry.type_index if entry.type_index is not None else entry.camera_index
+        )
+        return self._camera_identifier(entry.camera_type, fallback_index)
+
+    def _camera_options(self) -> list[tuple[str, int]]:
+        return [
+            (self._camera_identifier(camera.camera_type, camera.index), index)
+            for index, camera in enumerate(self._cameras)
+        ]
+
+    def entry_for_index(self, model_index: QtCore.QModelIndex) -> Optional[CameraViewEntry]:
+        _tree, _item, view_index, entry_index = self._context_for_index(model_index)
+        if view_index is None or entry_index is None:
+            return None
+        if view_index < 0 or view_index >= len(self._views):
+            return None
+        view = self._views[view_index]
+        if entry_index < 0 or entry_index >= len(view.entries):
+            return None
+        return view.entries[entry_index]
+
+    def populate_camera_editor(
+        self, editor: QtWidgets.QComboBox, model_index: QtCore.QModelIndex
+    ) -> None:
+        editor.clear()
+        options = self._camera_options()
+        if not options:
+            editor.setEnabled(False)
+            return
+        for label, camera_index in options:
+            editor.addItem(label, camera_index)
+        editor.setEnabled(True)
+        entry = self.entry_for_index(model_index)
+        if entry is None:
+            return
+        current_row = editor.findData(entry.camera_index)
+        if current_row < 0:
+            current_row = 0
+        editor.setCurrentIndex(current_row)
+
+    def commit_camera_editor(
+        self, editor: QtWidgets.QComboBox, model_index: QtCore.QModelIndex
+    ) -> None:
+        tree, item, view_index, entry_index = self._context_for_index(model_index)
+        if tree is None or item is None or view_index is None or entry_index is None:
+            return
+        camera_data = editor.currentData()
+        if camera_data is None:
+            return
+        try:
+            camera_index = int(camera_data)
+        except (TypeError, ValueError):
+            return
+        self._set_entry_camera(tree, item, view_index, entry_index, camera_index)
+
+    def _context_for_index(
+        self, model_index: QtCore.QModelIndex
+    ) -> tuple[
+        Optional[QtWidgets.QTreeWidget],
+        Optional[QtWidgets.QTreeWidgetItem],
+        Optional[int],
+        Optional[int],
+    ]:
+        model = model_index.model()
+        tree = next((candidate for candidate in self._tv_trees if candidate.model() is model), None)
+        if tree is None:
+            return None, None, None, None
+        item = tree.itemFromIndex(model_index)
+        view_index = self._tv_tree_views.get(tree)
+        entry_index_data = item.data(0, QtCore.Qt.UserRole + 2) if item else None
+        entry_index: Optional[int]
+        if entry_index_data is None:
+            entry_index = None
+        else:
+            try:
+                entry_index = int(entry_index_data)
+            except (TypeError, ValueError):
+                entry_index = None
+        return tree, item, view_index, entry_index
+
+    def _set_entry_camera(
+        self,
+        tree: QtWidgets.QTreeWidget,
+        item: QtWidgets.QTreeWidgetItem,
+        view_index: int,
+        entry_index: int,
+        camera_index: int,
+    ) -> None:
+        if view_index < 0 or view_index >= len(self._views):
+            return
+        view = self._views[view_index]
+        if entry_index < 0 or entry_index >= len(view.entries):
+            return
+        entry = view.entries[entry_index]
+        camera = self._camera_from_index(camera_index)
+        if camera is None:
+            return
+        previous_camera_index = entry.camera_index
+        entry.camera_index = camera_index
+        entry.type_index = camera.index
+        entry.camera_type = camera.camera_type
+        with QtCore.QSignalBlocker(tree):
+            item.setData(0, QtCore.Qt.UserRole, camera_index)
+            item.setText(0, self._camera_label(entry))
+        self._update_camera_item_reference(previous_camera_index, camera_index, tree, item)
+
+    def _update_camera_item_reference(
+        self,
+        previous_camera_index: Optional[int],
+        new_camera_index: int,
+        tree: QtWidgets.QTreeWidget,
+        item: QtWidgets.QTreeWidgetItem,
+    ) -> None:
+        if previous_camera_index is not None:
+            previous_items = self._tv_camera_items.get(previous_camera_index, [])
+            self._tv_camera_items[previous_camera_index] = [
+                pair for pair in previous_items if pair != (tree, item)
+            ]
+            if not self._tv_camera_items[previous_camera_index]:
+                del self._tv_camera_items[previous_camera_index]
+        self._tv_camera_items.setdefault(new_camera_index, []).append((tree, item))
 
     def select_camera(self, index: int | None) -> None:
         for tree in self._tv_trees:
@@ -138,8 +281,8 @@ class TvModesPanel(QtWidgets.QWidget):
 
     def _create_tv_tree(self) -> QtWidgets.QTreeWidget:
         tree = QtWidgets.QTreeWidget()
-        tree.setColumnCount(4)
-        tree.setHeaderLabels(["ID", "Type", "Start", "End"])
+        tree.setColumnCount(3)
+        tree.setHeaderLabels(["Camera", "Start", "End"])
         tree.setRootIsDecorated(False)
         tree.setAlternatingRowColors(True)
         tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -183,7 +326,7 @@ class TvModesPanel(QtWidgets.QWidget):
         tree = self.sender()
         if not isinstance(tree, QtWidgets.QTreeWidget):
             return
-        if column not in (2, 3):
+        if column not in (1, 2):
             return
 
         view_index = self._tv_tree_views.get(tree)
@@ -202,7 +345,10 @@ class TvModesPanel(QtWidgets.QWidget):
         if entry_index < 0 or entry_index >= len(view.entries):
             return
         entry = view.entries[entry_index]
-        if entry.camera_type != 6:
+        if column in (1, 2) and entry.camera_type != 6:
+            return
+
+        if column == 0:
             return
 
         text = item.text(column).strip()
@@ -221,11 +367,11 @@ class TvModesPanel(QtWidgets.QWidget):
             self._restore_tv_value(tree, item, column, entry)
             return
 
-        if column == 2:
+        if column == 1:
             entry.start_dlong = new_value
             self.dlongsUpdated.emit(entry.camera_index, new_value, None)
             self._align_previous_camera_end(tree, view_index, entry_index, new_value)
-        elif column == 3:
+        elif column == 2:
             entry.end_dlong = new_value
             self.dlongsUpdated.emit(entry.camera_index, None, new_value)
             self._align_next_camera_start(tree, view_index, entry_index, new_value)
@@ -237,7 +383,7 @@ class TvModesPanel(QtWidgets.QWidget):
         column: int,
         entry: CameraViewEntry,
     ) -> None:
-        if column == 2:
+        if column == 1:
             value = entry.start_dlong
         else:
             value = entry.end_dlong
@@ -260,7 +406,7 @@ class TvModesPanel(QtWidgets.QWidget):
         items = self._tv_tree_items.get(tree, [])
         if previous_index < len(items):
             previous_item = items[previous_index]
-            self._refresh_item_text(tree, previous_item, 3, new_start)
+            self._refresh_item_text(tree, previous_item, 2, new_start)
         self.dlongsUpdated.emit(previous_entry.camera_index, None, previous_entry.end_dlong)
 
     def _align_next_camera_start(
@@ -279,7 +425,7 @@ class TvModesPanel(QtWidgets.QWidget):
         items = self._tv_tree_items.get(tree, [])
         if next_index < len(items):
             next_item = items[next_index]
-            self._refresh_item_text(tree, next_item, 2, new_end)
+            self._refresh_item_text(tree, next_item, 1, new_end)
         self.dlongsUpdated.emit(next_entry.camera_index, next_entry.start_dlong, None)
 
     def _refresh_item_text(
@@ -316,8 +462,25 @@ class _TvCameraItemDelegate(QtWidgets.QStyledItemDelegate):
         self._panel = panel
 
     def createEditor(self, parent, option, index):  # type: ignore[override]
-        if index.column() not in (2, 3):
-            return None
-        editor = QtWidgets.QLineEdit(parent)
-        editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
-        return editor
+        if index.column() == 0:
+            return QtWidgets.QComboBox(parent)
+        if index.column() in (1, 2):
+            entry = self._panel.entry_for_index(index)
+            if entry is None or entry.camera_type != 6:
+                return None
+            editor = QtWidgets.QLineEdit(parent)
+            editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
+            return editor
+        return None
+
+    def setEditorData(self, editor, index):  # type: ignore[override]
+        if index.column() == 0 and isinstance(editor, QtWidgets.QComboBox):
+            self._panel.populate_camera_editor(editor, index)
+            return
+        super().setEditorData(editor, index)
+
+    def setModelData(self, editor, model, index):  # type: ignore[override]
+        if index.column() == 0 and isinstance(editor, QtWidgets.QComboBox):
+            self._panel.commit_camera_editor(editor, index)
+            return
+        super().setModelData(editor, model, index)

@@ -142,7 +142,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._selected_camera_index = None
         self._camera_table.set_camera(None, None)
         self._type6_editor.set_camera(None, None)
-        self._tv_panel.set_views(views)
+        self._tv_panel.set_views(views, cameras)
         self._camera_list.blockSignals(True)
         self._camera_list.clear()
         if not cameras:
