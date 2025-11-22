@@ -460,6 +460,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     ) -> List[CameraViewListing]:
         if not segments:
             return []
+        type_buckets: dict[int, dict[int, CameraPosition]] = {}
+        for camera in self._cameras:
+            per_type = type_buckets.setdefault(camera.camera_type, {})
+            per_type[camera.index] = camera
         by_view: dict[int, List[CameraSegmentRange]] = {}
         for segment in segments:
             by_view.setdefault(segment.view, []).append(segment)
@@ -475,13 +479,16 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             )
             view_entries: List[CameraViewEntry] = []
             for segment in entries:
-                camera = None
-                if 0 <= segment.camera_id < len(self._cameras):
+                camera_type = segment.mark if segment.mark in (2, 6, 7) else None
+                camera = type_buckets.get(camera_type, {}).get(segment.camera_id)
+                if camera is None and 0 <= segment.camera_id < len(self._cameras):
                     camera = self._cameras[segment.camera_id]
+                    if camera_type is None:
+                        camera_type = camera.camera_type
                 view_entries.append(
                     CameraViewEntry(
                         camera_index=segment.camera_id,
-                        camera_type=camera.camera_type if camera else None,
+                        camera_type=camera_type if camera_type is not None else None,
                         start_dlong=segment.start_dlong,
                         end_dlong=segment.end_dlong,
                         mark=segment.mark,
