@@ -212,6 +212,7 @@ class TvModesPanel(QtWidgets.QWidget):
         entry.camera_index = camera_index
         entry.type_index = camera.index
         entry.camera_type = camera.camera_type
+        entry.mark = camera.camera_type
         with QtCore.QSignalBlocker(tree):
             item.setData(0, QtCore.Qt.UserRole, camera_index)
             item.setText(0, self._camera_label(entry))
