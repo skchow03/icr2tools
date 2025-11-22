@@ -685,6 +685,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawPolyline(QtGui.QPolygonF(points))
 
         if transform and self._show_center_line:
+            self._draw_start_finish_line(painter, transform)
+
+        if transform and self._show_center_line:
             self._draw_camera_range_markers(painter, transform)
 
         if transform and self._nearest_centerline_point:
@@ -1059,6 +1062,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         painter: QtGui.QPainter,
         transform: Tuple[float, Tuple[float, float]],
         dlong: float,
+        *,
+        color: QtGui.QColor | str = "#ff4081",
+        width: float = 3.0,
+        half_length_px: float = 10.0,
     ) -> None:
         mapping = self._centerline_point_and_normal(dlong)
         if mapping is None:
@@ -1068,7 +1075,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if scale == 0:
             return
 
-        half_length_px = 10.0
         half_length_track = half_length_px / scale
         start = self._map_point(
             cx - nx * half_length_track,
@@ -1082,12 +1088,26 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             scale,
             offsets,
         )
-        pen = QtGui.QPen(QtGui.QColor("#ff4081"), 3)
+        pen = QtGui.QPen(QtGui.QColor(color), width)
         pen.setCapStyle(QtCore.Qt.RoundCap)
         painter.save()
         painter.setPen(pen)
         painter.drawLine(QtCore.QLineF(start, end))
         painter.restore()
+
+    def _draw_start_finish_line(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+    ) -> None:
+        self._draw_perpendicular_bar(
+            painter,
+            transform,
+            0.0,
+            color="white",
+            width=3.0,
+            half_length_px=12.0,
+        )
 
     def _camera_view_ranges(self, camera_index: int) -> list[tuple[float, float]]:
         ranges: list[tuple[float, float]] = []
