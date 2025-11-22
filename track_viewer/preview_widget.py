@@ -225,6 +225,16 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong)
         middle_point = self._interpolated_dlong(start_dlong, end_dlong) or 0
 
+        if start_dlong is not None:
+            previous_entry.end_dlong = start_dlong
+        if end_dlong is not None:
+            next_entry.start_dlong = end_dlong
+
+        base_type6 = base_camera.type6
+        start_zoom = base_type6.start_zoom if base_type6 else 0
+        middle_zoom = base_type6.middle_point_zoom if base_type6 else 0
+        end_zoom = base_type6.end_zoom if base_type6 else 0
+
         new_camera = CameraPosition(
             camera_type=6,
             index=0,
@@ -234,10 +244,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             type6=Type6CameraParameters(
                 middle_point=middle_point,
                 start_point=start_dlong or 0,
-                start_zoom=0,
-                middle_point_zoom=0,
+                start_zoom=start_zoom,
+                middle_point_zoom=middle_zoom,
                 end_point=end_dlong or (start_dlong or 0),
-                end_zoom=0,
+                end_zoom=end_zoom,
             ),
             raw_values=tuple([0] * 9),
         )
