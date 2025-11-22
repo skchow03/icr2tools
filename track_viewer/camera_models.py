@@ -10,6 +10,7 @@ class CameraViewEntry:
     """Single camera reference within a TV view listing."""
 
     camera_index: int
+    type_index: Optional[int]
     camera_type: Optional[int]
     start_dlong: Optional[int]
     end_dlong: Optional[int]
