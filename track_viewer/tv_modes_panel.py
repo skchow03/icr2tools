@@ -61,8 +61,9 @@ class TvModesPanel(QtWidgets.QWidget):
             items: List[QtWidgets.QTreeWidgetItem] = []
             with QtCore.QSignalBlocker(tree):
                 for entry_index, entry in enumerate(view.entries):
+                    display_index = entry.type_index
                     values = [
-                        f"#{entry.camera_index}",
+                        f"#{display_index}" if display_index is not None else f"#{entry.camera_index}",
                         f"{entry.camera_type}" if entry.camera_type is not None else "–",
                         self._format_dlong(entry.start_dlong),
                         self._format_dlong(entry.end_dlong),

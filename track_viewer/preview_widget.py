@@ -257,6 +257,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             next_index,
             CameraViewEntry(
                 camera_index=insert_index,
+                type_index=new_camera.index,
                 camera_type=6,
                 start_dlong=start_dlong,
                 end_dlong=end_dlong,
@@ -289,6 +290,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             count = type_counts.get(camera.camera_type, 0)
             camera.index = count
             type_counts[camera.camera_type] = count + 1
+        for view in self._camera_views:
+            for entry in view.entries:
+                if entry.camera_index is None:
+                    continue
+                if entry.camera_index < 0 or entry.camera_index >= len(self._cameras):
+                    continue
+                camera = self._cameras[entry.camera_index]
+                if entry.camera_type is None or entry.camera_type == camera.camera_type:
+                    entry.type_index = camera.index
 
     def _emit_selected_camera(self) -> None:
         selected = None
@@ -460,10 +470,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     ) -> List[CameraViewListing]:
         if not segments:
             return []
-        type_buckets: dict[int, dict[int, CameraPosition]] = {}
-        for camera in self._cameras:
+        type_buckets: dict[int, dict[int, tuple[int, CameraPosition]]] = {}
+        for global_index, camera in enumerate(self._cameras):
             per_type = type_buckets.setdefault(camera.camera_type, {})
-            per_type[camera.index] = camera
+            per_type[camera.index] = (global_index, camera)
         by_view: dict[int, List[CameraSegmentRange]] = {}
         for segment in segments:
             by_view.setdefault(segment.view, []).append(segment)
@@ -480,14 +490,27 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             view_entries: List[CameraViewEntry] = []
             for segment in entries:
                 camera_type = segment.mark if segment.mark in (2, 6, 7) else None
-                camera = type_buckets.get(camera_type, {}).get(segment.camera_id)
-                if camera is None and 0 <= segment.camera_id < len(self._cameras):
-                    camera = self._cameras[segment.camera_id]
+                bucket_entry = type_buckets.get(camera_type, {}).get(segment.camera_id)
+                camera_index = None
+                camera = None
+                if bucket_entry is not None:
+                    camera_index, camera = bucket_entry
+                elif 0 <= segment.camera_id < len(self._cameras):
+                    camera_index = segment.camera_id
+                    camera = self._cameras[camera_index]
                     if camera_type is None:
                         camera_type = camera.camera_type
+                elif type_buckets:
+                    # Try any camera with the requested type index as a last resort
+                    for per_type in type_buckets.values():
+                        candidate = per_type.get(segment.camera_id)
+                        if candidate is not None:
+                            camera_index, camera = candidate
+                            break
                 view_entries.append(
                     CameraViewEntry(
-                        camera_index=segment.camera_id,
+                        camera_index=camera_index if camera_index is not None else segment.camera_id,
+                        type_index=segment.camera_id,
                         camera_type=camera_type if camera_type is not None else None,
                         start_dlong=segment.start_dlong,
                         end_dlong=segment.end_dlong,
