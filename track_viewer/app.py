@@ -838,6 +838,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._center_line_button.toggled.connect(self._toggle_center_line)
         self._toggle_center_line(self._center_line_button.isChecked())
 
+        self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
+        self._save_cameras_button.clicked.connect(self._save_cameras)
+
         self._show_cameras_button = QtWidgets.QPushButton("Show Cameras")
         self._show_cameras_button.setCheckable(True)
         self._show_cameras_button.setChecked(True)
@@ -854,6 +857,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         controls = QtWidgets.QHBoxLayout()
         controls.addStretch(1)
+        controls.addWidget(self._save_cameras_button)
         controls.addWidget(self._center_line_button)
         controls.addWidget(self._show_cameras_button)
         layout.addLayout(controls)
@@ -950,6 +954,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Center Line" if enabled else "Show Center Line"
         self._center_line_button.setText(text)
         self.visualization_widget.set_show_center_line(enabled)
+
+    def _save_cameras(self) -> None:
+        success, message = self.visualization_widget.save_cameras()
+        if success:
+            QtWidgets.QMessageBox.information(self, "Save Cameras", message)
+        else:
+            QtWidgets.QMessageBox.warning(self, "Save Cameras", message)
 
     def _handle_camera_selection_changed(self, index: Optional[int]) -> None:
         self.visualization_widget.set_selected_camera(index)

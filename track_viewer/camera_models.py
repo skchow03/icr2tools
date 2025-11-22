@@ -20,5 +20,6 @@ class CameraViewEntry:
 class CameraViewListing:
     """Collection of camera entries for a specific TV mode."""
 
+    view: int
     label: str
     entries: List[CameraViewEntry]
