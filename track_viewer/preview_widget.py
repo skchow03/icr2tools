@@ -215,8 +215,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return False, "No TV camera entries are available to place the new camera."
 
         base_camera = self._cameras[self._selected_camera]
-        new_global_index = len(self._cameras)
-        type6_index = sum(1 for cam in self._cameras if cam.camera_type == 6)
+        insert_index = self._selected_camera + 1
         next_index = (entry_index + 1) % len(view.entries)
         previous_entry = view.entries[entry_index]
         next_entry = view.entries[next_index]
@@ -228,7 +227,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         new_camera = CameraPosition(
             camera_type=6,
-            index=type6_index,
+            index=0,
             x=base_camera.x + 60000,
             y=base_camera.y + 60000,
             z=base_camera.z,
@@ -242,22 +241,44 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             ),
             raw_values=tuple([0] * 9),
         )
-        self._cameras.append(new_camera)
+
+        insert_index = self._insert_camera_at_index(insert_index, new_camera)
         view.entries.insert(
             next_index,
             CameraViewEntry(
-                camera_index=new_global_index,
+                camera_index=insert_index,
                 camera_type=6,
                 start_dlong=start_dlong,
                 end_dlong=end_dlong,
                 mark=None,
             ),
         )
-        self.set_selected_camera(new_global_index)
+        self._renumber_camera_type_indices()
+        self.set_selected_camera(insert_index)
         self.camerasChanged.emit(self._cameras, self._camera_views)
-        self._status_message = f"Added camera #{new_global_index} to {view.label}"
+        self._status_message = f"Added camera #{insert_index} to {view.label}"
         self.update()
         return True, "Type 6 camera added."
+
+    def _insert_camera_at_index(self, index: int, camera: CameraPosition) -> int:
+        """Insert a camera into the global list and shift references."""
+
+        insert_index = max(0, min(index, len(self._cameras)))
+        self._cameras.insert(insert_index, camera)
+        for view in self._camera_views:
+            for entry in view.entries:
+                if entry.camera_index is not None and entry.camera_index >= insert_index:
+                    entry.camera_index += 1
+        return insert_index
+
+    def _renumber_camera_type_indices(self) -> None:
+        """Ensure per-type camera indices are sequential after edits."""
+
+        type_counts: dict[int, int] = {}
+        for camera in self._cameras:
+            count = type_counts.get(camera.camera_type, 0)
+            camera.index = count
+            type_counts[camera.camera_type] = count + 1
 
     def _emit_selected_camera(self) -> None:
         selected = None
