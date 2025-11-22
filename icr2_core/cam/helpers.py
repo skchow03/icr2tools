@@ -21,6 +21,16 @@ class Type6CameraParameters:
 
 
 @dataclass
+class Type7CameraParameters:
+    """Additional parameters available for type 7 cameras."""
+
+    z_axis_rotation: int
+    vertical_rotation: int
+    tilt: int
+    zoom: int
+
+
+@dataclass
 class CameraPosition:
     """Simple representation of a camera defined inside a CAM file."""
 
@@ -30,6 +40,7 @@ class CameraPosition:
     y: int
     z: int
     type6: Type6CameraParameters | None = None
+    type7: Type7CameraParameters | None = None
     raw_values: tuple[int, ...] | None = None
 
 
@@ -81,6 +92,7 @@ def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
             if len(row) < 4:
                 continue
             type6_params = None
+            type7_params = None
             if camera_type == 6 and len(row) >= 9:
                 type6_params = Type6CameraParameters(
                     middle_point=row[0],
@@ -90,6 +102,13 @@ def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
                     end_point=row[7],
                     end_zoom=row[8],
                 )
+            if camera_type == 7 and len(row) >= 8:
+                type7_params = Type7CameraParameters(
+                    z_axis_rotation=row[4],
+                    vertical_rotation=row[5],
+                    tilt=row[6],
+                    zoom=row[7],
+                )
             positions.append(
                 CameraPosition(
                     camera_type=camera_type,
@@ -98,6 +117,7 @@ def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
                     y=row[2],
                     z=row[3],
                     type6=type6_params,
+                    type7=type7_params,
                     raw_values=tuple(row),
                 )
             )
@@ -191,6 +211,11 @@ def _serialize_cam_rows(cameras: Sequence[CameraPosition]) -> List[int]:
                 row[6] = camera.type6.middle_point_zoom
                 row[7] = camera.type6.end_point
                 row[8] = camera.type6.end_zoom
+            if camera_type == 7 and camera.type7 is not None:
+                row[4] = camera.type7.z_axis_rotation
+                row[5] = camera.type7.vertical_rotation
+                row[6] = camera.type7.tilt
+                row[7] = camera.type7.zoom
             values.extend(row[:width])
     return values
 
