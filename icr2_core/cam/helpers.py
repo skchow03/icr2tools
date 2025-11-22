@@ -235,8 +235,17 @@ def _serialize_scr_segments(views: Sequence["CameraViewListing"]) -> List[int]:
     values.extend(len(view.entries) for view in sorted_views)
     for view in sorted_views:
         for entry in view.entries:
-            mark = entry.mark if entry.mark is not None else 0
-            camera_index = entry.camera_index if entry.camera_index is not None else 0
+            mark = entry.mark
+            if mark is None:
+                mark = entry.camera_type
+            if mark is None:
+                mark = 0
+
+            camera_index = entry.type_index
+            if camera_index is None:
+                camera_index = entry.camera_index
+            if camera_index is None:
+                camera_index = 0
             start = entry.start_dlong if entry.start_dlong is not None else 0
             end = entry.end_dlong if entry.end_dlong is not None else 0
             values.extend([mark, camera_index, start, end])
