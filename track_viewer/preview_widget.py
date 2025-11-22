@@ -86,6 +86,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_camera: int | None = None
         self._nearest_centerline_point: Tuple[float, float] | None = None
         self._nearest_centerline_dlong: float | None = None
+        self._nearest_centerline_elevation: float | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -120,6 +121,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_camera = None
         self._nearest_centerline_point = None
         self._nearest_centerline_dlong = None
+        self._nearest_centerline_elevation = None
         self._track_length = None
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -137,7 +139,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._show_center_line != show:
             self._show_center_line = show
             if not show:
-                self._set_centerline_projection(None, None)
+                self._set_centerline_projection(None, None, None)
             self.update()
 
     def center_line_visible(self) -> bool:
@@ -602,6 +604,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._nearest_centerline_dlong is not None:
             dlong_text = f"Centerline DLONG: {int(round(self._nearest_centerline_dlong))}"
             painter.drawText(12, y, dlong_text)
+            y += 16
+        if self._nearest_centerline_elevation is not None:
+            elevation_text = (
+                f"Elevation: {self._nearest_centerline_elevation:.2f} (DLAT = 0)"
+            )
+            painter.drawText(12, y, elevation_text)
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._pixmap_size = None
@@ -710,7 +718,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def leaveEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self.cursorPositionChanged.emit(None)
-        self._set_centerline_projection(None, None)
+        self._set_centerline_projection(None, None, None)
         super().leaveEvent(event)
 
     # ------------------------------------------------------------------
@@ -719,22 +727,27 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _update_cursor_position(self, point: QtCore.QPointF) -> None:
         if not self._surface_mesh or not self._bounds:
             self.cursorPositionChanged.emit(None)
-            self._set_centerline_projection(None, None)
+            self._set_centerline_projection(None, None, None)
             return
         coords = self._map_to_track(point)
         self.cursorPositionChanged.emit(coords)
         self._update_centerline_projection(point)
 
     def _set_centerline_projection(
-        self, point: Tuple[float, float] | None, dlong: float | None
+        self,
+        point: Tuple[float, float] | None,
+        dlong: float | None,
+        elevation: float | None,
     ) -> None:
         if (
             point == self._nearest_centerline_point
             and dlong == self._nearest_centerline_dlong
+            and elevation == self._nearest_centerline_elevation
         ):
             return
         self._nearest_centerline_point = point
         self._nearest_centerline_dlong = dlong
+        self._nearest_centerline_elevation = elevation
         self.update()
 
     def _update_centerline_projection(self, point: QtCore.QPointF | None) -> None:
@@ -744,17 +757,17 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             or not self._sampled_dlongs
             or not self._show_center_line
         ):
-            self._set_centerline_projection(None, None)
+            self._set_centerline_projection(None, None, None)
             return
 
         transform = self._current_transform()
         if not transform or not self.trk:
-            self._set_centerline_projection(None, None)
+            self._set_centerline_projection(None, None, None)
             return
 
         cursor_track = self._map_to_track(point)
         if cursor_track is None:
-            self._set_centerline_projection(None, None)
+            self._set_centerline_projection(None, None, None)
             return
 
         cursor_x, cursor_y = cursor_track
@@ -793,15 +806,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         scale, offsets = transform
         if best_point is None:
-            self._set_centerline_projection(None, None)
+            self._set_centerline_projection(None, None, None)
             return
 
         mapped_point = self._map_point(best_point[0], best_point[1], scale, offsets)
         pixel_distance = (mapped_point - point).manhattanLength()
         if pixel_distance > 16:
-            self._set_centerline_projection(None, None)
+            self._set_centerline_projection(None, None, None)
             return
-        self._set_centerline_projection(best_point, best_dlong)
+        elevation = None
+        if best_dlong is not None and self._cline:
+            _, _, elevation = getxyz(self.trk, float(best_dlong), 0, self._cline)
+        self._set_centerline_projection(best_point, best_dlong, elevation)
 
     def _draw_flags(
         self,
