@@ -30,6 +30,7 @@ class Type7Details(QtWidgets.QGroupBox):
 
         self.setLayout(layout)
         self.setEnabled(False)
+        self.setVisible(False)
 
     def set_camera(
         self, index: Optional[int], camera: Optional[CameraPosition]
@@ -38,6 +39,7 @@ class Type7Details(QtWidgets.QGroupBox):
         if camera is None or camera.camera_type != 7 or camera.type7 is None:
             self._clear_fields()
             self.setEnabled(False)
+            self.setVisible(False)
             return
 
         params = camera.type7
@@ -46,6 +48,7 @@ class Type7Details(QtWidgets.QGroupBox):
         self._tilt.setText(str(params.tilt))
         self._zoom.setText(str(params.zoom))
         self.setEnabled(True)
+        self.setVisible(True)
 
     def _clear_fields(self) -> None:
         for field in (self._z_rotation, self._vertical_rotation, self._tilt, self._zoom):
