@@ -12,6 +12,7 @@ from track_viewer.camera_table import CameraCoordinateTable
 from track_viewer.preview_widget import TrackPreviewWidget
 from track_viewer.tv_modes_panel import TvModesPanel
 from track_viewer.type6_editor import Type6Editor
+from track_viewer.type7_details import Type7Details
 
 
 class TrackViewerApp(QtWidgets.QApplication):
@@ -57,6 +58,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._camera_details.setAlignment(QtCore.Qt.AlignTop)
         self._camera_details.setStyleSheet("font-size: 12px")
         self._type6_editor = Type6Editor()
+        self._type7_details = Type7Details()
         self._cameras: List[CameraPosition] = []
         self._selected_camera_index: int | None = None
 
@@ -108,6 +110,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         coords_title.setStyleSheet("font-weight: bold")
         layout.addWidget(coords_title)
         layout.addWidget(self._camera_table)
+        layout.addWidget(self._type7_details)
         layout.addWidget(self._type6_editor)
 
         layout.addStretch(1)
@@ -142,6 +145,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._selected_camera_index = None
         self._camera_table.set_camera(None, None)
         self._type6_editor.set_camera(None, None)
+        self._type7_details.set_camera(None, None)
         self._tv_panel.set_views(views, cameras)
         self._camera_list.blockSignals(True)
         self._camera_list.clear()
@@ -181,6 +185,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self._selected_camera_index = None
             self._camera_table.set_camera(None, None)
             self._type6_editor.set_camera(None, None)
+            self._type7_details.set_camera(None, None)
             if index is None:
                 self.select_camera(None)
             return
@@ -194,6 +199,21 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self._type6_editor.set_camera(index, camera)
         else:
             self._type6_editor.set_camera(None, None)
+
+        if camera.camera_type == 7 and camera.type7 is not None:
+            params = camera.type7
+            details.append("Type 7 parameters:")
+            details.append(
+                "Z-axis rotation: {0}, vertical rotation: {1}, tilt: {2}, zoom: {3}".format(
+                    params.z_axis_rotation,
+                    params.vertical_rotation,
+                    params.tilt,
+                    params.zoom,
+                )
+            )
+            self._type7_details.set_camera(index, camera)
+        else:
+            self._type7_details.set_camera(None, None)
 
         self._camera_details.setText("<br>".join(details))
         if index is not None and self._camera_list.currentRow() != index:
