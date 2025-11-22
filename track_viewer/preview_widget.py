@@ -464,7 +464,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for segment in segments:
             by_view.setdefault(segment.view, []).append(segment)
         listings: List[CameraViewListing] = []
-        for view_index, entries in by_view.items():
+        for view_index in sorted(by_view):
+            entries = sorted(
+                by_view[view_index],
+                key=lambda segment: (
+                    segment.start_dlong,
+                    segment.end_dlong,
+                    segment.camera_id,
+                ),
+            )
             view_entries: List[CameraViewEntry] = []
             for segment in entries:
                 camera = None
