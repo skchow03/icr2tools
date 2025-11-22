@@ -211,6 +211,14 @@ class CoordinateSidebar(QtWidgets.QFrame):
                     params.zoom,
                 )
             )
+            details.append(
+                "Unknowns: {0}, {1}, {2}, {3}".format(
+                    params.unknown1,
+                    params.unknown2,
+                    params.unknown3,
+                    params.unknown4,
+                )
+            )
             self._type7_details.set_camera(index, camera)
         else:
             self._type7_details.set_camera(None, None)

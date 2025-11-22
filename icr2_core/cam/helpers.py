@@ -28,6 +28,10 @@ class Type7CameraParameters:
     vertical_rotation: int
     tilt: int
     zoom: int
+    unknown1: int
+    unknown2: int
+    unknown3: int
+    unknown4: int
 
 
 @dataclass
@@ -108,6 +112,10 @@ def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
                     vertical_rotation=row[5],
                     tilt=row[6],
                     zoom=row[7],
+                    unknown1=row[8] if len(row) > 8 else 0,
+                    unknown2=row[9] if len(row) > 9 else 0,
+                    unknown3=row[10] if len(row) > 10 else 0,
+                    unknown4=row[11] if len(row) > 11 else 0,
                 )
             positions.append(
                 CameraPosition(
@@ -216,6 +224,10 @@ def _serialize_cam_rows(cameras: Sequence[CameraPosition]) -> List[int]:
                 row[5] = camera.type7.vertical_rotation
                 row[6] = camera.type7.tilt
                 row[7] = camera.type7.zoom
+                row[8] = camera.type7.unknown1
+                row[9] = camera.type7.unknown2
+                row[10] = camera.type7.unknown3
+                row[11] = camera.type7.unknown4
             values.extend(row[:width])
     return values
 
