@@ -1281,7 +1281,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
 
         angle_scale = math.pi / 2147483648
-        angle = -camera.type7.z_axis_rotation * angle_scale
+        angle = camera.type7.z_axis_rotation * angle_scale
         direction = QtCore.QPointF(math.cos(angle), math.sin(angle))
 
         line_length_px = 18.0
