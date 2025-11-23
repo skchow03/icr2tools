@@ -14,18 +14,19 @@ class Type7Details(QtWidgets.QGroupBox):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__("Type 7 parameters", parent)
         self._camera: Optional[CameraPosition] = None
+        self._field_attrs: dict[QtWidgets.QLineEdit, str] = {}
 
         layout = QtWidgets.QFormLayout()
         layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
 
-        self._z_rotation = self._create_readonly_field()
-        self._vertical_rotation = self._create_readonly_field()
-        self._tilt = self._create_readonly_field()
-        self._zoom = self._create_readonly_field()
-        self._unknown1 = self._create_integer_field()
-        self._unknown2 = self._create_integer_field()
-        self._unknown3 = self._create_integer_field()
-        self._unknown4 = self._create_integer_field()
+        self._z_rotation = self._create_integer_field("z_axis_rotation")
+        self._vertical_rotation = self._create_integer_field("vertical_rotation")
+        self._tilt = self._create_integer_field("tilt")
+        self._zoom = self._create_integer_field("zoom")
+        self._unknown1 = self._create_integer_field("unknown1")
+        self._unknown2 = self._create_integer_field("unknown2")
+        self._unknown3 = self._create_integer_field("unknown3")
+        self._unknown4 = self._create_integer_field("unknown4")
 
         layout.addRow("Z-axis rotation", self._z_rotation)
         layout.addRow("Vertical rotation", self._vertical_rotation)
@@ -51,49 +52,27 @@ class Type7Details(QtWidgets.QGroupBox):
             return
 
         params = camera.type7
-        self._z_rotation.setText(str(params.z_axis_rotation))
-        self._vertical_rotation.setText(str(params.vertical_rotation))
-        self._tilt.setText(str(params.tilt))
-        self._zoom.setText(str(params.zoom))
-        for field, value in (
-            (self._unknown1, params.unknown1),
-            (self._unknown2, params.unknown2),
-            (self._unknown3, params.unknown3),
-            (self._unknown4, params.unknown4),
-        ):
+        for field, attr in self._field_attrs.items():
+            value = getattr(params, attr)
             with QtCore.QSignalBlocker(field):
                 field.setText(str(value))
         self.setEnabled(True)
         self.setVisible(True)
 
     def _clear_fields(self) -> None:
-        for field in (
-            self._z_rotation,
-            self._vertical_rotation,
-            self._tilt,
-            self._zoom,
-            self._unknown1,
-            self._unknown2,
-            self._unknown3,
-            self._unknown4,
-        ):
+        for field in self._field_attrs:
             field.clear()
 
-    def _create_readonly_field(self) -> QtWidgets.QLineEdit:
-        field = QtWidgets.QLineEdit()
-        field.setReadOnly(True)
-        field.setFocusPolicy(QtCore.Qt.ClickFocus)
-        return field
-
-    def _create_integer_field(self) -> QtWidgets.QLineEdit:
+    def _create_integer_field(self, attr: str) -> QtWidgets.QLineEdit:
         field = QtWidgets.QLineEdit()
         field.setValidator(QtGui.QIntValidator(-2**31, 2**31 - 1, field))
         field.editingFinished.connect(
-            lambda f=field: self._handle_unknown_changed(f)
+            lambda f=field, a=attr: self._handle_field_changed(f, a)
         )
+        self._field_attrs[field] = attr
         return field
 
-    def _handle_unknown_changed(self, field: QtWidgets.QLineEdit) -> None:
+    def _handle_field_changed(self, field: QtWidgets.QLineEdit, attr: str) -> None:
         if self._camera is None or self._camera.type7 is None:
             return
 
@@ -101,31 +80,17 @@ class Type7Details(QtWidgets.QGroupBox):
         try:
             value = int(text)
         except ValueError:
-            self._restore_unknown_field(field)
+            self._restore_field(field, attr)
             return
 
-        attr_map = {
-            self._unknown1: "unknown1",
-            self._unknown2: "unknown2",
-            self._unknown3: "unknown3",
-            self._unknown4: "unknown4",
-        }
-        attr = attr_map.get(field)
-        if attr is None:
-            return
         setattr(self._camera.type7, attr, value)
 
-    def _restore_unknown_field(self, field: QtWidgets.QLineEdit) -> None:
+    def _restore_field(self, field: QtWidgets.QLineEdit, attr: str) -> None:
         if self._camera is None or self._camera.type7 is None:
             field.clear()
             return
-        attr_map = {
-            self._unknown1: self._camera.type7.unknown1,
-            self._unknown2: self._camera.type7.unknown2,
-            self._unknown3: self._camera.type7.unknown3,
-            self._unknown4: self._camera.type7.unknown4,
-        }
-        value = attr_map.get(field)
+        params = self._camera.type7
+        value = getattr(params, attr, None)
         if value is None:
             return
         with QtCore.QSignalBlocker(field):
