@@ -1267,10 +1267,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if scale == 0 or camera.type7 is None:
             return
 
-        angle = -math.radians(camera.type7.z_axis_rotation)
+        angle_scale = math.pi / 2147483648
+        angle = -camera.type7.z_axis_rotation * angle_scale
         direction = QtCore.QPointF(math.cos(angle), math.sin(angle))
 
-        line_length_px = 12.0
+        line_length_px = 18.0
         line_length_track = line_length_px / scale
 
         end = self._map_point(
