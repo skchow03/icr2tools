@@ -90,6 +90,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_point: Tuple[float, float] | None = None
         self._nearest_centerline_dlong: float | None = None
         self._nearest_centerline_elevation: float | None = None
+        self._camera_files_from_dat = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -126,6 +127,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_dlong = None
         self._nearest_centerline_elevation = None
         self._track_length = None
+        self._camera_files_from_dat = False
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
@@ -441,6 +443,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             write_scr_segments(scr_path, self._camera_views)
             if self._camera_source == "dat" and self._dat_path is not None:
                 self._repack_dat(cam_path, scr_path)
+                if self._camera_files_from_dat:
+                    if cam_path.exists():
+                        cam_path.unlink()
+                    if scr_path.exists():
+                        scr_path.unlink()
             self._status_message = f"Saved cameras for {track_name}"
             self.update()
         except Exception as exc:  # pragma: no cover - interactive feedback
@@ -451,6 +458,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
         self._camera_views = []
+        self._camera_files_from_dat = False
         if not track_folder:
             self.camerasChanged.emit([], [])
             return
@@ -467,6 +475,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._camera_source = None
 
         cam_from_dat = False
+        cam_on_disk = cam_path.exists()
         if cam_path.exists():
             try:
                 self._cameras = load_cam_positions(cam_path)
@@ -482,6 +491,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         segments: List[CameraSegmentRange] = []
         scr_from_dat = False
+        scr_on_disk = scr_path.exists()
         if scr_path.exists():
             try:
                 segments = load_scr_segments(scr_path)
@@ -496,10 +506,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 segments = []
         if cam_from_dat and scr_from_dat:
             self._camera_source = "dat"
+            self._camera_files_from_dat = not cam_on_disk and not scr_on_disk
         elif cam_path.exists() or scr_path.exists():
             self._camera_source = "files"
+            self._camera_files_from_dat = False
         elif dat_path:
             self._camera_source = "dat"
+            self._camera_files_from_dat = True
         self._camera_views = self._build_camera_views(segments)
         self.camerasChanged.emit(self._cameras, self._camera_views)
 
