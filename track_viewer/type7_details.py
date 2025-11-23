@@ -11,6 +11,8 @@ from icr2_core.cam.helpers import CameraPosition
 class Type7Details(QtWidgets.QGroupBox):
     """Displays Type 7 parameters and allows editing of extra fields."""
 
+    parametersChanged = QtCore.pyqtSignal()
+
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__("Type 7 parameters", parent)
         self._camera: Optional[CameraPosition] = None
@@ -107,6 +109,7 @@ class Type7Details(QtWidgets.QGroupBox):
         slider = self._controls[attr][1]
         with QtCore.QSignalBlocker(slider):
             slider.setValue(value)
+        self.parametersChanged.emit()
 
     def _handle_slider_changed(self, value: int, attr: str) -> None:
         if self._camera is None or self._camera.type7 is None:
@@ -115,6 +118,7 @@ class Type7Details(QtWidgets.QGroupBox):
         field = self._controls[attr][0]
         with QtCore.QSignalBlocker(field):
             field.setText(str(value))
+        self.parametersChanged.emit()
 
     def _restore_field(self, field: QtWidgets.QLineEdit, attr: str) -> None:
         if self._camera is None or self._camera.type7 is None:

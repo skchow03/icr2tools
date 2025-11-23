@@ -306,6 +306,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.selectedCameraChanged.connect(
             self._sidebar.update_selected_camera_details
         )
+        self._sidebar.type7_details.parametersChanged.connect(
+            self.visualization_widget.update
+        )
         self._sidebar.cameraSelectionChanged.connect(
             self._handle_camera_selection_changed
         )
