@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 import shutil
 import tempfile
 from pathlib import Path
@@ -1133,6 +1134,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for index, cam in enumerate(self._cameras):
             point = self._map_point(cam.x, cam.y, scale, offsets)
             color = type_colors.get(cam.camera_type, QtGui.QColor("#ffffff"))
+            if cam.camera_type == 7 and cam.type7 is not None:
+                self._draw_camera_orientation(
+                    painter, cam, point, scale, offsets, color
+                )
             self._draw_camera_symbol(painter, point, color, index == self._selected_camera)
 
     def _centerline_point_and_normal(
@@ -1249,6 +1254,40 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for start_dlong, end_dlong in ranges:
             self._draw_perpendicular_bar(painter, transform, float(start_dlong))
             self._draw_perpendicular_bar(painter, transform, float(end_dlong))
+
+    def _draw_camera_orientation(
+        self,
+        painter: QtGui.QPainter,
+        camera: CameraPosition,
+        center: QtCore.QPointF,
+        scale: float,
+        offsets: Tuple[float, float],
+        base_color: QtGui.QColor,
+    ) -> None:
+        if scale == 0 or camera.type7 is None:
+            return
+
+        angle = -math.radians(camera.type7.z_axis_rotation)
+        direction = QtCore.QPointF(math.cos(angle), math.sin(angle))
+
+        line_length_px = 12.0
+        line_length_track = line_length_px / scale
+
+        end = self._map_point(
+            camera.x + direction.x() * line_length_track,
+            camera.y + direction.y() * line_length_track,
+            scale,
+            offsets,
+        )
+
+        pen = QtGui.QPen(QtGui.QColor(base_color))
+        pen.setWidth(2)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+
+        painter.save()
+        painter.setPen(pen)
+        painter.drawLine(QtCore.QLineF(center, end))
+        painter.restore()
 
     def _draw_camera_symbol(
         self,
