@@ -346,7 +346,9 @@ class TvModesPanel(QtWidgets.QWidget):
         if entry_index < 0 or entry_index >= len(view.entries):
             return
         entry = view.entries[entry_index]
-        if column in (1, 2) and entry.camera_type != 6:
+        editable_types = {2, 6, 7}
+
+        if column in (1, 2) and entry.camera_type not in editable_types:
             return
 
         if column == 0:
@@ -467,7 +469,7 @@ class _TvCameraItemDelegate(QtWidgets.QStyledItemDelegate):
             return QtWidgets.QComboBox(parent)
         if index.column() in (1, 2):
             entry = self._panel.entry_for_index(index)
-            if entry is None or entry.camera_type != 6:
+            if entry is None or entry.camera_type not in {2, 6, 7}:
                 return None
             editor = QtWidgets.QLineEdit(parent)
             editor.setValidator(QtGui.QIntValidator(0, 2**31 - 1, editor))
