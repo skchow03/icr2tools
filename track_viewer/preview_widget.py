@@ -13,6 +13,7 @@ from icr2_core.cam.helpers import (
     CameraPosition,
     CameraSegmentRange,
     Type6CameraParameters,
+    Type7CameraParameters,
     load_cam_positions,
     load_cam_positions_bytes,
     load_scr_segments,
@@ -270,6 +271,78 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._status_message = f"Added camera #{insert_index} to {view.label}"
         self.update()
         return True, "Type 6 camera added."
+
+    def add_type7_camera(self) -> tuple[bool, str]:
+        """Create a new type 7 camera relative to the current selection."""
+
+        if not self._cameras:
+            return False, "No cameras are loaded."
+        if self._selected_camera is None:
+            return False, "Select a camera before adding a new one."
+        view_entry = self._find_camera_entry(self._selected_camera)
+        if view_entry is None:
+            return False, "The selected camera is not part of any TV camera mode."
+
+        view_index, entry_index = view_entry
+        view = self._camera_views[view_index]
+        if not view.entries:
+            return False, "No TV camera entries are available to place the new camera."
+
+        base_camera = self._cameras[self._selected_camera]
+        insert_index = self._selected_camera + 1
+        next_index = (entry_index + 1) % len(view.entries)
+        previous_entry = view.entries[entry_index]
+        next_entry = view.entries[next_index]
+        start_dlong = self._interpolated_dlong(
+            previous_entry.start_dlong, next_entry.start_dlong
+        )
+        end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong)
+
+        if start_dlong is not None:
+            previous_entry.end_dlong = start_dlong
+        if end_dlong is not None:
+            next_entry.start_dlong = end_dlong
+
+        base_type7 = base_camera.type7
+        new_type7 = Type7CameraParameters(
+            z_axis_rotation=base_type7.z_axis_rotation if base_type7 else 0,
+            vertical_rotation=base_type7.vertical_rotation if base_type7 else 0,
+            tilt=base_type7.tilt if base_type7 else 0,
+            zoom=base_type7.zoom if base_type7 else 0,
+            unknown1=base_type7.unknown1 if base_type7 else 0,
+            unknown2=base_type7.unknown2 if base_type7 else 0,
+            unknown3=base_type7.unknown3 if base_type7 else 0,
+            unknown4=base_type7.unknown4 if base_type7 else 0,
+        )
+
+        new_camera = CameraPosition(
+            camera_type=7,
+            index=0,
+            x=base_camera.x + 60000,
+            y=base_camera.y + 60000,
+            z=base_camera.z,
+            type7=new_type7,
+            raw_values=tuple([0] * 12),
+        )
+
+        insert_index = self._insert_camera_at_index(insert_index, new_camera)
+        view.entries.insert(
+            next_index,
+            CameraViewEntry(
+                camera_index=insert_index,
+                type_index=new_camera.index,
+                camera_type=7,
+                start_dlong=start_dlong,
+                end_dlong=end_dlong,
+                mark=7,
+            ),
+        )
+        self._renumber_camera_type_indices()
+        self.set_selected_camera(insert_index)
+        self.camerasChanged.emit(self._cameras, self._camera_views)
+        self._status_message = f"Added camera #{insert_index} to {view.label}"
+        self.update()
+        return True, "Type 7 camera added."
 
     def _insert_camera_at_index(self, index: int, camera: CameraPosition) -> int:
         """Insert a camera into the global list and shift references."""
