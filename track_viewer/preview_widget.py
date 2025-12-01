@@ -87,6 +87,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_flag: int | None = None
         self._cameras: List[CameraPosition] = []
         self._camera_views: List[CameraViewListing] = []
+        self._archived_camera_views: List[CameraViewListing] = []
         self._selected_camera: int | None = None
         self._nearest_centerline_point: Tuple[float, float] | None = None
         self._nearest_centerline_dlong: float | None = None
@@ -123,6 +124,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_flag = None
         self._cameras = []
         self._camera_views = []
+        self._archived_camera_views = []
         self._selected_camera = None
         self._nearest_centerline_point = None
         self._nearest_centerline_dlong = None
@@ -148,26 +150,35 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
 
         if clamped_count == 1:
+            if len(self._camera_views) > 1:
+                self._archived_camera_views = self._camera_views[1:]
             self._camera_views = self._camera_views[:1]
         elif clamped_count == 2:
             if len(self._camera_views) > 2:
                 self._camera_views = self._camera_views[:2]
+                self._archived_camera_views = []
             elif len(self._camera_views) == 1:
-                source_view = self._camera_views[0]
-                copied_entries = [
-                    CameraViewEntry(
-                        camera_index=entry.camera_index,
-                        type_index=entry.type_index,
-                        camera_type=entry.camera_type,
-                        start_dlong=entry.start_dlong,
-                        end_dlong=entry.end_dlong,
-                        mark=entry.mark,
+                restored_view = None
+                if self._archived_camera_views:
+                    restored_view = self._archived_camera_views.pop(0)
+                if restored_view is not None:
+                    self._camera_views.append(restored_view)
+                else:
+                    source_view = self._camera_views[0]
+                    copied_entries = [
+                        CameraViewEntry(
+                            camera_index=entry.camera_index,
+                            type_index=entry.type_index,
+                            camera_type=entry.camera_type,
+                            start_dlong=entry.start_dlong,
+                            end_dlong=entry.end_dlong,
+                            mark=entry.mark,
+                        )
+                        for entry in source_view.entries
+                    ]
+                    self._camera_views.append(
+                        CameraViewListing(view=2, label="TV2", entries=copied_entries)
                     )
-                    for entry in source_view.entries
-                ]
-                self._camera_views.append(
-                    CameraViewListing(view=2, label="TV2", entries=copied_entries)
-                )
 
         for index, view in enumerate(self._camera_views, start=1):
             view.view = index
@@ -500,6 +511,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
         self._camera_views = []
+        self._archived_camera_views = []
         self._camera_files_from_dat = False
         self._tv_mode_count = 0
         if not track_folder:
