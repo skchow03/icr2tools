@@ -1,18 +1,11 @@
 """
 reader.py
 
-MemoryReader: translates raw memory (via ICR2Memory) to a RaceState (model.RaceState).
-All parsing/mapping logic lives here; no UI code in this module.
-
-Updated to compute last_lap_ms from per-car clock fields:
-    last_lap_ms = (clock_end_field23 - clock_start_field22) & 0xFFFFFFFF
-This handles unsigned wrap correctly and avoids using field 33 (which is personal-best).
-
-Now also reads field 24 (laps_down) to show how many laps behind the leader each car is.
-Now also reads field 37 (car_status) to detect retirement reasons.
-
-NEW: also exports the full 0x214 block decoded as 133 signed i32s in CarState.values
-so the overlay can show arbitrary indices as custom columns.
+MemoryReader translates raw memory (via ICR2Memory) to a RaceState
+(model.RaceState). All parsing/mapping logic lives here; no UI code in this
+module. It computes lap/interval metadata from the telemetry block, handles
+wraparound-safe lap timing, detects pit/retirement state, and exposes the full
+0x214 car-state block for custom columns in the UI.
 """
 
 import logging
@@ -194,11 +187,10 @@ class MemoryReader:
 
         last_lap_ms computed from two per-car clock fields (cfg.field_lap_clock_start/ end).
         If either clock is a known sentinel (0xFF000000 / -16777216) or missing -> last_lap_valid=False.
-        
-        Also reads laps_down from field 24 to show how many laps behind the leader each car is.
-        Also reads car_status from field 37 to detect retirement reasons.
 
-        NEW: decodes the entire 0x214 block as signed ints and stores in CarState.values.
+        Also reads laps_down from field 24 to show how many laps behind the leader each car is,
+        car_status from field 37 to detect retirement reasons, and the entire 0x214 block for
+        custom column support.
         """
         total_bytes = raw_count * self._cfg.car_state_size
         raw = self._mem.read(self._cfg.car_state_base, 'bytes', count=total_bytes)
@@ -304,7 +296,7 @@ class MemoryReader:
                 last_lap_ms = (clock_end - clock_start) & 0xFFFFFFFF
                 last_lap_valid = True
 
-            # NEW: full 0x214 block decoded as signed i32s for research/custom fields
+            # Full 0x214 block decoded as signed i32s for research/custom fields
             values: List[int] = [
                 int.from_bytes(blob[base + i*4: base + (i+1)*4], 'little', signed=True)
                 for i in range(self._cfg.car_state_size // 4)

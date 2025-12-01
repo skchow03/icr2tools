@@ -34,7 +34,10 @@ class CarState:
     - lap_end_clock: clock value at end of last completed lap (field 22)
     - lap_start_clock: clock value at start of current lap (field 23)
     - car_status: retirement reason (0 = running, 1+ = retired with reason)
-    - values: full raw 0x214 block as signed 32-bit integers
+    - current_lp: current LP waypoint index
+    - fuel_laps_remaining: number of laps of fuel left (may be negative while pitting)
+    - dlat/dlong: lateral/longitudinal offsets relative to the centreline
+    - values: full raw 0x214 block as signed 32-bit integers for custom columns
     """
     struct_index: int
     laps_left: int
@@ -49,7 +52,7 @@ class CarState:
     fuel_laps_remaining: int
     dlat: int
     dlong: int
-    values: List[int]   # NEW: all 133 4-byte signed ints from the car state block
+    values: List[int]   # All 133 4-byte signed ints from the car state block
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,9 @@ class RaceState:
     - order: list of struct indices in running order (pace car excluded), length == display_count
     - drivers: mapping struct_index -> Driver for all struct indices 0..raw_count-1
     - car_states: mapping struct_index -> CarState for all struct indices 0..raw_count-1
+    - track_length: derived length (miles) for gap calculations
+    - track_name: short track identifier
+    - session_timer_ms: optional session-wide clock in milliseconds
     """
     raw_count: int
     display_count: int
