@@ -243,17 +243,39 @@ class ConfigStore(QtCore.QObject):
                 self.overlay_setting_changed.emit(section.lower())
         return cfg
 
+    @staticmethod
+    def _safe_int(value: object, default: int) -> int:
+        """
+        Convert *value* to an int, falling back to *default* for invalid inputs.
+
+        Users sometimes enter floating point values (e.g. "10.0") in INI files.
+        Using int(float(...)) accepts these while still rejecting unparseable
+        strings without crashing during configuration load.
+        """
+
+        if value is None:
+            return default
+
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return default
+
     def _apply_overlay_settings(self, cfg: ConfigModel, data: Mapping[str, Mapping[str, str]]) -> None:
         overlay = data.get("overlay", {})
         colors = data.get("colors", {})
         radar = data.get("radar", {})
 
-        cfg.poll_ms = int(overlay.get("poll_ms", cfg.poll_ms))
-        cfg.font_size = int(overlay.get("font_size", cfg.font_size))
+        cfg.poll_ms = self._safe_int(overlay.get("poll_ms", cfg.poll_ms), cfg.poll_ms)
+        cfg.font_size = self._safe_int(overlay.get("font_size", cfg.font_size), cfg.font_size)
         cfg.font_family = overlay.get("font_family", cfg.font_family)
-        cfg.player_index = int(overlay.get("player_index", cfg.player_index))
-        cfg.fudge_px = int(overlay.get("fudge_px", cfg.fudge_px))
-        cfg.resize_throttle_ms = int(overlay.get("resize_throttle_ms", cfg.resize_throttle_ms))
+        cfg.player_index = self._safe_int(
+            overlay.get("player_index", cfg.player_index), cfg.player_index
+        )
+        cfg.fudge_px = self._safe_int(overlay.get("fudge_px", cfg.fudge_px), cfg.fudge_px)
+        cfg.resize_throttle_ms = self._safe_int(
+            overlay.get("resize_throttle_ms", cfg.resize_throttle_ms), cfg.resize_throttle_ms
+        )
 
         cfg.background_rgba = colors.get("background_rgba", cfg.background_rgba)
         cfg.text_color = colors.get("text_color", cfg.text_color)
@@ -266,18 +288,32 @@ class ConfigStore(QtCore.QObject):
         cfg.retired = colors.get("retired", cfg.retired)
         cfg.player_row = colors.get("player_row", cfg.player_row)
 
-        cfg.radar_width = int(radar.get("width", cfg.radar_width))
-        cfg.radar_height = int(radar.get("height", cfg.radar_height))
-        cfg.radar_range_forward = int(radar.get("range_forward_lengths", cfg.radar_range_forward))
-        cfg.radar_range_rear = int(radar.get("range_rear_lengths", cfg.radar_range_rear))
-        cfg.radar_range_side = int(radar.get("range_side_widths", cfg.radar_range_side))
-        cfg.radar_car_length_in = int(radar.get("car_length_in", cfg.radar_car_length_in))
-        cfg.radar_car_width_in = int(radar.get("car_width_in", cfg.radar_car_width_in))
+        cfg.radar_width = self._safe_int(radar.get("width", cfg.radar_width), cfg.radar_width)
+        cfg.radar_height = self._safe_int(radar.get("height", cfg.radar_height), cfg.radar_height)
+        cfg.radar_range_forward = self._safe_int(
+            radar.get("range_forward_lengths", cfg.radar_range_forward), cfg.radar_range_forward
+        )
+        cfg.radar_range_rear = self._safe_int(
+            radar.get("range_rear_lengths", cfg.radar_range_rear), cfg.radar_range_rear
+        )
+        cfg.radar_range_side = self._safe_int(
+            radar.get("range_side_widths", cfg.radar_range_side), cfg.radar_range_side
+        )
+        cfg.radar_car_length_in = self._safe_int(
+            radar.get("car_length_in", cfg.radar_car_length_in), cfg.radar_car_length_in
+        )
+        cfg.radar_car_width_in = self._safe_int(
+            radar.get("car_width_in", cfg.radar_car_width_in), cfg.radar_car_width_in
+        )
         cfg.radar_player_color = radar.get("player_color", cfg.radar_player_color)
         cfg.radar_ai_color = radar.get("ai_color", cfg.radar_ai_color)
         cfg.radar_background = radar.get("background", cfg.radar_background)
-        cfg.radar_range_lengths = int(radar.get("range_lengths", cfg.radar_range_lengths))
-        cfg.radar_range_widths = int(radar.get("range_widths", cfg.radar_range_widths))
+        cfg.radar_range_lengths = self._safe_int(
+            radar.get("range_lengths", cfg.radar_range_lengths), cfg.radar_range_lengths
+        )
+        cfg.radar_range_widths = self._safe_int(
+            radar.get("range_widths", cfg.radar_range_widths), cfg.radar_range_widths
+        )
         cfg.radar_ai_ahead_color = radar.get("ai_ahead_color", cfg.radar_ai_ahead_color)
         cfg.radar_ai_behind_color = radar.get("ai_behind_color", cfg.radar_ai_behind_color)
         cfg.radar_ai_alongside_color = radar.get("ai_alongside_color", cfg.radar_ai_alongside_color)
