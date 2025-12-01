@@ -219,7 +219,11 @@ class ConfigStore(QtCore.QObject):
         version = self._backend.get_exe_info_option(data, "version", fallback=cfg.version).upper()
         normalized_version = VERSION_ALIASES.get(version, version)
         if normalized_version not in OFFSETS:
-            raise ValueError(f"Unsupported memory version: {version}")
+            supported_versions = ", ".join(sorted(OFFSETS))
+            raise ValueError(
+                "Unsupported memory version: "
+                f"{version}. Supported versions: {supported_versions}"
+            )
 
         self._backend.validate_executable(data, normalized_version)
         for key, value in OFFSETS[normalized_version].items():
