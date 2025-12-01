@@ -3,8 +3,11 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
 
 ## Structure
 - **icr2_core/** – shared library (memory access, DAT/TRK readers, models)
+  - [Architecture](icr2_core/ARCHITECTURE.md)
 - **icr2timing/** – live telemetry overlay app
+  - [Architecture](icr2timing/ARCHITECTURE.md)
 - **track_viewer/** – experimental desktop utility for browsing track files
+  - [Architecture](track_viewer/ARCHITECTURE.md)
 
 ## Install (for development)
 ```bash
