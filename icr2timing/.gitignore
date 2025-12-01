@@ -17,6 +17,7 @@ dist/
 # --- Log files ---
 *.log
 timing_log.txt
+track_viewer_log.txt
 
 # --- VS Code settings ---
 .vscode/
@@ -38,3 +39,4 @@ ICR2Timing.pkg
 # --- Optional: telemetry exports or CSVs ---
 telemetry_laps/
 *.csv
+*.json
