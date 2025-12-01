@@ -306,6 +306,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.selectedCameraChanged.connect(
             self._sidebar.update_selected_camera_details
         )
+        self.visualization_widget.camerasChanged.connect(
+            self._sync_tv_mode_selector
+        )
         self._sidebar.type7_details.parametersChanged.connect(
             self.visualization_widget.update
         )
@@ -340,6 +343,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.set_show_cameras
         )
 
+        self._tv_mode_selector = QtWidgets.QComboBox()
+        self._tv_mode_selector.addItems(["One TV mode", "Two TV modes"])
+        self._tv_mode_selector.currentIndexChanged.connect(
+            self._handle_tv_mode_selection_changed
+        )
+
         layout = QtWidgets.QVBoxLayout()
         header = QtWidgets.QHBoxLayout()
         header.addWidget(QtWidgets.QLabel("ICR2 Installation:"))
@@ -354,6 +363,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._save_cameras_button)
         controls.addWidget(self._center_line_button)
         controls.addWidget(self._show_cameras_button)
+        controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
 
         body = QtWidgets.QSplitter()
@@ -448,6 +458,21 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Center Line" if enabled else "Show Center Line"
         self._center_line_button.setText(text)
         self.visualization_widget.set_show_center_line(enabled)
+
+    def _handle_tv_mode_selection_changed(self, index: int) -> None:
+        mode_count = 1 if index <= 0 else 2
+        self.visualization_widget.set_tv_mode_count(mode_count)
+
+    def _sync_tv_mode_selector(
+        self, _cameras: list[CameraPosition], views: list[CameraViewListing]
+    ) -> None:
+        if not views:
+            target_index = 0
+        else:
+            max_view = max((view.view for view in views), default=1)
+            target_index = 0 if max_view <= 1 else 1
+        with QtCore.QSignalBlocker(self._tv_mode_selector):
+            self._tv_mode_selector.setCurrentIndex(target_index)
 
     def _add_type6_camera(self) -> None:
         success, message = self.visualization_widget.add_type6_camera()
