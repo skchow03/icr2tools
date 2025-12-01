@@ -40,7 +40,7 @@ class ConfigBackend:
         return self._path
 
     def load(self) -> Dict[str, Dict[str, str]]:
-        parser = configparser.ConfigParser()
+        parser = configparser.ConfigParser(inline_comment_prefixes=(";", "#"))
         parser.read(self._path)
         data: Dict[str, Dict[str, str]] = {}
         for section in parser.sections():
