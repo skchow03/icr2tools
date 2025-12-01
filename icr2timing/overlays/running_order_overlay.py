@@ -101,7 +101,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
         self._showing_error: bool = False
         self._last_error_msg: Optional[str] = None
 
-        # NEW: track last resize time for throttling
+        # Track last resize time for throttling
         self._last_resize_time = QtCore.QTime.currentTime()
         self._resize_throttle_ms = self._cfg.resize_throttle_ms
 
@@ -238,7 +238,7 @@ class RunningOrderOverlayTable(QtCore.QObject):
                     else:
                         best_txt = self._best_tracker.format_ms(best_ms)
 
-                        # NEW: BestGap in time (ms difference)
+                        # BestGap in time (ms difference)
                         if self._best_tracker.global_best_ms is not None:
                             diff = best_ms - self._best_tracker.global_best_ms
                             if diff <= 0:

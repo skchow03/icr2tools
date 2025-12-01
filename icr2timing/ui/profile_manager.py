@@ -41,7 +41,7 @@ class Profile:
     radar_ai_alongside_color: str = "255,255,0,255"
     position_indicator_duration: float = 5.0
     position_indicator_enabled: bool = True
-    custom_fields: List[Tuple[str, int]] = None   # ✅ NEW
+    custom_fields: List[Tuple[str, int]] = None
 
     def __post_init__(self):
         if self.custom_fields is None:
@@ -125,7 +125,7 @@ class ProfileManager:
             radar_y=sec.getint("radar_y", fallback=200),
             radar_visible=sec.getboolean("radar_visible", fallback=False),
 
-            # ✅ NEW radar config fields
+            # Radar config fields
             radar_width=sec.getint("radar_width", fallback=300),
             radar_height=sec.getint("radar_height", fallback=300),
             radar_range_forward=int(float(sec.get("radar_range_forward", fallback="2"))),
