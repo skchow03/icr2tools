@@ -69,6 +69,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_center_line = True
         self._show_cameras = True
         self._track_length: float | None = None
+        self._tv_mode_count: int = 0
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -128,11 +129,52 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_elevation = None
         self._track_length = None
         self._camera_files_from_dat = False
+        self._tv_mode_count = 0
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
         self.camerasChanged.emit([], [])
         self.selectedCameraChanged.emit(None, None)
+        self.update()
+
+    def tv_mode_count(self) -> int:
+        return self._tv_mode_count
+
+    def set_tv_mode_count(self, count: int) -> None:
+        if not self._camera_views:
+            return
+        clamped_count = max(1, min(2, count))
+        if clamped_count == self._tv_mode_count:
+            return
+
+        if clamped_count == 1:
+            self._camera_views = self._camera_views[:1]
+        elif clamped_count == 2:
+            if len(self._camera_views) > 2:
+                self._camera_views = self._camera_views[:2]
+            elif len(self._camera_views) == 1:
+                source_view = self._camera_views[0]
+                copied_entries = [
+                    CameraViewEntry(
+                        camera_index=entry.camera_index,
+                        type_index=entry.type_index,
+                        camera_type=entry.camera_type,
+                        start_dlong=entry.start_dlong,
+                        end_dlong=entry.end_dlong,
+                        mark=entry.mark,
+                    )
+                    for entry in source_view.entries
+                ]
+                self._camera_views.append(
+                    CameraViewListing(view=2, label="TV2", entries=copied_entries)
+                )
+
+        for index, view in enumerate(self._camera_views, start=1):
+            view.view = index
+            view.label = f"TV{index}"
+
+        self._tv_mode_count = len(self._camera_views)
+        self.camerasChanged.emit(self._cameras, self._camera_views)
         self.update()
 
     # ------------------------------------------------------------------
@@ -459,6 +501,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cameras = []
         self._camera_views = []
         self._camera_files_from_dat = False
+        self._tv_mode_count = 0
         if not track_folder:
             self.camerasChanged.emit([], [])
             return
@@ -514,6 +557,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._camera_source = "dat"
             self._camera_files_from_dat = True
         self._camera_views = self._build_camera_views(segments)
+        self._tv_mode_count = max((view.view for view in self._camera_views), default=0)
         self.camerasChanged.emit(self._cameras, self._camera_views)
 
     def _backup_file(self, path: Path) -> Optional[Path]:
