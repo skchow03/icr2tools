@@ -7,12 +7,7 @@ from typing import List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from icr2_core.cam.helpers import (
-    CameraPosition,
-    CameraSegmentRange,
-    Type6CameraParameters,
-    Type7CameraParameters,
-)
+from icr2_core.cam.helpers import CameraPosition, CameraSegmentRange
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_utils import (
     color_from_ground_type,
@@ -20,6 +15,7 @@ from icr2_core.trk.trk_utils import (
     getxyz,
     sect2xy,
 )
+from track_viewer.camera_controller import CameraController
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -128,6 +124,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         ] | None = None
         self._camera_files_from_dat = False
         self._io_service = TrackIOService()
+        self._camera_controller = CameraController()
 
     # ------------------------------------------------------------------
     # Public API
@@ -186,46 +183,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def set_tv_mode_count(self, count: int) -> None:
         if not self._camera_views:
             return
-        clamped_count = max(1, min(2, count))
-        if clamped_count == self._tv_mode_count:
-            return
-
-        if clamped_count == 1:
-            if len(self._camera_views) > 1:
-                self._archived_camera_views = self._camera_views[1:]
-            self._camera_views = self._camera_views[:1]
-        elif clamped_count == 2:
-            if len(self._camera_views) > 2:
-                self._camera_views = self._camera_views[:2]
-                self._archived_camera_views = []
-            elif len(self._camera_views) == 1:
-                restored_view = None
-                if self._archived_camera_views:
-                    restored_view = self._archived_camera_views.pop(0)
-                if restored_view is not None:
-                    self._camera_views.append(restored_view)
-                else:
-                    source_view = self._camera_views[0]
-                    copied_entries = [
-                        CameraViewEntry(
-                            camera_index=entry.camera_index,
-                            type_index=entry.type_index,
-                            camera_type=entry.camera_type,
-                            start_dlong=entry.start_dlong,
-                            end_dlong=entry.end_dlong,
-                            mark=entry.mark,
-                        )
-                        for entry in source_view.entries
-                    ]
-                    self._camera_views.append(
-                        CameraViewListing(view=2, label="TV2", entries=copied_entries)
-                    )
-
-        for index, view in enumerate(self._camera_views, start=1):
-            view.view = index
-            view.label = f"TV{index}"
-
-        self._tv_mode_count = len(self._camera_views)
+        (
+            self._camera_views,
+            self._archived_camera_views,
+            self._tv_mode_count,
+        ) = self._camera_controller.set_tv_mode_count(
+            self._camera_views, self._archived_camera_views, count
+        )
         self.camerasChanged.emit(self._cameras, self._camera_views)
         self.update()
 
@@ -328,177 +292,27 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def add_type6_camera(self) -> tuple[bool, str]:
         """Create a new type 6 camera relative to the current selection."""
-
-        if not self._cameras:
-            return False, "No cameras are loaded."
-        if self._selected_camera is None:
-            return False, "Select a camera before adding a new one."
-        view_entry = self._find_camera_entry(self._selected_camera)
-        if view_entry is None:
-            return False, "The selected camera is not part of any TV camera mode."
-
-        view_index, entry_index = view_entry
-        view = self._camera_views[view_index]
-        if not view.entries:
-            return False, "No TV camera entries are available to place the new camera."
-
-        base_camera = self._cameras[self._selected_camera]
-        insert_index = self._selected_camera + 1
-        next_index = (entry_index + 1) % len(view.entries)
-        previous_entry = view.entries[entry_index]
-        next_entry = view.entries[next_index]
-        start_dlong = self._interpolated_dlong(
-            previous_entry.start_dlong, next_entry.start_dlong
+        result = self._camera_controller.add_type6_camera(
+            self._cameras, self._camera_views, self._selected_camera, self._track_length
         )
-        end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong)
-        middle_point = self._interpolated_dlong(start_dlong, end_dlong) or 0
-
-        if start_dlong is not None:
-            previous_entry.end_dlong = start_dlong
-        if end_dlong is not None:
-            next_entry.start_dlong = end_dlong
-
-        base_type6 = base_camera.type6
-        start_zoom = base_type6.start_zoom if base_type6 else 0
-        middle_zoom = base_type6.middle_point_zoom if base_type6 else 0
-        end_zoom = base_type6.end_zoom if base_type6 else 0
-
-        new_camera = CameraPosition(
-            camera_type=6,
-            index=0,
-            x=base_camera.x + 60000,
-            y=base_camera.y + 60000,
-            z=base_camera.z,
-            type6=Type6CameraParameters(
-                middle_point=middle_point,
-                start_point=start_dlong or 0,
-                start_zoom=start_zoom,
-                middle_point_zoom=middle_zoom,
-                end_point=end_dlong or (start_dlong or 0),
-                end_zoom=end_zoom,
-            ),
-            raw_values=tuple([0] * 9),
-        )
-
-        insert_index = self._insert_camera_at_index(insert_index, new_camera)
-        view.entries.insert(
-            next_index,
-            CameraViewEntry(
-                camera_index=insert_index,
-                type_index=new_camera.index,
-                camera_type=6,
-                start_dlong=start_dlong,
-                end_dlong=end_dlong,
-                mark=6,
-            ),
-        )
-        self._renumber_camera_type_indices()
-        self.set_selected_camera(insert_index)
+        if result.success and result.selected_camera is not None:
+            self.set_selected_camera(result.selected_camera)
         self.camerasChanged.emit(self._cameras, self._camera_views)
-        self._status_message = f"Added camera #{insert_index} to {view.label}"
+        self._status_message = result.message
         self.update()
-        return True, "Type 6 camera added."
+        return result.success, result.message
 
     def add_type7_camera(self) -> tuple[bool, str]:
         """Create a new type 7 camera relative to the current selection."""
-
-        if not self._cameras:
-            return False, "No cameras are loaded."
-        if self._selected_camera is None:
-            return False, "Select a camera before adding a new one."
-        view_entry = self._find_camera_entry(self._selected_camera)
-        if view_entry is None:
-            return False, "The selected camera is not part of any TV camera mode."
-
-        view_index, entry_index = view_entry
-        view = self._camera_views[view_index]
-        if not view.entries:
-            return False, "No TV camera entries are available to place the new camera."
-
-        base_camera = self._cameras[self._selected_camera]
-        insert_index = self._selected_camera + 1
-        next_index = (entry_index + 1) % len(view.entries)
-        previous_entry = view.entries[entry_index]
-        next_entry = view.entries[next_index]
-        start_dlong = self._interpolated_dlong(
-            previous_entry.start_dlong, next_entry.start_dlong
+        result = self._camera_controller.add_type7_camera(
+            self._cameras, self._camera_views, self._selected_camera, self._track_length
         )
-        end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong)
-
-        if start_dlong is not None:
-            previous_entry.end_dlong = start_dlong
-        if end_dlong is not None:
-            next_entry.start_dlong = end_dlong
-
-        base_type7 = base_camera.type7
-        new_type7 = Type7CameraParameters(
-            z_axis_rotation=base_type7.z_axis_rotation if base_type7 else 0,
-            vertical_rotation=base_type7.vertical_rotation if base_type7 else 0,
-            tilt=base_type7.tilt if base_type7 else 0,
-            zoom=base_type7.zoom if base_type7 else 0,
-            unknown1=base_type7.unknown1 if base_type7 else 0,
-            unknown2=base_type7.unknown2 if base_type7 else 0,
-            unknown3=base_type7.unknown3 if base_type7 else 0,
-            unknown4=base_type7.unknown4 if base_type7 else 0,
-        )
-
-        new_camera = CameraPosition(
-            camera_type=7,
-            index=0,
-            x=base_camera.x + 60000,
-            y=base_camera.y + 60000,
-            z=base_camera.z,
-            type7=new_type7,
-            raw_values=tuple([0] * 12),
-        )
-
-        insert_index = self._insert_camera_at_index(insert_index, new_camera)
-        view.entries.insert(
-            next_index,
-            CameraViewEntry(
-                camera_index=insert_index,
-                type_index=new_camera.index,
-                camera_type=7,
-                start_dlong=start_dlong,
-                end_dlong=end_dlong,
-                mark=7,
-            ),
-        )
-        self._renumber_camera_type_indices()
-        self.set_selected_camera(insert_index)
+        if result.success and result.selected_camera is not None:
+            self.set_selected_camera(result.selected_camera)
         self.camerasChanged.emit(self._cameras, self._camera_views)
-        self._status_message = f"Added camera #{insert_index} to {view.label}"
+        self._status_message = result.message
         self.update()
-        return True, "Type 7 camera added."
-
-    def _insert_camera_at_index(self, index: int, camera: CameraPosition) -> int:
-        """Insert a camera into the global list and shift references."""
-
-        insert_index = max(0, min(index, len(self._cameras)))
-        self._cameras.insert(insert_index, camera)
-        for view in self._camera_views:
-            for entry in view.entries:
-                if entry.camera_index is not None and entry.camera_index >= insert_index:
-                    entry.camera_index += 1
-        return insert_index
-
-    def _renumber_camera_type_indices(self) -> None:
-        """Ensure per-type camera indices are sequential after edits."""
-
-        type_counts: dict[int, int] = {}
-        for camera in self._cameras:
-            count = type_counts.get(camera.camera_type, 0)
-            camera.index = count
-            type_counts[camera.camera_type] = count + 1
-        for view in self._camera_views:
-            for entry in view.entries:
-                if entry.camera_index is None:
-                    continue
-                if entry.camera_index < 0 or entry.camera_index >= len(self._cameras):
-                    continue
-                camera = self._cameras[entry.camera_index]
-                if entry.camera_type is None or entry.camera_type == camera.camera_type:
-                    entry.type_index = camera.index
+        return result.success, result.message
 
     def _emit_selected_camera(self) -> None:
         selected = None
@@ -637,29 +451,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._camera_views = camera_data.camera_views
         self._tv_mode_count = camera_data.tv_mode_count
         self.camerasChanged.emit(self._cameras, self._camera_views)
-
-    def _find_camera_entry(self, camera_index: int) -> tuple[int, int] | None:
-        for view_index, view in enumerate(self._camera_views):
-            for entry_index, entry in enumerate(view.entries):
-                if entry.camera_index == camera_index:
-                    return view_index, entry_index
-        return None
-
-    def _interpolated_dlong(
-        self, first: Optional[int], second: Optional[int]
-    ) -> Optional[int]:
-        if first is None and second is None:
-            return None
-        if first is None:
-            return second
-        if second is None:
-            return first
-        if self._track_length:
-            lap_length = int(self._track_length)
-            if lap_length > 0:
-                delta = (second - first) % lap_length
-                return (first + delta // 2) % lap_length
-        return (first + second) // 2
 
     # ------------------------------------------------------------------
     # Painting helpers
