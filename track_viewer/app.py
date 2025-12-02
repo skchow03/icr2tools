@@ -9,7 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import CameraPosition
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
-from track_viewer.preview_widget import LP_FILE_NAMES, TrackPreviewWidget
+from track_viewer.preview_widget import TrackPreviewWidget
 from track_viewer.tv_modes_panel import TvModesPanel
 from track_viewer.type6_editor import Type6Editor
 from track_viewer.type7_details import Type7Details
@@ -286,6 +286,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_list = QtWidgets.QListWidget()
         self._track_list.currentItemChanged.connect(self._on_track_selected)
 
+        self._lp_list = QtWidgets.QListWidget()
+        self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._lp_list.itemChanged.connect(self._handle_lp_item_changed)
+
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self._sidebar = CoordinateSidebar()
@@ -297,6 +301,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(track_label)
         left_layout.addWidget(self._track_list)
+        lp_label = QtWidgets.QLabel("AI Lines")
+        lp_label.setStyleSheet("font-weight: bold")
+        left_layout.addWidget(lp_label)
+        left_layout.addWidget(self._lp_list)
         left_layout.addWidget(self._sidebar.type7_details)
         left_layout.addWidget(self._sidebar.type6_editor)
         left_layout.addStretch(1)
@@ -345,16 +353,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button.setCheckable(True)
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
 
-        self._ai_line_button = QtWidgets.QPushButton("Show AI Line")
-        self._ai_line_button.setCheckable(True)
-        self._ai_line_button.setEnabled(False)
-        self._ai_line_button.toggled.connect(self._toggle_ai_line)
-
-        self._lp_selector = QtWidgets.QComboBox()
-        self._lp_selector.addItems(LP_FILE_NAMES)
-        self._lp_selector.setEnabled(False)
-        self._lp_selector.currentTextChanged.connect(self._handle_lp_selection_changed)
-
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_cameras_button.clicked.connect(self._save_cameras)
 
@@ -392,8 +390,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._center_line_button)
         controls.addWidget(self._zoom_points_button)
-        controls.addWidget(self._ai_line_button)
-        controls.addWidget(self._lp_selector)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -503,19 +499,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button.setText(text)
         self.visualization_widget.set_show_zoom_points(enabled)
 
-    def _toggle_ai_line(self, enabled: bool) -> None:
-        available = self.visualization_widget.ai_line_available()
-        if enabled and not available:
-            with QtCore.QSignalBlocker(self._ai_line_button):
-                self._ai_line_button.setChecked(False)
-            enabled = False
-        text = "Hide AI Line" if enabled else "Show AI Line"
-        self._ai_line_button.setText(text)
-        self.visualization_widget.set_show_ai_line(enabled)
-
-    def _handle_lp_selection_changed(self, name: str) -> None:
-        self.visualization_widget.set_lp_file_name(name)
-        self._sync_ai_line_controls()
+    def _handle_lp_item_changed(self, item: QtWidgets.QListWidgetItem) -> None:
+        name = item.data(QtCore.Qt.UserRole)
+        if not isinstance(name, str):
+            return
+        selected = [
+            self._lp_list.item(row).data(QtCore.Qt.UserRole)
+            for row in range(self._lp_list.count())
+            if self._lp_list.item(row).checkState() == QtCore.Qt.Checked
+        ]
+        self.visualization_widget.set_visible_lp_files(selected)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
@@ -533,31 +526,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._tv_mode_selector.setCurrentIndex(target_index)
 
     def _sync_ai_line_controls(self) -> None:
-        available_files = set(self.visualization_widget.available_lp_files())
-        selector_model = self._lp_selector.model()
-        for index in range(self._lp_selector.count()):
-            item = selector_model.item(index)
-            if item is not None:
-                item.setEnabled(self._lp_selector.itemText(index) in available_files)
-
-        selector_enabled = bool(available_files)
-        self._lp_selector.setEnabled(selector_enabled)
-        if selector_enabled:
-            target = self.visualization_widget.lp_file_name()
-            target_index = self._lp_selector.findText(target)
-            if target_index >= 0:
-                with QtCore.QSignalBlocker(self._lp_selector):
-                    self._lp_selector.setCurrentIndex(target_index)
-
-        available = self.visualization_widget.ai_line_available()
-        self._ai_line_button.setEnabled(available)
-        with QtCore.QSignalBlocker(self._ai_line_button):
-            if not available:
-                self._ai_line_button.setChecked(False)
-                self._ai_line_button.setText("Show AI Line")
-            else:
-                text = "Hide AI Line" if self._ai_line_button.isChecked() else "Show AI Line"
-                self._ai_line_button.setText(text)
+        available_files = self.visualization_widget.available_lp_files()
+        visible_files = set(self.visualization_widget.visible_lp_files())
+        with QtCore.QSignalBlocker(self._lp_list):
+            self._lp_list.clear()
+            for name in available_files:
+                item = QtWidgets.QListWidgetItem(name)
+                item.setData(QtCore.Qt.UserRole, name)
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                color = QtGui.QColor(self.visualization_widget.lp_color(name))
+                item.setForeground(QtGui.QBrush(color))
+                state = QtCore.Qt.Checked if name in visible_files else QtCore.Qt.Unchecked
+                item.setCheckState(state)
+                self._lp_list.addItem(item)
+        self._lp_list.setEnabled(bool(available_files) and self.visualization_widget.ai_line_available())
 
     def _add_type6_camera(self) -> None:
         success, message = self.visualization_widget.add_type6_camera()
