@@ -17,6 +17,7 @@ from icr2_core.trk.trk_utils import (
 from track_viewer import rendering
 from track_viewer.camera_controller import CameraController
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.camera_service import CameraService
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
@@ -24,7 +25,7 @@ from track_viewer.geometry import (
     project_point_to_centerline,
     sample_centerline,
 )
-from track_viewer.io_service import CameraLoadResult, TrackIOService
+from track_viewer.io_service import TrackIOService
 
 
 LP_FILE_NAMES = [
@@ -85,15 +86,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
-        self._camera_source: str | None = None
-        self._dat_path: Path | None = None
         self._show_center_line = True
         self._show_cameras = True
         self._show_zoom_points = False
         self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
         self._track_length: float | None = None
-        self._tv_mode_count: int = 0
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -109,9 +107,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
-        self._cameras: List[CameraPosition] = []
-        self._camera_views: List[CameraViewListing] = []
-        self._archived_camera_views: List[CameraViewListing] = []
         self._selected_camera: int | None = None
         self._nearest_centerline_point: Tuple[float, float] | None = None
         self._nearest_centerline_dlong: float | None = None
@@ -122,9 +117,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             float | None,
             float | None,
         ] | None = None
-        self._camera_files_from_dat = False
         self._io_service = TrackIOService()
-        self._camera_controller = CameraController()
+        self._camera_service = CameraService(self._io_service, CameraController())
 
     # ------------------------------------------------------------------
     # Public API
@@ -142,8 +136,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
-        self._camera_source = None
-        self._dat_path = None
         self._view_center = None
         self._fit_scale = None
         self._current_scale = None
@@ -156,9 +148,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._camera_dragged = False
         self._flags = []
         self._selected_flag = None
-        self._cameras = []
-        self._camera_views = []
-        self._archived_camera_views = []
         self._selected_camera = None
         self._nearest_centerline_point = None
         self._nearest_centerline_dlong = None
@@ -168,8 +157,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._track_length = None
         self._visible_lp_files = set()
         self._available_lp_files = []
-        self._camera_files_from_dat = False
-        self._tv_mode_count = 0
+        self._camera_service.reset()
         self._status_message = message
         self.cursorPositionChanged.emit(None)
         self.selectedFlagChanged.emit(None)
@@ -178,19 +166,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self.update()
 
     def tv_mode_count(self) -> int:
-        return self._tv_mode_count
+        return self._camera_service.tv_mode_count
 
     def set_tv_mode_count(self, count: int) -> None:
-        if not self._camera_views:
+        updated_count = self._camera_service.set_tv_mode_count(count)
+        if not updated_count:
             return
-        (
-            self._camera_views,
-            self._archived_camera_views,
-            self._tv_mode_count,
-        ) = self._camera_controller.set_tv_mode_count(
-            self._camera_views, self._archived_camera_views, count
+        self.camerasChanged.emit(
+            self._camera_service.cameras, self._camera_service.camera_views
         )
-        self.camerasChanged.emit(self._cameras, self._camera_views)
         self.update()
 
     # ------------------------------------------------------------------
@@ -249,12 +233,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self.update()
 
     def cameras(self) -> List[CameraPosition]:
-        return list(self._cameras)
+        return list(self._camera_service.cameras)
 
     def update_camera_dlongs(
         self, camera_index: int, start_dlong: Optional[int], end_dlong: Optional[int]
     ) -> None:
-        if camera_index < 0 or camera_index >= len(self._cameras):
+        if camera_index < 0 or camera_index >= len(self._camera_service.cameras):
             return
 
         # Editing start/end values in the TV modes table updates the segment
@@ -267,9 +251,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def update_camera_position(
         self, camera_index: int, x: Optional[int], y: Optional[int], z: Optional[int]
     ) -> None:
-        if camera_index < 0 or camera_index >= len(self._cameras):
+        if camera_index < 0 or camera_index >= len(self._camera_service.cameras):
             return
-        camera = self._cameras[camera_index]
+        camera = self._camera_service.cameras[camera_index]
         if x is not None:
             camera.x = int(x)
         if y is not None:
@@ -284,7 +268,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if index == self._selected_camera:
             return
         if index is not None:
-            if index < 0 or index >= len(self._cameras):
+            if index < 0 or index >= len(self._camera_service.cameras):
                 index = None
         self._selected_camera = index
         self._emit_selected_camera()
@@ -292,33 +276,37 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def add_type6_camera(self) -> tuple[bool, str]:
         """Create a new type 6 camera relative to the current selection."""
-        result = self._camera_controller.add_type6_camera(
-            self._cameras, self._camera_views, self._selected_camera, self._track_length
+        success, message, selected = self._camera_service.add_type6_camera(
+            self._selected_camera, self._track_length
         )
-        if result.success and result.selected_camera is not None:
-            self.set_selected_camera(result.selected_camera)
-        self.camerasChanged.emit(self._cameras, self._camera_views)
-        self._status_message = result.message
+        if success and selected is not None:
+            self.set_selected_camera(selected)
+        self.camerasChanged.emit(
+            self._camera_service.cameras, self._camera_service.camera_views
+        )
+        self._status_message = message
         self.update()
-        return result.success, result.message
+        return success, message
 
     def add_type7_camera(self) -> tuple[bool, str]:
         """Create a new type 7 camera relative to the current selection."""
-        result = self._camera_controller.add_type7_camera(
-            self._cameras, self._camera_views, self._selected_camera, self._track_length
+        success, message, selected = self._camera_service.add_type7_camera(
+            self._selected_camera, self._track_length
         )
-        if result.success and result.selected_camera is not None:
-            self.set_selected_camera(result.selected_camera)
-        self.camerasChanged.emit(self._cameras, self._camera_views)
-        self._status_message = result.message
+        if success and selected is not None:
+            self.set_selected_camera(selected)
+        self.camerasChanged.emit(
+            self._camera_service.cameras, self._camera_service.camera_views
+        )
+        self._status_message = message
         self.update()
-        return result.success, result.message
+        return success, message
 
     def _emit_selected_camera(self) -> None:
         selected = None
         index = self._selected_camera
-        if index is not None and 0 <= index < len(self._cameras):
-            selected = self._cameras[index]
+        if index is not None and 0 <= index < len(self._camera_service.cameras):
+            selected = self._camera_service.cameras[index]
         self.selectedCameraChanged.emit(index, selected)
 
     def load_track(self, track_folder: Path) -> None:
@@ -365,7 +353,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._update_fit_scale()
         self._flags = []
         self._set_selected_flag(None)
-        self._load_track_cameras(track_folder)
+        self._camera_service.load_for_track(track_folder)
+        self.camerasChanged.emit(
+            self._camera_service.cameras, self._camera_service.camera_views
+        )
         self.set_selected_camera(None)
         self.update()
 
@@ -376,14 +367,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return False, "No track is currently loaded."
 
         try:
-            self._status_message = self._io_service.save_cameras(
-                self._current_track,
-                self._cameras,
-                self._camera_views,
-                self._camera_source,
-                self._dat_path,
-                self._camera_files_from_dat,
-            )
+            self._status_message = self._camera_service.save()
             self.update()
         except Exception as exc:  # pragma: no cover - interactive feedback
             return False, f"Failed to save cameras: {exc}"
@@ -428,29 +412,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return False, f"Failed to compute TRK gaps: {exc}"
 
         return True, "\n".join(lines)
-
-    def _load_track_cameras(self, track_folder: Path) -> None:
-        self._cameras = []
-        self._camera_views = []
-        self._archived_camera_views = []
-        self._camera_files_from_dat = False
-        self._tv_mode_count = 0
-        if not track_folder:
-            self.camerasChanged.emit([], [])
-            return
-        try:
-            camera_data: CameraLoadResult = self._io_service.load_cameras(track_folder)
-        except Exception:  # pragma: no cover - best effort diagnostics
-            self.camerasChanged.emit([], [])
-            return
-
-        self._dat_path = camera_data.dat_path
-        self._camera_source = camera_data.camera_source
-        self._camera_files_from_dat = camera_data.camera_files_from_dat
-        self._cameras = camera_data.cameras
-        self._camera_views = camera_data.camera_views
-        self._tv_mode_count = camera_data.tv_mode_count
-        self.camerasChanged.emit(self._cameras, self._camera_views)
 
     def _default_center(self) -> Tuple[float, float] | None:
         if not self._bounds:
@@ -610,7 +571,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if transform:
             if self._show_cameras:
                 rendering.draw_camera_positions(
-                    painter, self._cameras, self._selected_camera, transform, self.height()
+                    painter,
+                    self._camera_service.cameras,
+                    self._selected_camera,
+                    transform,
+                    self.height(),
                 )
             rendering.draw_ai_lines(
                 painter,
@@ -868,7 +833,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         transform = self._current_transform()
         if not transform:
             return None
-        for index, cam in enumerate(self._cameras):
+        for index, cam in enumerate(self._camera_service.cameras):
             camera_point = rendering.map_point(
                 cam.x, cam.y, transform, self.height()
             )
@@ -894,9 +859,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if coords is None:
             return
         index = self._dragging_camera_index
-        if index < 0 or index >= len(self._cameras):
+        if index < 0 or index >= len(self._camera_service.cameras):
             return
-        cam = self._cameras[index]
+        cam = self._camera_service.cameras[index]
         cam.x = int(round(coords[0]))
         cam.y = int(round(coords[1]))
         self._camera_dragged = True
@@ -949,10 +914,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _camera_view_ranges(self, camera_index: int | None) -> list[tuple[float, float]]:
         if camera_index is None:
             return []
-        if camera_index < 0 or camera_index >= len(self._cameras):
+        if camera_index < 0 or camera_index >= len(self._camera_service.cameras):
             return []
         ranges: list[tuple[float, float]] = []
-        for view in self._camera_views:
+        for view in self._camera_service.camera_views:
             for entry in view.entries:
                 if entry.camera_index != camera_index:
                     continue
@@ -966,10 +931,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return []
         if self._selected_camera is None:
             return []
-        if self._selected_camera < 0 or self._selected_camera >= len(self._cameras):
+        if self._selected_camera < 0 or self._selected_camera >= len(
+            self._camera_service.cameras
+        ):
             return []
 
-        camera = self._cameras[self._selected_camera]
+        camera = self._camera_service.cameras[self._selected_camera]
         params = camera.type6
         if params is None:
             return []
