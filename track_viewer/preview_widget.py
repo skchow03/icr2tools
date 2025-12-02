@@ -53,6 +53,19 @@ LP_FILE_NAMES = [
 ]
 
 
+LP_COLORS = [
+    "#e53935",
+    "#8e24aa",
+    "#3949ab",
+    "#1e88e5",
+    "#00897b",
+    "#43a047",
+    "#fdd835",
+    "#fb8c00",
+    "#6d4c41",
+]
+
+
 class TrackPreviewWidget(QtWidgets.QFrame):
     """Renders the TRK ground surface similar to the timing overlay."""
 
@@ -80,7 +93,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline: List[Tuple[float, float]] = []
         self._sampled_dlongs: List[float] = []
         self._sampled_bounds: Tuple[float, float, float, float] | None = None
-        self._ai_line_points: List[Tuple[float, float]] = []
+        self._ai_lines: dict[str, List[Tuple[float, float]]] = {}
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
@@ -89,8 +102,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_center_line = True
         self._show_cameras = True
         self._show_zoom_points = False
-        self._show_ai_line = False
-        self._lp_file_name = "RACE"
+        self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
         self._track_length: float | None = None
         self._tv_mode_count: int = 0
@@ -129,7 +141,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline = []
         self._sampled_dlongs = []
         self._sampled_bounds = None
-        self._ai_line_points = []
+        self._ai_lines = {}
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
@@ -155,7 +167,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_dlong = None
         self._nearest_centerline_elevation = None
         self._track_length = None
-        self._show_ai_line = False
+        self._visible_lp_files = set()
         self._available_lp_files = []
         self._camera_files_from_dat = False
         self._tv_mode_count = 0
@@ -230,42 +242,30 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def center_line_visible(self) -> bool:
         return self._show_center_line
 
-    def set_show_ai_line(self, show: bool) -> None:
-        """Enable or disable rendering of the AI line if available."""
-
-        if not self._ai_line_points:
-            show = False
-        if self._show_ai_line != show:
-            self._show_ai_line = show
-            self.update()
-
     def ai_line_available(self) -> bool:
-        return bool(self._ai_line_points)
-
-    def lp_file_name(self) -> str:
-        return self._lp_file_name
+        return any(points for points in self._ai_lines.values())
 
     def available_lp_files(self) -> list[str]:
         return list(self._available_lp_files)
 
-    def set_lp_file_name(self, name: str) -> None:
-        normalized = name.upper()
-        if normalized not in LP_FILE_NAMES or normalized == self._lp_file_name:
-            return
+    def visible_lp_files(self) -> list[str]:
+        return sorted(self._visible_lp_files)
 
-        self._lp_file_name = normalized
-        if self._current_track is None:
+    def set_visible_lp_files(self, names: list[str] | set[str]) -> None:
+        if not self._ai_lines:
+            names = set()
+        valid = {name for name in names if self._ai_lines.get(name)}
+        if valid == self._visible_lp_files:
             return
-
-        if normalized not in self._available_lp_files:
-            self._ai_line_points = []
-            self._show_ai_line = False
-            self.update()
-            return
-
-        self._ai_line_points = self._load_ai_line(self._current_track)
-        self._show_ai_line = self._show_ai_line and bool(self._ai_line_points)
+        self._visible_lp_files = valid
         self.update()
+
+    def lp_color(self, name: str) -> str:
+        try:
+            index = LP_FILE_NAMES.index(name)
+        except ValueError:
+            return "#e53935"
+        return LP_COLORS[index % len(LP_COLORS)]
 
     def set_show_zoom_points(self, show: bool) -> None:
         """Enable or disable rendering of zoom DLONG markers."""
@@ -538,14 +538,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_bounds = sampled_bounds
         self._bounds = self._merge_bounds(bounds, sampled_bounds)
         self._available_lp_files = self._detect_available_lp_files(track_folder)
-        if self._lp_file_name not in self._available_lp_files and self._available_lp_files:
-            self._lp_file_name = self._available_lp_files[0]
-
-        if self._lp_file_name in self._available_lp_files:
-            self._ai_line_points = self._load_ai_line(track_folder)
-        else:
-            self._ai_line_points = []
-        self._show_ai_line = self._show_ai_line and bool(self._ai_line_points)
+        self._ai_lines = {
+            name: self._load_ai_line(track_folder, name)
+            for name in self._available_lp_files
+        }
+        self._visible_lp_files = {
+            name for name in self._visible_lp_files if self._ai_lines.get(name)
+        }
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = track_folder
@@ -884,11 +883,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 available.append(name)
         return available
 
-    def _load_ai_line(self, track_folder: Path) -> List[Tuple[float, float]]:
+    def _load_ai_line(self, track_folder: Path, lp_name: str) -> List[Tuple[float, float]]:
         if self.trk is None or not self._cline:
             return []
 
-        lp_path = track_folder / f"{self._lp_file_name}.LP"
+        lp_path = track_folder / f"{lp_name}.LP"
         if not lp_path.exists():
             return []
 
@@ -1038,8 +1037,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if transform:
             if self._show_cameras:
                 self._draw_camera_positions(painter, transform)
-            if self._show_ai_line:
-                self._draw_ai_line(painter, transform)
+            self._draw_ai_lines(painter, transform)
             self._draw_flags(painter, transform)
             if self._show_zoom_points:
                 self._draw_zoom_points(painter, transform)
@@ -1272,19 +1270,24 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             _, _, elevation = getxyz(self.trk, float(best_dlong), 0, self._cline)
         self._set_centerline_projection(best_point, best_dlong, elevation)
 
-    def _draw_ai_line(
+    def _draw_ai_lines(
         self, painter: QtGui.QPainter, transform: tuple[float, tuple[float, float]]
     ) -> None:
-        if not self._ai_line_points:
+        if not self._visible_lp_files:
             return
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
         scale, offsets = transform
-        points = [
-            self._map_point(point[0], point[1], scale, offsets)
-            for point in self._ai_line_points
-        ]
-        painter.setPen(QtGui.QPen(QtGui.QColor("#e53935"), 2))
-        painter.drawPolyline(QtGui.QPolygonF(points))
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        for name in sorted(self._visible_lp_files):
+            points = self._ai_lines.get(name)
+            if not points:
+                continue
+            mapped = [
+                self._map_point(point[0], point[1], scale, offsets)
+                for point in points
+            ]
+            color = QtGui.QColor(self.lp_color(name))
+            painter.setPen(QtGui.QPen(color, 2))
+            painter.drawPolyline(QtGui.QPolygonF(mapped))
 
     def _draw_flags(
         self,
