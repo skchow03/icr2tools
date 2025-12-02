@@ -1,4 +1,4 @@
-from binary import *
+from icr2_core.lp.binary import *
 
 class Rpy:
 
