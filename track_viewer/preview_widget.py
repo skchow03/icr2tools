@@ -402,6 +402,28 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         max_y = max(b[3] for b in valid)
         return (min_x, max_x, min_y, max_y)
 
+    def _calculate_fit_scale(self) -> float | None:
+        """Compute a scale that fits the entire track within the widget."""
+
+        if not self._bounds:
+            return None
+
+        widget_width, widget_height = self.width(), self.height()
+        if widget_width <= 0 or widget_height <= 0:
+            return None
+
+        min_x, max_x, min_y, max_y = self._bounds
+        track_width = max_x - min_x
+        track_height = max_y - min_y
+        if track_width <= 0 or track_height <= 0:
+            return None
+
+        padding_ratio = 0.9
+        scale_x = widget_width * padding_ratio / track_width
+        scale_y = widget_height * padding_ratio / track_height
+
+        return min(scale_x, scale_y)
+
     def _update_fit_scale(self) -> None:
         fit = self._calculate_fit_scale()
         self._fit_scale = fit
@@ -444,6 +466,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         min_scale = base * 0.1
         max_scale = base * 25.0
         return max(min_scale, min(max_scale, scale))
+
+    def _map_point(
+        self, x: float, y: float, scale: float, offsets: Tuple[float, float]
+    ) -> QtCore.QPointF:
+        px = x * scale + offsets[0]
+        py = self.height() - (y * scale + offsets[1])
+        return QtCore.QPointF(px, py)
+
+    def _default_center(self) -> Tuple[float, float] | None:
+        if not self._bounds:
+            return None
+        min_x, max_x, min_y, max_y = self._bounds
+        return (min_x + max_x) / 2, (min_y + max_y) / 2
 
     def _render_surface_to_pixmap(self) -> QtGui.QPixmap:
         pixmap = QtGui.QPixmap(self.size())
