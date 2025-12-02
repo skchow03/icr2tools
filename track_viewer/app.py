@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 from track_viewer.camera_models import CameraViewListing
@@ -348,6 +348,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_cameras_button.clicked.connect(self._save_cameras)
 
+        self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
+        self._trk_gaps_button.setEnabled(False)
+        self._trk_gaps_button.clicked.connect(self._run_trk_gaps)
+        self._gap_results_window: QtWidgets.QDialog | None = None
+        self._gap_results_text: QtWidgets.QPlainTextEdit | None = None
+
         self._show_cameras_button = QtWidgets.QPushButton("Show Cameras")
         self._show_cameras_button.setCheckable(True)
         self._show_cameras_button.setChecked(True)
@@ -373,6 +379,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._add_type6_camera_button)
         controls.addWidget(self._add_type7_camera_button)
         controls.addWidget(self._save_cameras_button)
+        controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._center_line_button)
         controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._show_cameras_button)
@@ -423,6 +430,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_list.clear()
         self.visualization_widget.clear()
         self._sidebar.set_track_length(None)
+        self._trk_gaps_button.setEnabled(False)
 
         if not track_root:
             self.app_state.update_tracks([])
@@ -456,16 +464,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if not current:
             self.visualization_widget.clear()
             self._sidebar.set_track_length(None)
+            self._trk_gaps_button.setEnabled(False)
             return
 
         folder = current.data(QtCore.Qt.UserRole)
         if not isinstance(folder, Path):
             self.visualization_widget.clear("Select a valid track folder.")
             self._sidebar.set_track_length(None)
+            self._trk_gaps_button.setEnabled(False)
             return
 
         self.visualization_widget.load_track(folder)
         self._sidebar.set_track_length(self.visualization_widget.track_length())
+        self._trk_gaps_button.setEnabled(self.visualization_widget.trk is not None)
 
     def _toggle_center_line(self, enabled: bool) -> None:
         text = "Hide Center Line" if enabled else "Show Center Line"
@@ -530,3 +541,33 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_type6_parameters_changed(self) -> None:
         self.visualization_widget.update()
+
+    def _run_trk_gaps(self) -> None:
+        success, message = self.visualization_widget.run_trk_gaps()
+        title = "TRK Gaps"
+        if not success:
+            QtWidgets.QMessageBox.warning(self, title, message)
+            return
+
+        self._show_gap_results_window(title, message)
+
+    def _show_gap_results_window(self, title: str, text: str) -> None:
+        if self._gap_results_window is None:
+            self._gap_results_window = QtWidgets.QDialog(self)
+            self._gap_results_window.setModal(False)
+            layout = QtWidgets.QVBoxLayout()
+            self._gap_results_text = QtWidgets.QPlainTextEdit()
+            self._gap_results_text.setReadOnly(True)
+            close_button = QtWidgets.QPushButton("Close")
+            close_button.clicked.connect(self._gap_results_window.close)
+            layout.addWidget(self._gap_results_text)
+            layout.addWidget(close_button, alignment=QtCore.Qt.AlignRight)
+            self._gap_results_window.setLayout(layout)
+            self._gap_results_window.resize(520, 420)
+        if self._gap_results_text is not None:
+            self._gap_results_window.setWindowTitle(title)
+            self._gap_results_text.setPlainText(text)
+            self._gap_results_text.moveCursor(QtGui.QTextCursor.Start)
+        self._gap_results_window.show()
+        self._gap_results_window.raise_()
+        self._gap_results_window.activateWindow()
