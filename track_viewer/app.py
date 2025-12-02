@@ -66,6 +66,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
         self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
         self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
+        self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(12)
@@ -333,6 +334,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._center_line_button.toggled.connect(self._toggle_center_line)
         self._toggle_center_line(self._center_line_button.isChecked())
 
+        self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
+        self._zoom_points_button.setCheckable(True)
+        self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
+
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_cameras_button.clicked.connect(self._save_cameras)
 
@@ -362,6 +367,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._add_type7_camera_button)
         controls.addWidget(self._save_cameras_button)
         controls.addWidget(self._center_line_button)
+        controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -459,6 +465,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._center_line_button.setText(text)
         self.visualization_widget.set_show_center_line(enabled)
 
+    def _toggle_zoom_points(self, enabled: bool) -> None:
+        text = "Hide Zoom Points" if enabled else "Show Zoom Points"
+        self._zoom_points_button.setText(text)
+        self.visualization_widget.set_show_zoom_points(enabled)
+
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
         self.visualization_widget.set_tv_mode_count(mode_count)
@@ -509,3 +520,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
     ) -> None:
         self.visualization_widget.update_camera_position(index, x, y, z)
+
+    def _handle_type6_parameters_changed(self) -> None:
+        self.visualization_widget.update()
