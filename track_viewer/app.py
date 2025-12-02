@@ -9,7 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import CameraPosition
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
-from track_viewer.preview_widget import TrackPreviewWidget
+from track_viewer.preview_widget import LP_FILE_NAMES, TrackPreviewWidget
 from track_viewer.tv_modes_panel import TvModesPanel
 from track_viewer.type6_editor import Type6Editor
 from track_viewer.type7_details import Type7Details
@@ -350,6 +350,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._ai_line_button.setEnabled(False)
         self._ai_line_button.toggled.connect(self._toggle_ai_line)
 
+        self._lp_selector = QtWidgets.QComboBox()
+        self._lp_selector.addItems(LP_FILE_NAMES)
+        self._lp_selector.setEnabled(False)
+        self._lp_selector.currentTextChanged.connect(self._handle_lp_selection_changed)
+
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_cameras_button.clicked.connect(self._save_cameras)
 
@@ -388,6 +393,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._center_line_button)
         controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._ai_line_button)
+        controls.addWidget(self._lp_selector)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -471,7 +477,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.clear()
             self._sidebar.set_track_length(None)
             self._trk_gaps_button.setEnabled(False)
-            self._sync_ai_line_button()
+            self._sync_ai_line_controls()
             return
 
         folder = current.data(QtCore.Qt.UserRole)
@@ -479,13 +485,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.clear("Select a valid track folder.")
             self._sidebar.set_track_length(None)
             self._trk_gaps_button.setEnabled(False)
-            self._sync_ai_line_button()
+            self._sync_ai_line_controls()
             return
 
         self.visualization_widget.load_track(folder)
         self._sidebar.set_track_length(self.visualization_widget.track_length())
         self._trk_gaps_button.setEnabled(self.visualization_widget.trk is not None)
-        self._sync_ai_line_button()
+        self._sync_ai_line_controls()
 
     def _toggle_center_line(self, enabled: bool) -> None:
         text = "Hide Center Line" if enabled else "Show Center Line"
@@ -507,6 +513,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._ai_line_button.setText(text)
         self.visualization_widget.set_show_ai_line(enabled)
 
+    def _handle_lp_selection_changed(self, name: str) -> None:
+        self.visualization_widget.set_lp_file_name(name)
+        self._sync_ai_line_controls()
+
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
         self.visualization_widget.set_tv_mode_count(mode_count)
@@ -522,7 +532,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         with QtCore.QSignalBlocker(self._tv_mode_selector):
             self._tv_mode_selector.setCurrentIndex(target_index)
 
-    def _sync_ai_line_button(self) -> None:
+    def _sync_ai_line_controls(self) -> None:
+        available_files = set(self.visualization_widget.available_lp_files())
+        selector_model = self._lp_selector.model()
+        for index in range(self._lp_selector.count()):
+            item = selector_model.item(index)
+            if item is not None:
+                item.setEnabled(self._lp_selector.itemText(index) in available_files)
+
+        selector_enabled = bool(available_files)
+        self._lp_selector.setEnabled(selector_enabled)
+        if selector_enabled:
+            target = self.visualization_widget.lp_file_name()
+            target_index = self._lp_selector.findText(target)
+            if target_index >= 0:
+                with QtCore.QSignalBlocker(self._lp_selector):
+                    self._lp_selector.setCurrentIndex(target_index)
+
         available = self.visualization_widget.ai_line_available()
         self._ai_line_button.setEnabled(available)
         with QtCore.QSignalBlocker(self._ai_line_button):

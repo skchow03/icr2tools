@@ -40,6 +40,19 @@ from icr2_core.trk.trk_utils import (
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 
 
+LP_FILE_NAMES = [
+    "RACE",
+    "PASS1",
+    "PASS2",
+    "PIT",
+    "MINRACE",
+    "MAXRACE",
+    "MINPANIC",
+    "MAXPANIC",
+    "PACE",
+]
+
+
 class TrackPreviewWidget(QtWidgets.QFrame):
     """Renders the TRK ground surface similar to the timing overlay."""
 
@@ -77,6 +90,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_cameras = True
         self._show_zoom_points = False
         self._show_ai_line = False
+        self._lp_file_name = "RACE"
+        self._available_lp_files: List[str] = []
         self._track_length: float | None = None
         self._tv_mode_count: int = 0
 
@@ -141,6 +156,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_elevation = None
         self._track_length = None
         self._show_ai_line = False
+        self._available_lp_files = []
         self._camera_files_from_dat = False
         self._tv_mode_count = 0
         self._status_message = message
@@ -225,6 +241,31 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def ai_line_available(self) -> bool:
         return bool(self._ai_line_points)
+
+    def lp_file_name(self) -> str:
+        return self._lp_file_name
+
+    def available_lp_files(self) -> list[str]:
+        return list(self._available_lp_files)
+
+    def set_lp_file_name(self, name: str) -> None:
+        normalized = name.upper()
+        if normalized not in LP_FILE_NAMES or normalized == self._lp_file_name:
+            return
+
+        self._lp_file_name = normalized
+        if self._current_track is None:
+            return
+
+        if normalized not in self._available_lp_files:
+            self._ai_line_points = []
+            self._show_ai_line = False
+            self.update()
+            return
+
+        self._ai_line_points = self._load_ai_line(self._current_track)
+        self._show_ai_line = self._show_ai_line and bool(self._ai_line_points)
+        self.update()
 
     def set_show_zoom_points(self, show: bool) -> None:
         """Enable or disable rendering of zoom DLONG markers."""
@@ -496,7 +537,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = sampled_bounds
         self._bounds = self._merge_bounds(bounds, sampled_bounds)
-        self._ai_line_points = self._load_ai_line(track_folder)
+        self._available_lp_files = self._detect_available_lp_files(track_folder)
+        if self._lp_file_name not in self._available_lp_files and self._available_lp_files:
+            self._lp_file_name = self._available_lp_files[0]
+
+        if self._lp_file_name in self._available_lp_files:
+            self._ai_line_points = self._load_ai_line(track_folder)
+        else:
+            self._ai_line_points = []
         self._show_ai_line = self._show_ai_line and bool(self._ai_line_points)
         self._cached_surface_pixmap = None
         self._pixmap_size = None
@@ -829,11 +877,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             bounds = (min(xs), max(xs), min(ys), max(ys))
         return pts, dlongs, bounds
 
+    def _detect_available_lp_files(self, track_folder: Path) -> List[str]:
+        available: List[str] = []
+        for name in LP_FILE_NAMES:
+            if (track_folder / f"{name}.LP").exists():
+                available.append(name)
+        return available
+
     def _load_ai_line(self, track_folder: Path) -> List[Tuple[float, float]]:
         if self.trk is None or not self._cline:
             return []
 
-        lp_path = track_folder / "RACE.LP"
+        lp_path = track_folder / f"{self._lp_file_name}.LP"
         if not lp_path.exists():
             return []
 
