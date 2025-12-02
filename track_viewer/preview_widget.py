@@ -93,7 +93,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline: List[Tuple[float, float]] = []
         self._sampled_dlongs: List[float] = []
         self._sampled_bounds: Tuple[float, float, float, float] | None = None
-        self._ai_lines: dict[str, List[Tuple[float, float]]] = {}
+        self._ai_lines: dict[str, List[Tuple[float, float]]] | None = None
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
@@ -141,7 +141,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline = []
         self._sampled_dlongs = []
         self._sampled_bounds = None
-        self._ai_lines = {}
+        self._ai_lines = None
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
@@ -243,7 +243,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return self._show_center_line
 
     def ai_line_available(self) -> bool:
-        return any(points for points in self._ai_lines.values())
+        return bool(self._available_lp_files)
 
     def available_lp_files(self) -> list[str]:
         return list(self._available_lp_files)
@@ -252,9 +252,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return sorted(self._visible_lp_files)
 
     def set_visible_lp_files(self, names: list[str] | set[str]) -> None:
-        if not self._ai_lines:
-            names = set()
-        valid = {name for name in names if self._ai_lines.get(name)}
+        valid = {name for name in names if name in self._available_lp_files}
         if valid == self._visible_lp_files:
             return
         self._visible_lp_files = valid
@@ -538,12 +536,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_bounds = sampled_bounds
         self._bounds = self._merge_bounds(bounds, sampled_bounds)
         self._available_lp_files = self._detect_available_lp_files(track_folder)
-        self._ai_lines = {
-            name: self._load_ai_line(track_folder, name)
-            for name in self._available_lp_files
-        }
+        self._ai_lines = None
         self._visible_lp_files = {
-            name for name in self._visible_lp_files if self._ai_lines.get(name)
+            name for name in self._visible_lp_files if name in self._available_lp_files
         }
         self._cached_surface_pixmap = None
         self._pixmap_size = None
@@ -912,6 +907,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 continue
             points.append((x, y))
         return points
+
+    def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
+        if self._current_track is None:
+            return []
+
+        if self._ai_lines is None:
+            self._ai_lines = {}
+
+        if lp_name not in self._ai_lines:
+            self._ai_lines[lp_name] = self._load_ai_line(self._current_track, lp_name)
+
+        return self._ai_lines.get(lp_name) or []
 
     def _merge_bounds(
         self, *bounds: Tuple[float, float, float, float] | None
@@ -1285,7 +1292,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         scale, offsets = transform
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
         for name in sorted(self._visible_lp_files):
-            points = self._ai_lines.get(name)
+            points = self._get_ai_line_points(name)
             if not points:
                 continue
             mapped = [
