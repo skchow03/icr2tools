@@ -10,11 +10,11 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import CameraPosition, CameraSegmentRange
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_utils import (
-    color_from_ground_type,
     get_cline_pos,
     getxyz,
     sect2xy,
 )
+from track_viewer import rendering
 from track_viewer.camera_controller import CameraController
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 from track_viewer.geometry import (
@@ -452,16 +452,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._tv_mode_count = camera_data.tv_mode_count
         self.camerasChanged.emit(self._cameras, self._camera_views)
 
-    # ------------------------------------------------------------------
-    # Painting helpers
-    # ------------------------------------------------------------------
-    def _map_point(
-        self, x: float, y: float, scale: float, offsets: Tuple[float, float]
-    ) -> QtCore.QPointF:
-        px = x * scale + offsets[0]
-        py = y * scale + offsets[1]
-        return QtCore.QPointF(px, self.height() - py)
-
     def _default_center(self) -> Tuple[float, float] | None:
         if not self._bounds:
             return None
@@ -483,25 +473,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         scale_x = available_w / track_w
         scale_y = available_h / track_h
         return min(scale_x, scale_y)
-
-    def _centerline_screen_bounds(
-        self, transform: tuple[float, tuple[float, float]]
-    ) -> QtCore.QRectF | None:
-        if not self._sampled_bounds:
-            return None
-        min_x, max_x, min_y, max_y = self._sampled_bounds
-        scale, offsets = transform
-        corners = [
-            self._map_point(min_x, min_y, scale, offsets),
-            self._map_point(min_x, max_y, scale, offsets),
-            self._map_point(max_x, min_y, scale, offsets),
-            self._map_point(max_x, max_y, scale, offsets),
-        ]
-        min_px = min(p.x() for p in corners)
-        max_px = max(p.x() for p in corners)
-        min_py = min(p.y() for p in corners)
-        max_py = max(p.y() for p in corners)
-        return QtCore.QRectF(min_px, min_py, max_px - min_px, max_py - min_py)
 
     def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
         if self._current_track is None:
@@ -576,29 +547,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         max_scale = base * 25.0
         return max(min_scale, min(max_scale, scale))
 
-    def _render_surface_to_pixmap(self) -> QtGui.QPixmap:
-        pixmap = QtGui.QPixmap(self.size())
-        pixmap.fill(QtCore.Qt.transparent)
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
-        transform = self._current_transform()
-        if not transform:
-            painter.end()
-            return pixmap
-        scale, offsets = transform
-        for strip in self._surface_mesh:
-            base_color = QtGui.QColor(color_from_ground_type(strip.ground_type))
-            fill = QtGui.QColor(base_color)
-            fill.setAlpha(200)
-            outline = base_color.darker(125)
-            points = [self._map_point(x, y, scale, offsets) for x, y in strip.points]
-            poly = QtGui.QPolygonF(points)
-            painter.setBrush(QtGui.QBrush(fill))
-            painter.setPen(QtGui.QPen(outline, 1))
-            painter.drawPolygon(poly)
-        painter.end()
-        return pixmap
-
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -611,37 +559,47 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawText(self.rect(), QtCore.Qt.AlignCenter, self._status_message)
             return
 
+        transform = self._current_transform()
         if self._cached_surface_pixmap is None or self._pixmap_size != self.size():
-            self._cached_surface_pixmap = self._render_surface_to_pixmap()
+            self._cached_surface_pixmap = rendering.render_surface_to_pixmap(
+                self._surface_mesh, transform, self.size()
+            )
             self._pixmap_size = self.size()
 
         painter.drawPixmap(0, 0, self._cached_surface_pixmap)
 
-        transform = self._current_transform()
         if self._show_center_line and self._sampled_centerline and transform:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-            scale, offsets = transform
-            points = [
-                self._map_point(x, y, scale, offsets)
-                for x, y in self._sampled_centerline
-            ]
-            painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
-            painter.drawPolyline(QtGui.QPolygonF(points))
+            rendering.draw_centerline(
+                painter,
+                self._sampled_centerline,
+                transform,
+                self.height(),
+            )
 
         if transform and self._show_center_line:
-            self._draw_start_finish_line(painter, transform)
+            rendering.draw_start_finish_line(
+                painter,
+                transform,
+                self.height(),
+                self._centerline_point_and_normal,
+            )
 
         if transform and self._show_center_line:
-            self._draw_camera_range_markers(painter, transform)
+            rendering.draw_camera_range_markers(
+                painter,
+                self._camera_view_ranges(self._selected_camera),
+                transform,
+                self.height(),
+                self._centerline_point_and_normal,
+            )
 
         if transform and self._nearest_centerline_point:
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-            scale, offsets = transform
-            highlight = self._map_point(
+            highlight = rendering.map_point(
                 self._nearest_centerline_point[0],
                 self._nearest_centerline_point[1],
-                scale,
-                offsets,
+                transform,
+                self.height(),
             )
             pen = QtGui.QPen(QtGui.QColor("#ff5252"))
             pen.setWidth(2)
@@ -651,11 +609,28 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         if transform:
             if self._show_cameras:
-                self._draw_camera_positions(painter, transform)
-            self._draw_ai_lines(painter, transform)
-            self._draw_flags(painter, transform)
+                rendering.draw_camera_positions(
+                    painter, self._cameras, self._selected_camera, transform, self.height()
+                )
+            rendering.draw_ai_lines(
+                painter,
+                self._visible_lp_files,
+                self._get_ai_line_points,
+                transform,
+                self.height(),
+                self.lp_color,
+            )
+            rendering.draw_flags(
+                painter, self._flags, self._selected_flag, transform, self.height()
+            )
             if self._show_zoom_points:
-                self._draw_zoom_points(painter, transform)
+                rendering.draw_zoom_points(
+                    painter,
+                    self._zoom_points_for_camera(),
+                    transform,
+                    self.height(),
+                    self._centerline_point,
+                )
 
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         y = 20
@@ -840,7 +815,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._set_centerline_projection(None, None, None)
             return
 
-        screen_bounds = self._centerline_screen_bounds(transform)
+        screen_bounds = rendering.centerline_screen_bounds(
+            self._sampled_bounds, transform, self.height()
+        )
         if screen_bounds:
             dx = max(screen_bounds.left() - point.x(), 0.0, point.x() - screen_bounds.right())
             dy = max(screen_bounds.top() - point.y(), 0.0, point.y() - screen_bounds.bottom())
@@ -868,12 +845,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             track_length,
         )
 
-        scale, offsets = transform
         if best_point is None:
             self._set_centerline_projection(None, None, None)
             return
-
-        mapped_point = self._map_point(best_point[0], best_point[1], scale, offsets)
+        mapped_point = rendering.map_point(
+            best_point[0], best_point[1], transform, self.height()
+        )
         pixel_distance = (mapped_point - point).manhattanLength()
         if pixel_distance > 16:
             self._centerline_cached_point = point
@@ -887,61 +864,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._centerline_cached_projection = (best_point, best_dlong, elevation)
         self._set_centerline_projection(best_point, best_dlong, elevation)
 
-    def _draw_ai_lines(
-        self, painter: QtGui.QPainter, transform: tuple[float, tuple[float, float]]
-    ) -> None:
-        if not self._visible_lp_files:
-            return
-        scale, offsets = transform
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        for name in sorted(self._visible_lp_files):
-            points = self._get_ai_line_points(name)
-            if not points:
-                continue
-            mapped = [
-                self._map_point(point[0], point[1], scale, offsets)
-                for point in points
-            ]
-            color = QtGui.QColor(self.lp_color(name))
-            painter.setPen(QtGui.QPen(color, 2))
-            painter.drawPolyline(QtGui.QPolygonF(mapped))
-
-    def _draw_flags(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-    ) -> None:
-        if not self._flags:
-            return
-        scale, offsets = transform
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        radius = 6
-        for index, (fx, fy) in enumerate(self._flags):
-            point = self._map_point(fx, fy, scale, offsets)
-            color = QtGui.QColor("#ffcc33")
-            if index == self._selected_flag:
-                color = QtGui.QColor("#ff7f0e")
-            pen = QtGui.QPen(QtGui.QColor("black"))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.setBrush(QtGui.QBrush(color))
-            painter.drawEllipse(point, radius, radius)
-            painter.setPen(QtGui.QPen(QtGui.QColor("black")))
-            flag_pole = QtCore.QLineF(
-                point.x(),
-                point.y() - radius - 4,
-                point.x(),
-                point.y() - radius,
-            )
-            painter.drawLine(flag_pole)
-
     def _camera_at_point(self, point: QtCore.QPointF, radius: int = 10) -> int | None:
         transform = self._current_transform()
         if not transform:
             return None
-        scale, offsets = transform
         for index, cam in enumerate(self._cameras):
-            camera_point = self._map_point(cam.x, cam.y, scale, offsets)
+            camera_point = rendering.map_point(
+                cam.x, cam.y, transform, self.height()
+            )
             if (camera_point - point).manhattanLength() <= radius:
                 return index
         return None
@@ -972,29 +902,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._camera_dragged = True
         self._emit_selected_camera()
         self.update()
-
-    def _draw_camera_positions(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-    ) -> None:
-        if not self._cameras:
-            return
-        scale, offsets = transform
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        type_colors = {
-            2: QtGui.QColor("#ffeb3b"),
-            6: QtGui.QColor("#ff9800"),
-            7: QtGui.QColor("#4dd0e1"),
-        }
-        for index, cam in enumerate(self._cameras):
-            point = self._map_point(cam.x, cam.y, scale, offsets)
-            color = type_colors.get(cam.camera_type, QtGui.QColor("#ffffff"))
-            if cam.camera_type == 7 and cam.type7 is not None:
-                self._draw_camera_orientation(
-                    painter, cam, point, scale, offsets, color
-                )
-            self._draw_camera_symbol(painter, point, color, index == self._selected_camera)
 
     def _centerline_point_and_normal(
         self, dlong: float
@@ -1039,59 +946,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         cx, cy, _ = getxyz(self.trk, wrapped, 0, self._cline)
         return cx, cy
 
-    def _draw_perpendicular_bar(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-        dlong: float,
-        *,
-        color: QtGui.QColor | str = "#ff4081",
-        width: float = 3.0,
-        half_length_px: float = 10.0,
-    ) -> None:
-        mapping = self._centerline_point_and_normal(dlong)
-        if mapping is None:
-            return
-        (cx, cy), (nx, ny) = mapping
-        scale, offsets = transform
-        if scale == 0:
-            return
-
-        half_length_track = half_length_px / scale
-        start = self._map_point(
-            cx - nx * half_length_track,
-            cy - ny * half_length_track,
-            scale,
-            offsets,
-        )
-        end = self._map_point(
-            cx + nx * half_length_track,
-            cy + ny * half_length_track,
-            scale,
-            offsets,
-        )
-        pen = QtGui.QPen(QtGui.QColor(color), width)
-        pen.setCapStyle(QtCore.Qt.RoundCap)
-        painter.save()
-        painter.setPen(pen)
-        painter.drawLine(QtCore.QLineF(start, end))
-        painter.restore()
-
-    def _draw_start_finish_line(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-    ) -> None:
-        self._draw_perpendicular_bar(
-            painter,
-            transform,
-            0.0,
-            color="white",
-            width=3.0,
-            half_length_px=12.0,
-        )
-
-    def _camera_view_ranges(self, camera_index: int) -> list[tuple[float, float]]:
+    def _camera_view_ranges(self, camera_index: int | None) -> list[tuple[float, float]]:
+        if camera_index is None:
+            return []
+        if camera_index < 0 or camera_index >= len(self._cameras):
+            return []
         ranges: list[tuple[float, float]] = []
         for view in self._camera_views:
             for entry in view.entries:
@@ -1102,148 +961,33 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 ranges.append((float(entry.start_dlong), float(entry.end_dlong)))
         return ranges
 
-    def _draw_camera_range_markers(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-    ) -> None:
-        if self._selected_camera is None:
-            return
-        if self._selected_camera < 0 or self._selected_camera >= len(self._cameras):
-            return
-
-        ranges = self._camera_view_ranges(self._selected_camera)
-        if not ranges:
-            return
-
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        for start_dlong, end_dlong in ranges:
-            self._draw_perpendicular_bar(painter, transform, float(start_dlong))
-            self._draw_perpendicular_bar(painter, transform, float(end_dlong))
-
-    def _draw_zoom_points(
-        self,
-        painter: QtGui.QPainter,
-        transform: Tuple[float, Tuple[float, float]],
-    ) -> None:
+    def _zoom_points_for_camera(self) -> list[tuple[float, QtGui.QColor]]:
         if not self._show_zoom_points:
-            return
+            return []
         if self._selected_camera is None:
-            return
+            return []
         if self._selected_camera < 0 or self._selected_camera >= len(self._cameras):
-            return
+            return []
 
         camera = self._cameras[self._selected_camera]
         params = camera.type6
         if params is None:
-            return
+            return []
 
-        scale, offsets = transform
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        pen = QtGui.QPen(QtGui.QColor("black"))
-        pen.setWidth(3)
-        painter.setPen(pen)
-
-        points = [
+        return [
             (params.start_point, QtGui.QColor("#ffeb3b")),
             (params.middle_point, QtGui.QColor("#00e676")),
             (params.end_point, QtGui.QColor("#42a5f5")),
         ]
 
-        for dlong, color in points:
-            if dlong is None:
-                continue
-            point = self._centerline_point(float(dlong))
-            if point is None:
-                continue
-            mapped = self._map_point(point[0], point[1], scale, offsets)
-            painter.setBrush(QtGui.QBrush(color))
-            painter.drawEllipse(mapped, 7, 7)
-
-        painter.restore()
-
-    def _draw_camera_orientation(
-        self,
-        painter: QtGui.QPainter,
-        camera: CameraPosition,
-        center: QtCore.QPointF,
-        scale: float,
-        offsets: Tuple[float, float],
-        base_color: QtGui.QColor,
-    ) -> None:
-        if scale == 0 or camera.type7 is None:
-            return
-
-        angle_scale = math.pi / 2147483648
-        angle = camera.type7.z_axis_rotation * angle_scale
-        direction = QtCore.QPointF(math.cos(angle), math.sin(angle))
-
-        line_length_px = 18.0
-        line_length_track = line_length_px / scale
-
-        end = self._map_point(
-            camera.x + direction.x() * line_length_track,
-            camera.y + direction.y() * line_length_track,
-            scale,
-            offsets,
-        )
-
-        pen = QtGui.QPen(QtGui.QColor(base_color))
-        pen.setWidth(2)
-        pen.setCapStyle(QtCore.Qt.RoundCap)
-
-        painter.save()
-        painter.setPen(pen)
-        painter.drawLine(QtCore.QLineF(center, end))
-        painter.restore()
-
-    def _draw_camera_symbol(
-        self,
-        painter: QtGui.QPainter,
-        center: QtCore.QPointF,
-        base_color: QtGui.QColor,
-        selected: bool,
-    ) -> None:
-        painter.save()
-        painter.translate(center)
-        pen = QtGui.QPen(QtGui.QColor("#111111"))
-        pen.setWidth(1 if not selected else 2)
-        pen.setColor(base_color if not selected else QtGui.QColor("#ff4081"))
-        painter.setPen(pen)
-        painter.setBrush(QtGui.QBrush(base_color))
-
-        body_width = 14
-        body_height = 9
-        lens_radius = 3
-        viewfinder_width = 5
-        viewfinder_height = 4
-
-        body_rect = QtCore.QRectF(
-            -body_width / 2, -body_height / 2, body_width, body_height
-        )
-        painter.drawRoundedRect(body_rect, 2, 2)
-
-        lens_center = QtCore.QPointF(body_width / 2 - lens_radius - 1, 0)
-        painter.drawEllipse(lens_center, lens_radius, lens_radius)
-
-        viewfinder_rect = QtCore.QRectF(
-            -body_width / 2,
-            -body_height / 2 - viewfinder_height + 1,
-            viewfinder_width,
-            viewfinder_height,
-        )
-        painter.drawRoundedRect(viewfinder_rect, 1.5, 1.5)
-
-        painter.restore()
-
     def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
         transform = self._current_transform()
         if not transform:
             return None
-        scale, offsets = transform
         for index, (fx, fy) in enumerate(self._flags):
-            flag_point = self._map_point(fx, fy, scale, offsets)
+            flag_point = rendering.map_point(
+                fx, fy, transform, self.height()
+            )
             if (flag_point - point).manhattanLength() <= radius:
                 return index
         return None
