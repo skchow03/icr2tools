@@ -93,6 +93,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline: List[Tuple[float, float]] = []
         self._sampled_dlongs: List[float] = []
         self._sampled_bounds: Tuple[float, float, float, float] | None = None
+        self._centerline_grid: dict[tuple[int, int], list[int]] = {}
+        self._centerline_grid_origin: Tuple[float, float] | None = None
+        self._centerline_grid_cell: float | None = None
+        self._centerline_segments: list[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._ai_lines: dict[str, List[Tuple[float, float]]] | None = None
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
@@ -128,6 +132,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_point: Tuple[float, float] | None = None
         self._nearest_centerline_dlong: float | None = None
         self._nearest_centerline_elevation: float | None = None
+        self._centerline_cached_point: QtCore.QPointF | None = None
+        self._centerline_cached_projection: tuple[
+            Tuple[float, float] | None,
+            float | None,
+            float | None,
+        ] | None = None
         self._camera_files_from_dat = False
 
     # ------------------------------------------------------------------
@@ -141,6 +151,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline = []
         self._sampled_dlongs = []
         self._sampled_bounds = None
+        self._centerline_grid = {}
+        self._centerline_grid_origin = None
+        self._centerline_grid_cell = None
+        self._centerline_segments = []
         self._ai_lines = None
         self._cached_surface_pixmap = None
         self._pixmap_size = None
@@ -166,6 +180,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_point = None
         self._nearest_centerline_dlong = None
         self._nearest_centerline_elevation = None
+        self._centerline_cached_point = None
+        self._centerline_cached_projection = None
         self._track_length = None
         self._visible_lp_files = set()
         self._available_lp_files = []
@@ -534,6 +550,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline = sampled
         self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = sampled_bounds
+        self._build_centerline_index()
         self._bounds = self._merge_bounds(bounds, sampled_bounds)
         self._available_lp_files = self._detect_available_lp_files(track_folder)
         self._ai_lines = None
@@ -877,6 +894,88 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             ys = [p[1] for p in pts]
             bounds = (min(xs), max(xs), min(ys), max(ys))
         return pts, dlongs, bounds
+
+    def _build_centerline_index(self) -> None:
+        self._centerline_grid = {}
+        self._centerline_grid_origin = None
+        self._centerline_grid_cell = None
+        self._centerline_segments = []
+        self._centerline_cached_point = None
+        self._centerline_cached_projection = None
+
+        if not self._sampled_centerline or not self._sampled_bounds:
+            return
+
+        min_x, max_x, min_y, max_y = self._sampled_bounds
+        span_x = max_x - min_x
+        span_y = max_y - min_y
+        span = max(span_x, span_y)
+        if span <= 0:
+            return
+
+        target_cells = 64
+        cell_size = max(span / target_cells, 1.0)
+        self._centerline_grid_cell = cell_size
+        self._centerline_grid_origin = (min_x, min_y)
+
+        for index, start in enumerate(self._sampled_centerline):
+            end = self._sampled_centerline[(index + 1) % len(self._sampled_centerline)]
+            self._centerline_segments.append((start, end))
+            min_sx = min(start[0], end[0])
+            max_sx = max(start[0], end[0])
+            min_sy = min(start[1], end[1])
+            max_sy = max(start[1], end[1])
+            gx0 = int((min_sx - min_x) // cell_size)
+            gx1 = int((max_sx - min_x) // cell_size)
+            gy0 = int((min_sy - min_y) // cell_size)
+            gy1 = int((max_sy - min_y) // cell_size)
+            for gx in range(gx0, gx1 + 1):
+                for gy in range(gy0, gy1 + 1):
+                    self._centerline_grid.setdefault((gx, gy), []).append(index)
+
+    def _query_centerline_segments(self, x: float, y: float) -> list[int]:
+        if (
+            not self._centerline_grid
+            or self._centerline_grid_origin is None
+            or self._centerline_grid_cell is None
+        ):
+            return list(range(len(self._centerline_segments)))
+
+        ox, oy = self._centerline_grid_origin
+        cell = self._centerline_grid_cell
+        gx = int((x - ox) // cell)
+        gy = int((y - oy) // cell)
+
+        candidates: set[int] = set()
+        for radius in range(0, 3):
+            for cx in range(gx - radius, gx + radius + 1):
+                for cy in range(gy - radius, gy + radius + 1):
+                    candidates.update(self._centerline_grid.get((cx, cy), ()))
+            if candidates:
+                break
+
+        if not candidates:
+            return list(range(len(self._centerline_segments)))
+        return list(candidates)
+
+    def _centerline_screen_bounds(
+        self, transform: tuple[float, tuple[float, float]]
+    ) -> QtCore.QRectF | None:
+        if not self._sampled_bounds:
+            return None
+        min_x, max_x, min_y, max_y = self._sampled_bounds
+        scale, offsets = transform
+        corners = [
+            self._map_point(min_x, min_y, scale, offsets),
+            self._map_point(min_x, max_y, scale, offsets),
+            self._map_point(max_x, min_y, scale, offsets),
+            self._map_point(max_x, max_y, scale, offsets),
+        ]
+        min_px = min(p.x() for p in corners)
+        max_px = max(p.x() for p in corners)
+        min_py = min(p.y() for p in corners)
+        max_py = max(p.y() for p in corners)
+        return QtCore.QRectF(min_px, min_py, max_px - min_px, max_py - min_py)
 
     def _detect_available_lp_files(self, track_folder: Path) -> List[str]:
         available: List[str] = []
@@ -1225,10 +1324,29 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._set_centerline_projection(None, None, None)
             return
 
+        if (
+            self._centerline_cached_point is not None
+            and self._centerline_cached_projection is not None
+            and (point - self._centerline_cached_point).manhattanLength() <= 3
+        ):
+            cached_point, cached_dlong, cached_elevation = self._centerline_cached_projection
+            self._set_centerline_projection(cached_point, cached_dlong, cached_elevation)
+            return
+
         transform = self._current_transform()
         if not transform or not self.trk:
             self._set_centerline_projection(None, None, None)
             return
+
+        screen_bounds = self._centerline_screen_bounds(transform)
+        if screen_bounds:
+            dx = max(screen_bounds.left() - point.x(), 0.0, point.x() - screen_bounds.right())
+            dy = max(screen_bounds.top() - point.y(), 0.0, point.y() - screen_bounds.bottom())
+            if max(dx, dy) > 24:
+                self._centerline_cached_point = point
+                self._centerline_cached_projection = (None, None, None)
+                self._set_centerline_projection(None, None, None)
+                return
 
         cursor_track = self._map_to_track(point)
         if cursor_track is None:
@@ -1241,8 +1359,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         best_distance_sq = float("inf")
 
         track_length = float(self.trk.trklength)
-        for index, start in enumerate(self._sampled_centerline):
-            end = self._sampled_centerline[(index + 1) % len(self._sampled_centerline)]
+        segment_indices = self._query_centerline_segments(cursor_x, cursor_y)
+        for index in segment_indices:
+            start, end = self._centerline_segments[index]
             start_dlong = self._sampled_dlongs[index]
             end_dlong = self._sampled_dlongs[(index + 1) % len(self._sampled_dlongs)]
             dlong_delta = end_dlong - start_dlong
@@ -1277,11 +1396,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         mapped_point = self._map_point(best_point[0], best_point[1], scale, offsets)
         pixel_distance = (mapped_point - point).manhattanLength()
         if pixel_distance > 16:
+            self._centerline_cached_point = point
+            self._centerline_cached_projection = (None, None, None)
             self._set_centerline_projection(None, None, None)
             return
         elevation = None
         if best_dlong is not None and self._cline:
             _, _, elevation = getxyz(self.trk, float(best_dlong), 0, self._cline)
+        self._centerline_cached_point = point
+        self._centerline_cached_projection = (best_point, best_dlong, elevation)
         self._set_centerline_projection(best_point, best_dlong, elevation)
 
     def _draw_ai_lines(
