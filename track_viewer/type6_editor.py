@@ -11,6 +11,8 @@ from icr2_core.cam.helpers import CameraPosition, Type6CameraParameters
 class Type6Editor(QtWidgets.QGroupBox):
     """Displays and edits Type 6 camera parameters."""
 
+    parametersChanged = QtCore.pyqtSignal()
+
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__("Type 6 parameters", parent)
         self._track_length: Optional[int] = None
@@ -183,6 +185,8 @@ class Type6Editor(QtWidgets.QGroupBox):
                 params.end_point = value
             else:
                 params.end_zoom = value
+
+        self.parametersChanged.emit()
 
     def _show_dlong_bounds_error(self) -> None:
         if self._track_length is None:

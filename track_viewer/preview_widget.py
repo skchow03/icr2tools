@@ -68,6 +68,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._dat_path: Path | None = None
         self._show_center_line = True
         self._show_cameras = True
+        self._show_zoom_points = False
         self._track_length: float | None = None
         self._tv_mode_count: int = 0
 
@@ -202,6 +203,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def center_line_visible(self) -> bool:
         return self._show_center_line
+
+    def set_show_zoom_points(self, show: bool) -> None:
+        """Enable or disable rendering of zoom DLONG markers."""
+
+        if self._show_zoom_points != show:
+            self._show_zoom_points = show
+            self.update()
 
     def track_length(self) -> Optional[int]:
         return int(self._track_length) if self._track_length is not None else None
@@ -890,6 +898,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             if self._show_cameras:
                 self._draw_camera_positions(painter, transform)
             self._draw_flags(painter, transform)
+            if self._show_zoom_points:
+                self._draw_zoom_points(painter, transform)
 
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         y = 20
@@ -1242,6 +1252,16 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         normal = (-vy / length, vx / length)
         return (cx, cy), normal
 
+    def _centerline_point(self, dlong: float) -> tuple[float, float] | None:
+        if not self.trk or not self._cline:
+            return None
+        track_length = float(self.trk.trklength)
+        if track_length <= 0:
+            return None
+        wrapped = dlong % track_length
+        cx, cy, _ = getxyz(self.trk, wrapped, 0, self._cline)
+        return cx, cy
+
     def _draw_perpendicular_bar(
         self,
         painter: QtGui.QPainter,
@@ -1323,6 +1343,48 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for start_dlong, end_dlong in ranges:
             self._draw_perpendicular_bar(painter, transform, float(start_dlong))
             self._draw_perpendicular_bar(painter, transform, float(end_dlong))
+
+    def _draw_zoom_points(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+    ) -> None:
+        if not self._show_zoom_points:
+            return
+        if self._selected_camera is None:
+            return
+        if self._selected_camera < 0 or self._selected_camera >= len(self._cameras):
+            return
+
+        camera = self._cameras[self._selected_camera]
+        params = camera.type6
+        if params is None:
+            return
+
+        scale, offsets = transform
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("black"))
+        pen.setWidth(3)
+        painter.setPen(pen)
+
+        points = [
+            (params.start_point, QtGui.QColor("#ffeb3b")),
+            (params.middle_point, QtGui.QColor("#00e676")),
+            (params.end_point, QtGui.QColor("#42a5f5")),
+        ]
+
+        for dlong, color in points:
+            if dlong is None:
+                continue
+            point = self._centerline_point(float(dlong))
+            if point is None:
+                continue
+            mapped = self._map_point(point[0], point[1], scale, offsets)
+            painter.setBrush(QtGui.QBrush(color))
+            painter.drawEllipse(mapped, 7, 7)
+
+        painter.restore()
 
     def _draw_camera_orientation(
         self,
