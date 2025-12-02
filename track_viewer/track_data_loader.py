@@ -27,7 +27,7 @@ from icr2_core.trk.surface_mesh import (
     compute_mesh_bounds,
 )
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz
-from track_viewer.camera_models import CameraViewListing
+from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 
 
 @dataclass
@@ -235,7 +235,9 @@ class TrackDataLoader:
                 cam_bytes = extract_file_bytes(str(dat_path), str(cam_path))
                 scr_bytes = extract_file_bytes(str(dat_path), str(scr_path))
                 cameras = load_cam_positions_bytes(cam_bytes)
-                camera_views = load_scr_segments_bytes(scr_bytes)
+                camera_views = self._normalize_camera_views(
+                    load_scr_segments_bytes(scr_bytes), cameras
+                )
                 camera_source = "dat"
                 camera_files_from_dat = True
             except Exception:
@@ -251,7 +253,9 @@ class TrackDataLoader:
             except Exception:
                 cameras = []
             try:
-                camera_views = load_scr_segments(scr_path)
+                camera_views = self._normalize_camera_views(
+                    load_scr_segments(scr_path), cameras
+                )
             except Exception:
                 camera_views = []
 
@@ -262,6 +266,50 @@ class TrackDataLoader:
             camera_files_from_dat=camera_files_from_dat,
             dat_path=dat_path,
         )
+
+    def _normalize_camera_views(
+        self,
+        camera_views: list[CameraSegmentRange | CameraViewListing],
+        cameras: list[CameraPosition],
+    ) -> list[CameraViewListing]:
+        """Convert legacy SCR segment ranges into camera view listings."""
+
+        if not camera_views:
+            return []
+        if isinstance(camera_views[0], CameraViewListing):
+            return camera_views  # type: ignore[return-value]
+
+        grouped: dict[int, list[CameraViewEntry]] = {}
+        for segment in camera_views:
+            if not isinstance(segment, CameraSegmentRange):
+                continue
+            camera_type: int | None = None
+            type_index: int | None = None
+            if 0 <= segment.camera_id < len(cameras):
+                camera = cameras[segment.camera_id]
+                camera_type = camera.camera_type
+                type_index = camera.index
+            grouped.setdefault(segment.view, []).append(
+                CameraViewEntry(
+                    camera_index=segment.camera_id,
+                    type_index=type_index,
+                    camera_type=camera_type,
+                    start_dlong=segment.start_dlong,
+                    end_dlong=segment.end_dlong,
+                    mark=segment.mark,
+                )
+            )
+
+        normalized_views: list[CameraViewListing] = []
+        for view in sorted(grouped):
+            normalized_views.append(
+                CameraViewListing(
+                    view=view,
+                    label=f"TV{view}",
+                    entries=grouped[view],
+                )
+            )
+        return normalized_views
 
     def _backup_file(self, path: Path) -> None:
         if not path.exists():
