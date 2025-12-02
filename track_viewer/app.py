@@ -36,6 +36,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
     cameraSelectionChanged = QtCore.pyqtSignal(object)
     cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
     cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
+    type6ParametersChanged = QtCore.pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -245,6 +246,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self.update_selected_camera_details(index, self._cameras[index])
         self.cameraPositionUpdated.emit(index, x, y, z)
 
+    def _handle_type6_parameters_changed(self) -> None:
+        self.type6ParametersChanged.emit()
+
     def _on_camera_selected(self, index: int) -> None:
         if not self._cameras or index < 0 or index >= len(self._cameras):
             self.cameraSelectionChanged.emit(None)
@@ -321,6 +325,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._sidebar.cameraPositionUpdated.connect(
             self._handle_camera_position_updated
+        )
+        self._sidebar.type6ParametersChanged.connect(
+            self._handle_type6_parameters_changed
         )
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
