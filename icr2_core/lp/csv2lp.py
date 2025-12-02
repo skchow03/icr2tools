@@ -1,9 +1,9 @@
 import numpy as np
-from rpy import Rpy
-from trk import Trk
+from icr2_core.lp.rpy import Rpy
+from icr2_core.lp.lpcalc import *
+from icr2_core.trk.trk_classes import TRKFile
 import math
 import argparse
-from lpcalc import *
 
 def load_csv(csv_file):
     print ('Loading csv file {}'.format(csv_file))
@@ -23,7 +23,7 @@ def load_csv(csv_file):
         for i in range(0, num_lp_recs):
             cur_dlong = i * 65536
             if i == num_lp_recs - 1:
-                cur_dlong = trk.trackLength
+                cur_dlong = trk.trklength
             lp_dlong.append(cur_dlong)
     return num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong
 
@@ -48,7 +48,7 @@ def load_trafo(txt_file):
     for i in range(0, num_lp_recs):
         cur_dlong = i * 65536
         if i == num_lp_recs - 1:
-            cur_dlong = trk.trackLength
+            cur_dlong = trk.trklength
         lp_dlong.append(cur_dlong)
     return num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong
 
@@ -66,7 +66,7 @@ output_file = args.Output_file
 trkfile = args.TRK_file
 
 print ('Loading track file {}'.format(trkfile))
-trk = Trk(trkfile)
+trk = TRKFile.from_trk(trkfile)
 
 if args.trafo:
     num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong = load_trafo(input_file)
@@ -79,10 +79,10 @@ else:
 # records.
 
 print ('Extending start and end of LP records...')
-lp_dlong = [trk.trackLength - 65536 * 2, trk.trackLength - 65536] \
+lp_dlong = [trk.trklength - 65536 * 2, trk.trklength - 65536] \
            + lp_dlong \
-           + [trk.trackLength - lp_dlong[-2],
-             (trk.trackLength - lp_dlong[-2]) * 2]
+           + [trk.trklength - lp_dlong[-2],
+             (trk.trklength - lp_dlong[-2]) * 2]
 
 dlat_start_change = lp_dlat[1] - lp_dlat[0]
 dlat_end_change = lp_dlat[-1] - lp_dlat[-2]
@@ -117,10 +117,10 @@ for i in range(0, num_lp_recs2):
     t3_sect.append(get_trk_sect_id(trk, lp_dlong[i]))
 
 # Fix sections
-lp_dlong[0] = lp_dlong[0] - trk.trackLength
-lp_dlong[1] = lp_dlong[1] - trk.trackLength
-lp_dlong[-1] = lp_dlong[-1] + trk.trackLength
-lp_dlong[-2] = lp_dlong[-2] + trk.trackLength
+lp_dlong[0] = lp_dlong[0] - trk.trklength
+lp_dlong[1] = lp_dlong[1] - trk.trklength
+lp_dlong[-1] = lp_dlong[-1] + trk.trklength
+lp_dlong[-2] = lp_dlong[-2] + trk.trklength
 
 # Calculate T3 radius
 for i in range(0, num_lp_recs2):
