@@ -30,7 +30,12 @@ from icr2_core.trk.surface_mesh import (
     build_ground_surface_mesh,
     compute_mesh_bounds,
 )
-from icr2_core.trk.trk_utils import get_cline_pos, color_from_ground_type, getxyz
+from icr2_core.trk.trk_utils import (
+    color_from_ground_type,
+    get_cline_pos,
+    getxyz,
+    sect2xy,
+)
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 
 
@@ -515,6 +520,45 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return False, f"Failed to save cameras: {exc}"
 
         return True, "Camera files saved successfully."
+
+    def run_trk_gaps(self) -> tuple[bool, str]:
+        """Replicate the ``trk_gaps`` script for the currently loaded track."""
+
+        if self.trk is None or self._current_track is None:
+            return False, "No track is currently loaded."
+
+        track_name = self._current_track.name
+        trk_path = self._current_track / f"{track_name}.trk"
+        header_label = str(trk_path if trk_path.exists() else trk_path.name)
+
+        try:
+            cline = get_cline_pos(self.trk)
+            dist_list: list[float] = []
+            lines = [header_label]
+
+            for sect in range(-1, self.trk.num_sects - 1):
+                xy2 = getxyz(
+                    self.trk,
+                    self.trk.sects[sect].start_dlong + self.trk.sects[sect].length - 1,
+                    0,
+                    cline,
+                )
+                xy1 = sect2xy(self.trk, sect + 1, cline)
+
+                dist = math.dist((xy1[0], xy1[1]), (xy2[0], xy2[1]))
+
+                dist_list.append(dist)
+                lines.append(f"Sect {sect}/{sect + 1}, gap {dist:.1f}")
+
+            if dist_list:
+                lines.append(f"Max gap {max(dist_list):.1f}")
+                lines.append(f"Min gap {min(dist_list):.1f}")
+                lines.append(f"Sum gaps {sum(dist_list):.1f}")
+            lines.append(f"Track length: {self.trk.trklength}")
+        except Exception as exc:  # pragma: no cover - interactive feedback
+            return False, f"Failed to compute TRK gaps: {exc}"
+
+        return True, "\n".join(lines)
 
     def _load_track_cameras(self, track_folder: Path) -> None:
         self._cameras = []
