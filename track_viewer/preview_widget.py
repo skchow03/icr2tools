@@ -24,6 +24,7 @@ from icr2_core.cam.helpers import (
 )
 from icr2_core.dat import packdat, unpackdat
 from icr2_core.dat.unpackdat import extract_file_bytes
+from icr2_core.lp.loader import load_lp_file
 from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.surface_mesh import (
     GroundSurfaceStrip,
@@ -66,6 +67,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline: List[Tuple[float, float]] = []
         self._sampled_dlongs: List[float] = []
         self._sampled_bounds: Tuple[float, float, float, float] | None = None
+        self._ai_line_points: List[Tuple[float, float]] = []
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
@@ -74,6 +76,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_center_line = True
         self._show_cameras = True
         self._show_zoom_points = False
+        self._show_ai_line = False
         self._track_length: float | None = None
         self._tv_mode_count: int = 0
 
@@ -111,6 +114,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_centerline = []
         self._sampled_dlongs = []
         self._sampled_bounds = None
+        self._ai_line_points = []
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
@@ -136,6 +140,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_dlong = None
         self._nearest_centerline_elevation = None
         self._track_length = None
+        self._show_ai_line = False
         self._camera_files_from_dat = False
         self._tv_mode_count = 0
         self._status_message = message
@@ -208,6 +213,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def center_line_visible(self) -> bool:
         return self._show_center_line
+
+    def set_show_ai_line(self, show: bool) -> None:
+        """Enable or disable rendering of the AI line if available."""
+
+        if not self._ai_line_points:
+            show = False
+        if self._show_ai_line != show:
+            self._show_ai_line = show
+            self.update()
+
+    def ai_line_available(self) -> bool:
+        return bool(self._ai_line_points)
 
     def set_show_zoom_points(self, show: bool) -> None:
         """Enable or disable rendering of zoom DLONG markers."""
@@ -479,6 +496,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = sampled_bounds
         self._bounds = self._merge_bounds(bounds, sampled_bounds)
+        self._ai_line_points = self._load_ai_line(track_folder)
+        self._show_ai_line = self._show_ai_line and bool(self._ai_line_points)
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = track_folder
@@ -810,6 +829,29 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             bounds = (min(xs), max(xs), min(ys), max(ys))
         return pts, dlongs, bounds
 
+    def _load_ai_line(self, track_folder: Path) -> List[Tuple[float, float]]:
+        if self.trk is None or not self._cline:
+            return []
+
+        lp_path = track_folder / "RACE.LP"
+        if not lp_path.exists():
+            return []
+
+        track_length = int(self._track_length) if self._track_length is not None else None
+        try:
+            ai_line = load_lp_file(lp_path, track_length=track_length)
+        except Exception:
+            return []
+
+        points: List[Tuple[float, float]] = []
+        for record in ai_line:
+            try:
+                x, y, _ = getxyz(self.trk, float(record.dlong), record.dlat, self._cline)
+            except Exception:
+                continue
+            points.append((x, y))
+        return points
+
     def _merge_bounds(
         self, *bounds: Tuple[float, float, float, float] | None
     ) -> Tuple[float, float, float, float] | None:
@@ -941,6 +983,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if transform:
             if self._show_cameras:
                 self._draw_camera_positions(painter, transform)
+            if self._show_ai_line:
+                self._draw_ai_line(painter, transform)
             self._draw_flags(painter, transform)
             if self._show_zoom_points:
                 self._draw_zoom_points(painter, transform)
@@ -1172,6 +1216,20 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if best_dlong is not None and self._cline:
             _, _, elevation = getxyz(self.trk, float(best_dlong), 0, self._cline)
         self._set_centerline_projection(best_point, best_dlong, elevation)
+
+    def _draw_ai_line(
+        self, painter: QtGui.QPainter, transform: tuple[float, tuple[float, float]]
+    ) -> None:
+        if not self._ai_line_points:
+            return
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        scale, offsets = transform
+        points = [
+            self._map_point(point[0], point[1], scale, offsets)
+            for point in self._ai_line_points
+        ]
+        painter.setPen(QtGui.QPen(QtGui.QColor("#e53935"), 2))
+        painter.drawPolyline(QtGui.QPolygonF(points))
 
     def _draw_flags(
         self,

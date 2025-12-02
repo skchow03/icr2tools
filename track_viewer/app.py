@@ -345,6 +345,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button.setCheckable(True)
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
 
+        self._ai_line_button = QtWidgets.QPushButton("Show AI Line")
+        self._ai_line_button.setCheckable(True)
+        self._ai_line_button.setEnabled(False)
+        self._ai_line_button.toggled.connect(self._toggle_ai_line)
+
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_cameras_button.clicked.connect(self._save_cameras)
 
@@ -382,6 +387,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._center_line_button)
         controls.addWidget(self._zoom_points_button)
+        controls.addWidget(self._ai_line_button)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -465,6 +471,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.clear()
             self._sidebar.set_track_length(None)
             self._trk_gaps_button.setEnabled(False)
+            self._sync_ai_line_button()
             return
 
         folder = current.data(QtCore.Qt.UserRole)
@@ -472,11 +479,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.clear("Select a valid track folder.")
             self._sidebar.set_track_length(None)
             self._trk_gaps_button.setEnabled(False)
+            self._sync_ai_line_button()
             return
 
         self.visualization_widget.load_track(folder)
         self._sidebar.set_track_length(self.visualization_widget.track_length())
         self._trk_gaps_button.setEnabled(self.visualization_widget.trk is not None)
+        self._sync_ai_line_button()
 
     def _toggle_center_line(self, enabled: bool) -> None:
         text = "Hide Center Line" if enabled else "Show Center Line"
@@ -487,6 +496,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
         self._zoom_points_button.setText(text)
         self.visualization_widget.set_show_zoom_points(enabled)
+
+    def _toggle_ai_line(self, enabled: bool) -> None:
+        available = self.visualization_widget.ai_line_available()
+        if enabled and not available:
+            with QtCore.QSignalBlocker(self._ai_line_button):
+                self._ai_line_button.setChecked(False)
+            enabled = False
+        text = "Hide AI Line" if enabled else "Show AI Line"
+        self._ai_line_button.setText(text)
+        self.visualization_widget.set_show_ai_line(enabled)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
@@ -502,6 +521,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             target_index = 0 if max_view <= 1 else 1
         with QtCore.QSignalBlocker(self._tv_mode_selector):
             self._tv_mode_selector.setCurrentIndex(target_index)
+
+    def _sync_ai_line_button(self) -> None:
+        available = self.visualization_widget.ai_line_available()
+        self._ai_line_button.setEnabled(available)
+        with QtCore.QSignalBlocker(self._ai_line_button):
+            if not available:
+                self._ai_line_button.setChecked(False)
+                self._ai_line_button.setText("Show AI Line")
+            else:
+                text = "Hide AI Line" if self._ai_line_button.isChecked() else "Show AI Line"
+                self._ai_line_button.setText(text)
 
     def _add_type6_camera(self) -> None:
         success, message = self.visualization_widget.add_type6_camera()
