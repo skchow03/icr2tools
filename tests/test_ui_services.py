@@ -2,6 +2,8 @@ import types
 
 import pytest
 
+pytest.importorskip("PyQt5")
+
 from icr2timing.ui.services import (
     LapLoggerController,
     PitCommandService,

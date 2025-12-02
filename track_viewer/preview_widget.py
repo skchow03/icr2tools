@@ -1,10 +1,7 @@
 """Embedded surface preview widget for the standalone track viewer."""
 from __future__ import annotations
 
-import datetime
 import math
-import shutil
-import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -15,22 +12,9 @@ from icr2_core.cam.helpers import (
     CameraSegmentRange,
     Type6CameraParameters,
     Type7CameraParameters,
-    load_cam_positions,
-    load_cam_positions_bytes,
-    load_scr_segments,
-    load_scr_segments_bytes,
-    write_cam_positions,
-    write_scr_segments,
 )
-from icr2_core.dat import packdat, unpackdat
-from icr2_core.dat.unpackdat import extract_file_bytes
 from icr2_core.lp.loader import load_lp_file
-from icr2_core.trk.track_loader import load_trk_from_folder
-from icr2_core.trk.surface_mesh import (
-    GroundSurfaceStrip,
-    build_ground_surface_mesh,
-    compute_mesh_bounds,
-)
+from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_utils import (
     color_from_ground_type,
     get_cline_pos,
@@ -38,6 +22,7 @@ from icr2_core.trk.trk_utils import (
     sect2xy,
 )
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.io_service import CameraLoadResult, TrackIOService
 
 
 LP_FILE_NAMES = [
@@ -139,6 +124,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             float | None,
         ] | None = None
         self._camera_files_from_dat = False
+        self._io_service = TrackIOService()
 
     # ------------------------------------------------------------------
     # Public API
@@ -534,25 +520,24 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self.update()
 
         try:
-            trk = load_trk_from_folder(str(track_folder))
-            cline = get_cline_pos(trk)
-            surface_mesh = build_ground_surface_mesh(trk, cline)
-            bounds = compute_mesh_bounds(surface_mesh)
+            track_data = self._io_service.load_track(track_folder)
         except Exception as exc:  # pragma: no cover - interactive feedback
             self.clear(f"Failed to load track: {exc}")
             return
 
-        self.trk = trk
-        self._track_length = float(trk.trklength)
-        self._cline = cline
-        self._surface_mesh = surface_mesh
-        sampled, sampled_dlongs, sampled_bounds = self._sample_centerline(trk, cline)
+        self.trk = track_data.trk
+        self._track_length = track_data.track_length
+        self._cline = track_data.centerline
+        self._surface_mesh = track_data.surface_mesh
+        sampled, sampled_dlongs, sampled_bounds = self._sample_centerline(
+            self.trk, self._cline
+        )
         self._sampled_centerline = sampled
         self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = sampled_bounds
         self._build_centerline_index()
-        self._bounds = self._merge_bounds(bounds, sampled_bounds)
-        self._available_lp_files = self._detect_available_lp_files(track_folder)
+        self._bounds = self._merge_bounds(track_data.surface_bounds, sampled_bounds)
+        self._available_lp_files = track_data.available_lp_files
         self._ai_lines = None
         self._visible_lp_files = {
             name for name in self._visible_lp_files if name in self._available_lp_files
@@ -576,23 +561,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._current_track is None:
             return False, "No track is currently loaded."
 
-        track_name = self._current_track.name
-        cam_path = self._current_track / f"{track_name}.cam"
-        scr_path = self._current_track / f"{track_name}.scr"
-
         try:
-            self._backup_file(cam_path)
-            self._backup_file(scr_path)
-            write_cam_positions(cam_path, self._cameras)
-            write_scr_segments(scr_path, self._camera_views)
-            if self._camera_source == "dat" and self._dat_path is not None:
-                self._repack_dat(cam_path, scr_path)
-                if self._camera_files_from_dat:
-                    if cam_path.exists():
-                        cam_path.unlink()
-                    if scr_path.exists():
-                        scr_path.unlink()
-            self._status_message = f"Saved cameras for {track_name}"
+            self._status_message = self._io_service.save_cameras(
+                self._current_track,
+                self._cameras,
+                self._camera_views,
+                self._camera_source,
+                self._dat_path,
+                self._camera_files_from_dat,
+            )
             self.update()
         except Exception as exc:  # pragma: no cover - interactive feedback
             return False, f"Failed to save cameras: {exc}"
@@ -648,159 +625,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self.camerasChanged.emit([], [])
             return
         try:
-            track_name = track_folder.name
-        except Exception:
+            camera_data: CameraLoadResult = self._io_service.load_cameras(track_folder)
+        except Exception:  # pragma: no cover - best effort diagnostics
             self.camerasChanged.emit([], [])
             return
-        cam_path = track_folder / f"{track_name}.cam"
-        scr_path = track_folder / f"{track_name}.scr"
-        dat_files = list(track_folder.glob("*.dat"))
-        dat_path = next(
-            (
-                candidate
-                for candidate in dat_files
-                if candidate.stem.lower() == track_name.lower()
-            ),
-            None,
-        )
-        self._dat_path = dat_path
-        self._camera_source = None
 
-        cam_from_dat = False
-        cam_on_disk = cam_path.exists()
-        if cam_path.exists():
-            try:
-                self._cameras = load_cam_positions(cam_path)
-            except Exception:  # pragma: no cover - best effort diagnostics
-                self._cameras = []
-        elif dat_path:
-            try:
-                cam_bytes = extract_file_bytes(str(dat_path), f"{track_name}.cam")
-                self._cameras = load_cam_positions_bytes(cam_bytes)
-                cam_from_dat = True
-            except Exception:  # pragma: no cover - best effort diagnostics
-                self._cameras = []
-
-        segments: List[CameraSegmentRange] = []
-        scr_from_dat = False
-        scr_on_disk = scr_path.exists()
-        if scr_path.exists():
-            try:
-                segments = load_scr_segments(scr_path)
-            except Exception:  # pragma: no cover - best effort diagnostics
-                segments = []
-        elif dat_path:
-            try:
-                scr_bytes = extract_file_bytes(str(dat_path), f"{track_name}.scr")
-                segments = load_scr_segments_bytes(scr_bytes)
-                scr_from_dat = True
-            except Exception:  # pragma: no cover - best effort diagnostics
-                segments = []
-        if cam_from_dat and scr_from_dat:
-            self._camera_source = "dat"
-            self._camera_files_from_dat = not cam_on_disk and not scr_on_disk
-        elif cam_path.exists() or scr_path.exists():
-            self._camera_source = "files"
-            self._camera_files_from_dat = False
-        elif dat_path:
-            self._camera_source = "dat"
-            self._camera_files_from_dat = True
-        self._camera_views = self._build_camera_views(segments)
-        self._tv_mode_count = max((view.view for view in self._camera_views), default=0)
+        self._dat_path = camera_data.dat_path
+        self._camera_source = camera_data.camera_source
+        self._camera_files_from_dat = camera_data.camera_files_from_dat
+        self._cameras = camera_data.cameras
+        self._camera_views = camera_data.camera_views
+        self._tv_mode_count = camera_data.tv_mode_count
         self.camerasChanged.emit(self._cameras, self._camera_views)
-
-    def _backup_file(self, path: Path) -> Optional[Path]:
-        if not path.exists():
-            return None
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = path.with_suffix(path.suffix + f".bak.{timestamp}")
-        shutil.copy2(path, backup_path)
-        return backup_path
-
-    def _repack_dat(self, cam_path: Path, scr_path: Path) -> None:
-        if self._dat_path is None:
-            return
-        with tempfile.TemporaryDirectory() as tmpdir:
-            unpackdat.unpackdat(str(self._dat_path), output_folder=tmpdir)
-            packlist_path = Path(tmpdir) / "packlist.txt"
-            if not packlist_path.exists():
-                raise FileNotFoundError("packlist.txt not found when rebuilding DAT")
-            pack_entries = [
-                line.strip() for line in packlist_path.read_text().splitlines() if line.strip()
-            ]
-            cam_entry = next(
-                (name for name in pack_entries if name.lower() == cam_path.name.lower()),
-                cam_path.name,
-            )
-            scr_entry = next(
-                (name for name in pack_entries if name.lower() == scr_path.name.lower()),
-                scr_path.name,
-            )
-            if cam_entry not in pack_entries:
-                pack_entries.append(cam_entry)
-            if scr_entry not in pack_entries:
-                pack_entries.append(scr_entry)
-            packlist_path.write_text("\n".join(pack_entries) + "\n")
-            shutil.copy2(cam_path, Path(tmpdir) / cam_entry)
-            shutil.copy2(scr_path, Path(tmpdir) / scr_entry)
-            packdat.packdat(str(packlist_path), str(self._dat_path), backup=True)
-
-    def _build_camera_views(
-        self, segments: List[CameraSegmentRange]
-    ) -> List[CameraViewListing]:
-        if not segments:
-            return []
-        type_buckets: dict[int, dict[int, tuple[int, CameraPosition]]] = {}
-        for global_index, camera in enumerate(self._cameras):
-            per_type = type_buckets.setdefault(camera.camera_type, {})
-            per_type[camera.index] = (global_index, camera)
-        by_view: dict[int, List[CameraSegmentRange]] = {}
-        for segment in segments:
-            by_view.setdefault(segment.view, []).append(segment)
-        listings: List[CameraViewListing] = []
-        for view_index in sorted(by_view):
-            entries = sorted(
-                by_view[view_index],
-                key=lambda segment: (
-                    segment.start_dlong,
-                    segment.end_dlong,
-                    segment.camera_id,
-                ),
-            )
-            view_entries: List[CameraViewEntry] = []
-            for segment in entries:
-                camera_type = segment.mark if segment.mark in (2, 6, 7) else None
-                bucket_entry = type_buckets.get(camera_type, {}).get(segment.camera_id)
-                camera_index = None
-                camera = None
-                if bucket_entry is not None:
-                    camera_index, camera = bucket_entry
-                elif 0 <= segment.camera_id < len(self._cameras):
-                    camera_index = segment.camera_id
-                    camera = self._cameras[camera_index]
-                    if camera_type is None:
-                        camera_type = camera.camera_type
-                elif type_buckets:
-                    # Try any camera with the requested type index as a last resort
-                    for per_type in type_buckets.values():
-                        candidate = per_type.get(segment.camera_id)
-                        if candidate is not None:
-                            camera_index, camera = candidate
-                            break
-                view_entries.append(
-                    CameraViewEntry(
-                        camera_index=camera_index if camera_index is not None else segment.camera_id,
-                        type_index=segment.camera_id,
-                        camera_type=camera_type if camera_type is not None else None,
-                        start_dlong=segment.start_dlong,
-                        end_dlong=segment.end_dlong,
-                        mark=segment.mark,
-                    )
-                )
-            listings.append(
-                CameraViewListing(view=view_index, label=f"TV{view_index}", entries=view_entries)
-            )
-        return listings
 
     def _find_camera_entry(self, camera_index: int) -> tuple[int, int] | None:
         for view_index, view in enumerate(self._camera_views):
@@ -976,13 +812,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         min_py = min(p.y() for p in corners)
         max_py = max(p.y() for p in corners)
         return QtCore.QRectF(min_px, min_py, max_px - min_px, max_py - min_py)
-
-    def _detect_available_lp_files(self, track_folder: Path) -> List[str]:
-        available: List[str] = []
-        for name in LP_FILE_NAMES:
-            if (track_folder / f"{name}.LP").exists():
-                available.append(name)
-        return available
 
     def _load_ai_line(self, track_folder: Path, lp_name: str) -> List[Tuple[float, float]]:
         if self.trk is None or not self._cline:
