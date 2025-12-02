@@ -7,9 +7,11 @@ from typing import List, Optional
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
+from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
 from track_viewer.preview_widget import TrackPreviewWidget
+from track_viewer.window_controller import WindowController
 from track_viewer.tv_modes_panel import TvModesPanel
 from track_viewer.type6_editor import Type6Editor
 from track_viewer.type7_details import Type7Details
@@ -281,7 +283,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._path_display = QtWidgets.QLineEdit()
         self._path_display.setReadOnly(True)
         self._browse_button = QtWidgets.QPushButton("Select Folder…")
-        self._browse_button.clicked.connect(self._select_installation_path)
 
         self._track_list = QtWidgets.QListWidget()
         self._track_list.currentItemChanged.connect(self._on_track_selected)
@@ -340,9 +341,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
-        self._add_type6_camera_button.clicked.connect(self._add_type6_camera)
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
-        self._add_type7_camera_button.clicked.connect(self._add_type7_camera)
         self._center_line_button = QtWidgets.QPushButton("Hide Center Line")
         self._center_line_button.setCheckable(True)
         self._center_line_button.setChecked(True)
@@ -354,13 +353,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
 
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
-        self._save_cameras_button.clicked.connect(self._save_cameras)
 
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
         self._trk_gaps_button.setEnabled(False)
-        self._trk_gaps_button.clicked.connect(self._run_trk_gaps)
-        self._gap_results_window: QtWidgets.QDialog | None = None
-        self._gap_results_text: QtWidgets.QPlainTextEdit | None = None
 
         self._show_cameras_button = QtWidgets.QPushButton("Show Cameras")
         self._show_cameras_button.setCheckable(True)
@@ -374,6 +369,41 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._tv_mode_selector.currentIndexChanged.connect(
             self._handle_tv_mode_selection_changed
         )
+
+        self.controller = WindowController(
+            self.app_state, self.visualization_widget, parent=self
+        )
+        self.controller.installationPathChanged.connect(
+            lambda path: self._path_display.setText(str(path))
+        )
+        self.controller.trackListUpdated.connect(self._apply_track_list_items)
+        self.controller.trackLengthChanged.connect(self._sidebar.set_track_length)
+        self.controller.trkGapsAvailabilityChanged.connect(self._trk_gaps_button.setEnabled)
+        self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
+
+        self.camera_actions = CameraActions(self.visualization_widget)
+        self.camera_actions.infoMessage.connect(
+            lambda title, message: QtWidgets.QMessageBox.information(
+                self, title, message
+            )
+        )
+        self.camera_actions.warningMessage.connect(
+            lambda title, message: QtWidgets.QMessageBox.warning(
+                self, title, message
+            )
+        )
+        self._browse_button.clicked.connect(
+            lambda: self.controller.select_installation_path(self)
+        )
+        self._add_type6_camera_button.clicked.connect(
+            self.camera_actions.add_type6_camera
+        )
+        self._add_type7_camera_button.clicked.connect(
+            self.camera_actions.add_type7_camera
+        )
+        self._save_cameras_button.clicked.connect(self.camera_actions.save_cameras)
+        self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
+        self.controller.sync_ai_lines()
 
         layout = QtWidgets.QVBoxLayout()
         header = QtWidgets.QHBoxLayout()
@@ -409,85 +439,46 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
     # UI helpers
     # ------------------------------------------------------------------
-    def _select_installation_path(self) -> None:
-        start_dir = str(self.app_state.installation_path or Path.home())
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            "Select IndyCar Racing II folder",
-            start_dir,
-        )
-        if folder:
-            self.app_state.installation_path = Path(folder)
-            self._path_display.setText(str(self.app_state.installation_path))
-            self._load_tracks()
-
-    def _tracks_root(self) -> Optional[Path]:
-        if not self.app_state.installation_path:
-            return None
-        candidates = [
-            self.app_state.installation_path / "TRACKS",
-            self.app_state.installation_path / "tracks",
-        ]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_dir():
-                return candidate
-        return None
-
-    def _load_tracks(self) -> None:
-        track_root = self._tracks_root()
-        self._track_list.clear()
-        self.visualization_widget.clear()
-        self._sidebar.set_track_length(None)
-        self._trk_gaps_button.setEnabled(False)
-
-        if not track_root:
-            self.app_state.update_tracks([])
-            self._track_list.addItem("(TRACKS folder not found)")
-            self._track_list.setEnabled(False)
-            return
-
-        folders = [
-            path
-            for path in sorted(track_root.iterdir(), key=lambda p: p.name.lower())
-            if path.is_dir()
-        ]
-        self.app_state.update_tracks([folder.name for folder in folders])
-        if not folders:
-            self._track_list.addItem("(No track folders found)")
-            self._track_list.setEnabled(False)
-            return
-
-        self._track_list.setEnabled(True)
-        for folder in folders:
-            item = QtWidgets.QListWidgetItem(folder.name)
-            item.setData(QtCore.Qt.UserRole, folder)
-            self._track_list.addItem(item)
-        self._track_list.setCurrentRow(0)
+    def _apply_track_list_items(
+        self, entries: list[tuple[str, Path | None]], enabled: bool, default_index: int
+    ) -> None:
+        with QtCore.QSignalBlocker(self._track_list):
+            self._track_list.clear()
+            for label, folder in entries:
+                item = QtWidgets.QListWidgetItem(label)
+                item.setData(QtCore.Qt.UserRole, folder)
+                self._track_list.addItem(item)
+        self._track_list.setEnabled(enabled)
+        if enabled and 0 <= default_index < self._track_list.count():
+            self._track_list.setCurrentRow(default_index)
+        else:
+            self._track_list.setCurrentRow(-1)
 
     def _on_track_selected(
         self,
         current: Optional[QtWidgets.QListWidgetItem],
         _previous: Optional[QtWidgets.QListWidgetItem],
     ) -> None:
-        if not current:
-            self.visualization_widget.clear()
-            self._sidebar.set_track_length(None)
-            self._trk_gaps_button.setEnabled(False)
-            self._sync_ai_line_controls()
-            return
+        folder = current.data(QtCore.Qt.UserRole) if current else None
+        self.controller.set_selected_track(folder)
 
-        folder = current.data(QtCore.Qt.UserRole)
-        if not isinstance(folder, Path):
-            self.visualization_widget.clear("Select a valid track folder.")
-            self._sidebar.set_track_length(None)
-            self._trk_gaps_button.setEnabled(False)
-            self._sync_ai_line_controls()
-            return
-
-        self.visualization_widget.load_track(folder)
-        self._sidebar.set_track_length(self.visualization_widget.track_length())
-        self._trk_gaps_button.setEnabled(self.visualization_widget.trk is not None)
-        self._sync_ai_line_controls()
+    def _apply_ai_line_state(
+        self, available_files: list[str], visible_files: set[str], enabled: bool
+    ) -> None:
+        with QtCore.QSignalBlocker(self._lp_list):
+            self._lp_list.clear()
+            for name in available_files:
+                item = QtWidgets.QListWidgetItem(name)
+                item.setData(QtCore.Qt.UserRole, name)
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                color = QtGui.QColor(self.visualization_widget.lp_color(name))
+                item.setForeground(QtGui.QBrush(color))
+                state = (
+                    QtCore.Qt.Checked if name in visible_files else QtCore.Qt.Unchecked
+                )
+                item.setCheckState(state)
+                self._lp_list.addItem(item)
+        self._lp_list.setEnabled(enabled)
 
     def _toggle_center_line(self, enabled: bool) -> None:
         text = "Hide Center Line" if enabled else "Show Center Line"
@@ -508,7 +499,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             for row in range(self._lp_list.count())
             if self._lp_list.item(row).checkState() == QtCore.Qt.Checked
         ]
-        self.visualization_widget.set_visible_lp_files(selected)
+        self.controller.set_visible_lp_files(selected)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
@@ -525,45 +516,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         with QtCore.QSignalBlocker(self._tv_mode_selector):
             self._tv_mode_selector.setCurrentIndex(target_index)
 
-    def _sync_ai_line_controls(self) -> None:
-        available_files = self.visualization_widget.available_lp_files()
-        visible_files = set(self.visualization_widget.visible_lp_files())
-        with QtCore.QSignalBlocker(self._lp_list):
-            self._lp_list.clear()
-            for name in available_files:
-                item = QtWidgets.QListWidgetItem(name)
-                item.setData(QtCore.Qt.UserRole, name)
-                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-                color = QtGui.QColor(self.visualization_widget.lp_color(name))
-                item.setForeground(QtGui.QBrush(color))
-                state = QtCore.Qt.Checked if name in visible_files else QtCore.Qt.Unchecked
-                item.setCheckState(state)
-                self._lp_list.addItem(item)
-        self._lp_list.setEnabled(bool(available_files) and self.visualization_widget.ai_line_available())
-
-    def _add_type6_camera(self) -> None:
-        success, message = self.visualization_widget.add_type6_camera()
-        title = "Add Type 6 Camera"
-        if success:
-            QtWidgets.QMessageBox.information(self, title, message)
-        else:
-            QtWidgets.QMessageBox.warning(self, title, message)
-
-    def _add_type7_camera(self) -> None:
-        success, message = self.visualization_widget.add_type7_camera()
-        title = "Add Type 7 Camera"
-        if success:
-            QtWidgets.QMessageBox.information(self, title, message)
-        else:
-            QtWidgets.QMessageBox.warning(self, title, message)
-
-    def _save_cameras(self) -> None:
-        success, message = self.visualization_widget.save_cameras()
-        if success:
-            QtWidgets.QMessageBox.information(self, "Save Cameras", message)
-        else:
-            QtWidgets.QMessageBox.warning(self, "Save Cameras", message)
-
     def _handle_camera_selection_changed(self, index: Optional[int]) -> None:
         self.visualization_widget.set_selected_camera(index)
 
@@ -579,33 +531,3 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_type6_parameters_changed(self) -> None:
         self.visualization_widget.update()
-
-    def _run_trk_gaps(self) -> None:
-        success, message = self.visualization_widget.run_trk_gaps()
-        title = "TRK Gaps"
-        if not success:
-            QtWidgets.QMessageBox.warning(self, title, message)
-            return
-
-        self._show_gap_results_window(title, message)
-
-    def _show_gap_results_window(self, title: str, text: str) -> None:
-        if self._gap_results_window is None:
-            self._gap_results_window = QtWidgets.QDialog(self)
-            self._gap_results_window.setModal(False)
-            layout = QtWidgets.QVBoxLayout()
-            self._gap_results_text = QtWidgets.QPlainTextEdit()
-            self._gap_results_text.setReadOnly(True)
-            close_button = QtWidgets.QPushButton("Close")
-            close_button.clicked.connect(self._gap_results_window.close)
-            layout.addWidget(self._gap_results_text)
-            layout.addWidget(close_button, alignment=QtCore.Qt.AlignRight)
-            self._gap_results_window.setLayout(layout)
-            self._gap_results_window.resize(520, 420)
-        if self._gap_results_text is not None:
-            self._gap_results_window.setWindowTitle(title)
-            self._gap_results_text.setPlainText(text)
-            self._gap_results_text.moveCursor(QtGui.QTextCursor.Start)
-        self._gap_results_window.show()
-        self._gap_results_window.raise_()
-        self._gap_results_window.activateWindow()
