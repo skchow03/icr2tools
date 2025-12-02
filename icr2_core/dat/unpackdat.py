@@ -76,25 +76,40 @@ def unpackdat(dat_file_path, output_folder=None, specific_file=None):
                         output_file.write(bytes)
             print("Done")
 
+def _read_dat_entries(f):
+    """Return a list of ``(name, offset, length)`` tuples for ``f``."""
+
+    num_files = struct.unpack("<H", f.read(2))[0]
+
+    file_entries = []
+    for _ in range(num_files):
+        f.read(2)
+        file_length = struct.unpack("<L", f.read(4))[0]
+        f.read(4)
+
+        name_bytes = [struct.unpack("c", f.read(1))[0].decode("ascii") for _ in range(13)]
+        file_name = "".join(ch for ch in name_bytes if ch != "\x00")
+
+        file_offset = struct.unpack("<L", f.read(4))[0]
+        file_entries.append((file_name, file_offset, file_length))
+
+    return file_entries
+
+
+def list_dat_entries(dat_file_path: str):
+    """Return a list of ``(name, offset, length)`` tuples inside ``dat_file_path``."""
+
+    with open(dat_file_path, "rb") as f:
+        return _read_dat_entries(f)
+
+
 def extract_file_bytes(dat_file_path: str, target_name: str) -> bytes:
     """
     Extract a specific file from a .DAT archive into memory.
     Returns the raw bytes of that file, or raises FileNotFoundError.
     """
     with open(dat_file_path, "rb") as f:
-        num_files = struct.unpack("<H", f.read(2))[0]
-
-        file_entries = []
-        for _ in range(num_files):
-            f.read(2)
-            file_length = struct.unpack("<L", f.read(4))[0]
-            f.read(4)
-
-            name_bytes = [struct.unpack("c", f.read(1))[0].decode("ascii") for _ in range(13)]
-            file_name = "".join(ch for ch in name_bytes if ch != "\x00")
-
-            file_offset = struct.unpack("<L", f.read(4))[0]
-            file_entries.append((file_name, file_offset, file_length))
+        file_entries = _read_dat_entries(f)
 
         for file_name, file_offset, file_length in file_entries:
             if file_name.lower() == target_name.lower():
