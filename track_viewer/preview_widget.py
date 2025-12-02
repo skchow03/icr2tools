@@ -643,7 +643,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         cam_path = track_folder / f"{track_name}.cam"
         scr_path = track_folder / f"{track_name}.scr"
         dat_files = list(track_folder.glob("*.dat"))
-        dat_path = dat_files[0] if dat_files else None
+        dat_path = next(
+            (
+                candidate
+                for candidate in dat_files
+                if candidate.stem.lower() == track_name.lower()
+            ),
+            None,
+        )
         self._dat_path = dat_path
         self._camera_source = None
 
