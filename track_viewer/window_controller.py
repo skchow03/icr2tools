@@ -106,7 +106,7 @@ class WindowController(QtCore.QObject):
     def sync_ai_lines(self) -> None:
         available_files = self.preview_widget.available_lp_files()
         visible_files = set(self.preview_widget.visible_lp_files())
-        enabled = bool(available_files) and self.preview_widget.ai_line_available()
+        enabled = self.preview_widget.trk is not None
         self.aiLinesUpdated.emit(available_files, visible_files, enabled)
 
     # ------------------------------------------------------------------

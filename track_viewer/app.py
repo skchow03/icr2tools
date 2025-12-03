@@ -291,7 +291,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(track_label)
         left_layout.addWidget(self._track_list)
-        lp_label = QtWidgets.QLabel("AI Lines")
+        lp_label = QtWidgets.QLabel("AI and center lines")
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
         left_layout.addWidget(self._lp_list)
@@ -331,12 +331,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.update_selected_camera_details(None, None)
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
-        self._center_line_button = QtWidgets.QPushButton("Hide Center Line")
-        self._center_line_button.setCheckable(True)
-        self._center_line_button.setChecked(True)
-        self._center_line_button.toggled.connect(self._toggle_center_line)
-        self._toggle_center_line(self._center_line_button.isChecked())
-
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
         self._boundary_button.setCheckable(True)
         self._boundary_button.setChecked(True)
@@ -406,7 +400,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._add_type7_camera_button)
         controls.addWidget(self._save_cameras_button)
         controls.addWidget(self._trk_gaps_button)
-        controls.addWidget(self._center_line_button)
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._show_cameras_button)
@@ -483,6 +476,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         with QtCore.QSignalBlocker(self._lp_list):
             self._lp_list.clear()
+            center_item = QtWidgets.QListWidgetItem("Center line")
+            center_item.setData(QtCore.Qt.UserRole, "center-line")
+            center_item.setFlags(
+                center_item.flags() | QtCore.Qt.ItemIsUserCheckable
+            )
+            center_state = (
+                QtCore.Qt.Checked
+                if self.visualization_widget.center_line_visible()
+                else QtCore.Qt.Unchecked
+            )
+            center_item.setCheckState(center_state)
+            self._lp_list.addItem(center_item)
             for name in available_files:
                 item = QtWidgets.QListWidgetItem(name)
                 item.setData(QtCore.Qt.UserRole, name)
@@ -493,13 +498,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                     QtCore.Qt.Checked if name in visible_files else QtCore.Qt.Unchecked
                 )
                 item.setCheckState(state)
-                self._lp_list.addItem(item)
+            self._lp_list.addItem(item)
         self._lp_list.setEnabled(enabled)
-
-    def _toggle_center_line(self, enabled: bool) -> None:
-        text = "Hide Center Line" if enabled else "Show Center Line"
-        self._center_line_button.setText(text)
-        self.visualization_widget.set_show_center_line(enabled)
 
     def _toggle_boundaries(self, enabled: bool) -> None:
         text = "Hide Boundaries" if enabled else "Show Boundaries"
@@ -515,10 +515,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         name = item.data(QtCore.Qt.UserRole)
         if not isinstance(name, str):
             return
+        if name == "center-line":
+            self.visualization_widget.set_show_center_line(
+                item.checkState() == QtCore.Qt.Checked
+            )
+            return
         selected = [
             self._lp_list.item(row).data(QtCore.Qt.UserRole)
             for row in range(self._lp_list.count())
             if self._lp_list.item(row).checkState() == QtCore.Qt.Checked
+            and self._lp_list.item(row).data(QtCore.Qt.UserRole) != "center-line"
         ]
         self.controller.set_visible_lp_files(selected)
 
