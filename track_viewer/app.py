@@ -11,6 +11,7 @@ from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
 from track_viewer.preview_widget import TrackPreviewWidget
+from track_viewer.version import __version__
 from track_viewer.window_controller import WindowController
 from track_viewer.tv_modes_panel import TvModesPanel
 from track_viewer.type6_editor import Type6Editor
@@ -451,7 +452,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.about(
             self,
             "About ICR2 Track Viewer",
-            "ICR2 Track Viewer\nby SK Chow",
+            f"ICR2 Track Viewer v{__version__}\nby SK Chow",
         )
 
     def _apply_track_list_items(
