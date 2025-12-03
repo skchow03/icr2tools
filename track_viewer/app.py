@@ -498,7 +498,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                     QtCore.Qt.Checked if name in visible_files else QtCore.Qt.Unchecked
                 )
                 item.setCheckState(state)
-            self._lp_list.addItem(item)
+                self._lp_list.addItem(item)
         self._lp_list.setEnabled(enabled)
 
     def _toggle_boundaries(self, enabled: bool) -> None:
