@@ -272,10 +272,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
 
-        self._path_display = QtWidgets.QLineEdit()
-        self._path_display.setReadOnly(True)
-        self._browse_button = QtWidgets.QPushButton("Select Folder…")
-
         self._track_list = QtWidgets.QListWidget()
         self._track_list.currentItemChanged.connect(self._on_track_selected)
 
@@ -365,9 +361,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.controller = WindowController(
             self.app_state, self.visualization_widget, parent=self
         )
-        self.controller.installationPathChanged.connect(
-            lambda path: self._path_display.setText(str(path))
-        )
+        self.controller.installationPathChanged.connect(self._handle_installation_path)
         self.controller.trackListUpdated.connect(self._apply_track_list_items)
         self.controller.trackLengthChanged.connect(self._sidebar.set_track_length)
         self.controller.trkGapsAvailabilityChanged.connect(self._trk_gaps_button.setEnabled)
@@ -384,9 +378,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self, title, message
             )
         )
-        self._browse_button.clicked.connect(
-            lambda: self.controller.select_installation_path(self)
-        )
         self._add_type6_camera_button.clicked.connect(
             self.camera_actions.add_type6_camera
         )
@@ -397,12 +388,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
         self.controller.sync_ai_lines()
 
+        self._create_menus()
+        self.statusBar().showMessage("Select an ICR2 folder to get started")
+
         layout = QtWidgets.QVBoxLayout()
-        header = QtWidgets.QHBoxLayout()
-        header.addWidget(QtWidgets.QLabel("ICR2 Installation:"))
-        header.addWidget(self._path_display, stretch=1)
-        header.addWidget(self._browse_button)
-        layout.addLayout(header)
 
         controls = QtWidgets.QHBoxLayout()
         controls.addStretch(1)
@@ -431,6 +420,33 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
     # UI helpers
     # ------------------------------------------------------------------
+    def _create_menus(self) -> None:
+        file_menu = self.menuBar().addMenu("File")
+        open_action = QtWidgets.QAction("Open ICR2 folder", self)
+        open_action.triggered.connect(
+            lambda: self.controller.select_installation_path(self)
+        )
+        file_menu.addAction(open_action)
+
+        quit_action = QtWidgets.QAction("Quit", self)
+        quit_action.triggered.connect(QtWidgets.qApp.quit)
+        file_menu.addAction(quit_action)
+
+        help_menu = self.menuBar().addMenu("Help")
+        about_action = QtWidgets.QAction("About", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_action)
+
+    def _handle_installation_path(self, path: Path) -> None:
+        self.statusBar().showMessage(str(path))
+
+    def _show_about_dialog(self) -> None:
+        QtWidgets.QMessageBox.about(
+            self,
+            "About ICR2 Track Viewer",
+            "ICR2 Track Viewer\nA tool for inspecting IndyCar Racing II tracks.",
+        )
+
     def _apply_track_list_items(
         self, entries: list[tuple[str, Path | None]], enabled: bool, default_index: int
     ) -> None:
