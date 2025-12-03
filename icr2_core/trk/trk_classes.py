@@ -1,5 +1,12 @@
-import numpy as np
 import math
+import sys
+from pathlib import Path
+
+import numpy as np
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.append(str(PACKAGE_ROOT))
 
 from icr2_core.trk.sg_classes import SGFile
 import icr2_core.trk.trk_exporter  # if you have this file too
