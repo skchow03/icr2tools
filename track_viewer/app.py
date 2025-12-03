@@ -74,14 +74,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(12)
 
-        cursor_title = QtWidgets.QLabel("Cursor position")
-        cursor_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(cursor_title)
-        cursor_form = QtWidgets.QFormLayout()
-        cursor_form.addRow("X", self._cursor_x)
-        cursor_form.addRow("Y", self._cursor_y)
-        layout.addLayout(cursor_form)
-
         flag_title = QtWidgets.QLabel("Selected flag")
         flag_title.setStyleSheet("font-weight: bold")
         layout.addWidget(flag_title)
