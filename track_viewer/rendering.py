@@ -79,6 +79,31 @@ def render_surface_to_pixmap(
     return pixmap
 
 
+def draw_track_boundaries(
+    painter: QtGui.QPainter,
+    edges: Sequence[tuple[Point2D, Point2D]],
+    transform: Transform,
+    viewport_height: int,
+    *,
+    color: QtGui.QColor | str = "lightgray",
+    width: int = 2,
+) -> None:
+    if not edges:
+        return
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    painter.setPen(QtGui.QPen(QtGui.QColor(color), width))
+    for start, end in edges:
+        painter.drawLine(
+            QtCore.QLineF(
+                map_point(start[0], start[1], transform, viewport_height),
+                map_point(end[0], end[1], transform, viewport_height),
+            )
+        )
+    painter.restore()
+
+
 def draw_centerline(
     painter: QtGui.QPainter,
     sampled_centerline: Sequence[Point2D],
