@@ -187,31 +187,25 @@ def _draw_camera_symbol(
 ) -> None:
     painter.save()
     painter.translate(center)
-    pen = QtGui.QPen(QtGui.QColor("#111111"))
-    pen.setWidth(1 if not selected else 2)
-    pen.setColor(base_color if not selected else QtGui.QColor("#ff4081"))
+
+    pen_color = base_color if not selected else QtGui.QColor("#ff4081")
+    pen = QtGui.QPen(pen_color)
+    pen.setWidth(2 if selected else 1)
+    pen.setJoinStyle(QtCore.Qt.RoundJoin)
     painter.setPen(pen)
     painter.setBrush(QtGui.QBrush(base_color))
 
-    body_width = 14
-    body_height = 9
-    lens_radius = 3
-    viewfinder_width = 5
-    viewfinder_height = 4
+    triangle_height = 12
+    half_width = 7
 
-    body_rect = QtCore.QRectF(-body_width / 2, -body_height / 2, body_width, body_height)
-    painter.drawRoundedRect(body_rect, 2, 2)
-
-    lens_center = QtCore.QPointF(body_width / 2 - lens_radius - 1, 0)
-    painter.drawEllipse(lens_center, lens_radius, lens_radius)
-
-    viewfinder_rect = QtCore.QRectF(
-        -body_width / 2,
-        -body_height / 2 - viewfinder_height + 1,
-        viewfinder_width,
-        viewfinder_height,
+    triangle = QtGui.QPolygonF(
+        [
+            QtCore.QPointF(0, 0),  # tip at the camera position
+            QtCore.QPointF(-half_width, -triangle_height),
+            QtCore.QPointF(half_width, -triangle_height),
+        ]
     )
-    painter.drawRoundedRect(viewfinder_rect, 1.5, 1.5)
+    painter.drawPolygon(triangle)
 
     painter.restore()
 
