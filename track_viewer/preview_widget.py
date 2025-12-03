@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition, CameraSegmentRange
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
+from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import (
     get_cline_pos,
     getxyz,
@@ -343,7 +344,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._track_length = track_data.track_length
         self._cline = track_data.centerline
         self._surface_mesh = track_data.surface_mesh
-        self._boundary_edges = self._build_boundary_edges(self._surface_mesh)
+        self._boundary_edges = self._build_boundary_edges(self.trk, self._cline)
         sampled, sampled_dlongs, sampled_bounds = sample_centerline(self.trk, self._cline)
         self._sampled_centerline = sampled
         self._sampled_dlongs = sampled_dlongs
@@ -479,35 +480,32 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return (min_x, max_x, min_y, max_y)
 
     @staticmethod
-    def _canonical_edge(
-        start: Tuple[float, float], end: Tuple[float, float]
-    ) -> tuple[Tuple[float, float], Tuple[float, float]]:
-        return (start, end) if start <= end else (end, start)
-
     def _build_boundary_edges(
-        self, mesh: Iterable[GroundSurfaceStrip]
+        self,
+        trk: TRKFile | None,
+        cline: Optional[List[Tuple[float, float]]],
     ) -> List[tuple[Tuple[float, float], Tuple[float, float]]]:
-        edge_counts: Dict[
-            tuple[Tuple[float, float], Tuple[float, float]], int
-        ] = {}
-        edge_orientations: Dict[
-            tuple[Tuple[float, float], Tuple[float, float]],
-            tuple[Tuple[float, float], Tuple[float, float]],
-        ] = {}
+        """Create boundary line segments directly from TRK section data."""
 
-        for strip in mesh:
-            points = list(strip.points)
-            for index, start in enumerate(points):
-                end = points[(index + 1) % len(points)]
-                key = self._canonical_edge(start, end)
-                edge_counts[key] = edge_counts.get(key, 0) + 1
-                edge_orientations.setdefault(key, (start, end))
+        if trk is None or cline is None:
+            return []
 
-        return [
-            edge_orientations[key]
-            for key, count in edge_counts.items()
-            if count == 1 and key in edge_orientations
-        ]
+        edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
+
+        for sect in trk.sects:
+            start_dlong = sect.start_dlong
+            end_dlong = sect.start_dlong + sect.length
+
+            for bound_idx in range(sect.num_bounds):
+                start_dlat = sect.bound_dlat_start[bound_idx]
+                end_dlat = sect.bound_dlat_end[bound_idx]
+
+                start_x, start_y, _ = getxyz(trk, start_dlong, start_dlat, cline)
+                end_x, end_y, _ = getxyz(trk, end_dlong, end_dlat, cline)
+
+                edges.append(((start_x, start_y), (end_x, end_y)))
+
+        return edges
 
     def _update_fit_scale(self) -> None:
         fit = self._calculate_fit_scale()
