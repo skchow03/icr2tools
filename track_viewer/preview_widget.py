@@ -495,14 +495,39 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             start_dlong = sect.start_dlong
             end_dlong = sect.start_dlong + sect.length
 
+            if sect.type == 1:
+                num_subsects = 1
+            else:
+                num_subsects = max(1, round(sect.length / 60000))
+
             for bound_idx in range(sect.num_bounds):
                 start_dlat = sect.bound_dlat_start[bound_idx]
                 end_dlat = sect.bound_dlat_end[bound_idx]
 
-                start_x, start_y, _ = getxyz(trk, start_dlong, start_dlat, cline)
-                end_x, end_y, _ = getxyz(trk, end_dlong, end_dlat, cline)
+                for sub_idx in range(num_subsects):
+                    sub_start_dlong = start_dlong + (
+                        (end_dlong - start_dlong) * sub_idx / num_subsects
+                    )
+                    if sub_idx == num_subsects - 1:
+                        sub_end_dlong = end_dlong
+                    else:
+                        sub_end_dlong = start_dlong + (
+                            (end_dlong - start_dlong) * (sub_idx + 1) / num_subsects
+                        )
 
-                edges.append(((start_x, start_y), (end_x, end_y)))
+                    sub_start_dlat = start_dlat + (
+                        (end_dlat - start_dlat) * sub_idx / num_subsects
+                    )
+                    sub_end_dlat = start_dlat + (
+                        (end_dlat - start_dlat) * (sub_idx + 1) / num_subsects
+                    )
+
+                    start_x, start_y, _ = getxyz(
+                        trk, sub_start_dlong, sub_start_dlat, cline
+                    )
+                    end_x, end_y, _ = getxyz(trk, sub_end_dlong, sub_end_dlat, cline)
+
+                    edges.append(((start_x, start_y), (end_x, end_y)))
 
         return edges
 
