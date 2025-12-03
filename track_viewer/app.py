@@ -278,7 +278,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self._lp_list = QtWidgets.QListWidget()
         self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self._lp_list.itemChanged.connect(self._handle_lp_item_changed)
+        self._lp_button_group = QtWidgets.QButtonGroup(self)
+        self._lp_button_group.setExclusive(True)
+        self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
+        self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -475,31 +478,85 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self, available_files: list[str], visible_files: set[str], enabled: bool
     ) -> None:
         with QtCore.QSignalBlocker(self._lp_list):
+            for button in self._lp_button_group.buttons():
+                self._lp_button_group.removeButton(button)
+                button.deleteLater()
+            self._lp_checkboxes = {}
             self._lp_list.clear()
-            center_item = QtWidgets.QListWidgetItem("Center line")
-            center_item.setData(QtCore.Qt.UserRole, "center-line")
-            center_item.setFlags(
-                center_item.flags() | QtCore.Qt.ItemIsUserCheckable
+
+            active_line = self.visualization_widget.active_lp_line()
+            if active_line not in {"center-line", *available_files}:
+                active_line = "center-line"
+
+            self._add_lp_list_item(
+                label="Center line",
+                name="center-line",
+                color=None,
+                visible=self.visualization_widget.center_line_visible(),
+                selected=active_line == "center-line",
+                enabled=enabled,
             )
-            center_state = (
-                QtCore.Qt.Checked
-                if self.visualization_widget.center_line_visible()
-                else QtCore.Qt.Unchecked
-            )
-            center_item.setCheckState(center_state)
-            self._lp_list.addItem(center_item)
+
             for name in available_files:
-                item = QtWidgets.QListWidgetItem(name)
-                item.setData(QtCore.Qt.UserRole, name)
-                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-                color = QtGui.QColor(self.visualization_widget.lp_color(name))
-                item.setForeground(QtGui.QBrush(color))
-                state = (
-                    QtCore.Qt.Checked if name in visible_files else QtCore.Qt.Unchecked
+                self._add_lp_list_item(
+                    label=name,
+                    name=name,
+                    color=self.visualization_widget.lp_color(name),
+                    visible=name in visible_files,
+                    selected=active_line == name,
+                    enabled=enabled,
                 )
-                item.setCheckState(state)
-                self._lp_list.addItem(item)
+
+            self.visualization_widget.set_active_lp_line(active_line)
         self._lp_list.setEnabled(enabled)
+
+    def _add_lp_list_item(
+        self,
+        *,
+        label: str,
+        name: str,
+        color: str | None,
+        visible: bool,
+        selected: bool,
+        enabled: bool,
+    ) -> None:
+        item = QtWidgets.QListWidgetItem()
+        item.setData(QtCore.Qt.UserRole, name)
+        item.setFlags(QtCore.Qt.ItemIsEnabled)
+
+        radio = QtWidgets.QRadioButton()
+        radio.setProperty("lp-name", name)
+        with QtCore.QSignalBlocker(radio):
+            radio.setChecked(selected)
+        radio.setEnabled(enabled)
+        self._lp_button_group.addButton(radio)
+
+        checkbox = QtWidgets.QCheckBox(label)
+        if color:
+            palette = checkbox.palette()
+            palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(color))
+            checkbox.setPalette(palette)
+        with QtCore.QSignalBlocker(checkbox):
+            checkbox.setChecked(visible)
+        checkbox.setEnabled(enabled)
+        checkbox.toggled.connect(
+            lambda state, line=name: self._handle_lp_visibility_changed(line, state)
+        )
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(6, 0, 6, 0)
+        layout.setSpacing(8)
+        layout.addWidget(radio)
+        layout.addWidget(checkbox)
+        layout.addStretch(1)
+
+        container = QtWidgets.QWidget()
+        container.setLayout(layout)
+        item.setSizeHint(container.sizeHint())
+
+        self._lp_list.addItem(item)
+        self._lp_list.setItemWidget(item, container)
+        self._lp_checkboxes[name] = checkbox
 
     def _toggle_boundaries(self, enabled: bool) -> None:
         text = "Hide Boundaries" if enabled else "Show Boundaries"
@@ -511,22 +568,22 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button.setText(text)
         self.visualization_widget.set_show_zoom_points(enabled)
 
-    def _handle_lp_item_changed(self, item: QtWidgets.QListWidgetItem) -> None:
-        name = item.data(QtCore.Qt.UserRole)
-        if not isinstance(name, str):
-            return
+    def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":
-            self.visualization_widget.set_show_center_line(
-                item.checkState() == QtCore.Qt.Checked
-            )
+            self.visualization_widget.set_show_center_line(visible)
             return
-        selected = [
-            self._lp_list.item(row).data(QtCore.Qt.UserRole)
-            for row in range(self._lp_list.count())
-            if self._lp_list.item(row).checkState() == QtCore.Qt.Checked
-            and self._lp_list.item(row).data(QtCore.Qt.UserRole) != "center-line"
-        ]
-        self.controller.set_visible_lp_files(selected)
+
+        selected = set(self.visualization_widget.visible_lp_files())
+        if visible:
+            selected.add(name)
+        else:
+            selected.discard(name)
+        self.controller.set_visible_lp_files(sorted(selected))
+
+    def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
+        name = button.property("lp-name")
+        if isinstance(name, str):
+            self.visualization_widget.set_active_lp_line(name)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
