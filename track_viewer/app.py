@@ -336,6 +336,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._center_line_button.toggled.connect(self._toggle_center_line)
         self._toggle_center_line(self._center_line_button.isChecked())
 
+        self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
+        self._boundary_button.setCheckable(True)
+        self._boundary_button.setChecked(True)
+        self._boundary_button.toggled.connect(self._toggle_boundaries)
+        self._toggle_boundaries(self._boundary_button.isChecked())
+
         self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
         self._zoom_points_button.setCheckable(True)
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
@@ -400,6 +406,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._save_cameras_button)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._center_line_button)
+        controls.addWidget(self._boundary_button)
         controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
@@ -492,6 +499,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Center Line" if enabled else "Show Center Line"
         self._center_line_button.setText(text)
         self.visualization_widget.set_show_center_line(enabled)
+
+    def _toggle_boundaries(self, enabled: bool) -> None:
+        text = "Hide Boundaries" if enabled else "Show Boundaries"
+        self._boundary_button.setText(text)
+        self.visualization_widget.set_show_boundaries(enabled)
 
     def _toggle_zoom_points(self, enabled: bool) -> None:
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"

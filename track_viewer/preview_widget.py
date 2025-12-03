@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -87,11 +87,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
         self._show_center_line = True
+        self._show_boundaries = True
         self._show_cameras = True
         self._show_zoom_points = False
         self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
         self._track_length: float | None = None
+        self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -159,6 +161,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._track_length = None
         self._visible_lp_files = set()
         self._available_lp_files = []
+        self._boundary_edges = []
         self._camera_service.reset()
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -189,6 +192,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._show_center_line = show
             if not show:
                 self._set_centerline_projection(None, None, None)
+            self.update()
+
+    def set_show_boundaries(self, show: bool) -> None:
+        """Enable or disable rendering of the track boundary edges."""
+
+        if self._show_boundaries != show:
+            self._show_boundaries = show
             self.update()
 
     def center_line_visible(self) -> bool:
@@ -333,6 +343,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._track_length = track_data.track_length
         self._cline = track_data.centerline
         self._surface_mesh = track_data.surface_mesh
+        self._boundary_edges = self._build_boundary_edges(self._surface_mesh)
         sampled, sampled_dlongs, sampled_bounds = sample_centerline(self.trk, self._cline)
         self._sampled_centerline = sampled
         self._sampled_dlongs = sampled_dlongs
@@ -467,6 +478,37 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         max_y = max(b[3] for b in valid)
         return (min_x, max_x, min_y, max_y)
 
+    @staticmethod
+    def _canonical_edge(
+        start: Tuple[float, float], end: Tuple[float, float]
+    ) -> tuple[Tuple[float, float], Tuple[float, float]]:
+        return (start, end) if start <= end else (end, start)
+
+    def _build_boundary_edges(
+        self, mesh: Iterable[GroundSurfaceStrip]
+    ) -> List[tuple[Tuple[float, float], Tuple[float, float]]]:
+        edge_counts: Dict[
+            tuple[Tuple[float, float], Tuple[float, float]], int
+        ] = {}
+        edge_orientations: Dict[
+            tuple[Tuple[float, float], Tuple[float, float]],
+            tuple[Tuple[float, float], Tuple[float, float]],
+        ] = {}
+
+        for strip in mesh:
+            points = list(strip.points)
+            for index, start in enumerate(points):
+                end = points[(index + 1) % len(points)]
+                key = self._canonical_edge(start, end)
+                edge_counts[key] = edge_counts.get(key, 0) + 1
+                edge_orientations.setdefault(key, (start, end))
+
+        return [
+            edge_orientations[key]
+            for key, count in edge_counts.items()
+            if count == 1 and key in edge_orientations
+        ]
+
     def _update_fit_scale(self) -> None:
         fit = self._calculate_fit_scale()
         self._fit_scale = fit
@@ -530,6 +572,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._pixmap_size = self.size()
 
         painter.drawPixmap(0, 0, self._cached_surface_pixmap)
+
+        if transform and self._show_boundaries:
+            rendering.draw_track_boundaries(
+                painter, self._boundary_edges, transform, self.height()
+            )
 
         if self._show_center_line and self._sampled_centerline and transform:
             rendering.draw_centerline(
