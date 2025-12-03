@@ -481,7 +481,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     @staticmethod
     def _build_boundary_edges(
-        self,
         trk: TRKFile | None,
         cline: Optional[List[Tuple[float, float]]],
     ) -> List[tuple[Tuple[float, float], Tuple[float, float]]]:
