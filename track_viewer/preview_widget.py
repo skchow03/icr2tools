@@ -117,6 +117,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             float | None,
             float | None,
         ] | None = None
+        self._cursor_position: Tuple[float, float] | None = None
         self._io_service = TrackIOService()
         self._camera_service = CameraService(self._io_service, CameraController())
 
@@ -154,6 +155,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_centerline_elevation = None
         self._centerline_cached_point = None
         self._centerline_cached_projection = None
+        self._cursor_position = None
         self._track_length = None
         self._visible_lp_files = set()
         self._available_lp_files = []
@@ -617,6 +619,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             )
             painter.drawText(12, y, elevation_text)
 
+        self._draw_cursor_position(painter)
+
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._pixmap_size = None
         self._cached_surface_pixmap = None
@@ -724,6 +728,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def leaveEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self.cursorPositionChanged.emit(None)
+        if self._cursor_position is not None:
+            self._cursor_position = None
+            self.update()
         self._set_centerline_projection(None, None, None)
         super().leaveEvent(event)
 
@@ -733,9 +740,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _update_cursor_position(self, point: QtCore.QPointF) -> None:
         if not self._surface_mesh or not self._bounds:
             self.cursorPositionChanged.emit(None)
+            if self._cursor_position is not None:
+                self._cursor_position = None
+                self.update()
             self._set_centerline_projection(None, None, None)
             return
         coords = self._map_to_track(point)
+        if coords != self._cursor_position:
+            self._cursor_position = coords
+            self.update()
         self.cursorPositionChanged.emit(coords)
         self._update_centerline_projection(point)
 
@@ -828,6 +841,32 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._centerline_cached_point = point
         self._centerline_cached_projection = (best_point, best_dlong, elevation)
         self._set_centerline_projection(best_point, best_dlong, elevation)
+
+    def _draw_cursor_position(self, painter: QtGui.QPainter) -> None:
+        if self._cursor_position is None:
+            return
+
+        x, y = self._cursor_position
+        lines = [
+            f"Cursor X: {self._format_cursor_value(x)}",
+            f"Cursor Y: {self._format_cursor_value(y)}",
+        ]
+
+        metrics = painter.fontMetrics()
+        line_height = metrics.height()
+        margin = 12
+        max_width = max(metrics.horizontalAdvance(line) for line in lines)
+        start_x = self.width() - margin - max_width
+        start_y = margin + metrics.ascent()
+
+        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+        for line in lines:
+            painter.drawText(start_x, start_y, line)
+            start_y += line_height
+
+    @staticmethod
+    def _format_cursor_value(value: float) -> str:
+        return f"{value:.2f}"
 
     def _camera_at_point(self, point: QtCore.QPointF, radius: int = 10) -> int | None:
         transform = self._current_transform()
