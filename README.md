@@ -24,10 +24,17 @@ python -m icr2timing.main
 ```
 
 ### Track Viewer
-The track viewer is a lightweight PyQt utility that scans an IndyCar Racing II
-installation, lists the available `.TRK` files, and reserves space for future
-visualization work. It mirrors the overlay's cleanup hooks so it can be frozen
-into an executable later.
+The track viewer is a PyQt desktop tool for inspecting IndyCar Racing II track
+folders. It:
+
+- Discovers tracks in the `TRACKS/` directory and previews the `.TRK` ground
+  surface with centreline overlays.
+- Loads `.cam`/`.scr` data from disk or bundled DAT files, allowing Type 6/7
+  camera editing, TV mode reshuffling, coordinate tweaks, and save/export back
+  to disk (with optional DAT repacking).
+- Displays AI line (`*.LP`) polylines and lets you toggle individual files.
+- Runs the `trk_gaps` check against the loaded track and surfaces the results
+  inline.
 
 Run it either as a module or via the installed entry point:
 
