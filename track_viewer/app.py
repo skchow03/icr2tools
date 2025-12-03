@@ -444,7 +444,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.about(
             self,
             "About ICR2 Track Viewer",
-            "ICR2 Track Viewer\nA tool for inspecting IndyCar Racing II tracks.",
+            "ICR2 Track Viewer\nby SK Chow",
         )
 
     def _apply_track_list_items(
