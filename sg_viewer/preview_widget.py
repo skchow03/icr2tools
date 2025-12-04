@@ -7,7 +7,7 @@ from typing import List, Tuple
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_cline_pos
+from icr2_core.trk.trk_utils import get_cline_pos, getxyz
 from track_viewer import rendering
 from track_viewer.geometry import (
     CenterlineIndex,
