@@ -28,6 +28,8 @@ class SectionSelection:
     type_name: str
     start_dlong: float
     end_dlong: float
+    start_heading: Point | None = None
+    end_heading: Point | None = None
     center: Point | None = None
     radius: float | None = None
 
@@ -392,6 +394,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._track_length:
             end_dlong = end_dlong % self._track_length
 
+        start_heading, end_heading = self._get_heading_vectors(index)
         type_name = "Curve" if sect.type == 2 else "Straight"
         marker = self._curve_markers.get(index)
         selection = SectionSelection(
@@ -399,6 +402,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             type_name=type_name,
             start_dlong=self._round_sg_value(sect.start_dlong),
             end_dlong=self._round_sg_value(end_dlong),
+            start_heading=start_heading,
+            end_heading=end_heading,
             center=marker.center if marker else None,
             radius=marker.radius if marker else None,
         )
@@ -482,6 +487,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
         end = start + float(self._trk.sects[index].length)
         return start, end
 
+    def _get_heading_vectors(self, index: int) -> tuple[Point | None, Point | None]:
+        if self._sgfile is None or index < 0 or index >= len(self._sgfile.sects):
+            return None, None
+
+        start = self._normalize_heading_vector(
+            float(self._sgfile.sects[index].sang1),
+            float(self._sgfile.sects[index].sang2),
+        )
+        end = self._normalize_heading_vector(
+            float(self._sgfile.sects[index].eang1),
+            float(self._sgfile.sects[index].eang2),
+        )
+        return start, end
+
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (
             self._sgfile is None
@@ -544,6 +563,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         """Round SG-derived values to match the raw file precision."""
 
         return float(round(value))
+
+    @staticmethod
+    def _normalize_heading_vector(x_component: float, y_component: float) -> Point | None:
+        scale = 2**30
+        x = x_component / scale
+        y = y_component / scale
+        length = (x * x + y * y) ** 0.5
+        if length == 0:
+            return None
+        return (x / length, y / length)
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}

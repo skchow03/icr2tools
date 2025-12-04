@@ -80,6 +80,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
         self._center_label = QtWidgets.QLabel("Center: –")
         self._radius_label = QtWidgets.QLabel("Radius: –")
+        self._start_heading_label = QtWidgets.QLabel("Start Heading: –")
+        self._end_heading_label = QtWidgets.QLabel("End Heading: –")
         self._section_table_window: SectionTableWindow | None = None
 
         sidebar_layout = QtWidgets.QVBoxLayout()
@@ -95,6 +97,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._dlong_label)
         sidebar_layout.addWidget(self._center_label)
         sidebar_layout.addWidget(self._radius_label)
+        sidebar_layout.addWidget(self._start_heading_label)
+        sidebar_layout.addWidget(self._end_heading_label)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
@@ -173,6 +177,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._dlong_label.setText("DLONG: –")
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+            self._start_heading_label.setText("Start Heading: –")
+            self._end_heading_label.setText("End Heading: –")
             self._profile_widget.set_selected_range(None)
             return
 
@@ -188,6 +194,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+
+        if selection.start_heading is not None:
+            sx, sy = selection.start_heading
+            self._start_heading_label.setText(f"Start Heading: ({sx:.3f}, {sy:.3f})")
+        else:
+            self._start_heading_label.setText("Start Heading: –")
+
+        if selection.end_heading is not None:
+            ex, ey = selection.end_heading
+            self._end_heading_label.setText(f"End Heading: ({ex:.3f}, {ey:.3f})")
+        else:
+            self._end_heading_label.setText("End Heading: –")
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
