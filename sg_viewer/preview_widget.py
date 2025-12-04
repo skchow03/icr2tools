@@ -28,8 +28,8 @@ class SectionSelection:
     type_name: str
     start_dlong: float
     end_dlong: float
-    start_heading: float | None = None
-    end_heading: float | None = None
+    start_heading: tuple[float, float] | None = None
+    end_heading: tuple[float, float] | None = None
     center: Point | None = None
     radius: float | None = None
 
@@ -487,13 +487,51 @@ class SGPreviewWidget(QtWidgets.QWidget):
         end = start + float(self._trk.sects[index].length)
         return start, end
 
-    def _get_heading_vectors(self, index: int) -> tuple[float | None, float | None]:
-        if self._sgfile is None or index < 0 or index >= len(self._sgfile.sects):
+    def _get_heading_vectors(
+        self, index: int
+    ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+        if (
+            self._sgfile is None
+            or self._trk is None
+            or self._cline is None
+            or index < 0
+            or index >= len(self._sgfile.sects)
+            or index >= len(self._trk.sects)
+        ):
             return None, None
 
-        start = float(self._sgfile.sects[index].sang1)
-        end = float(self._sgfile.sects[index].eang1)
-        return start, end
+        trk_sect = self._trk.sects[index]
+        if getattr(trk_sect, "type", None) == 2:
+            sg_sect = self._sgfile.sects[index]
+            start = (
+                float(sg_sect.sang1),
+                float(sg_sect.sang2),
+            )
+            end = (
+                float(sg_sect.eang1),
+                float(sg_sect.eang2),
+            )
+            return self._round_heading_vector(start), self._round_heading_vector(end)
+
+        track_length = float(self._track_length or 0)
+        if track_length <= 0:
+            return None, None
+
+        start_x, start_y, _ = getxyz(
+            self._trk, float(trk_sect.start_dlong) % track_length, 0, self._cline
+        )
+        end_x, end_y, _ = getxyz(
+            self._trk, float(trk_sect.start_dlong + trk_sect.length) % track_length, 0, self._cline
+        )
+        dx = end_x - start_x
+        dy = end_y - start_y
+        length = (dx * dx + dy * dy) ** 0.5
+        if length <= 0:
+            return None, None
+
+        heading = (dx / length, dy / length)
+        rounded_heading = self._round_heading_vector(heading)
+        return rounded_heading, rounded_heading
 
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (
@@ -557,6 +595,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
         """Round SG-derived values to match the raw file precision."""
 
         return float(round(value))
+
+    @staticmethod
+    def _round_heading_vector(
+        vector: tuple[float, float] | None,
+    ) -> tuple[float, float] | None:
+        if vector is None:
+            return None
+
+        return (round(vector[0], 3), round(vector[1], 3))
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}
