@@ -246,6 +246,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             )
 
         self._draw_curve_markers(painter, transform)
+        self._draw_start_finish_line(painter, transform)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if not self._sampled_centerline:
@@ -478,6 +479,89 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter.drawLine(QtCore.QLineF(center_point, start_point))
             painter.drawLine(QtCore.QLineF(center_point, end_point))
             painter.drawEllipse(center_point, 4, 4)
+
+    def _draw_start_finish_line(self, painter: QtGui.QPainter, transform: Transform) -> None:
+        if self._track_length is None:
+            return
+
+        mapping = self._centerline_point_normal_and_tangent(0.0)
+        if mapping is None:
+            return
+
+        (cx, cy), normal, tangent = mapping
+        scale, _ = transform
+        if scale == 0:
+            return
+
+        half_length_track = 12.0 / scale
+        direction_length_track = 10.0 / scale
+
+        start = rendering.map_point(
+            cx - normal[0] * half_length_track,
+            cy - normal[1] * half_length_track,
+            transform,
+            self.height(),
+        )
+        end = rendering.map_point(
+            cx + normal[0] * half_length_track,
+            cy + normal[1] * half_length_track,
+            transform,
+            self.height(),
+        )
+
+        direction_start = end
+        direction_end = rendering.map_point(
+            cx + normal[0] * half_length_track + tangent[0] * direction_length_track,
+            cy + normal[1] * half_length_track + tangent[1] * direction_length_track,
+            transform,
+            self.height(),
+        )
+
+        pen = QtGui.QPen(QtGui.QColor("white"), 3.0)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setPen(pen)
+        painter.drawLine(QtCore.QLineF(start, end))
+        painter.drawLine(QtCore.QLineF(direction_start, direction_end))
+        painter.restore()
+
+    def _centerline_point_normal_and_tangent(
+        self, dlong: float
+    ) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None:
+        if not self._trk or not self._cline or not self._track_length:
+            return None
+
+        track_length = self._track_length
+        if track_length <= 0:
+            return None
+
+        def _wrap(value: float) -> float:
+            while value < 0:
+                value += track_length
+            while value >= track_length:
+                value -= track_length
+            return value
+
+        base = _wrap(float(dlong))
+        delta = max(50.0, track_length * 0.002)
+        prev_dlong = _wrap(base - delta)
+        next_dlong = _wrap(base + delta)
+
+        px, py, _ = getxyz(self._trk, prev_dlong, 0, self._cline)
+        nx, ny, _ = getxyz(self._trk, next_dlong, 0, self._cline)
+        cx, cy, _ = getxyz(self._trk, base, 0, self._cline)
+
+        vx = nx - px
+        vy = ny - py
+        length = (vx * vx + vy * vy) ** 0.5
+        if length == 0:
+            return None
+
+        tangent = (vx / length, vy / length)
+        normal = (-vy / length, vx / length)
+        return (cx, cy), normal, tangent
 
         painter.restore()
 
