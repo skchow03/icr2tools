@@ -435,10 +435,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
             start_dlong = self._round_sg_value(sect.start_dlong)
             end_dlong = self._round_sg_value((start_dlong + float(sect.length)) % track_length)
 
-            start_x = self._round_sg_value(sect.start_x)
-            start_y = self._round_sg_value(sect.start_y)
-            end_x = self._round_sg_value(sect.end_x)
-            end_y = self._round_sg_value(sect.end_y)
+            start_x, start_y, _ = getxyz(
+                self._trk, float(sect.start_dlong) % track_length, 0, self._cline
+            )
+            start_x = self._round_sg_value(start_x)
+            start_y = self._round_sg_value(start_y)
+
+            end_x, end_y, _ = getxyz(
+                self._trk, float(sect.start_dlong + sect.length) % track_length, 0, self._cline
+            )
+            end_x = self._round_sg_value(end_x)
+            end_y = self._round_sg_value(end_y)
 
             next_sect = self._trk.sects[(idx + 1) % total_sections]
             next_start = self._round_sg_value(float(next_sect.start_dlong) % track_length)
