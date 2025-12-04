@@ -38,6 +38,16 @@ class CurveMarker:
     radius: float
 
 
+@dataclass
+class SectionGeometry:
+    index: int
+    start_x: float
+    start_y: float
+    end_x: float
+    end_y: float
+    gap_to_next: float
+
+
 class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
 
@@ -410,6 +420,40 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         points.append((x, y))
         return points
+
+    def get_section_geometries(self) -> list[SectionGeometry]:
+        if self._trk is None or not self._cline or self._track_length is None:
+            return []
+
+        track_length = float(self._track_length)
+        if track_length <= 0:
+            return []
+
+        sections: list[SectionGeometry] = []
+        total_sections = len(self._trk.sects)
+        for idx, sect in enumerate(self._trk.sects):
+            start_dlong = float(sect.start_dlong)
+            end_dlong = (start_dlong + float(sect.length)) % track_length
+
+            start_x, start_y, _ = getxyz(self._trk, start_dlong % track_length, 0, self._cline)
+            end_x, end_y, _ = getxyz(self._trk, end_dlong, 0, self._cline)
+
+            next_sect = self._trk.sects[(idx + 1) % total_sections]
+            next_start = float(next_sect.start_dlong) % track_length
+            gap = (next_start - end_dlong) % track_length
+
+            sections.append(
+                SectionGeometry(
+                    index=idx,
+                    start_x=start_x,
+                    start_y=start_y,
+                    end_x=end_x,
+                    end_y=end_y,
+                    gap_to_next=gap,
+                )
+            )
+
+        return sections
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}
