@@ -653,7 +653,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if normalized is None:
             return None
 
-        return (round(normalized[0], 3), round(normalized[1], 3))
+        return (round(normalized[0], 5), round(normalized[1], 5))
 
     def _heading_delta(
         self, end: tuple[float, float] | None, next_start: tuple[float, float] | None
@@ -666,7 +666,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         dot = max(-1.0, min(1.0, end_norm[0] * next_norm[0] + end_norm[1] * next_norm[1]))
         cross = end_norm[0] * next_norm[1] - end_norm[1] * next_norm[0]
         angle_deg = math.degrees(math.atan2(cross, dot))
-        return round(angle_deg, 3)
+        return round(angle_deg, 4)
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}
