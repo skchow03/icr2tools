@@ -26,6 +26,16 @@ class SectionSelection:
     type_name: str
     start_dlong: float
     end_dlong: float
+    center: Point | None = None
+    radius: float | None = None
+
+
+@dataclass
+class CurveMarker:
+    center: Point
+    start: Point
+    end: Point
+    radius: float
 
 
 class SGPreviewWidget(QtWidgets.QWidget):
@@ -50,7 +60,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._centerline_index: CenterlineIndex | None = None
         self._status_message = "Select an SG file to begin."
 
-        self._curve_markers: list[tuple[Point, Point, Point]] = []
+        self._curve_markers: dict[int, CurveMarker] = {}
+        self._selected_curve_index: int | None = None
 
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
@@ -74,7 +85,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = None
         self._selected_section_index = None
         self._selected_section_points = []
-        self._curve_markers = []
+        self._curve_markers = {}
+        self._selected_curve_index = None
         self._fit_scale = None
         self._current_scale = None
         self._view_center = None
@@ -114,6 +126,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index = None
         self._selected_section_points = []
         self._curve_markers = self._build_curve_markers(trk)
+        self._selected_curve_index = None
         self._fit_scale = None
         self._current_scale = None
         self._view_center = None
@@ -343,6 +356,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if index is None:
             self._selected_section_index = None
             self._selected_section_points = []
+            self._selected_curve_index = None
             self.selectedSectionChanged.emit(None)
             self.update()
             return
@@ -353,17 +367,21 @@ class SGPreviewWidget(QtWidgets.QWidget):
         sect = self._trk.sects[index]
         self._selected_section_index = index
         self._selected_section_points = self._sample_section_polyline(sect)
+        self._selected_curve_index = index if sect.type == 2 else None
 
         end_dlong = float(sect.start_dlong + sect.length)
         if self._track_length:
             end_dlong = end_dlong % self._track_length
 
         type_name = "Curve" if sect.type == 2 else "Straight"
+        marker = self._curve_markers.get(index)
         selection = SectionSelection(
             index=index,
             type_name=type_name,
             start_dlong=float(sect.start_dlong),
             end_dlong=end_dlong,
+            center=marker.center if marker else None,
+            radius=marker.radius if marker else None,
         )
         self.selectedSectionChanged.emit(selection)
         self.update()
@@ -390,12 +408,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         points.append((x, y))
         return points
 
-    def _build_curve_markers(self, trk: TRKFile) -> list[tuple[Point, Point, Point]]:
-        markers: list[tuple[Point, Point, Point]] = []
+    def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
+        markers: dict[int, CurveMarker] = {}
         track_length = float(getattr(trk, "trklength", 0) or 0)
         cline = self._cline
 
-        for sect in trk.sects:
+        for idx, sect in enumerate(trk.sects):
             if getattr(sect, "type", None) != 2:
                 continue
             if hasattr(sect, "center_x") and hasattr(sect, "center_y"):
@@ -424,7 +442,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
                     float(getattr(sect, "end_x", 0.0)),
                     float(getattr(sect, "end_y", 0.0)),
                 )
-            markers.append((center, start, end))
+            radius = ((start[0] - center[0]) ** 2 + (start[1] - center[1]) ** 2) ** 0.5
+            markers[idx] = CurveMarker(center=center, start=start, end=end, radius=radius)
         return markers
 
     def _draw_curve_markers(self, painter: QtGui.QPainter, transform: Transform) -> None:
@@ -433,15 +452,26 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        color = QtGui.QColor(140, 140, 140)
-        pen = QtGui.QPen(color, 1)
-        painter.setPen(pen)
-        painter.setBrush(QtGui.QBrush(color))
+        default_color = QtGui.QColor(140, 140, 140)
+        highlight_color = QtGui.QColor("red")
 
-        for center, start, end in self._curve_markers:
-            center_point = rendering.map_point(center[0], center[1], transform, self.height())
-            start_point = rendering.map_point(start[0], start[1], transform, self.height())
-            end_point = rendering.map_point(end[0], end[1], transform, self.height())
+        for idx, marker in self._curve_markers.items():
+            is_selected = idx == self._selected_curve_index
+            color = highlight_color if is_selected else default_color
+            width = 2 if is_selected else 1
+
+            painter.setPen(QtGui.QPen(color, width))
+            painter.setBrush(QtGui.QBrush(color))
+
+            center_point = rendering.map_point(
+                marker.center[0], marker.center[1], transform, self.height()
+            )
+            start_point = rendering.map_point(
+                marker.start[0], marker.start[1], transform, self.height()
+            )
+            end_point = rendering.map_point(
+                marker.end[0], marker.end[1], transform, self.height()
+            )
 
             painter.drawLine(QtCore.QLineF(center_point, start_point))
             painter.drawLine(QtCore.QLineF(center_point, end_point))

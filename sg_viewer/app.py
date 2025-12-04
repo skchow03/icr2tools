@@ -31,12 +31,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
+        self._center_label = QtWidgets.QLabel("Center: –")
+        self._radius_label = QtWidgets.QLabel("Radius: –")
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
         sidebar_layout.addWidget(self._dlong_label)
+        sidebar_layout.addWidget(self._center_label)
+        sidebar_layout.addWidget(self._radius_label)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
@@ -93,6 +97,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._section_label.setText("Section: None")
             self._type_label.setText("Type: –")
             self._dlong_label.setText("DLONG: –")
+            self._center_label.setText("Center: –")
+            self._radius_label.setText("Radius: –")
             return
 
         self._section_label.setText(f"Section: {selection.index}")
@@ -100,4 +106,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._dlong_label.setText(
             f"DLONG: {selection.start_dlong:.0f} → {selection.end_dlong:.0f}"
         )
+        if selection.center is not None and selection.radius is not None:
+            cx, cy = selection.center
+            self._center_label.setText(f"Center: ({cx:.1f}, {cy:.1f})")
+            self._radius_label.setText(f"Radius: {selection.radius:.1f}")
+        else:
+            self._center_label.setText("Center: –")
+            self._radius_label.setText("Radius: –")
 
