@@ -790,9 +790,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawText(12, y, speed_text)
             y += 16
         if self._nearest_projection_acceleration is not None:
-            accel_text = (
-                f"Accel: {self._nearest_projection_acceleration:+.3f} mph/DLONG"
-            )
+            accel_text = f"Accel: {self._nearest_projection_acceleration:+.3f} ft/s²"
             painter.drawText(12, y, accel_text)
             y += 16
         if self._nearest_projection_elevation is not None:
@@ -1170,8 +1168,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 best_dlong = interp_dlong
                 best_dlat = p0.dlat + (p1.dlat - p0.dlat) * t
                 best_speed = p0.speed_mph + (p1.speed_mph - p0.speed_mph) * t
-                if dlong_delta:
-                    best_accel = (p1.speed_mph - p0.speed_mph) / dlong_delta
+                best_accel = rendering.compute_segment_acceleration(
+                    p0, p1, track_length=track_length
+                )
 
         if best_point is None:
             self._set_projection_data(None, None, None, None, None, None, None)
