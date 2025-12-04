@@ -28,6 +28,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._preview = SGPreviewWidget()
         self._sidebar = QtWidgets.QWidget()
+        self._prev_button = QtWidgets.QPushButton("Previous Section")
+        self._next_button = QtWidgets.QPushButton("Next Section")
+        self._radii_button = QtWidgets.QPushButton("Radii")
+        self._radii_button.setCheckable(True)
+        self._radii_button.setChecked(True)
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
@@ -35,6 +40,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radius_label = QtWidgets.QLabel("Radius: –")
 
         sidebar_layout = QtWidgets.QVBoxLayout()
+        navigation_layout = QtWidgets.QHBoxLayout()
+        navigation_layout.addWidget(self._prev_button)
+        navigation_layout.addWidget(self._next_button)
+        sidebar_layout.addLayout(navigation_layout)
+        sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
@@ -55,6 +65,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._create_menus()
         self.statusBar().showMessage("Select File → Open SG to begin.")
         self._preview.selectedSectionChanged.connect(self._update_selection_sidebar)
+        self._prev_button.clicked.connect(self._preview.select_previous_section)
+        self._next_button.clicked.connect(self._preview.select_next_section)
+        self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
 
     def load_sg(self, path: Path) -> None:
         try:
