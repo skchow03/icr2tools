@@ -344,6 +344,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button.setCheckable(True)
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
 
+        self._ai_gradient_button = QtWidgets.QPushButton("Show AI Speed Gradient")
+        self._ai_gradient_button.setCheckable(True)
+        self._ai_gradient_button.toggled.connect(self._toggle_ai_gradient)
+        self._toggle_ai_gradient(self._ai_gradient_button.isChecked())
+
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
 
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
@@ -405,6 +410,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._zoom_points_button)
+        controls.addWidget(self._ai_gradient_button)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -567,6 +573,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
         self._zoom_points_button.setText(text)
         self.visualization_widget.set_show_zoom_points(enabled)
+
+    def _toggle_ai_gradient(self, enabled: bool) -> None:
+        text = "Use Solid AI Colors" if enabled else "Show AI Speed Gradient"
+        self._ai_gradient_button.setText(text)
+        self.visualization_widget.set_ai_speed_gradient_enabled(enabled)
 
     def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":

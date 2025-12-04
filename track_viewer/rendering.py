@@ -126,6 +126,9 @@ def draw_ai_lines(
     transform: Transform,
     viewport_height: int,
     lp_color: Callable[[str], str],
+    *,
+    gradient: bool = False,
+    get_records: Callable[[str], Sequence[object]] | None = None,
 ) -> None:
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     for name in sorted(set(visible_lp_files)):
@@ -133,6 +136,39 @@ def draw_ai_lines(
         if not points:
             continue
         mapped = [map_point(px, py, transform, viewport_height) for px, py in points]
+
+        if gradient and get_records is not None:
+            records = get_records(name)
+            speeds = [getattr(record, "speed_mph", None) for record in records]
+            if len(mapped) >= 2 and len(speeds) >= 2:
+                try:
+                    min_speed = min(speed for speed in speeds if speed is not None)
+                    max_speed = max(speed for speed in speeds if speed is not None)
+                except ValueError:
+                    min_speed = max_speed = None
+
+                def _speed_to_color(speed_value: float | None) -> QtGui.QColor:
+                    if (
+                        speed_value is None
+                        or min_speed is None
+                        or max_speed is None
+                        or max_speed == min_speed
+                    ):
+                        return QtGui.QColor(lp_color(name))
+                    ratio = (speed_value - min_speed) / (max_speed - min_speed)
+                    ratio = max(0.0, min(1.0, ratio))
+                    red = int(round(255 * (1 - ratio)))
+                    green = int(round(255 * ratio))
+                    return QtGui.QColor(red, green, 0)
+
+                for start, end, speed in zip(
+                    mapped[:-1], mapped[1:], speeds[:-1]
+                ):
+                    pen = QtGui.QPen(_speed_to_color(speed), 2)
+                    painter.setPen(pen)
+                    painter.drawLine(QtCore.QLineF(start, end))
+                continue
+
         color = QtGui.QColor(lp_color(name))
         painter.setPen(QtGui.QPen(color, 2))
         painter.drawPolyline(QtGui.QPolygonF(mapped))
