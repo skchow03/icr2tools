@@ -171,8 +171,12 @@ def draw_ai_lines(
     *,
     gradient: str = "none",
     get_records: Callable[[str], Sequence[object]] | None = None,
+    line_width: int = 2,
+    acceleration_window: int = 3,
 ) -> None:
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    window_size = max(1, acceleration_window)
+    pen_width = max(1, line_width)
     for name in sorted(set(visible_lp_files)):
         points = get_points(name)
         if not points:
@@ -208,7 +212,7 @@ def draw_ai_lines(
                     for start, end, speed in zip(
                         mapped[:-1], mapped[1:], speeds[:-1]
                     ):
-                        pen = QtGui.QPen(_speed_to_color(speed), 2)
+                        pen = QtGui.QPen(_speed_to_color(speed), pen_width)
                         painter.setPen(pen)
                         painter.drawLine(QtCore.QLineF(start, end))
                     continue
@@ -225,7 +229,7 @@ def draw_ai_lines(
                     for accel in raw_accelerations:
                         if accel is not None:
                             recent.append(accel)
-                        if len(recent) > 3:
+                        if len(recent) > window_size:
                             recent.pop(0)
                         if recent:
                             accelerations.append(sum(recent) / len(recent))
@@ -257,13 +261,13 @@ def draw_ai_lines(
                         return QtGui.QColor(255, green, 0)
 
                     for start, end, accel in zip(mapped[:-1], mapped[1:], accelerations):
-                        pen = QtGui.QPen(_accel_to_color(accel), 2)
+                        pen = QtGui.QPen(_accel_to_color(accel), pen_width)
                         painter.setPen(pen)
                         painter.drawLine(QtCore.QLineF(start, end))
                     continue
 
         color = QtGui.QColor(lp_color(name))
-        painter.setPen(QtGui.QPen(color, 2))
+        painter.setPen(QtGui.QPen(color, pen_width))
         painter.drawPolyline(QtGui.QPolygonF(mapped))
 
 

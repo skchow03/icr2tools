@@ -356,6 +356,30 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._toggle_ai_acceleration_gradient
         )
 
+        self._accel_window_label = QtWidgets.QLabel()
+        self._accel_window_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._accel_window_slider.setRange(1, 12)
+        self._accel_window_slider.setSingleStep(1)
+        self._accel_window_slider.setPageStep(1)
+        self._accel_window_slider.setValue(
+            self.visualization_widget.ai_acceleration_window()
+        )
+        self._accel_window_slider.setFixedWidth(120)
+        self._accel_window_slider.valueChanged.connect(
+            self._handle_accel_window_changed
+        )
+        self._update_accel_window_label(self._accel_window_slider.value())
+
+        self._ai_width_label = QtWidgets.QLabel()
+        self._ai_width_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._ai_width_slider.setRange(1, 8)
+        self._ai_width_slider.setSingleStep(1)
+        self._ai_width_slider.setPageStep(1)
+        self._ai_width_slider.setValue(self.visualization_widget.ai_line_width())
+        self._ai_width_slider.setFixedWidth(120)
+        self._ai_width_slider.valueChanged.connect(self._handle_ai_line_width_changed)
+        self._update_ai_line_width_label(self._ai_width_slider.value())
+
         self._ai_color_mode = "none"
         self._update_ai_color_mode("none")
 
@@ -422,6 +446,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._ai_gradient_button)
         controls.addWidget(self._ai_acceleration_button)
+        controls.addWidget(self._accel_window_label)
+        controls.addWidget(self._accel_window_slider)
+        controls.addWidget(self._ai_width_label)
+        controls.addWidget(self._ai_width_slider)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -623,6 +651,21 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._ai_gradient_button.setText(speed_text)
         self._ai_acceleration_button.setText(accel_text)
         self.visualization_widget.set_ai_color_mode(mode)
+
+    def _update_accel_window_label(self, segments: int) -> None:
+        plural = "s" if segments != 1 else ""
+        self._accel_window_label.setText(f"Accel avg: {segments} segment{plural}")
+
+    def _handle_accel_window_changed(self, segments: int) -> None:
+        self._update_accel_window_label(segments)
+        self.visualization_widget.set_ai_acceleration_window(segments)
+
+    def _update_ai_line_width_label(self, width: int) -> None:
+        self._ai_width_label.setText(f"AI line width: {width}px")
+
+    def _handle_ai_line_width_changed(self, width: int) -> None:
+        self._update_ai_line_width_label(width)
+        self.visualization_widget.set_ai_line_width(width)
 
     def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":
