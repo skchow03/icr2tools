@@ -6,8 +6,9 @@ from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_cline_pos, getxyz
+from icr2_core.trk.trk_utils import get_alt, get_cline_pos, getxyz
 from track_viewer import rendering
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -15,6 +16,7 @@ from track_viewer.geometry import (
     project_point_to_centerline,
     sample_centerline,
 )
+from sg_viewer.elevation_profile import ElevationProfileData
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -62,6 +64,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
         self.setPalette(palette)
 
+        self._sgfile: SGFile | None = None
         self._trk: TRKFile | None = None
         self._cline: List[Point] | None = None
         self._sampled_centerline: List[Point] = []
@@ -88,6 +91,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._show_curve_markers = True
 
     def clear(self, message: str | None = None) -> None:
+        self._sgfile = None
         self._trk = None
         self._cline = None
         self._sampled_centerline = []
@@ -121,6 +125,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = f"Loading {path.name}…"
         self.update()
 
+        sgfile = SGFile.from_sg(str(path))
         trk = TRKFile.from_sg(str(path))
         cline = get_cline_pos(trk)
         sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
@@ -128,6 +133,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if not sampled or bounds is None:
             raise ValueError("Failed to build centreline from SG file")
 
+        self._sgfile = sgfile
         self._trk = trk
         self._cline = cline
         self._sampled_centerline = sampled
@@ -463,6 +469,75 @@ class SGPreviewWidget(QtWidgets.QWidget):
             )
 
         return sections
+
+    def get_xsect_metadata(self) -> list[tuple[int, float]]:
+        if self._sgfile is None:
+            return []
+        return [(idx, float(dlat)) for idx, dlat in enumerate(self._sgfile.xsect_dlats)]
+
+    def get_section_range(self, index: int) -> tuple[float, float] | None:
+        if self._trk is None or index < 0 or index >= len(self._trk.sects):
+            return None
+        start = float(self._trk.sects[index].start_dlong)
+        end = start + float(self._trk.sects[index].length)
+        return start, end
+
+    def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
+        if (
+            self._sgfile is None
+            or self._trk is None
+            or self._track_length is None
+            or xsect_index < 0
+            or xsect_index >= self._sgfile.num_xsects
+        ):
+            return None
+
+        dlongs: list[float] = []
+        sg_altitudes: list[float] = []
+        trk_altitudes: list[float] = []
+        section_ranges: list[tuple[float, float]] = []
+
+        dlat_value = float(self._trk.xsect_dlats[xsect_index])
+        for sect_idx, (sg_sect, trk_sect) in enumerate(zip(self._sgfile.sects, self._trk.sects)):
+            prev_idx = (sect_idx - 1) % self._sgfile.num_sects
+            begin_alt = float(self._sgfile.sects[prev_idx].alt[xsect_index])
+            end_alt = float(sg_sect.alt[xsect_index])
+
+            sg_length = float(sg_sect.length)
+            if sg_length <= 0:
+                continue
+            cur_slope = float(self._sgfile.sects[prev_idx].grade[xsect_index]) / 8192.0
+            next_slope = float(sg_sect.grade[xsect_index]) / 8192.0
+            grade1 = (2 * begin_alt / sg_length + cur_slope + next_slope - 2 * end_alt / sg_length) * sg_length
+            grade2 = (3 * end_alt / sg_length - 3 * begin_alt / sg_length - 2 * cur_slope - next_slope) * sg_length
+            grade3 = cur_slope * sg_length
+
+            start_dlong = float(trk_sect.start_dlong)
+            trk_length = float(trk_sect.length)
+            if trk_length <= 0:
+                continue
+            section_ranges.append((start_dlong, start_dlong + trk_length))
+
+            for step in range(samples_per_section + 1):
+                fraction = step / samples_per_section
+                dlong = start_dlong + fraction * trk_length
+
+                sg_alt = grade1 * fraction ** 3 + grade2 * fraction ** 2 + grade3 * fraction + begin_alt
+                trk_alt = get_alt(self._trk, sect_idx, fraction, dlat_value)
+
+                dlongs.append(dlong)
+                sg_altitudes.append(sg_alt)
+                trk_altitudes.append(trk_alt)
+
+        label = f"X-Section {xsect_index} (DLAT {dlat_value:.0f})"
+        return ElevationProfileData(
+            dlongs=dlongs,
+            sg_altitudes=sg_altitudes,
+            trk_altitudes=trk_altitudes,
+            section_ranges=section_ranges,
+            track_length=float(self._track_length),
+            xsect_label=label,
+        )
 
     @staticmethod
     def _round_sg_value(value: float) -> float:

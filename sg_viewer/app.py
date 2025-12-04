@@ -6,6 +6,7 @@ from typing import List
 
 from PyQt5 import QtWidgets
 
+from sg_viewer.elevation_profile import ElevationProfileWidget
 from sg_viewer.preview_widget import SectionGeometry, SectionSelection, SGPreviewWidget
 
 
@@ -71,6 +72,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button.setChecked(True)
         self._section_table_button = QtWidgets.QPushButton("Section Table")
         self._section_table_button.setEnabled(False)
+        self._profile_widget = ElevationProfileWidget()
+        self._xsect_combo = QtWidgets.QComboBox()
+        self._xsect_combo.setEnabled(False)
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
@@ -94,9 +98,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
+        preview_column = QtWidgets.QWidget()
+        preview_column_layout = QtWidgets.QVBoxLayout()
+        preview_column_layout.addWidget(self._preview, stretch=5)
+
+        profile_controls = QtWidgets.QHBoxLayout()
+        profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
+        profile_controls.addWidget(self._xsect_combo)
+        preview_column_layout.addLayout(profile_controls)
+        preview_column_layout.addWidget(self._profile_widget, stretch=2)
+        preview_column.setLayout(preview_column_layout)
+
         container = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self._preview, stretch=1)
+        layout.addWidget(preview_column, stretch=1)
         layout.addWidget(self._sidebar)
         container.setLayout(layout)
         self.setCentralWidget(container)
@@ -109,6 +124,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._next_button.clicked.connect(self._preview.select_next_section)
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
         self._section_table_button.clicked.connect(self._show_section_table)
+        self._xsect_combo.currentIndexChanged.connect(self._refresh_elevation_profile)
 
     def load_sg(self, path: Path) -> None:
         try:
@@ -120,6 +136,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"Loaded {path}")
             self._section_table_button.setEnabled(True)
             self._update_section_table()
+            self._populate_xsect_choices()
+            self._refresh_elevation_profile()
 
     def _create_actions(self) -> None:
         self._open_action = QtWidgets.QAction("Open SG…", self)
@@ -155,6 +173,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._dlong_label.setText("DLONG: –")
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+            self._profile_widget.set_selected_range(None)
             return
 
         self._section_label.setText(f"Section: {selection.index}")
@@ -169,6 +188,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+
+        selected_range = self._preview.get_section_range(selection.index)
+        self._profile_widget.set_selected_range(selected_range)
 
     def _show_section_table(self) -> None:
         sections = self._preview.get_section_geometries()
@@ -192,4 +214,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         sections = self._preview.get_section_geometries()
         self._section_table_window.set_sections(sections)
+
+    def _populate_xsect_choices(self) -> None:
+        metadata = self._preview.get_xsect_metadata()
+        self._xsect_combo.blockSignals(True)
+        self._xsect_combo.clear()
+        for idx, dlat in metadata:
+            self._xsect_combo.addItem(f"{idx} (DLAT {dlat:.0f})", idx)
+        self._xsect_combo.setEnabled(bool(metadata))
+        if metadata:
+            self._xsect_combo.setCurrentIndex(0)
+        self._xsect_combo.blockSignals(False)
+
+    def _refresh_elevation_profile(self) -> None:
+        if not self._xsect_combo.isEnabled():
+            self._profile_widget.set_profile_data(None)
+            return
+
+        current_index = self._xsect_combo.currentData()
+        if current_index is None:
+            current_index = self._xsect_combo.currentIndex()
+
+        profile = self._preview.build_elevation_profile(int(current_index))
+        self._profile_widget.set_profile_data(profile)
 
