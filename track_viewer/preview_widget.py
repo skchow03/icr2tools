@@ -103,7 +103,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_zoom_points = False
         self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
-        self._ai_speed_gradient = False
+        self._ai_color_mode = "none"
         self._track_length: float | None = None
         self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._active_lp_line = "center-line"
@@ -128,10 +128,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_projection_dlat: float | None = None
         self._nearest_projection_speed: float | None = None
         self._nearest_projection_elevation: float | None = None
+        self._nearest_projection_acceleration: float | None = None
         self._nearest_projection_line: str | None = None
         self._projection_cached_point: QtCore.QPointF | None = None
         self._projection_cached_result: tuple[
             Tuple[float, float] | None,
+            float | None,
             float | None,
             float | None,
             float | None,
@@ -176,6 +178,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_projection_dlat = None
         self._nearest_projection_speed = None
         self._nearest_projection_elevation = None
+        self._nearest_projection_acceleration = None
         self._nearest_projection_line = None
         self._projection_cached_point = None
         self._projection_cached_result = None
@@ -214,7 +217,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._show_center_line != show:
             self._show_center_line = show
             if not show and self._active_lp_line == "center-line":
-                self._set_projection_data(None, None, None, None, None, None)
+                self._set_projection_data(None, None, None, None, None, None, None)
             self.update()
 
     def set_show_boundaries(self, show: bool) -> None:
@@ -257,7 +260,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._active_lp_line = target
         self._projection_cached_point = None
         self._projection_cached_result = None
-        self._set_projection_data(None, None, None, None, None, None)
+        self._set_projection_data(None, None, None, None, None, None, None)
 
     def lp_color(self, name: str) -> str:
         try:
@@ -276,8 +279,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def set_ai_speed_gradient_enabled(self, enabled: bool) -> None:
         """Toggle AI line rendering between solid colors and speed gradient."""
 
-        if self._ai_speed_gradient != enabled:
-            self._ai_speed_gradient = enabled
+        self.set_ai_color_mode("speed" if enabled else "none")
+
+    def set_ai_acceleration_gradient_enabled(self, enabled: bool) -> None:
+        """Toggle AI line rendering between solid colors and acceleration gradient."""
+
+        self.set_ai_color_mode("acceleration" if enabled else "none")
+
+    def set_ai_color_mode(self, mode: str) -> None:
+        if mode not in {"none", "speed", "acceleration"}:
+            mode = "none"
+        if self._ai_color_mode != mode:
+            self._ai_color_mode = mode
             self.update()
 
     def track_length(self) -> Optional[int]:
@@ -405,7 +418,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         }
         if self._active_lp_line not in {"center-line", *self._available_lp_files}:
             self._active_lp_line = "center-line"
-        self._set_projection_data(None, None, None, None, None, None)
+        self._set_projection_data(None, None, None, None, None, None, None)
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = track_folder
@@ -731,7 +744,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 transform,
                 self.height(),
                 self.lp_color,
-                gradient=self._ai_speed_gradient,
+                gradient=self._ai_color_mode,
                 get_records=self._get_ai_line_records,
             )
             rendering.draw_flags(
@@ -775,6 +788,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._nearest_projection_speed is not None:
             speed_text = f"Speed: {self._nearest_projection_speed:.1f} mph"
             painter.drawText(12, y, speed_text)
+            y += 16
+        if self._nearest_projection_acceleration is not None:
+            accel_text = (
+                f"Accel: {self._nearest_projection_acceleration:+.3f} mph/DLONG"
+            )
+            painter.drawText(12, y, accel_text)
             y += 16
         if self._nearest_projection_elevation is not None:
             elevation_text = (
@@ -894,7 +913,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._cursor_position is not None:
             self._cursor_position = None
             self.update()
-        self._set_projection_data(None, None, None, None, None, None)
+        self._set_projection_data(None, None, None, None, None, None, None)
         super().leaveEvent(event)
 
     # ------------------------------------------------------------------
@@ -906,7 +925,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             if self._cursor_position is not None:
                 self._cursor_position = None
                 self.update()
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
         coords = self._map_to_track(point)
         if coords != self._cursor_position:
@@ -922,6 +941,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         dlat: float | None,
         speed: float | None,
         elevation: float | None,
+        acceleration: float | None,
         line_name: str | None,
     ) -> None:
         if (
@@ -930,6 +950,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             and dlat == self._nearest_projection_dlat
             and speed == self._nearest_projection_speed
             and elevation == self._nearest_projection_elevation
+            and acceleration == self._nearest_projection_acceleration
             and line_name == self._nearest_projection_line
         ):
             return
@@ -938,6 +959,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._nearest_projection_dlat = dlat
         self._nearest_projection_speed = speed
         self._nearest_projection_elevation = elevation
+        self._nearest_projection_acceleration = acceleration
         self._nearest_projection_line = line_name
         self.update()
 
@@ -957,7 +979,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             or not self._sampled_dlongs
             or not self._show_center_line
         ):
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         if (
@@ -972,6 +994,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 cached_dlat,
                 cached_speed,
                 cached_elevation,
+                cached_acceleration,
                 cached_line,
             ) = self._projection_cached_result
             self._set_projection_data(
@@ -980,13 +1003,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 cached_dlat,
                 cached_speed,
                 cached_elevation,
+                cached_acceleration,
                 cached_line,
             )
             return
 
         transform = self._current_transform()
         if not transform or not self.trk:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         screen_bounds = rendering.centerline_screen_bounds(
@@ -997,17 +1021,25 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             dy = max(screen_bounds.top() - point.y(), 0.0, point.y() - screen_bounds.bottom())
             if max(dx, dy) > 24:
                 self._projection_cached_point = point
-                self._projection_cached_result = (None, None, None, None, None, None)
-                self._set_projection_data(None, None, None, None, None, None)
+                self._projection_cached_result = (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                self._set_projection_data(None, None, None, None, None, None, None)
                 return
 
         cursor_track = self._map_to_track(point)
         if cursor_track is None:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         if self._centerline_index is None:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         cursor_x, cursor_y = cursor_track
@@ -1020,7 +1052,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         )
 
         if best_point is None:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
         mapped_point = rendering.map_point(
             best_point[0], best_point[1], transform, self.height()
@@ -1028,8 +1060,16 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         pixel_distance = (mapped_point - point).manhattanLength()
         if pixel_distance > 16:
             self._projection_cached_point = point
-            self._projection_cached_result = (None, None, None, None, None, None)
-            self._set_projection_data(None, None, None, None, None, None)
+            self._projection_cached_result = (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
         elevation = None
         if best_dlong is not None and self._cline:
@@ -1041,20 +1081,23 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             0.0,
             None,
             elevation,
+            None,
             "center-line",
         )
-        self._set_projection_data(best_point, best_dlong, 0.0, None, elevation, "center-line")
+        self._set_projection_data(
+            best_point, best_dlong, 0.0, None, elevation, None, "center-line"
+        )
 
     def _update_ai_line_projection(
         self, point: QtCore.QPointF | None, lp_name: str
     ) -> None:
         if point is None or lp_name not in self._visible_lp_files:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         records = self._get_ai_line_records(lp_name)
         if not records:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         if (
@@ -1069,6 +1112,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 cached_dlat,
                 cached_speed,
                 cached_elevation,
+                cached_acceleration,
                 cached_line,
             ) = self._projection_cached_result
             self._set_projection_data(
@@ -1077,18 +1121,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 cached_dlat,
                 cached_speed,
                 cached_elevation,
+                cached_acceleration,
                 cached_line,
             )
             return
 
         transform = self._current_transform()
         if not transform or not self.trk:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         cursor_track = self._map_to_track(point)
         if cursor_track is None:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         cursor_x, cursor_y = cursor_track
@@ -1097,6 +1142,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         best_dlong = None
         best_dlat = None
         best_speed = None
+        best_accel = None
 
         track_length = float(self.trk.trklength) if self.trk else None
         for idx in range(len(records)):
@@ -1124,17 +1170,27 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 best_dlong = interp_dlong
                 best_dlat = p0.dlat + (p1.dlat - p0.dlat) * t
                 best_speed = p0.speed_mph + (p1.speed_mph - p0.speed_mph) * t
+                if dlong_delta:
+                    best_accel = (p1.speed_mph - p0.speed_mph) / dlong_delta
 
         if best_point is None:
-            self._set_projection_data(None, None, None, None, None, None)
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         mapped_point = rendering.map_point(best_point[0], best_point[1], transform, self.height())
         pixel_distance = (mapped_point - point).manhattanLength()
         if pixel_distance > 16:
             self._projection_cached_point = point
-            self._projection_cached_result = (None, None, None, None, None, None)
-            self._set_projection_data(None, None, None, None, None, None)
+            self._projection_cached_result = (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         self._projection_cached_point = point
@@ -1144,10 +1200,17 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             best_dlat,
             best_speed,
             None,
+            best_accel,
             lp_name,
         )
         self._set_projection_data(
-            best_point, best_dlong, best_dlat, best_speed, None, lp_name
+            best_point,
+            best_dlong,
+            best_dlat,
+            best_speed,
+            None,
+            best_accel,
+            lp_name,
         )
 
     def _draw_cursor_position(self, painter: QtGui.QPainter) -> None:

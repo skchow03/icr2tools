@@ -347,7 +347,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._ai_gradient_button = QtWidgets.QPushButton("Show AI Speed Gradient")
         self._ai_gradient_button.setCheckable(True)
         self._ai_gradient_button.toggled.connect(self._toggle_ai_gradient)
-        self._toggle_ai_gradient(self._ai_gradient_button.isChecked())
+
+        self._ai_acceleration_button = QtWidgets.QPushButton(
+            "Show AI Acceleration Gradient"
+        )
+        self._ai_acceleration_button.setCheckable(True)
+        self._ai_acceleration_button.toggled.connect(
+            self._toggle_ai_acceleration_gradient
+        )
+
+        self._ai_color_mode = "none"
+        self._update_ai_color_mode("none")
 
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
 
@@ -411,6 +421,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._zoom_points_button)
         controls.addWidget(self._ai_gradient_button)
+        controls.addWidget(self._ai_acceleration_button)
         controls.addWidget(self._show_cameras_button)
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
@@ -575,9 +586,43 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.set_show_zoom_points(enabled)
 
     def _toggle_ai_gradient(self, enabled: bool) -> None:
-        text = "Use Solid AI Colors" if enabled else "Show AI Speed Gradient"
-        self._ai_gradient_button.setText(text)
-        self.visualization_widget.set_ai_speed_gradient_enabled(enabled)
+        mode = (
+            "speed"
+            if enabled
+            else "acceleration" if self._ai_acceleration_button.isChecked() else "none"
+        )
+        self._update_ai_color_mode(mode)
+
+    def _toggle_ai_acceleration_gradient(self, enabled: bool) -> None:
+        mode = (
+            "acceleration"
+            if enabled
+            else "speed" if self._ai_gradient_button.isChecked() else "none"
+        )
+        self._update_ai_color_mode(mode)
+
+    def _update_ai_color_mode(self, mode: str) -> None:
+        if mode not in {"none", "speed", "acceleration"}:
+            mode = "none"
+
+        self._ai_color_mode = mode
+
+        with QtCore.QSignalBlocker(self._ai_gradient_button):
+            self._ai_gradient_button.setChecked(mode == "speed")
+        with QtCore.QSignalBlocker(self._ai_acceleration_button):
+            self._ai_acceleration_button.setChecked(mode == "acceleration")
+
+        speed_text = (
+            "Use Solid AI Colors" if mode == "speed" else "Show AI Speed Gradient"
+        )
+        accel_text = (
+            "Use Solid AI Colors"
+            if mode == "acceleration"
+            else "Show AI Acceleration Gradient"
+        )
+        self._ai_gradient_button.setText(speed_text)
+        self._ai_acceleration_button.setText(accel_text)
+        self.visualization_widget.set_ai_color_mode(mode)
 
     def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":
