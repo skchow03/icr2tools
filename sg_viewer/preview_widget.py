@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import List, Tuple
 
@@ -50,6 +51,14 @@ class SectionGeometry:
     end_x: float
     end_y: float
     gap_to_next: float
+
+
+@dataclass
+class SectionHeadingData:
+    index: int
+    start_heading: tuple[float, float] | None
+    end_heading: tuple[float, float] | None
+    delta_to_next: float | None
 
 
 class SGPreviewWidget(QtWidgets.QWidget):
@@ -475,6 +484,34 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return sections
 
+    def get_section_headings(self) -> list[SectionHeadingData]:
+        if self._sgfile is None or self._trk is None:
+            return []
+
+        start_vectors: list[tuple[float, float] | None] = []
+        end_vectors: list[tuple[float, float] | None] = []
+        for sect in self._sgfile.sects:
+            start = (float(sect.sang1), float(sect.sang2))
+            end = (float(sect.eang1), float(sect.eang2))
+            start_vectors.append(self._round_heading_vector(start))
+            end_vectors.append(self._round_heading_vector(end))
+
+        headings: list[SectionHeadingData] = []
+        total = len(start_vectors)
+        for idx, (start, end) in enumerate(zip(start_vectors, end_vectors)):
+            next_start = start_vectors[(idx + 1) % total] if total else None
+            delta = self._heading_delta(end, next_start)
+            headings.append(
+                SectionHeadingData(
+                    index=idx,
+                    start_heading=start,
+                    end_heading=end,
+                    delta_to_next=delta,
+                )
+            )
+
+        return headings
+
     def get_xsect_metadata(self) -> list[tuple[int, float]]:
         if self._sgfile is None:
             return []
@@ -617,6 +654,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return None
 
         return (round(normalized[0], 3), round(normalized[1], 3))
+
+    def _heading_delta(
+        self, end: tuple[float, float] | None, next_start: tuple[float, float] | None
+    ) -> float | None:
+        end_norm = self._normalize_heading_vector(end)
+        next_norm = self._normalize_heading_vector(next_start)
+        if end_norm is None or next_norm is None:
+            return None
+
+        dot = max(-1.0, min(1.0, end_norm[0] * next_norm[0] + end_norm[1] * next_norm[1]))
+        cross = end_norm[0] * next_norm[1] - end_norm[1] * next_norm[0]
+        angle_deg = math.degrees(math.atan2(cross, dot))
+        return round(angle_deg, 3)
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}

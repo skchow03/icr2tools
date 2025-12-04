@@ -7,7 +7,12 @@ from typing import List
 from PyQt5 import QtWidgets
 
 from sg_viewer.elevation_profile import ElevationProfileWidget
-from sg_viewer.preview_widget import SectionGeometry, SectionSelection, SGPreviewWidget
+from sg_viewer.preview_widget import (
+    SectionGeometry,
+    SectionHeadingData,
+    SectionSelection,
+    SGPreviewWidget,
+)
 
 
 class SGViewerApp(QtWidgets.QApplication):
@@ -55,6 +60,54 @@ class SectionTableWindow(QtWidgets.QDialog):
             for col, value in enumerate(values):
                 self._table.setItem(row, col, QtWidgets.QTableWidgetItem(value))
 
+
+class HeadingTableWindow(QtWidgets.QDialog):
+    """Displays start/end headings and deltas between sections."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Heading Table")
+        self.resize(780, 520)
+
+        layout = QtWidgets.QVBoxLayout()
+        self._table = QtWidgets.QTableWidget()
+        self._table.setColumnCount(6)
+        self._table.setHorizontalHeaderLabels(
+            [
+                "Section",
+                "Start X",
+                "Start Y",
+                "End X",
+                "End Y",
+                "Δ to Next (deg)",
+            ]
+        )
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setAlternatingRowColors(True)
+        self._table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        layout.addWidget(self._table)
+        self.setLayout(layout)
+
+    def set_headings(self, headings: list[SectionHeadingData]) -> None:
+        self._table.setRowCount(len(headings))
+
+        def _fmt(value: float | None) -> str:
+            return "–" if value is None else f"{value:.3f}"
+
+        for row, entry in enumerate(headings):
+            values = [
+                str(entry.index),
+                _fmt(entry.start_heading[0] if entry.start_heading else None),
+                _fmt(entry.start_heading[1] if entry.start_heading else None),
+                _fmt(entry.end_heading[0] if entry.end_heading else None),
+                _fmt(entry.end_heading[1] if entry.end_heading else None),
+                _fmt(entry.delta_to_next),
+            ]
+            for col, value in enumerate(values):
+                self._table.setItem(row, col, QtWidgets.QTableWidgetItem(value))
+
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
 
@@ -72,6 +125,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button.setChecked(True)
         self._section_table_button = QtWidgets.QPushButton("Section Table")
         self._section_table_button.setEnabled(False)
+        self._heading_table_button = QtWidgets.QPushButton("Heading Table")
+        self._heading_table_button.setEnabled(False)
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
@@ -83,6 +138,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._start_heading_label = QtWidgets.QLabel("Start Heading: –")
         self._end_heading_label = QtWidgets.QLabel("End Heading: –")
         self._section_table_window: SectionTableWindow | None = None
+        self._heading_table_window: HeadingTableWindow | None = None
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -91,6 +147,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
+        sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
@@ -128,6 +185,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._next_button.clicked.connect(self._preview.select_next_section)
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
         self._section_table_button.clicked.connect(self._show_section_table)
+        self._heading_table_button.clicked.connect(self._show_heading_table)
         self._xsect_combo.currentIndexChanged.connect(self._refresh_elevation_profile)
 
     def load_sg(self, path: Path) -> None:
@@ -139,7 +197,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self.statusBar().showMessage(f"Loaded {path}")
             self._section_table_button.setEnabled(True)
+            self._heading_table_button.setEnabled(True)
             self._update_section_table()
+            self._update_heading_table()
             self._populate_xsect_choices()
             self._refresh_elevation_profile()
 
@@ -234,6 +294,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         sections = self._preview.get_section_geometries()
         self._section_table_window.set_sections(sections)
+
+    def _show_heading_table(self) -> None:
+        headings = self._preview.get_section_headings()
+        if not headings:
+            QtWidgets.QMessageBox.information(
+                self, "No Headings", "Load an SG file to view headings."
+            )
+            return
+
+        if self._heading_table_window is None:
+            self._heading_table_window = HeadingTableWindow(self)
+
+        self._heading_table_window.set_headings(headings)
+        self._heading_table_window.show()
+        self._heading_table_window.raise_()
+        self._heading_table_window.activateWindow()
+
+    def _update_heading_table(self) -> None:
+        if self._heading_table_window is None:
+            return
+
+        headings = self._preview.get_section_headings()
+        self._heading_table_window.set_headings(headings)
 
     def _populate_xsect_choices(self) -> None:
         metadata = self._preview.get_xsect_metadata()
