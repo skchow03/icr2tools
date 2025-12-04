@@ -6,7 +6,7 @@ from typing import List
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.preview_widget import SectionSelection, SGPreviewWidget
+from sg_viewer.preview_widget import SectionGeometry, SectionSelection, SGPreviewWidget
 
 
 class SGViewerApp(QtWidgets.QApplication):
@@ -17,6 +17,42 @@ class SGViewerApp(QtWidgets.QApplication):
         self.setQuitOnLastWindowClosed(True)
         self.window: SGViewerWindow | None = None
 
+
+class SectionTableWindow(QtWidgets.QDialog):
+    """Displays a table of section endpoints and gaps."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Section Table")
+        self.resize(720, 480)
+
+        layout = QtWidgets.QVBoxLayout()
+        self._table = QtWidgets.QTableWidget()
+        self._table.setColumnCount(6)
+        self._table.setHorizontalHeaderLabels(
+            ["Section", "Start X", "Start Y", "End X", "End Y", "Gap → Next"]
+        )
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._table.setAlternatingRowColors(True)
+        self._table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        layout.addWidget(self._table)
+        self.setLayout(layout)
+
+    def set_sections(self, sections: list[SectionGeometry]) -> None:
+        self._table.setRowCount(len(sections))
+        for row, section in enumerate(sections):
+            values = [
+                str(section.index),
+                f"{section.start_x:.1f}",
+                f"{section.start_y:.1f}",
+                f"{section.end_x:.1f}",
+                f"{section.end_y:.1f}",
+                f"{section.gap_to_next:.1f}",
+            ]
+            for col, value in enumerate(values):
+                self._table.setItem(row, col, QtWidgets.QTableWidgetItem(value))
 
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
@@ -33,11 +69,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
+        self._section_table_button = QtWidgets.QPushButton("Section Table")
+        self._section_table_button.setEnabled(False)
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
         self._center_label = QtWidgets.QLabel("Center: –")
         self._radius_label = QtWidgets.QLabel("Radius: –")
+        self._section_table_window: SectionTableWindow | None = None
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -45,6 +84,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._next_button)
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
+        sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
@@ -68,6 +108,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._prev_button.clicked.connect(self._preview.select_previous_section)
         self._next_button.clicked.connect(self._preview.select_next_section)
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
+        self._section_table_button.clicked.connect(self._show_section_table)
 
     def load_sg(self, path: Path) -> None:
         try:
@@ -77,6 +118,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             logging.exception("Failed to load SG file")
         else:
             self.statusBar().showMessage(f"Loaded {path}")
+            self._section_table_button.setEnabled(True)
+            self._update_section_table()
 
     def _create_actions(self) -> None:
         self._open_action = QtWidgets.QAction("Open SG…", self)
@@ -126,4 +169,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+
+    def _show_section_table(self) -> None:
+        sections = self._preview.get_section_geometries()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self, "No Sections", "Load an SG file to view sections."
+            )
+            return
+
+        if self._section_table_window is None:
+            self._section_table_window = SectionTableWindow(self)
+
+        self._section_table_window.set_sections(sections)
+        self._section_table_window.show()
+        self._section_table_window.raise_()
+        self._section_table_window.activateWindow()
+
+    def _update_section_table(self) -> None:
+        if self._section_table_window is None:
+            return
+
+        sections = self._preview.get_section_geometries()
+        self._section_table_window.set_sections(sections)
 
