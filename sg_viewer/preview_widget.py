@@ -392,12 +392,38 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _build_curve_markers(self, trk: TRKFile) -> list[tuple[Point, Point, Point]]:
         markers: list[tuple[Point, Point, Point]] = []
+        track_length = float(getattr(trk, "trklength", 0) or 0)
+        cline = self._cline
+
         for sect in trk.sects:
             if getattr(sect, "type", None) != 2:
                 continue
-            center = (float(sect.center_x), float(sect.center_y))
-            start = (float(sect.start_x), float(sect.start_y))
-            end = (float(sect.end_x), float(sect.end_y))
+            if hasattr(sect, "center_x") and hasattr(sect, "center_y"):
+                center = (float(sect.center_x), float(sect.center_y))
+            elif hasattr(sect, "ang1") and hasattr(sect, "ang2"):
+                # TRK section parsing stores curve centers in ang1/ang2
+                center = (float(sect.ang1), float(sect.ang2))
+            else:
+                continue
+
+            if cline and track_length > 0:
+                start_x, start_y, _ = getxyz(
+                    trk, float(sect.start_dlong) % track_length, 0, cline
+                )
+                end_dlong = float(sect.start_dlong + sect.length)
+                end_dlong = end_dlong % track_length if track_length else end_dlong
+                end_x, end_y, _ = getxyz(trk, end_dlong, 0, cline)
+                start = (start_x, start_y)
+                end = (end_x, end_y)
+            else:
+                start = (
+                    float(getattr(sect, "start_x", 0.0)),
+                    float(getattr(sect, "start_y", 0.0)),
+                )
+                end = (
+                    float(getattr(sect, "end_x", 0.0)),
+                    float(getattr(sect, "end_y", 0.0)),
+                )
             markers.append((center, start, end))
         return markers
 
