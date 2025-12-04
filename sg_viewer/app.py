@@ -196,14 +196,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._radius_label.setText("Radius: –")
 
         if selection.start_heading is not None:
-            sx, sy = selection.start_heading
-            self._start_heading_label.setText(f"Start Heading: ({sx:.3f}, {sy:.3f})")
+            self._start_heading_label.setText(
+                f"Start Heading: {selection.start_heading}"
+            )
         else:
             self._start_heading_label.setText("Start Heading: –")
 
         if selection.end_heading is not None:
-            ex, ey = selection.end_heading
-            self._end_heading_label.setText(f"End Heading: ({ex:.3f}, {ey:.3f})")
+            self._end_heading_label.setText(f"End Heading: {selection.end_heading}")
         else:
             self._end_heading_label.setText("End Heading: –")
 
