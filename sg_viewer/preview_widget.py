@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
 
@@ -8,25 +9,50 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_cline_pos
 from track_viewer import rendering
-from track_viewer.geometry import sample_centerline
+from track_viewer.geometry import (
+    CenterlineIndex,
+    build_centerline_index,
+    project_point_to_centerline,
+    sample_centerline,
+)
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
 
+@dataclass
+class SectionSelection:
+    index: int
+    type_name: str
+    start_dlong: float
+    end_dlong: float
+
+
 class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
+
+    selectedSectionChanged = QtCore.pyqtSignal(object)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumSize(640, 480)
         self.setMouseTracking(True)
 
+        palette = self.palette()
+        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
+        self.setPalette(palette)
+
         self._trk: TRKFile | None = None
         self._cline: List[Point] | None = None
         self._sampled_centerline: List[Point] = []
+        self._sampled_dlongs: List[float] = []
         self._sampled_bounds: tuple[float, float, float, float] | None = None
+        self._centerline_index: CenterlineIndex | None = None
         self._status_message = "Select an SG file to begin."
+
+        self._track_length: float | None = None
+        self._selected_section_index: int | None = None
+        self._selected_section_points: List[Point] = []
 
         self._fit_scale: float | None = None
         self._current_scale: float | None = None
@@ -34,19 +60,27 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._user_transform_active = False
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
+        self._press_pos: QtCore.QPoint | None = None
 
     def clear(self, message: str | None = None) -> None:
         self._trk = None
         self._cline = None
         self._sampled_centerline = []
+        self._sampled_dlongs = []
         self._sampled_bounds = None
+        self._centerline_index = None
+        self._track_length = None
+        self._selected_section_index = None
+        self._selected_section_points = []
         self._fit_scale = None
         self._current_scale = None
         self._view_center = None
         self._user_transform_active = False
         self._is_panning = False
         self._last_mouse_pos = None
+        self._press_pos = None
         self._status_message = message or "Select an SG file to begin."
+        self.selectedSectionChanged.emit(None)
         self.update()
 
     # ------------------------------------------------------------------
@@ -62,7 +96,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         trk = TRKFile.from_sg(str(path))
         cline = get_cline_pos(trk)
-        sampled, _, bounds = sample_centerline(trk, cline)
+        sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
 
         if not sampled or bounds is None:
             raise ValueError("Failed to build centreline from SG file")
@@ -70,13 +104,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._trk = trk
         self._cline = cline
         self._sampled_centerline = sampled
+        self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = bounds
+        self._centerline_index = build_centerline_index(sampled, bounds)
+        self._track_length = float(trk.trklength)
+        self._selected_section_index = None
+        self._selected_section_points = []
         self._fit_scale = None
         self._current_scale = None
         self._view_center = None
         self._user_transform_active = False
         self._status_message = f"Loaded {path.name}"
         self._update_fit_scale()
+        self.selectedSectionChanged.emit(None)
         self.update()
 
     # ------------------------------------------------------------------
@@ -176,6 +216,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
             width=3,
         )
 
+        if self._selected_section_points:
+            rendering.draw_centerline(
+                painter,
+                self._selected_section_points,
+                transform,
+                self.height(),
+                color="red",
+                width=4,
+            )
+
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if not self._sampled_centerline:
             return
@@ -203,6 +253,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
+            self._press_pos = event.pos()
             self._user_transform_active = True
             event.accept()
             return
@@ -231,4 +282,104 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.LeftButton:
             self._is_panning = False
             self._last_mouse_pos = None
+            if (
+                self._press_pos is not None
+                and (event.pos() - self._press_pos).manhattanLength() < 6
+            ):
+                self._handle_click(event.pos())
+            self._press_pos = None
         super().mouseReleaseEvent(event)
+
+    # ------------------------------------------------------------------
+    # Selection
+    # ------------------------------------------------------------------
+    def _handle_click(self, pos: QtCore.QPoint) -> None:
+        if not self._centerline_index or not self._sampled_dlongs or not self._trk:
+            return
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        transform = self._current_transform()
+        if track_point is None or transform is None or self._track_length is None:
+            return
+
+        _, nearest_dlong, distance_sq = project_point_to_centerline(
+            track_point, self._centerline_index, self._sampled_dlongs, self._track_length
+        )
+
+        if nearest_dlong is None:
+            return
+
+        scale, _ = transform
+        tolerance_units = 10 / max(scale, 1e-6)
+        if distance_sq > tolerance_units * tolerance_units:
+            self._set_selected_section(None)
+            return
+
+        selection = self._find_section_by_dlong(nearest_dlong)
+        self._set_selected_section(selection)
+
+    def _find_section_by_dlong(self, dlong: float) -> int | None:
+        if self._trk is None or not self._trk.sects:
+            return None
+
+        track_length = self._track_length or 0
+        for idx, sect in enumerate(self._trk.sects):
+            start = float(sect.start_dlong)
+            end = start + float(sect.length)
+            if track_length > 0 and end > track_length:
+                if dlong >= start or dlong <= end - track_length:
+                    return idx
+            elif start <= dlong <= end:
+                return idx
+        return None
+
+    def _set_selected_section(self, index: int | None) -> None:
+        if index is None:
+            self._selected_section_index = None
+            self._selected_section_points = []
+            self.selectedSectionChanged.emit(None)
+            self.update()
+            return
+
+        if self._trk is None or index < 0 or index >= len(self._trk.sects):
+            return
+
+        sect = self._trk.sects[index]
+        self._selected_section_index = index
+        self._selected_section_points = self._sample_section_polyline(sect)
+
+        end_dlong = float(sect.start_dlong + sect.length)
+        if self._track_length:
+            end_dlong = end_dlong % self._track_length
+
+        type_name = "Curve" if sect.type == 2 else "Straight"
+        selection = SectionSelection(
+            index=index,
+            type_name=type_name,
+            start_dlong=float(sect.start_dlong),
+            end_dlong=end_dlong,
+        )
+        self.selectedSectionChanged.emit(selection)
+        self.update()
+
+    def _sample_section_polyline(self, sect) -> List[Point]:
+        if self._trk is None or not self._cline or not self._track_length:
+            return []
+
+        step = 5000
+        remaining = float(sect.length)
+        current = float(sect.start_dlong)
+        points: List[Point] = []
+
+        while remaining > 0:
+            x, y, _ = getxyz(self._trk, current % self._track_length, 0, self._cline)
+            points.append((x, y))
+            advance = min(step, remaining)
+            current += advance
+            remaining -= advance
+
+        x, y, _ = getxyz(
+            self._trk, (sect.start_dlong + sect.length) % self._track_length, 0, self._cline
+        )
+        points.append((x, y))
+        return points

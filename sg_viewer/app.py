@@ -6,7 +6,7 @@ from typing import List
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.preview_widget import SGPreviewWidget
+from sg_viewer.preview_widget import SectionSelection, SGPreviewWidget
 
 
 class SGViewerApp(QtWidgets.QApplication):
@@ -27,11 +27,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.resize(960, 720)
 
         self._preview = SGPreviewWidget()
-        self.setCentralWidget(self._preview)
+        self._sidebar = QtWidgets.QWidget()
+        self._section_label = QtWidgets.QLabel("Section: None")
+        self._type_label = QtWidgets.QLabel("Type: –")
+        self._dlong_label = QtWidgets.QLabel("DLONG: –")
+
+        sidebar_layout = QtWidgets.QVBoxLayout()
+        sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
+        sidebar_layout.addWidget(self._section_label)
+        sidebar_layout.addWidget(self._type_label)
+        sidebar_layout.addWidget(self._dlong_label)
+        sidebar_layout.addStretch()
+        self._sidebar.setLayout(sidebar_layout)
+
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self._preview, stretch=1)
+        layout.addWidget(self._sidebar)
+        container.setLayout(layout)
+        self.setCentralWidget(container)
 
         self._create_actions()
         self._create_menus()
         self.statusBar().showMessage("Select File → Open SG to begin.")
+        self._preview.selectedSectionChanged.connect(self._update_selection_sidebar)
 
     def load_sg(self, path: Path) -> None:
         try:
@@ -68,4 +87,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         if file_path:
             self.load_sg(Path(file_path))
+
+    def _update_selection_sidebar(self, selection: SectionSelection | None) -> None:
+        if selection is None:
+            self._section_label.setText("Section: None")
+            self._type_label.setText("Type: –")
+            self._dlong_label.setText("DLONG: –")
+            return
+
+        self._section_label.setText(f"Section: {selection.index}")
+        self._type_label.setText(f"Type: {selection.type_name}")
+        self._dlong_label.setText(
+            f"DLONG: {selection.start_dlong:.0f} → {selection.end_dlong:.0f}"
+        )
 
