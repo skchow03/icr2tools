@@ -214,11 +214,23 @@ def draw_ai_lines(
                     continue
 
                 if gradient == "acceleration":
-                    accelerations: list[float | None] = []
+                    raw_accelerations: list[float | None] = []
                     for record_a, record_b in zip(records[:-1], records[1:]):
-                        accelerations.append(
+                        raw_accelerations.append(
                             compute_segment_acceleration(record_a, record_b)
                         )
+
+                    accelerations: list[float | None] = []
+                    recent: list[float] = []
+                    for accel in raw_accelerations:
+                        if accel is not None:
+                            recent.append(accel)
+                        if len(recent) > 3:
+                            recent.pop(0)
+                        if recent:
+                            accelerations.append(sum(recent) / len(recent))
+                        else:
+                            accelerations.append(None)
 
                     max_accel = max(
                         (a for a in accelerations if a is not None and a > 0),
@@ -236,13 +248,13 @@ def draw_ai_lines(
                             if max_accel is None or max_accel == 0:
                                 return QtGui.QColor(lp_color(name))
                             ratio = max(0.0, min(1.0, accel_value / max_accel))
-                            green = int(round(255 * ratio))
-                            return QtGui.QColor(0, green, 0)
+                            red = int(round(255 * (1 - ratio)))
+                            return QtGui.QColor(red, 255, 0)
                         if max_decel is None or max_decel == 0:
                             return QtGui.QColor(lp_color(name))
                         ratio = max(0.0, min(1.0, abs(accel_value) / abs(max_decel)))
-                        red = int(round(255 * ratio))
-                        return QtGui.QColor(red, 0, 0)
+                        green = int(round(255 * (1 - ratio)))
+                        return QtGui.QColor(255, green, 0)
 
                     for start, end, accel in zip(mapped[:-1], mapped[1:], accelerations):
                         pen = QtGui.QPen(_accel_to_color(accel), 2)
