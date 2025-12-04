@@ -94,7 +94,7 @@ class HeadingTableWindow(QtWidgets.QDialog):
         self._table.setRowCount(len(headings))
 
         def _fmt(value: float | None) -> str:
-            return "–" if value is None else f"{value:.3f}"
+            return "–" if value is None else f"{value:.5f}"
 
         for row, entry in enumerate(headings):
             values = [
@@ -258,14 +258,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if selection.start_heading is not None:
             sx, sy = selection.start_heading
             self._start_heading_label.setText(
-                f"Start Heading: ({sx:.3f}, {sy:.3f})"
+                f"Start Heading: ({sx:.5f}, {sy:.5f})"
             )
         else:
             self._start_heading_label.setText("Start Heading: –")
 
         if selection.end_heading is not None:
             ex, ey = selection.end_heading
-            self._end_heading_label.setText(f"End Heading: ({ex:.3f}, {ey:.3f})")
+            self._end_heading_label.setText(f"End Heading: ({ex:.5f}, {ey:.5f})")
         else:
             self._end_heading_label.setText("End Heading: –")
 
