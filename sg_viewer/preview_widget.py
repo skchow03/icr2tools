@@ -391,8 +391,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         selection = SectionSelection(
             index=index,
             type_name=type_name,
-            start_dlong=float(sect.start_dlong),
-            end_dlong=end_dlong,
+            start_dlong=self._round_sg_value(sect.start_dlong),
+            end_dlong=self._round_sg_value(end_dlong),
             center=marker.center if marker else None,
             radius=marker.radius if marker else None,
         )
@@ -432,14 +432,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         sections: list[SectionGeometry] = []
         total_sections = len(self._trk.sects)
         for idx, sect in enumerate(self._trk.sects):
-            start_dlong = float(sect.start_dlong)
-            end_dlong = (start_dlong + float(sect.length)) % track_length
+            start_dlong = self._round_sg_value(sect.start_dlong)
+            end_dlong = self._round_sg_value((start_dlong + float(sect.length)) % track_length)
 
-            start_x, start_y, _ = getxyz(self._trk, start_dlong % track_length, 0, self._cline)
-            end_x, end_y, _ = getxyz(self._trk, end_dlong, 0, self._cline)
+            start_x = self._round_sg_value(sect.start_x)
+            start_y = self._round_sg_value(sect.start_y)
+            end_x = self._round_sg_value(sect.end_x)
+            end_y = self._round_sg_value(sect.end_y)
 
             next_sect = self._trk.sects[(idx + 1) % total_sections]
-            next_start = float(next_sect.start_dlong) % track_length
+            next_start = self._round_sg_value(float(next_sect.start_dlong) % track_length)
             gap = (next_start - end_dlong) % track_length
 
             sections.append(
@@ -454,6 +456,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
             )
 
         return sections
+
+    @staticmethod
+    def _round_sg_value(value: float) -> float:
+        """Round SG-derived values to match the raw file precision."""
+
+        return float(round(value))
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}
