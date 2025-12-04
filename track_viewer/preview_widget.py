@@ -103,6 +103,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_zoom_points = False
         self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
+        self._ai_speed_gradient = False
         self._track_length: float | None = None
         self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._active_lp_line = "center-line"
@@ -270,6 +271,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         if self._show_zoom_points != show:
             self._show_zoom_points = show
+            self.update()
+
+    def set_ai_speed_gradient_enabled(self, enabled: bool) -> None:
+        """Toggle AI line rendering between solid colors and speed gradient."""
+
+        if self._ai_speed_gradient != enabled:
+            self._ai_speed_gradient = enabled
             self.update()
 
     def track_length(self) -> Optional[int]:
@@ -723,6 +731,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 transform,
                 self.height(),
                 self.lp_color,
+                gradient=self._ai_speed_gradient,
+                get_records=self._get_ai_line_records,
             )
             rendering.draw_flags(
                 painter, self._flags, self._selected_flag, transform, self.height()
