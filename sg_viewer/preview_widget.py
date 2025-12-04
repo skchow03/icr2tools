@@ -50,6 +50,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._centerline_index: CenterlineIndex | None = None
         self._status_message = "Select an SG file to begin."
 
+        self._curve_markers: list[tuple[Point, Point, Point]] = []
+
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
@@ -72,6 +74,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = None
         self._selected_section_index = None
         self._selected_section_points = []
+        self._curve_markers = []
         self._fit_scale = None
         self._current_scale = None
         self._view_center = None
@@ -110,6 +113,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = float(trk.trklength)
         self._selected_section_index = None
         self._selected_section_points = []
+        self._curve_markers = self._build_curve_markers(trk)
         self._fit_scale = None
         self._current_scale = None
         self._view_center = None
@@ -225,6 +229,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 color="red",
                 width=4,
             )
+
+        self._draw_curve_markers(painter, transform)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if not self._sampled_centerline:
@@ -383,3 +389,36 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         points.append((x, y))
         return points
+
+    def _build_curve_markers(self, trk: TRKFile) -> list[tuple[Point, Point, Point]]:
+        markers: list[tuple[Point, Point, Point]] = []
+        for sect in trk.sects:
+            if getattr(sect, "type", None) != 2:
+                continue
+            center = (float(sect.center_x), float(sect.center_y))
+            start = (float(sect.start_x), float(sect.start_y))
+            end = (float(sect.end_x), float(sect.end_y))
+            markers.append((center, start, end))
+        return markers
+
+    def _draw_curve_markers(self, painter: QtGui.QPainter, transform: Transform) -> None:
+        if not self._curve_markers:
+            return
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        color = QtGui.QColor(140, 140, 140)
+        pen = QtGui.QPen(color, 1)
+        painter.setPen(pen)
+        painter.setBrush(QtGui.QBrush(color))
+
+        for center, start, end in self._curve_markers:
+            center_point = rendering.map_point(center[0], center[1], transform, self.height())
+            start_point = rendering.map_point(start[0], start[1], transform, self.height())
+            end_point = rendering.map_point(end[0], end[1], transform, self.height())
+
+            painter.drawLine(QtCore.QLineF(center_point, start_point))
+            painter.drawLine(QtCore.QLineF(center_point, end_point))
+            painter.drawEllipse(center_point, 4, 4)
+
+        painter.restore()
