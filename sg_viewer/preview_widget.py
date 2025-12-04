@@ -539,6 +539,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter.drawLine(QtCore.QLineF(center_point, end_point))
             painter.drawEllipse(center_point, 4, 4)
 
+        painter.restore()
+
     def _draw_start_finish_line(self, painter: QtGui.QPainter, transform: Transform) -> None:
         if self._track_length is None:
             return
@@ -621,8 +623,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         tangent = (vx / length, vy / length)
         normal = (-vy / length, vx / length)
         return (cx, cy), normal, tangent
-
-        painter.restore()
 
     # ------------------------------------------------------------------
     # Public controls
