@@ -597,13 +597,26 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return float(round(value))
 
     @staticmethod
-    def _round_heading_vector(
+    def _normalize_heading_vector(
         vector: tuple[float, float] | None,
     ) -> tuple[float, float] | None:
         if vector is None:
             return None
 
-        return (round(vector[0], 3), round(vector[1], 3))
+        length = (vector[0] * vector[0] + vector[1] * vector[1]) ** 0.5
+        if length <= 0:
+            return None
+
+        return (vector[0] / length, vector[1] / length)
+
+    def _round_heading_vector(
+        self, vector: tuple[float, float] | None
+    ) -> tuple[float, float] | None:
+        normalized = self._normalize_heading_vector(vector)
+        if normalized is None:
+            return None
+
+        return (round(normalized[0], 3), round(normalized[1], 3))
 
     def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
         markers: dict[int, CurveMarker] = {}
