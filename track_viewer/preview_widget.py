@@ -104,6 +104,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
         self._ai_color_mode = "none"
+        self._ai_acceleration_window = 3
+        self._ai_line_width = 2
         self._track_length: float | None = None
         self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._active_lp_line = "center-line"
@@ -235,6 +237,24 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def available_lp_files(self) -> list[str]:
         return list(self._available_lp_files)
+
+    def ai_acceleration_window(self) -> int:
+        return self._ai_acceleration_window
+
+    def set_ai_acceleration_window(self, segments: int) -> None:
+        clamped = max(1, segments)
+        if self._ai_acceleration_window != clamped:
+            self._ai_acceleration_window = clamped
+            self.update()
+
+    def ai_line_width(self) -> int:
+        return self._ai_line_width
+
+    def set_ai_line_width(self, width: int) -> None:
+        clamped = max(1, width)
+        if self._ai_line_width != clamped:
+            self._ai_line_width = clamped
+            self.update()
 
     def visible_lp_files(self) -> list[str]:
         return sorted(self._visible_lp_files)
@@ -746,6 +766,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self.lp_color,
                 gradient=self._ai_color_mode,
                 get_records=self._get_ai_line_records,
+                line_width=self._ai_line_width,
+                acceleration_window=self._ai_acceleration_window,
             )
             rendering.draw_flags(
                 painter, self._flags, self._selected_flag, transform, self.height()
