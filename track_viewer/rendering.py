@@ -127,7 +127,7 @@ def draw_ai_lines(
     viewport_height: int,
     lp_color: Callable[[str], str],
     *,
-    gradient: bool = False,
+    gradient: str = "none",
     get_records: Callable[[str], Sequence[object]] | None = None,
 ) -> None:
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -137,7 +137,7 @@ def draw_ai_lines(
             continue
         mapped = [map_point(px, py, transform, viewport_height) for px, py in points]
 
-        if gradient and get_records is not None:
+        if gradient != "none" and get_records is not None:
             records = get_records(name)
             speeds = [getattr(record, "speed_mph", None) for record in records]
             if len(mapped) >= 2 and len(speeds) >= 2:
@@ -147,27 +147,72 @@ def draw_ai_lines(
                 except ValueError:
                     min_speed = max_speed = None
 
-                def _speed_to_color(speed_value: float | None) -> QtGui.QColor:
-                    if (
-                        speed_value is None
-                        or min_speed is None
-                        or max_speed is None
-                        or max_speed == min_speed
-                    ):
-                        return QtGui.QColor(lp_color(name))
-                    ratio = (speed_value - min_speed) / (max_speed - min_speed)
-                    ratio = max(0.0, min(1.0, ratio))
-                    red = int(round(255 * (1 - ratio)))
-                    green = int(round(255 * ratio))
-                    return QtGui.QColor(red, green, 0)
+                if gradient == "speed":
 
-                for start, end, speed in zip(
-                    mapped[:-1], mapped[1:], speeds[:-1]
-                ):
-                    pen = QtGui.QPen(_speed_to_color(speed), 2)
-                    painter.setPen(pen)
-                    painter.drawLine(QtCore.QLineF(start, end))
-                continue
+                    def _speed_to_color(speed_value: float | None) -> QtGui.QColor:
+                        if (
+                            speed_value is None
+                            or min_speed is None
+                            or max_speed is None
+                            or max_speed == min_speed
+                        ):
+                            return QtGui.QColor(lp_color(name))
+                        ratio = (speed_value - min_speed) / (max_speed - min_speed)
+                        ratio = max(0.0, min(1.0, ratio))
+                        red = int(round(255 * (1 - ratio)))
+                        green = int(round(255 * ratio))
+                        return QtGui.QColor(red, green, 0)
+
+                    for start, end, speed in zip(
+                        mapped[:-1], mapped[1:], speeds[:-1]
+                    ):
+                        pen = QtGui.QPen(_speed_to_color(speed), 2)
+                        painter.setPen(pen)
+                        painter.drawLine(QtCore.QLineF(start, end))
+                    continue
+
+                if gradient == "acceleration":
+                    accelerations: list[float | None] = []
+                    for record_a, record_b in zip(records[:-1], records[1:]):
+                        dlong_delta = getattr(record_b, "dlong", None)
+                        dlong_start = getattr(record_a, "dlong", None)
+                        if dlong_delta is None or dlong_start is None:
+                            accelerations.append(None)
+                            continue
+                        delta = float(dlong_delta) - float(dlong_start)
+                        if delta <= 0:
+                            accelerations.append(None)
+                            continue
+                        speed_a = getattr(record_a, "speed_mph", None)
+                        speed_b = getattr(record_b, "speed_mph", None)
+                        if speed_a is None or speed_b is None:
+                            accelerations.append(None)
+                            continue
+                        accelerations.append((float(speed_b) - float(speed_a)) / delta)
+
+                    max_accel = max((a for a in accelerations if a is not None and a > 0), default=None)
+                    max_decel = min((a for a in accelerations if a is not None and a < 0), default=None)
+
+                    def _accel_to_color(accel_value: float | None) -> QtGui.QColor:
+                        if accel_value is None:
+                            return QtGui.QColor(lp_color(name))
+                        if accel_value >= 0:
+                            if max_accel is None or max_accel == 0:
+                                return QtGui.QColor(lp_color(name))
+                            ratio = max(0.0, min(1.0, accel_value / max_accel))
+                            green = int(round(255 * ratio))
+                            return QtGui.QColor(0, green, 0)
+                        if max_decel is None or max_decel == 0:
+                            return QtGui.QColor(lp_color(name))
+                        ratio = max(0.0, min(1.0, abs(accel_value) / abs(max_decel)))
+                        red = int(round(255 * ratio))
+                        return QtGui.QColor(red, 0, 0)
+
+                    for start, end, accel in zip(mapped[:-1], mapped[1:], accelerations):
+                        pen = QtGui.QPen(_accel_to_color(accel), 2)
+                        painter.setPen(pen)
+                        painter.drawLine(QtCore.QLineF(start, end))
+                    continue
 
         color = QtGui.QColor(lp_color(name))
         painter.setPen(QtGui.QPen(color, 2))
