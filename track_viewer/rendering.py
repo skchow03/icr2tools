@@ -13,6 +13,48 @@ from icr2_core.trk.trk_utils import color_from_ground_type
 Transform = tuple[float, tuple[float, float]]
 Point2D = tuple[float, float]
 
+MPH_TO_FEET_PER_SECOND = 5280 / 3600
+# One DLONG corresponds to 1/500 inch, or 1/6000 feet.
+DLONG_TO_FEET = 1 / 6000
+
+
+def compute_segment_acceleration(
+    record_a: object, record_b: object, *, track_length: float | None = None
+) -> float | None:
+    """Estimate acceleration between two LP records in ft/s^2.
+
+    The calculation uses the change in speed between consecutive AI line
+    segments and converts the DLONG spacing into feet. Time is derived from
+    the segment length and average speed to express the result in ft/s^2.
+    """
+
+    dlong_a = getattr(record_a, "dlong", None)
+    dlong_b = getattr(record_b, "dlong", None)
+    speed_a_mph = getattr(record_a, "speed_mph", None)
+    speed_b_mph = getattr(record_b, "speed_mph", None)
+    if None in {dlong_a, dlong_b, speed_a_mph, speed_b_mph}:
+        return None
+
+    delta_dlong = float(dlong_b) - float(dlong_a)
+    if track_length is not None and delta_dlong < 0:
+        delta_dlong += float(track_length)
+    if delta_dlong <= 0:
+        return None
+
+    distance_feet = delta_dlong * DLONG_TO_FEET
+    speed_a = float(speed_a_mph) * MPH_TO_FEET_PER_SECOND
+    speed_b = float(speed_b_mph) * MPH_TO_FEET_PER_SECOND
+    average_speed = (speed_a + speed_b) / 2
+    if average_speed <= 0:
+        return None
+
+    time_seconds = distance_feet / average_speed
+    if time_seconds <= 0:
+        return None
+
+    delta_speed = speed_b - speed_a
+    return delta_speed / time_seconds
+
 
 def map_point(
     x: float, y: float, transform: Transform, viewport_height: int
@@ -174,24 +216,18 @@ def draw_ai_lines(
                 if gradient == "acceleration":
                     accelerations: list[float | None] = []
                     for record_a, record_b in zip(records[:-1], records[1:]):
-                        dlong_delta = getattr(record_b, "dlong", None)
-                        dlong_start = getattr(record_a, "dlong", None)
-                        if dlong_delta is None or dlong_start is None:
-                            accelerations.append(None)
-                            continue
-                        delta = float(dlong_delta) - float(dlong_start)
-                        if delta <= 0:
-                            accelerations.append(None)
-                            continue
-                        speed_a = getattr(record_a, "speed_mph", None)
-                        speed_b = getattr(record_b, "speed_mph", None)
-                        if speed_a is None or speed_b is None:
-                            accelerations.append(None)
-                            continue
-                        accelerations.append((float(speed_b) - float(speed_a)) / delta)
+                        accelerations.append(
+                            compute_segment_acceleration(record_a, record_b)
+                        )
 
-                    max_accel = max((a for a in accelerations if a is not None and a > 0), default=None)
-                    max_decel = min((a for a in accelerations if a is not None and a < 0), default=None)
+                    max_accel = max(
+                        (a for a in accelerations if a is not None and a > 0),
+                        default=None,
+                    )
+                    max_decel = min(
+                        (a for a in accelerations if a is not None and a < 0),
+                        default=None,
+                    )
 
                     def _accel_to_color(accel_value: float | None) -> QtGui.QColor:
                         if accel_value is None:
