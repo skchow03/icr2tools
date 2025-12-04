@@ -75,6 +75,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
 
+        self._show_curve_markers = True
+
     def clear(self, message: str | None = None) -> None:
         self._trk = None
         self._cline = None
@@ -447,7 +449,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return markers
 
     def _draw_curve_markers(self, painter: QtGui.QPainter, transform: Transform) -> None:
-        if not self._curve_markers:
+        if not self._curve_markers or not self._show_curve_markers:
             return
 
         painter.save()
@@ -478,3 +480,32 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter.drawEllipse(center_point, 4, 4)
 
         painter.restore()
+
+    # ------------------------------------------------------------------
+    # Public controls
+    # ------------------------------------------------------------------
+    def set_show_curve_markers(self, visible: bool) -> None:
+        self._show_curve_markers = visible
+        self.update()
+
+    def select_next_section(self) -> None:
+        if self._trk is None or not self._trk.sects:
+            return
+
+        if self._selected_section_index is None:
+            self._set_selected_section(0)
+            return
+
+        next_index = (self._selected_section_index + 1) % len(self._trk.sects)
+        self._set_selected_section(next_index)
+
+    def select_previous_section(self) -> None:
+        if self._trk is None or not self._trk.sects:
+            return
+
+        if self._selected_section_index is None:
+            self._set_selected_section(len(self._trk.sects) - 1)
+            return
+
+        prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
+        self._set_selected_section(prev_index)
