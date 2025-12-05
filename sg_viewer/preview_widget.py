@@ -300,6 +300,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return closest_id
 
+    def _build_node_endpoints(self) -> list[tuple[Point, Point]]:
+        """Return a list of ((x1, y1), (x2, y2)) for each section using node positions."""
+        if self._state is None or self._state.sg is None:
+            return []
+
+        endpoints: list[tuple[Point, Point]] = []
+        state = self._state
+
+        for sec in state.sg.sects:
+            sn = state.nodes.get(sec.start_node_id)
+            en = state.nodes.get(sec.end_node_id)
+            if sn is None or en is None:
+                continue
+            endpoints.append(((sn.x, sn.y), (en.x, en.y)))
+
+        return endpoints
+
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -331,9 +348,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self.height(),
         )
 
+        dynamic_endpoints = self._build_node_endpoints()
         preview_rendering.draw_section_endpoints(
             painter,
-            self._section_endpoints,
+            dynamic_endpoints,
             self._selected_section_index,
             transform,
             self.height(),
