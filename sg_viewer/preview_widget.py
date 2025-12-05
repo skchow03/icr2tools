@@ -3,20 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import math
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict, Set
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt, getxyz
-from track_viewer import rendering
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
+
 from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_loader, preview_rendering
+from sg_viewer.editor_state import EditorState
+
 
 Point = Tuple[float, float]
-Transform = tuple[float, tuple[float, float]]
+Transform = tuple[float, Tuple[float, float]]
 
 
 @dataclass
@@ -25,8 +27,8 @@ class SectionSelection:
     type_name: str
     start_dlong: float
     end_dlong: float
-    start_heading: tuple[float, float] | None = None
-    end_heading: tuple[float, float] | None = None
+    start_heading: Tuple[float, float] | None = None
+    end_heading: Tuple[float, float] | None = None
     center: Point | None = None
     radius: float | None = None
 
@@ -44,13 +46,19 @@ class SectionGeometry:
 @dataclass
 class SectionHeadingData:
     index: int
-    start_heading: tuple[float, float] | None
-    end_heading: tuple[float, float] | None
+    start_heading: Tuple[float, float] | None
+    end_heading: Tuple[float, float] | None
     delta_to_next: float | None
 
 
 class SGPreviewWidget(QtWidgets.QWidget):
-    """Minimal preview widget that draws an SG file centreline."""
+    """
+    Preview widget that draws an SG/TRK centreline and exposes per-section metadata.
+
+    It is wired to an EditorState which owns the SG/TRK/PreviewData, and supports:
+      - section selection
+      - move-point mode (Phase 1): detach endpoints and drag them visually
+    """
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
 
@@ -63,30 +71,121 @@ class SGPreviewWidget(QtWidgets.QWidget):
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
         self.setPalette(palette)
 
+        # Editor model
+        self._state: EditorState | None = None
+
+        # Cached references for convenience (derived from EditorState.preview)
         self._sgfile: SGFile | None = None
         self._trk: TRKFile | None = None
         self._cline: List[Point] | None = None
         self._sampled_centerline: List[Point] = []
         self._sampled_dlongs: List[float] = []
-        self._sampled_bounds: tuple[float, float, float, float] | None = None
+        self._sampled_bounds: Tuple[float, float, float, float] | None = None
         self._centerline_index: CenterlineIndex | None = None
-        self._status_message = "Select an SG file to begin."
-
-        self._curve_markers: dict[int, preview_loader.CurveMarker] = {}
-        self._selected_curve_index: int | None = None
-        self._section_endpoints: list[tuple[Point, Point]] = []
-
         self._track_length: float | None = None
+        self._curve_markers: Dict[int, preview_loader.CurveMarker] = {}
+
+        # Section endpoints as built from TRK + cline
+        self._base_section_endpoints: List[Tuple[Point, Point]] = []
+        self._section_endpoints: List[Tuple[Point, Point]] = []
+
+        # Endpoint overrides for move-point mode: {(index, "start"/"end"): (x, y)}
+        self._endpoint_overrides: Dict[Tuple[int, str], Point] = {}
+
+        # Selection state
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
+        self._selected_curve_index: int | None = None
 
+        # View transform state
         self._transform_state = preview_loader.TransformState()
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
 
-        self._show_curve_markers = True
+        # Move-point mode (Phase 1)
+        self._move_mode: bool = False
+        self._detached_endpoints: Set[Tuple[int, str]] = set()
+        self._dragging_section_index: Optional[int] = None
+        self._dragging_endpoint_type: Optional[str] = None  # "start" or "end"
+        self._dragging_initial_pos: Optional[Point] = None
+        self._dragging_initial_mouse_pos: Optional[QtCore.QPoint] = None
 
+        # Options
+        self._show_curve_markers = True
+        self._status_message = "Select an SG file to begin."
+
+    # ------------------------------------------------------------------
+    # State binding
+    # ------------------------------------------------------------------
+    def set_state(self, state: EditorState | None) -> None:
+        """
+        Bind an EditorState to this widget and refresh the preview.
+        """
+        self._state = state
+        if state is None:
+            self.clear()
+            return
+        self._apply_preview(state.preview)
+        self.selectedSectionChanged.emit(None)
+        self.update()
+
+    def refresh_from_state(self) -> None:
+        """
+        Re-bind all cached preview fields from the current EditorState.
+        Call this after you mutate the state (e.g., after an edit).
+        """
+        if self._state is None:
+            self.clear()
+            return
+        self._apply_preview(self._state.preview)
+        # Try to restore selected section
+        if self._selected_section_index is not None:
+            idx = self._selected_section_index
+            if self._trk and 0 <= idx < len(self._trk.sects):
+                self._set_selected_section(idx)
+            else:
+                self._set_selected_section(None)
+        self.update()
+
+    def _apply_preview(self, data: preview_loader.PreviewData) -> None:
+        """
+        Copy preview data into local caches. Keeps widget as a "dumb view"
+        over PreviewData while allowing fast access to fields.
+        """
+        self._sgfile = data.sgfile
+        self._trk = data.trk
+        self._cline = data.cline
+        self._sampled_centerline = list(data.sampled_centerline)
+        self._sampled_dlongs = list(data.sampled_dlongs)
+        self._sampled_bounds = data.sampled_bounds
+        self._centerline_index = data.centerline_index
+        self._track_length = data.track_length
+        self._curve_markers = dict(data.curve_markers)
+
+        self._base_section_endpoints = list(data.section_endpoints)
+        self._section_endpoints = list(data.section_endpoints)
+        self._endpoint_overrides.clear()
+
+        self._status_message = data.status_message
+
+        # Reset view transform so it refits around new bounds
+        self._transform_state = preview_loader.TransformState()
+        self._update_fit_scale()
+
+        # Clear selection and move mode state on new preview
+        self._selected_section_index = None
+        self._selected_section_points = []
+        self._selected_curve_index = None
+        self._detached_endpoints.clear()
+        self._dragging_section_index = None
+        self._dragging_endpoint_type = None
+        self._dragging_initial_pos = None
+        self._dragging_initial_mouse_pos = None
+
+    # ------------------------------------------------------------------
+    # Public control API
+    # ------------------------------------------------------------------
     def clear(self, message: str | None = None) -> None:
         self._sgfile = None
         self._trk = None
@@ -96,23 +195,33 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = None
         self._centerline_index = None
         self._track_length = None
+        self._curve_markers = {}
+        self._base_section_endpoints = []
+        self._section_endpoints = []
+        self._endpoint_overrides.clear()
         self._selected_section_index = None
         self._selected_section_points = []
-        self._section_endpoints = []
-        self._curve_markers = {}
         self._selected_curve_index = None
         self._transform_state = preview_loader.TransformState()
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
+        self._state = None
+        self._move_mode = False
+        self._detached_endpoints.clear()
+        self._dragging_section_index = None
+        self._dragging_endpoint_type = None
+        self._dragging_initial_pos = None
+        self._dragging_initial_mouse_pos = None
         self._status_message = message or "Select an SG file to begin."
         self.selectedSectionChanged.emit(None)
         self.update()
 
-    # ------------------------------------------------------------------
-    # Loading
-    # ------------------------------------------------------------------
     def load_sg_file(self, path: Path) -> None:
+        """
+        Convenience wrapper used by the app: create an EditorState from a path
+        and bind it to this widget.
+        """
         if not path:
             self.clear()
             return
@@ -120,26 +229,112 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = f"Loading {path.name}…"
         self.update()
 
-        data = preview_loader.load_preview(path)
+        state = EditorState.from_path(path)
+        self.set_state(state)
 
-        self._sgfile = data.sgfile
-        self._trk = data.trk
-        self._cline = data.cline
-        self._sampled_centerline = data.sampled_centerline
-        self._sampled_dlongs = data.sampled_dlongs
-        self._sampled_bounds = data.sampled_bounds
-        self._centerline_index = data.centerline_index
-        self._track_length = data.track_length
-        self._selected_section_index = None
-        self._selected_section_points = []
-        self._curve_markers = data.curve_markers
-        self._section_endpoints = data.section_endpoints
-        self._selected_curve_index = None
-        self._transform_state = preview_loader.TransformState()
-        self._status_message = data.status_message
-        self._update_fit_scale()
-        self.selectedSectionChanged.emit(None)
+        # Expose the state for the main window (SGViewerWindow)
+        self._state = state
+
+    def set_show_curve_markers(self, visible: bool) -> None:
+        self._show_curve_markers = visible
         self.update()
+
+    def select_next_section(self) -> None:
+        if self._trk is None or not self._trk.sects:
+            return
+
+        if self._selected_section_index is None:
+            self._set_selected_section(0)
+            return
+
+        next_index = (self._selected_section_index + 1) % len(self._trk.sects)
+        self._set_selected_section(next_index)
+
+    def select_previous_section(self) -> None:
+        if self._trk is None or not self._trk.sects:
+            return
+
+        if self._selected_section_index is None:
+            self._set_selected_section(len(self._trk.sects) - 1)
+            return
+
+        prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
+        self._set_selected_section(prev_index)
+
+    # ------------------------------------------------------------------
+    # Move-point mode (Phase 1 only: detach & drag endpoints visually)
+    # ------------------------------------------------------------------
+    def set_move_mode(self, enabled: bool) -> None:
+        """
+        Enable/disable Move Point mode.
+
+        When enabled:
+          - Right-click on an endpoint toggles it as "detached".
+          - Left-click+drag on a detached endpoint moves it visually.
+        No geometry fitting is done yet (Phase 1 only).
+        """
+        self._move_mode = bool(enabled)
+        self._dragging_section_index = None
+        self._dragging_endpoint_type = None
+        self._dragging_initial_pos = None
+        self._dragging_initial_mouse_pos = None
+        # Clear overrides when turning off move mode
+        if not self._move_mode:
+            self._endpoint_overrides.clear()
+            self._update_section_endpoints_from_overrides()
+        self.update()
+
+    def _update_section_endpoints_from_overrides(self) -> None:
+        """
+        Rebuild self._section_endpoints from base endpoints plus overrides.
+        """
+        self._section_endpoints = []
+        for idx, (start, end) in enumerate(self._base_section_endpoints):
+            s = self._endpoint_overrides.get((idx, "start"), start)
+            e = self._endpoint_overrides.get((idx, "end"), end)
+            self._section_endpoints.append((s, e))
+
+    def _pick_endpoint(
+        self, track_point: Point, pixel_tolerance: float = 8.0
+    ) -> Optional[Tuple[int, str, Point]]:
+        """
+        Find the nearest endpoint to the given track-space point.
+
+        Returns (section_index, "start"/"end", endpoint_point) or None.
+        """
+        if not self._section_endpoints:
+            return None
+
+        transform = self._current_transform()
+        if not transform:
+            return None
+        scale, _ = transform
+        if scale <= 0:
+            return None
+
+        # convert pixel tolerance to track units
+        tol_units = pixel_tolerance / scale
+        tol_sq = tol_units * tol_units
+
+        best: Optional[Tuple[int, str, Point]] = None
+        best_dist_sq = float("inf")
+
+        tx, ty = track_point
+        for idx, (start, end) in enumerate(self._section_endpoints):
+            for etype, pt in (("start", start), ("end", end)):
+                dx = pt[0] - tx
+                dy = pt[1] - ty
+                d2 = dx * dx + dy * dy
+                if d2 < best_dist_sq:
+                    best_dist_sq = d2
+                    best = (idx, etype, pt)
+
+        if best is None:
+            return None
+
+        if best_dist_sq > tol_sq:
+            return None
+        return best
 
     # ------------------------------------------------------------------
     # Transform helpers
@@ -182,12 +377,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
-    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: D401
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
         self._update_fit_scale()
         self.update()
 
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         painter = QtGui.QPainter(self)
         painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
 
@@ -234,7 +429,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self.height(),
         )
 
-    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         if not self._sampled_centerline:
             return
         transform = self._current_transform()
@@ -269,7 +464,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
         event.accept()
 
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._move_mode:
+            # Move-point mode: right-click toggles detach; left-click may start dragging
+            if event.button() == QtCore.Qt.RightButton:
+                self._handle_move_mode_right_click(event.pos())
+                event.accept()
+                return
+            if event.button() == QtCore.Qt.LeftButton:
+                self._handle_move_mode_left_press(event.pos())
+                # handled if dragging started; if not, no panning in move mode
+                event.accept()
+                return
+
+        # Normal mode: pan + selection
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -279,7 +487,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._move_mode and self._dragging_section_index is not None:
+            self._handle_move_mode_drag(event.pos())
+            event.accept()
+            return
+
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -298,7 +511,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if self._move_mode and event.button() == QtCore.Qt.LeftButton:
+            # End dragging in move mode (Phase 1: no fit logic yet)
+            self._dragging_section_index = None
+            self._dragging_endpoint_type = None
+            self._dragging_initial_pos = None
+            self._dragging_initial_mouse_pos = None
+            event.accept()
+            return
+
         if event.button() == QtCore.Qt.LeftButton:
             self._is_panning = False
             self._last_mouse_pos = None
@@ -306,12 +528,64 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._press_pos is not None
                 and (event.pos() - self._press_pos).manhattanLength() < 6
             ):
+                # Small movement → treat as click (selection)
                 self._handle_click(event.pos())
             self._press_pos = None
         super().mouseReleaseEvent(event)
 
     # ------------------------------------------------------------------
-    # Selection
+    # Move-point mode helpers
+    # ------------------------------------------------------------------
+    def _handle_move_mode_right_click(self, pos: QtCore.QPoint) -> None:
+        """Right-click: toggle detached state on nearest endpoint."""
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return
+        picked = self._pick_endpoint(track_point)
+        if picked is None:
+            return
+        idx, etype, _ = picked
+        key = (idx, etype)
+        if key in self._detached_endpoints:
+            self._detached_endpoints.remove(key)
+        else:
+            self._detached_endpoints.add(key)
+        self.update()
+
+    def _handle_move_mode_left_press(self, pos: QtCore.QPoint) -> None:
+        """Left press in move mode: if on a detached endpoint, start dragging."""
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return
+        picked = self._pick_endpoint(track_point)
+        if picked is None:
+            return
+        idx, etype, pt = picked
+        key = (idx, etype)
+        if key not in self._detached_endpoints:
+            # Only allow dragging detached endpoints (SGE behavior)
+            return
+
+        self._dragging_section_index = idx
+        self._dragging_endpoint_type = etype
+        self._dragging_initial_pos = pt
+        self._dragging_initial_mouse_pos = pos
+
+    def _handle_move_mode_drag(self, pos: QtCore.QPoint) -> None:
+        """While dragging a detached endpoint, update its override position."""
+        if self._dragging_section_index is None or self._dragging_endpoint_type is None:
+            return
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return
+
+        key = (self._dragging_section_index, self._dragging_endpoint_type)
+        self._endpoint_overrides[key] = track_point
+        self._update_section_endpoints_from_overrides()
+        self.update()
+
+    # ------------------------------------------------------------------
+    # Selection (normal mode)
     # ------------------------------------------------------------------
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         if not self._centerline_index or not self._sampled_dlongs or not self._trk:
@@ -335,8 +609,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._set_selected_section(None)
             return
 
-        selection = self._find_section_by_dlong(nearest_dlong)
-        self._set_selected_section(selection)
+        selection_index = self._find_section_by_dlong(nearest_dlong)
+        self._set_selected_section(selection_index)
 
     def _find_section_by_dlong(self, dlong: float) -> int | None:
         if self._trk is None or not self._trk.sects:
@@ -368,14 +642,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         sect = self._trk.sects[index]
         self._selected_section_index = index
         self._selected_section_points = self._sample_section_polyline(sect)
-        self._selected_curve_index = index if sect.type == 2 else None
+        self._selected_curve_index = index if getattr(sect, "type", 1) == 2 else None
 
         end_dlong = float(sect.start_dlong + sect.length)
         if self._track_length:
             end_dlong = end_dlong % self._track_length
 
         start_heading, end_heading = self._get_heading_vectors(index)
-        type_name = "Curve" if sect.type == 2 else "Straight"
+        type_name = "Curve" if getattr(sect, "type", 1) == 2 else "Straight"
         marker = self._curve_markers.get(index)
         selection = SectionSelection(
             index=index,
@@ -412,7 +686,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         points.append((x, y))
         return points
 
-    def get_section_geometries(self) -> list[SectionGeometry]:
+    # ------------------------------------------------------------------
+    # Metadata / analysis helpers
+    # ------------------------------------------------------------------
+    def get_section_geometries(self) -> List[SectionGeometry]:
         if self._trk is None or not self._cline or self._track_length is None:
             return []
 
@@ -420,7 +697,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if track_length <= 0:
             return []
 
-        sections: list[SectionGeometry] = []
+        sections: List[SectionGeometry] = []
         total_sections = len(self._trk.sects)
         for idx, sect in enumerate(self._trk.sects):
             start_dlong = self._round_sg_value(sect.start_dlong)
@@ -455,19 +732,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return sections
 
-    def get_section_headings(self) -> list[SectionHeadingData]:
+    def get_section_headings(self) -> List[SectionHeadingData]:
         if self._sgfile is None or self._trk is None:
             return []
 
-        start_vectors: list[tuple[float, float] | None] = []
-        end_vectors: list[tuple[float, float] | None] = []
+        start_vectors: List[Tuple[float, float] | None] = []
+        end_vectors: List[Tuple[float, float] | None] = []
         for sect in self._sgfile.sects:
             start = (float(sect.sang1), float(sect.sang2))
             end = (float(sect.eang1), float(sect.eang2))
             start_vectors.append(self._round_heading_vector(start))
             end_vectors.append(self._round_heading_vector(end))
 
-        headings: list[SectionHeadingData] = []
+        headings: List[SectionHeadingData] = []
         total = len(start_vectors)
         for idx, (start, end) in enumerate(zip(start_vectors, end_vectors)):
             next_start = start_vectors[(idx + 1) % total] if total else None
@@ -483,12 +760,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return headings
 
-    def get_xsect_metadata(self) -> list[tuple[int, float]]:
+    def get_xsect_metadata(self) -> List[Tuple[int, float]]:
         if self._sgfile is None:
             return []
         return [(idx, float(dlat)) for idx, dlat in enumerate(self._sgfile.xsect_dlats)]
 
-    def get_section_range(self, index: int) -> tuple[float, float] | None:
+    def get_section_range(self, index: int) -> Tuple[float, float] | None:
         if self._trk is None or index < 0 or index >= len(self._trk.sects):
             return None
         start = float(self._trk.sects[index].start_dlong)
@@ -497,7 +774,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _get_heading_vectors(
         self, index: int
-    ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    ) -> Tuple[Tuple[float, float] | None, Tuple[float, float] | None]:
         if (
             self._sgfile is None
             or self._trk is None
@@ -511,14 +788,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         trk_sect = self._trk.sects[index]
         if getattr(trk_sect, "type", None) == 2:
             sg_sect = self._sgfile.sects[index]
-            start = (
-                float(sg_sect.sang1),
-                float(sg_sect.sang2),
-            )
-            end = (
-                float(sg_sect.eang1),
-                float(sg_sect.eang2),
-            )
+            start = (float(sg_sect.sang1), float(sg_sect.sang2))
+            end = (float(sg_sect.eang1), float(sg_sect.eang2))
             return self._round_heading_vector(start), self._round_heading_vector(end)
 
         track_length = float(self._track_length or 0)
@@ -541,7 +812,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         rounded_heading = self._round_heading_vector(heading)
         return rounded_heading, rounded_heading
 
-    def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
+    def build_elevation_profile(
+        self, xsect_index: int, samples_per_section: int = 24
+    ) -> ElevationProfileData | None:
         if (
             self._sgfile is None
             or self._trk is None
@@ -551,10 +824,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         ):
             return None
 
-        dlongs: list[float] = []
-        sg_altitudes: list[float] = []
-        trk_altitudes: list[float] = []
-        section_ranges: list[tuple[float, float]] = []
+        dlongs: List[float] = []
+        sg_altitudes: List[float] = []
+        trk_altitudes: List[float] = []
+        section_ranges: List[Tuple[float, float]] = []
 
         dlat_value = float(self._trk.xsect_dlats[xsect_index])
         for sect_idx, (sg_sect, trk_sect) in enumerate(zip(self._sgfile.sects, self._trk.sects)):
@@ -598,16 +871,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
             xsect_label=label,
         )
 
+    # ------------------------------------------------------------------
+    # Small helpers
+    # ------------------------------------------------------------------
     @staticmethod
     def _round_sg_value(value: float) -> float:
         """Round SG-derived values to match the raw file precision."""
-
         return float(round(value))
 
     @staticmethod
     def _normalize_heading_vector(
-        vector: tuple[float, float] | None,
-    ) -> tuple[float, float] | None:
+        vector: Tuple[float, float] | None,
+    ) -> Tuple[float, float] | None:
         if vector is None:
             return None
 
@@ -618,8 +893,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return (vector[0] / length, vector[1] / length)
 
     def _round_heading_vector(
-        self, vector: tuple[float, float] | None
-    ) -> tuple[float, float] | None:
+        self, vector: Tuple[float, float] | None
+    ) -> Tuple[float, float] | None:
         normalized = self._normalize_heading_vector(vector)
         if normalized is None:
             return None
@@ -627,7 +902,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return (round(normalized[0], 5), round(normalized[1], 5))
 
     def _heading_delta(
-        self, end: tuple[float, float] | None, next_start: tuple[float, float] | None
+        self, end: Tuple[float, float] | None, next_start: Tuple[float, float] | None
     ) -> float | None:
         end_norm = self._normalize_heading_vector(end)
         next_norm = self._normalize_heading_vector(next_start)
@@ -641,7 +916,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _centerline_point_normal_and_tangent(
         self, dlong: float
-    ) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None:
+    ) -> Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]] | None:
         if not self._trk or not self._cline or not self._track_length:
             return None
 
@@ -674,32 +949,3 @@ class SGPreviewWidget(QtWidgets.QWidget):
         tangent = (vx / length, vy / length)
         normal = (-vy / length, vx / length)
         return (cx, cy), normal, tangent
-
-    # ------------------------------------------------------------------
-    # Public controls
-    # ------------------------------------------------------------------
-    def set_show_curve_markers(self, visible: bool) -> None:
-        self._show_curve_markers = visible
-        self.update()
-
-    def select_next_section(self) -> None:
-        if self._trk is None or not self._trk.sects:
-            return
-
-        if self._selected_section_index is None:
-            self._set_selected_section(0)
-            return
-
-        next_index = (self._selected_section_index + 1) % len(self._trk.sects)
-        self._set_selected_section(next_index)
-
-    def select_previous_section(self) -> None:
-        if self._trk is None or not self._trk.sects:
-            return
-
-        if self._selected_section_index is None:
-            self._set_selected_section(len(self._trk.sects) - 1)
-            return
-
-        prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
-        self._set_selected_section(prev_index)

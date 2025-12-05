@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import List
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 
 from sg_viewer.elevation_profile import ElevationProfileWidget
 from sg_viewer.preview_widget import (
@@ -13,6 +13,8 @@ from sg_viewer.preview_widget import (
     SectionSelection,
     SGPreviewWidget,
 )
+from sg_viewer.section_properties import SectionPropertiesPanel
+from sg_viewer.editor_state import EditorState
 
 
 class SGViewerApp(QtWidgets.QApplication):
@@ -108,18 +110,41 @@ class HeadingTableWindow(QtWidgets.QDialog):
             for col, value in enumerate(values):
                 self._table.setItem(row, col, QtWidgets.QTableWidgetItem(value))
 
+
 class SGViewerWindow(QtWidgets.QMainWindow):
-    """Single-window utility that previews SG centrelines."""
+    """Main SG viewer + editor window."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SG Viewer")
-        self.resize(960, 720)
+        self.setWindowTitle("SG Editor")
+        self.resize(1200, 800)
 
+        # ---------------------------------------------------------
+        # Core widgets
+        # ---------------------------------------------------------
         self._preview = SGPreviewWidget()
+        self._state: EditorState | None = None
+
+        # Section properties panel
+        self._properties = SectionPropertiesPanel(self)
+        self._properties.set_state(None)
+
+        # ---------------------------------------------------------
+        # Dock: Section Properties Panel
+        # ---------------------------------------------------------
+        dock = QtWidgets.QDockWidget("Section Properties", self)
+        dock.setWidget(self._properties)
+        dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
+
+        # ---------------------------------------------------------
+        # Sidebar UI (selection, tools, tables)
+        # ---------------------------------------------------------
         self._sidebar = QtWidgets.QWidget()
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
+        self._move_point_button = QtWidgets.QPushButton("Move Point")
+        self._move_point_button.setCheckable(True)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
@@ -127,9 +152,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
         self._heading_table_button.setEnabled(False)
+
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
+
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
@@ -137,17 +164,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radius_label = QtWidgets.QLabel("Radius: –")
         self._start_heading_label = QtWidgets.QLabel("Start Heading: –")
         self._end_heading_label = QtWidgets.QLabel("End Heading: –")
+
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
 
+        # ---------------------------------------------------------
+        # Sidebar layout
+        # ---------------------------------------------------------
         sidebar_layout = QtWidgets.QVBoxLayout()
-        navigation_layout = QtWidgets.QHBoxLayout()
-        navigation_layout.addWidget(self._prev_button)
-        navigation_layout.addWidget(self._next_button)
-        sidebar_layout.addLayout(navigation_layout)
+        nav_layout = QtWidgets.QHBoxLayout()
+        nav_layout.addWidget(self._prev_button)
+        nav_layout.addWidget(self._next_button)
+        sidebar_layout.addLayout(nav_layout)
+
+        sidebar_layout.addWidget(self._move_point_button)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
+
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
@@ -156,53 +190,85 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._radius_label)
         sidebar_layout.addWidget(self._start_heading_label)
         sidebar_layout.addWidget(self._end_heading_label)
+
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
+        # ---------------------------------------------------------
+        # Main layout: preview on left, sidebar on right
+        # ---------------------------------------------------------
         preview_column = QtWidgets.QWidget()
-        preview_column_layout = QtWidgets.QVBoxLayout()
-        preview_column_layout.addWidget(self._preview, stretch=5)
+        preview_layout = QtWidgets.QVBoxLayout()
+        preview_layout.addWidget(self._preview, stretch=5)
 
         profile_controls = QtWidgets.QHBoxLayout()
         profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
         profile_controls.addWidget(self._xsect_combo)
-        preview_column_layout.addLayout(profile_controls)
-        preview_column_layout.addWidget(self._profile_widget, stretch=2)
-        preview_column.setLayout(preview_column_layout)
+
+        preview_layout.addLayout(profile_controls)
+        preview_layout.addWidget(self._profile_widget, stretch=2)
+
+        preview_column.setLayout(preview_layout)
 
         container = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(preview_column, stretch=1)
-        layout.addWidget(self._sidebar)
-        container.setLayout(layout)
+        main_layout = QtWidgets.QHBoxLayout()
+        main_layout.addWidget(preview_column, stretch=1)
+        main_layout.addWidget(self._sidebar)
+        container.setLayout(main_layout)
+
         self.setCentralWidget(container)
 
+        # ---------------------------------------------------------
+        # Menus / actions
+        # ---------------------------------------------------------
         self._create_actions()
         self._create_menus()
-        self.statusBar().showMessage("Select File → Open SG to begin.")
+
+        # ---------------------------------------------------------
+        # Signals
+        # ---------------------------------------------------------
         self._preview.selectedSectionChanged.connect(self._update_selection_sidebar)
+        self._preview.selectedSectionChanged.connect(self._properties.on_section_changed)
+
         self._prev_button.clicked.connect(self._preview.select_previous_section)
         self._next_button.clicked.connect(self._preview.select_next_section)
+
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
+
+        # Move Point mode → preview widget
+        self._move_point_button.toggled.connect(self._preview.set_move_mode)
+
         self._section_table_button.clicked.connect(self._show_section_table)
         self._heading_table_button.clicked.connect(self._show_heading_table)
         self._xsect_combo.currentIndexChanged.connect(self._refresh_elevation_profile)
 
+        self.statusBar().showMessage("Select File → Open SG to begin.")
+
+    # ------------------------------------------------------------------
+    # File loading + EditorState integration
+    # ------------------------------------------------------------------
     def load_sg(self, path: Path) -> None:
         try:
             self._preview.load_sg_file(path)
+            self._state = self._preview._state  # sync EditorState
+            self._properties.set_state(self._state)
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "Failed to load SG", str(exc))
             logging.exception("Failed to load SG file")
-        else:
-            self.statusBar().showMessage(f"Loaded {path}")
-            self._section_table_button.setEnabled(True)
-            self._heading_table_button.setEnabled(True)
-            self._update_section_table()
-            self._update_heading_table()
-            self._populate_xsect_choices()
-            self._refresh_elevation_profile()
+            return
 
+        self.statusBar().showMessage(f"Loaded {path}")
+        self._section_table_button.setEnabled(True)
+        self._heading_table_button.setEnabled(True)
+
+        self._update_section_table()
+        self._update_heading_table()
+        self._populate_xsect_choices()
+        self._refresh_elevation_profile()
+
+    # ------------------------------------------------------------------
+    # Menus
+    # ------------------------------------------------------------------
     def _create_actions(self) -> None:
         self._open_action = QtWidgets.QAction("Open SG…", self)
         self._open_action.setShortcut("Ctrl+O")
@@ -219,17 +285,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         file_menu.addAction(self._quit_action)
 
     def _open_file_dialog(self) -> None:
-        options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Open SG file",
             "",
             "SG files (*.sg *.SG);;All files (*)",
-            options=options,
         )
         if file_path:
             self.load_sg(Path(file_path))
 
+    # ------------------------------------------------------------------
+    # Selection sidebar updates
+    # ------------------------------------------------------------------
     def _update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         if selection is None:
             self._section_label.setText("Section: None")
@@ -247,6 +314,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._dlong_label.setText(
             f"DLONG: {selection.start_dlong:.0f} → {selection.end_dlong:.0f}"
         )
+
         if selection.center is not None and selection.radius is not None:
             cx, cy = selection.center
             self._center_label.setText(f"Center: ({cx:.1f}, {cy:.1f})")
@@ -255,15 +323,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
 
-        if selection.start_heading is not None:
+        if selection.start_heading:
             sx, sy = selection.start_heading
-            self._start_heading_label.setText(
-                f"Start Heading: ({sx:.5f}, {sy:.5f})"
-            )
+            self._start_heading_label.setText(f"Start Heading: ({sx:.5f}, {sy:.5f})")
         else:
             self._start_heading_label.setText("Start Heading: –")
 
-        if selection.end_heading is not None:
+        if selection.end_heading:
             ex, ey = selection.end_heading
             self._end_heading_label.setText(f"End Heading: ({ex:.5f}, {ey:.5f})")
         else:
@@ -272,6 +338,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
 
+    # ------------------------------------------------------------------
+    # Tables
+    # ------------------------------------------------------------------
     def _show_section_table(self) -> None:
         sections = self._preview.get_section_geometries()
         if not sections:
@@ -286,14 +355,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_table_window.set_sections(sections)
         self._section_table_window.show()
         self._section_table_window.raise_()
-        self._section_table_window.activateWindow()
 
     def _update_section_table(self) -> None:
-        if self._section_table_window is None:
-            return
-
-        sections = self._preview.get_section_geometries()
-        self._section_table_window.set_sections(sections)
+        if self._section_table_window:
+            sections = self._preview.get_section_geometries()
+            self._section_table_window.set_sections(sections)
 
     def _show_heading_table(self) -> None:
         headings = self._preview.get_section_headings()
@@ -309,24 +375,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._heading_table_window.set_headings(headings)
         self._heading_table_window.show()
         self._heading_table_window.raise_()
-        self._heading_table_window.activateWindow()
 
     def _update_heading_table(self) -> None:
-        if self._heading_table_window is None:
-            return
+        if self._heading_table_window:
+            headings = self._preview.get_section_headings()
+            self._heading_table_window.set_headings(headings)
 
-        headings = self._preview.get_section_headings()
-        self._heading_table_window.set_headings(headings)
-
+    # ------------------------------------------------------------------
+    # Elevation profile
+    # ------------------------------------------------------------------
     def _populate_xsect_choices(self) -> None:
         metadata = self._preview.get_xsect_metadata()
         self._xsect_combo.blockSignals(True)
         self._xsect_combo.clear()
+
         for idx, dlat in metadata:
             self._xsect_combo.addItem(f"{idx} (DLAT {dlat:.0f})", idx)
+
         self._xsect_combo.setEnabled(bool(metadata))
         if metadata:
             self._xsect_combo.setCurrentIndex(0)
+
         self._xsect_combo.blockSignals(False)
 
     def _refresh_elevation_profile(self) -> None:
@@ -340,4 +409,3 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         profile = self._preview.build_elevation_profile(int(current_index))
         self._profile_widget.set_profile_data(profile)
-
