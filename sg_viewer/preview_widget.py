@@ -9,9 +9,14 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_alt, getxyz
+from icr2_core.trk.trk_utils import get_alt, getxyz, get_cline_pos
 from track_viewer import rendering
-from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
+from track_viewer.geometry import (
+    CenterlineIndex,
+    build_centerline_index,
+    project_point_to_centerline,
+    sample_centerline,
+)
 from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_loader, preview_rendering
 
@@ -49,10 +54,22 @@ class SectionHeadingData:
     delta_to_next: float | None
 
 
+@dataclass
+class MoveCandidate:
+    first_index: int
+    second_index: int
+    start_point: Point
+    joint_point: Point
+    end_point: Point
+    first_length: float
+    second_length: float
+
+
 class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
+    pointMoveFinished = QtCore.pyqtSignal()
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -86,6 +103,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._press_pos: QtCore.QPoint | None = None
 
         self._show_curve_markers = True
+        self._move_mode_enabled = False
+        self._active_move: MoveCandidate | None = None
+        self._move_dragging = False
+        self._pending_move_length: float | None = None
 
     def clear(self, message: str | None = None) -> None:
         self._sgfile = None
@@ -106,6 +127,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._last_mouse_pos = None
         self._press_pos = None
         self._status_message = message or "Select an SG file to begin."
+        self._move_mode_enabled = False
+        self._active_move = None
+        self._move_dragging = False
+        self._pending_move_length = None
         self.selectedSectionChanged.emit(None)
         self.update()
 
@@ -137,6 +162,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_curve_index = None
         self._transform_state = preview_loader.TransformState()
         self._status_message = data.status_message
+        self._move_mode_enabled = False
+        self._active_move = None
+        self._move_dragging = False
+        self._pending_move_length = None
         self._update_fit_scale()
         self.selectedSectionChanged.emit(None)
         self.update()
@@ -178,6 +207,29 @@ class SGPreviewWidget(QtWidgets.QWidget):
         py = self.height() - point.y()
         y = (py - offsets[1]) / scale
         return x, y
+
+    # ------------------------------------------------------------------
+    # Section endpoint helpers
+    # ------------------------------------------------------------------
+    def _section_heading_vector(self, index: int) -> tuple[float, float] | None:
+        if index < 0 or index >= len(self._section_endpoints):
+            return None
+        start, end = self._section_endpoints[index]
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = (dx * dx + dy * dy) ** 0.5
+        if length <= 0:
+            return None
+        return dx / length, dy / length
+
+    def _refresh_section_endpoints(self) -> None:
+        if self._trk is None or self._cline is None or self._track_length is None:
+            self._section_endpoints = []
+            return
+
+        self._section_endpoints = preview_loader._build_section_endpoints(  # type: ignore[attr-defined]
+            self._trk, self._cline, self._track_length
+        )
 
     # ------------------------------------------------------------------
     # Qt events
@@ -270,16 +322,28 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
-            self._is_panning = True
-            self._last_mouse_pos = event.pos()
-            self._press_pos = event.pos()
-            self._transform_state = replace(self._transform_state, user_transform_active=True)
-            event.accept()
-            return
+        if event.button() == QtCore.Qt.LeftButton:
+            if self._move_mode_enabled:
+                self._press_pos = event.pos()
+                if self._attempt_begin_move(event.pos()):
+                    event.accept()
+                    return
+            elif self._sampled_centerline:
+                self._is_panning = True
+                self._last_mouse_pos = event.pos()
+                self._press_pos = event.pos()
+                self._transform_state = replace(
+                    self._transform_state, user_transform_active=True
+                )
+                event.accept()
+                return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._move_dragging and self._active_move is not None:
+            self._update_move_during_drag(event.pos())
+            event.accept()
+            return
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -300,6 +364,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
+            if self._move_dragging and self._active_move is not None:
+                self._finalize_move(event.pos())
+                event.accept()
+                return
             self._is_panning = False
             self._last_mouse_pos = None
             if (
@@ -314,6 +382,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Selection
     # ------------------------------------------------------------------
     def _handle_click(self, pos: QtCore.QPoint) -> None:
+        if self._move_mode_enabled:
+            return
         if not self._centerline_index or not self._sampled_dlongs or not self._trk:
             return
 
@@ -674,6 +744,258 @@ class SGPreviewWidget(QtWidgets.QWidget):
         tangent = (vx / length, vy / length)
         normal = (-vy / length, vx / length)
         return (cx, cy), normal, tangent
+
+    # ------------------------------------------------------------------
+    # Point moving
+    # ------------------------------------------------------------------
+    def begin_point_move_mode(self) -> None:
+        if not self._section_endpoints:
+            return
+
+        self._move_mode_enabled = True
+        self._active_move = None
+        self._move_dragging = False
+        self._pending_move_length = None
+
+    def cancel_point_move_mode(self) -> None:
+        self._move_mode_enabled = False
+        self._active_move = None
+        self._move_dragging = False
+        self._pending_move_length = None
+        self._refresh_section_endpoints()
+        self.update()
+
+    def _attempt_begin_move(self, pos: QtCore.QPoint) -> bool:
+        if not self._trk or not self._section_endpoints or self._track_length is None:
+            return False
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        transform = self._current_transform()
+        if track_point is None or transform is None:
+            return False
+
+        scale, _ = transform
+        tolerance_units = 12 / max(scale, 1e-6)
+        candidate = self._find_movable_endpoint(track_point, tolerance_units)
+        if candidate is None:
+            return False
+
+        self._active_move = candidate
+        self._move_dragging = True
+        self._pending_move_length = candidate.first_length
+        self._update_move_preview(candidate.joint_point, candidate.first_length)
+        return True
+
+    def _find_movable_endpoint(
+        self, track_point: Point, tolerance: float
+    ) -> MoveCandidate | None:
+        if self._trk is None or not self._section_endpoints:
+            return None
+
+        best_candidate: MoveCandidate | None = None
+        best_distance_sq = tolerance * tolerance
+        total_sections = len(self._trk.sects)
+
+        for idx, sect in enumerate(self._trk.sects):
+            if getattr(sect, "type", None) != 1:
+                continue
+            next_idx = (idx + 1) % total_sections
+            next_sect = self._trk.sects[next_idx]
+            if getattr(next_sect, "type", None) != 1:
+                continue
+
+            heading_a = self._section_heading_vector(idx)
+            heading_b = self._section_heading_vector(next_idx)
+            if heading_a is None or heading_b is None:
+                continue
+
+            dot = heading_a[0] * heading_b[0] + heading_a[1] * heading_b[1]
+            cross = heading_a[0] * heading_b[1] - heading_a[1] * heading_b[0]
+            if dot < 0.999 or abs(cross) > 1e-3:
+                continue
+
+            start_point, joint_point = self._section_endpoints[idx]
+            _, end_point = self._section_endpoints[next_idx]
+            dx = track_point[0] - joint_point[0]
+            dy = track_point[1] - joint_point[1]
+            distance_sq = dx * dx + dy * dy
+            if distance_sq <= best_distance_sq:
+                first_length = float(sect.length)
+                second_length = float(next_sect.length)
+                best_distance_sq = distance_sq
+                best_candidate = MoveCandidate(
+                    first_index=idx,
+                    second_index=next_idx,
+                    start_point=start_point,
+                    joint_point=joint_point,
+                    end_point=end_point,
+                    first_length=first_length,
+                    second_length=second_length,
+                )
+
+        return best_candidate
+
+    def _project_move(self, target: Point, candidate: MoveCandidate) -> tuple[Point, float]:
+        start = candidate.start_point
+        end = candidate.end_point
+        total_length = candidate.first_length + candidate.second_length
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        distance = (dx * dx + dy * dy) ** 0.5
+        if distance <= 0 or total_length <= 0:
+            return candidate.joint_point, candidate.first_length
+
+        direction = (dx / distance, dy / distance)
+        projection = (target[0] - start[0]) * direction[0] + (target[1] - start[1]) * direction[1]
+        projection = max(0.0, min(distance, projection))
+
+        min_length = 1.0
+        new_first_length = (projection / distance) * total_length
+        new_first_length = max(min_length, min(total_length - min_length, new_first_length))
+        ratio = new_first_length / total_length
+
+        new_joint = (
+            start[0] + direction[0] * distance * ratio,
+            start[1] + direction[1] * distance * ratio,
+        )
+        return new_joint, new_first_length
+
+    def _update_move_preview(self, joint_point: Point, first_length: float) -> None:
+        if self._active_move is None:
+            return
+
+        self._pending_move_length = first_length
+        self._section_endpoints[self._active_move.first_index] = (
+            self._active_move.start_point,
+            joint_point,
+        )
+        self._section_endpoints[self._active_move.second_index] = (
+            joint_point,
+            self._active_move.end_point,
+        )
+        self.update()
+
+    def _update_move_during_drag(self, pos: QtCore.QPoint) -> None:
+        if self._active_move is None:
+            return
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return
+
+        joint_point, new_length = self._project_move(track_point, self._active_move)
+        self._update_move_preview(joint_point, new_length)
+
+    def _finalize_move(self, pos: QtCore.QPoint) -> None:
+        if self._active_move is None:
+            self.cancel_point_move_mode()
+            return
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            joint_point = self._section_endpoints[self._active_move.first_index][1]
+            first_length = self._pending_move_length or self._active_move.first_length
+        else:
+            joint_point, first_length = self._project_move(track_point, self._active_move)
+
+        self._apply_move(first_length, joint_point)
+
+    def _resequence_start_dlongs(self) -> None:
+        if self._trk is None:
+            return
+
+        if not self._trk.sects:
+            return
+
+        base_start = float(self._trk.sects[0].start_dlong)
+        self._trk.sects[0].start_dlong = base_start
+        if self._sgfile is not None and self._sgfile.sects:
+            self._sgfile.sects[0].start_dlong = base_start
+            self._sgfile.sects[0].end_dlong = base_start + float(self._trk.sects[0].length)
+
+        for idx in range(1, len(self._trk.sects)):
+            prev = self._trk.sects[idx - 1]
+            current_start = float(prev.start_dlong + prev.length)
+            self._trk.sects[idx].start_dlong = current_start
+            if self._sgfile is not None and idx < len(self._sgfile.sects):
+                self._sgfile.sects[idx].start_dlong = current_start
+                self._sgfile.sects[idx].end_dlong = current_start + float(
+                    self._trk.sects[idx].length
+                )
+
+        self._trk.trklength = float(sum(float(sect.length) for sect in self._trk.sects))
+        if hasattr(self._trk, "header") and len(self._trk.header) > 2:
+            self._trk.header[2] = int(self._trk.trklength)
+
+    def _apply_move(self, first_length: float, joint_point: Point) -> None:
+        if self._active_move is None or self._trk is None or self._cline is None:
+            self.cancel_point_move_mode()
+            return
+
+        total_length = self._active_move.first_length + self._active_move.second_length
+        min_length = 1.0
+        clamped_first = max(min_length, min(total_length - min_length, first_length))
+        clamped_second = total_length - clamped_first
+
+        first_idx = self._active_move.first_index
+        second_idx = self._active_move.second_index
+
+        first_sect = self._trk.sects[first_idx]
+        second_sect = self._trk.sects[second_idx]
+        first_sect.length = clamped_first
+        second_sect.length = clamped_second
+
+        if self._sgfile is not None and first_idx < len(self._sgfile.sects):
+            sg_first = self._sgfile.sects[first_idx]
+            sg_first.length = clamped_first
+            sg_first.end_x, sg_first.end_y = joint_point
+            sg_first.end_dlong = sg_first.start_dlong + sg_first.length
+
+        if self._sgfile is not None and second_idx < len(self._sgfile.sects):
+            sg_second = self._sgfile.sects[second_idx]
+            sg_second.start_x, sg_second.start_y = joint_point
+            sg_second.length = clamped_second
+
+        self._resequence_start_dlongs()
+
+        if second_idx < len(self._cline):
+            self._cline[second_idx] = joint_point
+
+        self._section_endpoints[first_idx] = (
+            self._active_move.start_point,
+            joint_point,
+        )
+        self._section_endpoints[second_idx] = (
+            joint_point,
+            self._active_move.end_point,
+        )
+
+        self._pending_move_length = None
+        self._refresh_preview_after_edit()
+        self._move_mode_enabled = False
+        self._active_move = None
+        self._move_dragging = False
+        self.pointMoveFinished.emit()
+
+    def _refresh_preview_after_edit(self) -> None:
+        if self._trk is None:
+            return
+
+        self._cline = get_cline_pos(self._trk)
+        self._sampled_centerline, self._sampled_dlongs, self._sampled_bounds = (
+            sample_centerline(self._trk, self._cline)
+        )
+        self._centerline_index = build_centerline_index(
+            self._sampled_centerline, self._sampled_bounds
+        )
+        self._track_length = float(self._trk.trklength)
+        self._refresh_section_endpoints()
+
+        if self._selected_section_index is not None:
+            current = self._selected_section_index
+            self._set_selected_section(current)
+        else:
+            self.update()
 
     # ------------------------------------------------------------------
     # Public controls

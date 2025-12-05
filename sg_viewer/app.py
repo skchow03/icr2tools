@@ -120,6 +120,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sidebar = QtWidgets.QWidget()
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
+        self._move_point_button = QtWidgets.QPushButton("Move Point")
+        self._move_point_button.setCheckable(True)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
@@ -145,6 +147,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._prev_button)
         navigation_layout.addWidget(self._next_button)
         sidebar_layout.addLayout(navigation_layout)
+        sidebar_layout.addWidget(self._move_point_button)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
@@ -183,10 +186,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.selectedSectionChanged.connect(self._update_selection_sidebar)
         self._prev_button.clicked.connect(self._preview.select_previous_section)
         self._next_button.clicked.connect(self._preview.select_next_section)
+        self._move_point_button.toggled.connect(self._toggle_move_mode)
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
         self._section_table_button.clicked.connect(self._show_section_table)
         self._heading_table_button.clicked.connect(self._show_heading_table)
         self._xsect_combo.currentIndexChanged.connect(self._refresh_elevation_profile)
+        self._preview.pointMoveFinished.connect(self._on_move_finished)
 
     def load_sg(self, path: Path) -> None:
         try:
@@ -340,4 +345,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         profile = self._preview.build_elevation_profile(int(current_index))
         self._profile_widget.set_profile_data(profile)
+
+    def _toggle_move_mode(self, enabled: bool) -> None:
+        if enabled:
+            self._preview.begin_point_move_mode()
+        else:
+            self._preview.cancel_point_move_mode()
+
+    def _on_move_finished(self) -> None:
+        self._move_point_button.setChecked(False)
 
