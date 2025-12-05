@@ -165,6 +165,35 @@ class EditorState:
         sg_geometry.update_section_radius(self.sg, index, new_radius)
         self._rebuild_from_sg()
 
+    def update_straight_from_nodes(self, section_index: int) -> None:
+        sec = self.sg.sects[section_index]
+        if sec.type != 1:
+            return
+
+        sn = self.nodes[sec.start_node_id]
+        en = self.nodes[sec.end_node_id]
+
+        sx, sy = sn.x, sn.y
+        ex, ey = en.x, en.y
+
+        # Update endpoints
+        sec.start_x = sx
+        sec.start_y = sy
+        sec.end_x = ex
+        sec.end_y = ey
+
+        dx = ex - sx
+        dy = ey - sy
+        length = math.hypot(dx, dy)
+        sec.dlong = int(length)
+
+        # Heading
+        heading = math.atan2(dy, dx)
+        sec.sang1 = sg_geometry.sin_fixed(heading)
+        sec.sang2 = sg_geometry.cos_fixed(heading)
+        sec.eang1 = sec.sang1
+        sec.eang2 = sec.sang2
+
     def set_curve_center(self, index: int, new_center_x: float, new_center_y: float) -> None:
         """
         Change curve centre (for type=2 sections) and recompute geometry + preview.
