@@ -319,16 +319,7 @@ class SGFile:
                 o.write('\n')
         print ('done')
 
-    def output_sg(self, output_file):
-        """
-        Regenerates an SG file from the current SGFile object.
-
-        Args:
-            output_file (str): The path and name of the SG file to be written.
-        """
-
-        print ('Creating SG file {}...'.format(output_file),end='')
-
+    def _build_output_array(self):
         output_array = []
         output_array.extend(self.header)
         output_array.extend(self.xsect_dlats)
@@ -363,6 +354,24 @@ class SGFile:
             for j in range(0, unused_fsects):
                 output_array.extend([0,0,0,0])
 
-        output_array = np.array(output_array)
+        return np.array(output_array)
+
+    def output_bytes(self):
+        """Return the binary SG representation as bytes."""
+
+        output_array = self._build_output_array()
+        return output_array.astype('int32').tobytes()
+
+    def output_sg(self, output_file):
+        """
+        Regenerates an SG file from the current SGFile object.
+
+        Args:
+            output_file (str): The path and name of the SG file to be written.
+        """
+
+        print ('Creating SG file {}...'.format(output_file),end='')
+
+        output_array = self._build_output_array()
         output_array.astype('int32').tofile(output_file)
         print ('done')

@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from pathlib import Path
-import tempfile
 from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -899,9 +898,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._sgfile is None:
             return
 
-        with tempfile.NamedTemporaryFile(suffix=".sg") as temp:
-            self._sgfile.output_sg(temp.name)
-            trk = TRKFile.from_sg(temp.name)
+        sg_bytes = self._sgfile.output_bytes()
+        trk = TRKFile.from_bytes(sg_bytes)
 
         cline = get_cline_pos(trk)
         sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
