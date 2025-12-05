@@ -127,6 +127,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
         self._heading_table_button.setEnabled(False)
+        self._connection_tolerance = QtWidgets.QDoubleSpinBox()
+        self._connection_tolerance.setRange(0.0, 1000.0)
+        self._connection_tolerance.setDecimals(2)
+        self._connection_tolerance.setSingleStep(0.1)
+        self._connection_tolerance.setValue(1.0)
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
@@ -150,6 +155,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
+        tolerance_layout = QtWidgets.QHBoxLayout()
+        tolerance_layout.addWidget(QtWidgets.QLabel("Connection Tol."))
+        tolerance_layout.addWidget(self._connection_tolerance)
+        sidebar_layout.addLayout(tolerance_layout)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
@@ -189,7 +198,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
         self._section_table_button.clicked.connect(self._show_section_table)
         self._heading_table_button.clicked.connect(self._show_heading_table)
+        self._connection_tolerance.valueChanged.connect(
+            self._preview.set_connection_tolerance
+        )
         self._xsect_combo.currentIndexChanged.connect(self._refresh_elevation_profile)
+        self._preview.set_connection_tolerance(self._connection_tolerance.value())
 
     def load_sg(self, path: Path) -> None:
         try:
