@@ -179,6 +179,26 @@ def update_section_radius(sg: SGFile, index: int, new_radius: float) -> None:
     recompute_chain(sg, start_index=index)
 
 
+def update_curve_center(
+    sg: SGFile, index: int, new_center_x: float, new_center_y: float
+) -> None:
+    """
+    Change the stored curve centre for a section and recompute geometry.
+
+    Only applies to curve sections (type == 2).
+    """
+    if index < 0 or index >= sg.num_sects:
+        return
+
+    sec = sg.sects[index]
+    if getattr(sec, "type", 1) != 2:
+        return
+
+    sec.center_x = int(round(new_center_x))
+    sec.center_y = int(round(new_center_y))
+    recompute_chain(sg, start_index=index)
+
+
 def update_section_start_heading(sg: SGFile, index: int, new_heading_rad: float) -> None:
     """
     Force a new starting heading for section[index] and recompute downstream.

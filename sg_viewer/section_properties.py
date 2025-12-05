@@ -301,9 +301,7 @@ class SectionPropertiesPanel(QtWidgets.QWidget):
                 abs(new_cx - float(sect.center_x)) > 1e-6
                 or abs(new_cy - float(sect.center_y)) > 1e-6
             ):
-                sect.center_x = int(round(new_cx))
-                sect.center_y = int(round(new_cy))
-                self._state._rebuild_from_sg()  # uses existing pipeline
+                self._state.set_curve_center(idx, new_cx, new_cy)
 
         # Refresh preview
         parent = self.parent()

@@ -108,6 +108,16 @@ class EditorState:
         sg_geometry.update_section_radius(self.sg, index, new_radius)
         self._rebuild_from_sg()
 
+    def set_curve_center(self, index: int, new_center_x: float, new_center_y: float) -> None:
+        """
+        Change curve centre (for type=2 sections) and recompute geometry + preview.
+        """
+        if index < 0 or index >= self.sg.num_sects:
+            return
+        self._push_undo()
+        sg_geometry.update_curve_center(self.sg, index, new_center_x, new_center_y)
+        self._rebuild_from_sg()
+
     def set_section_start_heading_deg(self, index: int, new_heading_deg: float) -> None:
         """
         Change the starting heading (in degrees) for a section and recompute.
