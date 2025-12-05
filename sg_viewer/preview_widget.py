@@ -99,6 +99,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
+        self._dragging_node_id: int | None = None
 
         # Options
         self._show_curve_markers = True
@@ -435,6 +436,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 event.accept()
                 return
 
+        if self._move_points_enabled and event.button() == QtCore.Qt.LeftButton:
+            node_id = self.pick_node(event.x(), event.y())
+            if node_id is not None:
+                # Do not drag yet — only record that a node was clicked.
+                self._dragging_node_id = node_id
+                event.accept()
+                return
+
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -464,6 +473,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton and self._dragging_node_id is not None:
+            self._dragging_node_id = None
+            # Do not call _handle_click here — dragging mode absorbs click.
+            event.accept()
+            return
+
         if event.button() == QtCore.Qt.LeftButton:
             self._is_panning = False
             self._last_mouse_pos = None
