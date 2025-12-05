@@ -118,13 +118,13 @@ class EditorState:
 
         def get_or_create_node_id(x: int, y: int) -> int:
             nonlocal next_node_id
-            coord = (int(x), int(y))
+            coord = (round(x), round(y))
             if coord in coord_to_id:
                 return coord_to_id[coord]
 
             node_id = next_node_id
             coord_to_id[coord] = node_id
-            nodes[node_id] = Node(id=node_id, x=float(x), y=float(y), attached_sections=[])
+            nodes[node_id] = Node(id=node_id, x=float(x), y=float(y), attached_sections=set())
             next_node_id += 1
             return node_id
 
@@ -138,7 +138,7 @@ class EditorState:
             for node_id in (start_node_id, end_node_id):
                 node = nodes[node_id]
                 if idx not in node.attached_sections:
-                    node.attached_sections.append(idx)
+                    node.attached_sections.add(idx)
 
         return nodes, next_node_id
 
