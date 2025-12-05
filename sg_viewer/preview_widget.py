@@ -89,8 +89,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._curve_markers: dict[int, CurveMarker] = {}
         self._selected_curve_index: int | None = None
-        self._dragging_handle: str | None = None
-
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
@@ -289,8 +287,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 width=4,
             )
 
-        self._draw_selection_handles(painter, transform)
-
         self._draw_curve_markers(painter, transform)
         self._draw_start_finish_line(painter, transform)
 
@@ -319,21 +315,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
-            handle = self._hit_test_handle(event.pos())
-            if handle:
-                if self._selected_section_index is not None and not self._is_handle_editable(
-                    self._selected_section_index, handle
-                ):
-                    event.accept()
-                    return
-
-                self._dragging_handle = handle
-                self._last_mouse_pos = event.pos()
-                self._press_pos = None
-                self._user_transform_active = True
-                event.accept()
-                return
-
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._press_pos = event.pos()
@@ -343,22 +324,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._dragging_handle and self._selected_section_index is not None:
-            track_point = self._map_to_track(QtCore.QPointF(event.pos()))
-            if track_point is not None:
-                if self._trk and self._selected_section_index < len(self._trk.sects):
-                    sect = self._trk.sects[self._selected_section_index]
-                    if sect.type == 1:
-                        self._update_straight_handle_position(
-                            self._selected_section_index, self._dragging_handle, track_point
-                        )
-                    elif sect.type == 2:
-                        self._update_curve_handle_position(
-                            self._selected_section_index, self._dragging_handle, track_point
-                        )
-            event.accept()
-            return
-
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -378,13 +343,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if event.button() == QtCore.Qt.LeftButton and self._dragging_handle:
-            self._dragging_handle = None
-            self._last_mouse_pos = None
-            self._press_pos = None
-            event.accept()
-            return
-
         if event.button() == QtCore.Qt.LeftButton:
             self._is_panning = False
             self._last_mouse_pos = None
@@ -423,55 +381,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         selection = self._find_section_by_dlong(nearest_dlong)
         self._set_selected_section(selection)
-
-    def _hit_test_handle(self, pos: QtCore.QPoint) -> str | None:
-        if self._trk is None or self._selected_section_index is None:
-            return None
-
-        transform = self._current_transform()
-        if transform is None:
-            return None
-
-        sect = self._trk.sects[self._selected_section_index]
-        radius = 8
-
-        if sect.type == 1:
-            endpoints = self._get_selected_section_endpoints()
-            if endpoints is None:
-                return None
-
-            start, end = endpoints
-            start_point = rendering.map_point(
-                start[0], start[1], transform, self.height()
-            )
-            end_point = rendering.map_point(end[0], end[1], transform, self.height())
-
-            if (pos.x() - start_point.x()) ** 2 + (pos.y() - start_point.y()) ** 2 <= radius**2:
-                return "start"
-            if (pos.x() - end_point.x()) ** 2 + (pos.y() - end_point.y()) ** 2 <= radius**2:
-                return "end"
-        elif sect.type == 2:
-            marker = self._curve_markers.get(self._selected_section_index)
-            if marker is None:
-                return None
-
-            center_point = rendering.map_point(
-                marker.center[0], marker.center[1], transform, self.height()
-            )
-            start_point = rendering.map_point(
-                marker.start[0], marker.start[1], transform, self.height()
-            )
-            end_point = rendering.map_point(
-                marker.end[0], marker.end[1], transform, self.height()
-            )
-
-            if (pos.x() - center_point.x()) ** 2 + (pos.y() - center_point.y()) ** 2 <= radius**2:
-                return "curve_center"
-            if (pos.x() - start_point.x()) ** 2 + (pos.y() - start_point.y()) ** 2 <= radius**2:
-                return "curve_start"
-            if (pos.x() - end_point.x()) ** 2 + (pos.y() - end_point.y()) ** 2 <= radius**2:
-                return "curve_end"
-        return None
 
     def _find_section_by_dlong(self, dlong: float) -> int | None:
         if self._trk is None or not self._trk.sects:
@@ -906,33 +815,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         painter.restore()
 
-    def _draw_selection_handles(self, painter: QtGui.QPainter, transform: Transform) -> None:
-        if self._selected_section_index is None:
-            return
-
-        endpoints = self._get_selected_section_endpoints()
-        if endpoints is None:
-            return
-
-        start, end = endpoints
-        start_point = rendering.map_point(start[0], start[1], transform, self.height())
-        end_point = rendering.map_point(end[0], end[1], transform, self.height())
-
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-
-        handle_radius = 6
-        pen = QtGui.QPen(QtGui.QColor("white"), 2)
-        painter.setPen(pen)
-
-        painter.setBrush(QtGui.QBrush(QtGui.QColor("red")))
-        painter.drawEllipse(start_point, handle_radius, handle_radius)
-
-        painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawEllipse(end_point, handle_radius, handle_radius)
-
-        painter.restore()
-
     def _draw_start_finish_line(self, painter: QtGui.QPainter, transform: Transform) -> None:
         if self._track_length is None:
             return
@@ -1060,53 +942,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
         self._set_selected_section(prev_index)
 
-    def _apply_straight_geometry(
-        self, sg_sect, trk_sect, start: Point, end: Point
-    ) -> None:
-        dx = end[0] - start[0]
-        dy = end[1] - start[1]
-        if dx == 0 and dy == 0:
-            return
-
-        sg_sect.start_x = int(round(start[0]))
-        sg_sect.start_y = int(round(start[1]))
-        sg_sect.end_x = int(round(end[0]))
-        sg_sect.end_y = int(round(end[1]))
-
-        heading_rad = math.atan2(dy, dx)
-        heading_val = round(heading_rad / math.pi * 2**31)
-        if heading_val == 2**31:
-            heading_val = -(2**31)
-        trk_sect.heading = heading_val
-
-        offset_angle = heading_rad + math.pi / 2
-        for i in range(self._trk.num_xsects):
-            dlat = float(self._trk.xsect_dlats[i])
-            trk_sect.pos1[i] = round(start[0] + dlat * math.cos(offset_angle))
-            trk_sect.pos2[i] = round(start[1] + dlat * math.sin(offset_angle))
-
-    def _refresh_after_geometry_change(self, selected_index: int | None) -> None:
-        if self._trk is None:
-            return
-
-        self._cline = get_cline_pos(self._trk)
-        sampled, sampled_dlongs, bounds = sample_centerline(self._trk, self._cline)
-        if sampled and sampled_dlongs and bounds:
-            self._sampled_centerline = sampled
-            self._sampled_dlongs = sampled_dlongs
-            self._sampled_bounds = bounds
-            self._centerline_index = build_centerline_index(sampled, bounds)
-            self._section_polylines = self._build_section_polylines(self._trk)
-            self._curve_markers = self._build_curve_markers(self._trk)
-            self._section_connections = self._calculate_section_connections()
-            if selected_index is not None and 0 <= selected_index < len(self._trk.sects):
-                self._selected_section_points = self._sample_section_polyline(
-                    self._trk.sects[selected_index]
-                )
-                self._set_selected_section(selected_index)
-            self._fit_scale = self._calculate_fit_scale()
-        self.update()
-
     def _curve_orientation_sign(
         self, center: Point, start_point: Point, heading_value: int
     ) -> int:
@@ -1123,156 +958,3 @@ class SGPreviewWidget(QtWidgets.QWidget):
         cw_delta = abs(_normalize(heading_rad - (radial_angle - math.pi / 2)))
         ccw_delta = abs(_normalize(heading_rad - (radial_angle + math.pi / 2)))
         return -1 if cw_delta < ccw_delta else 1
-
-    def _is_handle_editable(self, index: int, handle: str) -> bool:
-        if handle in {"end", "curve_end"}:
-            return not self._is_section_connected_to_next(index)
-        return True
-
-    def _update_straight_handle_position(
-        self, index: int, handle: str, track_point: Point
-    ) -> None:
-        if (
-            self._sgfile is None
-            or self._trk is None
-            or self._cline is None
-            or self._track_length is None
-            or index < 0
-            or index >= len(self._trk.sects)
-        ):
-            return
-
-        trk_sect = self._trk.sects[index]
-        if getattr(trk_sect, "type", None) != 1:
-            return
-
-        sg_sect = self._sgfile.sects[index] if self._sgfile else None
-        if sg_sect is None:
-            return
-
-        start = (float(sg_sect.start_x), float(sg_sect.start_y))
-        end = (float(sg_sect.end_x), float(sg_sect.end_y))
-
-        if handle == "start":
-            start = track_point
-        elif handle == "end":
-            end = track_point
-        else:
-            return
-
-        dx = end[0] - start[0]
-        dy = end[1] - start[1]
-        if dx == 0 and dy == 0:
-            return
-
-        self._apply_straight_geometry(sg_sect, trk_sect, start, end)
-
-        total_sections = len(self._trk.sects)
-        prev_index = (index - 1) % total_sections
-        next_index = (index + 1) % total_sections
-
-        prev_sg = self._sgfile.sects[prev_index]
-        prev_trk = self._trk.sects[prev_index]
-        if getattr(prev_trk, "type", None) == 1:
-            prev_start = (float(prev_sg.start_x), float(prev_sg.start_y))
-            self._apply_straight_geometry(prev_sg, prev_trk, prev_start, start)
-
-        next_sg = self._sgfile.sects[next_index]
-        next_trk = self._trk.sects[next_index]
-        if getattr(next_trk, "type", None) == 1:
-            next_end = (float(next_sg.end_x), float(next_sg.end_y))
-            self._apply_straight_geometry(next_sg, next_trk, end, next_end)
-
-        self._dirty = True
-        self._refresh_after_geometry_change(index)
-
-    def _update_curve_handle_position(
-        self, index: int, handle: str, track_point: Point
-    ) -> None:
-        if (
-            self._sgfile is None
-            or self._trk is None
-            or self._cline is None
-            or self._track_length is None
-            or index < 0
-            or index >= len(self._trk.sects)
-        ):
-            return
-
-        trk_sect = self._trk.sects[index]
-        if getattr(trk_sect, "type", None) != 2:
-            return
-
-        sg_sect = self._sgfile.sects[index]
-        if hasattr(trk_sect, "ang1"):
-            center = (float(trk_sect.ang1), float(trk_sect.ang2))
-        elif hasattr(sg_sect, "center_x"):
-            center = (float(sg_sect.center_x), float(sg_sect.center_y))
-        else:
-            return
-
-        original_heading = int(trk_sect.heading)
-        track_length = float(self._track_length)
-
-        radius = float(self._cline[index][0]) if self._cline else 0.0
-        if handle == "curve_center":
-            center = track_point
-        elif handle == "curve_start":
-            radius = math.hypot(track_point[0] - center[0], track_point[1] - center[1])
-        elif handle == "curve_end":
-            radius = math.hypot(track_point[0] - center[0], track_point[1] - center[1])
-        else:
-            return
-
-        if radius <= 0:
-            return
-
-        sg_sect.center_x = int(round(center[0]))
-        sg_sect.center_y = int(round(center[1]))
-        sg_sect.radius = int(round(radius))
-
-        trk_sect.ang1 = int(round(center[0]))
-        trk_sect.ang2 = int(round(center[1]))
-        for i in range(self._trk.num_xsects):
-            dlat = float(self._trk.xsect_dlats[i])
-            trk_sect.pos1[i] = round(radius - dlat)
-
-        updated_cline = get_cline_pos(self._trk)
-        self._cline = updated_cline
-        start_x, start_y, _ = getxyz(
-            self._trk, float(trk_sect.start_dlong) % track_length, 0, updated_cline
-        )
-        end_x, end_y, _ = getxyz(
-            self._trk,
-            float(trk_sect.start_dlong + trk_sect.length) % track_length,
-            0,
-            updated_cline,
-        )
-        start_point = (start_x, start_y)
-        end_point = (end_x, end_y)
-
-        orientation_sign = self._curve_orientation_sign(center, start_point, original_heading)
-        heading_rad = math.atan2(start_point[1] - center[1], start_point[0] - center[0])
-        heading_rad += orientation_sign * math.pi / 2
-        heading_val = round(heading_rad / math.pi * 2**31)
-        if heading_val == 2**31:
-            heading_val = -(2**31)
-        trk_sect.heading = heading_val
-
-        end_heading_rad = math.atan2(end_point[1] - center[1], end_point[0] - center[0])
-        end_heading_rad += orientation_sign * math.pi / 2
-        end_heading_val = round(end_heading_rad / math.pi * 2**31)
-        if end_heading_val == 2**31:
-            end_heading_val = -(2**31)
-
-        next_index = (index + 1) % len(self._trk.sects)
-        next_trk = self._trk.sects[next_index]
-        next_trk.heading = end_heading_val
-
-        sg_sect.start_x = int(round(start_x))
-        sg_sect.start_y = int(round(start_y))
-        sg_sect.end_x = int(round(end_x))
-        sg_sect.end_y = int(round(end_y))
-
-        self._dirty = True
-        self._refresh_after_geometry_change(index)
