@@ -44,9 +44,7 @@ class TransformState:
     user_transform_active: bool = False
 
 
-def load_preview(path: Path) -> PreviewData:
-    sgfile = SGFile.from_sg(str(path))
-    trk = TRKFile.from_sg(str(path))
+def _build_preview(sgfile: SGFile, trk: TRKFile, path: Path | None = None) -> PreviewData:
     cline = get_cline_pos(trk)
     sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
 
@@ -57,6 +55,8 @@ def load_preview(path: Path) -> PreviewData:
     track_length = float(trk.trklength)
     curve_markers = _build_curve_markers(trk, cline, track_length)
     section_endpoints = _build_section_endpoints(trk, cline, track_length)
+
+    status_message = f"Loaded {path.name}" if path else "Loaded SG data"
 
     return PreviewData(
         sgfile=sgfile,
@@ -69,8 +69,20 @@ def load_preview(path: Path) -> PreviewData:
         track_length=track_length,
         curve_markers=curve_markers,
         section_endpoints=section_endpoints,
-        status_message=f"Loaded {path.name}",
+        status_message=status_message,
     )
+
+
+def load_preview(path: Path) -> PreviewData:
+    sgfile = SGFile.from_sg(str(path))
+    trk = TRKFile.from_sg(str(path))
+    return _build_preview(sgfile, trk, path)
+
+
+def load_preview_from_objects(sgfile: SGFile, trk: TRKFile, path: Path | None) -> PreviewData:
+    """Build PreviewData from in-memory SG/TRK objects."""
+
+    return _build_preview(sgfile, trk, path)
 
 
 def default_center(sampled_bounds: tuple[float, float, float, float] | None) -> Point | None:

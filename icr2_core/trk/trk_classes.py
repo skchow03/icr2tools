@@ -90,6 +90,16 @@ class TRKFile:
         return cls(header, xsect_dlats, sect_offsets, xsect_data, ground_data, sects)
 
     @classmethod
+    def from_sg(cls, file_name):
+        sgfile = SGFile.from_sg(file_name)
+        return cls._from_sgfile(sgfile)
+
+    @classmethod
+    def from_sgfile(cls, sgfile: SGFile):
+        """Build a TRKFile from an existing SGFile without touching disk."""
+        return cls._from_sgfile(sgfile)
+
+    @classmethod
     def from_trk(cls, file_name):
         arr = np.fromfile(file_name, dtype=np.int32)
         return cls._parse_array(arr)
@@ -100,8 +110,7 @@ class TRKFile:
         return cls._parse_array(arr)
 
     @classmethod
-    def from_sg(cls, file_name):
-        sgfile = SGFile.from_sg(file_name)
+    def _from_sgfile(cls, sgfile: SGFile):
         num_sects = sgfile.num_sects
         num_xsects = sgfile.num_xsects
 
