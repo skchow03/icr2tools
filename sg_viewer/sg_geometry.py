@@ -14,11 +14,6 @@ from icr2_core.trk.sg_classes import SGFile
 # Use a fixed scale factor to convert to/from radians.
 _ANGLE_SCALE = 32768.0
 
-# Attribute name used on SGFile to store detached joints.
-# A "joint" is the connection between section i and section i+1.
-_DETACHED_ATTR = "_sg_detached_joints"
-
-
 def _heading_from_sincos(sin_val, cos_val) -> float:
     """
     Convert SG (sin, cos) values to a heading angle in radians.
@@ -108,125 +103,6 @@ def _solve_curve(
 
 
 # ---------------------------------------------------------------------------
-# Detached joint helpers (Option A)
-# ---------------------------------------------------------------------------
-
-def _get_detached_joints_mutable(sg: SGFile) -> set[int]:
-    """
-    Return the mutable set of detached joint indices stored on the SGFile.
-
-    Creates the set on first use.
-    """
-    dj = getattr(sg, _DETACHED_ATTR, None)
-    if dj is None:
-        dj = set()
-        setattr(sg, _DETACHED_ATTR, dj)
-    return dj
-
-
-def get_detached_joints(sg: SGFile) -> set[int]:
-    """
-    Return a copy of the indices of detached joints on *sg*.
-
-    A value i in this set means the joint between section i and section i+1
-    is currently detached.
-    """
-    dj = getattr(sg, _DETACHED_ATTR, None)
-    return set(dj) if dj is not None else set()
-
-
-def clear_detached_joints(sg: SGFile) -> None:
-    """
-    Clear all detached joints from *sg*.
-    """
-    setattr(sg, _DETACHED_ATTR, set())
-
-
-def detach_endpoint(sg: SGFile, section_index: int) -> None:
-    """
-    Detach the joint between section_index and section_index + 1.
-
-    This matches SGE's behavior: right-clicking the *end* of section i
-    detaches it from the next section. Once detached:
-
-    - Edits to section i (length, heading, moving its end point) will not
-      automatically drag section i+1.
-    - recompute_chain() will stop propagation before section i+1 when it
-      reaches the detached joint.
-    """
-    if section_index < 0 or section_index >= sg.num_sects:
-        return
-    joints = _get_detached_joints_mutable(sg)
-    joints.add(int(section_index))
-
-
-def move_detached_endpoint(sg: SGFile, section_index: int, new_x: float, new_y: float) -> None:
-    """
-    Move the *end* point of a detached section to (new_x, new_y).
-
-    This only updates the geometry of section_index itself; it does not modify
-    section_index+1 or any other section. It is intended to be used while the
-    joint after section_index is detached.
-
-    Notes:
-
-    - For straights (type == 1), we update both the length and headings so the
-      section becomes a straight between its start and the new end.
-    - For curves (type != 1), we update the end point and end heading only.
-      Radius/center are left untouched for now; a more advanced solver can
-      replace this later.
-    """
-    if section_index < 0 or section_index >= sg.num_sects:
-        return
-
-    sec = sg.sects[section_index]
-    sx = float(sec.start_x)
-    sy = float(sec.start_y)
-    ex = float(new_x)
-    ey = float(new_y)
-
-    sec.end_x = int(round(ex))
-    sec.end_y = int(round(ey))
-
-    dx = ex - sx
-    dy = ey - sy
-    if dx == 0.0 and dy == 0.0:
-        # Degenerate; leave headings and length as-is
-        return
-
-    theta_end = math.atan2(dy, dx)
-    sec.eang1, sec.eang2 = _sincos_from_heading(theta_end)
-
-    if getattr(sec, "type", 1) == 1:
-        # Straight: treat it as a straight between start and new end.
-        sec.length = int(round(math.hypot(dx, dy)))
-        # Keep the start heading aligned with the section.
-        sec.sang1, sec.sang2 = _sincos_from_heading(theta_end)
-
-
-def reconnect_endpoint(sg: SGFile, section_index: int) -> None:
-    """
-    Reattach the joint between section_index and section_index + 1.
-
-    After reconnecting, we recompute geometry from section_index + 1 onward
-    so that the following sections follow the new end pose of section_index.
-    """
-    if section_index < 0 or section_index >= sg.num_sects:
-        return
-
-    joints = _get_detached_joints_mutable(sg)
-    if section_index not in joints:
-        return
-
-    joints.remove(section_index)
-
-    # If there is a next section, recompute from it using the current
-    # end pose of section_index as the new starting pose.
-    if section_index + 1 < sg.num_sects:
-        recompute_chain(sg, section_index + 1)
-
-
-# ---------------------------------------------------------------------------
 # Main chain recomputation
 # ---------------------------------------------------------------------------
 
@@ -241,14 +117,6 @@ def recompute_chain(sg: SGFile, start_index: int = 0) -> None:
     - compute end_x/end_y/eang1/eang2 from type/length/radius/center
     - propagate end point + heading to next section
 
-    Detach-aware behavior:
-
-    If the joint between section k and k+1 is detached, then when the loop
-    finishes processing section k, propagation stops before k+1. This lets
-    you edit section k without pulling the rest of the chain.
-
-    This mimics SGE's "edit one section, everything downstream moves"
-    behavior, with detach points acting as hard stops.
     """
     sections = sg.sects
     n = sg.num_sects
@@ -259,9 +127,6 @@ def recompute_chain(sg: SGFile, start_index: int = 0) -> None:
         start_index = 0
     if start_index >= n:
         return
-
-    detached = getattr(sg, _DETACHED_ATTR, None)
-    detached_joints = detached if isinstance(detached, set) else set()
 
     # Determine starting pose (x,y,θ)
     if start_index == 0:
@@ -277,10 +142,6 @@ def recompute_chain(sg: SGFile, start_index: int = 0) -> None:
 
     # Propagate through the chain
     for i in range(start_index, n):
-        # If the joint between i-1 and i is detached, stop before touching i.
-        if i > start_index and (i - 1) in detached_joints:
-            break
-
         sec = sections[i]
 
         # Set start position + heading for this section
@@ -320,9 +181,6 @@ def recompute_chain(sg: SGFile, start_index: int = 0) -> None:
 def update_section_length(sg: SGFile, index: int, new_length: float) -> None:
     """
     Change the length of a section and recompute geometry from that section onward.
-
-    Detach-aware: if the joint after this section is detached, only this section
-    is recomputed; propagation stops before the next section.
     """
     if index < 0 or index >= sg.num_sects:
         return
