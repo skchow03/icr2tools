@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Tuple
 
 import math
 
@@ -12,6 +12,14 @@ import copy
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer import preview_loader, sg_geometry
+
+
+@dataclass
+class Node:
+    id: int
+    x: float
+    y: float
+    attached_sections: List[int]
 
 
 @dataclass
@@ -31,6 +39,8 @@ class EditorState:
     sg: SGFile
     trk: TRKFile
     preview: preview_loader.PreviewData
+    nodes: Dict[int, Node]
+    next_node_id: int
 
     max_undo: int = 50
     _undo_stack: List[SGFile] = field(default_factory=list, repr=False)
@@ -48,7 +58,15 @@ class EditorState:
         your current sampling + curve marker code.
         """
         data = preview_loader.load_preview(path)
-        return cls(path=path, sg=data.sgfile, trk=data.trk, preview=data)
+        nodes, next_node_id = cls._build_nodes(data.sgfile)
+        return cls(
+            path=path,
+            sg=data.sgfile,
+            trk=data.trk,
+            preview=data,
+            nodes=nodes,
+            next_node_id=next_node_id,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -83,6 +101,46 @@ class EditorState:
 
         # Rebuild preview snapshot
         self.preview = preview_loader.load_preview_from_objects(self.sg, self.trk, self.path)
+
+        # Refresh nodes to reflect the latest section geometry
+        self.nodes, self.next_node_id = self._build_nodes(self.sg)
+
+    # ------------------------------------------------------------------
+    # Node helpers
+    # ------------------------------------------------------------------
+    @classmethod
+    def _build_nodes(cls, sgfile: SGFile) -> tuple[Dict[int, Node], int]:
+        """Build nodes from SG section endpoints and attach section references."""
+
+        nodes: Dict[int, Node] = {}
+        next_node_id = 0
+        coord_to_id: Dict[Tuple[int, int], int] = {}
+
+        def get_or_create_node_id(x: int, y: int) -> int:
+            nonlocal next_node_id
+            coord = (int(x), int(y))
+            if coord in coord_to_id:
+                return coord_to_id[coord]
+
+            node_id = next_node_id
+            coord_to_id[coord] = node_id
+            nodes[node_id] = Node(id=node_id, x=float(x), y=float(y), attached_sections=[])
+            next_node_id += 1
+            return node_id
+
+        for idx, sec in enumerate(sgfile.sects):
+            start_node_id = get_or_create_node_id(getattr(sec, "start_x", 0), getattr(sec, "start_y", 0))
+            end_node_id = get_or_create_node_id(getattr(sec, "end_x", 0), getattr(sec, "end_y", 0))
+
+            sec.start_node_id = start_node_id
+            sec.end_node_id = end_node_id
+
+            for node_id in (start_node_id, end_node_id):
+                node = nodes[node_id]
+                if idx not in node.attached_sections:
+                    node.attached_sections.append(idx)
+
+        return nodes, next_node_id
 
     # ------------------------------------------------------------------
     # Public edit operations
