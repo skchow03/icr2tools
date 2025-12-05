@@ -78,6 +78,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sgfile: SGFile | None = None
         self._trk: TRKFile | None = None
         self._cline: List[Point] | None = None
+        self._section_polylines: list[list[Point]] = []
         self._sampled_centerline: List[Point] = []
         self._sampled_dlongs: List[float] = []
         self._sampled_bounds: tuple[float, float, float, float] | None = None
@@ -106,6 +107,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sgfile = None
         self._trk = None
         self._cline = None
+        self._section_polylines = []
         self._sampled_centerline = []
         self._sampled_dlongs = []
         self._sampled_bounds = None
@@ -148,11 +150,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sgfile = sgfile
         self._trk = trk
         self._cline = cline
+        self._track_length = float(trk.trklength)
+        self._section_polylines = self._build_section_polylines(trk)
         self._sampled_centerline = sampled
         self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = bounds
         self._centerline_index = build_centerline_index(sampled, bounds)
-        self._track_length = float(trk.trklength)
         self._selected_section_index = None
         self._selected_section_points = []
         self._curve_markers = self._build_curve_markers(trk)
@@ -254,14 +257,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter.end()
             return
 
-        rendering.draw_centerline(
-            painter,
-            self._sampled_centerline,
-            transform,
-            self.height(),
-            color="white",
-            width=3,
-        )
+        polylines = self._section_polylines or [self._sampled_centerline]
+        for section_polyline in polylines:
+            rendering.draw_centerline(
+                painter,
+                section_polyline,
+                transform,
+                self.height(),
+                color="white",
+                width=3,
+            )
 
         if self._selected_section_points:
             rendering.draw_centerline(
@@ -489,6 +494,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._trk, float(sect.start_dlong + sect.length) % track_length, 0, self._cline
         )
         return (start_x, start_y), (end_x, end_y)
+
+    def _build_section_polylines(self, trk: TRKFile) -> list[list[Point]]:
+        if self._track_length is None or self._cline is None:
+            return []
+
+        polylines: list[list[Point]] = []
+        for sect in trk.sects:
+            polyline = self._sample_section_polyline(sect)
+            if polyline:
+                polylines.append(polyline)
+        return polylines
 
     def _sample_section_polyline(self, sect) -> List[Point]:
         if self._trk is None or not self._cline or not self._track_length:
@@ -1009,6 +1025,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_dlongs = sampled_dlongs
             self._sampled_bounds = bounds
             self._centerline_index = build_centerline_index(sampled, bounds)
+            self._section_polylines = self._build_section_polylines(self._trk)
             self._selected_section_points = self._sample_section_polyline(trk_sect)
             self._fit_scale = self._calculate_fit_scale()
             self._set_selected_section(index)
