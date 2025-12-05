@@ -86,6 +86,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._curve_markers: dict[int, CurveMarker] = {}
         self._selected_curve_index: int | None = None
+        self._section_endpoints: list[tuple[Point, Point]] = []
 
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
@@ -112,6 +113,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = None
         self._selected_section_index = None
         self._selected_section_points = []
+        self._section_endpoints = []
         self._curve_markers = {}
         self._selected_curve_index = None
         self._fit_scale = None
@@ -155,6 +157,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index = None
         self._selected_section_points = []
         self._curve_markers = self._build_curve_markers(trk)
+        self._section_endpoints = self._build_section_endpoints(trk)
         self._selected_curve_index = None
         self._fit_scale = None
         self._current_scale = None
@@ -272,6 +275,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 width=4,
             )
 
+        self._draw_section_endpoints(painter, transform)
         self._draw_curve_markers(painter, transform)
         self._draw_start_finish_line(painter, transform)
 
@@ -706,6 +710,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
             markers[idx] = CurveMarker(center=center, start=start, end=end, radius=radius)
         return markers
 
+    def _build_section_endpoints(self, trk: TRKFile) -> list[tuple[Point, Point]]:
+        endpoints: list[tuple[Point, Point]] = []
+        track_length = float(getattr(trk, "trklength", 0) or 0)
+
+        if self._cline is None or track_length <= 0:
+            return endpoints
+
+        for sect in trk.sects:
+            start_dlong = float(sect.start_dlong) % track_length
+            end_dlong = float(sect.start_dlong + sect.length) % track_length
+
+            start_x, start_y, _ = getxyz(trk, start_dlong, 0, self._cline)
+            end_x, end_y, _ = getxyz(trk, end_dlong, 0, self._cline)
+            endpoints.append(((start_x, start_y), (end_x, end_y)))
+
+        return endpoints
+
     def _draw_curve_markers(self, painter: QtGui.QPainter, transform: Transform) -> None:
         if not self._curve_markers or not self._show_curve_markers:
             return
@@ -736,6 +757,52 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter.drawLine(QtCore.QLineF(center_point, start_point))
             painter.drawLine(QtCore.QLineF(center_point, end_point))
             painter.drawEllipse(center_point, 4, 4)
+
+        painter.restore()
+
+    def _draw_section_endpoints(self, painter: QtGui.QPainter, transform: Transform) -> None:
+        if not self._section_endpoints:
+            return
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        base_color = QtGui.QColor(0, 220, 255)
+        base_pen = QtGui.QPen(base_color, 1)
+        base_brush = QtGui.QBrush(base_color)
+
+        size = 6.0
+        half = size / 2
+
+        painter.setPen(base_pen)
+        painter.setBrush(base_brush)
+
+        for start, end in self._section_endpoints:
+            for point in (start, end):
+                mapped = rendering.map_point(point[0], point[1], transform, self.height())
+                painter.drawRect(QtCore.QRectF(mapped.x() - half, mapped.y() - half, size, size))
+
+        if (
+            self._selected_section_index is not None
+            and 0 <= self._selected_section_index < len(self._section_endpoints)
+        ):
+            _, end_point = self._section_endpoints[self._selected_section_index]
+            mapped_end = rendering.map_point(end_point[0], end_point[1], transform, self.height())
+
+            highlight_size = 12.0
+            highlight_half = highlight_size / 2
+
+            highlight_pen = QtGui.QPen(QtGui.QColor("yellow"), 2)
+            painter.setPen(highlight_pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRect(
+                QtCore.QRectF(
+                    mapped_end.x() - highlight_half,
+                    mapped_end.y() - highlight_half,
+                    highlight_size,
+                    highlight_size,
+                )
+            )
 
         painter.restore()
 
