@@ -93,6 +93,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
         self._section_connections: list[bool] = []
+        self._connection_tolerance: float = 1.0
 
         self._fit_scale: float | None = None
         self._current_scale: float | None = None
@@ -287,6 +288,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 width=4,
             )
 
+        self._draw_section_connection_markers(painter, transform)
         self._draw_curve_markers(painter, transform)
         self._draw_start_finish_line(painter, transform)
 
@@ -496,11 +498,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if total_sections == 0:
             return connections
 
+        tolerance = max(0.0, float(self._connection_tolerance))
         for idx, sect in enumerate(self._sgfile.sects):
             next_sect = self._sgfile.sects[(idx + 1) % total_sections]
             connected = math.isclose(
-                float(sect.end_x), float(next_sect.start_x), abs_tol=0.5
-            ) and math.isclose(float(sect.end_y), float(next_sect.start_y), abs_tol=0.5)
+                float(sect.end_x), float(next_sect.start_x), abs_tol=tolerance
+            ) and math.isclose(float(sect.end_y), float(next_sect.start_y), abs_tol=tolerance)
             connections.append(connected)
 
         return connections
@@ -514,6 +517,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return False
 
         return self._section_connections[index % total_sections]
+
+    def set_connection_tolerance(self, tolerance: float) -> None:
+        tolerance = max(0.0, float(tolerance))
+        if math.isclose(tolerance, self._connection_tolerance):
+            return
+
+        self._connection_tolerance = tolerance
+        if self._sgfile is not None:
+            self._section_connections = self._calculate_section_connections()
+        if self._selected_section_index is not None:
+            self._set_selected_section(self._selected_section_index)
+        self.update()
 
     def get_section_geometries(self) -> list[SectionGeometry]:
         if self._trk is None or not self._cline or self._track_length is None:
@@ -779,6 +794,44 @@ class SGPreviewWidget(QtWidgets.QWidget):
             radius = ((start[0] - center[0]) ** 2 + (start[1] - center[1]) ** 2) ** 0.5
             markers[idx] = CurveMarker(center=center, start=start, end=end, radius=radius)
         return markers
+
+    def _draw_section_connection_markers(
+        self, painter: QtGui.QPainter, transform: Transform
+    ) -> None:
+        if not self._section_polylines or not self._section_connections:
+            return
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("yellow"), 2)
+        painter.setPen(pen)
+
+        size = 10.0
+        half_size = size / 2
+        total = min(len(self._section_polylines), len(self._section_connections))
+
+        for idx in range(total):
+            polyline = self._section_polylines[idx]
+            if not polyline:
+                continue
+
+            end_x, end_y = polyline[-1]
+            screen_point = rendering.map_point(end_x, end_y, transform, self.height())
+            rect = QtCore.QRectF(
+                screen_point.x() - half_size,
+                screen_point.y() - half_size,
+                size,
+                size,
+            )
+
+            if self._section_connections[idx]:
+                painter.setBrush(QtGui.QBrush(QtGui.QColor("yellow")))
+            else:
+                painter.setBrush(QtGui.QBrush(QtCore.Qt.NoBrush))
+
+            painter.drawRect(rect)
+
+        painter.restore()
 
     def _draw_curve_markers(self, painter: QtGui.QPainter, transform: Transform) -> None:
         if not self._curve_markers or not self._show_curve_markers:
