@@ -38,9 +38,6 @@ application, and where to look when making changes.
     update themselves.
   - Camera-like pan/zoom using `TransformState` helpers from
     `preview_loader` to keep view transforms consistent and clamped.
-  - Optional "Move Point" mode that lets users detach and drag section end points
-    with temporary overrides; redraws are driven by `_section_endpoints` derived
-    from the base endpoints plus overrides.
   - Building per-section geometry summaries (`get_section_geometries`), heading
     deltas (`get_section_headings`), x-section metadata, and elevation profile
     samples (`build_elevation_profile`). These feed the tables and elevation plot.
@@ -54,9 +51,8 @@ application, and where to look when making changes.
   heading, radius, and curve centres when applicable. Edits call back into
   `EditorState` so SG/TRK/preview snapshots stay consistent.
 - **Sidebar navigation**: Buttons in `SGViewerWindow` call preview-widget methods
-  for section navigation, toggling curve markers, and enabling Move Point mode.
-  Selection labels mirror the current `SectionSelection` provided by the preview
-  widget.
+  for section navigation and toggling curve markers. Selection labels mirror the
+  current `SectionSelection` provided by the preview widget.
 - **Tables**: `SectionTableWindow` and `HeadingTableWindow` present derived data
   from `SGPreviewWidget.get_section_geometries()` and
   `SGPreviewWidget.get_section_headings()` respectively. They refresh whenever a

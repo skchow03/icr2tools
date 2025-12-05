@@ -143,8 +143,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sidebar = QtWidgets.QWidget()
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
-        self._move_point_button = QtWidgets.QPushButton("Move Point")
-        self._move_point_button.setCheckable(True)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
@@ -177,7 +175,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         nav_layout.addWidget(self._next_button)
         sidebar_layout.addLayout(nav_layout)
 
-        sidebar_layout.addWidget(self._move_point_button)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
@@ -234,9 +231,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._next_button.clicked.connect(self._preview.select_next_section)
 
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
-
-        # Move Point mode → preview widget
-        self._move_point_button.toggled.connect(self._preview.set_move_mode)
 
         self._section_table_button.clicked.connect(self._show_section_table)
         self._heading_table_button.clicked.connect(self._show_heading_table)
