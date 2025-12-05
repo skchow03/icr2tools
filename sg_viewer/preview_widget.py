@@ -429,7 +429,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._move_points_enabled and event.button() == QtCore.Qt.RightButton:
-            node_id = self.pick_node(event.x(), event.y())
+            node_id = self.pick_node(event.x(), event.y(), radius_px=12)
             if node_id is not None:
                 self._detach_node(node_id)
                 self.refresh_from_state()
@@ -437,10 +437,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 return
 
         if self._move_points_enabled and event.button() == QtCore.Qt.LeftButton:
-            node_id = self.pick_node(event.x(), event.y())
+            node_id = self.pick_node(event.x(), event.y(), radius_px=12)
             if node_id is not None:
                 # Do not drag yet — only record that a node was clicked.
                 self._dragging_node_id = node_id
+                self._last_mouse_pos = event.pos()
                 event.accept()
                 return
 
