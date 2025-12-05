@@ -324,6 +324,38 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return endpoints
 
+    def _project_point_onto_straight(self, section, x, y):
+        # Get node positions
+        state = self._state
+        sn = state.nodes[section.start_node_id]
+        en = state.nodes[section.end_node_id]
+
+        sx, sy = sn.x, sn.y
+        ex, ey = en.x, en.y
+
+        # Heading vector H = normalize(E - S)
+        dx = ex - sx
+        dy = ey - sy
+        length = math.hypot(dx, dy)
+        if length == 0:
+            return sx, sy  # degenerate; do nothing
+
+        hx = dx / length
+        hy = dy / length
+
+        # Vector from S to dragged point P
+        px = x - sx
+        py = y - sy
+
+        # Projection scalar t = dot(P, H)
+        t = px * hx + py * hy
+
+        # Constrained position P' = S + t * H
+        proj_x = sx + t * hx
+        proj_y = sy + t * hy
+
+        return proj_x, proj_y
+
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -478,14 +510,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
                 node = self._state.nodes.get(self._dragging_node_id)
                 if node is not None:
-                    old_x, old_y = node.x, node.y
-                    node.x += dx
-                    node.y += dy
+                    # Identify section this node belongs to
+                    sec_index = next(iter(node.attached_sections))
+                    sec = self._state.sg.sects[sec_index]
 
-                    print(
-                        f"[DRAG] node {self._dragging_node_id} moved "
-                        f"{old_x:.3f},{old_y:.3f} -> {node.x:.3f},{node.y:.3f}"
-                    )
+                    # Compute unconstrained target position from dx/dy
+                    tx = node.x + dx
+                    ty = node.y + dy
+
+                    # If the section is a straight (type = 1), constrain motion
+                    if sec.type == 1:
+                        proj_x, proj_y = self._project_point_onto_straight(sec, tx, ty)
+                        node.x = proj_x
+                        node.y = proj_y
+                    else:
+                        # curves (not implemented yet)
+                        node.x = tx
+                        node.y = ty
 
                 self.update()
 
