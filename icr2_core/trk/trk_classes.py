@@ -102,6 +102,10 @@ class TRKFile:
     @classmethod
     def from_sg(cls, file_name):
         sgfile = SGFile.from_sg(file_name)
+        return cls.from_sgfile(sgfile)
+
+    @classmethod
+    def from_sgfile(cls, sgfile: SGFile):
         num_sects = sgfile.num_sects
         num_xsects = sgfile.num_xsects
 
