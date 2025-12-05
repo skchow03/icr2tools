@@ -898,8 +898,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._sgfile is None:
             return
 
-        sg_bytes = self._sgfile.output_bytes()
-        trk = TRKFile.from_bytes(sg_bytes)
+        trk = TRKFile.from_sgfile(self._sgfile)
 
         cline = get_cline_pos(trk)
         sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
