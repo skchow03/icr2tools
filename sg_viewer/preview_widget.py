@@ -564,6 +564,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._update_straight_section_endpoints(
             self._dragging_section_index, new_start, new_end, new_length
         )
+
+        # Update the currently drawn polylines immediately so the user can see
+        # the effect of the drag before a full geometry rebuild completes.
+        self._selected_section_points = [new_start, new_end]
+        if 0 <= self._dragging_section_index < len(self._section_polylines):
+            self._section_polylines[self._dragging_section_index] = [
+                new_start,
+                new_end,
+            ]
+
         self._dirty = True
         self._rebuild_geometry_after_edit()
 
