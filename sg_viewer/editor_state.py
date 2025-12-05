@@ -186,6 +186,39 @@ class EditorState:
         sg_geometry.update_section_start_heading(self.sg, index, theta)
         self._rebuild_from_sg()
 
+    def detach_node_for_section(self, node_id: int, section_index: int) -> None:
+        """Detach a section endpoint into a new node if the node has multiple attachments."""
+
+        if section_index < 0 or section_index >= len(self.sg.sects):
+            return
+
+        node = self.nodes.get(node_id)
+        if (
+            node is None
+            or len(node.attached_sections) <= 1
+            or section_index not in node.attached_sections
+        ):
+            return
+
+        new_id = self.next_node_id
+        self.next_node_id += 1
+
+        new_node = Node(
+            id=new_id,
+            x=node.x,
+            y=node.y,
+            attached_sections={section_index},
+        )
+        self.nodes[new_id] = new_node
+
+        sec = self.sg.sects[section_index]
+        if getattr(sec, "start_node_id", None) == node_id:
+            sec.start_node_id = new_id
+        elif getattr(sec, "end_node_id", None) == node_id:
+            sec.end_node_id = new_id
+
+        node.attached_sections.discard(section_index)
+
     # ------------------------------------------------------------------
     # Undo / Redo
     # ------------------------------------------------------------------

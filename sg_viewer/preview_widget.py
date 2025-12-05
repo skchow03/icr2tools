@@ -14,6 +14,7 @@ from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 
 from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_loader, preview_rendering
+from track_viewer import rendering
 from sg_viewer.editor_state import EditorState
 
 
@@ -274,6 +275,31 @@ class SGPreviewWidget(QtWidgets.QWidget):
         y = (py - offsets[1]) / scale
         return x, y
 
+    def pick_node(self, mouse_x: float, mouse_y: float, radius_px: float = 6) -> int | None:
+        """Return the closest node id within the hit radius, if any."""
+
+        if self._state is None or not self._state.nodes:
+            return None
+
+        transform = self._current_transform()
+        if transform is None:
+            return None
+
+        radius_sq = radius_px * radius_px
+        closest_id: int | None = None
+        closest_dist_sq = radius_sq
+
+        for node in self._state.nodes.values():
+            point = rendering.map_point(node.x, node.y, transform, self.height())
+            dx = point.x() - mouse_x
+            dy = point.y() - mouse_y
+            dist_sq = dx * dx + dy * dy
+            if dist_sq <= closest_dist_sq:
+                closest_dist_sq = dist_sq
+                closest_id = node.id
+
+        return closest_id
+
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -312,6 +338,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
             transform,
             self.height(),
         )
+
+        if self._state is not None and self._state.nodes:
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 0, 0)))
+            painter.setPen(QtCore.Qt.NoPen)
+
+            for node in self._state.nodes.values():
+                point = rendering.map_point(node.x, node.y, transform, self.height())
+                painter.drawEllipse(point, 3, 3)
+
+            painter.restore()
 
         if self._show_curve_markers:
             preview_rendering.draw_curve_markers(
@@ -365,6 +403,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.RightButton:
+            node_id = self.pick_node(event.x(), event.y())
+            if node_id is not None:
+                self._detach_node(node_id)
+                self.refresh_from_state()
+                event.accept()
+                return
+
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -405,6 +451,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._handle_click(event.pos())
             self._press_pos = None
         super().mouseReleaseEvent(event)
+
+    def _detach_node(self, node_id: int) -> None:
+        if self._state is None or self._selected_section_index is None:
+            return
+
+        self._state.detach_node_for_section(node_id, self._selected_section_index)
 
     # ------------------------------------------------------------------
     # Selection (normal mode)
