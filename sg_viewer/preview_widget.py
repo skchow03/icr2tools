@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from pathlib import Path
 from typing import List, Tuple
@@ -9,15 +9,11 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_alt, get_cline_pos, getxyz
+from icr2_core.trk.trk_utils import get_alt, getxyz
 from track_viewer import rendering
-from track_viewer.geometry import (
-    CenterlineIndex,
-    build_centerline_index,
-    project_point_to_centerline,
-    sample_centerline,
-)
+from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
+from sg_viewer import preview_loader, preview_rendering
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -33,14 +29,6 @@ class SectionSelection:
     end_heading: tuple[float, float] | None = None
     center: Point | None = None
     radius: float | None = None
-
-
-@dataclass
-class CurveMarker:
-    center: Point
-    start: Point
-    end: Point
-    radius: float
 
 
 @dataclass
@@ -84,7 +72,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._centerline_index: CenterlineIndex | None = None
         self._status_message = "Select an SG file to begin."
 
-        self._curve_markers: dict[int, CurveMarker] = {}
+        self._curve_markers: dict[int, preview_loader.CurveMarker] = {}
         self._selected_curve_index: int | None = None
         self._section_endpoints: list[tuple[Point, Point]] = []
 
@@ -92,10 +80,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
 
-        self._fit_scale: float | None = None
-        self._current_scale: float | None = None
-        self._view_center: Point | None = None
-        self._user_transform_active = False
+        self._transform_state = preview_loader.TransformState()
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
@@ -116,10 +101,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = []
         self._curve_markers = {}
         self._selected_curve_index = None
-        self._fit_scale = None
-        self._current_scale = None
-        self._view_center = None
-        self._user_transform_active = False
+        self._transform_state = preview_loader.TransformState()
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
@@ -138,32 +120,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = f"Loading {path.name}…"
         self.update()
 
-        sgfile = SGFile.from_sg(str(path))
-        trk = TRKFile.from_sg(str(path))
-        cline = get_cline_pos(trk)
-        sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
+        data = preview_loader.load_preview(path)
 
-        if not sampled or bounds is None:
-            raise ValueError("Failed to build centreline from SG file")
-
-        self._sgfile = sgfile
-        self._trk = trk
-        self._cline = cline
-        self._sampled_centerline = sampled
-        self._sampled_dlongs = sampled_dlongs
-        self._sampled_bounds = bounds
-        self._centerline_index = build_centerline_index(sampled, bounds)
-        self._track_length = float(trk.trklength)
+        self._sgfile = data.sgfile
+        self._trk = data.trk
+        self._cline = data.cline
+        self._sampled_centerline = data.sampled_centerline
+        self._sampled_dlongs = data.sampled_dlongs
+        self._sampled_bounds = data.sampled_bounds
+        self._centerline_index = data.centerline_index
+        self._track_length = data.track_length
         self._selected_section_index = None
         self._selected_section_points = []
-        self._curve_markers = self._build_curve_markers(trk)
-        self._section_endpoints = self._build_section_endpoints(trk)
+        self._curve_markers = data.curve_markers
+        self._section_endpoints = data.section_endpoints
         self._selected_curve_index = None
-        self._fit_scale = None
-        self._current_scale = None
-        self._view_center = None
-        self._user_transform_active = False
-        self._status_message = f"Loaded {path.name}"
+        self._transform_state = preview_loader.TransformState()
+        self._status_message = data.status_message
         self._update_fit_scale()
         self.selectedSectionChanged.emit(None)
         self.update()
@@ -172,54 +145,29 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Transform helpers
     # ------------------------------------------------------------------
     def _default_center(self) -> Point | None:
-        if not self._sampled_bounds:
-            return None
-        min_x, max_x, min_y, max_y = self._sampled_bounds
-        return ( (min_x + max_x) / 2, (min_y + max_y) / 2 )
-
-    def _calculate_fit_scale(self) -> float | None:
-        if not self._sampled_bounds:
-            return None
-        min_x, max_x, min_y, max_y = self._sampled_bounds
-        span_x = max_x - min_x
-        span_y = max_y - min_y
-        if span_x <= 0 or span_y <= 0:
-            return None
-        margin = 24
-        w, h = self.width(), self.height()
-        available_w = max(w - margin * 2, 1)
-        available_h = max(h - margin * 2, 1)
-        scale_x = available_w / span_x
-        scale_y = available_h / span_y
-        return min(scale_x, scale_y)
+        return preview_loader.default_center(self._sampled_bounds)
 
     def _update_fit_scale(self) -> None:
-        fit = self._calculate_fit_scale()
-        self._fit_scale = fit
-        if fit is not None and not self._user_transform_active:
-            self._current_scale = fit
-            if self._view_center is None:
-                self._view_center = self._default_center()
+        self._transform_state = preview_loader.update_fit_scale(
+            self._transform_state,
+            self._sampled_bounds,
+            (self.width(), self.height()),
+            self._default_center(),
+        )
 
     def _current_transform(self) -> Transform | None:
-        if not self._sampled_bounds:
-            return None
-        if self._current_scale is None:
-            self._update_fit_scale()
-        if self._current_scale is None:
-            return None
-        center = self._view_center or self._default_center()
-        if center is None:
-            return None
-        w, h = self.width(), self.height()
-        offsets = (w / 2 - center[0] * self._current_scale, h / 2 - center[1] * self._current_scale)
-        return self._current_scale, offsets
+        transform, updated_state = preview_loader.current_transform(
+            self._transform_state,
+            self._sampled_bounds,
+            (self.width(), self.height()),
+            self._default_center(),
+        )
+        if updated_state is not self._transform_state:
+            self._transform_state = updated_state
+        return transform
 
     def _clamp_scale(self, scale: float) -> float:
-        base = self._fit_scale or self._current_scale or 1.0
-        min_scale = base * 0.1
-        max_scale = base * 25.0
-        return max(min_scale, min(max_scale, scale))
+        return preview_loader.clamp_scale(scale, self._transform_state)
 
     def _map_to_track(self, point: QtCore.QPointF) -> Point | None:
         transform = self._current_transform()
@@ -244,61 +192,80 @@ class SGPreviewWidget(QtWidgets.QWidget):
         painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
 
         if not self._sampled_centerline:
-            painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
-            painter.drawText(self.rect(), QtCore.Qt.AlignCenter, self._status_message)
+            preview_rendering.draw_placeholder(painter, self.rect(), self._status_message)
             painter.end()
             return
 
         transform = self._current_transform()
         if not transform:
-            painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
-            painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "Unable to fit view")
+            preview_rendering.draw_placeholder(painter, self.rect(), "Unable to fit view")
             painter.end()
             return
 
-        rendering.draw_centerline(
+        preview_rendering.draw_centerlines(
             painter,
             self._sampled_centerline,
+            self._selected_section_points,
             transform,
             self.height(),
-            color="white",
-            width=3,
         )
 
-        if self._selected_section_points:
-            rendering.draw_centerline(
+        preview_rendering.draw_section_endpoints(
+            painter,
+            self._section_endpoints,
+            self._selected_section_index,
+            transform,
+            self.height(),
+        )
+
+        if self._show_curve_markers:
+            preview_rendering.draw_curve_markers(
                 painter,
-                self._selected_section_points,
+                self._curve_markers,
+                self._selected_curve_index,
                 transform,
                 self.height(),
-                color="red",
-                width=4,
             )
 
-        self._draw_section_endpoints(painter, transform)
-        self._draw_curve_markers(painter, transform)
-        self._draw_start_finish_line(painter, transform)
+        preview_rendering.draw_start_finish_line(
+            painter,
+            self._centerline_point_normal_and_tangent(0.0),
+            transform,
+            self.height(),
+        )
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if not self._sampled_centerline:
             return
-        if self._view_center is None:
-            self._view_center = self._default_center()
-        if self._view_center is None or self._current_scale is None:
+        transform = self._current_transform()
+        if transform is None:
             return
+        state = self._transform_state
+        if state.view_center is None:
+            center = self._default_center()
+            if center is None:
+                return
+            state = replace(state, view_center=center)
+            self._transform_state = state
+        if state.current_scale is None or state.view_center is None:
+            return
+
         delta = event.angleDelta().y()
         factor = 1.15 if delta > 0 else 1 / 1.15
-        new_scale = self._clamp_scale(self._current_scale * factor)
+        new_scale = self._clamp_scale(state.current_scale * factor)
         cursor_track = self._map_to_track(event.pos())
         if cursor_track is None:
-            cursor_track = self._view_center
+            cursor_track = state.view_center
         w, h = self.width(), self.height()
         px, py = event.pos().x(), event.pos().y()
         cx = cursor_track[0] - (px - w / 2) / new_scale
         cy = cursor_track[1] + (py - h / 2) / new_scale
-        self._view_center = (cx, cy)
-        self._current_scale = new_scale
-        self._user_transform_active = True
+        self._transform_state = replace(
+            state,
+            current_scale=new_scale,
+            view_center=(cx, cy),
+            user_transform_active=True,
+        )
         self.update()
         event.accept()
 
@@ -307,7 +274,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._press_pos = event.pos()
-            self._user_transform_active = True
+            self._transform_state = replace(self._transform_state, user_transform_active=True)
             event.accept()
             return
         super().mousePressEvent(event)
@@ -316,16 +283,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
-                if self._view_center is None:
-                    self._view_center = self._default_center()
-                if self._view_center is not None:
+                state = self._transform_state
+                center = state.view_center or self._default_center()
+                if center is not None:
                     scale, _ = transform
                     delta = event.pos() - self._last_mouse_pos
                     self._last_mouse_pos = event.pos()
-                    cx, cy = self._view_center
+                    cx, cy = center
                     cx -= delta.x() / scale
                     cy += delta.y() / scale
-                    self._view_center = (cx, cy)
+                    self._transform_state = replace(state, view_center=(cx, cy))
                     self.update()
             event.accept()
             return
@@ -671,187 +638,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         cross = end_norm[0] * next_norm[1] - end_norm[1] * next_norm[0]
         angle_deg = math.degrees(math.atan2(cross, dot))
         return round(angle_deg, 4)
-
-    def _build_curve_markers(self, trk: TRKFile) -> dict[int, CurveMarker]:
-        markers: dict[int, CurveMarker] = {}
-        track_length = float(getattr(trk, "trklength", 0) or 0)
-        cline = self._cline
-
-        for idx, sect in enumerate(trk.sects):
-            if getattr(sect, "type", None) != 2:
-                continue
-            if hasattr(sect, "center_x") and hasattr(sect, "center_y"):
-                center = (float(sect.center_x), float(sect.center_y))
-            elif hasattr(sect, "ang1") and hasattr(sect, "ang2"):
-                # TRK section parsing stores curve centers in ang1/ang2
-                center = (float(sect.ang1), float(sect.ang2))
-            else:
-                continue
-
-            if cline and track_length > 0:
-                start_x, start_y, _ = getxyz(
-                    trk, float(sect.start_dlong) % track_length, 0, cline
-                )
-                end_dlong = float(sect.start_dlong + sect.length)
-                end_dlong = end_dlong % track_length if track_length else end_dlong
-                end_x, end_y, _ = getxyz(trk, end_dlong, 0, cline)
-                start = (start_x, start_y)
-                end = (end_x, end_y)
-            else:
-                start = (
-                    float(getattr(sect, "start_x", 0.0)),
-                    float(getattr(sect, "start_y", 0.0)),
-                )
-                end = (
-                    float(getattr(sect, "end_x", 0.0)),
-                    float(getattr(sect, "end_y", 0.0)),
-                )
-            radius = ((start[0] - center[0]) ** 2 + (start[1] - center[1]) ** 2) ** 0.5
-            markers[idx] = CurveMarker(center=center, start=start, end=end, radius=radius)
-        return markers
-
-    def _build_section_endpoints(self, trk: TRKFile) -> list[tuple[Point, Point]]:
-        endpoints: list[tuple[Point, Point]] = []
-        track_length = float(getattr(trk, "trklength", 0) or 0)
-
-        if self._cline is None or track_length <= 0:
-            return endpoints
-
-        for sect in trk.sects:
-            start_dlong = float(sect.start_dlong) % track_length
-            end_dlong = float(sect.start_dlong + sect.length) % track_length
-
-            start_x, start_y, _ = getxyz(trk, start_dlong, 0, self._cline)
-            end_x, end_y, _ = getxyz(trk, end_dlong, 0, self._cline)
-            endpoints.append(((start_x, start_y), (end_x, end_y)))
-
-        return endpoints
-
-    def _draw_curve_markers(self, painter: QtGui.QPainter, transform: Transform) -> None:
-        if not self._curve_markers or not self._show_curve_markers:
-            return
-
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        default_color = QtGui.QColor(140, 140, 140)
-        highlight_color = QtGui.QColor("red")
-
-        for idx, marker in self._curve_markers.items():
-            is_selected = idx == self._selected_curve_index
-            color = highlight_color if is_selected else default_color
-            width = 2 if is_selected else 1
-
-            painter.setPen(QtGui.QPen(color, width))
-            painter.setBrush(QtGui.QBrush(color))
-
-            center_point = rendering.map_point(
-                marker.center[0], marker.center[1], transform, self.height()
-            )
-            start_point = rendering.map_point(
-                marker.start[0], marker.start[1], transform, self.height()
-            )
-            end_point = rendering.map_point(
-                marker.end[0], marker.end[1], transform, self.height()
-            )
-
-            painter.drawLine(QtCore.QLineF(center_point, start_point))
-            painter.drawLine(QtCore.QLineF(center_point, end_point))
-            painter.drawEllipse(center_point, 4, 4)
-
-        painter.restore()
-
-    def _draw_section_endpoints(self, painter: QtGui.QPainter, transform: Transform) -> None:
-        if not self._section_endpoints:
-            return
-
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-
-        base_color = QtGui.QColor(0, 220, 255)
-        base_pen = QtGui.QPen(base_color, 1)
-        base_brush = QtGui.QBrush(base_color)
-
-        size = 6.0
-        half = size / 2
-
-        painter.setPen(base_pen)
-        painter.setBrush(base_brush)
-
-        for start, end in self._section_endpoints:
-            for point in (start, end):
-                mapped = rendering.map_point(point[0], point[1], transform, self.height())
-                painter.drawRect(QtCore.QRectF(mapped.x() - half, mapped.y() - half, size, size))
-
-        if (
-            self._selected_section_index is not None
-            and 0 <= self._selected_section_index < len(self._section_endpoints)
-        ):
-            _, end_point = self._section_endpoints[self._selected_section_index]
-            mapped_end = rendering.map_point(end_point[0], end_point[1], transform, self.height())
-
-            highlight_size = 12.0
-            highlight_half = highlight_size / 2
-
-            highlight_pen = QtGui.QPen(QtGui.QColor("yellow"), 2)
-            painter.setPen(highlight_pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawRect(
-                QtCore.QRectF(
-                    mapped_end.x() - highlight_half,
-                    mapped_end.y() - highlight_half,
-                    highlight_size,
-                    highlight_size,
-                )
-            )
-
-        painter.restore()
-
-    def _draw_start_finish_line(self, painter: QtGui.QPainter, transform: Transform) -> None:
-        if self._track_length is None:
-            return
-
-        mapping = self._centerline_point_normal_and_tangent(0.0)
-        if mapping is None:
-            return
-
-        (cx, cy), normal, tangent = mapping
-        scale, _ = transform
-        if scale == 0:
-            return
-
-        half_length_track = 12.0 / scale
-        direction_length_track = 10.0 / scale
-
-        start = rendering.map_point(
-            cx - normal[0] * half_length_track,
-            cy - normal[1] * half_length_track,
-            transform,
-            self.height(),
-        )
-        end = rendering.map_point(
-            cx + normal[0] * half_length_track,
-            cy + normal[1] * half_length_track,
-            transform,
-            self.height(),
-        )
-
-        direction_start = end
-        direction_end = rendering.map_point(
-            cx + normal[0] * half_length_track + tangent[0] * direction_length_track,
-            cy + normal[1] * half_length_track + tangent[1] * direction_length_track,
-            transform,
-            self.height(),
-        )
-
-        pen = QtGui.QPen(QtGui.QColor("white"), 3.0)
-        pen.setCapStyle(QtCore.Qt.RoundCap)
-
-        painter.save()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        painter.setPen(pen)
-        painter.drawLine(QtCore.QLineF(start, end))
-        painter.drawLine(QtCore.QLineF(direction_start, direction_end))
-        painter.restore()
 
     def _centerline_point_normal_and_tangent(
         self, dlong: float
