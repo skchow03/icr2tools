@@ -189,10 +189,9 @@ class EditorState:
 
         # Heading
         heading = math.atan2(dy, dx)
-        sec.sang1 = sg_geometry.sin_fixed(heading)
-        sec.sang2 = sg_geometry.cos_fixed(heading)
-        sec.eang1 = sec.sang1
-        sec.eang2 = sec.sang2
+        sec.sang1, sec.sang2 = sg_geometry._sincos_from_heading(heading)
+        sec.eang1, sec.eang2 = sec.sang1, sec.sang2
+
 
     def set_curve_center(self, index: int, new_center_x: float, new_center_y: float) -> None:
         """
