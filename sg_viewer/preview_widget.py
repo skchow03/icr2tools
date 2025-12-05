@@ -514,6 +514,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._move_mode and event.button() == QtCore.Qt.LeftButton:
             # End dragging in move mode (Phase 1: no fit logic yet)
+            if (
+                self._dragging_section_index is not None
+                and self._dragging_endpoint_type is not None
+                and self._state is not None
+            ):
+                key = (self._dragging_section_index, self._dragging_endpoint_type)
+                override = self._endpoint_overrides.get(key)
+                if override is not None:
+                    x, y = override
+                    self._state.commit_endpoint_move(
+                        self._dragging_section_index,
+                        self._dragging_endpoint_type,
+                        x,
+                        y,
+                    )
+                    self._endpoint_overrides.pop(key, None)
+                    self.refresh_from_state()
             self._dragging_section_index = None
             self._dragging_endpoint_type = None
             self._dragging_initial_pos = None
