@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import math
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Set
+from typing import List, Tuple, Optional, Dict
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -57,7 +57,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     It is wired to an EditorState which owns the SG/TRK/PreviewData, and supports:
       - section selection
-      - move-point mode (Phase 1): detach endpoints and drag them visually
     """
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
@@ -89,9 +88,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._base_section_endpoints: List[Tuple[Point, Point]] = []
         self._section_endpoints: List[Tuple[Point, Point]] = []
 
-        # Endpoint overrides for move-point mode: {(index, "start"/"end"): (x, y)}
-        self._endpoint_overrides: Dict[Tuple[int, str], Point] = {}
-
         # Selection state
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
@@ -102,14 +98,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
-
-        # Move-point mode (Phase 1)
-        self._move_mode: bool = False
-        self._detached_endpoints: Set[Tuple[int, str]] = set()
-        self._dragging_section_index: Optional[int] = None
-        self._dragging_endpoint_type: Optional[str] = None  # "start" or "end"
-        self._dragging_initial_pos: Optional[Point] = None
-        self._dragging_initial_mouse_pos: Optional[QtCore.QPoint] = None
 
         # Options
         self._show_curve_markers = True
@@ -165,7 +153,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._base_section_endpoints = list(data.section_endpoints)
         self._section_endpoints = list(data.section_endpoints)
-        self._endpoint_overrides.clear()
 
         self._status_message = data.status_message
 
@@ -173,15 +160,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._transform_state = preview_loader.TransformState()
         self._update_fit_scale()
 
-        # Clear selection and move mode state on new preview
+        # Clear selection state on new preview
         self._selected_section_index = None
         self._selected_section_points = []
         self._selected_curve_index = None
-        self._detached_endpoints.clear()
-        self._dragging_section_index = None
-        self._dragging_endpoint_type = None
-        self._dragging_initial_pos = None
-        self._dragging_initial_mouse_pos = None
 
     # ------------------------------------------------------------------
     # Public control API
@@ -198,7 +180,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._curve_markers = {}
         self._base_section_endpoints = []
         self._section_endpoints = []
-        self._endpoint_overrides.clear()
         self._selected_section_index = None
         self._selected_section_points = []
         self._selected_curve_index = None
@@ -207,12 +188,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._last_mouse_pos = None
         self._press_pos = None
         self._state = None
-        self._move_mode = False
-        self._detached_endpoints.clear()
-        self._dragging_section_index = None
-        self._dragging_endpoint_type = None
-        self._dragging_initial_pos = None
-        self._dragging_initial_mouse_pos = None
         self._status_message = message or "Select an SG file to begin."
         self.selectedSectionChanged.emit(None)
         self.update()
@@ -260,81 +235,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
         self._set_selected_section(prev_index)
-
-    # ------------------------------------------------------------------
-    # Move-point mode (Phase 1 only: detach & drag endpoints visually)
-    # ------------------------------------------------------------------
-    def set_move_mode(self, enabled: bool) -> None:
-        """
-        Enable/disable Move Point mode.
-
-        When enabled:
-          - Right-click on an endpoint toggles it as "detached".
-          - Left-click+drag on a detached endpoint moves it visually.
-        No geometry fitting is done yet (Phase 1 only).
-        """
-        self._move_mode = bool(enabled)
-        self._dragging_section_index = None
-        self._dragging_endpoint_type = None
-        self._dragging_initial_pos = None
-        self._dragging_initial_mouse_pos = None
-        # Clear overrides when turning off move mode
-        if not self._move_mode:
-            self._endpoint_overrides.clear()
-            self._update_section_endpoints_from_overrides()
-        self.update()
-
-    def _update_section_endpoints_from_overrides(self) -> None:
-        """
-        Rebuild self._section_endpoints from base endpoints plus overrides.
-        """
-        self._section_endpoints = []
-        for idx, (start, end) in enumerate(self._base_section_endpoints):
-            s = self._endpoint_overrides.get((idx, "start"), start)
-            e = self._endpoint_overrides.get((idx, "end"), end)
-            self._section_endpoints.append((s, e))
-
-    def _pick_endpoint(
-        self, track_point: Point, pixel_tolerance: float = 8.0
-    ) -> Optional[Tuple[int, str, Point]]:
-        """
-        Find the nearest endpoint to the given track-space point.
-
-        Returns (section_index, "start"/"end", endpoint_point) or None.
-        """
-        if not self._section_endpoints:
-            return None
-
-        transform = self._current_transform()
-        if not transform:
-            return None
-        scale, _ = transform
-        if scale <= 0:
-            return None
-
-        # convert pixel tolerance to track units
-        tol_units = pixel_tolerance / scale
-        tol_sq = tol_units * tol_units
-
-        best: Optional[Tuple[int, str, Point]] = None
-        best_dist_sq = float("inf")
-
-        tx, ty = track_point
-        for idx, (start, end) in enumerate(self._section_endpoints):
-            for etype, pt in (("start", start), ("end", end)):
-                dx = pt[0] - tx
-                dy = pt[1] - ty
-                d2 = dx * dx + dy * dy
-                if d2 < best_dist_sq:
-                    best_dist_sq = d2
-                    best = (idx, etype, pt)
-
-        if best is None:
-            return None
-
-        if best_dist_sq > tol_sq:
-            return None
-        return best
 
     # ------------------------------------------------------------------
     # Transform helpers
@@ -465,19 +365,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if self._move_mode:
-            # Move-point mode: right-click toggles detach; left-click may start dragging
-            if event.button() == QtCore.Qt.RightButton:
-                self._handle_move_mode_right_click(event.pos())
-                event.accept()
-                return
-            if event.button() == QtCore.Qt.LeftButton:
-                self._handle_move_mode_left_press(event.pos())
-                # handled if dragging started; if not, no panning in move mode
-                event.accept()
-                return
-
-        # Normal mode: pan + selection
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -488,11 +375,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        if self._move_mode and self._dragging_section_index is not None:
-            self._handle_move_mode_drag(event.pos())
-            event.accept()
-            return
-
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -512,32 +394,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        if self._move_mode and event.button() == QtCore.Qt.LeftButton:
-            # End dragging in move mode (Phase 1: no fit logic yet)
-            if (
-                self._dragging_section_index is not None
-                and self._dragging_endpoint_type is not None
-                and self._state is not None
-            ):
-                key = (self._dragging_section_index, self._dragging_endpoint_type)
-                override = self._endpoint_overrides.get(key)
-                if override is not None:
-                    x, y = override
-                    self._state.commit_endpoint_move(
-                        self._dragging_section_index,
-                        self._dragging_endpoint_type,
-                        x,
-                        y,
-                    )
-                    self._endpoint_overrides.pop(key, None)
-                    self.refresh_from_state()
-            self._dragging_section_index = None
-            self._dragging_endpoint_type = None
-            self._dragging_initial_pos = None
-            self._dragging_initial_mouse_pos = None
-            event.accept()
-            return
-
         if event.button() == QtCore.Qt.LeftButton:
             self._is_panning = False
             self._last_mouse_pos = None
@@ -549,57 +405,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._handle_click(event.pos())
             self._press_pos = None
         super().mouseReleaseEvent(event)
-
-    # ------------------------------------------------------------------
-    # Move-point mode helpers
-    # ------------------------------------------------------------------
-    def _handle_move_mode_right_click(self, pos: QtCore.QPoint) -> None:
-        """Right-click: toggle detached state on nearest endpoint."""
-        track_point = self._map_to_track(QtCore.QPointF(pos))
-        if track_point is None:
-            return
-        picked = self._pick_endpoint(track_point)
-        if picked is None:
-            return
-        idx, etype, _ = picked
-        key = (idx, etype)
-        if key in self._detached_endpoints:
-            self._detached_endpoints.remove(key)
-        else:
-            self._detached_endpoints.add(key)
-        self.update()
-
-    def _handle_move_mode_left_press(self, pos: QtCore.QPoint) -> None:
-        """Left press in move mode: if on a detached endpoint, start dragging."""
-        track_point = self._map_to_track(QtCore.QPointF(pos))
-        if track_point is None:
-            return
-        picked = self._pick_endpoint(track_point)
-        if picked is None:
-            return
-        idx, etype, pt = picked
-        key = (idx, etype)
-        if key not in self._detached_endpoints:
-            # Only allow dragging detached endpoints (SGE behavior)
-            return
-
-        self._dragging_section_index = idx
-        self._dragging_endpoint_type = etype
-        self._dragging_initial_pos = pt
-        self._dragging_initial_mouse_pos = pos
-
-    def _handle_move_mode_drag(self, pos: QtCore.QPoint) -> None:
-        """While dragging a detached endpoint, update its override position."""
-        if self._dragging_section_index is None or self._dragging_endpoint_type is None:
-            return
-        track_point = self._map_to_track(QtCore.QPointF(pos))
-        if track_point is None:
-            return
-
-        key = (self._dragging_section_index, self._dragging_endpoint_type)
-        self._endpoint_overrides[key] = track_point
-        self._update_section_endpoints_from_overrides()
-        self.update()
 
     # ------------------------------------------------------------------
     # Selection (normal mode)
