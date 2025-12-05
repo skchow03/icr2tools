@@ -34,6 +34,7 @@ class SectionSelection:
     end_heading: tuple[float, float] | None = None
     center: Point | None = None
     radius: float | None = None
+    connected_to_next: bool | None = None
 
 
 @dataclass
@@ -93,6 +94,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
+        self._section_connections: list[bool] = []
 
         self._fit_scale: float | None = None
         self._current_scale: float | None = None
@@ -118,6 +120,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = None
         self._selected_section_index = None
         self._selected_section_points = []
+        self._section_connections = []
         self._curve_markers = {}
         self._selected_curve_index = None
         self._fit_scale = None
@@ -157,6 +160,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._cline = cline
         self._track_length = float(trk.trklength)
         self._section_polylines = self._build_section_polylines(trk)
+        self._section_connections = self._calculate_section_connections()
         self._sampled_centerline = sampled
         self._sampled_dlongs = sampled_dlongs
         self._sampled_bounds = bounds
@@ -317,6 +321,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             handle = self._hit_test_handle(event.pos())
             if handle:
+                if self._selected_section_index is not None and not self._is_handle_editable(
+                    self._selected_section_index, handle
+                ):
+                    event.accept()
+                    return
+
                 self._dragging_handle = handle
                 self._last_mouse_pos = event.pos()
                 self._press_pos = None
@@ -511,6 +521,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             end_heading=end_heading,
             center=marker.center if marker else None,
             radius=marker.radius if marker else None,
+            connected_to_next=self._is_section_connected_to_next(index),
         )
         self.selectedSectionChanged.emit(selection)
         self.update()
@@ -566,6 +577,34 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         points.append((x, y))
         return points
+
+    def _calculate_section_connections(self) -> list[bool]:
+        if self._sgfile is None:
+            return []
+
+        connections: list[bool] = []
+        total_sections = len(self._sgfile.sects)
+        if total_sections == 0:
+            return connections
+
+        for idx, sect in enumerate(self._sgfile.sects):
+            next_sect = self._sgfile.sects[(idx + 1) % total_sections]
+            connected = math.isclose(
+                float(sect.end_x), float(next_sect.start_x), abs_tol=0.5
+            ) and math.isclose(float(sect.end_y), float(next_sect.start_y), abs_tol=0.5)
+            connections.append(connected)
+
+        return connections
+
+    def _is_section_connected_to_next(self, index: int) -> bool:
+        if not self._section_connections:
+            return False
+
+        total_sections = len(self._section_connections)
+        if total_sections == 0:
+            return False
+
+        return self._section_connections[index % total_sections]
 
     def get_section_geometries(self) -> list[SectionGeometry]:
         if self._trk is None or not self._cline or self._track_length is None:
@@ -1059,6 +1098,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._centerline_index = build_centerline_index(sampled, bounds)
             self._section_polylines = self._build_section_polylines(self._trk)
             self._curve_markers = self._build_curve_markers(self._trk)
+            self._section_connections = self._calculate_section_connections()
             if selected_index is not None and 0 <= selected_index < len(self._trk.sects):
                 self._selected_section_points = self._sample_section_polyline(
                     self._trk.sects[selected_index]
@@ -1083,6 +1123,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         cw_delta = abs(_normalize(heading_rad - (radial_angle - math.pi / 2)))
         ccw_delta = abs(_normalize(heading_rad - (radial_angle + math.pi / 2)))
         return -1 if cw_delta < ccw_delta else 1
+
+    def _is_handle_editable(self, index: int, handle: str) -> bool:
+        if handle in {"end", "curve_end"}:
+            return not self._is_section_connected_to_next(index)
+        return True
 
     def _update_straight_handle_position(
         self, index: int, handle: str, track_point: Point
