@@ -131,7 +131,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._state is None:
             self.clear()
             return
-        self._apply_preview(self._state.preview)
+        self._apply_preview(self._state.preview, skip_fit=self._move_points_enabled)
         # Try to restore selected section
         if self._selected_section_index is not None:
             idx = self._selected_section_index
@@ -141,7 +141,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._set_selected_section(None)
         self.update()
 
-    def _apply_preview(self, data: preview_loader.PreviewData) -> None:
+    def _apply_preview(self, data: preview_loader.PreviewData, skip_fit: bool = False) -> None:
         """
         Copy preview data into local caches. Keeps widget as a "dumb view"
         over PreviewData while allowing fast access to fields.
@@ -162,8 +162,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = data.status_message
 
         # Reset view transform so it refits around new bounds
-        self._transform_state = preview_loader.TransformState()
-        self._update_fit_scale()
+        if not skip_fit:
+            self._transform_state = preview_loader.TransformState()
+            self._update_fit_scale()
 
         # Clear selection state on new preview
         self._selected_section_index = None
@@ -390,6 +391,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
         dynamic_endpoints = self._build_node_endpoints()
+        # When moving points, draw straight sections directly from node endpoints
+        if self._move_points_enabled and self._state is not None:
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+            for i, sec in enumerate(self._state.sg.sects):
+                if sec.type == 1:  # straight
+                    (sx, sy), (ex, ey) = dynamic_endpoints[i]
+                    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 1))
+                    start_point = rendering.map_point(sx, sy, transform, self.height())
+                    end_point = rendering.map_point(ex, ey, transform, self.height())
+                    painter.drawLine(start_point, end_point)
         preview_rendering.draw_section_endpoints(
             painter,
             dynamic_endpoints,
