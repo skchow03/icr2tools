@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from pathlib import Path
+import tempfile
 from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -103,6 +104,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
+        self._dragging_endpoint: str | None = None
+        self._dragging_section_index: int | None = None
+        self._dragging_heading: tuple[float, float] | None = None
 
         self._show_curve_markers = True
         self._dirty = False
@@ -318,6 +322,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
+            if self._maybe_start_endpoint_drag(event.pos()):
+                event.accept()
+                return
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._press_pos = event.pos()
@@ -327,6 +334,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._dragging_endpoint is not None:
+            self._handle_endpoint_drag(event.pos())
+            event.accept()
+            return
+
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -347,6 +359,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
+            if self._dragging_endpoint is not None:
+                self._dragging_endpoint = None
+                self._dragging_section_index = None
+                self._dragging_heading = None
+                event.accept()
+                return
             self._is_panning = False
             self._last_mouse_pos = None
             if (
@@ -457,6 +475,98 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._trk, float(sect.start_dlong + sect.length) % track_length, 0, self._cline
         )
         return (start_x, start_y), (end_x, end_y)
+
+    def _get_unconnected_endpoints(self, index: int) -> tuple[bool, bool]:
+        if not self._section_connections or self._sgfile is None:
+            return False, False
+
+        total_sections = len(self._section_connections)
+        if total_sections == 0:
+            return False, False
+
+        end_unconnected = not self._section_connections[index % total_sections]
+        start_unconnected = not self._section_connections[(index - 1) % total_sections]
+        return start_unconnected, end_unconnected
+
+    def _maybe_start_endpoint_drag(self, pos: QtCore.QPoint) -> bool:
+        if (
+            self._selected_section_index is None
+            or self._trk is None
+            or self._sgfile is None
+            or self._trk.sects[self._selected_section_index].type == 2
+        ):
+            return False
+
+        transform = self._current_transform()
+        endpoints = self._get_selected_section_endpoints()
+        if transform is None or endpoints is None:
+            return False
+
+        start_unconnected, end_unconnected = self._get_unconnected_endpoints(
+            self._selected_section_index
+        )
+        if start_unconnected == end_unconnected:
+            return False
+
+        tolerance = 10.0
+        start, end = endpoints
+        start_point = rendering.map_point(start[0], start[1], transform, self.height())
+        end_point = rendering.map_point(end[0], end[1], transform, self.height())
+
+        if start_unconnected and (QtCore.QPointF(pos) - start_point).manhattanLength() <= tolerance:
+            self._dragging_endpoint = "start"
+        elif end_unconnected and (QtCore.QPointF(pos) - end_point).manhattanLength() <= tolerance:
+            self._dragging_endpoint = "end"
+        else:
+            return False
+
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = math.hypot(dx, dy)
+        if length <= 0:
+            self._dragging_endpoint = None
+            return False
+
+        self._dragging_section_index = self._selected_section_index
+        self._dragging_heading = (dx / length, dy / length)
+        self._press_pos = None
+        return True
+
+    def _handle_endpoint_drag(self, pos: QtCore.QPoint) -> None:
+        if (
+            self._dragging_endpoint is None
+            or self._dragging_section_index is None
+            or self._dragging_heading is None
+        ):
+            return
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        endpoints = self._get_selected_section_endpoints()
+        if track_point is None or endpoints is None:
+            return
+
+        start, end = endpoints
+        heading = self._dragging_heading
+        min_length = 1.0
+
+        if self._dragging_endpoint == "end":
+            vector = (track_point[0] - start[0], track_point[1] - start[1])
+            projected_length = vector[0] * heading[0] + vector[1] * heading[1]
+            new_length = max(min_length, projected_length)
+            new_end = (start[0] + heading[0] * new_length, start[1] + heading[1] * new_length)
+            new_start = start
+        else:
+            vector = (end[0] - track_point[0], end[1] - track_point[1])
+            projected_length = vector[0] * heading[0] + vector[1] * heading[1]
+            new_length = max(min_length, projected_length)
+            new_start = (end[0] - heading[0] * new_length, end[1] - heading[1] * new_length)
+            new_end = end
+
+        self._update_straight_section_endpoints(
+            self._dragging_section_index, new_start, new_end, new_length
+        )
+        self._dirty = True
+        self._rebuild_geometry_after_edit()
 
     def _build_section_polylines(self, trk: TRKFile) -> list[list[Point]]:
         if self._track_length is None or self._cline is None:
@@ -759,6 +869,58 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return None
 
         return (round(normalized[0], 5), round(normalized[1], 5))
+
+    def _update_straight_section_endpoints(
+        self, index: int, new_start: Point, new_end: Point, new_length: float
+    ) -> None:
+        if self._sgfile is None or index < 0 or index >= len(self._sgfile.sects):
+            return
+
+        sg_sect = self._sgfile.sects[index]
+        sg_sect.start_x = self._round_sg_value(new_start[0])
+        sg_sect.start_y = self._round_sg_value(new_start[1])
+        sg_sect.end_x = self._round_sg_value(new_end[0])
+        sg_sect.end_y = self._round_sg_value(new_end[1])
+
+        rounded_length = int(self._round_sg_value(new_length))
+        rounded_length = max(1, rounded_length)
+        sg_sect.length = rounded_length
+        sg_sect.end_dlong = sg_sect.start_dlong + sg_sect.length
+
+        heading_angle = math.atan2(new_end[1] - new_start[1], new_end[0] - new_start[0])
+        heading_value = int(round(heading_angle / math.pi * (2 ** 31)))
+
+        if self._trk is not None and index < len(self._trk.sects):
+            trk_sect = self._trk.sects[index]
+            trk_sect.length = rounded_length
+            trk_sect.heading = heading_value
+
+    def _rebuild_geometry_after_edit(self) -> None:
+        if self._sgfile is None:
+            return
+
+        with tempfile.NamedTemporaryFile(suffix=".sg") as temp:
+            self._sgfile.output_sg(temp.name)
+            trk = TRKFile.from_sg(temp.name)
+
+        cline = get_cline_pos(trk)
+        sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
+
+        self._trk = trk
+        self._cline = cline
+        self._track_length = float(trk.trklength)
+        self._sampled_centerline = sampled
+        self._sampled_dlongs = sampled_dlongs
+        self._sampled_bounds = bounds
+        self._centerline_index = build_centerline_index(sampled, bounds)
+        self._section_polylines = self._build_section_polylines(trk)
+        self._section_connections = self._calculate_section_connections()
+        self._curve_markers = self._build_curve_markers(trk)
+
+        if self._selected_section_index is not None:
+            self._set_selected_section(self._selected_section_index)
+
+        self.update()
 
     def _heading_delta(
         self, end: tuple[float, float] | None, next_start: tuple[float, float] | None
