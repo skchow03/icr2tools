@@ -119,10 +119,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("SG Editor")
         self.resize(1200, 800)
 
+        self.toolbar = self.addToolBar("Tools")
+        self.toolbar.setMovable(False)
+
         # ---------------------------------------------------------
         # Core widgets
         # ---------------------------------------------------------
         self._preview = SGPreviewWidget()
+        self.preview_widget = self._preview
         self._state: EditorState | None = None
 
         # Section properties panel
@@ -165,6 +169,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
+
+        # Move Points: enables dragging and detaching endpoints
+        self.action_move_points = QtWidgets.QAction("Move Points", self)
+        self.action_move_points.setCheckable(True)
+        self.action_move_points.setToolTip("Enable moving and detaching section endpoints")
+
+        self.toolbar.addAction(self.action_move_points)
 
         # ---------------------------------------------------------
         # Sidebar layout
@@ -231,6 +242,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._next_button.clicked.connect(self._preview.select_next_section)
 
         self._radii_button.toggled.connect(self._preview.set_show_curve_markers)
+
+        self.action_move_points.toggled.connect(
+            self.preview_widget.set_move_points_enabled
+        )
 
         self._section_table_button.clicked.connect(self._show_section_table)
         self._heading_table_button.clicked.connect(self._show_heading_table)
