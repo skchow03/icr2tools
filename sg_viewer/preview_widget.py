@@ -86,6 +86,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._curve_markers: dict[int, CurveMarker] = {}
         self._selected_curve_index: int | None = None
+        self._dragging_handle: str | None = None
 
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
@@ -272,6 +273,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 width=4,
             )
 
+        self._draw_selection_handles(painter, transform)
+
         self._draw_curve_markers(painter, transform)
         self._draw_start_finish_line(painter, transform)
 
@@ -300,6 +303,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
+            handle = self._hit_test_handle(event.pos())
+            if handle:
+                self._dragging_handle = handle
+                self._last_mouse_pos = event.pos()
+                self._press_pos = None
+                self._user_transform_active = True
+                event.accept()
+                return
+
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._press_pos = event.pos()
@@ -309,6 +321,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._dragging_handle and self._selected_section_index is not None:
+            track_point = self._map_to_track(QtCore.QPointF(event.pos()))
+            if track_point is not None:
+                self._update_straight_handle_position(
+                    self._selected_section_index, self._dragging_handle, track_point
+                )
+            event.accept()
+            return
+
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -328,6 +349,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() == QtCore.Qt.LeftButton and self._dragging_handle:
+            self._dragging_handle = None
+            self._last_mouse_pos = None
+            self._press_pos = None
+            event.accept()
+            return
+
         if event.button() == QtCore.Qt.LeftButton:
             self._is_panning = False
             self._last_mouse_pos = None
@@ -366,6 +394,30 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         selection = self._find_section_by_dlong(nearest_dlong)
         self._set_selected_section(selection)
+
+    def _hit_test_handle(self, pos: QtCore.QPoint) -> str | None:
+        if (
+            self._trk is None
+            or self._selected_section_index is None
+            or self._trk.sects[self._selected_section_index].type != 1
+        ):
+            return None
+
+        transform = self._current_transform()
+        endpoints = self._get_selected_section_endpoints()
+        if transform is None or endpoints is None:
+            return None
+
+        start, end = endpoints
+        start_point = rendering.map_point(start[0], start[1], transform, self.height())
+        end_point = rendering.map_point(end[0], end[1], transform, self.height())
+
+        radius = 8
+        if (pos.x() - start_point.x()) ** 2 + (pos.y() - start_point.y()) ** 2 <= radius**2:
+            return "start"
+        if (pos.x() - end_point.x()) ** 2 + (pos.y() - end_point.y()) ** 2 <= radius**2:
+            return "end"
+        return None
 
     def _find_section_by_dlong(self, dlong: float) -> int | None:
         if self._trk is None or not self._trk.sects:
@@ -418,6 +470,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         self.selectedSectionChanged.emit(selection)
         self.update()
+
+    def _get_selected_section_endpoints(self) -> tuple[Point, Point] | None:
+        if (
+            self._trk is None
+            or self._cline is None
+            or self._track_length is None
+            or self._selected_section_index is None
+        ):
+            return None
+
+        sect = self._trk.sects[self._selected_section_index]
+        track_length = float(self._track_length)
+        start_x, start_y, _ = getxyz(
+            self._trk, float(sect.start_dlong) % track_length, 0, self._cline
+        )
+        end_x, end_y, _ = getxyz(
+            self._trk, float(sect.start_dlong + sect.length) % track_length, 0, self._cline
+        )
+        return (start_x, start_y), (end_x, end_y)
 
     def _sample_section_polyline(self, sect) -> List[Point]:
         if self._trk is None or not self._cline or not self._track_length:
@@ -739,6 +810,33 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         painter.restore()
 
+    def _draw_selection_handles(self, painter: QtGui.QPainter, transform: Transform) -> None:
+        if self._selected_section_index is None:
+            return
+
+        endpoints = self._get_selected_section_endpoints()
+        if endpoints is None:
+            return
+
+        start, end = endpoints
+        start_point = rendering.map_point(start[0], start[1], transform, self.height())
+        end_point = rendering.map_point(end[0], end[1], transform, self.height())
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        handle_radius = 6
+        pen = QtGui.QPen(QtGui.QColor("white"), 2)
+        painter.setPen(pen)
+
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("red")))
+        painter.drawEllipse(start_point, handle_radius, handle_radius)
+
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawEllipse(end_point, handle_radius, handle_radius)
+
+        painter.restore()
+
     def _draw_start_finish_line(self, painter: QtGui.QPainter, transform: Transform) -> None:
         if self._track_length is None:
             return
@@ -850,3 +948,68 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
         self._set_selected_section(prev_index)
+
+    def _update_straight_handle_position(
+        self, index: int, handle: str, track_point: Point
+    ) -> None:
+        if (
+            self._sgfile is None
+            or self._trk is None
+            or self._cline is None
+            or self._track_length is None
+            or index < 0
+            or index >= len(self._trk.sects)
+        ):
+            return
+
+        trk_sect = self._trk.sects[index]
+        if getattr(trk_sect, "type", None) != 1:
+            return
+
+        sg_sect = self._sgfile.sects[index] if self._sgfile else None
+        if sg_sect is None:
+            return
+
+        start = (float(sg_sect.start_x), float(sg_sect.start_y))
+        end = (float(sg_sect.end_x), float(sg_sect.end_y))
+
+        if handle == "start":
+            start = track_point
+        elif handle == "end":
+            end = track_point
+        else:
+            return
+
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        if dx == 0 and dy == 0:
+            return
+
+        sg_sect.start_x = int(round(start[0]))
+        sg_sect.start_y = int(round(start[1]))
+        sg_sect.end_x = int(round(end[0]))
+        sg_sect.end_y = int(round(end[1]))
+
+        heading_rad = math.atan2(dy, dx)
+        heading_val = round(heading_rad / math.pi * 2**31)
+        if heading_val == 2**31:
+            heading_val = -(2**31)
+        trk_sect.heading = heading_val
+
+        offset_angle = heading_rad + math.pi / 2
+        for i in range(self._trk.num_xsects):
+            dlat = float(self._trk.xsect_dlats[i])
+            trk_sect.pos1[i] = round(start[0] + dlat * math.cos(offset_angle))
+            trk_sect.pos2[i] = round(start[1] + dlat * math.sin(offset_angle))
+
+        self._cline = get_cline_pos(self._trk)
+        sampled, sampled_dlongs, bounds = sample_centerline(self._trk, self._cline)
+        if sampled and sampled_dlongs and bounds:
+            self._sampled_centerline = sampled
+            self._sampled_dlongs = sampled_dlongs
+            self._sampled_bounds = bounds
+            self._centerline_index = build_centerline_index(sampled, bounds)
+            self._selected_section_points = self._sample_section_polyline(trk_sect)
+            self._fit_scale = self._calculate_fit_scale()
+            self._set_selected_section(index)
+        self.update()
