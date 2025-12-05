@@ -454,6 +454,36 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        # Node dragging (move-points mode)
+        # Do NOT change any SG geometry fields (start_x, end_x, sang/eang, radius, length, center).
+        # Do NOT call _rebuild_from_sg() or modify TRK.
+        # Do NOT update section properties or headings.
+        # Dragging updates ONLY node.x and node.y.
+        if (
+            self._move_points_enabled
+            and self._dragging_node_id is not None
+            and self._last_mouse_pos is not None
+        ):
+            transform = self._current_transform()
+            if transform:
+                scale, _ = transform
+
+                # Compute movement in track/world coordinates
+                delta = event.pos() - self._last_mouse_pos
+                self._last_mouse_pos = event.pos()
+
+                dx = delta.x() / scale
+                dy = -delta.y() / scale   # invert Y
+
+                node = self._state.nodes.get(self._dragging_node_id)
+                if node is not None:
+                    node.x += dx
+                    node.y += dy
+
+                self.update()
+
+            event.accept()
+            return
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
