@@ -366,3 +366,11 @@ class SGFile:
         output_array = np.array(output_array)
         output_array.astype('int32').tofile(output_file)
         print ('done')
+
+    def get_start_xy(self, state):
+        n = state.nodes[self.start_node_id]
+        return n.x, n.y
+
+    def get_end_xy(self, state):
+        n = state.nodes[self.end_node_id]
+        return n.x, n.y

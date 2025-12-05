@@ -19,7 +19,7 @@ class Node:
     id: int
     x: float
     y: float
-    attached_sections: List[int]
+    attached_sections: set[int]
 
 
 @dataclass
