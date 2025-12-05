@@ -72,20 +72,17 @@ class EditorState:
 
     def _rebuild_from_sg(self) -> None:
         """
-        Persist SG to disk, regenerate TRK from SG, and rebuild PreviewData.
+        Regenerate TRK and PreviewData from the in-memory SG without writing.
 
-        This keeps your viewer code unchanged: it still uses TRK + preview_loader.
-        The only difference is that SG is now the source of truth and we
-        regenerate TRK after each edit.
+        SG remains the source of truth and we rebuild dependent data after
+        each edit while keeping the on-disk file untouched.
         """
-        # Write current SG back to its file
-        self.sg.output_sg(str(self.path))
 
         # Regenerate TRK from updated SG
-        self.trk = TRKFile.from_sg(str(self.path))
+        self.trk = TRKFile.from_sgfile(self.sg)
 
         # Rebuild preview snapshot
-        self.preview = preview_loader.load_preview(self.path)
+        self.preview = preview_loader.load_preview_from_objects(self.sg, self.trk, self.path)
 
     # ------------------------------------------------------------------
     # Public edit operations
