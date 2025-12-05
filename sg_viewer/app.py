@@ -141,6 +141,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._center_label = QtWidgets.QLabel("Center: –")
         self._radius_label = QtWidgets.QLabel("Radius: –")
         self._connection_label = QtWidgets.QLabel("Connected → Next: –")
+        self._endpoint_gap_label = QtWidgets.QLabel("Endpoint Δ → Next: –")
         self._start_heading_label = QtWidgets.QLabel("Start Heading: –")
         self._end_heading_label = QtWidgets.QLabel("End Heading: –")
         self._section_table_window: SectionTableWindow | None = None
@@ -166,6 +167,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._center_label)
         sidebar_layout.addWidget(self._radius_label)
         sidebar_layout.addWidget(self._connection_label)
+        sidebar_layout.addWidget(self._endpoint_gap_label)
         sidebar_layout.addWidget(self._start_heading_label)
         sidebar_layout.addWidget(self._end_heading_label)
         sidebar_layout.addStretch()
@@ -333,6 +335,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
             self._connection_label.setText("Connected → Next: –")
+            self._endpoint_gap_label.setText("Endpoint Δ → Next: –")
             self._start_heading_label.setText("Start Heading: –")
             self._end_heading_label.setText("End Heading: –")
             self._profile_widget.set_selected_range(None)
@@ -356,6 +359,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._connection_label.setText(f"Connected → Next: {connection_status}")
         else:
             self._connection_label.setText("Connected → Next: –")
+
+        if selection.endpoint_gap_to_next is not None:
+            self._endpoint_gap_label.setText(
+                f"Endpoint Δ → Next: {selection.endpoint_gap_to_next:.1f}"
+            )
+        else:
+            self._endpoint_gap_label.setText("Endpoint Δ → Next: –")
 
         if selection.start_heading is not None:
             sx, sy = selection.start_heading

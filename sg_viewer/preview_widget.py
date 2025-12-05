@@ -35,6 +35,7 @@ class SectionSelection:
     center: Point | None = None
     radius: float | None = None
     connected_to_next: bool | None = None
+    endpoint_gap_to_next: float | None = None
 
 
 @dataclass
@@ -433,6 +434,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             center=marker.center if marker else None,
             radius=marker.radius if marker else None,
             connected_to_next=self._is_section_connected_to_next(index),
+            endpoint_gap_to_next=self._get_endpoint_gap(index),
         )
         self.selectedSectionChanged.emit(selection)
         self.update()
@@ -507,6 +509,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
             connections.append(connected)
 
         return connections
+
+    def _get_endpoint_gap(self, index: int) -> float | None:
+        if self._sgfile is None:
+            return None
+
+        total_sections = self._sgfile.num_sects
+        if total_sections <= 0:
+            return None
+
+        current = self._sgfile.sects[index % total_sections]
+        next_sect = self._sgfile.sects[(index + 1) % total_sections]
+        dx = float(next_sect.start_x) - float(current.end_x)
+        dy = float(next_sect.start_y) - float(current.end_y)
+        return math.hypot(dx, dy)
 
     def _is_section_connected_to_next(self, index: int) -> bool:
         if not self._section_connections:
@@ -803,12 +819,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        pen = QtGui.QPen(QtGui.QColor("yellow"), 2)
-        painter.setPen(pen)
 
         size = 10.0
         half_size = size / 2
         total = min(len(self._section_polylines), len(self._section_connections))
+        connected_color = QtGui.QColor("green")
+        unconnected_color = QtGui.QColor("orange")
 
         for idx in range(total):
             polyline = self._section_polylines[idx]
@@ -823,11 +839,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 size,
                 size,
             )
+            connected = self._section_connections[idx]
+            color = connected_color if connected else unconnected_color
 
-            if self._section_connections[idx]:
-                painter.setBrush(QtGui.QBrush(QtGui.QColor("yellow")))
-            else:
-                painter.setBrush(QtGui.QBrush(QtCore.Qt.NoBrush))
+            painter.setPen(QtGui.QPen(color, 2))
+            painter.setBrush(QtGui.QBrush(color))
 
             painter.drawRect(rect)
 
