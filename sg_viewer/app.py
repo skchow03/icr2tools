@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import List
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtGui, QtWidgets
 
 from sg_viewer.elevation_profile import ElevationProfileWidget
 from sg_viewer.preview_widget import (
@@ -139,6 +139,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_heading_label = QtWidgets.QLabel("End Heading: –")
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
+        self._current_path: Path | None = None
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -198,6 +199,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"Loaded {path}")
             self._section_table_button.setEnabled(True)
             self._heading_table_button.setEnabled(True)
+            self._save_action.setEnabled(True)
+            self._save_as_action.setEnabled(True)
+            self._current_path = path
             self._update_section_table()
             self._update_heading_table()
             self._populate_xsect_choices()
@@ -208,6 +212,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
 
+        self._save_action = QtWidgets.QAction("Save", self)
+        self._save_action.setShortcut("Ctrl+S")
+        self._save_action.triggered.connect(self._save_current)
+        self._save_action.setEnabled(False)
+
+        self._save_as_action = QtWidgets.QAction("Save As…", self)
+        self._save_as_action.setShortcut("Ctrl+Shift+S")
+        self._save_as_action.triggered.connect(self._save_as)
+        self._save_as_action.setEnabled(False)
+
         self._quit_action = QtWidgets.QAction("Quit", self)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self.close)
@@ -215,6 +229,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _create_menus(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._save_action)
+        file_menu.addAction(self._save_as_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -229,6 +245,70 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         if file_path:
             self.load_sg(Path(file_path))
+
+    def _save_to_path(self, path: Path) -> bool:
+        try:
+            self._preview.save(path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "Failed to save", str(exc))
+            logging.exception("Failed to save SG/TRK files")
+            return False
+        else:
+            self.statusBar().showMessage(f"Saved {path}")
+            self._current_path = path
+            return True
+
+    def _save_current(self) -> bool:
+        if self._current_path is None:
+            return self._save_as()
+        return self._save_to_path(self._current_path)
+
+    def _save_as(self) -> bool:
+        options = QtWidgets.QFileDialog.Options()
+        default_dir = str(self._current_path.parent) if self._current_path else ""
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save SG file",
+            default_dir,
+            "SG files (*.sg *.SG);;All files (*)",
+            options=options,
+        )
+        if not file_path:
+            return False
+
+        target = Path(file_path)
+        success = self._save_to_path(target)
+        if success:
+            self._save_action.setEnabled(True)
+            self._save_as_action.setEnabled(True)
+        return success
+
+    def _prompt_save_changes(self) -> bool:
+        if not self._preview.is_dirty():
+            return True
+
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setWindowTitle("Unsaved Changes")
+        dialog.setText("Save changes to the current SG file?")
+        dialog.setStandardButtons(
+            QtWidgets.QMessageBox.Save
+            | QtWidgets.QMessageBox.Discard
+            | QtWidgets.QMessageBox.Cancel
+        )
+        dialog.setIcon(QtWidgets.QMessageBox.Warning)
+        choice = dialog.exec()
+
+        if choice == QtWidgets.QMessageBox.Save:
+            return self._save_current()
+        if choice == QtWidgets.QMessageBox.Cancel:
+            return False
+        return True
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: D401
+        if self._prompt_save_changes():
+            super().closeEvent(event)
+        else:
+            event.ignore()
 
     def _update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         if selection is None:
