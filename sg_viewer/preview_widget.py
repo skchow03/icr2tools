@@ -103,6 +103,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # Options
         self._show_curve_markers = True
         self._status_message = "Select an SG file to begin."
+        self._move_points_enabled = False
 
     # ------------------------------------------------------------------
     # State binding
@@ -213,6 +214,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def set_show_curve_markers(self, visible: bool) -> None:
         self._show_curve_markers = visible
+        self.update()
+
+    def set_move_points_enabled(self, enabled: bool) -> None:
+        """Enable or disable node move/detach mode."""
+        self._move_points_enabled = enabled
         self.update()
 
     def select_next_section(self) -> None:
@@ -421,7 +427,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == QtCore.Qt.RightButton:
+        if self._move_points_enabled and event.button() == QtCore.Qt.RightButton:
             node_id = self.pick_node(event.x(), event.y())
             if node_id is not None:
                 self._detach_node(node_id)
