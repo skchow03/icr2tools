@@ -478,8 +478,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
                 node = self._state.nodes.get(self._dragging_node_id)
                 if node is not None:
+                    old_x, old_y = node.x, node.y
                     node.x += dx
                     node.y += dy
+
+                    print(
+                        f"[DRAG] node {self._dragging_node_id} moved "
+                        f"{old_x:.3f},{old_y:.3f} -> {node.x:.3f},{node.y:.3f}"
+                    )
 
                 self.update()
 
