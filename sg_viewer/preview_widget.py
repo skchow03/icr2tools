@@ -105,6 +105,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._show_curve_markers = True
         self._status_message = "Select an SG file to begin."
         self._move_points_enabled = False
+        self._drag_update_timer = QtCore.QElapsedTimer()
+        self._drag_update_timer.invalidate()
 
     # ------------------------------------------------------------------
     # State binding
@@ -488,10 +490,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         # Node dragging (move-points mode)
-        # Do NOT change any SG geometry fields (start_x, end_x, sang/eang, radius, length, center).
-        # Do NOT call _rebuild_from_sg() or modify TRK.
-        # Do NOT update section properties or headings.
-        # Dragging updates ONLY node.x and node.y.
         if (
             self._move_points_enabled
             and self._dragging_node_id is not None
@@ -528,6 +526,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
                         node.x = tx
                         node.y = ty
 
+                    if sec.type == 1:
+                        # Update SG geometry immediately
+                        self._state.update_straight_from_nodes(sec_index)
+
+                        # Throttle preview rebuilds
+                        if (not self._drag_update_timer.isValid()) or self._drag_update_timer.elapsed() > 40:
+                            self._state._rebuild_from_sg()
+                            self.refresh_from_state()
+                            self._drag_update_timer.restart()
+
                 self.update()
 
             event.accept()
@@ -552,9 +560,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.LeftButton and self._dragging_node_id is not None:
+            if self._move_points_enabled and self._state is not None:
+                self._state._rebuild_from_sg()
+                self.refresh_from_state()
             self._dragging_node_id = None
             # Do not call _handle_click here — dragging mode absorbs click.
             event.accept()
+            self._drag_update_timer.invalidate()
             return
 
         if event.button() == QtCore.Qt.LeftButton:
@@ -567,6 +579,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 # Small movement → treat as click (selection)
                 self._handle_click(event.pos())
             self._press_pos = None
+        self._drag_update_timer.invalidate()
         super().mouseReleaseEvent(event)
 
     def _detach_node(self, node_id: int) -> None:
