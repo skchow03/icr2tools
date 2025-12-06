@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 from typing import List
 
-from PyQt5 import QtWidgets
+from dataclasses import replace
+
+from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.elevation_profile import ElevationProfileWidget
 from sg_viewer.preview_widget import (
@@ -27,10 +29,16 @@ class SGViewerApp(QtWidgets.QApplication):
 class SectionTableWindow(QtWidgets.QDialog):
     """Displays a table of section endpoints and gaps."""
 
+    sectionsEdited = QtCore.pyqtSignal(list)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Section Table")
         self.resize(720, 480)
+
+        self._sections: list[SectionPreview] = []
+        self._track_length: float | None = None
+        self._is_updating = False
 
         layout = QtWidgets.QVBoxLayout()
         self._table = QtWidgets.QTableWidget()
@@ -55,10 +63,13 @@ class SectionTableWindow(QtWidgets.QDialog):
                 "Radius",
             ]
         )
-        self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setAlternatingRowColors(True)
-        self._table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents
+        )
+        self._table.itemChanged.connect(self._handle_item_changed)
 
         layout.addWidget(self._table)
         self.setLayout(layout)
@@ -66,6 +77,16 @@ class SectionTableWindow(QtWidgets.QDialog):
     def set_sections(
         self, sections: list[SectionPreview], track_length: float | None
     ) -> None:
+        self._sections = list(sections)
+        self._track_length = track_length
+        self._is_updating = True
+        try:
+            self._populate_rows()
+        finally:
+            self._is_updating = False
+        self._resize_columns()
+
+    def _populate_rows(self) -> None:
         def _fmt(value: float | None, precision: int = 1) -> str:
             if value is None:
                 return "–"
@@ -73,16 +94,19 @@ class SectionTableWindow(QtWidgets.QDialog):
                 return f"{int(value)}"
             return f"{value:.{precision}f}"
 
-        self._table.setRowCount(len(sections))
-        total_sections = len(sections)
-        for row, section in enumerate(sections):
+        self._table.blockSignals(True)
+        self._table.clearContents()
+
+        self._table.setRowCount(len(self._sections))
+        total_sections = len(self._sections)
+        for row, section in enumerate(self._sections):
             end_dlong = section.start_dlong + section.length
             gap = None
-            if track_length:
-                end_dlong = end_dlong % track_length
-                next_section = sections[(row + 1) % total_sections]
-                next_start = next_section.start_dlong % track_length
-                gap = (next_start - end_dlong) % track_length
+            if self._track_length:
+                end_dlong = end_dlong % self._track_length
+                next_section = self._sections[(row + 1) % total_sections]
+                next_start = next_section.start_dlong % self._track_length
+                gap = (next_start - end_dlong) % self._track_length
 
             values = [
                 str(section.section_id),
@@ -104,6 +128,104 @@ class SectionTableWindow(QtWidgets.QDialog):
             ]
             for col, value in enumerate(values):
                 self._table.setItem(row, col, QtWidgets.QTableWidgetItem(value))
+        self._table.blockSignals(False)
+
+    def _resize_columns(self) -> None:
+        self._table.resizeColumnsToContents()
+
+    def _handle_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if self._is_updating:
+            return
+
+        updated_sections = self._build_sections_from_table()
+        self._sections = updated_sections
+        self.sectionsEdited.emit(updated_sections)
+        self._resize_columns()
+
+    def _build_sections_from_table(self) -> list[SectionPreview]:
+        def _parse_float(value: str) -> float | None:
+            value = value.strip()
+            if not value or value == "–":
+                return None
+            try:
+                return float(value)
+            except ValueError:
+                return None
+
+        def _parse_int(value: str, default: int) -> int:
+            try:
+                return int(value)
+            except ValueError:
+                return default
+
+        updated: list[SectionPreview] = []
+        for row, original in enumerate(self._sections):
+            section_item = self._table.item(row, 0)
+            type_item = self._table.item(row, 1)
+            prev_item = self._table.item(row, 2)
+            next_item = self._table.item(row, 3)
+
+            def _cell_text(column: int) -> str:
+                cell = self._table.item(row, column)
+                return cell.text() if cell is not None else ""
+
+            start_x = _parse_float(_cell_text(4))
+            start_y = _parse_float(_cell_text(5))
+            end_x = _parse_float(_cell_text(6))
+            end_y = _parse_float(_cell_text(7))
+
+            center_x = _parse_float(_cell_text(9))
+            center_y = _parse_float(_cell_text(10))
+            sang1 = _parse_float(_cell_text(11))
+            sang2 = _parse_float(_cell_text(12))
+            eang1 = _parse_float(_cell_text(13))
+            eang2 = _parse_float(_cell_text(14))
+            radius = _parse_float(_cell_text(15))
+
+            type_text = type_item.text() if type_item else original.type_name
+            type_name = type_text.lower().strip()
+            if type_name not in {"curve", "straight"}:
+                type_name = original.type_name
+
+            section_id = _parse_int(section_item.text(), original.section_id) if section_item else original.section_id
+            prev_id = _parse_int(prev_item.text(), original.previous_id) if prev_item else original.previous_id
+            next_id = _parse_int(next_item.text(), original.next_id) if next_item else original.next_id
+
+            start = (start_x, start_y) if start_x is not None and start_y is not None else original.start
+            end = (end_x, end_y) if end_x is not None and end_y is not None else original.end
+
+            center = None
+            if center_x is not None and center_y is not None:
+                center = (center_x, center_y)
+
+            start_heading = None
+            end_heading = None
+            if sang1 is not None and sang2 is not None:
+                start_heading = (sang1, sang2)
+            if eang1 is not None and eang2 is not None:
+                end_heading = (eang1, eang2)
+
+            updated.append(
+                replace(
+                    original,
+                    section_id=section_id,
+                    type_name=type_name,
+                    previous_id=prev_id,
+                    next_id=next_id,
+                    start=start,
+                    end=end,
+                    center=center,
+                    sang1=sang1,
+                    sang2=sang2,
+                    eang1=eang1,
+                    eang2=eang2,
+                    radius=radius,
+                    start_heading=start_heading,
+                    end_heading=end_heading,
+                )
+            )
+
+        return updated
 
 
 class HeadingTableWindow(QtWidgets.QDialog):
@@ -327,6 +449,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         if self._section_table_window is None:
             self._section_table_window = SectionTableWindow(self)
+            self._section_table_window.sectionsEdited.connect(
+                self._apply_section_table_edits
+            )
 
         self._section_table_window.set_sections(sections, track_length)
         self._section_table_window.show()
@@ -339,6 +464,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         sections, track_length = self._preview.get_section_set()
         self._section_table_window.set_sections(sections, track_length)
+
+    def _apply_section_table_edits(
+        self, sections: list[SectionPreview]
+    ) -> None:
+        self._preview.set_sections(sections)
+        self._update_heading_table()
 
     def _show_heading_table(self) -> None:
         headings = self._preview.get_section_headings()
