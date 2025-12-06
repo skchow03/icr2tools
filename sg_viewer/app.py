@@ -8,11 +8,11 @@ from PyQt5 import QtWidgets
 
 from sg_viewer.elevation_profile import ElevationProfileWidget
 from sg_viewer.preview_widget import (
-    SectionGeometry,
     SectionHeadingData,
     SectionSelection,
     SGPreviewWidget,
 )
+from sg_viewer.preview_loader import SectionPreview
 
 
 class SGViewerApp(QtWidgets.QApplication):
@@ -34,9 +34,26 @@ class SectionTableWindow(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout()
         self._table = QtWidgets.QTableWidget()
-        self._table.setColumnCount(6)
+        self._table.setColumnCount(16)
         self._table.setHorizontalHeaderLabels(
-            ["Section", "Start X", "Start Y", "End X", "End Y", "Gap → Next"]
+            [
+                "Section",
+                "Type",
+                "Prev",
+                "Next",
+                "Start X",
+                "Start Y",
+                "End X",
+                "End Y",
+                "Gap → Next",
+                "Center X",
+                "Center Y",
+                "SAng1",
+                "SAng2",
+                "EAng1",
+                "EAng2",
+                "Radius",
+            ]
         )
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -46,16 +63,42 @@ class SectionTableWindow(QtWidgets.QDialog):
         layout.addWidget(self._table)
         self.setLayout(layout)
 
-    def set_sections(self, sections: list[SectionGeometry]) -> None:
+    def set_sections(
+        self, sections: list[SectionPreview], track_length: float | None
+    ) -> None:
+        def _fmt(value: float | None, precision: int = 1) -> str:
+            if value is None:
+                return "–"
+            return f"{value:.{precision}f}"
+
         self._table.setRowCount(len(sections))
+        total_sections = len(sections)
         for row, section in enumerate(sections):
+            end_dlong = section.start_dlong + section.length
+            gap = None
+            if track_length:
+                end_dlong = end_dlong % track_length
+                next_section = sections[(row + 1) % total_sections]
+                next_start = next_section.start_dlong % track_length
+                gap = (next_start - end_dlong) % track_length
+
             values = [
-                str(section.index),
-                f"{section.start_x:.1f}",
-                f"{section.start_y:.1f}",
-                f"{section.end_x:.1f}",
-                f"{section.end_y:.1f}",
-                f"{section.gap_to_next:.1f}",
+                str(section.section_id),
+                section.type_name.title(),
+                str(section.previous_id),
+                str(section.next_id),
+                _fmt(section.start[0]),
+                _fmt(section.start[1]),
+                _fmt(section.end[0]),
+                _fmt(section.end[1]),
+                _fmt(gap) if gap is not None else "–",
+                _fmt(section.center[0]) if section.center else "–",
+                _fmt(section.center[1]) if section.center else "–",
+                _fmt(section.sang1, 5),
+                _fmt(section.sang2, 5),
+                _fmt(section.eang1, 5),
+                _fmt(section.eang2, 5),
+                _fmt(section.radius) if section.radius is not None else "–",
             ]
             for col, value in enumerate(values):
                 self._table.setItem(row, col, QtWidgets.QTableWidgetItem(value))
@@ -273,7 +316,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._profile_widget.set_selected_range(selected_range)
 
     def _show_section_table(self) -> None:
-        sections = self._preview.get_section_geometries()
+        sections, track_length = self._preview.get_section_set()
         if not sections:
             QtWidgets.QMessageBox.information(
                 self, "No Sections", "Load an SG file to view sections."
@@ -283,7 +326,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if self._section_table_window is None:
             self._section_table_window = SectionTableWindow(self)
 
-        self._section_table_window.set_sections(sections)
+        self._section_table_window.set_sections(sections, track_length)
         self._section_table_window.show()
         self._section_table_window.raise_()
         self._section_table_window.activateWindow()
@@ -292,8 +335,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if self._section_table_window is None:
             return
 
-        sections = self._preview.get_section_geometries()
-        self._section_table_window.set_sections(sections)
+        sections, track_length = self._preview.get_section_set()
+        self._section_table_window.set_sections(sections, track_length)
 
     def _show_heading_table(self) -> None:
         headings = self._preview.get_section_headings()

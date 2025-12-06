@@ -32,16 +32,6 @@ class SectionSelection:
 
 
 @dataclass
-class SectionGeometry:
-    index: int
-    start_x: float
-    start_y: float
-    end_x: float
-    end_y: float
-    gap_to_next: float
-
-
-@dataclass
 class SectionHeadingData:
     index: int
     start_heading: tuple[float, float] | None
@@ -389,42 +379,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.selectedSectionChanged.emit(selection)
         self.update()
 
-    def get_section_geometries(self) -> list[SectionGeometry]:
-        if not self._sections or self._track_length is None:
-            return []
-
-        track_length = float(self._track_length)
-        if track_length <= 0:
-            return []
-
-        sections: list[SectionGeometry] = []
-        total_sections = len(self._sections)
-        for idx, sect in enumerate(self._sections):
-            start_dlong = self._round_sg_value(sect.start_dlong)
-            end_dlong = self._round_sg_value((sect.start_dlong + float(sect.length)) % track_length)
-
-            start_x = self._round_sg_value(sect.start[0])
-            start_y = self._round_sg_value(sect.start[1])
-
-            end_x = self._round_sg_value(sect.end[0])
-            end_y = self._round_sg_value(sect.end[1])
-
-            next_sect = self._sections[(idx + 1) % total_sections]
-            next_start = self._round_sg_value(float(next_sect.start_dlong) % track_length)
-            gap = (next_start - end_dlong) % track_length
-
-            sections.append(
-                SectionGeometry(
-                    index=idx,
-                    start_x=start_x,
-                    start_y=start_y,
-                    end_x=end_x,
-                    end_y=end_y,
-                    gap_to_next=gap,
-                )
-            )
-
-        return sections
+    def get_section_set(self) -> tuple[list[preview_loader.SectionPreview], float | None]:
+        track_length = float(self._track_length) if self._track_length is not None else None
+        return list(self._sections), track_length
 
     def get_section_headings(self) -> list[SectionHeadingData]:
         if not self._sections:
