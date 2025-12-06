@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import List
 
@@ -140,6 +141,7 @@ class SectionTableWindow(QtWidgets.QDialog):
         updated_sections = self._build_sections_from_table()
         self._sections = updated_sections
         self.sectionsEdited.emit(updated_sections)
+        self.set_sections(updated_sections, self._track_length)
         self._resize_columns()
 
     def _build_sections_from_table(self) -> list[SectionPreview]:
@@ -151,6 +153,37 @@ class SectionTableWindow(QtWidgets.QDialog):
                 return float(value)
             except ValueError:
                 return None
+
+        def _point_from_heading(
+            center: tuple[float, float] | None,
+            heading: tuple[float, float] | None,
+            radius: float | None,
+            reference: tuple[float, float] | None,
+        ) -> tuple[float, float] | None:
+            if center is None or heading is None or radius is None or radius <= 0:
+                return None
+
+            hx, hy = heading
+            length = math.hypot(hx, hy)
+            if length <= 0:
+                return None
+
+            nx, ny = hx / length, hy / length
+            cx, cy = center
+            candidates = [
+                (cx - ny * radius, cy + nx * radius),
+                (cx + ny * radius, cy - nx * radius),
+            ]
+
+            if reference is None:
+                return candidates[0]
+
+            def _distance_sq(point: tuple[float, float]) -> float:
+                dx = point[0] - reference[0]
+                dy = point[1] - reference[1]
+                return dx * dx + dy * dy
+
+            return min(candidates, key=_distance_sq)
 
         def _parse_int(value: str, default: int) -> int:
             try:
@@ -204,6 +237,15 @@ class SectionTableWindow(QtWidgets.QDialog):
                 start_heading = (sang1, sang2)
             if eang1 is not None and eang2 is not None:
                 end_heading = (eang1, eang2)
+
+            if type_name == "curve" and center is not None and radius is not None:
+                recalculated_start = _point_from_heading(center, start_heading, radius, start)
+                recalculated_end = _point_from_heading(center, end_heading, radius, end)
+
+                if recalculated_start is not None:
+                    start = recalculated_start
+                if recalculated_end is not None:
+                    end = recalculated_end
 
             polyline: list[tuple[float, float]]
             if original.polyline:
