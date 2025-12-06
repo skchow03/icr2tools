@@ -383,6 +383,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._sections), track_length
 
+    def set_sections(self, sections: list[preview_loader.SectionPreview]) -> None:
+        self._sections = list(sections)
+        self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
+
+        if (
+            self._selected_section_index is not None
+            and 0 <= self._selected_section_index < len(self._sections)
+        ):
+            self._set_selected_section(self._selected_section_index)
+        else:
+            self._selected_section_index = None
+            self.selectedSectionChanged.emit(None)
+        self.update()
+
     def get_section_headings(self) -> list[SectionHeadingData]:
         if not self._sections:
             return []
