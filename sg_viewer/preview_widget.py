@@ -14,6 +14,8 @@ from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_loader, preview_loader_service, preview_state
 from sg_viewer import rendering_service, selection
+from sg_viewer.sg_geometry import update_section_geometry
+from sg_viewer.sg_model import SectionPreview
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -43,7 +45,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._centerline_index: CenterlineIndex | None = None
         self._status_message = "Select an SG file to begin."
 
-        self._sections: list[preview_loader.SectionPreview] = []
+        self._sections: list[SectionPreview] = []
         self._section_endpoints: list[tuple[Point, Point]] = []
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
 
@@ -266,12 +268,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.selectedSectionChanged.emit(selection_value)
         self.update()
 
-    def get_section_set(self) -> tuple[list[preview_loader.SectionPreview], float | None]:
+    def get_section_set(self) -> tuple[list[SectionPreview], float | None]:
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._sections), track_length
 
     @staticmethod
-    def _section_signature(section: preview_loader.SectionPreview) -> tuple:
+    def _section_signature(section: SectionPreview) -> tuple:
         return (
             section.section_id,
             section.type_name,
@@ -289,10 +291,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
             section.radius,
         )
 
-    def set_sections(self, sections: list[preview_loader.SectionPreview]) -> None:
+    def set_sections(self, sections: list[SectionPreview]) -> None:
         previous_signatures = self._section_signatures
 
-        new_sections: list[preview_loader.SectionPreview] = []
+        new_sections: list[SectionPreview] = []
         new_signatures: list[tuple] = []
         changed_indices: list[int] = []
 
@@ -308,7 +310,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             ):
                 new_sections.append(self._sections[idx])
             else:
-                new_sections.append(preview_loader.update_section_geometry(sect))
+                new_sections.append(update_section_geometry(sect))
                 changed_indices.append(idx)
 
         length_changed = len(sections) != len(self._sections)

@@ -8,7 +8,7 @@ from PyQt5 import QtCore
 
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 
-from sg_viewer.preview_loader import SectionPreview
+from sg_viewer.sg_model import SectionPreview
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
