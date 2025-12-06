@@ -45,6 +45,7 @@ class PreviewData:
     sampled_bounds: tuple[float, float, float, float]
     centerline_index: CenterlineIndex
     track_length: float
+    start_finish_mapping: tuple[Point, Point, Point] | None
     sections: list[SectionPreview]
     section_endpoints: list[tuple[Point, Point]]
     status_message: str
@@ -69,6 +70,7 @@ def load_preview(path: Path) -> PreviewData:
 
     centerline_index = build_centerline_index(sampled, bounds)
     track_length = float(trk.trklength)
+    start_finish_mapping = _centerline_point_normal_and_tangent(trk, cline, track_length, 0.0)
     sections = _build_sections(sgfile, trk, cline, track_length)
     section_endpoints = [(sect.start, sect.end) for sect in sections]
 
@@ -81,6 +83,7 @@ def load_preview(path: Path) -> PreviewData:
         sampled_bounds=bounds,
         centerline_index=centerline_index,
         track_length=track_length,
+        start_finish_mapping=start_finish_mapping,
         sections=sections,
         section_endpoints=section_endpoints,
         status_message=f"Loaded {path.name}",
@@ -213,6 +216,39 @@ def _build_sections(
         )
 
     return sections
+
+
+def _centerline_point_normal_and_tangent(
+    trk: TRKFile, cline: Iterable[Point] | None, track_length: float, dlong: float
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None:
+    if cline is None or track_length <= 0:
+        return None
+
+    def _wrap(value: float) -> float:
+        while value < 0:
+            value += track_length
+        while value >= track_length:
+            value -= track_length
+        return value
+
+    base = _wrap(float(dlong))
+    delta = max(50.0, track_length * 0.002)
+    prev_dlong = _wrap(base - delta)
+    next_dlong = _wrap(base + delta)
+
+    px, py, _ = getxyz(trk, prev_dlong, 0, cline)
+    nx, ny, _ = getxyz(trk, next_dlong, 0, cline)
+    cx, cy, _ = getxyz(trk, base, 0, cline)
+
+    vx = nx - px
+    vy = ny - py
+    length = (vx * vx + vy * vy) ** 0.5
+    if length == 0:
+        return None
+
+    tangent = (vx / length, vy / length)
+    normal = (-vy / length, vx / length)
+    return (cx, cy), normal, tangent
 
 
 def _sample_section_polyline(

@@ -4,8 +4,6 @@ from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
 
-from track_viewer import rendering
-
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
@@ -15,6 +13,46 @@ def draw_placeholder(painter: QtGui.QPainter, rect: QtCore.QRect, message: str) 
     painter.drawText(rect, QtCore.Qt.AlignCenter, message)
 
 
+def map_point(x: float, y: float, transform: Transform, widget_height: int) -> QtCore.QPointF:
+    scale, offsets = transform
+    px = offsets[0] + x * scale
+    py = offsets[1] + y * scale
+    return QtCore.QPointF(px, widget_height - py)
+
+
+def _draw_polyline(
+    painter: QtGui.QPainter,
+    points: Iterable[Point],
+    transform: Transform,
+    widget_height: int,
+    color: str,
+    width: float,
+) -> None:
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor(color), width)
+    pen.setCapStyle(QtCore.Qt.RoundCap)
+    pen.setJoinStyle(QtCore.Qt.RoundJoin)
+    painter.setPen(pen)
+
+    path = QtGui.QPainterPath()
+    iterator = iter(points)
+    try:
+        first = next(iterator)
+    except StopIteration:
+        painter.restore()
+        return
+
+    start_point = map_point(first[0], first[1], transform, widget_height)
+    path.moveTo(start_point)
+
+    for x, y in iterator:
+        path.lineTo(map_point(x, y, transform, widget_height))
+
+    painter.drawPath(path)
+    painter.restore()
+
+
 def draw_centerlines(
     painter: QtGui.QPainter,
     sampled_centerline: Iterable[Point],
@@ -22,24 +60,20 @@ def draw_centerlines(
     transform: Transform,
     widget_height: int,
 ) -> None:
-    rendering.draw_centerline(
+    _draw_polyline(painter, sampled_centerline, transform, widget_height, color="white", width=3)
+
+    selected_points = list(selected_section_points)
+    if not selected_points:
+        return
+
+    _draw_polyline(
         painter,
-        sampled_centerline,
+        selected_points,
         transform,
         widget_height,
-        color="white",
-        width=3,
+        color="red",
+        width=4,
     )
-
-    if selected_section_points:
-        rendering.draw_centerline(
-            painter,
-            selected_section_points,
-            transform,
-            widget_height,
-            color="red",
-            width=4,
-        )
 
 
 def draw_curve_markers(
@@ -74,9 +108,9 @@ def draw_curve_markers(
         if start is None or end is None:
             continue
 
-        center_point = rendering.map_point(center[0], center[1], transform, widget_height)
-        start_point = rendering.map_point(start[0], start[1], transform, widget_height)
-        end_point = rendering.map_point(end[0], end[1], transform, widget_height)
+        center_point = map_point(center[0], center[1], transform, widget_height)
+        start_point = map_point(start[0], start[1], transform, widget_height)
+        end_point = map_point(end[0], end[1], transform, widget_height)
 
         painter.drawLine(QtCore.QLineF(center_point, start_point))
         painter.drawLine(QtCore.QLineF(center_point, end_point))
@@ -110,12 +144,12 @@ def draw_section_endpoints(
 
     for start, end in section_endpoints:
         for point in (start, end):
-            mapped = rendering.map_point(point[0], point[1], transform, widget_height)
+            mapped = map_point(point[0], point[1], transform, widget_height)
             painter.drawRect(QtCore.QRectF(mapped.x() - half, mapped.y() - half, size, size))
 
     if selected_section_index is not None and 0 <= selected_section_index < len(section_endpoints):
         _, end_point = section_endpoints[selected_section_index]
-        mapped_end = rendering.map_point(end_point[0], end_point[1], transform, widget_height)
+        mapped_end = map_point(end_point[0], end_point[1], transform, widget_height)
 
         highlight_size = 12.0
         highlight_half = highlight_size / 2
@@ -152,13 +186,13 @@ def draw_start_finish_line(
     half_length_track = 12.0 / scale
     direction_length_track = 10.0 / scale
 
-    start = rendering.map_point(
+    start = map_point(
         cx - normal[0] * half_length_track,
         cy - normal[1] * half_length_track,
         transform,
         widget_height,
     )
-    end = rendering.map_point(
+    end = map_point(
         cx + normal[0] * half_length_track,
         cy + normal[1] * half_length_track,
         transform,
@@ -166,7 +200,7 @@ def draw_start_finish_line(
     )
 
     direction_start = end
-    direction_end = rendering.map_point(
+    direction_end = map_point(
         cx + normal[0] * half_length_track + tangent[0] * direction_length_track,
         cy + normal[1] * half_length_track + tangent[1] * direction_length_track,
         transform,

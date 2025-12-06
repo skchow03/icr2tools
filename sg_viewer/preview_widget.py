@@ -9,11 +9,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_alt, getxyz
-from track_viewer import rendering
+from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
-from sg_viewer import preview_loader, preview_rendering
+from sg_viewer import preview_loader, sg_rendering
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -65,6 +64,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sections: list[preview_loader.SectionPreview] = []
         self._selected_curve_index: int | None = None
         self._section_endpoints: list[tuple[Point, Point]] = []
+        self._start_finish_mapping: tuple[Point, Point, Point] | None = None
 
         self._track_length: float | None = None
         self._selected_section_index: int | None = None
@@ -91,6 +91,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = []
         self._sections = []
         self._selected_curve_index = None
+        self._start_finish_mapping = None
         self._transform_state = preview_loader.TransformState()
         self._is_panning = False
         self._last_mouse_pos = None
@@ -124,6 +125,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_points = []
         self._sections = data.sections
         self._section_endpoints = data.section_endpoints
+        self._start_finish_mapping = data.start_finish_mapping
         self._selected_curve_index = None
         self._transform_state = preview_loader.TransformState()
         self._status_message = data.status_message
@@ -182,17 +184,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
         painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
 
         if not self._sampled_centerline:
-            preview_rendering.draw_placeholder(painter, self.rect(), self._status_message)
+            sg_rendering.draw_placeholder(painter, self.rect(), self._status_message)
             painter.end()
             return
 
         transform = self._current_transform()
         if not transform:
-            preview_rendering.draw_placeholder(painter, self.rect(), "Unable to fit view")
+            sg_rendering.draw_placeholder(painter, self.rect(), "Unable to fit view")
             painter.end()
             return
 
-        preview_rendering.draw_centerlines(
+        sg_rendering.draw_centerlines(
             painter,
             self._sampled_centerline,
             self._selected_section_points,
@@ -200,7 +202,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self.height(),
         )
 
-        preview_rendering.draw_section_endpoints(
+        sg_rendering.draw_section_endpoints(
             painter,
             self._section_endpoints,
             self._selected_section_index,
@@ -209,7 +211,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
         if self._show_curve_markers:
-            preview_rendering.draw_curve_markers(
+            sg_rendering.draw_curve_markers(
                 painter,
                 [sect for sect in self._sections if sect.center is not None],
                 self._selected_curve_index,
@@ -217,9 +219,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self.height(),
             )
 
-        preview_rendering.draw_start_finish_line(
+        sg_rendering.draw_start_finish_line(
             painter,
-            self._centerline_point_normal_and_tangent(0.0),
+            self._start_finish_mapping,
             transform,
             self.height(),
         )
@@ -577,42 +579,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         cross = end_norm[0] * next_norm[1] - end_norm[1] * next_norm[0]
         angle_deg = math.degrees(math.atan2(cross, dot))
         return round(angle_deg, 4)
-
-    def _centerline_point_normal_and_tangent(
-        self, dlong: float
-    ) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None:
-        if not self._trk or not self._cline or not self._track_length:
-            return None
-
-        track_length = self._track_length
-        if track_length <= 0:
-            return None
-
-        def _wrap(value: float) -> float:
-            while value < 0:
-                value += track_length
-            while value >= track_length:
-                value -= track_length
-            return value
-
-        base = _wrap(float(dlong))
-        delta = max(50.0, track_length * 0.002)
-        prev_dlong = _wrap(base - delta)
-        next_dlong = _wrap(base + delta)
-
-        px, py, _ = getxyz(self._trk, prev_dlong, 0, self._cline)
-        nx, ny, _ = getxyz(self._trk, next_dlong, 0, self._cline)
-        cx, cy, _ = getxyz(self._trk, base, 0, self._cline)
-
-        vx = nx - px
-        vy = ny - py
-        length = (vx * vx + vy * vy) ** 0.5
-        if length == 0:
-            return None
-
-        tangent = (vx / length, vy / length)
-        normal = (-vy / length, vx / length)
-        return (cx, cy), normal, tangent
 
     # ------------------------------------------------------------------
     # Public controls
