@@ -5,7 +5,8 @@ from typing import List
 from PyQt5 import QtWidgets
 
 from sg_viewer.elevation_profile import ElevationProfileWidget
-from sg_viewer.preview_widget import SectionSelection, SGPreviewWidget
+from sg_viewer.preview_widget import SGPreviewWidget
+from sg_viewer.selection import SectionSelection
 from sg_viewer.viewer_controller import SGViewerController
 
 
