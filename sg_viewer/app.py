@@ -205,6 +205,14 @@ class SectionTableWindow(QtWidgets.QDialog):
             if eang1 is not None and eang2 is not None:
                 end_heading = (eang1, eang2)
 
+            polyline: list[tuple[float, float]]
+            if original.polyline:
+                polyline = list(original.polyline)
+                polyline[0] = start
+                polyline[-1] = end
+            else:
+                polyline = [start, end]
+
             updated.append(
                 replace(
                     original,
@@ -222,6 +230,7 @@ class SectionTableWindow(QtWidgets.QDialog):
                     radius=radius,
                     start_heading=start_heading,
                     end_heading=end_heading,
+                    polyline=polyline,
                 )
             )
 
