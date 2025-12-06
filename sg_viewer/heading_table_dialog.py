@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.preview_widget import SectionHeadingData
+from sg_viewer.selection import SectionHeadingData
 
 
 class HeadingTableWindow(QtWidgets.QDialog):
