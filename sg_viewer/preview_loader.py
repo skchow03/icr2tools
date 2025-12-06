@@ -172,7 +172,6 @@ def _build_sections(
     for idx, (sg_sect, trk_sect) in enumerate(zip(sgfile.sects, trk.sects)):
         start_dlong = float(trk_sect.start_dlong) % track_length
         length = float(trk_sect.length)
-        polyline = _sample_section_polyline(trk, cline, track_length, start_dlong, length)
 
         start = (float(sg_sect.start_x), float(sg_sect.start_y))
         end = (
@@ -190,6 +189,12 @@ def _build_sections(
             sang2 = float(sg_sect.sang2)
             eang1 = float(sg_sect.eang1)
             eang2 = float(sg_sect.eang2)
+
+        polyline = (
+            _sample_section_polyline(trk, cline, track_length, start_dlong, length)
+            if getattr(sg_sect, "type", None) == 2
+            else [start, end]
+        )
 
         start_heading, end_heading = _derive_heading_vectors(polyline, sang1, sang2, eang1, eang2)
 
