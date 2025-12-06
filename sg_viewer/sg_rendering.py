@@ -55,12 +55,13 @@ def _draw_polyline(
 
 def draw_centerlines(
     painter: QtGui.QPainter,
-    sampled_centerline: Iterable[Point],
+    centerline_polylines: Iterable[Iterable[Point]],
     selected_section_points: Iterable[Point],
     transform: Transform,
     widget_height: int,
 ) -> None:
-    _draw_polyline(painter, sampled_centerline, transform, widget_height, color="white", width=3)
+    for polyline in centerline_polylines:
+        _draw_polyline(painter, polyline, transform, widget_height, color="white", width=3)
 
     selected_points = list(selected_section_points)
     if not selected_points:

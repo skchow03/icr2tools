@@ -56,6 +56,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._trk: TRKFile | None = None
         self._cline: List[Point] | None = None
         self._sampled_centerline: List[Point] = []
+        self._centerline_polylines: list[list[Point]] = []
         self._sampled_dlongs: List[float] = []
         self._sampled_bounds: tuple[float, float, float, float] | None = None
         self._centerline_index: CenterlineIndex | None = None
@@ -82,6 +83,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._trk = None
         self._cline = None
         self._sampled_centerline = []
+        self._centerline_polylines = []
         self._sampled_dlongs = []
         self._sampled_bounds = None
         self._centerline_index = None
@@ -117,6 +119,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._trk = data.trk
         self._cline = data.cline
         self._sampled_centerline = data.sampled_centerline
+        self._centerline_polylines = [list(data.sampled_centerline)] if data.sampled_centerline else []
         self._sampled_dlongs = data.sampled_dlongs
         self._sampled_bounds = data.sampled_bounds
         self._centerline_index = data.centerline_index
@@ -196,7 +199,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         sg_rendering.draw_centerlines(
             painter,
-            self._sampled_centerline,
+            self._centerline_polylines,
             self._selected_section_points,
             transform,
             self.height(),
@@ -438,6 +441,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _rebuild_centerline_from_sections(self) -> None:
         """Flatten section polylines into the active centreline representation."""
 
+        self._centerline_polylines = []
         polylines = [sect.polyline for sect in self._sections if sect.polyline]
         if not polylines:
             return
@@ -453,6 +457,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         if len(points) < 2:
             return
+
+        self._centerline_polylines = polylines
 
         bounds = (
             min(p[0] for p in points),
