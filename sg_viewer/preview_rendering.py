@@ -44,12 +44,12 @@ def draw_centerlines(
 
 def draw_curve_markers(
     painter: QtGui.QPainter,
-    curve_markers,
+    sections,
     selected_curve_index: int | None,
     transform: Transform,
     widget_height: int,
 ) -> None:
-    if not curve_markers:
+    if not sections:
         return
 
     painter.save()
@@ -57,17 +57,26 @@ def draw_curve_markers(
     default_color = QtGui.QColor(140, 140, 140)
     highlight_color = QtGui.QColor("red")
 
-    for idx, marker in curve_markers.items():
-        is_selected = idx == selected_curve_index
+    for section in sections:
+        center = getattr(section, "center", None)
+        if center is None:
+            continue
+
+        is_selected = getattr(section, "section_id", None) == selected_curve_index
         color = highlight_color if is_selected else default_color
         width = 2 if is_selected else 1
 
         painter.setPen(QtGui.QPen(color, width))
         painter.setBrush(QtGui.QBrush(color))
 
-        center_point = rendering.map_point(marker.center[0], marker.center[1], transform, widget_height)
-        start_point = rendering.map_point(marker.start[0], marker.start[1], transform, widget_height)
-        end_point = rendering.map_point(marker.end[0], marker.end[1], transform, widget_height)
+        start = getattr(section, "start", None)
+        end = getattr(section, "end", None)
+        if start is None or end is None:
+            continue
+
+        center_point = rendering.map_point(center[0], center[1], transform, widget_height)
+        start_point = rendering.map_point(start[0], start[1], transform, widget_height)
+        end_point = rendering.map_point(end[0], end[1], transform, widget_height)
 
         painter.drawLine(QtCore.QLineF(center_point, start_point))
         painter.drawLine(QtCore.QLineF(center_point, end_point))

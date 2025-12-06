@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
@@ -14,11 +15,24 @@ Transform = tuple[float, tuple[float, float]]
 
 
 @dataclass(frozen=True)
-class CurveMarker:
-    center: Point
+class SectionPreview:
+    section_id: int
+    type_name: str
+    previous_id: int
+    next_id: int
     start: Point
     end: Point
-    radius: float
+    start_dlong: float
+    length: float
+    center: Point | None
+    sang1: float | None
+    sang2: float | None
+    eang1: float | None
+    eang2: float | None
+    radius: float | None
+    start_heading: tuple[float, float] | None
+    end_heading: tuple[float, float] | None
+    polyline: list[Point]
 
 
 @dataclass(frozen=True)
@@ -31,7 +45,7 @@ class PreviewData:
     sampled_bounds: tuple[float, float, float, float]
     centerline_index: CenterlineIndex
     track_length: float
-    curve_markers: dict[int, CurveMarker]
+    sections: list[SectionPreview]
     section_endpoints: list[tuple[Point, Point]]
     status_message: str
 
@@ -55,8 +69,8 @@ def load_preview(path: Path) -> PreviewData:
 
     centerline_index = build_centerline_index(sampled, bounds)
     track_length = float(trk.trklength)
-    curve_markers = _build_curve_markers(trk, cline, track_length)
-    section_endpoints = _build_section_endpoints(trk, cline, track_length)
+    sections = _build_sections(sgfile, trk, cline, track_length)
+    section_endpoints = [(sect.start, sect.end) for sect in sections]
 
     return PreviewData(
         sgfile=sgfile,
@@ -67,7 +81,7 @@ def load_preview(path: Path) -> PreviewData:
         sampled_bounds=bounds,
         centerline_index=centerline_index,
         track_length=track_length,
-        curve_markers=curve_markers,
+        sections=sections,
         section_endpoints=section_endpoints,
         status_message=f"Loaded {path.name}",
     )
@@ -144,62 +158,129 @@ def clamp_scale(scale: float, state: TransformState) -> float:
     return max(min_scale, min(max_scale, scale))
 
 
-def _build_curve_markers(
-    trk: TRKFile, cline: Iterable[Point] | None, track_length: float
-) -> dict[int, CurveMarker]:
-    markers: dict[int, CurveMarker] = {}
-
-    if track_length <= 0:
-        return markers
-
-    for idx, sect in enumerate(trk.sects):
-        if getattr(sect, "type", None) != 2:
-            continue
-        if hasattr(sect, "center_x") and hasattr(sect, "center_y"):
-            center = (float(sect.center_x), float(sect.center_y))
-        elif hasattr(sect, "ang1") and hasattr(sect, "ang2"):
-            center = (float(sect.ang1), float(sect.ang2))
-        else:
-            continue
-
-        if cline:
-            start_x, start_y, _ = getxyz(trk, float(sect.start_dlong) % track_length, 0, cline)
-            end_dlong = float(sect.start_dlong + sect.length)
-            end_dlong = end_dlong % track_length if track_length else end_dlong
-            end_x, end_y, _ = getxyz(trk, end_dlong, 0, cline)
-            start = (start_x, start_y)
-            end = (end_x, end_y)
-        else:
-            start = (
-                float(getattr(sect, "start_x", 0.0)),
-                float(getattr(sect, "start_y", 0.0)),
-            )
-            end = (
-                float(getattr(sect, "end_x", 0.0)),
-                float(getattr(sect, "end_y", 0.0)),
-            )
-        radius = ((start[0] - center[0]) ** 2 + (start[1] - center[1]) ** 2) ** 0.5
-        markers[idx] = CurveMarker(center=center, start=start, end=end, radius=radius)
-    return markers
-
-
-def _build_section_endpoints(
-    trk: TRKFile, cline: Iterable[Point] | None, track_length: float
-) -> list[tuple[Point, Point]]:
-    endpoints: list[tuple[Point, Point]] = []
+def _build_sections(
+    sgfile: SGFile, trk: TRKFile, cline: Iterable[Point] | None, track_length: float
+) -> list[SectionPreview]:
+    sections: list[SectionPreview] = []
 
     if cline is None or track_length <= 0:
-        return endpoints
+        return sections
 
-    for sect in trk.sects:
-        start_dlong = float(sect.start_dlong) % track_length
-        end_dlong = float(sect.start_dlong + sect.length) % track_length
+    for idx, (sg_sect, trk_sect) in enumerate(zip(sgfile.sects, trk.sects)):
+        start_dlong = float(trk_sect.start_dlong) % track_length
+        length = float(trk_sect.length)
+        polyline = _sample_section_polyline(trk, cline, track_length, start_dlong, length)
+        start = polyline[0] if polyline else (float(trk_sect.start_x), float(trk_sect.start_y))
+        end = polyline[-1] if polyline else (
+            float(getattr(trk_sect, "end_x", start[0])),
+            float(getattr(trk_sect, "end_y", start[1])),
+        )
 
-        start_x, start_y, _ = getxyz(trk, start_dlong, 0, cline)
-        end_x, end_y, _ = getxyz(trk, end_dlong, 0, cline)
-        endpoints.append(((start_x, start_y), (end_x, end_y)))
+        center = None
+        radius = None
+        sang1 = sang2 = eang1 = eang2 = None
+        if getattr(sg_sect, "type", None) == 2:
+            center = (float(sg_sect.center_x), float(sg_sect.center_y))
+            radius = float(sg_sect.radius)
+            sang1 = float(sg_sect.sang1)
+            sang2 = float(sg_sect.sang2)
+            eang1 = float(sg_sect.eang1)
+            eang2 = float(sg_sect.eang2)
 
-    return endpoints
+        start_heading, end_heading = _derive_heading_vectors(polyline, sang1, sang2, eang1, eang2)
+
+        sections.append(
+            SectionPreview(
+                section_id=idx,
+                type_name="curve" if getattr(sg_sect, "type", None) == 2 else "straight",
+                previous_id=int(getattr(sg_sect, "sec_prev", idx - 1)),
+                next_id=int(getattr(sg_sect, "sec_next", idx + 1)),
+                start=start,
+                end=end,
+                start_dlong=start_dlong,
+                length=length,
+                center=center,
+                sang1=sang1,
+                sang2=sang2,
+                eang1=eang1,
+                eang2=eang2,
+                radius=radius,
+                start_heading=start_heading,
+                end_heading=end_heading,
+                polyline=polyline,
+            )
+        )
+
+    return sections
+
+
+def _sample_section_polyline(
+    trk: TRKFile,
+    cline: Iterable[Point],
+    track_length: float,
+    start_dlong: float,
+    length: float,
+) -> list[Point]:
+    step = 5000.0
+    remaining = float(length)
+    current = float(start_dlong)
+    points: list[Point] = []
+
+    while remaining > 0:
+        x, y, _ = getxyz(trk, current % track_length, 0, cline)
+        points.append((x, y))
+        advance = min(step, remaining)
+        current += advance
+        remaining -= advance
+
+    end_dlong = (start_dlong + length) % track_length if track_length else start_dlong + length
+    x, y, _ = getxyz(trk, end_dlong, 0, cline)
+    points.append((x, y))
+    return points
+
+
+def _derive_heading_vectors(
+    polyline: list[Point],
+    sang1: float | None,
+    sang2: float | None,
+    eang1: float | None,
+    eang2: float | None,
+) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    if sang1 is not None and sang2 is not None and eang1 is not None and eang2 is not None:
+        return _round_heading((sang1, sang2)), _round_heading((eang1, eang2))
+
+    if len(polyline) < 2:
+        return None, None
+
+    start = polyline[0]
+    end = polyline[-1]
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length = (dx * dx + dy * dy) ** 0.5
+    if length <= 0:
+        return None, None
+
+    heading = (dx / length, dy / length)
+    rounded = _round_heading(heading)
+    return rounded, rounded
+
+
+def _round_heading(vector: tuple[float, float] | None) -> tuple[float, float] | None:
+    normalized = _normalize_heading(vector)
+    if normalized is None:
+        return None
+    return (round(normalized[0], 5), round(normalized[1], 5))
+
+
+def _normalize_heading(vector: tuple[float, float] | None) -> tuple[float, float] | None:
+    if vector is None:
+        return None
+
+    length = (vector[0] * vector[0] + vector[1] * vector[1]) ** 0.5
+    if length <= 0:
+        return None
+
+    return (vector[0] / length, vector[1] / length)
 
 
 # Delayed import to avoid circular dependency
