@@ -1,7 +1,11 @@
 from __future__ import annotations
+
 import math
 from dataclasses import replace
 from typing import List, Tuple
+
+from track_viewer.geometry import CenterlineIndex, build_centerline_index
+
 from sg_viewer.sg_model import SectionPreview, Point
 
 
@@ -170,3 +174,42 @@ def update_section_geometry(section: SectionPreview) -> SectionPreview:
     )
 
     return replace(section, polyline=polyline, start_heading=start_heading, end_heading=end_heading)
+
+
+def rebuild_centerline_from_sections(
+    sections: list[SectionPreview],
+) -> tuple[list[Point], list[float], tuple[float, float, float, float] | None, CenterlineIndex | None]:
+    """Flatten section polylines into the active centreline representation."""
+
+    polylines = [sect.polyline for sect in sections if sect.polyline]
+    if not polylines:
+        return [], [], None, None
+
+    points: list[Point] = []
+    for polyline in polylines:
+        if not polyline:
+            continue
+        if points and points[-1] == polyline[0]:
+            points.extend(polyline[1:])
+        else:
+            points.extend(polyline)
+
+    if len(points) < 2:
+        return [], [], None, None
+
+    bounds = (
+        min(p[0] for p in points),
+        max(p[0] for p in points),
+        min(p[1] for p in points),
+        max(p[1] for p in points),
+    )
+
+    dlongs: list[float] = [0.0]
+    distance = 0.0
+    for prev, cur in zip(points, points[1:]):
+        distance += math.hypot(cur[0] - prev[0], cur[1] - prev[1])
+        dlongs.append(distance)
+
+    centerline_index = build_centerline_index(points, bounds)
+
+    return points, dlongs, bounds, centerline_index

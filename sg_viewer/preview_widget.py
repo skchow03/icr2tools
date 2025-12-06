@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import math
 from pathlib import Path
 from typing import List, Tuple
 
@@ -12,9 +11,9 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
-from sg_viewer import preview_loader, preview_loader_service, preview_state
+from sg_viewer import preview_loader_service, preview_state
 from sg_viewer import rendering_service, selection
-from sg_viewer.sg_geometry import update_section_geometry
+from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 from sg_viewer.sg_model import SectionPreview
 
 Point = Tuple[float, float]
@@ -321,7 +320,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
 
         if needs_rebuild:
-            self._rebuild_centerline_from_sections()
+            points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
+            self._centerline_polylines = [sect.polyline for sect in self._sections]
+            self._sampled_centerline = points
+            self._sampled_dlongs = dlongs
+            self._sampled_bounds = bounds
+            self._centerline_index = index
+            self._update_fit_scale()
 
         self._selection.update_context(
             self._sections,
@@ -345,47 +350,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         start = float(self._sections[index].start_dlong)
         end = start + float(self._sections[index].length)
         return start, end
-
-    def _rebuild_centerline_from_sections(self) -> None:
-        """Flatten section polylines into the active centreline representation."""
-
-        self._centerline_polylines = []
-        polylines = [sect.polyline for sect in self._sections if sect.polyline]
-        if not polylines:
-            return
-
-        points: list[Point] = []
-        for polyline in polylines:
-            if not polyline:
-                continue
-            if points and points[-1] == polyline[0]:
-                points.extend(polyline[1:])
-            else:
-                points.extend(polyline)
-
-        if len(points) < 2:
-            return
-
-        self._centerline_polylines = polylines
-
-        bounds = (
-            min(p[0] for p in points),
-            max(p[0] for p in points),
-            min(p[1] for p in points),
-            max(p[1] for p in points),
-        )
-
-        dlongs: list[float] = [0.0]
-        distance = 0.0
-        for prev, cur in zip(points, points[1:]):
-            distance += math.hypot(cur[0] - prev[0], cur[1] - prev[1])
-            dlongs.append(distance)
-
-        self._sampled_centerline = points
-        self._sampled_dlongs = dlongs
-        self._sampled_bounds = bounds
-        self._centerline_index = preview_loader.build_centerline_index(points, bounds)
-        self._update_fit_scale()
 
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (

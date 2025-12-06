@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import getxyz
-from track_viewer.geometry import CenterlineIndex, build_centerline_index, sample_centerline
+from track_viewer.geometry import build_centerline_index, sample_centerline
 
+from sg_viewer.centerline_utils import compute_centerline_normal_and_tangent
 from sg_viewer.sg_geometry import build_section_polyline, derive_heading_vectors
 from sg_viewer.sg_model import Point, PreviewData, SectionPreview
 
@@ -22,7 +22,7 @@ def load_preview(path: Path) -> PreviewData:
 
     centerline_index = build_centerline_index(sampled, bounds)
     track_length = float(trk.trklength)
-    start_finish_mapping = _centerline_point_normal_and_tangent(trk, cline, track_length, 0.0)
+    start_finish_mapping = compute_centerline_normal_and_tangent(trk, cline, track_length, 0.0)
     sections = _build_sections(sgfile, trk, cline, track_length)
     section_endpoints = [(sect.start, sect.end) for sect in sections]
 
@@ -106,40 +106,6 @@ def _build_sections(
         )
 
     return sections
-
-
-def _centerline_point_normal_and_tangent(
-    trk: TRKFile, cline: Iterable[Point] | None, track_length: float, dlong: float
-) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None:
-    if cline is None or track_length <= 0:
-        return None
-
-    def _wrap(value: float) -> float:
-        while value < 0:
-            value += track_length
-        while value >= track_length:
-            value -= track_length
-        return value
-
-    base = _wrap(float(dlong))
-    delta = max(50.0, track_length * 0.002)
-    prev_dlong = _wrap(base - delta)
-    next_dlong = _wrap(base + delta)
-
-    px, py, _ = getxyz(trk, prev_dlong, 0, cline)
-    nx, ny, _ = getxyz(trk, next_dlong, 0, cline)
-    cx, cy, _ = getxyz(trk, base, 0, cline)
-
-    vx = nx - px
-    vy = ny - py
-    length = (vx * vx + vy * vy) ** 0.5
-    if length == 0:
-        return None
-
-    tangent = (vx / length, vy / length)
-    normal = (-vy / length, vx / length)
-
-    return (cx, cy), normal, tangent
 
 
 # Delayed import to avoid circular dependency
