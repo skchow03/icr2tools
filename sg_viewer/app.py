@@ -88,6 +88,8 @@ class SectionTableWindow(QtWidgets.QDialog):
         button_row.addWidget(self._apply_button)
         layout.addLayout(button_row)
         self.setLayout(layout)
+        self._columns_resized_once = False
+
 
     def set_sections(
         self, sections: list[SectionPreview], track_length: float | None
@@ -102,7 +104,11 @@ class SectionTableWindow(QtWidgets.QDialog):
             self._populate_rows()
         finally:
             self._is_updating = False
-        self._resize_columns()
+
+        if not self._columns_resized_once:
+            self._resize_columns()
+            self._columns_resized_once = True
+
 
     def _populate_rows(self) -> None:
         def _fmt(value: float | None, precision: int = 1) -> str:
@@ -157,9 +163,10 @@ class SectionTableWindow(QtWidgets.QDialog):
 
         self._pending_edit = True
         self._apply_button.setEnabled(True)
-        self._apply_timer.start()
+        # self._apply_timer.start()
 
     def _apply_pending_edits(self, *_args) -> None:
+        # If you kept the timer, you can keep this guard.
         self._apply_timer.stop()
         if self._is_updating or not self._pending_edit:
             return
@@ -167,9 +174,14 @@ class SectionTableWindow(QtWidgets.QDialog):
         updated_sections = self._build_sections_from_table()
         self._pending_edit = False
         self._sections = updated_sections
+
+        # Send the updated sections to the preview window.
         self.sectionsEdited.emit(updated_sections)
-        self.set_sections(updated_sections, self._track_length)
-        self._resize_columns()
+
+        # Do NOT call set_sections() here; that repopulates the table and
+        # resizes columns again, which is slow and redundant.
+        self._apply_button.setEnabled(False)
+
 
     def _build_sections_from_table(self) -> list[SectionPreview]:
         def _parse_float(value: str) -> float | None:
