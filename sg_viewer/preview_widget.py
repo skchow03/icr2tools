@@ -72,7 +72,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._centerline_index: CenterlineIndex | None = None
         self._status_message = "Select an SG file to begin."
 
-        self._curve_markers: dict[int, preview_loader.CurveMarker] = {}
+        self._sections: list[preview_loader.SectionPreview] = []
         self._selected_curve_index: int | None = None
         self._section_endpoints: list[tuple[Point, Point]] = []
 
@@ -99,7 +99,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index = None
         self._selected_section_points = []
         self._section_endpoints = []
-        self._curve_markers = {}
+        self._sections = []
         self._selected_curve_index = None
         self._transform_state = preview_loader.TransformState()
         self._is_panning = False
@@ -132,7 +132,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = data.track_length
         self._selected_section_index = None
         self._selected_section_points = []
-        self._curve_markers = data.curve_markers
+        self._sections = data.sections
         self._section_endpoints = data.section_endpoints
         self._selected_curve_index = None
         self._transform_state = preview_loader.TransformState()
@@ -221,7 +221,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._show_curve_markers:
             preview_rendering.draw_curve_markers(
                 painter,
-                self._curve_markers,
+                [sect for sect in self._sections if sect.center is not None],
                 self._selected_curve_index,
                 transform,
                 self.height(),
@@ -339,11 +339,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._set_selected_section(selection)
 
     def _find_section_by_dlong(self, dlong: float) -> int | None:
-        if self._trk is None or not self._trk.sects:
+        if not self._sections or self._track_length is None:
             return None
 
         track_length = self._track_length or 0
-        for idx, sect in enumerate(self._trk.sects):
+        for idx, sect in enumerate(self._sections):
             start = float(sect.start_dlong)
             end = start + float(sect.length)
             if track_length > 0 and end > track_length:
@@ -362,58 +362,35 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self.update()
             return
 
-        if self._trk is None or index < 0 or index >= len(self._trk.sects):
+        if not self._sections or index < 0 or index >= len(self._sections):
             return
 
-        sect = self._trk.sects[index]
+        sect = self._sections[index]
         self._selected_section_index = index
-        self._selected_section_points = self._sample_section_polyline(sect)
-        self._selected_curve_index = index if sect.type == 2 else None
+        self._selected_section_points = sect.polyline
+        self._selected_curve_index = sect.section_id if sect.center is not None else None
 
         end_dlong = float(sect.start_dlong + sect.length)
         if self._track_length:
             end_dlong = end_dlong % self._track_length
 
         start_heading, end_heading = self._get_heading_vectors(index)
-        type_name = "Curve" if sect.type == 2 else "Straight"
-        marker = self._curve_markers.get(index)
+        type_name = "Curve" if sect.type_name == "curve" else "Straight"
         selection = SectionSelection(
-            index=index,
+            index=sect.section_id,
             type_name=type_name,
             start_dlong=self._round_sg_value(sect.start_dlong),
             end_dlong=self._round_sg_value(end_dlong),
             start_heading=start_heading,
             end_heading=end_heading,
-            center=marker.center if marker else None,
-            radius=marker.radius if marker else None,
+            center=sect.center,
+            radius=sect.radius,
         )
         self.selectedSectionChanged.emit(selection)
         self.update()
 
-    def _sample_section_polyline(self, sect) -> List[Point]:
-        if self._trk is None or not self._cline or not self._track_length:
-            return []
-
-        step = 5000
-        remaining = float(sect.length)
-        current = float(sect.start_dlong)
-        points: List[Point] = []
-
-        while remaining > 0:
-            x, y, _ = getxyz(self._trk, current % self._track_length, 0, self._cline)
-            points.append((x, y))
-            advance = min(step, remaining)
-            current += advance
-            remaining -= advance
-
-        x, y, _ = getxyz(
-            self._trk, (sect.start_dlong + sect.length) % self._track_length, 0, self._cline
-        )
-        points.append((x, y))
-        return points
-
     def get_section_geometries(self) -> list[SectionGeometry]:
-        if self._trk is None or not self._cline or self._track_length is None:
+        if not self._sections or self._track_length is None:
             return []
 
         track_length = float(self._track_length)
@@ -421,24 +398,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return []
 
         sections: list[SectionGeometry] = []
-        total_sections = len(self._trk.sects)
-        for idx, sect in enumerate(self._trk.sects):
+        total_sections = len(self._sections)
+        for idx, sect in enumerate(self._sections):
             start_dlong = self._round_sg_value(sect.start_dlong)
-            end_dlong = self._round_sg_value((start_dlong + float(sect.length)) % track_length)
+            end_dlong = self._round_sg_value((sect.start_dlong + float(sect.length)) % track_length)
 
-            start_x, start_y, _ = getxyz(
-                self._trk, float(sect.start_dlong) % track_length, 0, self._cline
-            )
-            start_x = self._round_sg_value(start_x)
-            start_y = self._round_sg_value(start_y)
+            start_x = self._round_sg_value(sect.start[0])
+            start_y = self._round_sg_value(sect.start[1])
 
-            end_x, end_y, _ = getxyz(
-                self._trk, float(sect.start_dlong + sect.length) % track_length, 0, self._cline
-            )
-            end_x = self._round_sg_value(end_x)
-            end_y = self._round_sg_value(end_y)
+            end_x = self._round_sg_value(sect.end[0])
+            end_y = self._round_sg_value(sect.end[1])
 
-            next_sect = self._trk.sects[(idx + 1) % total_sections]
+            next_sect = self._sections[(idx + 1) % total_sections]
             next_start = self._round_sg_value(float(next_sect.start_dlong) % track_length)
             gap = (next_start - end_dlong) % track_length
 
@@ -456,21 +427,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return sections
 
     def get_section_headings(self) -> list[SectionHeadingData]:
-        if self._sgfile is None or self._trk is None:
+        if not self._sections:
             return []
 
-        start_vectors: list[tuple[float, float] | None] = []
-        end_vectors: list[tuple[float, float] | None] = []
-        for sect in self._sgfile.sects:
-            start = (float(sect.sang1), float(sect.sang2))
-            end = (float(sect.eang1), float(sect.eang2))
-            start_vectors.append(self._round_heading_vector(start))
-            end_vectors.append(self._round_heading_vector(end))
-
         headings: list[SectionHeadingData] = []
-        total = len(start_vectors)
-        for idx, (start, end) in enumerate(zip(start_vectors, end_vectors)):
-            next_start = start_vectors[(idx + 1) % total] if total else None
+        total = len(self._sections)
+        for idx, sect in enumerate(self._sections):
+            start = sect.start_heading
+            end = sect.end_heading
+            next_start = self._sections[(idx + 1) % total].start_heading if total else None
             delta = self._heading_delta(end, next_start)
             headings.append(
                 SectionHeadingData(
@@ -489,57 +454,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return [(idx, float(dlat)) for idx, dlat in enumerate(self._sgfile.xsect_dlats)]
 
     def get_section_range(self, index: int) -> tuple[float, float] | None:
-        if self._trk is None or index < 0 or index >= len(self._trk.sects):
+        if not self._sections or index < 0 or index >= len(self._sections):
             return None
-        start = float(self._trk.sects[index].start_dlong)
-        end = start + float(self._trk.sects[index].length)
+        start = float(self._sections[index].start_dlong)
+        end = start + float(self._sections[index].length)
         return start, end
 
     def _get_heading_vectors(
         self, index: int
     ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
-        if (
-            self._sgfile is None
-            or self._trk is None
-            or self._cline is None
-            or index < 0
-            or index >= len(self._sgfile.sects)
-            or index >= len(self._trk.sects)
-        ):
+        if not self._sections or index < 0 or index >= len(self._sections):
             return None, None
 
-        trk_sect = self._trk.sects[index]
-        if getattr(trk_sect, "type", None) == 2:
-            sg_sect = self._sgfile.sects[index]
-            start = (
-                float(sg_sect.sang1),
-                float(sg_sect.sang2),
-            )
-            end = (
-                float(sg_sect.eang1),
-                float(sg_sect.eang2),
-            )
-            return self._round_heading_vector(start), self._round_heading_vector(end)
-
-        track_length = float(self._track_length or 0)
-        if track_length <= 0:
-            return None, None
-
-        start_x, start_y, _ = getxyz(
-            self._trk, float(trk_sect.start_dlong) % track_length, 0, self._cline
-        )
-        end_x, end_y, _ = getxyz(
-            self._trk, float(trk_sect.start_dlong + trk_sect.length) % track_length, 0, self._cline
-        )
-        dx = end_x - start_x
-        dy = end_y - start_y
-        length = (dx * dx + dy * dy) ** 0.5
-        if length <= 0:
-            return None, None
-
-        heading = (dx / length, dy / length)
-        rounded_heading = self._round_heading_vector(heading)
-        return rounded_heading, rounded_heading
+        sect = self._sections[index]
+        return sect.start_heading, sect.end_heading
 
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (
@@ -683,23 +611,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def select_next_section(self) -> None:
-        if self._trk is None or not self._trk.sects:
+        if not self._sections:
             return
 
         if self._selected_section_index is None:
             self._set_selected_section(0)
             return
 
-        next_index = (self._selected_section_index + 1) % len(self._trk.sects)
+        next_index = (self._selected_section_index + 1) % len(self._sections)
         self._set_selected_section(next_index)
 
     def select_previous_section(self) -> None:
-        if self._trk is None or not self._trk.sects:
+        if not self._sections:
             return
 
         if self._selected_section_index is None:
-            self._set_selected_section(len(self._trk.sects) - 1)
+            self._set_selected_section(len(self._sections) - 1)
             return
 
-        prev_index = (self._selected_section_index - 1) % len(self._trk.sects)
+        prev_index = (self._selected_section_index - 1) % len(self._sections)
         self._set_selected_section(prev_index)
