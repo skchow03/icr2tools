@@ -42,6 +42,11 @@ class SectionTableWindow(QtWidgets.QDialog):
         self._is_updating = False
         self._pending_edit = False
 
+        self._apply_timer = QtCore.QTimer(self)
+        self._apply_timer.setInterval(500)
+        self._apply_timer.setSingleShot(True)
+        self._apply_timer.timeout.connect(self._apply_pending_edits)
+
         layout = QtWidgets.QVBoxLayout()
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(16)
@@ -72,8 +77,6 @@ class SectionTableWindow(QtWidgets.QDialog):
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._table.itemChanged.connect(self._handle_item_changed)
-        self._table.installEventFilter(self)
-        self._table.itemDelegate().closeEditor.connect(self._on_editor_closed)
 
         layout.addWidget(self._table)
 
@@ -93,6 +96,7 @@ class SectionTableWindow(QtWidgets.QDialog):
         self._track_length = track_length
         self._is_updating = True
         self._pending_edit = False
+        self._apply_timer.stop()
         self._apply_button.setEnabled(False)
         try:
             self._populate_rows()
@@ -153,20 +157,10 @@ class SectionTableWindow(QtWidgets.QDialog):
 
         self._pending_edit = True
         self._apply_button.setEnabled(True)
-
-    def _on_editor_closed(
-        self,
-        editor: QtWidgets.QWidget,
-        hint: QtWidgets.QAbstractItemDelegate.EndEditHint,
-    ) -> None:
-        self._apply_pending_edits()
-
-    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
-        if obj is self._table and event.type() == QtCore.QEvent.FocusOut:
-            self._apply_pending_edits()
-        return super().eventFilter(obj, event)
+        self._apply_timer.start()
 
     def _apply_pending_edits(self, *_args) -> None:
+        self._apply_timer.stop()
         if self._is_updating or not self._pending_edit:
             return
 
