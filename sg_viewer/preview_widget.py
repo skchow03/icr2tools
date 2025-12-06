@@ -387,6 +387,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sections = list(sections)
         self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
 
+        self._rebuild_centerline_from_sections()
+
         if (
             self._selected_section_index is not None
             and 0 <= self._selected_section_index < len(self._sections)
@@ -430,6 +432,44 @@ class SGPreviewWidget(QtWidgets.QWidget):
         start = float(self._sections[index].start_dlong)
         end = start + float(self._sections[index].length)
         return start, end
+
+    def _rebuild_centerline_from_sections(self) -> None:
+        """Flatten section polylines into the active centreline representation."""
+
+        polylines = [sect.polyline for sect in self._sections if sect.polyline]
+        if not polylines:
+            return
+
+        points: list[Point] = []
+        for polyline in polylines:
+            if not polyline:
+                continue
+            if points and points[-1] == polyline[0]:
+                points.extend(polyline[1:])
+            else:
+                points.extend(polyline)
+
+        if len(points) < 2:
+            return
+
+        bounds = (
+            min(p[0] for p in points),
+            max(p[0] for p in points),
+            min(p[1] for p in points),
+            max(p[1] for p in points),
+        )
+
+        dlongs: list[float] = [0.0]
+        distance = 0.0
+        for prev, cur in zip(points, points[1:]):
+            distance += math.hypot(cur[0] - prev[0], cur[1] - prev[1])
+            dlongs.append(distance)
+
+        self._sampled_centerline = points
+        self._sampled_dlongs = dlongs
+        self._sampled_bounds = bounds
+        self._centerline_index = preview_loader.build_centerline_index(points, bounds)
+        self._update_fit_scale()
 
     def _get_heading_vectors(
         self, index: int
