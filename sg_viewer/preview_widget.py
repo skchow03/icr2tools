@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import math
 from pathlib import Path
 from typing import List, Tuple
@@ -12,30 +12,11 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
-from sg_viewer import preview_loader, sg_rendering
+from sg_viewer import preview_loader, preview_loader_service, preview_state
+from sg_viewer import rendering_service, selection
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
-
-
-@dataclass
-class SectionSelection:
-    index: int
-    type_name: str
-    start_dlong: float
-    end_dlong: float
-    start_heading: tuple[float, float] | None = None
-    end_heading: tuple[float, float] | None = None
-    center: Point | None = None
-    radius: float | None = None
-
-
-@dataclass
-class SectionHeadingData:
-    index: int
-    start_heading: tuple[float, float] | None
-    end_heading: tuple[float, float] | None
-    delta_to_next: float | None
 
 
 class SGPreviewWidget(QtWidgets.QWidget):
@@ -63,20 +44,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = "Select an SG file to begin."
 
         self._sections: list[preview_loader.SectionPreview] = []
-        self._selected_curve_index: int | None = None
         self._section_endpoints: list[tuple[Point, Point]] = []
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
 
         self._track_length: float | None = None
-        self._selected_section_index: int | None = None
-        self._selected_section_points: List[Point] = []
 
         self._section_signatures: list[tuple] = []
 
-        self._transform_state = preview_loader.TransformState()
+        self._transform_state = preview_state.TransformState()
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
+
+        self._selection = selection.SelectionManager()
+        self._selection.selectionChanged.connect(self._on_selection_changed)
 
         self._show_curve_markers = True
 
@@ -90,19 +71,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = None
         self._centerline_index = None
         self._track_length = None
-        self._selected_section_index = None
-        self._selected_section_points = []
         self._section_endpoints = []
         self._sections = []
         self._section_signatures = []
-        self._selected_curve_index = None
         self._start_finish_mapping = None
-        self._transform_state = preview_loader.TransformState()
+        self._transform_state = preview_state.TransformState()
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
         self._status_message = message or "Select an SG file to begin."
-        self.selectedSectionChanged.emit(None)
+        self._selection.reset([], None, None, [])
         self.update()
 
     # ------------------------------------------------------------------
@@ -116,7 +94,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = f"Loading {path.name}…"
         self.update()
 
-        data = preview_loader.load_preview(path)
+        data = preview_loader_service.load_preview(path)
 
         self._sgfile = data.sgfile
         self._trk = data.trk
@@ -127,27 +105,29 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = data.sampled_bounds
         self._centerline_index = data.centerline_index
         self._track_length = data.track_length
-        self._selected_section_index = None
-        self._selected_section_points = []
         self._sections = data.sections
         self._section_signatures = [self._section_signature(sect) for sect in data.sections]
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
-        self._selected_curve_index = None
-        self._transform_state = preview_loader.TransformState()
+        self._transform_state = preview_state.TransformState()
         self._status_message = data.status_message
+        self._selection.reset(
+            self._sections,
+            self._track_length,
+            self._centerline_index,
+            self._sampled_dlongs,
+        )
         self._update_fit_scale()
-        self.selectedSectionChanged.emit(None)
         self.update()
 
     # ------------------------------------------------------------------
     # Transform helpers
     # ------------------------------------------------------------------
     def _default_center(self) -> Point | None:
-        return preview_loader.default_center(self._sampled_bounds)
+        return preview_state.default_center(self._sampled_bounds)
 
     def _update_fit_scale(self) -> None:
-        self._transform_state = preview_loader.update_fit_scale(
+        self._transform_state = preview_state.update_fit_scale(
             self._transform_state,
             self._sampled_bounds,
             (self.width(), self.height()),
@@ -155,7 +135,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
     def _current_transform(self) -> Transform | None:
-        transform, updated_state = preview_loader.current_transform(
+        transform, updated_state = preview_state.current_transform(
             self._transform_state,
             self._sampled_bounds,
             (self.width(), self.height()),
@@ -166,17 +146,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return transform
 
     def _clamp_scale(self, scale: float) -> float:
-        return preview_loader.clamp_scale(scale, self._transform_state)
+        return preview_state.clamp_scale(scale, self._transform_state)
 
     def _map_to_track(self, point: QtCore.QPointF) -> Point | None:
         transform = self._current_transform()
-        if not transform:
-            return None
-        scale, offsets = transform
-        x = (point.x() - offsets[0]) / scale
-        py = self.height() - point.y()
-        y = (py - offsets[1]) / scale
-        return x, y
+        return preview_state.map_to_track(transform, (point.x(), point.y()), self.height())
 
     # ------------------------------------------------------------------
     # Qt events
@@ -188,49 +162,22 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
         painter = QtGui.QPainter(self)
-        painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
-
-        if not self._sampled_centerline:
-            sg_rendering.draw_placeholder(painter, self.rect(), self._status_message)
-            painter.end()
-            return
-
-        transform = self._current_transform()
-        if not transform:
-            sg_rendering.draw_placeholder(painter, self.rect(), "Unable to fit view")
-            painter.end()
-            return
-
-        sg_rendering.draw_centerlines(
+        rendering_service.paint_preview(
             painter,
+            self.rect(),
+            self.palette().color(QtGui.QPalette.Window),
+            self._sampled_centerline,
             self._centerline_polylines,
-            self._selected_section_points,
-            transform,
-            self.height(),
-        )
-
-        sg_rendering.draw_section_endpoints(
-            painter,
+            self._selection.selected_section_points,
             self._section_endpoints,
-            self._selected_section_index,
-            transform,
-            self.height(),
-        )
-
-        if self._show_curve_markers:
-            sg_rendering.draw_curve_markers(
-                painter,
-                [sect for sect in self._sections if sect.center is not None],
-                self._selected_curve_index,
-                transform,
-                self.height(),
-            )
-
-        sg_rendering.draw_start_finish_line(
-            painter,
+            self._selection.selected_section_index,
+            self._show_curve_markers,
+            self._sections,
+            self._selection.selected_curve_index,
             self._start_finish_mapping,
-            transform,
+            self._current_transform(),
             self.height(),
+            self._status_message,
         )
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
@@ -313,79 +260,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Selection
     # ------------------------------------------------------------------
     def _handle_click(self, pos: QtCore.QPoint) -> None:
-        if not self._centerline_index or not self._sampled_dlongs or not self._trk:
-            return
+        self._selection.handle_click(pos, self._map_to_track, self._current_transform())
 
-        track_point = self._map_to_track(QtCore.QPointF(pos))
-        transform = self._current_transform()
-        if track_point is None or transform is None or self._track_length is None:
-            return
-
-        _, nearest_dlong, distance_sq = project_point_to_centerline(
-            track_point, self._centerline_index, self._sampled_dlongs, self._track_length
-        )
-
-        if nearest_dlong is None:
-            return
-
-        scale, _ = transform
-        tolerance_units = 10 / max(scale, 1e-6)
-        if distance_sq > tolerance_units * tolerance_units:
-            self._set_selected_section(None)
-            return
-
-        selection = self._find_section_by_dlong(nearest_dlong)
-        self._set_selected_section(selection)
-
-    def _find_section_by_dlong(self, dlong: float) -> int | None:
-        if not self._sections or self._track_length is None:
-            return None
-
-        track_length = self._track_length or 0
-        for idx, sect in enumerate(self._sections):
-            start = float(sect.start_dlong)
-            end = start + float(sect.length)
-            if track_length > 0 and end > track_length:
-                if dlong >= start or dlong <= end - track_length:
-                    return idx
-            elif start <= dlong <= end:
-                return idx
-        return None
-
-    def _set_selected_section(self, index: int | None) -> None:
-        if index is None:
-            self._selected_section_index = None
-            self._selected_section_points = []
-            self._selected_curve_index = None
-            self.selectedSectionChanged.emit(None)
-            self.update()
-            return
-
-        if not self._sections or index < 0 or index >= len(self._sections):
-            return
-
-        sect = self._sections[index]
-        self._selected_section_index = index
-        self._selected_section_points = sect.polyline
-        self._selected_curve_index = sect.section_id if sect.center is not None else None
-
-        end_dlong = float(sect.start_dlong + sect.length)
-        if self._track_length:
-            end_dlong = end_dlong % self._track_length
-
-        start_heading, end_heading = self._get_heading_vectors(index)
-        type_name = "Curve" if sect.type_name == "curve" else "Straight"
-        selection = SectionSelection(
-            index=sect.section_id,
-            type_name=type_name,
-            start_dlong=self._round_sg_value(sect.start_dlong),
-            end_dlong=self._round_sg_value(end_dlong),
-            start_heading=start_heading,
-            end_heading=end_heading,
-            center=sect.center,
-            radius=sect.radius,
-        )
-        self.selectedSectionChanged.emit(selection)
+    def _on_selection_changed(self, selection_value: object) -> None:
+        self.selectedSectionChanged.emit(selection_value)
         self.update()
 
     def get_section_set(self) -> tuple[list[preview_loader.SectionPreview], float | None]:
@@ -443,37 +321,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if needs_rebuild:
             self._rebuild_centerline_from_sections()
 
-        if self._selected_section_index is not None:
-            if self._selected_section_index >= len(self._sections):
-                self._selected_section_index = None
-                self.selectedSectionChanged.emit(None)
-            elif needs_rebuild or self._selected_section_index in changed_indices:
-                self._set_selected_section(self._selected_section_index)
-        else:
-            self.selectedSectionChanged.emit(None)
+        self._selection.update_context(
+            self._sections,
+            self._track_length,
+            self._centerline_index,
+            self._sampled_dlongs,
+        )
         self.update()
 
-    def get_section_headings(self) -> list[SectionHeadingData]:
-        if not self._sections:
-            return []
-
-        headings: list[SectionHeadingData] = []
-        total = len(self._sections)
-        for idx, sect in enumerate(self._sections):
-            start = sect.start_heading
-            end = sect.end_heading
-            next_start = self._sections[(idx + 1) % total].start_heading if total else None
-            delta = self._heading_delta(end, next_start)
-            headings.append(
-                SectionHeadingData(
-                    index=idx,
-                    start_heading=start,
-                    end_heading=end,
-                    delta_to_next=delta,
-                )
-            )
-
-        return headings
+    def get_section_headings(self) -> list[selection.SectionHeadingData]:
+        return self._selection.get_section_headings()
 
     def get_xsect_metadata(self) -> list[tuple[int, float]]:
         if self._sgfile is None:
@@ -527,15 +384,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = bounds
         self._centerline_index = preview_loader.build_centerline_index(points, bounds)
         self._update_fit_scale()
-
-    def _get_heading_vectors(
-        self, index: int
-    ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
-        if not self._sections or index < 0 or index >= len(self._sections):
-            return None, None
-
-        sect = self._sections[index]
-        return sect.start_heading, sect.end_heading
 
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (
@@ -594,47 +442,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
             xsect_label=label,
         )
 
-    @staticmethod
-    def _round_sg_value(value: float) -> float:
-        """Round SG-derived values to match the raw file precision."""
-
-        return float(round(value))
-
-    @staticmethod
-    def _normalize_heading_vector(
-        vector: tuple[float, float] | None,
-    ) -> tuple[float, float] | None:
-        if vector is None:
-            return None
-
-        length = (vector[0] * vector[0] + vector[1] * vector[1]) ** 0.5
-        if length <= 0:
-            return None
-
-        return (vector[0] / length, vector[1] / length)
-
-    def _round_heading_vector(
-        self, vector: tuple[float, float] | None
-    ) -> tuple[float, float] | None:
-        normalized = self._normalize_heading_vector(vector)
-        if normalized is None:
-            return None
-
-        return (round(normalized[0], 5), round(normalized[1], 5))
-
-    def _heading_delta(
-        self, end: tuple[float, float] | None, next_start: tuple[float, float] | None
-    ) -> float | None:
-        end_norm = self._normalize_heading_vector(end)
-        next_norm = self._normalize_heading_vector(next_start)
-        if end_norm is None or next_norm is None:
-            return None
-
-        dot = max(-1.0, min(1.0, end_norm[0] * next_norm[0] + end_norm[1] * next_norm[1]))
-        cross = end_norm[0] * next_norm[1] - end_norm[1] * next_norm[0]
-        angle_deg = math.degrees(math.atan2(cross, dot))
-        return round(angle_deg, 4)
-
     # ------------------------------------------------------------------
     # Public controls
     # ------------------------------------------------------------------
@@ -643,23 +450,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def select_next_section(self) -> None:
-        if not self._sections:
+        if not self._selection.sections:
             return
 
-        if self._selected_section_index is None:
-            self._set_selected_section(0)
+        if self._selection.selected_section_index is None:
+            self._selection.set_selected_section(0)
             return
 
-        next_index = (self._selected_section_index + 1) % len(self._sections)
-        self._set_selected_section(next_index)
+        next_index = (self._selection.selected_section_index + 1) % len(self._selection.sections)
+        self._selection.set_selected_section(next_index)
 
     def select_previous_section(self) -> None:
-        if not self._sections:
+        if not self._selection.sections:
             return
 
-        if self._selected_section_index is None:
-            self._set_selected_section(len(self._sections) - 1)
+        if self._selection.selected_section_index is None:
+            self._selection.set_selected_section(len(self._selection.sections) - 1)
             return
 
-        prev_index = (self._selected_section_index - 1) % len(self._sections)
-        self._set_selected_section(prev_index)
+        prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
+        self._selection.set_selected_section(prev_index)
