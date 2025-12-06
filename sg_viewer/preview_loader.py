@@ -337,14 +337,22 @@ def _build_section_polyline(
 
 
 def update_section_geometry(section: SectionPreview) -> SectionPreview:
+    start_heading = section.start_heading
+    end_heading = section.end_heading
+
+    if section.sang1 is not None and section.sang2 is not None:
+        start_heading = _round_heading((section.sang1, section.sang2))
+    if section.eang1 is not None and section.eang2 is not None:
+        end_heading = _round_heading((section.eang1, section.eang2))
+
     polyline = _build_section_polyline(
         section.type_name,
         section.start,
         section.end,
         section.center,
         section.radius,
-        section.start_heading,
-        section.end_heading,
+        start_heading,
+        end_heading,
     )
     start_heading, end_heading = _derive_heading_vectors(
         polyline, section.sang1, section.sang2, section.eang1, section.eang2
