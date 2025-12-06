@@ -40,6 +40,7 @@ class SectionTableWindow(QtWidgets.QDialog):
         self._sections: list[SectionPreview] = []
         self._track_length: float | None = None
         self._is_updating = False
+        self._pending_edit = False
 
         layout = QtWidgets.QVBoxLayout()
         self._table = QtWidgets.QTableWidget()
@@ -71,8 +72,18 @@ class SectionTableWindow(QtWidgets.QDialog):
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._table.itemChanged.connect(self._handle_item_changed)
+        self._table.installEventFilter(self)
+        self._table.itemDelegate().closeEditor.connect(self._on_editor_closed)
 
         layout.addWidget(self._table)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch()
+        self._apply_button = QtWidgets.QPushButton("Apply")
+        self._apply_button.setEnabled(False)
+        self._apply_button.clicked.connect(self._apply_pending_edits)
+        button_row.addWidget(self._apply_button)
+        layout.addLayout(button_row)
         self.setLayout(layout)
 
     def set_sections(
@@ -81,6 +92,8 @@ class SectionTableWindow(QtWidgets.QDialog):
         self._sections = list(sections)
         self._track_length = track_length
         self._is_updating = True
+        self._pending_edit = False
+        self._apply_button.setEnabled(False)
         try:
             self._populate_rows()
         finally:
@@ -138,7 +151,27 @@ class SectionTableWindow(QtWidgets.QDialog):
         if self._is_updating:
             return
 
+        self._pending_edit = True
+        self._apply_button.setEnabled(True)
+
+    def _on_editor_closed(
+        self,
+        editor: QtWidgets.QWidget,
+        hint: QtWidgets.QAbstractItemDelegate.EndEditHint,
+    ) -> None:
+        self._apply_pending_edits()
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if obj is self._table and event.type() == QtCore.QEvent.FocusOut:
+            self._apply_pending_edits()
+        return super().eventFilter(obj, event)
+
+    def _apply_pending_edits(self, *_args) -> None:
+        if self._is_updating or not self._pending_edit:
+            return
+
         updated_sections = self._build_sections_from_table()
+        self._pending_edit = False
         self._sections = updated_sections
         self.sectionsEdited.emit(updated_sections)
         self.set_sections(updated_sections, self._track_length)
