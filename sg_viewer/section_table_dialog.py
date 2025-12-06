@@ -6,7 +6,7 @@ from typing import Callable
 
 from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.preview_loader import SectionPreview
+from sg_viewer.sg_model import SectionPreview
 
 
 def _parse_float(value: str) -> float | None:

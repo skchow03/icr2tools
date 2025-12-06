@@ -6,7 +6,7 @@ from pathlib import Path
 from PyQt5 import QtWidgets
 
 from sg_viewer.heading_table_dialog import HeadingTableWindow
-from sg_viewer.preview_loader import SectionPreview
+from sg_viewer.sg_model import SectionPreview
 from sg_viewer.section_table_dialog import SectionTableWindow
 
 logger = logging.getLogger(__name__)
