@@ -170,10 +170,11 @@ def _build_sections(
         start_dlong = float(trk_sect.start_dlong) % track_length
         length = float(trk_sect.length)
         polyline = _sample_section_polyline(trk, cline, track_length, start_dlong, length)
-        start = polyline[0] if polyline else (float(trk_sect.start_x), float(trk_sect.start_y))
-        end = polyline[-1] if polyline else (
-            float(getattr(trk_sect, "end_x", start[0])),
-            float(getattr(trk_sect, "end_y", start[1])),
+
+        start = (float(sg_sect.start_x), float(sg_sect.start_y))
+        end = (
+            float(getattr(sg_sect, "end_x", start[0])),
+            float(getattr(sg_sect, "end_y", start[1])),
         )
 
         center = None

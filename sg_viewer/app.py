@@ -69,6 +69,8 @@ class SectionTableWindow(QtWidgets.QDialog):
         def _fmt(value: float | None, precision: int = 1) -> str:
             if value is None:
                 return "–"
+            if float(value).is_integer():
+                return f"{int(value)}"
             return f"{value:.{precision}f}"
 
         self._table.setRowCount(len(sections))
