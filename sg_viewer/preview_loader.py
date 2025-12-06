@@ -295,6 +295,26 @@ def _build_section_polyline(
             return None
         return ccw_dot > cw_dot
 
+    def _heading_radius_angle(
+        heading: tuple[float, float] | None, reference_vec: tuple[float, float] | None
+    ) -> float | None:
+        heading_norm = _normalize_heading(heading)
+        if heading_norm is None:
+            return None
+
+        heading_angle = math.atan2(heading_norm[1], heading_norm[0])
+        candidates = [heading_angle - math.pi / 2, heading_angle + math.pi / 2]
+
+        ref_norm = _normalize_heading(reference_vec)
+        if ref_norm is None:
+            return candidates[0]
+
+        def _dot(angle: float) -> float:
+            return math.cos(angle) * ref_norm[0] + math.sin(angle) * ref_norm[1]
+
+        best_angle = max(candidates, key=_dot)
+        return best_angle
+
     cx, cy = center
     start_vec = (start[0] - cx, start[1] - cy)
     end_vec = (end[0] - cx, end[1] - cy)
@@ -303,8 +323,13 @@ def _build_section_polyline(
     if radius_length <= 0:
         return [start, end]
 
-    start_angle = math.atan2(start_vec[1], start_vec[0])
-    end_angle = math.atan2(end_vec[1], end_vec[0])
+    start_angle = _heading_radius_angle(start_heading, start_vec)
+    if start_angle is None:
+        start_angle = math.atan2(start_vec[1], start_vec[0])
+
+    end_angle = _heading_radius_angle(end_heading, end_vec)
+    if end_angle is None:
+        end_angle = math.atan2(end_vec[1], end_vec[0])
 
     prefer_ccw = _heading_prefers_ccw(start_vec, start_heading) if start_heading else None
     if prefer_ccw is None and end_heading:
