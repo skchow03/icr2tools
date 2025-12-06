@@ -77,6 +77,7 @@ class SectionTableWindow(QtWidgets.QDialog):
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._table.itemChanged.connect(self._handle_item_changed)
+        self._table.itemDelegate().closeEditor.connect(self._apply_after_editor_close)
 
         layout.addWidget(self._table)
 
@@ -108,6 +109,18 @@ class SectionTableWindow(QtWidgets.QDialog):
         if not self._columns_resized_once:
             self._resize_columns()
             self._columns_resized_once = True
+
+    def _apply_after_editor_close(self, editor, hint):
+        if self._is_updating:
+            return
+
+        # Same logic you had in _apply_pending_edits, but fast
+        updated_sections = self._build_sections_from_table()
+        self._sections = updated_sections
+
+        # Send to preview immediately
+        self.sectionsEdited.emit(updated_sections)
+
 
 
     def _populate_rows(self) -> None:
