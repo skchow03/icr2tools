@@ -71,6 +71,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index: int | None = None
         self._selected_section_points: List[Point] = []
 
+        self._section_signatures: list[tuple] = []
+
         self._transform_state = preview_loader.TransformState()
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
@@ -92,6 +94,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_points = []
         self._section_endpoints = []
         self._sections = []
+        self._section_signatures = []
         self._selected_curve_index = None
         self._start_finish_mapping = None
         self._transform_state = preview_loader.TransformState()
@@ -127,6 +130,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selected_section_index = None
         self._selected_section_points = []
         self._sections = data.sections
+        self._section_signatures = [self._section_signature(sect) for sect in data.sections]
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._selected_curve_index = None
@@ -388,19 +392,64 @@ class SGPreviewWidget(QtWidgets.QWidget):
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._sections), track_length
 
+    @staticmethod
+    def _section_signature(section: preview_loader.SectionPreview) -> tuple:
+        return (
+            section.section_id,
+            section.type_name,
+            section.previous_id,
+            section.next_id,
+            section.start,
+            section.end,
+            section.start_dlong,
+            section.length,
+            section.center,
+            section.sang1,
+            section.sang2,
+            section.eang1,
+            section.eang2,
+            section.radius,
+        )
+
     def set_sections(self, sections: list[preview_loader.SectionPreview]) -> None:
-        self._sections = [preview_loader.update_section_geometry(sect) for sect in sections]
+        previous_signatures = self._section_signatures
+
+        new_sections: list[preview_loader.SectionPreview] = []
+        new_signatures: list[tuple] = []
+        changed_indices: list[int] = []
+
+        for idx, sect in enumerate(sections):
+            signature = self._section_signature(sect)
+            new_signatures.append(signature)
+            prev_signature = previous_signatures[idx] if idx < len(previous_signatures) else None
+
+            if (
+                prev_signature is not None
+                and prev_signature == signature
+                and idx < len(self._sections)
+            ):
+                new_sections.append(self._sections[idx])
+            else:
+                new_sections.append(preview_loader.update_section_geometry(sect))
+                changed_indices.append(idx)
+
+        length_changed = len(sections) != len(self._sections)
+        needs_rebuild = length_changed or bool(changed_indices)
+
+        self._sections = new_sections
+        self._section_signatures = new_signatures
         self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
 
-        self._rebuild_centerline_from_sections()
+        if needs_rebuild:
+            self._rebuild_centerline_from_sections()
 
-        if (
-            self._selected_section_index is not None
-            and 0 <= self._selected_section_index < len(self._sections)
-        ):
-            self._set_selected_section(self._selected_section_index)
+        if self._selected_section_index is not None:
+            if self._selected_section_index >= len(self._sections):
+                self._selected_section_index = None
+                self.selectedSectionChanged.emit(None)
+            elif needs_rebuild or self._selected_section_index in changed_indices:
+                self._set_selected_section(self._selected_section_index)
         else:
-            self._selected_section_index = None
             self.selectedSectionChanged.emit(None)
         self.update()
 
