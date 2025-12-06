@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import math
 
 from pathlib import Path
 from typing import Iterable, List, Tuple
@@ -190,10 +191,14 @@ def _build_sections(
             eang1 = float(sg_sect.eang1)
             eang2 = float(sg_sect.eang2)
 
-        polyline = (
-            _sample_section_polyline(trk, cline, track_length, start_dlong, length)
-            if getattr(sg_sect, "type", None) == 2
-            else [start, end]
+        polyline = _build_section_polyline(
+            "curve" if getattr(sg_sect, "type", None) == 2 else "straight",
+            start,
+            end,
+            center,
+            radius,
+            (sang1, sang2) if sang1 is not None and sang2 is not None else None,
+            (eang1, eang2) if eang1 is not None and eang2 is not None else None,
         )
 
         start_heading, end_heading = _derive_heading_vectors(polyline, sang1, sang2, eang1, eang2)
@@ -256,29 +261,100 @@ def _centerline_point_normal_and_tangent(
     return (cx, cy), normal, tangent
 
 
-def _sample_section_polyline(
-    trk: TRKFile,
-    cline: Iterable[Point],
-    track_length: float,
-    start_dlong: float,
-    length: float,
+def _build_section_polyline(
+    type_name: str,
+    start: Point,
+    end: Point,
+    center: Point | None,
+    radius: float | None,
+    start_heading: tuple[float, float] | None,
+    end_heading: tuple[float, float] | None,
 ) -> list[Point]:
-    step = 5000.0
-    remaining = float(length)
-    current = float(start_dlong)
+    if type_name != "curve" or center is None:
+        return [start, end]
+
+    def _choose_ccw_direction(start_vec: tuple[float, float], end_vec: tuple[float, float]) -> bool:
+        start_norm = _normalize_heading(start_vec)
+        end_norm = _normalize_heading(end_vec)
+        if start_norm and end_norm:
+            cross = start_norm[0] * end_norm[1] - start_norm[1] * end_norm[0]
+            if abs(cross) > 1e-9:
+                return cross > 0
+        return True
+
+    def _heading_prefers_ccw(vec: tuple[float, float], heading: tuple[float, float]) -> bool | None:
+        heading_norm = _normalize_heading(heading)
+        vec_norm = _normalize_heading(vec)
+        if heading_norm is None or vec_norm is None:
+            return None
+        ccw_tangent = (-vec_norm[1], vec_norm[0])
+        cw_tangent = (vec_norm[1], -vec_norm[0])
+        ccw_dot = ccw_tangent[0] * heading_norm[0] + ccw_tangent[1] * heading_norm[1]
+        cw_dot = cw_tangent[0] * heading_norm[0] + cw_tangent[1] * heading_norm[1]
+        if abs(ccw_dot - cw_dot) < 1e-9:
+            return None
+        return ccw_dot > cw_dot
+
+    cx, cy = center
+    start_vec = (start[0] - cx, start[1] - cy)
+    end_vec = (end[0] - cx, end[1] - cy)
+    radius_length = radius if radius is not None and radius > 0 else (start_vec[0] ** 2 + start_vec[1] ** 2) ** 0.5
+
+    if radius_length <= 0:
+        return [start, end]
+
+    start_angle = math.atan2(start_vec[1], start_vec[0])
+    end_angle = math.atan2(end_vec[1], end_vec[0])
+
+    prefer_ccw = _heading_prefers_ccw(start_vec, start_heading) if start_heading else None
+    if prefer_ccw is None and end_heading:
+        prefer_ccw = _heading_prefers_ccw(end_vec, end_heading)
+    if prefer_ccw is None:
+        prefer_ccw = _choose_ccw_direction(start_vec, end_vec)
+
+    angle_span = end_angle - start_angle
+    if prefer_ccw:
+        if angle_span <= 0:
+            angle_span += 2 * math.pi
+    else:
+        if angle_span >= 0:
+            angle_span -= 2 * math.pi
+
+    total_angle = abs(angle_span)
+    if total_angle < 1e-6:
+        return [start, end]
+
+    steps = max(8, int(total_angle / (math.pi / 36)))
     points: list[Point] = []
-
-    while remaining > 0:
-        x, y, _ = getxyz(trk, current % track_length, 0, cline)
+    for step in range(steps + 1):
+        fraction = step / steps
+        angle = start_angle + angle_span * fraction
+        x = cx + math.cos(angle) * radius_length
+        y = cy + math.sin(angle) * radius_length
         points.append((x, y))
-        advance = min(step, remaining)
-        current += advance
-        remaining -= advance
 
-    end_dlong = (start_dlong + length) % track_length if track_length else start_dlong + length
-    x, y, _ = getxyz(trk, end_dlong, 0, cline)
-    points.append((x, y))
     return points
+
+
+def update_section_geometry(section: SectionPreview) -> SectionPreview:
+    polyline = _build_section_polyline(
+        section.type_name,
+        section.start,
+        section.end,
+        section.center,
+        section.radius,
+        section.start_heading,
+        section.end_heading,
+    )
+    start_heading, end_heading = _derive_heading_vectors(
+        polyline, section.sang1, section.sang2, section.eang1, section.eang2
+    )
+    return replace(
+        section,
+        polyline=polyline,
+        start_heading=start_heading,
+        end_heading=end_heading,
+    )
 
 
 def _derive_heading_vectors(

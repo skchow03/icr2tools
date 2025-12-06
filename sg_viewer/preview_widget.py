@@ -389,7 +389,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return list(self._sections), track_length
 
     def set_sections(self, sections: list[preview_loader.SectionPreview]) -> None:
-        self._sections = list(sections)
+        self._sections = [preview_loader.update_section_geometry(sect) for sect in sections]
         self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
 
         self._rebuild_centerline_from_sections()
