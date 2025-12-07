@@ -217,3 +217,28 @@ def draw_start_finish_line(
     painter.drawLine(QtCore.QLineF(start, end))
     painter.drawLine(QtCore.QLineF(direction_start, direction_end))
     painter.restore()
+
+
+def draw_nodes(painter, node_positions, node_status, transform, widget_height):
+    """Draw start/end nodes with color-coded connectivity."""
+    if transform is None:
+        return
+
+    painter.save()
+    painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0), 1))
+    radius = 5
+
+    for (sect_id, endtype), (x, y) in node_positions.items():
+        status = node_status.get((sect_id, endtype), "red")
+
+        if status == "green":
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(50, 200, 50)))
+        else:
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(220, 60, 60)))
+
+        # ✅ Use YOUR canonical coordinate mapping
+        mapped = map_point(x, y, transform, widget_height)
+        painter.drawEllipse(mapped, radius, radius)
+
+    painter.restore()
+

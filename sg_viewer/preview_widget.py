@@ -62,6 +62,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._show_curve_markers = True
 
+        self._node_status = {}   # (index, "start"|"end") -> "green" or "red"
+        self._node_radius_px = 6
+
+
     def clear(self, message: str | None = None) -> None:
         self._sgfile = None
         self._trk = None
@@ -118,6 +122,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._centerline_index,
             self._sampled_dlongs,
         )
+        self._update_node_status()
         self._update_fit_scale()
         self.update()
 
@@ -153,6 +158,58 @@ class SGPreviewWidget(QtWidgets.QWidget):
         transform = self._current_transform()
         return preview_state.map_to_track(transform, (point.x(), point.y()), self.height())
 
+    def _points_match(self, a: Point | None, b: Point | None, tol: float = 1e-4) -> bool:
+        if a is None or b is None:
+            return False
+        return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
+
+    def _update_node_status(self) -> None:
+        """Update node connectivity (green = connected, red = disconnected)."""
+        self._node_status.clear()
+        sections = self._sections
+        n = len(sections)
+        if n == 0:
+            return
+
+        # Build quick maps of start & end points for fast lookup.
+        starts = {i: sections[i].start for i in range(n)}
+        ends = {i: sections[i].end for i in range(n)}
+
+        for i in range(n):
+            start = starts[i]
+            end = ends[i]
+
+            # Check for any matching end -> start or start -> end.
+            # START NODE CONNECTION:
+            start_connected = False
+            for j in range(n):
+                if j == i:
+                    continue
+                if self._points_match(start, ends[j]):
+                    start_connected = True
+                    break
+
+            # END NODE CONNECTION:
+            end_connected = False
+            for j in range(n):
+                if j == i:
+                    continue
+                if self._points_match(end, starts[j]):
+                    end_connected = True
+                    break
+
+            self._node_status[(i, "start")] = "green" if start_connected else "red"
+            self._node_status[(i, "end")] = "green" if end_connected else "red"
+
+    def _build_node_positions(self):
+        pos = {}
+        for i, sect in enumerate(self._sections):
+            pos[(i, "start")] = sect.start
+            pos[(i, "end")] = sect.end
+        return pos
+
+
+
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -179,6 +236,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._current_transform(),
             self.height(),
             self._status_message,
+            node_positions=self._build_node_positions(),
+            node_status=self._node_status,
         )
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
@@ -217,6 +276,55 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        # ---------------------------------------------------------
+        # 1. NEW FEATURE: Disconnecting nodes by left-click
+        # ---------------------------------------------------------
+        if event.button() == QtCore.Qt.LeftButton:
+            hit = self._hit_test_node(event.pos())
+            if hit is not None:
+                sect_index, endtype = hit
+
+                # Break continuity using a tiny nudge
+                sect = self._sections[sect_index]
+                eps = 0.01
+
+                if endtype == "start":
+                    new_start = (sect.start[0] + eps, sect.start[1])
+                    updated = replace(sect, start=new_start)
+                else:
+                    new_end = (sect.end[0] + eps, sect.end[1])
+                    updated = replace(sect, end=new_end)
+
+                updated = update_section_geometry(updated)
+                self._sections[sect_index] = updated
+
+                # Rebuild centerline
+                points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
+                self._centerline_polylines = [s.polyline for s in self._sections]
+                self._sampled_centerline = points
+                self._sampled_dlongs = dlongs
+                self._sampled_bounds = bounds
+                self._centerline_index = index
+
+                # Update node colors and selection
+                self._update_node_status()
+                self._selection.update_context(
+                    self._sections,
+                    self._track_length,
+                    self._centerline_index,
+                    self._sampled_dlongs,
+                )
+
+                self.update()
+                event.accept()
+                return
+        # ---------------------------------------------------------
+        # END NEW BLOCK
+        # ---------------------------------------------------------
+
+        # ---------------------------------------------------------
+        # 2. EXISTING: Begin panning behavior
+        # ---------------------------------------------------------
         if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -224,7 +332,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._transform_state = replace(self._transform_state, user_transform_active=True)
             event.accept()
             return
+
         super().mousePressEvent(event)
+
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._is_panning and self._last_mouse_pos is not None:
@@ -327,6 +437,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_bounds = bounds
             self._centerline_index = index
             self._update_fit_scale()
+
+        self._update_node_status()
+
 
         self._selection.update_context(
             self._sections,
@@ -436,3 +549,23 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
+
+    def _hit_test_node(self, pos: QtCore.QPoint) -> tuple[int, str] | None:
+        if self._current_transform() is None:
+            return None
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return None
+
+        tx, ty = track_point
+        tol_world = self._node_radius_px / max(self._current_transform()[0], 1e-6)
+
+        for (i, endtype), (x, y) in self._build_node_positions().items():
+            dx = tx - x
+            dy = ty - y
+            if dx*dx + dy*dy <= tol_world * tol_world:
+                return (i, endtype)
+
+        return None
+
