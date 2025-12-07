@@ -62,7 +62,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._show_curve_markers = True
 
-        self._node_status = {}   # (index, "start"|"end") -> "green" or "red"
+        self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
+        self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
 
 
@@ -80,6 +81,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sections = []
         self._section_signatures = []
         self._start_finish_mapping = None
+        self._disconnected_nodes.clear()
         self._transform_state = preview_state.TransformState()
         self._is_panning = False
         self._last_mouse_pos = None
@@ -114,6 +116,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_signatures = [self._section_signature(sect) for sect in data.sections]
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
+        self._disconnected_nodes = set()
         self._transform_state = preview_state.TransformState()
         self._status_message = data.status_message
         self._selection.reset(
@@ -158,48 +161,27 @@ class SGPreviewWidget(QtWidgets.QWidget):
         transform = self._current_transform()
         return preview_state.map_to_track(transform, (point.x(), point.y()), self.height())
 
-    def _points_match(self, a: Point | None, b: Point | None, tol: float = 1e-4) -> bool:
-        if a is None or b is None:
-            return False
-        return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
-
     def _update_node_status(self) -> None:
-        """Update node connectivity (green = connected, red = disconnected)."""
+        """Update node connectivity flags using manual disconnect state."""
         self._node_status.clear()
         sections = self._sections
-        n = len(sections)
-        if n == 0:
+
+        if not sections:
+            self._disconnected_nodes.clear()
             return
 
-        # Build quick maps of start & end points for fast lookup.
-        starts = {i: sections[i].start for i in range(n)}
-        ends = {i: sections[i].end for i in range(n)}
+        valid_nodes = set()
+        for i in range(len(sections)):
+            valid_nodes.add((i, "start"))
+            valid_nodes.add((i, "end"))
+            self._node_status[(i, "start")] = "green"
+            self._node_status[(i, "end")] = "green"
 
-        for i in range(n):
-            start = starts[i]
-            end = ends[i]
-
-            # Check for any matching end -> start or start -> end.
-            # START NODE CONNECTION:
-            start_connected = False
-            for j in range(n):
-                if j == i:
-                    continue
-                if self._points_match(start, ends[j]):
-                    start_connected = True
-                    break
-
-            # END NODE CONNECTION:
-            end_connected = False
-            for j in range(n):
-                if j == i:
-                    continue
-                if self._points_match(end, starts[j]):
-                    end_connected = True
-                    break
-
-            self._node_status[(i, "start")] = "green" if start_connected else "red"
-            self._node_status[(i, "end")] = "green" if end_connected else "red"
+        self._disconnected_nodes = {
+            node for node in self._disconnected_nodes if node in valid_nodes
+        }
+        for node in self._disconnected_nodes:
+            self._node_status[node] = "orange"
 
     def _build_node_positions(self):
         pos = {}
@@ -284,6 +266,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             if hit is not None:
                 sect_index, endtype = hit
 
+                self._disconnected_nodes.add((sect_index, endtype))
+
                 # Break continuity using a tiny nudge
                 sect = self._sections[sect_index]
                 eps = 0.01
@@ -297,6 +281,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
                 updated = update_section_geometry(updated)
                 self._sections[sect_index] = updated
+                self._section_signatures[sect_index] = self._section_signature(updated)
+                self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
 
                 # Rebuild centerline
                 points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable, Tuple
 
-from PyQt5 import QtGui
+from PyQt5 import QtCore, QtGui
 
 from sg_viewer import sg_rendering
 
@@ -88,11 +88,11 @@ def draw_nodes(painter, node_positions, node_status, transform, widget_height):
 
     painter.save()
     for (sect_id, endtype), (x, y) in node_positions.items():
-        color = node_status.get((sect_id, endtype), "red")
-        if color == "green":
-            painter.setBrush(QtGui.QColor(50, 200, 50))
+        color = node_status.get((sect_id, endtype), "green")
+        if color == "orange":
+            painter.setBrush(QtGui.QColor(235, 150, 30))
         else:
-            painter.setBrush(QtGui.QColor(220, 60, 60))
+            painter.setBrush(QtGui.QColor(50, 200, 50))
 
         # Convert track coordinates -> widget
         px = (x - ox) * scale
