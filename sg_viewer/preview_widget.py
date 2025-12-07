@@ -24,6 +24,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
+    sectionsChanged = QtCore.pyqtSignal()  # NEW
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -201,7 +202,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
+        """Paint the preview + our node overlay that uses _node_status directly."""
         painter = QtGui.QPainter(self)
+
+        # Get the current transform once, reuse it
+        transform = self._current_transform()
+
+        # Let the rendering service draw everything (track, endpoints, etc.)
         rendering_service.paint_preview(
             painter,
             self.rect(),
@@ -209,18 +216,64 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_centerline,
             self._centerline_polylines,
             self._selection.selected_section_points,
-            self._section_endpoints,
+            None,
             self._selection.selected_section_index,
             self._show_curve_markers,
             self._sections,
             self._selection.selected_curve_index,
             self._start_finish_mapping,
-            self._current_transform(),
+            transform,
             self.height(),
             self._status_message,
-            node_positions=self._build_node_positions(),
-            node_status=self._node_status,
+            # we don't rely on its node drawing any more; our overlay will be on top
+            node_positions=None,
+            node_status=None,
         )
+
+        # If we have no transform yet (no track), we’re done
+        if transform is None or not self._sections:
+            return
+
+        # ---------------------------------------------------------
+        # NEW NODE DRAWING BLOCK
+        # ---------------------------------------------------------
+
+        scale, offsets = transform
+        ox, oy = offsets
+        widget_height = self.height()
+
+        # First draw all green nodes
+        for (i, endtype), (x, y) in self._build_node_positions().items():
+            status = self._node_status.get((i, endtype), "green")
+            if status == "orange":
+                continue  # skip oranges, draw them later on top
+
+            # compute screen coords
+            px = ox + x * scale
+            py_world = oy + y * scale
+            py = widget_height - py_world
+
+            painter.setBrush(QtGui.QColor(50, 200, 50))   # green
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.drawEllipse(QtCore.QPointF(px, py), 6, 6)
+
+
+        # Then draw all ORANGE nodes on top (larger + outline)
+        for (i, endtype), (x, y) in self._build_node_positions().items():
+            status = self._node_status.get((i, endtype), "green")
+            if status != "orange":
+                continue
+
+            # compute screen coords
+            px = ox + x * scale
+            py_world = oy + y * scale
+            py = widget_height - py_world
+
+            painter.setBrush(QtGui.QColor(255, 180, 50))   # bright orange
+            painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
+            painter.drawEllipse(QtCore.QPointF(px, py), 10, 10)
+
+
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if not self._sampled_centerline:
@@ -258,33 +311,60 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        # ---------------------------------------------------------
-        # 1. NEW FEATURE: Disconnecting nodes by left-click
-        # ---------------------------------------------------------
+# ---------------------------------------------------------
+# NEW: Node disconnect only if that section is selected
+# ---------------------------------------------------------
         if event.button() == QtCore.Qt.LeftButton:
             hit = self._hit_test_node(event.pos())
+            print("DEBUG hit =", hit)
             if hit is not None:
+
+                selected = self._selection.selected_section_index
                 sect_index, endtype = hit
 
+                # Must select section first
+                if selected is None or selected != sect_index:
+                    return
+
+                # Mark node as manually disconnected (for color)
                 self._disconnected_nodes.add((sect_index, endtype))
 
-                # Break continuity using a tiny nudge
+                # -----------------------------------------
+                # Break logical prev/next connectivity only
+                # -----------------------------------------
                 sect = self._sections[sect_index]
-                eps = 0.01
 
                 if endtype == "start":
-                    new_start = (sect.start[0] + eps, sect.start[1])
-                    updated = replace(sect, start=new_start)
-                else:
-                    new_end = (sect.end[0] + eps, sect.end[1])
-                    updated = replace(sect, end=new_end)
+                    # Break backward link
+                    prev_id = sect.previous_id
 
-                updated = update_section_geometry(updated)
-                self._sections[sect_index] = updated
-                self._section_signatures[sect_index] = self._section_signature(updated)
-                self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
+                    # Update this section
+                    sect = replace(sect, previous_id=-1)
+                    self._sections[sect_index] = sect
 
-                # Rebuild centerline
+                    # Update the previous section (break its forward link)
+                    if 0 <= prev_id < len(self._sections):
+                        prev_sect = self._sections[prev_id]
+                        prev_sect = replace(prev_sect, next_id=-1)
+                        self._sections[prev_id] = prev_sect
+
+                else:  # end node clicked
+                    # Break forward link
+                    next_id = sect.next_id
+
+                    # Update this section
+                    sect = replace(sect, next_id=-1)
+                    self._sections[sect_index] = sect
+
+                    # Update the next section (break its backward link)
+                    if 0 <= next_id < len(self._sections):
+                        next_sect = self._sections[next_id]
+                        next_sect = replace(next_sect, previous_id=-1)
+                        self._sections[next_id] = next_sect
+
+                                # -----------------------------------------
+                # Geometry rebuild WITHOUT nudging
+                # -----------------------------------------
                 points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
                 self._centerline_polylines = [s.polyline for s in self._sections]
                 self._sampled_centerline = points
@@ -292,8 +372,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._sampled_bounds = bounds
                 self._centerline_index = index
 
-                # Update node colors and selection
-                self._update_node_status()
+                # -----------------------------------------
+                # Directly mark this node as orange
+                # (do NOT rebuild all node status here)
+                # -----------------------------------------
+                # keep disconnected_nodes for logic if you still want it
+                self._disconnected_nodes.add((sect_index, endtype))
+                # explicitly set color for this node
+                self._node_status[(sect_index, endtype)] = "orange"
+
+                # Update selection context only
                 self._selection.update_context(
                     self._sections,
                     self._track_length,
@@ -301,9 +389,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
                     self._sampled_dlongs,
                 )
 
+                print("DEBUG node_status (after click):", self._node_status.get((sect_index, endtype)))
+
+                # optional: you can drop this if you don't need table refresh
+                # self.sectionsChanged.emit()
+
                 self.update()
                 event.accept()
                 return
+
+
+
         # ---------------------------------------------------------
         # END NEW BLOCK
         # ---------------------------------------------------------
@@ -433,6 +529,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._centerline_index,
             self._sampled_dlongs,
         )
+        self.sectionsChanged.emit()  # NEW
         self.update()
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
@@ -537,21 +634,29 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selection.set_selected_section(prev_index)
 
     def _hit_test_node(self, pos: QtCore.QPoint) -> tuple[int, str] | None:
-        if self._current_transform() is None:
+        transform = self._current_transform()
+        if transform is None:
             return None
 
-        track_point = self._map_to_track(QtCore.QPointF(pos))
-        if track_point is None:
-            return None
+        scale, offsets = transform
+        ox, oy = offsets
+        widget_height = self.height()
+        radius = self._node_radius_px
+        r2 = radius * radius
 
-        tx, ty = track_point
-        tol_world = self._node_radius_px / max(self._current_transform()[0], 1e-6)
+        px = pos.x()
+        py = pos.y()
 
         for (i, endtype), (x, y) in self._build_node_positions().items():
-            dx = tx - x
-            dy = ty - y
-            if dx*dx + dy*dy <= tol_world * tol_world:
+            # match renderer behavior exactly
+            node_px = ox + x * scale
+            node_py = widget_height - (oy + y * scale)
+
+            dx = px - node_px
+            dy = py - node_py
+            if dx*dx + dy*dy <= r2:
                 return (i, endtype)
 
         return None
+
 

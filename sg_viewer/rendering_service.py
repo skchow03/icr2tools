@@ -49,14 +49,6 @@ def paint_preview(
         widget_height,
     )
 
-    sg_rendering.draw_section_endpoints(
-        painter,
-        section_endpoints,
-        selected_section_index,
-        transform,
-        widget_height,
-    )
-
     if show_curve_markers:
         sg_rendering.draw_curve_markers(
             painter,
@@ -66,13 +58,16 @@ def paint_preview(
             widget_height,
         )
 
-    sg_rendering.draw_nodes(
-        painter,
-        node_positions,
-        node_status,
-        transform,
-        widget_height,
-    )
+    # Draw nodes only if positions were given
+    if node_positions is not None and node_status is not None:
+        sg_rendering.draw_nodes(
+            painter,
+            node_positions,
+            node_status,
+            transform,
+            widget_height,
+        )
+
 
     sg_rendering.draw_start_finish_line(
         painter,
