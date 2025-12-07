@@ -89,6 +89,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._press_pos = None
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
+        self._update_node_status()
         self.update()
 
     # ------------------------------------------------------------------
@@ -163,26 +164,31 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return preview_state.map_to_track(transform, (point.x(), point.y()), self.height())
 
     def _update_node_status(self) -> None:
-        """Update node connectivity flags using manual disconnect state."""
+        """
+        Determine node colors directly from section connectivity.
+        A node is green if it has a valid neighbor via prev_id or next_id.
+        A node is orange if that endpoint is not connected to another section.
+        """
         self._node_status.clear()
-        sections = self._sections
 
+        sections = self._sections
         if not sections:
-            self._disconnected_nodes.clear()
             return
 
-        valid_nodes = set()
-        for i in range(len(sections)):
-            valid_nodes.add((i, "start"))
-            valid_nodes.add((i, "end"))
-            self._node_status[(i, "start")] = "green"
-            self._node_status[(i, "end")] = "green"
+        total = len(sections)
 
-        self._disconnected_nodes = {
-            node for node in self._disconnected_nodes if node in valid_nodes
-        }
-        for node in self._disconnected_nodes:
-            self._node_status[node] = "orange"
+        for i, sect in enumerate(sections):
+            # Start node color
+            if sect.previous_id is None or sect.previous_id < 0 or sect.previous_id >= total:
+                self._node_status[(i, "start")] = "orange"
+            else:
+                self._node_status[(i, "start")] = "green"
+
+            # End node color
+            if sect.next_id is None or sect.next_id < 0 or sect.next_id >= total:
+                self._node_status[(i, "end")] = "orange"
+            else:
+                self._node_status[(i, "end")] = "green"
 
     def _build_node_positions(self):
         pos = {}
@@ -326,9 +332,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 if selected is None or selected != sect_index:
                     return
 
-                # Mark node as manually disconnected (for color)
-                self._disconnected_nodes.add((sect_index, endtype))
-
                 # -----------------------------------------
                 # Break logical prev/next connectivity only
                 # -----------------------------------------
@@ -372,14 +375,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._sampled_bounds = bounds
                 self._centerline_index = index
 
-                # -----------------------------------------
-                # Directly mark this node as orange
-                # (do NOT rebuild all node status here)
-                # -----------------------------------------
-                # keep disconnected_nodes for logic if you still want it
-                self._disconnected_nodes.add((sect_index, endtype))
-                # explicitly set color for this node
-                self._node_status[(sect_index, endtype)] = "orange"
+                self._update_node_status()
 
                 # Update selection context only
                 self._selection.update_context(
