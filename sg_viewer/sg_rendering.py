@@ -61,7 +61,7 @@ def draw_centerlines(
     widget_height: int,
 ) -> None:
     for polyline in centerline_polylines:
-        _draw_polyline(painter, polyline, transform, widget_height, color="white", width=3)
+        _draw_polyline(painter, polyline, transform, widget_height, color="lightgray", width=3)
 
     selected_points = list(selected_section_points)
     if not selected_points:
@@ -72,7 +72,7 @@ def draw_centerlines(
         selected_points,
         transform,
         widget_height,
-        color="purple",
+        color="yellow",
         width=4,
     )
 
@@ -90,7 +90,7 @@ def draw_curve_markers(
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     default_color = QtGui.QColor(140, 140, 140)
-    highlight_color = QtGui.QColor("red")
+    highlight_color = QtGui.QColor("magenta")
 
     for section in sections:
         center = getattr(section, "center", None)

@@ -259,7 +259,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             py_world = oy + y * scale
             py = widget_height - py_world
 
-            painter.setBrush(QtGui.QColor(50, 200, 50))   # green
+            painter.setBrush(QtGui.QColor("limegreen"))   # green
             painter.setPen(QtCore.Qt.NoPen)
             painter.drawEllipse(QtCore.QPointF(px, py), 6, 6)
 
@@ -275,7 +275,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             py_world = oy + y * scale
             py = widget_height - py_world
 
-            painter.setBrush(QtGui.QColor(255, 0, 0))   # red
+            painter.setBrush(QtGui.QColor("orange"))   # orange
             painter.setPen(QtCore.Qt.NoPen)
             painter.drawEllipse(QtCore.QPointF(px, py), 6, 6)
 
