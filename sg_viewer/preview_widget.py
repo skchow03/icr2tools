@@ -60,6 +60,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._press_pos: QtCore.QPoint | None = None
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
+        self._is_dragging_section = False
+        self._active_section_index: int | None = None
+        self._section_drag_origin: Point | None = None
+        self._section_drag_start_end: tuple[Point, Point] | None = None
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
@@ -90,6 +94,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
+        self._is_dragging_section = False
+        self._active_section_index = None
+        self._section_drag_origin = None
+        self._section_drag_start_end = None
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
         self._update_node_status()
@@ -419,6 +427,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # END NEW BLOCK
         # ---------------------------------------------------------
 
+        # Attempt to drag an isolated straight section by its selected polyline
+        if event.button() == QtCore.Qt.LeftButton:
+            drag_origin = self._hit_test_selected_section_line(event.pos())
+            if drag_origin is not None:
+                self._start_section_drag(drag_origin)
+                event.accept()
+                return
+
         # ---------------------------------------------------------
         # 2. EXISTING: Begin panning behavior
         # ---------------------------------------------------------
@@ -426,6 +442,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             event.button() == QtCore.Qt.LeftButton
             and self._sampled_centerline
             and not self._is_dragging_node
+            and not self._is_dragging_section
         ):
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -440,6 +457,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._is_dragging_node and self._active_node is not None:
             self._update_drag_position(event.pos())
+            event.accept()
+            return
+        if self._is_dragging_section and self._active_section_index is not None:
+            self._update_section_drag_position(event.pos())
             event.accept()
             return
 
@@ -465,6 +486,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if event.button() == QtCore.Qt.LeftButton:
             if self._is_dragging_node:
                 self._end_node_drag()
+                event.accept()
+                return
+            if self._is_dragging_section:
+                self._end_section_drag()
                 event.accept()
                 return
             self._is_panning = False
@@ -695,6 +720,35 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return None
 
+    def _hit_test_selected_section_line(self, pos: QtCore.QPoint) -> Point | None:
+        if self._selection.selected_section_index is None:
+            return None
+
+        index = self._selection.selected_section_index
+        if not self._sections or index < 0 or index >= len(self._sections):
+            return None
+
+        section = self._sections[index]
+        if not self._can_drag_section_node(section):
+            return None
+
+        transform = self._current_transform()
+        if transform is None:
+            return None
+
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return None
+
+        scale, _ = transform
+        if scale <= 0:
+            return None
+
+        tolerance = 6 / scale
+        if self._distance_to_polyline(track_point, section.polyline) <= tolerance:
+            return track_point
+        return None
+
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
         track_point = self._map_to_track(QtCore.QPointF(pos))
         if track_point is None:
@@ -743,6 +797,68 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         # Rebuild geometry for the modified section and refresh centreline data
         sections[sect_index] = update_section_geometry(sections[sect_index])
+        self._apply_section_updates(sections)
+
+    def _start_section_drag(self, track_point: Point) -> None:
+        if self._selection.selected_section_index is None:
+            return
+        index = self._selection.selected_section_index
+        if index < 0 or index >= len(self._sections):
+            return
+        sect = self._sections[index]
+        if not self._can_drag_section_node(sect):
+            return
+
+        self._active_section_index = index
+        self._section_drag_origin = track_point
+        self._section_drag_start_end = (sect.start, sect.end)
+        self._is_dragging_section = True
+        self._is_panning = False
+        self._press_pos = None
+        self._last_mouse_pos = None
+
+    def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return
+        self._update_section_drag(track_point)
+
+    def _update_section_drag(self, track_point: Point) -> None:
+        if (
+            not self._is_dragging_section
+            or self._active_section_index is None
+            or self._section_drag_origin is None
+            or self._section_drag_start_end is None
+        ):
+            return
+
+        index = self._active_section_index
+        if index < 0 or index >= len(self._sections):
+            return
+        sect = self._sections[index]
+        if not self._can_drag_section_node(sect):
+            return
+
+        dx = track_point[0] - self._section_drag_origin[0]
+        dy = track_point[1] - self._section_drag_origin[1]
+        start, end = self._section_drag_start_end
+
+        translated_start = (start[0] + dx, start[1] + dy)
+        translated_end = (end[0] + dx, end[1] + dy)
+
+        updated_section = replace(sect, start=translated_start, end=translated_end)
+
+        sections = list(self._sections)
+        sections[index] = update_section_geometry(updated_section)
+        self._apply_section_updates(sections)
+
+    def _end_section_drag(self) -> None:
+        self._is_dragging_section = False
+        self._active_section_index = None
+        self._section_drag_origin = None
+        self._section_drag_start_end = None
+
+    def _apply_section_updates(self, sections: list[SectionPreview]) -> None:
         self._sections = sections
         self._section_signatures = [self._section_signature(s) for s in sections]
         self._section_endpoints = [(s.start, s.end) for s in sections]
@@ -761,5 +877,28 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_dlongs,
         )
         self.update()
+
+    @staticmethod
+    def _distance_to_polyline(point: Point, polyline: list[Point]) -> float:
+        if len(polyline) < 2:
+            return float("inf")
+
+        px, py = point
+        min_dist_sq = float("inf")
+
+        for (x1, y1), (x2, y2) in zip(polyline, polyline[1:]):
+            dx = x2 - x1
+            dy = y2 - y1
+            if dx == dy == 0:
+                continue
+            t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
+            t = max(0.0, min(1.0, t))
+            proj_x = x1 + t * dx
+            proj_y = y1 + t * dy
+            dist_sq = (px - proj_x) ** 2 + (py - proj_y) ** 2
+            if dist_sq < min_dist_sq:
+                min_dist_sq = dist_sq
+
+        return math.sqrt(min_dist_sq)
 
 
