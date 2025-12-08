@@ -72,7 +72,7 @@ def draw_centerlines(
         selected_points,
         transform,
         widget_height,
-        color="red",
+        color="purple",
         width=4,
     )
 
