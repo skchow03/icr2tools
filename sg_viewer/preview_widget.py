@@ -318,15 +318,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
 # NEW: Node disconnect only if that section is selected
 # ---------------------------------------------------------
         if event.button() == QtCore.Qt.LeftButton:
-            hit = self._hit_test_node(event.pos())
+            selected_section = self._selection.selected_section_index
+            hit = self._hit_test_node(event.pos(), selected_section)
             print("DEBUG hit =", hit)
             if hit is not None:
 
-                selected = self._selection.selected_section_index
                 sect_index, endtype = hit
 
                 # Must select section first
-                if selected is None or selected != sect_index:
+                if selected_section is None or selected_section != sect_index:
                     return
 
                 # -----------------------------------------
@@ -626,7 +626,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
 
-    def _hit_test_node(self, pos: QtCore.QPoint) -> tuple[int, str] | None:
+    def _hit_test_node(
+        self, pos: QtCore.QPoint, preferred_index: int | None
+    ) -> tuple[int, str] | None:
         transform = self._current_transform()
         if transform is None:
             return None
@@ -640,7 +642,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         px = pos.x()
         py = pos.y()
 
-        for (i, endtype), (x, y) in self._build_node_positions().items():
+        nodes = list(self._build_node_positions().items())
+        if preferred_index is not None:
+            preferred_nodes = [n for n in nodes if n[0][0] == preferred_index]
+            other_nodes = [n for n in nodes if n[0][0] != preferred_index]
+            nodes = preferred_nodes + other_nodes
+
+        for (i, endtype), (x, y) in nodes:
             # match renderer behavior exactly
             node_px = ox + x * scale
             node_py = widget_height - (oy + y * scale)
