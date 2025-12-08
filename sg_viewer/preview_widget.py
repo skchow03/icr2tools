@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from pathlib import Path
 from typing import List, Tuple
@@ -57,6 +58,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
+        self._is_dragging_node = False
+        self._active_node: tuple[int, str] | None = None
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
@@ -197,6 +200,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
             pos[(i, "end")] = sect.end
         return pos
 
+    def _is_invalid_id(self, value: int | None) -> bool:
+        return value is None or value < 0 or value >= len(self._sections)
+
+    def _can_drag_section_node(self, section: SectionPreview) -> bool:
+        return (
+            section.type_name == "straight"
+            and self._is_invalid_id(section.previous_id)
+            and self._is_invalid_id(section.next_id)
+        )
+
 
 
     # ------------------------------------------------------------------
@@ -329,10 +342,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 if selected_section is None or selected_section != sect_index:
                     return
 
+                sect = self._sections[sect_index]
+
+                # ---------------------------------------------------------
+                # Node dragging for isolated straight sections
+                # ---------------------------------------------------------
+                if self._can_drag_section_node(sect):
+                    self._start_node_drag(hit, event.pos())
+                    event.accept()
+                    return
+
                 # -----------------------------------------
                 # Break logical prev/next connectivity only
                 # -----------------------------------------
-                sect = self._sections[sect_index]
 
                 if endtype == "start":
                     # Break backward link
@@ -400,7 +422,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # ---------------------------------------------------------
         # 2. EXISTING: Begin panning behavior
         # ---------------------------------------------------------
-        if event.button() == QtCore.Qt.LeftButton and self._sampled_centerline:
+        if (
+            event.button() == QtCore.Qt.LeftButton
+            and self._sampled_centerline
+            and not self._is_dragging_node
+        ):
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._press_pos = event.pos()
@@ -412,6 +438,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._is_dragging_node and self._active_node is not None:
+            self._update_drag_position(event.pos())
+            event.accept()
+            return
+
         if self._is_panning and self._last_mouse_pos is not None:
             transform = self._current_transform()
             if transform:
@@ -432,6 +463,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
+            if self._is_dragging_node:
+                self._end_node_drag()
+                event.accept()
+                return
             self._is_panning = False
             self._last_mouse_pos = None
             if (
@@ -659,5 +694,72 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 return (i, endtype)
 
         return None
+
+    def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None:
+            return
+        self._active_node = node
+        self._is_dragging_node = True
+        self._is_panning = False
+        self._press_pos = None
+        self._last_mouse_pos = None
+        self._update_dragged_section(track_point)
+
+    def _end_node_drag(self) -> None:
+        self._is_dragging_node = False
+        self._active_node = None
+
+    def _update_drag_position(self, pos: QtCore.QPoint) -> None:
+        track_point = self._map_to_track(QtCore.QPointF(pos))
+        if track_point is None or self._active_node is None:
+            return
+        self._update_dragged_section(track_point)
+
+    def _update_dragged_section(self, track_point: Point) -> None:
+        if self._active_node is None or not self._sections:
+            return
+
+        sect_index, endtype = self._active_node
+        if sect_index < 0 or sect_index >= len(self._sections):
+            return
+
+        sect = self._sections[sect_index]
+        if not self._can_drag_section_node(sect):
+            return
+
+        start = sect.start
+        end = sect.end
+        if endtype == "start":
+            start = track_point
+        else:
+            end = track_point
+
+        length = math.hypot(end[0] - start[0], end[1] - start[1])
+        updated_section = replace(sect, start=start, end=end, length=length)
+
+        sections = list(self._sections)
+        sections[sect_index] = updated_section
+
+        # Rebuild geometry for the modified section and refresh centreline data
+        sections[sect_index] = update_section_geometry(sections[sect_index])
+        self._sections = sections
+        self._section_signatures = [self._section_signature(s) for s in sections]
+        self._section_endpoints = [(s.start, s.end) for s in sections]
+
+        points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
+        self._centerline_polylines = [s.polyline for s in self._sections]
+        self._sampled_centerline = points
+        self._sampled_dlongs = dlongs
+        self._sampled_bounds = bounds
+        self._centerline_index = index
+
+        self._selection.update_context(
+            self._sections,
+            self._track_length,
+            self._centerline_index,
+            self._sampled_dlongs,
+        )
+        self.update()
 
 
