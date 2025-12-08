@@ -231,9 +231,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
             transform,
             self.height(),
             self._status_message,
-            # we don't rely on its node drawing any more; our overlay will be on top
-            node_positions=None,
-            node_status=None,
         )
 
         # If we have no transform yet (no track), we’re done
