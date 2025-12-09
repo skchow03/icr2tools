@@ -27,6 +27,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
     selectedSectionChanged = QtCore.pyqtSignal(object)
     sectionsChanged = QtCore.pyqtSignal()  # NEW
 
+    CURVE_SOLVE_TOLERANCE = 1.0  # inches
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumSize(640, 480)
@@ -211,12 +213,24 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _is_invalid_id(self, value: int | None) -> bool:
         return value is None or value < 0 or value >= len(self._sections)
 
+    def _is_disconnected_endpoint(self, section: SectionPreview, endtype: str) -> bool:
+        if endtype == "start":
+            return self._is_invalid_id(section.previous_id)
+        return self._is_invalid_id(section.next_id)
+
     def _can_drag_section_node(self, section: SectionPreview) -> bool:
         return (
             section.type_name == "straight"
             and self._is_invalid_id(section.previous_id)
             and self._is_invalid_id(section.next_id)
         )
+
+    def _can_drag_node(self, section: SectionPreview, endtype: str) -> bool:
+        if section.type_name == "straight":
+            return self._can_drag_section_node(section)
+        if section.type_name == "curve":
+            return self._is_disconnected_endpoint(section, endtype)
+        return False
 
 
 
@@ -353,9 +367,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 sect = self._sections[sect_index]
 
                 # ---------------------------------------------------------
-                # Node dragging for isolated straight sections
+                # Node dragging for disconnected sections
                 # ---------------------------------------------------------
-                if self._can_drag_section_node(sect):
+                if self._can_drag_node(sect, endtype):
                     self._start_node_drag(hit, event.pos())
                     event.accept()
                     return
@@ -779,7 +793,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         sect = self._sections[sect_index]
-        if not self._can_drag_section_node(sect):
+        if not self._can_drag_node(sect, endtype):
             return
 
         start = sect.start
@@ -789,8 +803,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         else:
             end = track_point
 
-        length = math.hypot(end[0] - start[0], end[1] - start[1])
-        updated_section = replace(sect, start=start, end=end, length=length)
+        if sect.type_name == "curve":
+            updated_section = self._solve_curve_drag(sect, start, end)
+        else:
+            length = math.hypot(end[0] - start[0], end[1] - start[1])
+            updated_section = replace(sect, start=start, end=end, length=length)
+
+        if updated_section is None:
+            return
 
         sections = list(self._sections)
         sections[sect_index] = updated_section
@@ -798,6 +818,180 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # Rebuild geometry for the modified section and refresh centreline data
         sections[sect_index] = update_section_geometry(sections[sect_index])
         self._apply_section_updates(sections)
+
+    def _solve_curve_drag(
+        self, sect: SectionPreview, start: Point, end: Point
+    ) -> SectionPreview | None:
+        if start == end:
+            return None
+
+        cx_hint, cy_hint = sect.center if sect.center is not None else (start[0], start[1])
+        orientation_hint = self._curve_orientation_hint(sect)
+
+        vx = end[0] - start[0]
+        vy = end[1] - start[1]
+        chord_length = math.hypot(vx, vy)
+        if chord_length <= 1e-6:
+            return None
+
+        half_chord = chord_length / 2.0
+        mid = (start[0] + vx * 0.5, start[1] + vy * 0.5)
+        normal = (-vy / chord_length, vx / chord_length)
+
+        offset_from_center = (cx_hint - mid[0]) * normal[0] + (cy_hint - mid[1]) * normal[1]
+        offset_sign = 1.0 if offset_from_center >= 0 else -1.0
+        if offset_sign == 0.0:
+            offset_sign = orientation_hint
+
+        radius_target = sect.radius if sect.radius and sect.radius > 0 else None
+        offset_for_radius = None
+        if radius_target is not None and radius_target > half_chord:
+            offset_for_radius = math.sqrt(max(radius_target * radius_target - half_chord * half_chord, 0.0))
+            offset_for_radius *= offset_sign
+
+        preferred_offset = offset_sign * max(abs(offset_from_center), self.CURVE_SOLVE_TOLERANCE)
+
+        offset_candidates = []
+        if offset_for_radius is not None:
+            offset_candidates.append(offset_for_radius)
+        offset_candidates.append(preferred_offset)
+        if offset_for_radius is not None:
+            blended = (offset_for_radius + preferred_offset) / 2.0
+            offset_candidates.append(blended)
+
+        best_section: SectionPreview | None = None
+        best_score = float("inf")
+
+        for offset in offset_candidates:
+            if offset == 0:
+                continue
+
+            center = (mid[0] + normal[0] * offset, mid[1] + normal[1] * offset)
+            radius = math.hypot(start[0] - center[0], start[1] - center[1])
+            if radius <= half_chord:
+                continue
+
+            orientation = 1.0 if offset > 0 else -1.0
+            start_heading = self._curve_tangent_heading(center, start, orientation)
+            end_heading = self._curve_tangent_heading(center, end, orientation)
+
+            arc_length = self._curve_arc_length(center, start, end, radius)
+            if arc_length is None:
+                continue
+
+            score = self._compute_curve_solution_metric(
+                center,
+                radius,
+                start_heading,
+                end_heading,
+                sect,
+            )
+
+            if score < best_score:
+                best_score = score
+                best_section = replace(
+                    sect,
+                    start=start,
+                    end=end,
+                    center=center,
+                    radius=radius,
+                    sang1=start_heading[0] if start_heading else None,
+                    sang2=start_heading[1] if start_heading else None,
+                    eang1=end_heading[0] if end_heading else None,
+                    eang2=end_heading[1] if end_heading else None,
+                    start_heading=start_heading,
+                    end_heading=end_heading,
+                    length=arc_length,
+                )
+
+        return best_section
+
+    @staticmethod
+    def _curve_orientation_hint(section: SectionPreview) -> float:
+        if section.center is not None:
+            sx, sy = section.start
+            ex, ey = section.end
+            cx, cy = section.center
+            start_vec = (sx - cx, sy - cy)
+            end_vec = (ex - cx, ey - cy)
+            cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+            if abs(cross) > 1e-9:
+                return 1.0 if cross > 0 else -1.0
+
+        if section.start_heading is not None and section.end_heading is not None:
+            sx, sy = section.start_heading
+            ex, ey = section.end_heading
+            cross = sx * ey - sy * ex
+            if abs(cross) > 1e-9:
+                return 1.0 if cross > 0 else -1.0
+
+        return 1.0
+
+    def _compute_curve_solution_metric(
+        self,
+        center: Point,
+        radius: float,
+        start_heading: tuple[float, float] | None,
+        end_heading: tuple[float, float] | None,
+        sect: SectionPreview,
+    ) -> float:
+        center_penalty = 0.0
+        if sect.center is not None:
+            cx, cy = sect.center
+            center_penalty = math.hypot(center[0] - cx, center[1] - cy) * 0.01
+
+        radius_penalty = 0.0
+        if sect.radius is not None and sect.radius > 0:
+            radius_delta = abs(radius - sect.radius)
+            radius_penalty = max(0.0, radius_delta - self.CURVE_SOLVE_TOLERANCE) * 0.05
+
+        heading_penalty = 0.0
+        heading_penalty += self._curve_heading_penalty(sect.start_heading, start_heading)
+        heading_penalty += self._curve_heading_penalty(sect.end_heading, end_heading)
+
+        return heading_penalty * 2.0 + radius_penalty + center_penalty
+
+    @staticmethod
+    def _curve_heading_penalty(
+        original: tuple[float, float] | None, candidate: tuple[float, float] | None
+    ) -> float:
+        if original is None or candidate is None:
+            return 0.0
+        dot = SGPreviewWidget._clamp_unit(original[0] * candidate[0] + original[1] * candidate[1])
+        return math.acos(dot)
+
+    @staticmethod
+    def _curve_tangent_heading(
+        center: Point, point: Point, orientation: float
+    ) -> tuple[float, float] | None:
+        vx = point[0] - center[0]
+        vy = point[1] - center[1]
+        radius = math.hypot(vx, vy)
+        if radius <= 0:
+            return None
+        tx = orientation * (-vy / radius)
+        ty = orientation * (vx / radius)
+        return (tx, ty)
+
+    @staticmethod
+    def _clamp_unit(value: float) -> float:
+        return max(-1.0, min(1.0, value))
+
+    @staticmethod
+    def _curve_arc_length(
+        center: Point, start: Point, end: Point, radius: float
+    ) -> float | None:
+        sx = start[0] - center[0]
+        sy = start[1] - center[1]
+        ex = end[0] - center[0]
+        ey = end[1] - center[1]
+
+        dot = SGPreviewWidget._clamp_unit((sx * ex + sy * ey) / max(radius * radius, 1e-9))
+        cross = sx * ey - sy * ex
+        angle = abs(math.atan2(cross, dot))
+        if angle <= 0:
+            return None
+        return radius * angle
 
     def _start_section_drag(self, track_point: Point) -> None:
         if self._selection.selected_section_index is None:
