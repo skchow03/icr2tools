@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.curve_solver import _project_point_along_heading
+from sg_viewer.curve_solver import (
+    _project_point_along_heading,
+    solve_curve_with_heading_constraint,
+)
 from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 
 if TYPE_CHECKING:
@@ -20,6 +23,8 @@ Point = tuple[float, float]
 
 
 class PreviewInteraction:
+    SNAP_HEADING_DISTANCE_TOLERANCE = 100.0
+
     def __init__(
         self,
         widget: "SGPreviewWidget",
@@ -306,6 +311,7 @@ class PreviewInteraction:
         self._apply_section_updates(sections)
 
     def _end_node_drag(self) -> None:
+        self._attempt_curve_to_straight_snap()
         self._is_dragging_node = False
         self._active_node = None
 
@@ -390,6 +396,105 @@ class PreviewInteraction:
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
+    def _attempt_curve_to_straight_snap(self) -> None:
+        if self._active_node is None:
+            return
+
+        sections = self._widget._sections
+        if not sections:
+            return
+
+        sect_index, endtype = self._active_node
+        if sect_index < 0 or sect_index >= len(sections):
+            return
+
+        curve = sections[sect_index]
+        if curve.type_name != "curve" or not self._widget._is_disconnected_endpoint(curve, endtype):
+            return
+
+        moving_point = curve.start if endtype == "start" else curve.end
+
+        best_solution: tuple[int, "SectionPreview", "SectionPreview", float] | None = None
+
+        for idx, straight in enumerate(sections):
+            if idx == sect_index or straight.type_name != "straight":
+                continue
+
+            if not self._widget._is_disconnected_endpoint(straight, "start"):
+                continue
+
+            heading = straight.start_heading
+            if heading is None:
+                continue
+
+            hx, hy = heading
+            heading_length = math.hypot(hx, hy)
+            if heading_length <= 1e-9:
+                continue
+
+            heading_unit = (hx / heading_length, hy / heading_length)
+            end_point = straight.end
+
+            dx = moving_point[0] - end_point[0]
+            dy = moving_point[1] - end_point[1]
+
+            projection = dx * -heading_unit[0] + dy * -heading_unit[1]
+            if projection <= 0:
+                continue
+
+            start_candidate = (
+                end_point[0] - heading_unit[0] * projection,
+                end_point[1] - heading_unit[1] * projection,
+            )
+
+            perpendicular_dist = math.hypot(
+                moving_point[0] - start_candidate[0], moving_point[1] - start_candidate[1]
+            )
+
+            if perpendicular_dist > self.SNAP_HEADING_DISTANCE_TOLERANCE:
+                continue
+
+            curve_start = start_candidate if endtype == "start" else curve.start
+            curve_end = start_candidate if endtype == "end" else curve.end
+
+            solved_curve = solve_curve_with_heading_constraint(
+                curve,
+                curve_start,
+                curve_end,
+                heading_unit,
+                heading_applies_to_start=endtype == "start",
+                tolerance=self._widget.CURVE_SOLVE_TOLERANCE,
+            )
+
+            if solved_curve is None:
+                continue
+
+            updated_straight = replace(
+                straight,
+                start=start_candidate,
+                length=projection,
+                previous_id=sect_index,
+            )
+
+            solved_curve = replace(
+                solved_curve,
+                next_id=idx if endtype == "end" else solved_curve.next_id,
+                previous_id=idx if endtype == "start" else solved_curve.previous_id,
+            )
+
+            score = perpendicular_dist
+            if best_solution is None or score < best_solution[3]:
+                best_solution = (idx, solved_curve, updated_straight, score)
+
+        if best_solution is None:
+            return
+
+        straight_index, solved_curve, updated_straight, _ = best_solution
+        sections = list(sections)
+        sections[sect_index] = update_section_geometry(solved_curve)
+        sections[straight_index] = update_section_geometry(updated_straight)
+        self._apply_section_updates(sections)
+
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
         self._widget._sections = sections
         self._widget._section_signatures = [self._widget._section_signature(s) for s in sections]

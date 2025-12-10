@@ -6,6 +6,7 @@ from sg_viewer.curve_solver import (
     _curve_tangent_heading,
     _project_point_along_heading,
     _solve_curve_drag,
+    solve_curve_with_heading_constraint,
 )
 from sg_viewer.sg_model import SectionPreview
 
@@ -123,3 +124,46 @@ def test_project_point_along_heading_projects_correctly():
     step = expected_projection / math.sqrt(2)
     assert math.isclose(projected[0], origin[0] + step)
     assert math.isclose(projected[1], origin[1] + step)
+
+
+def test_solve_curve_with_heading_constraint_matches_requested_heading():
+    start = (10.0, 0.0)
+    end = (0.0, 10.0)
+    center = (0.0, 0.0)
+    radius = math.hypot(*start)
+    end_heading = _curve_tangent_heading(center, end, 1.0)
+    start_heading = _curve_tangent_heading(center, start, 1.0)
+    length = _curve_arc_length(center, start, end, radius)
+
+    sect = _make_section(
+        start=start,
+        end=end,
+        center=center,
+        radius=radius,
+        start_heading=start_heading,
+        end_heading=end_heading,
+        length=length,
+    )
+
+    target_heading = (-1.0, 0.0)
+    target_end = (0.0, 12.0)
+
+    solved = solve_curve_with_heading_constraint(
+        sect,
+        start,
+        target_end,
+        target_heading,
+        heading_applies_to_start=False,
+        tolerance=1.0,
+    )
+
+    assert solved is not None
+    assert solved.end == target_end
+    assert solved.end_heading is not None
+
+    normalized_target = (
+        target_heading[0] / math.hypot(*target_heading),
+        target_heading[1] / math.hypot(*target_heading),
+    )
+    dot = solved.end_heading[0] * normalized_target[0] + solved.end_heading[1] * normalized_target[1]
+    assert math.isclose(dot, 1.0, rel_tol=1e-6)

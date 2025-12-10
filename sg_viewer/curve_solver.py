@@ -309,3 +309,58 @@ def _compute_curve_solution_metric(
 
 def _clamp_unit(value: float) -> float:
     return max(-1.0, min(1.0, value))
+
+
+def solve_curve_with_heading_constraint(
+    sect: SectionPreview,
+    start: Point,
+    end: Point,
+    target_heading: tuple[float, float],
+    heading_applies_to_start: bool,
+    tolerance: float,
+) -> SectionPreview | None:
+    """Solve a curve ensuring the heading at one endpoint matches ``target_heading``.
+
+    This helper is used when snapping a curve endpoint to another section while keeping
+    the tangent continuous.
+    """
+
+    hx, hy = target_heading
+    heading_length = math.hypot(hx, hy)
+    if heading_length <= 1e-9:
+        return None
+
+    normalized_heading = (hx / heading_length, hy / heading_length)
+    orientation_hint = _curve_orientation_hint(sect)
+
+    fixed_point = start if heading_applies_to_start else end
+
+    candidates = _solve_curve_with_fixed_heading(
+        sect,
+        start,
+        end,
+        fixed_point=fixed_point,
+        fixed_heading=normalized_heading,
+        fixed_point_is_start=heading_applies_to_start,
+        orientation_hint=orientation_hint,
+    )
+
+    cx_hint, cy_hint = sect.center if sect.center is not None else start
+
+    best_section: SectionPreview | None = None
+    best_score = float("inf")
+
+    for candidate in candidates:
+        score = _compute_curve_solution_metric(
+            candidate.center if candidate.center is not None else (cx_hint, cy_hint),
+            candidate.radius if candidate.radius is not None else 0.0,
+            candidate.start_heading,
+            candidate.end_heading,
+            sect,
+            tolerance,
+        )
+        if score < best_score:
+            best_score = score
+            best_section = candidate
+
+    return best_section
