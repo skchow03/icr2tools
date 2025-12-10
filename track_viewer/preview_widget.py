@@ -2,16 +2,12 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from icr2_core.lp.loader import load_lp_file
 from icr2_core.cam.helpers import CameraPosition, CameraSegmentRange
-from icr2_core.trk.surface_mesh import GroundSurfaceStrip
-from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import (
     get_cline_pos,
     getxyz,
@@ -21,13 +17,9 @@ from track_viewer import rendering
 from track_viewer.camera_controller import CameraController
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 from track_viewer.camera_service import CameraService
-from track_viewer.geometry import (
-    CenterlineIndex,
-    build_centerline_index,
-    project_point_to_centerline,
-    sample_centerline,
-)
+from track_viewer.geometry import project_point_to_centerline
 from track_viewer.io_service import TrackIOService
+from track_viewer.track_data import LpPoint, TrackLoader, TrackPreviewModel
 
 
 LP_FILE_NAMES = [
@@ -56,15 +48,6 @@ LP_COLORS = [
 ]
 
 
-@dataclass
-class LpPoint:
-    x: float
-    y: float
-    dlong: float
-    dlat: float
-    speed_mph: float
-
-
 class TrackPreviewWidget(QtWidgets.QFrame):
     """Renders the TRK ground surface similar to the timing overlay."""
 
@@ -85,30 +68,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         self._status_message = "Select a track to preview."
 
-        self.trk = None
-        self._cline: List[Tuple[float, float]] = []
-        self._surface_mesh: List[GroundSurfaceStrip] = []
-        self._bounds: Tuple[float, float, float, float] | None = None
-        self._sampled_centerline: List[Tuple[float, float]] = []
-        self._sampled_dlongs: List[float] = []
-        self._sampled_bounds: Tuple[float, float, float, float] | None = None
-        self._centerline_index: CenterlineIndex | None = None
-        self._ai_lines: dict[str, List[LpPoint]] | None = None
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
-        self._current_track: Path | None = None
-        self._show_center_line = True
-        self._show_boundaries = True
-        self._show_cameras = True
-        self._show_zoom_points = False
-        self._visible_lp_files: set[str] = set()
-        self._available_lp_files: List[str] = []
+        self._model = TrackPreviewModel()
+        self._io_service = TrackIOService()
+        self._loader = TrackLoader(self._io_service)
         self._ai_color_mode = "none"
         self._ai_acceleration_window = 3
         self._ai_line_width = 2
-        self._track_length: float | None = None
-        self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
-        self._active_lp_line = "center-line"
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -122,7 +89,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._dragging_camera_index: int | None = None
         self._camera_dragged = False
 
-        self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
         self._selected_camera: int | None = None
         self._nearest_projection_point: Tuple[float, float] | None = None
@@ -143,25 +109,38 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             str | None,
         ] | None = None
         self._cursor_position: Tuple[float, float] | None = None
-        self._io_service = TrackIOService()
         self._camera_service = CameraService(self._io_service, CameraController())
+
+        self._model.trackChanged.connect(self._on_model_changed)
+        self._model.visibilityChanged.connect(self.update)
+        self._model.flagsChanged.connect(self._on_flags_changed)
+        self._model.aiLineLoaded.connect(lambda _name: self.update())
+
+    def _on_model_changed(self) -> None:
+        self._cached_surface_pixmap = None
+        self._pixmap_size = None
+        self._projection_cached_point = None
+        self._projection_cached_result = None
+        self._view_center = self._default_center()
+        self._fit_scale = None
+        self._current_scale = None
+        self._user_transform_active = False
+        self._set_selected_flag(None)
+        self.update()
+
+    def _on_flags_changed(self) -> None:
+        if self._selected_flag is not None:
+            if self._selected_flag >= len(self._model.flags):
+                self._set_selected_flag(None)
+        self.update()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def clear(self, message: str = "Select a track to preview.") -> None:
-        self.trk = None
-        self._cline = []
-        self._surface_mesh = []
-        self._bounds = None
-        self._sampled_centerline = []
-        self._sampled_dlongs = []
-        self._sampled_bounds = None
-        self._centerline_index = None
-        self._ai_lines = None
+        self._model.clear()
         self._cached_surface_pixmap = None
         self._pixmap_size = None
-        self._current_track = None
         self._view_center = None
         self._fit_scale = None
         self._current_scale = None
@@ -172,7 +151,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._dragged_during_press = False
         self._dragging_camera_index = None
         self._camera_dragged = False
-        self._flags = []
         self._selected_flag = None
         self._selected_camera = None
         self._nearest_projection_point = None
@@ -185,11 +163,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._projection_cached_point = None
         self._projection_cached_result = None
         self._cursor_position = None
-        self._track_length = None
-        self._visible_lp_files = set()
-        self._available_lp_files = []
-        self._boundary_edges = []
-        self._active_lp_line = "center-line"
         self._camera_service.reset()
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -216,27 +189,27 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def set_show_center_line(self, show: bool) -> None:
         """Enable or disable rendering of the track center line."""
 
-        if self._show_center_line != show:
-            self._show_center_line = show
-            if not show and self._active_lp_line == "center-line":
+        if self._model.show_center_line != show:
+            self._model.set_show_center_line(show)
+            if not show and self._model.active_lp_line == "center-line":
                 self._set_projection_data(None, None, None, None, None, None, None)
             self.update()
 
     def set_show_boundaries(self, show: bool) -> None:
         """Enable or disable rendering of the track boundary edges."""
 
-        if self._show_boundaries != show:
-            self._show_boundaries = show
+        if self._model.show_boundaries != show:
+            self._model.set_show_boundaries(show)
             self.update()
 
     def center_line_visible(self) -> bool:
-        return self._show_center_line
+        return self._model.show_center_line
 
     def ai_line_available(self) -> bool:
-        return bool(self._available_lp_files)
+        return bool(self._model.available_lp_files)
 
     def available_lp_files(self) -> list[str]:
-        return list(self._available_lp_files)
+        return list(self._model.available_lp_files)
 
     def ai_acceleration_window(self) -> int:
         return self._ai_acceleration_window
@@ -257,30 +230,22 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self.update()
 
     def visible_lp_files(self) -> list[str]:
-        return sorted(self._visible_lp_files)
+        return sorted(self._model.visible_lp_files)
 
     def set_visible_lp_files(self, names: list[str] | set[str]) -> None:
-        valid = {name for name in names if name in self._available_lp_files}
-        if valid == self._visible_lp_files:
-            return
-        self._visible_lp_files = valid
+        self._model.set_visible_lp_files(names)
         self.update()
 
     def active_lp_line(self) -> str:
-        return self._active_lp_line
+        return self._model.active_lp_line
 
     def set_active_lp_line(self, name: str) -> None:
-        target = "center-line"
-        if name in self._available_lp_files:
-            target = name
-        elif name == "center-line":
-            target = name
-        if target == self._active_lp_line:
-            return
-        self._active_lp_line = target
-        self._projection_cached_point = None
-        self._projection_cached_result = None
-        self._set_projection_data(None, None, None, None, None, None, None)
+        current = self._model.active_lp_line
+        self._model.set_active_lp_line(name)
+        if self._model.active_lp_line != current:
+            self._projection_cached_point = None
+            self._projection_cached_result = None
+            self._set_projection_data(None, None, None, None, None, None, None)
 
     def lp_color(self, name: str) -> str:
         try:
@@ -292,8 +257,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def set_show_zoom_points(self, show: bool) -> None:
         """Enable or disable rendering of zoom DLONG markers."""
 
-        if self._show_zoom_points != show:
-            self._show_zoom_points = show
+        if self._model.show_zoom_points != show:
+            self._model.set_show_zoom_points(show)
             self.update()
 
     def set_ai_speed_gradient_enabled(self, enabled: bool) -> None:
@@ -314,13 +279,17 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self.update()
 
     def track_length(self) -> Optional[int]:
-        return int(self._track_length) if self._track_length is not None else None
+        return (
+            int(self._model.track_length)
+            if self._model.track_length is not None
+            else None
+        )
 
     def set_show_cameras(self, show: bool) -> None:
         """Enable or disable rendering of track camera overlays."""
 
-        if self._show_cameras != show:
-            self._show_cameras = show
+        if self._model.show_cameras != show:
+            self._model.set_show_cameras(show)
             self.update()
 
     def cameras(self) -> List[CameraPosition]:
@@ -368,7 +337,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def add_type6_camera(self) -> tuple[bool, str]:
         """Create a new type 6 camera relative to the current selection."""
         success, message, selected = self._camera_service.add_type6_camera(
-            self._selected_camera, self._track_length
+            self._selected_camera, self._model.track_length
         )
         if success and selected is not None:
             self.set_selected_camera(selected)
@@ -382,7 +351,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def add_type7_camera(self) -> tuple[bool, str]:
         """Create a new type 7 camera relative to the current selection."""
         success, message, selected = self._camera_service.add_type7_camera(
-            self._selected_camera, self._track_length
+            self._selected_camera, self._model.track_length
         )
         if success and selected is not None:
             self.set_selected_camera(selected)
@@ -406,47 +375,26 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self.clear()
             return
 
-        if self._current_track == track_folder:
+        if self._model.track_folder == track_folder:
             return  # nothing to do
 
         self._status_message = f"Loading {track_folder.name}…"
         self.update()
 
         try:
-            track_data = self._io_service.load_track(track_folder)
+            track_data = self._loader.load_track(track_folder)
         except Exception as exc:  # pragma: no cover - interactive feedback
             self.clear(f"Failed to load track: {exc}")
             return
 
-        self.trk = track_data.trk
-        self._track_length = track_data.track_length
-        self._cline = track_data.centerline
-        self._surface_mesh = track_data.surface_mesh
-        self._boundary_edges = self._build_boundary_edges(self.trk, self._cline)
-        sampled, sampled_dlongs, sampled_bounds = sample_centerline(self.trk, self._cline)
-        self._sampled_centerline = sampled
-        self._sampled_dlongs = sampled_dlongs
-        self._sampled_bounds = sampled_bounds
-        self._centerline_index = build_centerline_index(sampled, sampled_bounds)
+        self._model.set_track_data(track_data)
         self._projection_cached_point = None
         self._projection_cached_result = None
-        self._bounds = self._merge_bounds(track_data.surface_bounds, sampled_bounds)
-        self._available_lp_files = track_data.available_lp_files
-        self._ai_lines = None
-        self._visible_lp_files = {
-            name for name in self._visible_lp_files if name in self._available_lp_files
-        }
-        if self._active_lp_line not in {"center-line", *self._available_lp_files}:
-            self._active_lp_line = "center-line"
         self._set_projection_data(None, None, None, None, None, None, None)
-        self._cached_surface_pixmap = None
-        self._pixmap_size = None
-        self._current_track = track_folder
         self._status_message = f"Loaded {track_folder.name}" if track_folder else ""
         self._view_center = self._default_center()
         self._user_transform_active = False
         self._update_fit_scale()
-        self._flags = []
         self._set_selected_flag(None)
         self._camera_service.load_for_track(track_folder)
         self.camerasChanged.emit(
@@ -458,7 +406,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def save_cameras(self) -> tuple[bool, str]:
         """Persist the current camera data back to disk."""
 
-        if self._current_track is None:
+        if self._model.track_folder is None:
             return False, "No track is currently loaded."
 
         try:
@@ -472,26 +420,28 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def run_trk_gaps(self) -> tuple[bool, str]:
         """Replicate the ``trk_gaps`` script for the currently loaded track."""
 
-        if self.trk is None or self._current_track is None:
+        if self._model.trk is None or self._model.track_folder is None:
             return False, "No track is currently loaded."
 
-        track_name = self._current_track.name
-        trk_path = self._current_track / f"{track_name}.trk"
+        track_name = self._model.track_folder.name
+        trk_path = self._model.track_folder / f"{track_name}.trk"
         header_label = str(trk_path if trk_path.exists() else trk_path.name)
 
         try:
-            cline = get_cline_pos(self.trk)
+            cline = get_cline_pos(self._model.trk)
             dist_list: list[float] = []
             lines = [header_label]
 
-            for sect in range(-1, self.trk.num_sects - 1):
+            for sect in range(-1, self._model.trk.num_sects - 1):
                 xy2 = getxyz(
-                    self.trk,
-                    self.trk.sects[sect].start_dlong + self.trk.sects[sect].length - 1,
+                    self._model.trk,
+                    self._model.trk.sects[sect].start_dlong
+                    + self._model.trk.sects[sect].length
+                    - 1,
                     0,
                     cline,
                 )
-                xy1 = sect2xy(self.trk, sect + 1, cline)
+                xy1 = sect2xy(self._model.trk, sect + 1, cline)
 
                 dist = math.dist((xy1[0], xy1[1]), (xy2[0], xy2[1]))
 
@@ -502,22 +452,22 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 lines.append(f"Max gap {max(dist_list):.1f}")
                 lines.append(f"Min gap {min(dist_list):.1f}")
                 lines.append(f"Sum gaps {sum(dist_list):.1f}")
-            lines.append(f"Track length: {self.trk.trklength}")
+            lines.append(f"Track length: {self._model.trk.trklength}")
         except Exception as exc:  # pragma: no cover - interactive feedback
             return False, f"Failed to compute TRK gaps: {exc}"
 
         return True, "\n".join(lines)
 
     def _default_center(self) -> Tuple[float, float] | None:
-        if not self._bounds:
+        if not self._model.bounds:
             return None
-        min_x, max_x, min_y, max_y = self._bounds
+        min_x, max_x, min_y, max_y = self._model.bounds
         return ((min_x + max_x) / 2, (min_y + max_y) / 2)
 
     def _calculate_fit_scale(self) -> float | None:
-        if not self._bounds:
+        if not self._model.bounds:
             return None
-        min_x, max_x, min_y, max_y = self._bounds
+        min_x, max_x, min_y, max_y = self._model.bounds
         track_w = max_x - min_x
         track_h = max_y - min_y
         if track_w <= 0 or track_h <= 0:
@@ -531,114 +481,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return min(scale_x, scale_y)
 
     def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
-        return [(p.x, p.y) for p in self._get_ai_line_records(lp_name)]
+        return self._model.ai_line_points(lp_name, self._loader)
 
     def _get_ai_line_records(self, lp_name: str) -> List[LpPoint]:
-        if self._current_track is None:
-            return []
-
-        if self._ai_lines is None:
-            self._ai_lines = {}
-
-        if lp_name not in self._ai_lines:
-            self._ai_lines[lp_name] = self._load_ai_line_records(lp_name)
-
-        return self._ai_lines.get(lp_name) or []
-
-    def _load_ai_line_records(self, lp_name: str) -> List[LpPoint]:
-        if self.trk is None or not self._cline:
-            return []
-
-        lp_path = self._current_track / f"{lp_name}.LP"
-        if not lp_path.exists():
-            return []
-
-        length_arg = int(self._track_length) if self._track_length is not None else None
-        try:
-            ai_line = load_lp_file(lp_path, track_length=length_arg)
-        except Exception:
-            return []
-
-        points: List[LpPoint] = []
-        for record in ai_line:
-            try:
-                x, y, _ = getxyz(self.trk, float(record.dlong), record.dlat, self._cline)
-            except Exception:
-                continue
-            points.append(
-                LpPoint(
-                    x=x,
-                    y=y,
-                    dlong=float(record.dlong),
-                    dlat=float(record.dlat),
-                    speed_mph=float(record.speed_mph),
-                )
-            )
-        return points
-
-    def _merge_bounds(
-        self, *bounds: Tuple[float, float, float, float] | None
-    ) -> Tuple[float, float, float, float] | None:
-        valid = [b for b in bounds if b]
-        if not valid:
-            return None
-        min_x = min(b[0] for b in valid)
-        max_x = max(b[1] for b in valid)
-        min_y = min(b[2] for b in valid)
-        max_y = max(b[3] for b in valid)
-        return (min_x, max_x, min_y, max_y)
-
-    @staticmethod
-    def _build_boundary_edges(
-        trk: TRKFile | None,
-        cline: Optional[List[Tuple[float, float]]],
-    ) -> List[tuple[Tuple[float, float], Tuple[float, float]]]:
-        """Create boundary line segments directly from TRK section data."""
-
-        if trk is None or cline is None:
-            return []
-
-        edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
-
-        for sect in trk.sects:
-            start_dlong = sect.start_dlong
-            end_dlong = sect.start_dlong + sect.length
-
-            if sect.type == 1:
-                num_subsects = 1
-            else:
-                num_subsects = max(1, round(sect.length / 60000))
-
-            for bound_idx in range(sect.num_bounds):
-                start_dlat = sect.bound_dlat_start[bound_idx]
-                end_dlat = sect.bound_dlat_end[bound_idx]
-
-                for sub_idx in range(num_subsects):
-                    sub_start_dlong = start_dlong + (
-                        (end_dlong - start_dlong) * sub_idx / num_subsects
-                    )
-                    if sub_idx == num_subsects - 1:
-                        sub_end_dlong = end_dlong
-                    else:
-                        sub_end_dlong = start_dlong + (
-                            (end_dlong - start_dlong) * (sub_idx + 1) / num_subsects
-                        )
-
-                    sub_start_dlat = start_dlat + (
-                        (end_dlat - start_dlat) * sub_idx / num_subsects
-                    )
-                    sub_end_dlat = start_dlat + (
-                        (end_dlat - start_dlat) * (sub_idx + 1) / num_subsects
-                    )
-
-                    start_x, start_y, _ = getxyz(
-                        trk, sub_start_dlong, sub_start_dlat, cline
-                    )
-                    end_x, end_y, _ = getxyz(trk, sub_end_dlong, sub_end_dlat, cline)
-
-                    edges.append(((start_x, start_y), (end_x, end_y)))
-
-        return edges
+        return self._model.ai_line_records(lp_name, self._loader)
 
     def _update_fit_scale(self) -> None:
         fit = self._calculate_fit_scale()
@@ -650,7 +496,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._invalidate_cache()
 
     def _current_transform(self) -> Tuple[float, Tuple[float, float]] | None:
-        if not self._bounds:
+        if not self._model.bounds:
             return None
         if self._current_scale is None:
             self._update_fit_scale()
@@ -690,7 +536,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         painter = QtGui.QPainter(self)
         painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
 
-        if not self._surface_mesh or not self._bounds:
+        if not self._model.surface_mesh or not self._model.bounds:
             painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
             painter.drawText(self.rect(), QtCore.Qt.AlignCenter, self._status_message)
             return
@@ -698,26 +544,26 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         transform = self._current_transform()
         if self._cached_surface_pixmap is None or self._pixmap_size != self.size():
             self._cached_surface_pixmap = rendering.render_surface_to_pixmap(
-                self._surface_mesh, transform, self.size()
+                self._model.surface_mesh, transform, self.size()
             )
             self._pixmap_size = self.size()
 
         painter.drawPixmap(0, 0, self._cached_surface_pixmap)
 
-        if transform and self._show_boundaries:
+        if transform and self._model.show_boundaries:
             rendering.draw_track_boundaries(
-                painter, self._boundary_edges, transform, self.height()
+                painter, self._model.boundary_edges, transform, self.height()
             )
 
-        if self._show_center_line and self._sampled_centerline and transform:
+        if self._model.show_center_line and self._model.sampled_centerline and transform:
             rendering.draw_centerline(
                 painter,
-                self._sampled_centerline,
+                self._model.sampled_centerline,
                 transform,
                 self.height(),
             )
 
-        if transform and self._show_center_line:
+        if transform and self._model.show_center_line:
             rendering.draw_start_finish_line(
                 painter,
                 transform,
@@ -725,7 +571,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self._centerline_point_and_normal,
             )
 
-        if transform and self._show_center_line:
+        if transform and self._model.show_center_line:
             rendering.draw_camera_range_markers(
                 painter,
                 self._camera_view_ranges(self._selected_camera),
@@ -749,7 +595,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawEllipse(highlight, 5, 5)
 
         if transform:
-            if self._show_cameras:
+            if self._model.show_cameras:
                 rendering.draw_camera_positions(
                     painter,
                     self._camera_service.cameras,
@@ -759,7 +605,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 )
             rendering.draw_ai_lines(
                 painter,
-                self._visible_lp_files,
+                self._model.visible_lp_files,
                 self._get_ai_line_points,
                 transform,
                 self.height(),
@@ -770,9 +616,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 acceleration_window=self._ai_acceleration_window,
             )
             rendering.draw_flags(
-                painter, self._flags, self._selected_flag, transform, self.height()
+                painter, self._model.flags, self._selected_flag, transform, self.height()
             )
-            if self._show_zoom_points:
+            if self._model.show_zoom_points:
                 rendering.draw_zoom_points(
                     painter,
                     self._zoom_points_for_camera(),
@@ -783,10 +629,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         y = 20
-        if self._track_length is not None:
-            track_length_text = (
-                f"Track length: {int(round(self._track_length))} DLONG"
-            )
+        if self._model.track_length is not None:
+            track_length_text = f"Track length: {int(round(self._model.track_length))} DLONG"
             painter.drawText(12, y, track_length_text)
             y += 16
         painter.drawText(12, y, self._status_message)
@@ -833,7 +677,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     # Interaction handlers
     # ------------------------------------------------------------------
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401 - Qt signature
-        if not self._surface_mesh or not self._bounds:
+        if not self._model.surface_mesh or not self._model.bounds:
             return
         delta = event.angleDelta().y()
         if delta == 0:
@@ -859,12 +703,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if event.button() == QtCore.Qt.RightButton and self._surface_mesh:
+        if event.button() == QtCore.Qt.RightButton and self._model.surface_mesh:
             if self._handle_flag_removal(event.pos()):
                 event.accept()
                 return
 
-        if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+        if event.button() == QtCore.Qt.LeftButton and self._model.surface_mesh:
             if self._handle_camera_press(event.pos()):
                 event.accept()
                 return
@@ -911,7 +755,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+        if event.button() == QtCore.Qt.LeftButton and self._model.surface_mesh:
             if self._dragging_camera_index is not None:
                 self._dragging_camera_index = None
                 self._camera_dragged = False
@@ -940,7 +784,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     # Cursor & flag helpers
     # ------------------------------------------------------------------
     def _update_cursor_position(self, point: QtCore.QPointF) -> None:
-        if not self._surface_mesh or not self._bounds:
+        if not self._model.surface_mesh or not self._model.bounds:
             self.cursorPositionChanged.emit(None)
             if self._cursor_position is not None:
                 self._cursor_position = None
@@ -984,8 +828,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self.update()
 
     def _update_active_line_projection(self, point: QtCore.QPointF | None) -> None:
-        active = self._active_lp_line if self._active_lp_line else "center-line"
-        if active != "center-line" and active not in self._available_lp_files:
+        active = self._model.active_lp_line if self._model.active_lp_line else "center-line"
+        if active != "center-line" and active not in self._model.available_lp_files:
             active = "center-line"
         if active == "center-line":
             self._update_centerline_projection(point)
@@ -995,9 +839,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _update_centerline_projection(self, point: QtCore.QPointF | None) -> None:
         if (
             point is None
-            or not self._sampled_centerline
-            or not self._sampled_dlongs
-            or not self._show_center_line
+            or not self._model.sampled_centerline
+            or not self._model.sampled_dlongs
+            or not self._model.show_center_line
         ):
             self._set_projection_data(None, None, None, None, None, None, None)
             return
@@ -1029,12 +873,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
 
         transform = self._current_transform()
-        if not transform or not self.trk:
+        if not transform or not self._model.trk:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         screen_bounds = rendering.centerline_screen_bounds(
-            self._sampled_bounds, transform, self.height()
+            self._model.sampled_bounds, transform, self.height()
         )
         if screen_bounds:
             dx = max(screen_bounds.left() - point.x(), 0.0, point.x() - screen_bounds.right())
@@ -1058,16 +902,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._set_projection_data(None, None, None, None, None, None, None)
             return
 
-        if self._centerline_index is None:
+        if self._model.centerline_index is None:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
 
         cursor_x, cursor_y = cursor_track
-        track_length = float(self.trk.trklength)
+        if self._model.track_length is None:
+            self._set_projection_data(None, None, None, None, None, None, None)
+            return
+        track_length = float(self._model.track_length)
         best_point, best_dlong, best_distance_sq = project_point_to_centerline(
             (cursor_x, cursor_y),
-            self._centerline_index,
-            self._sampled_dlongs,
+            self._model.centerline_index,
+            self._model.sampled_dlongs,
             track_length,
         )
 
@@ -1092,8 +939,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._set_projection_data(None, None, None, None, None, None, None)
             return
         elevation = None
-        if best_dlong is not None and self._cline:
-            _, _, elevation = getxyz(self.trk, float(best_dlong), 0, self._cline)
+        if best_dlong is not None and self._model.centerline:
+            _, _, elevation = getxyz(
+                self._model.trk, float(best_dlong), 0, self._model.centerline
+            )
         self._projection_cached_point = point
         self._projection_cached_result = (
             best_point,
@@ -1111,7 +960,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _update_ai_line_projection(
         self, point: QtCore.QPointF | None, lp_name: str
     ) -> None:
-        if point is None or lp_name not in self._visible_lp_files:
+        if point is None or lp_name not in self._model.visible_lp_files:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
 
@@ -1147,7 +996,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
 
         transform = self._current_transform()
-        if not transform or not self.trk:
+        if not transform or not self._model.trk:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
 
@@ -1164,7 +1013,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         best_speed = None
         best_accel = None
 
-        track_length = float(self.trk.trklength) if self.trk else None
+        track_length = (
+            float(self._model.track_length) if self._model.track_length is not None else None
+        )
         for idx in range(len(records)):
             p0 = records[idx]
             p1 = records[(idx + 1) % len(records)]
@@ -1302,9 +1153,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _centerline_point_and_normal(
         self, dlong: float
     ) -> tuple[tuple[float, float], tuple[float, float]] | None:
-        if not self.trk or not self._cline:
+        if not self._model.trk or not self._model.centerline:
             return None
-        track_length = float(self.trk.trklength)
+        track_length = float(self._model.track_length) if self._model.track_length else 0
         if track_length <= 0:
             return None
 
@@ -1320,9 +1171,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         prev_dlong = _wrap(base - delta)
         next_dlong = _wrap(base + delta)
 
-        px, py, _ = getxyz(self.trk, prev_dlong, 0, self._cline)
-        nx, ny, _ = getxyz(self.trk, next_dlong, 0, self._cline)
-        cx, cy, _ = getxyz(self.trk, base, 0, self._cline)
+        px, py, _ = getxyz(
+            self._model.trk, prev_dlong, 0, self._model.centerline
+        )
+        nx, ny, _ = getxyz(
+            self._model.trk, next_dlong, 0, self._model.centerline
+        )
+        cx, cy, _ = getxyz(self._model.trk, base, 0, self._model.centerline)
 
         vx = nx - px
         vy = ny - py
@@ -1333,13 +1188,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return (cx, cy), normal
 
     def _centerline_point(self, dlong: float) -> tuple[float, float] | None:
-        if not self.trk or not self._cline:
+        if not self._model.trk or not self._model.centerline:
             return None
-        track_length = float(self.trk.trklength)
+        track_length = float(self._model.track_length) if self._model.track_length else 0
         if track_length <= 0:
             return None
         wrapped = dlong % track_length
-        cx, cy, _ = getxyz(self.trk, wrapped, 0, self._cline)
+        cx, cy, _ = getxyz(self._model.trk, wrapped, 0, self._model.centerline)
         return cx, cy
 
     def _camera_view_ranges(self, camera_index: int | None) -> list[tuple[float, float]]:
@@ -1358,7 +1213,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return ranges
 
     def _zoom_points_for_camera(self) -> list[tuple[float, QtGui.QColor]]:
-        if not self._show_zoom_points:
+        if not self._model.show_zoom_points:
             return []
         if self._selected_camera is None:
             return []
@@ -1382,7 +1237,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         transform = self._current_transform()
         if not transform:
             return None
-        for index, (fx, fy) in enumerate(self._flags):
+        for index, (fx, fy) in enumerate(self._model.flags):
             flag_point = rendering.map_point(
                 fx, fy, transform, self.height()
             )
@@ -1405,15 +1260,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         coords = self._map_to_track(point)
         if coords is None:
             return
-        self._flags.append(coords)
-        self._set_selected_flag(len(self._flags) - 1)
+        self._model.add_flag(coords)
+        self._set_selected_flag(len(self._model.flags) - 1)
         self.update()
 
     def _handle_flag_removal(self, point: QtCore.QPointF) -> bool:
         flag_index = self._flag_at_point(point)
         if flag_index is None:
             return False
-        del self._flags[flag_index]
+        self._model.remove_flag(flag_index)
         if self._selected_flag is not None:
             if self._selected_flag == flag_index:
                 self._set_selected_flag(None)
@@ -1425,7 +1280,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _set_selected_flag(self, index: int | None) -> None:
         self._selected_flag = index
         coords = None
-        if index is not None and 0 <= index < len(self._flags):
-            coords = self._flags[index]
+        if index is not None and 0 <= index < len(self._model.flags):
+            coords = self._model.flags[index]
         self.selectedFlagChanged.emit(coords)
         self.update()
