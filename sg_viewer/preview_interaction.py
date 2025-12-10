@@ -167,6 +167,13 @@ class PreviewInteraction:
 
         return None
 
+    def find_node_at_position(
+        self, pos: QtCore.QPoint, preferred_index: int | None
+    ) -> tuple[int, str] | None:
+        """Public wrapper around _hit_test_node for external interaction logic."""
+
+        return self._hit_test_node(pos, preferred_index)
+
     def _hit_test_selected_section_line(self, pos: QtCore.QPoint) -> Point | None:
         if self._selection.selected_section_index is None:
             return None
@@ -533,6 +540,134 @@ class PreviewInteraction:
         sections[sect_index] = update_section_geometry(solved_curve)
         sections[straight_index] = update_section_geometry(updated_straight)
         self._apply_section_updates(sections)
+
+    def attempt_manual_curve_to_straight_fit(
+        self, curve_node: tuple[int, str], straight_node: tuple[int, str]
+    ) -> tuple[bool, str]:
+        """Attempt to snap a specific curve endpoint to a specific straight endpoint."""
+
+        sections = self._widget._sections
+        if not sections:
+            return False, "No sections loaded to fit."
+
+        curve_index, curve_endtype = curve_node
+        straight_index, straight_endtype = straight_node
+
+        if (
+            curve_index < 0
+            or curve_index >= len(sections)
+            or straight_index < 0
+            or straight_index >= len(sections)
+        ):
+            return False, "Invalid nodes selected for fitting."
+
+        curve = sections[curve_index]
+        straight = sections[straight_index]
+
+        if curve.type_name != "curve":
+            return False, "First node must belong to a curve section."
+        if straight.type_name != "straight":
+            return False, "Second node must belong to a straight section."
+
+        if not self._widget._is_disconnected_endpoint(curve, curve_endtype):
+            return False, "Curve node is already connected."
+        if not self._widget._is_disconnected_endpoint(straight, straight_endtype):
+            return False, "Straight node is already connected."
+
+        moving_point = curve.start if curve_endtype == "start" else curve.end
+
+        if straight_endtype == "start":
+            heading = straight.start_heading
+            anchor_point = straight.end
+            heading_direction = -1.0
+        else:
+            heading = straight.end_heading or straight.start_heading
+            anchor_point = straight.start
+            heading_direction = 1.0
+
+        if heading is None:
+            return False, "Straight node is missing heading data for fitting."
+
+        hx, hy = heading
+        heading_length = math.hypot(hx, hy)
+        if heading_length <= 1e-9:
+            return False, "Straight heading is too small to use for fitting."
+
+        heading_unit = (hx / heading_length, hy / heading_length)
+        dx = moving_point[0] - anchor_point[0]
+        dy = moving_point[1] - anchor_point[1]
+
+        if heading_direction < 0:
+            projection = dx * -heading_unit[0] + dy * -heading_unit[1]
+            projected_point = (
+                anchor_point[0] - heading_unit[0] * projection,
+                anchor_point[1] - heading_unit[1] * projection,
+            )
+        else:
+            projection = dx * heading_unit[0] + dy * heading_unit[1]
+            projected_point = (
+                anchor_point[0] + heading_unit[0] * projection,
+                anchor_point[1] + heading_unit[1] * projection,
+            )
+
+        if projection <= 0:
+            return False, "Selected nodes are not positioned for a valid fit."
+
+        perpendicular_dist = math.hypot(
+            moving_point[0] - projected_point[0], moving_point[1] - projected_point[1]
+        )
+        if perpendicular_dist > self.SNAP_HEADING_DISTANCE_TOLERANCE:
+            return False, "Nodes are too far apart to fit based on heading tolerance."
+
+        curve_start = projected_point if curve_endtype == "start" else curve.start
+        curve_end = projected_point if curve_endtype == "end" else curve.end
+
+        solved_curve = solve_curve_with_heading_constraint(
+            curve,
+            curve_start,
+            curve_end,
+            heading_unit,
+            heading_applies_to_start=curve_endtype == "start",
+            tolerance=self._widget.CURVE_SOLVE_TOLERANCE,
+        )
+
+        if solved_curve is None:
+            return False, "Unable to solve curve with the provided nodes."
+
+        straight_start = projected_point if straight_endtype == "start" else straight.start
+        straight_end = straight.end if straight_endtype == "start" else projected_point
+
+        updated_straight = replace(
+            straight,
+            start=straight_start,
+            end=straight_end,
+            length=projection,
+            previous_id=curve_index if straight_endtype == "start" else straight.previous_id,
+            next_id=curve_index if straight_endtype == "end" else straight.next_id,
+        )
+
+        solved_curve = replace(
+            solved_curve,
+            next_id=straight_index if curve_endtype == "end" else solved_curve.next_id,
+            previous_id=straight_index
+            if curve_endtype == "start"
+            else solved_curve.previous_id,
+        )
+
+        logger.debug(
+            "Manual snap fit succeeded: curve node (%d, %s) to straight node (%d, %s)",
+            curve_index,
+            curve_endtype,
+            straight_index,
+            straight_endtype,
+        )
+
+        new_sections = list(sections)
+        new_sections[curve_index] = update_section_geometry(solved_curve)
+        new_sections[straight_index] = update_section_geometry(updated_straight)
+        self._apply_section_updates(new_sections)
+
+        return True, "Fit applied successfully."
 
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
         self._widget._sections = sections

@@ -68,6 +68,10 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
+        self._window.fit_button.clicked.connect(self._start_manual_fit)
+        self._window.preview.statusMessageEmitted.connect(
+            self._window.statusBar().showMessage
+        )
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -156,3 +160,6 @@ class SGViewerController:
 
         profile = self._window.preview.build_elevation_profile(int(current_index))
         self._window.profile_widget.set_profile_data(profile)
+
+    def _start_manual_fit(self) -> None:
+        self._window.preview.start_manual_fit_attempt()

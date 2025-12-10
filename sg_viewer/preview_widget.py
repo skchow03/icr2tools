@@ -29,6 +29,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
     sectionsChanged = QtCore.pyqtSignal()  # NEW
+    statusMessageEmitted = QtCore.pyqtSignal(str)
 
     CURVE_SOLVE_TOLERANCE = 1.0  # inches
 
@@ -67,6 +68,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
+        self._manual_fit_first_node: tuple[int, str] | None = None
+        self._manual_fit_active = False
 
     # ------------------------------------------------------------------
     # State delegation
@@ -143,6 +146,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._last_mouse_pos = None
         self._press_pos = None
         self._interaction.reset()
+        self._manual_fit_active = False
+        self._manual_fit_first_node = None
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
         self._update_node_status()
@@ -418,6 +423,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._press_pos is not None
                 and (event.pos() - self._press_pos).manhattanLength() < 6
             ):
+                if self._manual_fit_active and self._handle_fit_click(event.pos()):
+                    self._press_pos = None
+                    return
                 self._handle_click(event.pos())
             self._press_pos = None
         super().mouseReleaseEvent(event)
@@ -437,6 +445,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _on_selection_changed(self, selection_value: object) -> None:
         self.selectedSectionChanged.emit(selection_value)
         self.update()
+
+    def _emit_status_message(self, message: str) -> None:
+        self.statusMessageEmitted.emit(message)
 
     def get_section_set(self) -> tuple[list[SectionPreview], float | None]:
         track_length = float(self._track_length) if self._track_length is not None else None
@@ -510,6 +521,76 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         self.sectionsChanged.emit()  # NEW
         self.update()
+
+    # ------------------------------------------------------------------
+    # Manual fit support
+    # ------------------------------------------------------------------
+    def start_manual_fit_attempt(self) -> None:
+        if not self._sections:
+            self._emit_status_message("Load an SG file before attempting a fit.")
+            return
+
+        self._manual_fit_active = True
+        self._manual_fit_first_node = None
+        self._emit_status_message(
+            "Select an unconnected curve node to start the fit attempt."
+        )
+
+    def _handle_fit_click(self, pos: QtCore.QPoint) -> bool:
+        if not self._manual_fit_active:
+            return False
+
+        node = self._interaction.find_node_at_position(pos, None)
+        if node is None:
+            self._emit_status_message(
+                "Click an unconnected curve node, then an unconnected straight node."
+            )
+            return True
+
+        sections = self._sections
+        if not sections:
+            return True
+
+        index, endtype = node
+        if index < 0 or index >= len(sections):
+            return True
+
+        section = sections[index]
+        if not self._is_disconnected_endpoint(section, endtype):
+            self._emit_status_message(
+                "Selected node is already connected; choose unconnected nodes."
+            )
+            return True
+
+        if self._manual_fit_first_node is None:
+            if section.type_name != "curve":
+                self._emit_status_message(
+                    "First selection must be an unconnected curve endpoint."
+                )
+                return True
+
+            self._manual_fit_first_node = node
+            self._emit_status_message(
+                "Now select an unconnected straight endpoint to complete the fit."
+            )
+            return True
+
+        curve_node = self._manual_fit_first_node
+        straight_node = node
+
+        if section.type_name != "straight":
+            self._emit_status_message(
+                "Second selection must be an unconnected straight endpoint."
+            )
+            return True
+
+        _success, message = self._interaction.attempt_manual_curve_to_straight_fit(
+            curve_node, straight_node
+        )
+        self._emit_status_message(message)
+        self._manual_fit_active = False
+        self._manual_fit_first_node = None
+        return True
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
         return self._selection.get_section_headings()

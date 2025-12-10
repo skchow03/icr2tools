@@ -38,6 +38,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
         self._heading_table_button.setEnabled(False)
+        self._fit_button = QtWidgets.QPushButton("Fit Unconnected Nodes")
+        self._fit_button.setEnabled(True)
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
@@ -55,6 +57,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._next_button)
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
+        sidebar_layout.addWidget(self._fit_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
@@ -111,6 +114,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def heading_table_button(self) -> QtWidgets.QPushButton:
         return self._heading_table_button
+
+    @property
+    def fit_button(self) -> QtWidgets.QPushButton:
+        return self._fit_button
 
     @property
     def profile_widget(self) -> ElevationProfileWidget:
