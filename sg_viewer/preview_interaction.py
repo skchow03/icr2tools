@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -22,8 +23,11 @@ if TYPE_CHECKING:
 Point = tuple[float, float]
 
 
+logger = logging.getLogger(__name__)
+
+
 class PreviewInteraction:
-    SNAP_HEADING_DISTANCE_TOLERANCE = 100.0
+    SNAP_HEADING_DISTANCE_TOLERANCE = 150.0
 
     def __init__(
         self,
@@ -415,6 +419,7 @@ class PreviewInteraction:
         moving_point = curve.start if endtype == "start" else curve.end
 
         best_solution: tuple[int, "SectionPreview", "SectionPreview", float] | None = None
+        attempted_snap = False
 
         for idx, straight in enumerate(sections):
             if idx == sect_index or straight.type_name != "straight":
@@ -422,6 +427,16 @@ class PreviewInteraction:
 
             if not self._widget._is_disconnected_endpoint(straight, "start"):
                 continue
+
+            attempted_snap = True
+            logger.debug(
+                "Attempting snap fit from curve node (%d, %s) at %s to straight node (%d, start) at %s",
+                sect_index,
+                endtype,
+                moving_point,
+                idx,
+                straight.start,
+            )
 
             heading = straight.start_heading
             if heading is None:
@@ -486,10 +501,34 @@ class PreviewInteraction:
             if best_solution is None or score < best_solution[3]:
                 best_solution = (idx, solved_curve, updated_straight, score)
 
+        if not attempted_snap:
+            logger.debug(
+                "Snap fit skipped: no eligible straight section found for curve node (%d, %s) at %s",
+                sect_index,
+                endtype,
+                moving_point,
+            )
+            return
+
         if best_solution is None:
+            logger.debug(
+                "Snap fit unsuccessful between curve node (%d, %s) at %s and any straight start node (tolerance %.1f)",
+                sect_index,
+                endtype,
+                moving_point,
+                self.SNAP_HEADING_DISTANCE_TOLERANCE,
+            )
             return
 
         straight_index, solved_curve, updated_straight, _ = best_solution
+        logger.debug(
+            "Snap fit succeeded between curve node (%d, %s) at %s and straight node (%d, start) now at %s",
+            sect_index,
+            endtype,
+            moving_point,
+            straight_index,
+            updated_straight.start,
+        )
         sections = list(sections)
         sections[sect_index] = update_section_geometry(solved_curve)
         sections[straight_index] = update_section_geometry(updated_straight)
