@@ -46,6 +46,7 @@ class SelectionManager(QtCore.QObject):
         self._selected_section_index: int | None = None
         self._selected_section_points: list[Point] = []
         self._selected_curve_index: int | None = None
+        self._section_ranges: list[tuple[float, float]] = []
 
     @property
     def selected_section_index(self) -> int | None:
@@ -71,9 +72,10 @@ class SelectionManager(QtCore.QObject):
         sampled_dlongs: List[float],
     ) -> None:
         self._sections = sections
-        self._track_length = track_length
+        self._track_length = self._compute_track_length(track_length, sampled_dlongs)
         self._centerline_index = centerline_index
         self._sampled_dlongs = sampled_dlongs
+        self._section_ranges = self._compute_section_ranges(sections)
 
         if self._selected_section_index is not None:
             if self._selected_section_index >= len(sections):
@@ -92,6 +94,7 @@ class SelectionManager(QtCore.QObject):
         self._track_length = track_length
         self._centerline_index = centerline_index
         self._sampled_dlongs = sampled_dlongs
+        self._section_ranges = []
         self._selected_section_index = None
         self._selected_section_points = []
         self._selected_curve_index = None
@@ -148,6 +151,15 @@ class SelectionManager(QtCore.QObject):
         if not self._sections or self._track_length is None:
             return None
 
+        if self._section_ranges:
+            track_length = self._track_length or 0
+            for idx, (start, end) in enumerate(self._section_ranges):
+                if start <= dlong <= end:
+                    return idx
+                if track_length > 0 and end > track_length and (dlong >= start or dlong <= end - track_length):
+                    return idx
+            return None
+
         track_length = self._track_length or 0
         for idx, sect in enumerate(self._sections):
             start = float(sect.start_dlong)
@@ -158,6 +170,29 @@ class SelectionManager(QtCore.QObject):
             elif start <= dlong <= end:
                 return idx
         return None
+
+    def _compute_track_length(self, track_length: float | None, sampled_dlongs: list[float]) -> float | None:
+        if sampled_dlongs:
+            return sampled_dlongs[-1]
+        return track_length
+
+    def _compute_section_ranges(self, sections: list[SectionPreview]) -> list[tuple[float, float]]:
+        ranges: list[tuple[float, float]] = []
+        cursor = 0.0
+
+        for sect in sections:
+            if not sect.polyline or len(sect.polyline) < 2:
+                continue
+
+            length = 0.0
+            for start, end in zip(sect.polyline, sect.polyline[1:]):
+                length += math.hypot(end[0] - start[0], end[1] - start[1])
+
+            start_dlong = cursor
+            cursor += length
+            ranges.append((start_dlong, cursor))
+
+        return ranges
 
     def _build_section_selection(self, section: SectionPreview) -> SectionSelection:
         return SectionSelection(
