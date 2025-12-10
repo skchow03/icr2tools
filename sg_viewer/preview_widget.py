@@ -12,8 +12,9 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
-from sg_viewer import preview_loader_service, preview_state
+from sg_viewer import preview_state
 from sg_viewer import rendering_service, selection
+from sg_viewer.preview_state_controller import PreviewStateController
 from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 from sg_viewer.sg_model import SectionPreview
 
@@ -38,25 +39,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
         self.setPalette(palette)
 
-        self._sgfile: SGFile | None = None
-        self._trk: TRKFile | None = None
+        self._controller = PreviewStateController()
+
         self._cline: List[Point] | None = None
-        self._sampled_centerline: List[Point] = []
         self._centerline_polylines: list[list[Point]] = []
         self._sampled_dlongs: List[float] = []
-        self._sampled_bounds: tuple[float, float, float, float] | None = None
         self._centerline_index: CenterlineIndex | None = None
-        self._status_message = "Select an SG file to begin."
 
         self._sections: list[SectionPreview] = []
         self._section_endpoints: list[tuple[Point, Point]] = []
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
 
-        self._track_length: float | None = None
-
         self._section_signatures: list[tuple] = []
 
-        self._transform_state = preview_state.TransformState()
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
@@ -77,23 +72,77 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
 
+    # ------------------------------------------------------------------
+    # State delegation
+    # ------------------------------------------------------------------
+    @property
+    def _sgfile(self) -> SGFile | None:
+        return self._controller.sgfile
+
+    @_sgfile.setter
+    def _sgfile(self, value: SGFile | None) -> None:
+        self._controller.sgfile = value
+
+    @property
+    def _trk(self) -> TRKFile | None:
+        return self._controller.trk
+
+    @_trk.setter
+    def _trk(self, value: TRKFile | None) -> None:
+        self._controller.trk = value
+
+    @property
+    def _sampled_centerline(self) -> list[Point]:
+        return self._controller.sampled_centerline
+
+    @_sampled_centerline.setter
+    def _sampled_centerline(self, value: list[Point]) -> None:
+        self._controller.sampled_centerline = value
+
+    @property
+    def _sampled_bounds(self) -> tuple[float, float, float, float] | None:
+        return self._controller.sampled_bounds
+
+    @_sampled_bounds.setter
+    def _sampled_bounds(self, value: tuple[float, float, float, float] | None) -> None:
+        self._controller.sampled_bounds = value
+
+    @property
+    def _track_length(self) -> float | None:
+        return self._controller.track_length
+
+    @_track_length.setter
+    def _track_length(self, value: float | None) -> None:
+        self._controller.track_length = value
+
+    @property
+    def _status_message(self) -> str:
+        return self._controller.status_message
+
+    @_status_message.setter
+    def _status_message(self, value: str) -> None:
+        self._controller.status_message = value
+
+    @property
+    def _transform_state(self) -> preview_state.TransformState:
+        return self._controller.transform_state
+
+    @_transform_state.setter
+    def _transform_state(self, value: preview_state.TransformState) -> None:
+        self._controller.transform_state = value
+
 
     def clear(self, message: str | None = None) -> None:
-        self._sgfile = None
-        self._trk = None
+        self._controller.clear(message)
         self._cline = None
-        self._sampled_centerline = []
         self._centerline_polylines = []
         self._sampled_dlongs = []
-        self._sampled_bounds = None
         self._centerline_index = None
-        self._track_length = None
         self._section_endpoints = []
         self._sections = []
         self._section_signatures = []
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
-        self._transform_state = preview_state.TransformState()
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
@@ -111,19 +160,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Loading
     # ------------------------------------------------------------------
     def load_sg_file(self, path: Path) -> None:
-        if not path:
+        data = self._controller.load_sg_file(path)
+        if data is None:
             self.clear()
             return
 
-        self._status_message = f"Loading {path.name}…"
-        self.update()
-
-        data = preview_loader_service.load_preview(path)
-
-        self._sgfile = data.sgfile
-        self._trk = data.trk
         self._cline = data.cline
-        self._sampled_centerline = data.sampled_centerline
         self._centerline_polylines = [list(data.sampled_centerline)] if data.sampled_centerline else []
         self._sampled_dlongs = data.sampled_dlongs
         self._sampled_bounds = data.sampled_bounds
@@ -134,7 +176,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
-        self._transform_state = preview_state.TransformState()
         self._status_message = data.status_message
         self._selection.reset(
             self._sections,
@@ -143,40 +184,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_dlongs,
         )
         self._update_node_status()
-        self._update_fit_scale()
+        self._controller.update_fit_scale((self.width(), self.height()))
         self.update()
-
-    # ------------------------------------------------------------------
-    # Transform helpers
-    # ------------------------------------------------------------------
-    def _default_center(self) -> Point | None:
-        return preview_state.default_center(self._sampled_bounds)
-
-    def _update_fit_scale(self) -> None:
-        self._transform_state = preview_state.update_fit_scale(
-            self._transform_state,
-            self._sampled_bounds,
-            (self.width(), self.height()),
-            self._default_center(),
-        )
-
-    def _current_transform(self) -> Transform | None:
-        transform, updated_state = preview_state.current_transform(
-            self._transform_state,
-            self._sampled_bounds,
-            (self.width(), self.height()),
-            self._default_center(),
-        )
-        if updated_state is not self._transform_state:
-            self._transform_state = updated_state
-        return transform
-
-    def _clamp_scale(self, scale: float) -> float:
-        return preview_state.clamp_scale(scale, self._transform_state)
-
-    def _map_to_track(self, point: QtCore.QPointF) -> Point | None:
-        transform = self._current_transform()
-        return preview_state.map_to_track(transform, (point.x(), point.y()), self.height())
 
     def _update_node_status(self) -> None:
         """
@@ -248,7 +257,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: D401
         super().resizeEvent(event)
-        self._update_fit_scale()
+        self._controller.update_fit_scale((self.width(), self.height()))
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
@@ -256,7 +265,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
 
         # Get the current transform once, reuse it
-        transform = self._current_transform()
+        transform = self._controller.current_transform((self.width(), self.height()))
 
         # Let the rendering service draw everything (track, endpoints, etc.)
         rendering_service.paint_preview(
@@ -325,12 +334,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if not self._sampled_centerline:
             return
-        transform = self._current_transform()
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
         if transform is None:
             return
         state = self._transform_state
         if state.view_center is None:
-            center = self._default_center()
+            center = self._controller.default_center()
             if center is None:
                 return
             state = replace(state, view_center=center)
@@ -340,8 +350,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         delta = event.angleDelta().y()
         factor = 1.15 if delta > 0 else 1 / 1.15
-        new_scale = self._clamp_scale(state.current_scale * factor)
-        cursor_track = self._map_to_track(event.pos())
+        new_scale = self._controller.clamp_scale(state.current_scale * factor)
+        cursor_track = self._controller.map_to_track(event.pos(), widget_size, self.height())
         if cursor_track is None:
             cursor_track = state.view_center
         w, h = self.width(), self.height()
@@ -488,10 +498,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         if self._is_panning and self._last_mouse_pos is not None:
-            transform = self._current_transform()
+            widget_size = (self.width(), self.height())
+            transform = self._controller.current_transform(widget_size)
             if transform:
                 state = self._transform_state
-                center = state.view_center or self._default_center()
+                center = state.view_center or self._controller.default_center()
                 if center is not None:
                     scale, _ = transform
                     delta = event.pos() - self._last_mouse_pos
@@ -529,7 +540,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Selection
     # ------------------------------------------------------------------
     def _handle_click(self, pos: QtCore.QPoint) -> None:
-        self._selection.handle_click(pos, self._map_to_track, self._current_transform())
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        self._selection.handle_click(
+            pos,
+            lambda p: self._controller.map_to_track(p, widget_size, self.height(), transform),
+            transform,
+        )
 
     def _on_selection_changed(self, selection_value: object) -> None:
         self.selectedSectionChanged.emit(selection_value)
@@ -594,7 +611,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_dlongs = dlongs
             self._sampled_bounds = bounds
             self._centerline_index = index
-            self._update_fit_scale()
+            self._controller.update_fit_scale((self.width(), self.height()))
 
         self._update_node_status()
 
@@ -712,7 +729,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _hit_test_node(
         self, pos: QtCore.QPoint, preferred_index: int | None
     ) -> tuple[int, str] | None:
-        transform = self._current_transform()
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
         if transform is None:
             return None
 
@@ -755,11 +773,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if not self._can_drag_section_polyline(section):
             return None
 
-        transform = self._current_transform()
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
         if transform is None:
             return None
 
-        track_point = self._map_to_track(QtCore.QPointF(pos))
+        track_point = self._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.height(), transform
+        )
         if track_point is None:
             return None
 
@@ -773,7 +794,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return None
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
-        track_point = self._map_to_track(QtCore.QPointF(pos))
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        track_point = self._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.height(), transform
+        )
         if track_point is None:
             return
         self._active_node = node
@@ -788,7 +813,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._active_node = None
 
     def _update_drag_position(self, pos: QtCore.QPoint) -> None:
-        track_point = self._map_to_track(QtCore.QPointF(pos))
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        track_point = self._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.height(), transform
+        )
         if track_point is None or self._active_node is None:
             return
         self._update_dragged_section(track_point)
@@ -1167,7 +1196,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._last_mouse_pos = None
 
     def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
-        track_point = self._map_to_track(QtCore.QPointF(pos))
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        track_point = self._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.height(), transform
+        )
         if track_point is None:
             return
         self._update_section_drag(track_point)
