@@ -234,7 +234,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _can_drag_node(self, section: SectionPreview, endtype: str) -> bool:
         if section.type_name == "straight":
-            return self._can_drag_section_node(section)
+            return self._can_drag_section_node(section) or self._is_disconnected_endpoint(
+                section, endtype
+            )
         if section.type_name == "curve":
             return self._is_disconnected_endpoint(section, endtype)
         return False
@@ -805,10 +807,24 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         start = sect.start
         end = sect.end
+        disconnected_start = self._is_disconnected_endpoint(sect, "start")
+        disconnected_end = self._is_disconnected_endpoint(sect, "end")
         if endtype == "start":
-            start = track_point
+            if disconnected_start and not disconnected_end:
+                constrained_start = self._project_point_along_heading(
+                    end, sect.end_heading, track_point
+                )
+                start = constrained_start or track_point
+            else:
+                start = track_point
         else:
-            end = track_point
+            if disconnected_end and not disconnected_start:
+                constrained_end = self._project_point_along_heading(
+                    start, sect.start_heading, track_point
+                )
+                end = constrained_end or track_point
+            else:
+                end = track_point
 
         if sect.type_name == "curve":
             updated_section = self._solve_curve_drag(sect, start, end)
@@ -825,6 +841,26 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # Rebuild geometry for the modified section and refresh centreline data
         sections[sect_index] = update_section_geometry(sections[sect_index])
         self._apply_section_updates(sections)
+
+    def _project_point_along_heading(
+        self, origin: Point, heading: tuple[float, float] | None, target: Point
+    ) -> Point | None:
+        if heading is None:
+            return None
+
+        hx, hy = heading
+        mag = math.hypot(hx, hy)
+        if mag <= 0:
+            return None
+
+        hx /= mag
+        hy /= mag
+
+        dx = target[0] - origin[0]
+        dy = target[1] - origin[1]
+        projection = dx * hx + dy * hy
+
+        return origin[0] + projection * hx, origin[1] + projection * hy
 
     def _solve_curve_drag(
         self, sect: SectionPreview, start: Point, end: Point
