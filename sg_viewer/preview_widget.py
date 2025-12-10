@@ -15,6 +15,7 @@ from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_state
 from sg_viewer import rendering_service, selection
 from sg_viewer.preview_state_controller import PreviewStateController
+from sg_viewer.preview_interaction import PreviewInteraction
 from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 from sg_viewer.sg_model import SectionPreview
 
@@ -55,16 +56,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._press_pos: QtCore.QPoint | None = None
-        self._is_dragging_node = False
-        self._active_node: tuple[int, str] | None = None
-        self._is_dragging_section = False
-        self._active_section_index: int | None = None
-        self._section_drag_origin: Point | None = None
-        self._section_drag_start_end: tuple[Point, Point] | None = None
-        self._section_drag_center: Point | None = None
-
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
+
+        self._interaction = PreviewInteraction(self, self._controller, self._selection)
 
         self._show_curve_markers = True
 
@@ -146,11 +141,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
-        self._is_dragging_section = False
-        self._active_section_index = None
-        self._section_drag_origin = None
-        self._section_drag_start_end = None
-        self._section_drag_center = None
+        self._interaction.reset()
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
         self._update_node_status()
@@ -371,102 +362,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 # ---------------------------------------------------------
 # NEW: Node disconnect only if that section is selected
 # ---------------------------------------------------------
-        if event.button() == QtCore.Qt.LeftButton:
-            selected_section = self._selection.selected_section_index
-            hit = self._hit_test_node(event.pos(), selected_section)
-            print("DEBUG hit =", hit)
-            if hit is not None:
-
-                sect_index, endtype = hit
-
-                # Must select section first
-                if selected_section is None or selected_section != sect_index:
-                    return
-
-                sect = self._sections[sect_index]
-
-                # ---------------------------------------------------------
-                # Node dragging for disconnected sections
-                # ---------------------------------------------------------
-                if self._can_drag_node(sect, endtype):
-                    self._start_node_drag(hit, event.pos())
-                    event.accept()
-                    return
-
-                # -----------------------------------------
-                # Break logical prev/next connectivity only
-                # -----------------------------------------
-
-                if endtype == "start":
-                    # Break backward link
-                    prev_id = sect.previous_id
-
-                    # Update this section
-                    sect = replace(sect, previous_id=-1)
-                    self._sections[sect_index] = sect
-
-                    # Update the previous section (break its forward link)
-                    if 0 <= prev_id < len(self._sections):
-                        prev_sect = self._sections[prev_id]
-                        prev_sect = replace(prev_sect, next_id=-1)
-                        self._sections[prev_id] = prev_sect
-
-                else:  # end node clicked
-                    # Break forward link
-                    next_id = sect.next_id
-
-                    # Update this section
-                    sect = replace(sect, next_id=-1)
-                    self._sections[sect_index] = sect
-
-                    # Update the next section (break its backward link)
-                    if 0 <= next_id < len(self._sections):
-                        next_sect = self._sections[next_id]
-                        next_sect = replace(next_sect, previous_id=-1)
-                        self._sections[next_id] = next_sect
-
-                                # -----------------------------------------
-                # Geometry rebuild WITHOUT nudging
-                # -----------------------------------------
-                points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
-                self._centerline_polylines = [s.polyline for s in self._sections]
-                self._sampled_centerline = points
-                self._sampled_dlongs = dlongs
-                self._sampled_bounds = bounds
-                self._centerline_index = index
-
-                self._update_node_status()
-
-                # Update selection context only
-                self._selection.update_context(
-                    self._sections,
-                    self._track_length,
-                    self._centerline_index,
-                    self._sampled_dlongs,
-                )
-
-                print("DEBUG node_status (after click):", self._node_status.get((sect_index, endtype)))
-
-                # optional: you can drop this if you don't need table refresh
-                # self.sectionsChanged.emit()
-
-                self.update()
-                event.accept()
-                return
-
-
-
-        # ---------------------------------------------------------
-        # END NEW BLOCK
-        # ---------------------------------------------------------
-
-        # Attempt to drag an isolated straight section by its selected polyline
-        if event.button() == QtCore.Qt.LeftButton:
-            drag_origin = self._hit_test_selected_section_line(event.pos())
-            if drag_origin is not None:
-                self._start_section_drag(drag_origin)
-                event.accept()
-                return
+        if self._interaction.handle_mouse_press(event):
+            return
 
         # ---------------------------------------------------------
         # 2. EXISTING: Begin panning behavior
@@ -474,8 +371,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if (
             event.button() == QtCore.Qt.LeftButton
             and self._sampled_centerline
-            and not self._is_dragging_node
-            and not self._is_dragging_section
+            and not self._interaction.is_dragging_node
+            and not self._interaction.is_dragging_section
         ):
             self._is_panning = True
             self._last_mouse_pos = event.pos()
@@ -488,13 +385,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._is_dragging_node and self._active_node is not None:
-            self._update_drag_position(event.pos())
-            event.accept()
-            return
-        if self._is_dragging_section and self._active_section_index is not None:
-            self._update_section_drag_position(event.pos())
-            event.accept()
+        if self._interaction.handle_mouse_move(event):
             return
 
         if self._is_panning and self._last_mouse_pos is not None:
@@ -518,13 +409,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
-            if self._is_dragging_node:
-                self._end_node_drag()
-                event.accept()
-                return
-            if self._is_dragging_section:
-                self._end_section_drag()
-                event.accept()
+            if self._interaction.handle_mouse_release(event):
                 return
             self._is_panning = False
             self._last_mouse_pos = None
@@ -725,177 +610,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
-
-    def _hit_test_node(
-        self, pos: QtCore.QPoint, preferred_index: int | None
-    ) -> tuple[int, str] | None:
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        if transform is None:
-            return None
-
-        scale, offsets = transform
-        ox, oy = offsets
-        widget_height = self.height()
-        radius = self._node_radius_px
-        r2 = radius * radius
-
-        px = pos.x()
-        py = pos.y()
-
-        nodes = list(self._build_node_positions().items())
-        if preferred_index is not None:
-            preferred_nodes = [n for n in nodes if n[0][0] == preferred_index]
-            other_nodes = [n for n in nodes if n[0][0] != preferred_index]
-            nodes = preferred_nodes + other_nodes
-
-        for (i, endtype), (x, y) in nodes:
-            # match renderer behavior exactly
-            node_px = ox + x * scale
-            node_py = widget_height - (oy + y * scale)
-
-            dx = px - node_px
-            dy = py - node_py
-            if dx*dx + dy*dy <= r2:
-                return (i, endtype)
-
-        return None
-
-    def _hit_test_selected_section_line(self, pos: QtCore.QPoint) -> Point | None:
-        if self._selection.selected_section_index is None:
-            return None
-
-        index = self._selection.selected_section_index
-        if not self._sections or index < 0 or index >= len(self._sections):
-            return None
-
-        section = self._sections[index]
-        if not self._can_drag_section_polyline(section):
-            return None
-
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        if transform is None:
-            return None
-
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return None
-
-        scale, _ = transform
-        if scale <= 0:
-            return None
-
-        tolerance = 6 / scale
-        if self._distance_to_polyline(track_point, section.polyline) <= tolerance:
-            return track_point
-        return None
-
-    def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return
-        self._active_node = node
-        self._is_dragging_node = True
-        self._is_panning = False
-        self._press_pos = None
-        self._last_mouse_pos = None
-        self._update_dragged_section(track_point)
-
-    def _end_node_drag(self) -> None:
-        self._is_dragging_node = False
-        self._active_node = None
-
-    def _update_drag_position(self, pos: QtCore.QPoint) -> None:
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self.height(), transform
-        )
-        if track_point is None or self._active_node is None:
-            return
-        self._update_dragged_section(track_point)
-
-    def _update_dragged_section(self, track_point: Point) -> None:
-        if self._active_node is None or not self._sections:
-            return
-
-        sect_index, endtype = self._active_node
-        if sect_index < 0 or sect_index >= len(self._sections):
-            return
-
-        sect = self._sections[sect_index]
-        if not self._can_drag_node(sect, endtype):
-            return
-
-        start = sect.start
-        end = sect.end
-        disconnected_start = self._is_disconnected_endpoint(sect, "start")
-        disconnected_end = self._is_disconnected_endpoint(sect, "end")
-        if sect.type_name == "curve":
-            if endtype == "start":
-                start = track_point
-            else:
-                end = track_point
-        else:
-            if endtype == "start":
-                if disconnected_start and not disconnected_end:
-                    constrained_start = self._project_point_along_heading(
-                        end, sect.end_heading, track_point
-                    )
-                    start = constrained_start or track_point
-                else:
-                    start = track_point
-            else:
-                if disconnected_end and not disconnected_start:
-                    constrained_end = self._project_point_along_heading(
-                        start, sect.start_heading, track_point
-                    )
-                    end = constrained_end or track_point
-                else:
-                    end = track_point
-
-        if sect.type_name == "curve":
-            updated_section = self._solve_curve_drag(sect, start, end)
-        else:
-            length = math.hypot(end[0] - start[0], end[1] - start[1])
-            updated_section = replace(sect, start=start, end=end, length=length)
-
-        if updated_section is None:
-            return
-
-        sections = list(self._sections)
-        sections[sect_index] = updated_section
-
-        # Rebuild geometry for the modified section and refresh centreline data
-        sections[sect_index] = update_section_geometry(sections[sect_index])
-        self._apply_section_updates(sections)
-
-    def _project_point_along_heading(
-        self, origin: Point, heading: tuple[float, float] | None, target: Point
-    ) -> Point | None:
-        if heading is None:
-            return None
-
-        hx, hy = heading
-        mag = math.hypot(hx, hy)
-        if mag <= 0:
-            return None
-
-        hx /= mag
-        hy /= mag
-
-        dx = target[0] - origin[0]
-        dy = target[1] - origin[1]
-        projection = dx * hx + dy * hy
-
-        return origin[0] + projection * hx, origin[1] + projection * hy
 
     def _solve_curve_drag(
         self, sect: SectionPreview, start: Point, end: Point
@@ -1175,101 +889,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if angle <= 0:
             return None
         return radius * angle
-
-    def _start_section_drag(self, track_point: Point) -> None:
-        if self._selection.selected_section_index is None:
-            return
-        index = self._selection.selected_section_index
-        if index < 0 or index >= len(self._sections):
-            return
-        sect = self._sections[index]
-        if not self._can_drag_section_polyline(sect):
-            return
-
-        self._active_section_index = index
-        self._section_drag_origin = track_point
-        self._section_drag_start_end = (sect.start, sect.end)
-        self._section_drag_center = sect.center
-        self._is_dragging_section = True
-        self._is_panning = False
-        self._press_pos = None
-        self._last_mouse_pos = None
-
-    def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return
-        self._update_section_drag(track_point)
-
-    def _update_section_drag(self, track_point: Point) -> None:
-        if (
-            not self._is_dragging_section
-            or self._active_section_index is None
-            or self._section_drag_origin is None
-            or self._section_drag_start_end is None
-        ):
-            return
-
-        index = self._active_section_index
-        if index < 0 or index >= len(self._sections):
-            return
-        sect = self._sections[index]
-        if not self._can_drag_section_polyline(sect):
-            return
-
-        dx = track_point[0] - self._section_drag_origin[0]
-        dy = track_point[1] - self._section_drag_origin[1]
-        start, end = self._section_drag_start_end
-
-        translated_start = (start[0] + dx, start[1] + dy)
-        translated_end = (end[0] + dx, end[1] + dy)
-
-        translated_center = None
-        if self._section_drag_center is not None:
-            cx, cy = self._section_drag_center
-            translated_center = (cx + dx, cy + dy)
-
-        updated_section = replace(
-            sect,
-            start=translated_start,
-            end=translated_end,
-            center=translated_center if translated_center is not None else sect.center,
-        )
-
-        sections = list(self._sections)
-        sections[index] = update_section_geometry(updated_section)
-        self._apply_section_updates(sections)
-
-    def _end_section_drag(self) -> None:
-        self._is_dragging_section = False
-        self._active_section_index = None
-        self._section_drag_origin = None
-        self._section_drag_start_end = None
-        self._section_drag_center = None
-
-    def _apply_section_updates(self, sections: list[SectionPreview]) -> None:
-        self._sections = sections
-        self._section_signatures = [self._section_signature(s) for s in sections]
-        self._section_endpoints = [(s.start, s.end) for s in sections]
-
-        points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
-        self._centerline_polylines = [s.polyline for s in self._sections]
-        self._sampled_centerline = points
-        self._sampled_dlongs = dlongs
-        self._sampled_bounds = bounds
-        self._centerline_index = index
-
-        self._selection.update_context(
-            self._sections,
-            self._track_length,
-            self._centerline_index,
-            self._sampled_dlongs,
-        )
-        self.update()
 
     @staticmethod
     def _distance_to_polyline(point: Point, polyline: list[Point]) -> float:
