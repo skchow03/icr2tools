@@ -809,22 +809,28 @@ class SGPreviewWidget(QtWidgets.QWidget):
         end = sect.end
         disconnected_start = self._is_disconnected_endpoint(sect, "start")
         disconnected_end = self._is_disconnected_endpoint(sect, "end")
-        if endtype == "start":
-            if disconnected_start and not disconnected_end:
-                constrained_start = self._project_point_along_heading(
-                    end, sect.end_heading, track_point
-                )
-                start = constrained_start or track_point
-            else:
+        if sect.type_name == "curve":
+            if endtype == "start":
                 start = track_point
-        else:
-            if disconnected_end and not disconnected_start:
-                constrained_end = self._project_point_along_heading(
-                    start, sect.start_heading, track_point
-                )
-                end = constrained_end or track_point
             else:
                 end = track_point
+        else:
+            if endtype == "start":
+                if disconnected_start and not disconnected_end:
+                    constrained_start = self._project_point_along_heading(
+                        end, sect.end_heading, track_point
+                    )
+                    start = constrained_start or track_point
+                else:
+                    start = track_point
+            else:
+                if disconnected_end and not disconnected_start:
+                    constrained_end = self._project_point_along_heading(
+                        start, sect.start_heading, track_point
+                    )
+                    end = constrained_end or track_point
+                else:
+                    end = track_point
 
         if sect.type_name == "curve":
             updated_section = self._solve_curve_drag(sect, start, end)
