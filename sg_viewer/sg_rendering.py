@@ -24,18 +24,17 @@ def draw_background_image(
     if scale_500ths_per_px <= 0:
         return
 
-    scale, offsets = transform
-    ox, oy = offsets
     origin_x, origin_y = origin
-
-    dest_x = ox + origin_x * scale
-    dest_y = widget_height - (oy + origin_y * scale)
+    top_left = map_point(origin_x, origin_y, transform, widget_height)
+    scale, _ = transform
     dest_width = image.width() * scale_500ths_per_px * scale
     dest_height = image.height() * scale_500ths_per_px * scale
 
     painter.save()
     painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
-    painter.drawImage(QtCore.QRectF(dest_x, dest_y, dest_width, dest_height), image)
+    painter.drawImage(
+        QtCore.QRectF(top_left.x(), top_left.y(), dest_width, dest_height), image
+    )
     painter.restore()
 
 

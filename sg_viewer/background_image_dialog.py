@@ -21,13 +21,15 @@ class BackgroundImageDialog(QtWidgets.QDialog):
         self._scale_field.setSuffix(" 500ths/px")
 
         self._origin_u_field = QtWidgets.QDoubleSpinBox()
-        self._origin_u_field.setRange(-1_000_000.0, 1_000_000.0)
-        self._origin_u_field.setDecimals(2)
+        self._origin_u_field.setRange(-1_000_000_000_000.0, 1_000_000_000_000.0)
+        self._origin_u_field.setDecimals(0)
+        self._origin_u_field.setSingleStep(1)
         self._origin_u_field.setValue(origin_u)
 
         self._origin_v_field = QtWidgets.QDoubleSpinBox()
-        self._origin_v_field.setRange(-1_000_000.0, 1_000_000.0)
-        self._origin_v_field.setDecimals(2)
+        self._origin_v_field.setRange(-1_000_000_000_000.0, 1_000_000_000_000.0)
+        self._origin_v_field.setDecimals(0)
+        self._origin_v_field.setSingleStep(1)
         self._origin_v_field.setValue(origin_v)
 
         form = QtWidgets.QFormLayout()
