@@ -13,6 +13,32 @@ def draw_placeholder(painter: QtGui.QPainter, rect: QtCore.QRect, message: str) 
     painter.drawText(rect, QtCore.Qt.AlignCenter, message)
 
 
+def draw_background_image(
+    painter: QtGui.QPainter,
+    image: QtGui.QImage,
+    origin: Point,
+    scale_500ths_per_px: float,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    if scale_500ths_per_px <= 0:
+        return
+
+    scale, offsets = transform
+    ox, oy = offsets
+    origin_x, origin_y = origin
+
+    dest_x = ox + origin_x * scale
+    dest_y = widget_height - (oy + origin_y * scale)
+    dest_width = image.width() * scale_500ths_per_px * scale
+    dest_height = image.height() * scale_500ths_per_px * scale
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
+    painter.drawImage(QtCore.QRectF(dest_x, dest_y, dest_width, dest_height), image)
+    painter.restore()
+
+
 def map_point(x: float, y: float, transform: Transform, widget_height: int) -> QtCore.QPointF:
     scale, offsets = transform
     px = offsets[0] + x * scale

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PyQt5 import QtWidgets
 
+from sg_viewer.background_image_dialog import BackgroundImageDialog
 from sg_viewer.heading_table_dialog import HeadingTableWindow
 from sg_viewer.sg_model import SectionPreview
 from sg_viewer.section_table_dialog import SectionTableWindow
@@ -46,6 +47,22 @@ class SGViewerController:
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
 
+        self._open_background_action = QtWidgets.QAction(
+            "Load Background Image…", self._window
+        )
+        self._open_background_action.setShortcut("Ctrl+B")
+        self._open_background_action.triggered.connect(
+            self._open_background_file_dialog
+        )
+
+        self._background_settings_action = QtWidgets.QAction(
+            "Background Image Settings…", self._window
+        )
+        self._background_settings_action.setEnabled(False)
+        self._background_settings_action.triggered.connect(
+            self._show_background_settings_dialog
+        )
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -53,6 +70,8 @@ class SGViewerController:
     def _create_menus(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._open_background_action)
+        file_menu.addAction(self._background_settings_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -68,6 +87,55 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
+
+    def _open_background_file_dialog(self) -> None:
+        options = QtWidgets.QFileDialog.Options()
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Open Background Image",
+            "",
+            "Image files (*.png *.jpg *.jpeg *.bmp *.pcx);;All files (*)",
+            options=options,
+        )
+        if not file_path:
+            return
+
+        try:
+            self._window.preview.load_background_image(Path(file_path))
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window, "Failed to load background", str(exc)
+            )
+            logger.exception("Failed to load background image")
+            return
+
+        self._background_settings_action.setEnabled(True)
+        self._window.statusBar().showMessage(f"Loaded background image {file_path}")
+
+    def _show_background_settings_dialog(self) -> None:
+        if not self._window.preview.has_background_image():
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No Background",
+                "Load a background image before adjusting its settings.",
+            )
+            return
+
+        scale, (origin_u, origin_v) = self._window.preview.get_background_settings()
+        dialog = BackgroundImageDialog(self._window, scale, origin_u, origin_v)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            new_scale, new_u, new_v = dialog.get_values()
+            if new_scale <= 0:
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Invalid Scale",
+                    "500ths per pixel must be greater than zero.",
+                )
+                return
+            self._window.preview.set_background_settings(
+                new_scale, (new_u, new_v)
+            )
+            self._window.statusBar().showMessage("Updated background image settings")
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
