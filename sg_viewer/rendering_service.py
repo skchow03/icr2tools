@@ -14,6 +14,9 @@ def paint_preview(
     painter: QtGui.QPainter,
     rect: QtGui.QRect,
     background: QtGui.QColor,
+    background_image: QtGui.QImage | None,
+    background_scale_500ths_per_px: float | None,
+    background_origin: Point | None,
     sampled_centerline: list[Point],
     centerline_polylines: list[list[Point]],
     selected_section_points: list[Point],
@@ -28,6 +31,16 @@ def paint_preview(
     status_message: str,
 ) -> None:
     painter.fillRect(rect, background)
+
+    if transform and background_image and background_scale_500ths_per_px:
+        sg_rendering.draw_background_image(
+            painter,
+            background_image,
+            background_origin or (0.0, 0.0),
+            background_scale_500ths_per_px,
+            transform,
+            widget_height,
+        )
 
     if not sampled_centerline:
         sg_rendering.draw_placeholder(painter, rect, status_message)

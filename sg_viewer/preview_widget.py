@@ -43,6 +43,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._controller = PreviewStateController()
 
+        self._background_image: QtGui.QImage | None = None
+        self._background_scale_500ths_per_px: float = 1.0
+        self._background_origin: Point = (0.0, 0.0)
+
         self._cline: List[Point] | None = None
         self._centerline_polylines: list[list[Point]] = []
         self._sampled_dlongs: List[float] = []
@@ -179,6 +183,27 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._controller.update_fit_scale((self.width(), self.height()))
         self.update()
 
+    def load_background_image(self, path: Path) -> None:
+        image = QtGui.QImage(str(path))
+        if image.isNull():
+            raise ValueError(f"Unable to load image from {path}")
+
+        self._background_image = image
+        self.update()
+
+    def set_background_settings(
+        self, scale_500ths_per_px: float, origin: Point
+    ) -> None:
+        self._background_scale_500ths_per_px = scale_500ths_per_px
+        self._background_origin = origin
+        self.update()
+
+    def get_background_settings(self) -> tuple[float, Point]:
+        return self._background_scale_500ths_per_px, self._background_origin
+
+    def has_background_image(self) -> bool:
+        return self._background_image is not None
+
     def _update_node_status(self) -> None:
         """
         Determine node colors directly from section connectivity.
@@ -264,6 +289,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter,
             self.rect(),
             self.palette().color(QtGui.QPalette.Window),
+            self._background_image,
+            self._background_scale_500ths_per_px,
+            self._background_origin,
             self._sampled_centerline,
             self._centerline_polylines,
             self._selection.selected_section_points,
