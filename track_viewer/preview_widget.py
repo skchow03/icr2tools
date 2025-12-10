@@ -14,6 +14,13 @@ from icr2_core.trk.trk_utils import (
     sect2xy,
 )
 from track_viewer import rendering
+from track_viewer.preview_renderer import (
+    HudInfo,
+    PreviewRenderConfig,
+    PreviewRenderData,
+    PreviewRenderer,
+    ProjectionOverlay,
+)
 from track_viewer.camera_controller import CameraController
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
 from track_viewer.camera_service import CameraService
@@ -68,8 +75,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         self._status_message = "Select a track to preview."
 
-        self._cached_surface_pixmap: QtGui.QPixmap | None = None
-        self._pixmap_size: QtCore.QSize | None = None
         self._model = TrackPreviewModel()
         self._io_service = TrackIOService()
         self._loader = TrackLoader(self._io_service)
@@ -77,10 +82,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._ai_acceleration_window = 3
         self._ai_line_width = 2
 
-        self._view_center: Tuple[float, float] | None = None
-        self._fit_scale: float | None = None
-        self._current_scale: float | None = None
-        self._user_transform_active = False
+        self._renderer = PreviewRenderer(lambda: self._model.bounds, self._default_center)
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
         self._left_press_pos: QtCore.QPoint | None = None
@@ -117,14 +119,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._model.aiLineLoaded.connect(lambda _name: self.update())
 
     def _on_model_changed(self) -> None:
-        self._cached_surface_pixmap = None
-        self._pixmap_size = None
+        self._renderer.reset(view_center=self._default_center())
         self._projection_cached_point = None
         self._projection_cached_result = None
-        self._view_center = self._default_center()
-        self._fit_scale = None
-        self._current_scale = None
-        self._user_transform_active = False
+        self._renderer.user_transform_active = False
         self._set_selected_flag(None)
         self.update()
 
@@ -139,12 +137,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     # ------------------------------------------------------------------
     def clear(self, message: str = "Select a track to preview.") -> None:
         self._model.clear()
-        self._cached_surface_pixmap = None
-        self._pixmap_size = None
-        self._view_center = None
-        self._fit_scale = None
-        self._current_scale = None
-        self._user_transform_active = False
+        self._renderer.reset(view_center=None)
         self._is_panning = False
         self._last_mouse_pos = None
         self._left_press_pos = None
@@ -392,9 +385,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._projection_cached_result = None
         self._set_projection_data(None, None, None, None, None, None, None)
         self._status_message = f"Loaded {track_folder.name}" if track_folder else ""
-        self._view_center = self._default_center()
-        self._user_transform_active = False
-        self._update_fit_scale()
+        self._renderer.reset(view_center=self._default_center())
+        self._renderer.user_transform_active = False
+        self._renderer.update_fit_scale(self.size())
         self._set_selected_flag(None)
         self._camera_service.load_for_track(track_folder)
         self.camerasChanged.emit(
@@ -464,213 +457,75 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         min_x, max_x, min_y, max_y = self._model.bounds
         return ((min_x + max_x) / 2, (min_y + max_y) / 2)
 
-    def _calculate_fit_scale(self) -> float | None:
-        if not self._model.bounds:
-            return None
-        min_x, max_x, min_y, max_y = self._model.bounds
-        track_w = max_x - min_x
-        track_h = max_y - min_y
-        if track_w <= 0 or track_h <= 0:
-            return None
-        margin = 24
-        w, h = self.width(), self.height()
-        available_w = max(w - margin * 2, 1)
-        available_h = max(h - margin * 2, 1)
-        scale_x = available_w / track_w
-        scale_y = available_h / track_h
-        return min(scale_x, scale_y)
-
     def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
         return self._model.ai_line_points(lp_name, self._loader)
 
     def _get_ai_line_records(self, lp_name: str) -> List[LpPoint]:
         return self._model.ai_line_records(lp_name, self._loader)
 
-    def _update_fit_scale(self) -> None:
-        fit = self._calculate_fit_scale()
-        self._fit_scale = fit
-        if fit is not None and not self._user_transform_active:
-            self._current_scale = fit
-            if self._view_center is None:
-                self._view_center = self._default_center()
-            self._invalidate_cache()
-
-    def _current_transform(self) -> Tuple[float, Tuple[float, float]] | None:
-        if not self._model.bounds:
-            return None
-        if self._current_scale is None:
-            self._update_fit_scale()
-        if self._current_scale is None:
-            return None
-        center = self._view_center or self._default_center()
-        if center is None:
-            return None
-        w, h = self.width(), self.height()
-        offsets = (w / 2 - center[0] * self._current_scale, h / 2 - center[1] * self._current_scale)
-        return self._current_scale, offsets
-
-    def _invalidate_cache(self) -> None:
-        self._cached_surface_pixmap = None
-        self._pixmap_size = None
-
-    def _map_to_track(self, point: QtCore.QPointF) -> Tuple[float, float] | None:
-        transform = self._current_transform()
-        if not transform:
-            return None
-        scale, offsets = transform
-        x = (point.x() - offsets[0]) / scale
-        py = self.height() - point.y()
-        y = (py - offsets[1]) / scale
-        return x, y
-
-    def _clamp_scale(self, scale: float) -> float:
-        base = self._fit_scale or self._current_scale or 1.0
-        min_scale = base * 0.1
-        max_scale = base * 25.0
-        return max(min_scale, min(max_scale, scale))
-
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
     def paintEvent(self, event) -> None:  # noqa: D401 - Qt signature
         painter = QtGui.QPainter(self)
-        painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
+        projection_overlay = ProjectionOverlay(
+            self._nearest_projection_line,
+            self._nearest_projection_dlong,
+            self._nearest_projection_dlat,
+            self._nearest_projection_speed,
+            self._nearest_projection_elevation,
+            self._nearest_projection_acceleration,
+        )
+        hud = HudInfo(
+            status_message=self._status_message,
+            track_length=self._model.track_length,
+            projection=projection_overlay,
+            cursor_position=self._cursor_position,
+        )
 
-        if not self._model.surface_mesh or not self._model.bounds:
-            painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
-            painter.drawText(self.rect(), QtCore.Qt.AlignCenter, self._status_message)
-            return
+        config = PreviewRenderConfig(
+            show_boundaries=self._model.show_boundaries,
+            show_center_line=self._model.show_center_line,
+            show_cameras=self._model.show_cameras,
+            show_zoom_points=self._model.show_zoom_points,
+            ai_color_mode=self._ai_color_mode,
+            ai_line_width=self._ai_line_width,
+            ai_acceleration_window=self._ai_acceleration_window,
+            selected_flag=self._selected_flag,
+            selected_camera=self._selected_camera,
+        )
 
-        transform = self._current_transform()
-        if self._cached_surface_pixmap is None or self._pixmap_size != self.size():
-            self._cached_surface_pixmap = rendering.render_surface_to_pixmap(
-                self._model.surface_mesh, transform, self.size()
-            )
-            self._pixmap_size = self.size()
+        data = PreviewRenderData(
+            surface_mesh=self._model.surface_mesh,
+            bounds=self._model.bounds,
+            boundary_edges=self._model.boundary_edges,
+            sampled_centerline=self._model.sampled_centerline,
+            sampled_bounds=self._model.sampled_bounds,
+            visible_lp_files=self._model.visible_lp_files,
+            flags=self._model.flags,
+            cameras=self._camera_service.cameras,
+            zoom_points=self._zoom_points_for_camera(),
+            camera_ranges=self._camera_view_ranges(self._selected_camera),
+            centerline_point_and_normal=self._centerline_point_and_normal,
+            centerline_point=self._centerline_point,
+            get_ai_line_points=self._get_ai_line_points,
+            get_ai_line_records=self._get_ai_line_records,
+            lp_color=self.lp_color,
+            highlight_point=self._nearest_projection_point,
+        )
 
-        painter.drawPixmap(0, 0, self._cached_surface_pixmap)
-
-        if transform and self._model.show_boundaries:
-            rendering.draw_track_boundaries(
-                painter, self._model.boundary_edges, transform, self.height()
-            )
-
-        if self._model.show_center_line and self._model.sampled_centerline and transform:
-            rendering.draw_centerline(
-                painter,
-                self._model.sampled_centerline,
-                transform,
-                self.height(),
-            )
-
-        if transform and self._model.show_center_line:
-            rendering.draw_start_finish_line(
-                painter,
-                transform,
-                self.height(),
-                self._centerline_point_and_normal,
-            )
-
-        if transform and self._model.show_center_line:
-            rendering.draw_camera_range_markers(
-                painter,
-                self._camera_view_ranges(self._selected_camera),
-                transform,
-                self.height(),
-                self._centerline_point_and_normal,
-            )
-
-        if transform and self._nearest_projection_point:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-            highlight = rendering.map_point(
-                self._nearest_projection_point[0],
-                self._nearest_projection_point[1],
-                transform,
-                self.height(),
-            )
-            pen = QtGui.QPen(QtGui.QColor("#ff5252"))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            painter.setBrush(QtGui.QBrush(QtGui.QColor("#ff5252")))
-            painter.drawEllipse(highlight, 5, 5)
-
-        if transform:
-            if self._model.show_cameras:
-                rendering.draw_camera_positions(
-                    painter,
-                    self._camera_service.cameras,
-                    self._selected_camera,
-                    transform,
-                    self.height(),
-                )
-            rendering.draw_ai_lines(
-                painter,
-                self._model.visible_lp_files,
-                self._get_ai_line_points,
-                transform,
-                self.height(),
-                self.lp_color,
-                gradient=self._ai_color_mode,
-                get_records=self._get_ai_line_records,
-                line_width=self._ai_line_width,
-                acceleration_window=self._ai_acceleration_window,
-            )
-            rendering.draw_flags(
-                painter, self._model.flags, self._selected_flag, transform, self.height()
-            )
-            if self._model.show_zoom_points:
-                rendering.draw_zoom_points(
-                    painter,
-                    self._zoom_points_for_camera(),
-                    transform,
-                    self.height(),
-                    self._centerline_point,
-                )
-
-        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
-        y = 20
-        if self._model.track_length is not None:
-            track_length_text = f"Track length: {int(round(self._model.track_length))} DLONG"
-            painter.drawText(12, y, track_length_text)
-            y += 16
-        painter.drawText(12, y, self._status_message)
-        y += 16
-        if self._nearest_projection_line:
-            line_label = (
-                "Center line"
-                if self._nearest_projection_line == "center-line"
-                else f"{self._nearest_projection_line} line"
-            )
-            painter.drawText(12, y, line_label)
-            y += 16
-        if self._nearest_projection_dlong is not None:
-            dlong_text = f"DLONG: {int(round(self._nearest_projection_dlong))}"
-            painter.drawText(12, y, dlong_text)
-            y += 16
-        if self._nearest_projection_dlat is not None:
-            dlat_text = f"DLAT: {int(round(self._nearest_projection_dlat))}"
-            painter.drawText(12, y, dlat_text)
-            y += 16
-        if self._nearest_projection_speed is not None:
-            speed_text = f"Speed: {self._nearest_projection_speed:.1f} mph"
-            painter.drawText(12, y, speed_text)
-            y += 16
-        if self._nearest_projection_acceleration is not None:
-            accel_text = f"Accel: {self._nearest_projection_acceleration:+.3f} ft/s²"
-            painter.drawText(12, y, accel_text)
-            y += 16
-        if self._nearest_projection_elevation is not None:
-            elevation_text = (
-                f"Elevation: {self._nearest_projection_elevation:.2f} (DLAT = 0)"
-            )
-            painter.drawText(12, y, elevation_text)
-
-        self._draw_cursor_position(painter)
+        self._renderer.render(
+            painter,
+            self.size(),
+            background_color=self.palette().color(QtGui.QPalette.Window),
+            data=data,
+            config=config,
+            hud=hud,
+        )
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
-        self._pixmap_size = None
-        self._cached_surface_pixmap = None
-        self._update_fit_scale()
+        self._renderer.invalidate_cache()
+        self._renderer.update_fit_scale(self.size())
         super().resizeEvent(event)
 
     # ------------------------------------------------------------------
@@ -682,23 +537,26 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         delta = event.angleDelta().y()
         if delta == 0:
             return
-        if self._view_center is None:
-            self._view_center = self._default_center()
-        if self._view_center is None or self._current_scale is None:
+        transform = self._renderer.current_transform(self.size())
+        if transform is None:
             return
+        if self._renderer.view_center is None:
+            self._renderer.set_view_center(self._default_center())
         factor = 1.15 if delta > 0 else 1 / 1.15
-        new_scale = self._clamp_scale(self._current_scale * factor)
-        cursor_track = self._map_to_track(event.pos())
+        current_scale = self._renderer.current_scale
+        if current_scale is None:
+            return
+        new_scale = self._renderer.clamp_scale(current_scale * factor)
+        cursor_track = self._renderer.map_to_track(event.pos(), self.size())
         if cursor_track is None:
-            cursor_track = self._view_center
+            cursor_track = self._renderer.view_center
         w, h = self.width(), self.height()
         px, py = event.pos().x(), event.pos().y()
         cx = cursor_track[0] - (px - w / 2) / new_scale
         cy = cursor_track[1] + (py - h / 2) / new_scale
-        self._view_center = (cx, cy)
-        self._current_scale = new_scale
-        self._user_transform_active = True
-        self._invalidate_cache()
+        self._renderer.set_view_center((cx, cy))
+        self._renderer.set_current_scale(new_scale)
+        self._renderer.user_transform_active = True
         self.update()
         event.accept()
 
@@ -716,7 +574,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._last_mouse_pos = event.pos()
             self._left_press_pos = event.pos()
             self._dragged_during_press = False
-            self._user_transform_active = True
+            self._renderer.user_transform_active = True
             event.accept()
             return
         super().mousePressEvent(event)
@@ -728,11 +586,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             event.accept()
             handled = True
         if self._is_panning and self._last_mouse_pos is not None:
-            transform = self._current_transform()
+            transform = self._renderer.current_transform(self.size())
             if transform:
-                if self._view_center is None:
-                    self._view_center = self._default_center()
-                if self._view_center is not None:
+                if self._renderer.view_center is None:
+                    self._renderer.set_view_center(self._default_center())
+                if self._renderer.view_center is not None:
                     scale, _ = transform
                     delta = event.pos() - self._last_mouse_pos
                     self._last_mouse_pos = event.pos()
@@ -742,11 +600,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                         and (event.pos() - self._left_press_pos).manhattanLength() > 4
                     ):
                         self._dragged_during_press = True
-                    cx, cy = self._view_center
+                    cx, cy = self._renderer.view_center
                     cx -= delta.x() / scale
                     cy += delta.y() / scale
-                    self._view_center = (cx, cy)
-                    self._invalidate_cache()
+                    self._renderer.set_view_center((cx, cy))
                     self.update()
             event.accept()
             handled = True
@@ -791,7 +648,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self.update()
             self._set_projection_data(None, None, None, None, None, None, None)
             return
-        coords = self._map_to_track(point)
+        coords = self._renderer.map_to_track(point, self.size())
         if coords != self._cursor_position:
             self._cursor_position = coords
             self.update()
@@ -872,7 +729,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             )
             return
 
-        transform = self._current_transform()
+        transform = self._renderer.current_transform(self.size())
         if not transform or not self._model.trk:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
@@ -897,7 +754,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self._set_projection_data(None, None, None, None, None, None, None)
                 return
 
-        cursor_track = self._map_to_track(point)
+        cursor_track = self._renderer.map_to_track(point, self.size())
         if cursor_track is None:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
@@ -995,12 +852,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             )
             return
 
-        transform = self._current_transform()
+        transform = self._renderer.current_transform(self.size())
         if not transform or not self._model.trk:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
 
-        cursor_track = self._map_to_track(point)
+        cursor_track = self._renderer.map_to_track(point, self.size())
         if cursor_track is None:
             self._set_projection_data(None, None, None, None, None, None, None)
             return
@@ -1085,34 +942,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             lp_name,
         )
 
-    def _draw_cursor_position(self, painter: QtGui.QPainter) -> None:
-        if self._cursor_position is None:
-            return
-
-        x, y = self._cursor_position
-        lines = [
-            f"Cursor X: {self._format_cursor_value(x)}",
-            f"Cursor Y: {self._format_cursor_value(y)}",
-        ]
-
-        metrics = painter.fontMetrics()
-        line_height = metrics.height()
-        margin = 12
-        max_width = max(metrics.horizontalAdvance(line) for line in lines)
-        start_x = self.width() - margin - max_width
-        start_y = margin + metrics.ascent()
-
-        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
-        for line in lines:
-            painter.drawText(start_x, start_y, line)
-            start_y += line_height
-
-    @staticmethod
-    def _format_cursor_value(value: float) -> str:
-        return f"{value:.2f}"
-
     def _camera_at_point(self, point: QtCore.QPointF, radius: int = 10) -> int | None:
-        transform = self._current_transform()
+        transform = self._renderer.current_transform(self.size())
         if not transform:
             return None
         for index, cam in enumerate(self._camera_service.cameras):
@@ -1137,7 +968,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def _update_camera_position(self, point: QtCore.QPointF) -> None:
         if self._dragging_camera_index is None:
             return
-        coords = self._map_to_track(point)
+        coords = self._renderer.map_to_track(point, self.size())
         if coords is None:
             return
         index = self._dragging_camera_index
@@ -1234,7 +1065,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         ]
 
     def _flag_at_point(self, point: QtCore.QPointF, radius: int = 8) -> int | None:
-        transform = self._current_transform()
+        transform = self._renderer.current_transform(self.size())
         if not transform:
             return None
         for index, (fx, fy) in enumerate(self._model.flags):
@@ -1246,7 +1077,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return None
 
     def _handle_primary_click(self, point: QtCore.QPointF) -> None:
-        transform = self._current_transform()
+        transform = self._renderer.current_transform(self.size())
         if not transform:
             return
         camera_index = self._camera_at_point(point)
@@ -1257,7 +1088,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if flag_index is not None:
             self._set_selected_flag(flag_index)
             return
-        coords = self._map_to_track(point)
+        coords = self._renderer.map_to_track(point, self.size())
         if coords is None:
             return
         self._model.add_flag(coords)
