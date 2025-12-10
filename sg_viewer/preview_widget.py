@@ -828,6 +828,49 @@ class SGPreviewWidget(QtWidgets.QWidget):
         cx_hint, cy_hint = sect.center if sect.center is not None else (start[0], start[1])
         orientation_hint = self._curve_orientation_hint(sect)
 
+        best_section: SectionPreview | None = None
+        best_score = float("inf")
+
+        heading_preserving_candidates: list[SectionPreview] = []
+
+        moved_start = start != sect.start
+        moved_end = end != sect.end
+        if moved_start and not moved_end and sect.end_heading is not None:
+            heading_preserving_candidates = self._solve_curve_with_fixed_heading(
+                sect,
+                start,
+                end,
+                fixed_point=end,
+                fixed_heading=sect.end_heading,
+                fixed_point_is_start=False,
+                orientation_hint=orientation_hint,
+            )
+        elif moved_end and not moved_start and sect.start_heading is not None:
+            heading_preserving_candidates = self._solve_curve_with_fixed_heading(
+                sect,
+                start,
+                end,
+                fixed_point=start,
+                fixed_heading=sect.start_heading,
+                fixed_point_is_start=True,
+                orientation_hint=orientation_hint,
+            )
+
+        for candidate in heading_preserving_candidates:
+            score = self._compute_curve_solution_metric(
+                candidate.center if candidate.center is not None else (cx_hint, cy_hint),
+                candidate.radius if candidate.radius is not None else 0.0,
+                candidate.start_heading,
+                candidate.end_heading,
+                sect,
+            )
+            if score < best_score:
+                best_score = score
+                best_section = candidate
+
+        if best_section is not None:
+            return best_section
+
         vx = end[0] - start[0]
         vy = end[1] - start[1]
         chord_length = math.hypot(vx, vy)
@@ -858,9 +901,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if offset_for_radius is not None:
             blended = (offset_for_radius + preferred_offset) / 2.0
             offset_candidates.append(blended)
-
-        best_section: SectionPreview | None = None
-        best_score = float("inf")
 
         for offset in offset_candidates:
             if offset == 0:
@@ -905,6 +945,71 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 )
 
         return best_section
+
+    def _solve_curve_with_fixed_heading(
+        self,
+        sect: SectionPreview,
+        start: Point,
+        end: Point,
+        fixed_point: Point,
+        fixed_heading: tuple[float, float],
+        fixed_point_is_start: bool,
+        orientation_hint: float,
+    ) -> list[SectionPreview]:
+        hx, hy = fixed_heading
+        heading_length = math.hypot(hx, hy)
+        if heading_length <= 1e-9:
+            return []
+
+        hx /= heading_length
+        hy /= heading_length
+
+        moving_point = end if fixed_point_is_start else start
+        fx, fy = fixed_point
+        dx = moving_point[0] - fx
+        dy = moving_point[1] - fy
+
+        candidates: list[SectionPreview] = []
+
+        for orientation in {orientation_hint, -orientation_hint}:
+            normal = (-orientation * hy, orientation * hx)
+            dot = dx * normal[0] + dy * normal[1]
+            if abs(dot) <= 1e-9:
+                continue
+
+            radius = (dx * dx + dy * dy) / (2.0 * dot)
+            if radius <= 0:
+                continue
+
+            center = (fx + normal[0] * radius, fy + normal[1] * radius)
+            start_heading = self._curve_tangent_heading(center, start, orientation)
+            end_heading = self._curve_tangent_heading(center, end, orientation)
+
+            if start_heading is None or end_heading is None:
+                continue
+
+            arc_length = self._curve_arc_length(center, start, end, radius)
+            if arc_length is None:
+                continue
+
+            candidates.append(
+                replace(
+                    sect,
+                    start=start,
+                    end=end,
+                    center=center,
+                    radius=radius,
+                    sang1=start_heading[0],
+                    sang2=start_heading[1],
+                    eang1=end_heading[0],
+                    eang2=end_heading[1],
+                    start_heading=start_heading,
+                    end_heading=end_heading,
+                    length=arc_length,
+                )
+            )
+
+        return candidates
 
     @staticmethod
     def _curve_orientation_hint(section: SectionPreview) -> float:
