@@ -106,27 +106,14 @@ class SelectionManager(QtCore.QObject):
         map_to_track: Callable[[QtCore.QPointF], Point | None],
         transform: Transform | None,
     ) -> None:
-        if not self._centerline_index or not self._sampled_dlongs or not self._track_length:
+        if transform is None:
             return
 
         track_point = map_to_track(QtCore.QPointF(pos))
-        if track_point is None or transform is None:
+        if track_point is None:
             return
 
-        _, nearest_dlong, distance_sq = project_point_to_centerline(
-            track_point, self._centerline_index, self._sampled_dlongs, self._track_length
-        )
-
-        if nearest_dlong is None:
-            return
-
-        scale, _ = transform
-        tolerance_units = 10 / max(scale, 1e-6)
-        if distance_sq > tolerance_units * tolerance_units:
-            self.set_selected_section(None)
-            return
-
-        selection = self._find_section_by_dlong(nearest_dlong)
+        selection = self._find_section_by_dlong(track_point, transform)
         self.set_selected_section(selection)
 
     def set_selected_section(self, index: int | None) -> None:
@@ -147,7 +134,47 @@ class SelectionManager(QtCore.QObject):
         selection = self._build_section_selection(section)
         self.selectionChanged.emit(selection)
 
-    def _find_section_by_dlong(self, dlong: float) -> int | None:
+    def _find_section_by_dlong(self, track_point: Point, transform: Transform) -> int | None:
+        if not self._sections:
+            return None
+
+        polylines: list[tuple[int, list[Point]]] = [
+            (idx, sect.polyline) for idx, sect in enumerate(self._sections) if len(sect.polyline) >= 2
+        ]
+
+        if polylines:
+            best_index: int | None = None
+            best_distance = float("inf")
+
+            for idx, polyline in polylines:
+                distance = self._distance_to_polyline(track_point, polyline)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_index = idx
+
+            scale, _ = transform
+            screen_distance = best_distance * max(scale, 0.0)
+            if best_index is not None and screen_distance <= 10.0:
+                return best_index
+            return None
+
+        if not self._centerline_index or not self._sampled_dlongs or not self._track_length:
+            return None
+
+        _, nearest_dlong, distance_sq = project_point_to_centerline(
+            track_point, self._centerline_index, self._sampled_dlongs, self._track_length
+        )
+
+        if nearest_dlong is None:
+            return None
+
+        scale, _ = transform
+        if math.sqrt(distance_sq) * max(scale, 0.0) > 10.0:
+            return None
+
+        return self._section_index_for_dlong(nearest_dlong)
+
+    def _section_index_for_dlong(self, dlong: float) -> int | None:
         if not self._sections or self._track_length is None:
             return None
 
@@ -170,6 +197,15 @@ class SelectionManager(QtCore.QObject):
             elif start <= dlong <= end:
                 return idx
         return None
+
+    @staticmethod
+    def _distance_to_polyline(point: Point, polyline: list[Point]) -> float:
+        best_distance_sq = float("inf")
+        for start, end in zip(polyline, polyline[1:]):
+            distance_sq = point_to_segment_distance_sq(point, start, end)
+            if distance_sq < best_distance_sq:
+                best_distance_sq = distance_sq
+        return math.sqrt(best_distance_sq)
 
     def _compute_track_length(self, track_length: float | None, sampled_dlongs: list[float]) -> float | None:
         if sampled_dlongs:
@@ -231,6 +267,27 @@ class SelectionManager(QtCore.QObject):
 
 def round_sg_value(value: float) -> float:
     return float(round(value))
+
+
+def point_to_segment_distance_sq(point: Point, start: Point, end: Point) -> float:
+    px, py = point
+    sx, sy = start
+    ex, ey = end
+    vx = ex - sx
+    vy = ey - sy
+    if vx == 0 and vy == 0:
+        dx = px - sx
+        dy = py - sy
+        return dx * dx + dy * dy
+
+    t = ((px - sx) * vx + (py - sy) * vy) / (vx * vx + vy * vy)
+    t = max(0.0, min(1.0, t))
+
+    proj_x = sx + vx * t
+    proj_y = sy + vy * t
+    dx = px - proj_x
+    dy = py - proj_y
+    return dx * dx + dy * dy
 
 
 def normalize_heading_vector(vector: tuple[float, float] | None) -> tuple[float, float] | None:
