@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from PyQt5 import QtCore, QtGui
 
+from sg_viewer.curve_solver import _project_point_along_heading
 from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 
 if TYPE_CHECKING:
@@ -413,19 +414,4 @@ class PreviewInteraction:
     def _project_point_along_heading(
         self, origin: Point, heading: tuple[float, float] | None, target: Point
     ) -> Point | None:
-        if heading is None:
-            return None
-
-        hx, hy = heading
-        mag = math.hypot(hx, hy)
-        if mag <= 0:
-            return None
-
-        hx /= mag
-        hy /= mag
-
-        dx = target[0] - origin[0]
-        dy = target[1] - origin[1]
-        projection = dx * hx + dy * hy
-
-        return origin[0] + projection * hx, origin[1] + projection * hy
+        return _project_point_along_heading(origin, heading, target)
