@@ -37,6 +37,8 @@ class PreviewInteraction:
         self._section_drag_origin: Point | None = None
         self._section_drag_start_end: tuple[Point, Point] | None = None
         self._section_drag_center: Point | None = None
+        self._active_chain_indices: list[int] | None = None
+        self._chain_drag_origins: dict[int, tuple[Point, Point, Point | None]] | None = None
 
     # ------------------------------------------------------------------
     # State helpers
@@ -57,6 +59,8 @@ class PreviewInteraction:
         self._section_drag_origin = None
         self._section_drag_start_end = None
         self._section_drag_center = None
+        self._active_chain_indices = None
+        self._chain_drag_origins = None
 
     # ------------------------------------------------------------------
     # Mouse interaction entry points
@@ -167,7 +171,7 @@ class PreviewInteraction:
             return None
 
         section = self._widget._sections[index]
-        if not self._widget._can_drag_section_polyline(section):
+        if not self._widget._can_drag_section_polyline(section, index):
             return None
 
         widget_size = (self._widget.width(), self._widget.height())
@@ -319,13 +323,22 @@ class PreviewInteraction:
         if index < 0 or index >= len(self._widget._sections):
             return
         sect = self._widget._sections[index]
-        if not self._widget._can_drag_section_polyline(sect):
+        if not self._widget._can_drag_section_polyline(sect, index):
+            return
+
+        chain_indices = self._widget._get_drag_chain(index)
+        if chain_indices is None:
             return
 
         self._active_section_index = index
+        self._active_chain_indices = chain_indices
         self._section_drag_origin = track_point
         self._section_drag_start_end = (sect.start, sect.end)
         self._section_drag_center = sect.center
+        self._chain_drag_origins = {
+            i: (self._widget._sections[i].start, self._widget._sections[i].end, self._widget._sections[i].center)
+            for i in chain_indices
+        }
         self._is_dragging_section = True
         self._widget._is_panning = False
         self._widget._press_pos = None
@@ -346,7 +359,8 @@ class PreviewInteraction:
             not self._is_dragging_section
             or self._active_section_index is None
             or self._section_drag_origin is None
-            or self._section_drag_start_end is None
+            or self._active_chain_indices is None
+            or self._chain_drag_origins is None
         ):
             return
 
@@ -354,30 +368,36 @@ class PreviewInteraction:
         if index < 0 or index >= len(self._widget._sections):
             return
         sect = self._widget._sections[index]
-        if not self._widget._can_drag_section_polyline(sect):
+        if not self._widget._can_drag_section_polyline(sect, index):
             return
 
         dx = track_point[0] - self._section_drag_origin[0]
         dy = track_point[1] - self._section_drag_origin[1]
-        start, end = self._section_drag_start_end
-
-        translated_start = (start[0] + dx, start[1] + dy)
-        translated_end = (end[0] + dx, end[1] + dy)
-
-        translated_center = None
-        if self._section_drag_center is not None:
-            cx, cy = self._section_drag_center
-            translated_center = (cx + dx, cy + dy)
-
-        updated_section = replace(
-            sect,
-            start=translated_start,
-            end=translated_end,
-            center=translated_center if translated_center is not None else sect.center,
-        )
 
         sections = list(self._widget._sections)
-        sections[index] = update_section_geometry(updated_section)
+
+        for chain_index in self._active_chain_indices:
+            if chain_index not in self._chain_drag_origins or chain_index < 0 or chain_index >= len(sections):
+                continue
+
+            start, end, center = self._chain_drag_origins[chain_index]
+            translated_start = (start[0] + dx, start[1] + dy)
+            translated_end = (end[0] + dx, end[1] + dy)
+
+            translated_center = None
+            if center is not None:
+                cx, cy = center
+                translated_center = (cx + dx, cy + dy)
+
+            updated_section = replace(
+                sections[chain_index],
+                start=translated_start,
+                end=translated_end,
+                center=translated_center if translated_center is not None else sections[chain_index].center,
+            )
+
+            sections[chain_index] = update_section_geometry(updated_section)
+
         self._apply_section_updates(sections)
 
     def _end_section_drag(self) -> None:
@@ -386,6 +406,8 @@ class PreviewInteraction:
         self._section_drag_origin = None
         self._section_drag_start_end = None
         self._section_drag_center = None
+        self._active_chain_indices = None
+        self._chain_drag_origins = None
 
     # ------------------------------------------------------------------
     # Utilities

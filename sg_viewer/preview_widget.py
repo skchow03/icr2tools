@@ -253,12 +253,59 @@ class SGPreviewWidget(QtWidgets.QWidget):
             and self._is_invalid_id(section.next_id)
         )
 
-    def _can_drag_section_polyline(self, section: SectionPreview) -> bool:
+    def _can_drag_section_polyline(self, section: SectionPreview, index: int | None = None) -> bool:
+        chain = self._get_drag_chain(index) if index is not None else None
+        if chain is not None:
+            return True
+
         if section.type_name == "curve":
             return self._is_invalid_id(section.previous_id) and self._is_invalid_id(
                 section.next_id
             )
         return self._can_drag_section_node(section)
+
+    def _connected_neighbor_index(self, index: int, direction: str) -> int | None:
+        if index < 0 or index >= len(self._sections):
+            return None
+
+        section = self._sections[index]
+        neighbor_index = section.previous_id if direction == "previous" else section.next_id
+        if self._is_invalid_id(neighbor_index):
+            return None
+
+        neighbor = self._sections[neighbor_index]
+        if direction == "previous" and neighbor.next_id != index:
+            return None
+        if direction == "next" and neighbor.previous_id != index:
+            return None
+
+        return neighbor_index
+
+    def _get_drag_chain(self, index: int | None) -> list[int] | None:
+        if index is None or index < 0 or index >= len(self._sections):
+            return None
+
+        chain: list[int] = [index]
+
+        prev_idx = self._connected_neighbor_index(index, "previous")
+        while prev_idx is not None:
+            chain.insert(0, prev_idx)
+            prev_idx = self._connected_neighbor_index(prev_idx, "previous")
+
+        next_idx = self._connected_neighbor_index(index, "next")
+        while next_idx is not None:
+            chain.append(next_idx)
+            next_idx = self._connected_neighbor_index(next_idx, "next")
+
+        if not chain:
+            return None
+
+        head = self._sections[chain[0]]
+        tail = self._sections[chain[-1]]
+        if not self._is_invalid_id(head.previous_id) or not self._is_invalid_id(tail.next_id):
+            return None
+
+        return chain
 
     def _can_drag_node(self, section: SectionPreview, endtype: str) -> bool:
         if section.type_name == "straight":
