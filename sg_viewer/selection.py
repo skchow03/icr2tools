@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import math
 from typing import Callable, List, Tuple
 
@@ -12,6 +13,8 @@ from sg_viewer.sg_model import SectionPreview
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,13 +117,27 @@ class SelectionManager(QtCore.QObject):
         transform: Transform | None,
     ) -> None:
         if transform is None:
+            logger.debug("Selection.handle_click skipped: no transform for %s", pos)
             return
 
         track_point = map_to_track(QtCore.QPointF(pos))
         if track_point is None:
+            logger.debug("Selection.handle_click skipped: track map failed for %s", pos)
             return
 
+        logger.debug(
+            "Selection.handle_click mapped screen %s to track %s with transform scale %.3f",
+            pos,
+            track_point,
+            transform[0],
+        )
+
         selection = self._find_section_by_dlong(track_point, transform)
+        logger.debug(
+            "Selection.handle_click resolved selection index %s (total sections=%d)",
+            selection,
+            len(self._sections),
+        )
         self.set_selected_section(selection)
 
     def set_selected_section(self, index: int | None) -> None:
@@ -128,16 +145,29 @@ class SelectionManager(QtCore.QObject):
             self._selected_section_index = None
             self._selected_section_points = []
             self._selected_curve_index = None
+            logger.debug("Selection cleared")
             self.selectionChanged.emit(None)
             return
 
         if not self._sections or index < 0 or index >= len(self._sections):
+            logger.debug(
+                "Selection.set_selected_section ignored invalid index %s (sections=%d)",
+                index,
+                len(self._sections),
+            )
             return
 
         self._selected_section_index = index
         section = self._sections[index]
         self._selected_section_points = list(section.polyline)
         self._selected_curve_index = index if section.center is not None else None
+        logger.debug(
+            "Selection set to index %d type=%s start_dlong=%.3f length=%.3f", 
+            index,
+            section.type_name,
+            float(section.start_dlong),
+            float(section.length),
+        )
         selection = self._build_section_selection(section)
         self.selectionChanged.emit(selection)
 
@@ -161,6 +191,12 @@ class SelectionManager(QtCore.QObject):
 
             scale, _ = transform
             screen_distance = best_distance * max(scale, 0.0)
+            logger.debug(
+                "Selection._find_section_by_dlong nearest polyline idx=%s distance=%.3fpx (scale=%.3f)",
+                best_index,
+                screen_distance,
+                scale,
+            )
             if best_index is not None and screen_distance <= 10.0:
                 return best_index
             return None
@@ -176,7 +212,13 @@ class SelectionManager(QtCore.QObject):
             return None
 
         scale, _ = transform
-        if math.sqrt(distance_sq) * max(scale, 0.0) > 10.0:
+        screen_distance = math.sqrt(distance_sq) * max(scale, 0.0)
+        logger.debug(
+            "Selection._find_section_by_dlong centerline projection dlong=%.3f distance=%.3fpx",
+            nearest_dlong,
+            screen_distance,
+        )
+        if screen_distance > 10.0:
             return None
 
         return self._section_index_for_dlong(nearest_dlong)
