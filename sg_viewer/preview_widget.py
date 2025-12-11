@@ -255,7 +255,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _can_drag_section_polyline(self, section: SectionPreview) -> bool:
         if section.type_name == "curve":
-            return True
+            return self._is_invalid_id(section.previous_id) and self._is_invalid_id(
+                section.next_id
+            )
         return self._can_drag_section_node(section)
 
     def _can_drag_node(self, section: SectionPreview, endtype: str) -> bool:
