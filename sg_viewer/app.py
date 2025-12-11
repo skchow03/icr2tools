@@ -51,8 +51,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._start_heading_label = QtWidgets.QLabel("Start Heading: –")
         self._end_heading_label = QtWidgets.QLabel("End Heading: –")
-        self._sg_start_heading_label = QtWidgets.QLabel("SG Start Heading: –")
-        self._sg_end_heading_label = QtWidgets.QLabel("SG End Heading: –")
+        self._start_point_label = QtWidgets.QLabel("Start Point: –")
+        self._end_point_label = QtWidgets.QLabel("End Point: –")
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -73,8 +73,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._next_label)
         sidebar_layout.addWidget(self._start_heading_label)
         sidebar_layout.addWidget(self._end_heading_label)
-        sidebar_layout.addWidget(self._sg_start_heading_label)
-        sidebar_layout.addWidget(self._sg_end_heading_label)
+        sidebar_layout.addWidget(self._start_point_label)
+        sidebar_layout.addWidget(self._end_point_label)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
@@ -142,8 +142,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._next_label.setText("Next Section: –")
             self._start_heading_label.setText("Start Heading: –")
             self._end_heading_label.setText("End Heading: –")
-            self._sg_start_heading_label.setText("SG Start Heading: –")
-            self._sg_end_heading_label.setText("SG End Heading: –")
+            self._start_point_label.setText("Start Point: –")
+            self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
             return
 
@@ -178,14 +178,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._end_heading_label.setText("End Heading: –")
 
-        if selection.type_name == "curve" and selection.sg_start_heading and selection.sg_end_heading:
-            s1, s2 = selection.sg_start_heading
-            e1, e2 = selection.sg_end_heading
-            self._sg_start_heading_label.setText(f"SG Start Heading: sang1={s1}, sang2={s2}")
-            self._sg_end_heading_label.setText(f"SG End Heading: eang1={e1}, eang2={e2}")
+        if selection.start_point is not None:
+            sx, sy = selection.start_point
+            self._start_point_label.setText(f"Start Point: ({sx:.1f}, {sy:.1f})")
         else:
-            self._sg_start_heading_label.setText("SG Start Heading: –")
-            self._sg_end_heading_label.setText("SG End Heading: –")
+            self._start_point_label.setText("Start Point: –")
+
+        if selection.end_point is not None:
+            ex, ey = selection.end_point
+            self._end_point_label.setText(f"End Point: ({ex:.1f}, {ey:.1f})")
+        else:
+            self._end_point_label.setText("End Point: –")
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
