@@ -23,6 +23,8 @@ class SectionSelection:
     length: float
     previous_id: int
     next_id: int
+    start_point: Point | None = None
+    end_point: Point | None = None
     start_heading: tuple[float, float] | None = None
     end_heading: tuple[float, float] | None = None
     center: Point | None = None
@@ -245,6 +247,8 @@ class SelectionManager(QtCore.QObject):
             length=length,
             previous_id=section.previous_id,
             next_id=section.next_id,
+            start_point=section.start,
+            end_point=section.end,
             center=section.center,
             radius=section.radius,
             start_heading=section.start_heading,
