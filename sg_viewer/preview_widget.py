@@ -289,23 +289,39 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return None
 
         chain: list[int] = [index]
+        visited = {index}
 
         prev_idx = self._connected_neighbor_index(index, "previous")
-        while prev_idx is not None:
+        while prev_idx is not None and prev_idx not in visited:
             chain.insert(0, prev_idx)
+            visited.add(prev_idx)
             prev_idx = self._connected_neighbor_index(prev_idx, "previous")
+        head_closed_loop = prev_idx == index
 
         next_idx = self._connected_neighbor_index(index, "next")
-        while next_idx is not None:
+        while next_idx is not None and next_idx not in visited:
             chain.append(next_idx)
+            visited.add(next_idx)
             next_idx = self._connected_neighbor_index(next_idx, "next")
+        tail_closed_loop = next_idx == chain[0] or next_idx == index
 
         if not chain:
             return None
 
         head = self._sections[chain[0]]
         tail = self._sections[chain[-1]]
-        if not self._is_invalid_id(head.previous_id) or not self._is_invalid_id(tail.next_id):
+        head_open = self._is_invalid_id(head.previous_id)
+        tail_open = self._is_invalid_id(tail.next_id)
+
+        closed_loop = (
+            not head_open
+            and not tail_open
+            and self._connected_neighbor_index(chain[0], "previous") == chain[-1]
+            and self._connected_neighbor_index(chain[-1], "next") == chain[0]
+            and (head_closed_loop or tail_closed_loop)
+        )
+
+        if not closed_loop and not (head_open and tail_open):
             return None
 
         return chain
