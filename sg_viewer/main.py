@@ -13,11 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 def configure_logging() -> None:
+    log_level_name = os.getenv("SG_VIEWER_LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+
     base_dir = os.path.dirname(sys.argv[0])
     log_path = os.path.join(base_dir, "sg_viewer_log.txt")
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
             logging.FileHandler(log_path, mode="a", encoding="utf-8"),
