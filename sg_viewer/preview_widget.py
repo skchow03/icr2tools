@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
+import logging
 from pathlib import Path
 from typing import List, Tuple
 
@@ -19,6 +20,8 @@ from sg_viewer.preview_interaction import PreviewInteraction
 from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 from sg_viewer.curve_solver import _solve_curve_drag as _solve_curve_drag_util
 from sg_viewer.sg_model import SectionPreview
+
+logger = logging.getLogger(__name__)
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -441,6 +444,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 # NEW: Node disconnect only if that section is selected
 # ---------------------------------------------------------
         if self._interaction.handle_mouse_press(event):
+            logger.debug("mousePressEvent handled by interaction at %s", event.pos())
             return
 
         # ---------------------------------------------------------
@@ -456,6 +460,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._last_mouse_pos = event.pos()
             self._press_pos = event.pos()
             self._transform_state = replace(self._transform_state, user_transform_active=True)
+            logger.debug("mousePressEvent starting pan at %s", event.pos())
             event.accept()
             return
 
@@ -464,6 +469,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._interaction.handle_mouse_move(event):
+            logger.debug("mouseMoveEvent handled by interaction at %s", event.pos())
             return
 
         if self._is_panning and self._last_mouse_pos is not None:
@@ -488,6 +494,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
             if self._interaction.handle_mouse_release(event):
+                logger.debug("mouseReleaseEvent handled by interaction at %s", event.pos())
                 return
             self._is_panning = False
             self._last_mouse_pos = None
@@ -495,7 +502,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._press_pos is not None
                 and (event.pos() - self._press_pos).manhattanLength() < 6
             ):
+                logger.debug(
+                    "mouseReleaseEvent treating as click (press=%s, release=%s, delta=%s)",
+                    self._press_pos,
+                    event.pos(),
+                    (event.pos() - self._press_pos).manhattanLength(),
+                )
                 self._handle_click(event.pos())
+            else:
+                logger.debug(
+                    "mouseReleaseEvent ending pan without click (press=%s, release=%s, delta=%s)",
+                    self._press_pos,
+                    event.pos(),
+                    0 if self._press_pos is None else (event.pos() - self._press_pos).manhattanLength(),
+                )
             self._press_pos = None
         super().mouseReleaseEvent(event)
 
@@ -505,6 +525,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         widget_size = (self.width(), self.height())
         transform = self._controller.current_transform(widget_size)
+        logger.debug(
+            "Handling click at screen %s with widget size %s and transform %s",
+            pos,
+            widget_size,
+            transform,
+        )
         self._selection.handle_click(
             pos,
             lambda p: self._controller.map_to_track(p, widget_size, self.height(), transform),
