@@ -25,6 +25,67 @@ def round_heading(vec: tuple[float, float] | None) -> tuple[float, float] | None
     return (round(norm[0], 5), round(norm[1], 5))
 
 
+def _radius_vector(
+    center: Point | None, provided: tuple[float, float] | None, fallback: Point | None
+) -> tuple[float, float] | None:
+    if center is None:
+        return None
+
+    if provided is not None and provided[0] is not None and provided[1] is not None:
+        return provided
+
+    if fallback is None:
+        return None
+
+    cx, cy = center
+    fx, fy = fallback
+    return fx - cx, fy - cy
+
+
+def _orientation_from_radii(
+    start_radius: tuple[float, float] | None, end_radius: tuple[float, float] | None
+) -> float | None:
+    if start_radius is None or end_radius is None:
+        return None
+
+    cross = start_radius[0] * end_radius[1] - start_radius[1] * end_radius[0]
+    if abs(cross) < 1e-9:
+        return None
+    return 1.0 if cross > 0 else -1.0
+
+
+def _heading_from_radius(
+    radius_vec: tuple[float, float] | None, orientation: float | None
+) -> tuple[float, float] | None:
+    if radius_vec is None:
+        return None
+
+    rx, ry = radius_vec
+    if orientation is None:
+        orientation = 1.0
+
+    if orientation > 0:
+        tangent = (-ry, rx)
+    else:
+        tangent = (ry, -rx)
+
+    return round_heading(tangent)
+
+
+def derive_radius_vectors(
+    center: Point | None,
+    start: Point,
+    end: Point,
+    sang1: float | None,
+    sang2: float | None,
+    eang1: float | None,
+    eang2: float | None,
+) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    start_radius = _radius_vector(center, (sang1, sang2), start)
+    end_radius = _radius_vector(center, (eang1, eang2), end)
+    return start_radius, end_radius
+
+
 def build_section_polyline(
     type_name: str,
     start: Point,
@@ -127,13 +188,15 @@ def build_section_polyline(
 
 def derive_heading_vectors(
     polyline: List[Point],
-    sang1: float | None,
-    sang2: float | None,
-    eang1: float | None,
-    eang2: float | None,
+    start_radius: tuple[float, float] | None,
+    end_radius: tuple[float, float] | None,
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
-    if sang1 is not None and sang2 is not None and eang1 is not None and eang2 is not None:
-        return round_heading((sang1, sang2)), round_heading((eang1, eang2))
+    orientation = _orientation_from_radii(start_radius, end_radius)
+    start_heading = _heading_from_radius(start_radius, orientation)
+    end_heading = _heading_from_radius(end_radius, orientation)
+
+    if start_heading is not None and end_heading is not None:
+        return start_heading, end_heading
 
     if len(polyline) < 2:
         return None, None
@@ -152,13 +215,19 @@ def derive_heading_vectors(
 
 
 def update_section_geometry(section: SectionPreview) -> SectionPreview:
-    start_heading = section.start_heading
-    end_heading = section.end_heading
+    start_radius, end_radius = derive_radius_vectors(
+        section.center,
+        section.start,
+        section.end,
+        section.sang1,
+        section.sang2,
+        section.eang1,
+        section.eang2,
+    )
 
-    if section.sang1 is not None and section.sang2 is not None:
-        start_heading = round_heading((section.sang1, section.sang2))
-    if section.eang1 is not None and section.eang2 is not None:
-        end_heading = round_heading((section.eang1, section.eang2))
+    orientation = _orientation_from_radii(start_radius, end_radius)
+    start_heading = _heading_from_radius(start_radius, orientation) or section.start_heading
+    end_heading = _heading_from_radius(end_radius, orientation) or section.end_heading
 
     polyline = build_section_polyline(
         section.type_name,
@@ -169,11 +238,18 @@ def update_section_geometry(section: SectionPreview) -> SectionPreview:
         start_heading,
         end_heading,
     )
-    start_heading, end_heading = derive_heading_vectors(
-        polyline, section.sang1, section.sang2, section.eang1, section.eang2
-    )
+    start_heading, end_heading = derive_heading_vectors(polyline, start_radius, end_radius)
 
-    return replace(section, polyline=polyline, start_heading=start_heading, end_heading=end_heading)
+    return replace(
+        section,
+        polyline=polyline,
+        start_heading=start_heading,
+        end_heading=end_heading,
+        sang1=start_radius[0] if start_radius else None,
+        sang2=start_radius[1] if start_radius else None,
+        eang1=end_radius[0] if end_radius else None,
+        eang2=end_radius[1] if end_radius else None,
+    )
 
 
 def rebuild_centerline_from_sections(

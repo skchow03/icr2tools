@@ -20,6 +20,13 @@ def _make_section(
     end_heading: tuple[float, float] | None = None,
     length: float | None = None,
 ) -> SectionPreview:
+    sang1 = sang2 = eang1 = eang2 = None
+    if center is not None:
+        sang1 = start[0] - center[0]
+        sang2 = start[1] - center[1]
+        eang1 = end[0] - center[0]
+        eang2 = end[1] - center[1]
+
     return SectionPreview(
         section_id=1,
         type_name="curve",
@@ -30,10 +37,10 @@ def _make_section(
         start_dlong=0.0,
         length=length or 0.0,
         center=center,
-        sang1=start_heading[0] if start_heading else None,
-        sang2=start_heading[1] if start_heading else None,
-        eang1=end_heading[0] if end_heading else None,
-        eang2=end_heading[1] if end_heading else None,
+        sang1=sang1,
+        sang2=sang2,
+        eang1=eang1,
+        eang2=eang2,
         radius=radius,
         start_heading=start_heading,
         end_heading=end_heading,

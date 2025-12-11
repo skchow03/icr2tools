@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import replace
 from typing import Callable
 
@@ -26,36 +25,17 @@ def _parse_int(value: str, default: int) -> int:
         return default
 
 
-def _point_from_heading(
+def _point_from_radius_vector(
     center: tuple[float, float] | None,
-    heading: tuple[float, float] | None,
-    radius: float | None,
-    reference: tuple[float, float] | None,
+    radius_vec: tuple[float, float] | None,
+    _reference: tuple[float, float] | None,
 ) -> tuple[float, float] | None:
-    if center is None or heading is None or radius is None or radius <= 0:
+    if center is None or radius_vec is None:
         return None
 
-    hx, hy = heading
-    length = math.hypot(hx, hy)
-    if length <= 0:
-        return None
-
-    nx, ny = hx / length, hy / length
     cx, cy = center
-    candidates = [
-        (cx - ny * radius, cy + nx * radius),
-        (cx + ny * radius, cy - nx * radius),
-    ]
-
-    if reference is None:
-        return candidates[0]
-
-    def _distance_sq(point: tuple[float, float]) -> float:
-        dx = point[0] - reference[0]
-        dy = point[1] - reference[1]
-        return dx * dx + dy * dy
-
-    return min(candidates, key=_distance_sq)
+    rx, ry = radius_vec
+    return cx + rx, cy + ry
 
 
 class SectionTableWindow(QtWidgets.QDialog):
@@ -276,16 +256,16 @@ class SectionTableWindow(QtWidgets.QDialog):
             if center_x is not None and center_y is not None:
                 center = (center_x, center_y)
 
-            start_heading = None
-            end_heading = None
+            start_radius = None
+            end_radius = None
             if sang1 is not None and sang2 is not None:
-                start_heading = (sang1, sang2)
+                start_radius = (sang1, sang2)
             if eang1 is not None and eang2 is not None:
-                end_heading = (eang1, eang2)
+                end_radius = (eang1, eang2)
 
-            if type_name == "curve" and center is not None and radius is not None:
-                recalculated_start = _point_from_heading(center, start_heading, radius, start)
-                recalculated_end = _point_from_heading(center, end_heading, radius, end)
+            if type_name == "curve" and center is not None:
+                recalculated_start = _point_from_radius_vector(center, start_radius, start)
+                recalculated_end = _point_from_radius_vector(center, end_radius, end)
 
                 if recalculated_start is not None:
                     start = recalculated_start

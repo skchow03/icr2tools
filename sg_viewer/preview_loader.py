@@ -8,7 +8,13 @@ from icr2_core.trk.trk_classes import TRKFile
 from track_viewer.geometry import build_centerline_index, sample_centerline
 
 from sg_viewer.centerline_utils import compute_centerline_normal_and_tangent
-from sg_viewer.sg_geometry import build_section_polyline, derive_heading_vectors
+from sg_viewer.sg_geometry import (
+    _heading_from_radius,
+    _orientation_from_radii,
+    build_section_polyline,
+    derive_heading_vectors,
+    derive_radius_vectors,
+)
 from sg_viewer.sg_model import Point, PreviewData, SectionPreview
 
 def load_preview(path: Path) -> PreviewData:
@@ -71,17 +77,22 @@ def _build_sections(
             eang1 = float(sg_sect.eang1)
             eang2 = float(sg_sect.eang2)
 
+        start_radius, end_radius = derive_radius_vectors(center, start, end, sang1, sang2, eang1, eang2)
+        orientation = _orientation_from_radii(start_radius, end_radius)
+        start_heading_hint = _heading_from_radius(start_radius, orientation)
+        end_heading_hint = _heading_from_radius(end_radius, orientation)
+
         polyline = build_section_polyline(
             "curve" if getattr(sg_sect, "type", None) == 2 else "straight",
             start,
             end,
             center,
             radius,
-            (sang1, sang2) if sang1 is not None and sang2 is not None else None,
-            (eang1, eang2) if eang1 is not None and eang2 is not None else None,
+            start_heading_hint,
+            end_heading_hint,
         )
 
-        start_heading, end_heading = derive_heading_vectors(polyline, sang1, sang2, eang1, eang2)
+        start_heading, end_heading = derive_heading_vectors(polyline, start_radius, end_radius)
 
         sections.append(
             SectionPreview(
