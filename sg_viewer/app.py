@@ -44,10 +44,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
+        self._length_label = QtWidgets.QLabel("Length: –")
         self._center_label = QtWidgets.QLabel("Center: –")
         self._radius_label = QtWidgets.QLabel("Radius: –")
+        self._previous_label = QtWidgets.QLabel("Previous Section: –")
+        self._next_label = QtWidgets.QLabel("Next Section: –")
         self._start_heading_label = QtWidgets.QLabel("Start Heading: –")
         self._end_heading_label = QtWidgets.QLabel("End Heading: –")
+        self._sg_start_heading_label = QtWidgets.QLabel("SG Start Heading: –")
+        self._sg_end_heading_label = QtWidgets.QLabel("SG End Heading: –")
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -61,10 +66,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
         sidebar_layout.addWidget(self._dlong_label)
+        sidebar_layout.addWidget(self._length_label)
         sidebar_layout.addWidget(self._center_label)
         sidebar_layout.addWidget(self._radius_label)
+        sidebar_layout.addWidget(self._previous_label)
+        sidebar_layout.addWidget(self._next_label)
         sidebar_layout.addWidget(self._start_heading_label)
         sidebar_layout.addWidget(self._end_heading_label)
+        sidebar_layout.addWidget(self._sg_start_heading_label)
+        sidebar_layout.addWidget(self._sg_end_heading_label)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
@@ -125,10 +135,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._section_label.setText("Section: None")
             self._type_label.setText("Type: –")
             self._dlong_label.setText("DLONG: –")
+            self._length_label.setText("Length: –")
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+            self._previous_label.setText("Previous Section: –")
+            self._next_label.setText("Next Section: –")
             self._start_heading_label.setText("Start Heading: –")
             self._end_heading_label.setText("End Heading: –")
+            self._sg_start_heading_label.setText("SG Start Heading: –")
+            self._sg_end_heading_label.setText("SG End Heading: –")
             self._profile_widget.set_selected_range(None)
             return
 
@@ -137,6 +152,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._dlong_label.setText(
             f"DLONG: {selection.start_dlong:.0f} → {selection.end_dlong:.0f}"
         )
+        self._length_label.setText(f"Length: {selection.length:.3f}")
         if selection.center is not None and selection.radius is not None:
             cx, cy = selection.center
             self._center_label.setText(f"Center: ({cx:.1f}, {cy:.1f})")
@@ -144,6 +160,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._center_label.setText("Center: –")
             self._radius_label.setText("Radius: –")
+
+        self._previous_label.setText(self._format_section_link("Previous", selection.previous_id))
+        self._next_label.setText(self._format_section_link("Next", selection.next_id))
 
         if selection.start_heading is not None:
             sx, sy = selection.start_heading
@@ -159,5 +178,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._end_heading_label.setText("End Heading: –")
 
+        if selection.type_name == "curve" and selection.sg_start_heading and selection.sg_end_heading:
+            s1, s2 = selection.sg_start_heading
+            e1, e2 = selection.sg_end_heading
+            self._sg_start_heading_label.setText(f"SG Start Heading: sang1={s1}, sang2={s2}")
+            self._sg_end_heading_label.setText(f"SG End Heading: eang1={e1}, eang2={e2}")
+        else:
+            self._sg_start_heading_label.setText("SG Start Heading: –")
+            self._sg_end_heading_label.setText("SG End Heading: –")
+
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
+
+    @staticmethod
+    def _format_section_link(prefix: str, section_id: int) -> str:
+        connection = "Not connected" if section_id == -1 else str(section_id)
+        return f"{prefix} Section: {connection}"

@@ -20,10 +20,15 @@ class SectionSelection:
     type_name: str
     start_dlong: float
     end_dlong: float
+    length: float
+    previous_id: int
+    next_id: int
     start_heading: tuple[float, float] | None = None
     end_heading: tuple[float, float] | None = None
     center: Point | None = None
     radius: float | None = None
+    sg_start_heading: tuple[int, int] | None = None
+    sg_end_heading: tuple[int, int] | None = None
 
 
 @dataclass
@@ -220,9 +225,7 @@ class SelectionManager(QtCore.QObject):
             if not sect.polyline or len(sect.polyline) < 2:
                 continue
 
-            length = 0.0
-            for start, end in zip(sect.polyline, sect.polyline[1:]):
-                length += math.hypot(end[0] - start[0], end[1] - start[1])
+            length = self._section_length(sect.polyline)
 
             start_dlong = cursor
             cursor += length
@@ -231,16 +234,41 @@ class SelectionManager(QtCore.QObject):
         return ranges
 
     def _build_section_selection(self, section: SectionPreview) -> SectionSelection:
+        length = self._section_length(section.polyline)
+        sg_start_heading = self._sg_heading_from_vector(section.start_heading)
+        sg_end_heading = self._sg_heading_from_vector(section.end_heading)
         return SectionSelection(
             index=section.section_id,
             type_name=section.type_name,
             start_dlong=section.start_dlong,
             end_dlong=section.start_dlong + section.length,
+            length=length,
+            previous_id=section.previous_id,
+            next_id=section.next_id,
             center=section.center,
             radius=section.radius,
             start_heading=section.start_heading,
             end_heading=section.end_heading,
+            sg_start_heading=sg_start_heading,
+            sg_end_heading=sg_end_heading,
         )
+
+    @staticmethod
+    def _section_length(polyline: list[Point]) -> float:
+        length = 0.0
+        for start, end in zip(polyline, polyline[1:]):
+            length += math.hypot(end[0] - start[0], end[1] - start[1])
+        return length
+
+    @staticmethod
+    def _sg_heading_from_vector(vector: tuple[float, float] | None) -> tuple[int, int] | None:
+        if vector is None:
+            return None
+        length = math.hypot(vector[0], vector[1])
+        if length <= 0:
+            return None
+        scale = 32767.0 / length
+        return (int(round(vector[0] * scale)), int(round(vector[1] * scale)))
 
     def get_section_headings(self) -> list[SectionHeadingData]:
         if not self._sections:
