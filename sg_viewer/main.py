@@ -1,5 +1,6 @@
 """Entry point for the SG viewer."""
 
+import argparse
 import logging
 import os
 import sys
@@ -12,12 +13,39 @@ from sg_viewer.app import SGViewerApp, SGViewerWindow  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-def configure_logging() -> None:
-    log_level_name = os.getenv("SG_VIEWER_LOG_LEVEL", "INFO").upper()
-    log_level = getattr(logging, log_level_name, logging.INFO)
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="SG viewer")
+    parser.add_argument(
+        "--log-level",
+        default=os.getenv("SG_VIEWER_LOG_LEVEL", "INFO"),
+        help=(
+            "Logging level (e.g. DEBUG, INFO). Defaults to SG_VIEWER_LOG_LEVEL "
+            "environment variable or INFO."
+        ),
+    )
+    parser.add_argument(
+        "--log-file",
+        default=os.getenv("SG_VIEWER_LOG_PATH"),
+        help=(
+            "Optional log file path. Defaults to sg_viewer_log.txt next to the "
+            "executable."
+        ),
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Shortcut for --log-level DEBUG",
+    )
+    return parser.parse_args(argv)
 
-    base_dir = os.path.dirname(sys.argv[0])
-    log_path = os.path.join(base_dir, "sg_viewer_log.txt")
+
+def configure_logging(log_level_name: str, log_path: str | None) -> str:
+    resolved_level_name = log_level_name.upper()
+    log_level = getattr(logging, resolved_level_name, logging.INFO)
+
+    if not log_path:
+        base_dir = os.path.dirname(sys.argv[0])
+        log_path = os.path.join(base_dir, "sg_viewer_log.txt")
 
     logging.basicConfig(
         level=log_level,
@@ -28,10 +56,14 @@ def configure_logging() -> None:
         ],
     )
 
+    return log_path
+
 
 def main() -> None:
-    configure_logging()
-    logger.info("Starting SG Viewer")
+    args = parse_args()
+    log_level_name = "DEBUG" if args.debug else args.log_level
+    log_path = configure_logging(log_level_name, args.log_file)
+    logger.info("Starting SG Viewer (log level %s, log file %s)", log_level_name.upper(), log_path)
 
     app = SGViewerApp(sys.argv)
     window = SGViewerWindow()

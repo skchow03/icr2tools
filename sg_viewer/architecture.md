@@ -3,7 +3,7 @@
 The SG Viewer is a Qt-based desktop utility for inspecting SG track files. It is organized around a single-window UI with a controller that coordinates preview rendering, section selection, and supporting dialogs. The main concepts and data flow are summarized below.
 
 ## Entry Points and Application Shell
-- `sg_viewer/main.py` bootstraps logging, instantiates the Qt application, and shows the main window before running the event loop. Cleanup is attached to the Qt `aboutToQuit` signal for best-effort shutdown.【F:sg_viewer/main.py†L1-L37】
+- `sg_viewer/main.py` bootstraps logging, instantiates the Qt application, and shows the main window before running the event loop. Cleanup is attached to the Qt `aboutToQuit` signal for best-effort shutdown. Pass `--debug` or `--log-level DEBUG` to increase verbosity, and `--log-file` or the `SG_VIEWER_LOG_PATH` environment variable to control the log destination.【F:sg_viewer/main.py†L1-L42】
 - `sg_viewer/app.py` defines the `SGViewerApp` (`QApplication`) and `SGViewerWindow` (`QMainWindow`). The window assembles the preview canvas, elevation profile, navigation controls, and sidebar labels, then constructs the controller to wire behaviors.【F:sg_viewer/app.py†L1-L102】
 
 ## Controller and UI Coordination
