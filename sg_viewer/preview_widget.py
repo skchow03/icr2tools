@@ -813,13 +813,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if not self._sections:
             raise ValueError("No sections available to save.")
 
-        if len(self._sections) != len(self._sgfile.sects):
-            raise ValueError("Section count mismatch between SG file and preview state.")
-
         sgfile = self._sgfile
-        sgfile.num_sects = len(self._sections)
+
+        desired_section_count = len(self._sections)
+        current_section_count = len(sgfile.sects)
+
+        if desired_section_count != current_section_count:
+            section_record_length = 58 + 2 * sgfile.num_xsects
+            if desired_section_count > current_section_count:
+                template_section = [0] * section_record_length
+                for _ in range(desired_section_count - current_section_count):
+                    sgfile.sects.append(
+                        SGFile.Section(template_section, sgfile.num_xsects)
+                    )
+            else:
+                sgfile.sects = sgfile.sects[:desired_section_count]
+
+        sgfile.num_sects = desired_section_count
         if len(sgfile.header) > 4:
-            sgfile.header[4] = len(self._sections)
+            sgfile.header[4] = desired_section_count
 
         def _as_int(value: float | int | None, fallback: int = 0) -> int:
             if value is None:
