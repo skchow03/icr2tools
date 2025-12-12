@@ -675,13 +675,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
             sg_section.center_x = _as_int(center_x)
             sg_section.center_y = _as_int(center_y)
 
-            start_heading = preview_section.start_heading or (
-                preview_section.sang1,
-                preview_section.sang2,
+            start_heading = (
+                (preview_section.sang1, preview_section.sang2)
+                if preview_section.sang1 is not None and preview_section.sang2 is not None
+                else preview_section.start_heading
             )
-            end_heading = preview_section.end_heading or (
-                preview_section.eang1,
-                preview_section.eang2,
+            end_heading = (
+                (preview_section.eang1, preview_section.eang2)
+                if preview_section.eang1 is not None and preview_section.eang2 is not None
+                else preview_section.end_heading
             )
 
             sg_section.sang1 = _as_int(start_heading[0] if start_heading else None)
