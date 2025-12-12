@@ -121,6 +121,18 @@ class SelectionManager(QtCore.QObject):
         map_to_track: Callable[[QtCore.QPointF], Point | None],
         transform: Transform | None,
     ) -> None:
+        selection = self.find_section_at_point(pos, map_to_track, transform)
+        if selection is None:
+            return
+
+        self.set_selected_section(selection)
+
+    def find_section_at_point(
+        self,
+        pos: QtCore.QPoint,
+        map_to_track: Callable[[QtCore.QPointF], Point | None],
+        transform: Transform | None,
+    ) -> int | None:
         if transform is None:
             logger.debug("Selection.handle_click skipped: no transform for %s", pos)
             return
@@ -143,7 +155,7 @@ class SelectionManager(QtCore.QObject):
             selection,
             len(self._sections),
         )
-        self.set_selected_section(selection)
+        return selection
 
     def set_selected_section(self, index: int | None) -> None:
         if index is None:

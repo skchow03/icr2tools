@@ -25,6 +25,7 @@ class SGViewerController:
         self._current_path: Path | None = None
         self._new_straight_default_style = window.new_straight_button.styleSheet()
         self._new_curve_default_style = window.new_curve_button.styleSheet()
+        self._delete_default_style = window.delete_section_button.styleSheet()
 
         self._create_actions()
         self._create_menus()
@@ -45,6 +46,7 @@ class SGViewerController:
         self._window.heading_table_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
+        self._window.delete_section_button.setEnabled(True)
         self._save_action.setEnabled(True)
         self._update_section_table()
         self._update_heading_table()
@@ -102,6 +104,10 @@ class SGViewerController:
             self._on_new_straight_mode_changed
         )
         self._window.preview.newCurveModeChanged.connect(self._on_new_curve_mode_changed)
+        self._window.delete_section_button.toggled.connect(
+            self._toggle_delete_section_mode
+        )
+        self._window.preview.deleteModeChanged.connect(self._on_delete_mode_changed)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
@@ -124,6 +130,14 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3f51b5; color: white;")
         else:
             button.setStyleSheet(self._new_curve_default_style)
+
+    def _on_delete_mode_changed(self, active: bool) -> None:
+        button = self._window.delete_section_button
+        button.setChecked(active)
+        if active:
+            button.setStyleSheet("background-color: #b53f3f; color: white;")
+        else:
+            button.setStyleSheet(self._delete_default_style)
 
     def _open_background_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -250,6 +264,7 @@ class SGViewerController:
         )
 
     def _start_new_straight(self) -> None:
+        self._window.delete_section_button.setChecked(False)
         if not self._window.preview.begin_new_straight():
             self._window.statusBar().showMessage(
                 "Load an SG file before creating new straights."
@@ -262,6 +277,7 @@ class SGViewerController:
         )
 
     def _start_new_curve(self) -> None:
+        self._window.delete_section_button.setChecked(False)
         if not self._window.preview.begin_new_curve():
             self._window.statusBar().showMessage(
                 "Load an SG file and click an unconnected node to start a curve."
@@ -272,6 +288,17 @@ class SGViewerController:
         self._window.statusBar().showMessage(
             "Click an unconnected node to start the new curve."
         )
+
+    def _toggle_delete_section_mode(self, checked: bool) -> None:
+        if checked:
+            self._window.new_straight_button.setChecked(False)
+            self._window.new_curve_button.setChecked(False)
+            if not self._window.preview.begin_delete_section():
+                self._window.delete_section_button.setChecked(False)
+                return
+            self._window.statusBar().showMessage("Click a section to delete it.")
+        else:
+            self._window.preview.cancel_delete_section()
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
