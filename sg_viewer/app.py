@@ -37,6 +37,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._new_curve_button = QtWidgets.QPushButton("New Curve")
         self._new_curve_button.setCheckable(True)
         self._new_curve_button.setEnabled(False)
+        self._delete_section_button = QtWidgets.QPushButton("Delete Section")
+        self._delete_section_button.setCheckable(True)
+        self._delete_section_button.setEnabled(False)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
@@ -68,6 +71,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._next_button)
         navigation_layout.addWidget(self._new_straight_button)
         navigation_layout.addWidget(self._new_curve_button)
+        navigation_layout.addWidget(self._delete_section_button)
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
@@ -129,6 +133,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def new_curve_button(self) -> QtWidgets.QPushButton:
         return self._new_curve_button
+
+    @property
+    def delete_section_button(self) -> QtWidgets.QPushButton:
+        return self._delete_section_button
 
     @property
     def radii_button(self) -> QtWidgets.QPushButton:

@@ -72,6 +72,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     sectionsChanged = QtCore.pyqtSignal()  # NEW
     newStraightModeChanged = QtCore.pyqtSignal(bool)
     newCurveModeChanged = QtCore.pyqtSignal(bool)
+    deleteModeChanged = QtCore.pyqtSignal(bool)
 
     CURVE_SOLVE_TOLERANCE = 1.0  # inches
 
@@ -123,6 +124,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_curve_end: Point | None = None
         self._new_curve_heading: tuple[float, float] | None = None
         self._new_curve_preview: SectionPreview | None = None
+        self._delete_section_active = False
 
     # ------------------------------------------------------------------
     # State delegation
@@ -202,6 +204,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_active = False
         self._new_straight_start = None
         self._new_straight_end = None
+        self._new_curve_active = False
+        self._new_curve_start = None
+        self._new_curve_end = None
+        self._new_curve_preview = None
+        self._delete_section_active = False
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
@@ -367,6 +374,31 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         last = self._sections[-1]
         return float(last.start_dlong + last.length)
+
+    # ------------------------------------------------------------------
+    # Delete section
+    # ------------------------------------------------------------------
+    def begin_delete_section(self) -> bool:
+        if not self._sections:
+            return False
+
+        self._set_delete_section_active(True)
+        self._status_message = "Click a section to delete it."
+        self.update()
+        return True
+
+    def cancel_delete_section(self) -> None:
+        self._set_delete_section_active(False)
+
+    def _set_delete_section_active(self, active: bool) -> None:
+        if self._delete_section_active == active:
+            return
+
+        self._delete_section_active = active
+        if active:
+            self._set_new_straight_active(False)
+            self._set_new_curve_active(False)
+        self.deleteModeChanged.emit(active)
 
     def set_background_settings(
         self, scale_500ths_per_px: float, origin: Point
@@ -686,6 +718,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._handle_new_straight_press(event):
             return
 
+        if self._delete_section_active and event.button() == QtCore.Qt.LeftButton:
+            self._is_panning = False
+            self._last_mouse_pos = None
+            self._press_pos = event.pos()
+            event.accept()
+            return
+
 # ---------------------------------------------------------
 # NEW: Node disconnect only if that section is selected
 # ---------------------------------------------------------
@@ -729,6 +768,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
             event.accept()
             return
 
+        if self._delete_section_active:
+            event.accept()
+            return
+
         if self._interaction.handle_mouse_move(event):
             logger.debug("mouseMoveEvent handled by interaction at %s", event.pos())
             return
@@ -754,6 +797,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
+            if self._delete_section_active:
+                if (
+                    self._press_pos is not None
+                    and (event.pos() - self._press_pos).manhattanLength() < 6
+                ):
+                    self._handle_delete_click(event.pos())
+                self._press_pos = None
+                event.accept()
+                return
             if self._new_straight_active or self._new_curve_active:
                 event.accept()
                 return
@@ -1050,6 +1102,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         self._new_straight_active = active
+        if active:
+            self._set_delete_section_active(False)
         self.newStraightModeChanged.emit(active)
 
     def _set_new_curve_active(self, active: bool) -> None:
@@ -1057,9 +1111,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         self._new_curve_active = active
+        if active:
+            self._set_delete_section_active(False)
         self.newCurveModeChanged.emit(active)
 
     def _handle_click(self, pos: QtCore.QPoint) -> None:
+        if self._delete_section_active and self._handle_delete_click(pos):
+            return
+
         widget_size = (self.width(), self.height())
         transform = self._controller.current_transform(widget_size)
         logger.debug(
@@ -1077,6 +1136,62 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _on_selection_changed(self, selection_value: object) -> None:
         self.selectedSectionChanged.emit(selection_value)
         self.update()
+
+    def _handle_delete_click(self, pos: QtCore.QPoint) -> bool:
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        selection_index = self._selection.find_section_at_point(
+            pos,
+            lambda p: self._controller.map_to_track(p, widget_size, self.height(), transform),
+            transform,
+        )
+        if selection_index is None:
+            self._status_message = "Click a section to delete it."
+            self.update()
+            return False
+
+        self._delete_section(selection_index)
+        return True
+
+    def _delete_section(self, index: int) -> None:
+        if not self._sections or index < 0 or index >= len(self._sections):
+            return
+
+        removed_id = self._sections[index].section_id
+        removed_targets = {removed_id, index}
+        survivors = [sect for idx, sect in enumerate(self._sections) if idx != index]
+        id_mapping = {sect.section_id: new_idx for new_idx, sect in enumerate(survivors)}
+
+        new_sections: list[SectionPreview] = []
+        cursor = 0.0
+        for sect in survivors:
+            new_prev = -1
+            if sect.previous_id not in (None, -1) and sect.previous_id not in removed_targets:
+                new_prev = id_mapping.get(sect.previous_id, -1)
+
+            new_next = -1
+            if sect.next_id not in (None, -1) and sect.next_id not in removed_targets:
+                new_next = id_mapping.get(sect.next_id, -1)
+
+            new_index = id_mapping.get(sect.section_id, -1)
+            updated_section = replace(
+                sect,
+                section_id=new_index,
+                previous_id=new_prev,
+                next_id=new_next,
+                start_dlong=cursor,
+            )
+            new_sections.append(update_section_geometry(updated_section))
+            cursor += float(updated_section.length)
+
+        self._track_length = cursor if new_sections else None
+        self.set_sections(new_sections)
+        self._selection.set_selected_section(None)
+        self._status_message = f"Deleted section #{index}."
+        self._set_delete_section_active(False)
 
     def get_section_set(self) -> tuple[list[SectionPreview], float | None]:
         track_length = float(self._track_length) if self._track_length is not None else None
