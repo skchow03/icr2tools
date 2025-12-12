@@ -27,6 +27,37 @@ Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
 
+def _curve_angles(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    center: tuple[float, float],
+    radius: float,
+) -> tuple[float, float, float, float]:
+    """Compute SG curve angles based on geometry.
+
+    The values match the SG format expectations:
+    Sang1 = Center_Y - Start_Y
+    Sang2 = Start_X - Center_X
+    Eang1 = Center_Y - End_Y
+    Eang2 = End_X - Center_X
+
+    Each component is multiplied by the sign of ``radius`` (positive when the
+    curve bends right, negative when it bends left).
+    """
+
+    cx, cy = center
+    sx, sy = start
+    ex, ey = end
+    sign = 1 if radius >= 0 else -1
+
+    sang1 = (cy - sy) * sign
+    sang2 = (sx - cx) * sign
+    eang1 = (cy - ey) * sign
+    eang2 = (ex - cx) * sign
+
+    return sang1, sang2, eang1, eang2
+
+
 class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
 
@@ -957,10 +988,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
             sang1 = sang2 = eang1 = eang2 = None
             if preview_section.type_name == "curve" and preview_section.center is not None:
-                sang1 = start_x - center_x
-                sang2 = start_y - center_y
-                eang1 = end_x - center_x
-                eang2 = end_y - center_y
+                sang1, sang2, eang1, eang2 = _curve_angles(
+                    (start_x, start_y),
+                    (end_x, end_y),
+                    (center_x, center_y),
+                    preview_section.radius or 0.0,
+                )
             else:
                 sang1 = start_heading[0] if start_heading else None
                 sang2 = start_heading[1] if start_heading else None
