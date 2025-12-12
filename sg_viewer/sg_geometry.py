@@ -25,6 +25,38 @@ def round_heading(vec: tuple[float, float] | None) -> tuple[float, float] | None
     return (round(norm[0], 5), round(norm[1], 5))
 
 
+def signed_radius_from_heading(
+    heading: tuple[float, float] | None,
+    start: Point,
+    center: Point | None,
+    radius: float | None,
+) -> float | None:
+    """Return ``radius`` with a sign that matches the turn direction.
+
+    ``radius`` is returned unchanged when any inputs needed for determining the
+    turn direction are missing. When possible, the radius magnitude is preserved
+    but its sign is chosen based on whether the centre of the curve sits to the
+    left (positive) or right (negative) of the heading at the start point.
+    """
+
+    if heading is None or center is None or radius is None:
+        return radius
+
+    hx, hy = heading
+    sx, sy = start
+    cx, cy = center
+
+    cross = hx * (cy - sy) - hy * (cx - sx)
+    if abs(cross) <= 1e-9:
+        return radius
+
+    magnitude = abs(radius)
+    if magnitude == 0:
+        return radius
+
+    return magnitude if cross > 0 else -magnitude
+
+
 def build_section_polyline(
     type_name: str,
     start: Point,
