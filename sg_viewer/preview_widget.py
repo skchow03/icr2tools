@@ -126,6 +126,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_curve_heading: tuple[float, float] | None = None
         self._new_curve_preview: SectionPreview | None = None
         self._delete_section_active = False
+        self._has_unsaved_changes = False
 
     # ------------------------------------------------------------------
     # State delegation
@@ -141,6 +142,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
     @property
     def sgfile(self) -> SGFile | None:
         return self._controller.sgfile
+
+    @property
+    def has_unsaved_changes(self) -> bool:
+        return self._has_unsaved_changes
 
     @property
     def _trk(self) -> TRKFile | None:
@@ -217,6 +222,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
         self._update_node_status()
+        self._has_unsaved_changes = False
         self.update()
 
     # ------------------------------------------------------------------
@@ -257,6 +263,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         self._update_node_status()
         self._controller.update_fit_scale((self.width(), self.height()))
+        self._has_unsaved_changes = False
+        self.update()
+
+    def start_new_track(self) -> None:
+        self.clear("New track ready. Click New Straight to start drawing.")
+        default_bounds = (-1000.0, 1000.0, -1000.0, 1000.0)
+        self._sampled_bounds = default_bounds
+        self._sampled_centerline = []
+        self._track_length = 0.0
+        self._has_unsaved_changes = False
+        self._controller.update_fit_scale((self.width(), self.height()))
         self.update()
 
     def load_background_image(self, path: Path) -> None:
@@ -279,7 +296,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # New straight creation
     # ------------------------------------------------------------------
     def begin_new_straight(self) -> bool:
-        if not self._sampled_centerline:
+        if not self._sampled_bounds:
             return False
 
         self._set_new_straight_active(True)
@@ -291,7 +308,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return True
 
     def begin_new_curve(self) -> bool:
-        if not self._sampled_centerline:
+        if not self._sampled_bounds:
             return False
 
         self._set_new_curve_active(True)
@@ -1277,6 +1294,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._centerline_index,
             self._sampled_dlongs,
         )
+        self._has_unsaved_changes = True
         self.sectionsChanged.emit()  # NEW
         self.update()
 
@@ -1366,6 +1384,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             sg_section.radius = _as_int(preview_section.radius)
 
         sgfile.output_sg(str(path))
+        self._has_unsaved_changes = False
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
         return self._selection.get_section_headings()
