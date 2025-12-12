@@ -60,6 +60,8 @@ class FileHistory:
 
         try:
             image = Path(data["background_image"])
+            if not image.is_absolute():
+                image = (sg_path.parent / image).resolve()
             scale = float(data["background_scale"])
             origin = (float(data["background_origin_u"]), float(data["background_origin_v"]))
             return image, scale, origin
