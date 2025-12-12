@@ -24,6 +24,7 @@ class SGViewerController:
         self._heading_table_window: HeadingTableWindow | None = None
         self._current_path: Path | None = None
         self._new_straight_default_style = window.new_straight_button.styleSheet()
+        self._new_curve_default_style = window.new_curve_button.styleSheet()
 
         self._create_actions()
         self._create_menus()
@@ -43,6 +44,7 @@ class SGViewerController:
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
+        self._window.new_curve_button.setEnabled(True)
         self._save_action.setEnabled(True)
         self._update_section_table()
         self._update_heading_table()
@@ -95,9 +97,11 @@ class SGViewerController:
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
         self._window.next_button.clicked.connect(self._window.preview.select_next_section)
         self._window.new_straight_button.clicked.connect(self._start_new_straight)
+        self._window.new_curve_button.clicked.connect(self._start_new_curve)
         self._window.preview.newStraightModeChanged.connect(
             self._on_new_straight_mode_changed
         )
+        self._window.preview.newCurveModeChanged.connect(self._on_new_curve_mode_changed)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
@@ -112,6 +116,14 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3f51b5; color: white;")
         else:
             button.setStyleSheet(self._new_straight_default_style)
+
+    def _on_new_curve_mode_changed(self, active: bool) -> None:
+        button = self._window.new_curve_button
+        button.setChecked(active)
+        if active:
+            button.setStyleSheet("background-color: #3f51b5; color: white;")
+        else:
+            button.setStyleSheet(self._new_curve_default_style)
 
     def _open_background_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -247,6 +259,18 @@ class SGViewerController:
 
         self._window.statusBar().showMessage(
             "Click to place the start of the new straight."
+        )
+
+    def _start_new_curve(self) -> None:
+        if not self._window.preview.begin_new_curve():
+            self._window.statusBar().showMessage(
+                "Load an SG file and click an unconnected node to start a curve."
+            )
+            self._on_new_curve_mode_changed(False)
+            return
+
+        self._window.statusBar().showMessage(
+            "Click an unconnected node to start the new curve."
         )
 
     def _show_section_table(self) -> None:
