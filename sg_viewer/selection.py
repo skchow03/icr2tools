@@ -34,6 +34,11 @@ class SectionSelection:
     radius: float | None = None
     sg_start_heading: tuple[int, int] | None = None
     sg_end_heading: tuple[int, int] | None = None
+    sg_radius: int | None = None
+    sg_sang1: int | None = None
+    sg_sang2: int | None = None
+    sg_eang1: int | None = None
+    sg_eang2: int | None = None
 
 
 @dataclass
@@ -278,9 +283,8 @@ class SelectionManager(QtCore.QObject):
         return ranges
 
     def _build_section_selection(self, section: SectionPreview) -> SectionSelection:
-        length = self._section_length(section.polyline)
-        sg_start_heading = self._sg_heading_from_vector(section.start_heading)
-        sg_end_heading = self._sg_heading_from_vector(section.end_heading)
+        length = float(section.length)
+        sg_values = self._compute_sg_save_values(section)
         return SectionSelection(
             index=section.section_id,
             type_name=section.type_name,
@@ -295,8 +299,13 @@ class SelectionManager(QtCore.QObject):
             radius=section.radius,
             start_heading=section.start_heading,
             end_heading=section.end_heading,
-            sg_start_heading=sg_start_heading,
-            sg_end_heading=sg_end_heading,
+            sg_start_heading=sg_values.start_heading,
+            sg_end_heading=sg_values.end_heading,
+            sg_radius=sg_values.radius,
+            sg_sang1=sg_values.sang1,
+            sg_sang2=sg_values.sang2,
+            sg_eang1=sg_values.eang1,
+            sg_eang2=sg_values.eang2,
         )
 
     @staticmethod
@@ -307,14 +316,51 @@ class SelectionManager(QtCore.QObject):
         return length
 
     @staticmethod
-    def _sg_heading_from_vector(vector: tuple[float, float] | None) -> tuple[int, int] | None:
-        if vector is None:
-            return None
-        length = math.hypot(vector[0], vector[1])
-        if length <= 0:
-            return None
-        scale = 32767.0 / length
-        return (int(round(vector[0] * scale)), int(round(vector[1] * scale)))
+    def _compute_sg_save_values(section: SectionPreview) -> _SGSaveValues:
+        def _as_int(value: float | int | None) -> int | None:
+            if value is None:
+                return None
+            return int(round(value))
+
+        start_heading = (
+            (section.sang1, section.sang2)
+            if section.sang1 is not None and section.sang2 is not None
+            else section.start_heading
+        )
+        end_heading = (
+            (section.eang1, section.eang2)
+            if section.eang1 is not None and section.eang2 is not None
+            else section.end_heading
+        )
+
+        sang1 = sang2 = eang1 = eang2 = None
+        if section.type_name == "curve" and section.center is not None and section.radius is not None:
+            sang1, sang2, eang1, eang2 = _curve_angles(
+                section.start,
+                section.end,
+                section.center,
+                section.radius,
+            )
+        else:
+            if start_heading is not None:
+                sang1, sang2 = start_heading
+            if end_heading is not None:
+                eang1, eang2 = end_heading
+
+        def _as_heading(value: tuple[float, float] | None) -> tuple[int, int] | None:
+            if value is None:
+                return None
+            return (_as_int(value[0]) or 0, _as_int(value[1]) or 0)
+
+        return _SGSaveValues(
+            sang1=_as_int(sang1),
+            sang2=_as_int(sang2),
+            eang1=_as_int(eang1),
+            eang2=_as_int(eang2),
+            radius=_as_int(section.radius),
+            start_heading=_as_heading(start_heading),
+            end_heading=_as_heading(end_heading),
+        )
 
     def get_section_headings(self) -> list[SectionHeadingData]:
         if not self._sections:
@@ -339,8 +385,50 @@ class SelectionManager(QtCore.QObject):
         return headings
 
 
+@dataclass
+class _SGSaveValues:
+    sang1: int | None
+    sang2: int | None
+    eang1: int | None
+    eang2: int | None
+    radius: int | None
+    start_heading: tuple[int, int] | None
+    end_heading: tuple[int, int] | None
+
+
 def round_sg_value(value: float) -> float:
     return float(round(value))
+
+
+def _curve_angles(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    center: tuple[float, float],
+    radius: float,
+) -> tuple[float, float, float, float]:
+    """Compute SG curve angles based on geometry.
+
+    The values match the SG format expectations:
+    Sang1 = Center_Y - Start_Y
+    Sang2 = Start_X - Center_X
+    Eang1 = Center_Y - End_Y
+    Eang2 = End_X - Center_X
+
+    Each component is multiplied by the sign of ``radius`` (positive when the
+    curve bends right, negative when it bends left).
+    """
+
+    cx, cy = center
+    sx, sy = start
+    ex, ey = end
+    sign = 1 if radius >= 0 else -1
+
+    sang1 = (cy - sy) * sign
+    sang2 = (sx - cx) * sign
+    eang1 = (cy - ey) * sign
+    eang2 = (ex - cx) * sign
+
+    return sang1, sang2, eang1, eang2
 
 
 def point_to_segment_distance_sq(point: Point, start: Point, end: Point) -> float:
