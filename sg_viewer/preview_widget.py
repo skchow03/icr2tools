@@ -955,10 +955,22 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 else preview_section.end_heading
             )
 
-            sg_section.sang1 = _as_int(start_heading[0] if start_heading else None)
-            sg_section.sang2 = _as_int(start_heading[1] if start_heading else None)
-            sg_section.eang1 = _as_int(end_heading[0] if end_heading else None)
-            sg_section.eang2 = _as_int(end_heading[1] if end_heading else None)
+            sang1 = sang2 = eang1 = eang2 = None
+            if preview_section.type_name == "curve" and preview_section.center is not None:
+                sang1 = start_x - center_x
+                sang2 = start_y - center_y
+                eang1 = end_x - center_x
+                eang2 = end_y - center_y
+            else:
+                sang1 = start_heading[0] if start_heading else None
+                sang2 = start_heading[1] if start_heading else None
+                eang1 = end_heading[0] if end_heading else None
+                eang2 = end_heading[1] if end_heading else None
+
+            sg_section.sang1 = _as_int(sang1)
+            sg_section.sang2 = _as_int(sang2)
+            sg_section.eang1 = _as_int(eang1)
+            sg_section.eang2 = _as_int(eang2)
 
             sg_section.radius = _as_int(preview_section.radius)
 
