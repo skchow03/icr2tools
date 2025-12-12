@@ -54,7 +54,7 @@ class SGViewerController:
         self._window.new_curve_button.setEnabled(True)
         self._window.delete_section_button.setEnabled(True)
         self._save_action.setEnabled(True)
-        self._apply_saved_background()
+        self._apply_saved_background(path)
         self._refresh_recent_menu()
         self._update_section_table()
         self._update_heading_table()
@@ -410,11 +410,12 @@ class SGViewerController:
         self._window.preview.clear_background_image()
         self._background_settings_action.setEnabled(False)
 
-    def _apply_saved_background(self) -> None:
-        if self._current_path is None:
+    def _apply_saved_background(self, sg_path: Path | None = None) -> None:
+        path = sg_path or self._current_path
+        if path is None:
             return
 
-        background_data = self._history.get_background(self._current_path)
+        background_data = self._history.get_background(path)
         if not background_data:
             return
 
@@ -435,7 +436,7 @@ class SGViewerController:
 
         self._background_settings_action.setEnabled(True)
         self._window.statusBar().showMessage(
-            f"Restored background image {image_path} for {self._current_path.name}"
+            f"Restored background image {image_path} for {path.name}"
         )
 
     def _persist_background_state(self) -> None:
