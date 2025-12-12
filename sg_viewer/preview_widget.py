@@ -1055,16 +1055,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
     ) -> tuple[float, float] | None:
         heading = section.start_heading if endtype == "start" else section.end_heading
         if heading is not None:
-            return heading
+            hx, hy = heading
+        else:
+            dx = section.end[0] - section.start[0]
+            dy = section.end[1] - section.start[1]
+            length = math.hypot(dx, dy)
+            if length <= 0:
+                return None
+            hx, hy = dx / length, dy / length
 
-        dx = section.end[0] - section.start[0]
-        dy = section.end[1] - section.start[1]
-        length = math.hypot(dx, dy)
-        if length <= 0:
-            return None
         if endtype == "start":
-            return (dx / length, dy / length)
-        return (dx / length, dy / length)
+            return (-hx, -hy)
+        return (hx, hy)
 
     def _unconnected_node_hit(
         self, pos: QtCore.QPoint
