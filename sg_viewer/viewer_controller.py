@@ -33,7 +33,10 @@ class SGViewerController:
         self._create_menus()
         self._connect_signals()
         self._refresh_recent_menu()
-        self._window.statusBar().showMessage("Select File → Open SG to begin.")
+        self._start_new_track(confirm=False)
+        self._window.statusBar().showMessage(
+            "Click New Straight to begin drawing or File → Open SG."
+        )
 
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
@@ -107,8 +110,10 @@ class SGViewerController:
         self._window.preview.selectedSectionChanged.connect(
             self._window.update_selection_sidebar
         )
+        self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
         self._window.next_button.clicked.connect(self._window.preview.select_next_section)
+        self._window.new_track_button.clicked.connect(self._start_new_track)
         self._window.new_straight_button.clicked.connect(self._start_new_straight)
         self._window.new_curve_button.clicked.connect(self._start_new_curve)
         self._window.preview.newStraightModeChanged.connect(
@@ -125,6 +130,9 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
+
+    def _should_confirm_reset(self) -> bool:
+        return bool(self._window.preview.sgfile) or self._window.preview.has_unsaved_changes
 
     def _on_new_straight_mode_changed(self, active: bool) -> None:
         button = self._window.new_straight_button
@@ -213,6 +221,35 @@ class SGViewerController:
         if file_path:
             self.load_sg(Path(file_path))
 
+    def _start_new_track(self, *, confirm: bool = True) -> None:
+        if confirm and self._should_confirm_reset():
+            response = QtWidgets.QMessageBox.question(
+                self._window,
+                "Start New Track?",
+                "Any unsaved changes will be lost. Continue?",
+            )
+            if response != QtWidgets.QMessageBox.Yes:
+                return
+
+        self._clear_background_state()
+        self._current_path = None
+        self._window.preview.start_new_track()
+        self._window.update_selection_sidebar(None)
+        self._window.section_table_button.setEnabled(False)
+        self._window.heading_table_button.setEnabled(False)
+        self._window.delete_section_button.setEnabled(False)
+        self._window.xsect_combo.blockSignals(True)
+        self._window.xsect_combo.clear()
+        self._window.xsect_combo.setEnabled(False)
+        self._window.xsect_combo.blockSignals(False)
+        self._window.profile_widget.set_profile_data(None)
+        self._save_action.setEnabled(False)
+        self._window.new_straight_button.setEnabled(True)
+        self._window.new_curve_button.setEnabled(True)
+        self._window.statusBar().showMessage(
+            "New track ready. Click New Straight to start drawing."
+        )
+
     def _save_file_dialog(self) -> None:
         if self._window.preview.sgfile is None:
             QtWidgets.QMessageBox.information(
@@ -283,7 +320,7 @@ class SGViewerController:
         self._window.delete_section_button.setChecked(False)
         if not self._window.preview.begin_new_straight():
             self._window.statusBar().showMessage(
-                "Load an SG file before creating new straights."
+                "Start a new track or load an SG file before creating new straights."
             )
             self._on_new_straight_mode_changed(False)
             return
@@ -296,7 +333,7 @@ class SGViewerController:
         self._window.delete_section_button.setChecked(False)
         if not self._window.preview.begin_new_curve():
             self._window.statusBar().showMessage(
-                "Load an SG file and click an unconnected node to start a curve."
+                "Create a track with an unconnected node before adding a curve."
             )
             self._on_new_curve_mode_changed(False)
             return
@@ -329,6 +366,14 @@ class SGViewerController:
             action = QtWidgets.QAction(str(path), self._open_recent_menu)
             action.triggered.connect(lambda checked=False, p=path: self.load_sg(p))
             self._open_recent_menu.addAction(action)
+
+    def _on_sections_changed(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        has_sections = bool(sections)
+        self._window.delete_section_button.setEnabled(has_sections)
+        self._window.section_table_button.setEnabled(has_sections)
+        self._window.heading_table_button.setEnabled(has_sections)
+        self._save_action.setEnabled(self._window.preview.sgfile is not None)
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()

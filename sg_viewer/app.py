@@ -29,6 +29,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._preview = SGPreviewWidget()
         self._sidebar = QtWidgets.QWidget()
+        self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
         self._new_straight_button = QtWidgets.QPushButton("New Straight")
@@ -67,6 +68,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
+        navigation_layout.addWidget(self._new_track_button)
         navigation_layout.addWidget(self._prev_button)
         navigation_layout.addWidget(self._next_button)
         navigation_layout.addWidget(self._new_straight_button)
@@ -125,6 +127,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def next_button(self) -> QtWidgets.QPushButton:
         return self._next_button
+
+    @property
+    def new_track_button(self) -> QtWidgets.QPushButton:
+        return self._new_track_button
 
     @property
     def new_straight_button(self) -> QtWidgets.QPushButton:
