@@ -32,6 +32,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
     sectionsChanged = QtCore.pyqtSignal()  # NEW
+    newStraightModeChanged = QtCore.pyqtSignal(bool)
 
     CURVE_SOLVE_TOLERANCE = 1.0  # inches
 
@@ -77,6 +78,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_active = False
         self._new_straight_start: Point | None = None
         self._new_straight_end: Point | None = None
+        self._new_straight_heading: tuple[float, float] | None = None
 
     # ------------------------------------------------------------------
     # State delegation
@@ -185,9 +187,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
-        self._new_straight_active = False
+        self._set_new_straight_active(False)
         self._new_straight_start = None
         self._new_straight_end = None
+        self._new_straight_heading = None
         self._status_message = data.status_message
         self._selection.reset(
             self._sections,
@@ -214,9 +217,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if not self._sampled_centerline:
             return False
 
-        self._new_straight_active = True
+        self._set_new_straight_active(True)
         self._new_straight_start = None
         self._new_straight_end = None
+        self._new_straight_heading = None
         self._status_message = "Click to place the start of the new straight."
         self.update()
         return True
@@ -226,6 +230,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         start_point = self._new_straight_start
+        end_point = self._apply_heading_constraint(start_point, end_point)
         length = math.hypot(end_point[0] - start_point[0], end_point[1] - start_point[1])
         next_start_dlong = self._next_section_start_dlong()
         new_index = len(self._sections)
@@ -245,8 +250,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             eang1=None,
             eang2=None,
             radius=None,
-            start_heading=None,
-            end_heading=None,
+            start_heading=self._new_straight_heading,
+            end_heading=self._new_straight_heading,
             polyline=[start_point, end_point],
         )
 
@@ -259,9 +264,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self.set_sections(updated_sections)
         self._selection.set_selected_section(new_index)
-        self._new_straight_active = False
+        self._set_new_straight_active(False)
         self._new_straight_start = None
         self._new_straight_end = None
+        self._new_straight_heading = None
         self._status_message = f"Added new straight #{new_index}."
 
     def _next_section_start_dlong(self) -> float:
@@ -673,17 +679,31 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return False
 
         if self._new_straight_start is None:
-            self._new_straight_start = track_point
-            self._new_straight_end = track_point
-            self._status_message = (
-                "Move the mouse to position the new straight, then click to finish."
-            )
+            constrained_start = self._unconnected_node_hit(event.pos())
+            if constrained_start is not None:
+                start_point, heading = constrained_start
+                self._new_straight_start = start_point
+                self._new_straight_end = start_point
+                self._new_straight_heading = heading
+                self._status_message = (
+                    "Extending from unconnected node; move to set the length."
+                )
+            else:
+                self._new_straight_start = track_point
+                self._new_straight_end = track_point
+                self._new_straight_heading = None
+                self._status_message = (
+                    "Move the mouse to position the new straight, then click to finish."
+                )
             self._is_panning = False
             self._last_mouse_pos = None
             self._press_pos = None
             self.update()
         else:
-            self._finalize_new_straight(track_point)
+            constrained_end = self._apply_heading_constraint(
+                self._new_straight_start, track_point
+            )
+            self._finalize_new_straight(constrained_end)
 
         event.accept()
         return True
@@ -703,14 +723,81 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if track_point is None:
             return False
 
-        self._new_straight_end = track_point
+        constrained_end = self._apply_heading_constraint(
+            self._new_straight_start, track_point
+        )
+        self._new_straight_end = constrained_end
         length = math.hypot(
-            track_point[0] - self._new_straight_start[0],
-            track_point[1] - self._new_straight_start[1],
+            constrained_end[0] - self._new_straight_start[0],
+            constrained_end[1] - self._new_straight_start[1],
         )
         self._status_message = f"New straight length: {length:.1f} (click to set end)."
         self.update()
         return True
+
+    def _apply_heading_constraint(self, start_point: Point, candidate: Point) -> Point:
+        if self._new_straight_heading is None:
+            return candidate
+
+        hx, hy = self._new_straight_heading
+        vx = candidate[0] - start_point[0]
+        vy = candidate[1] - start_point[1]
+        projected_length = max(0.0, vx * hx + vy * hy)
+        return (start_point[0] + hx * projected_length, start_point[1] + hy * projected_length)
+
+    def _heading_for_endpoint(
+        self, section: SectionPreview, endtype: str
+    ) -> tuple[float, float] | None:
+        heading = section.start_heading if endtype == "start" else section.end_heading
+        if heading is not None:
+            return heading
+
+        dx = section.end[0] - section.start[0]
+        dy = section.end[1] - section.start[1]
+        length = math.hypot(dx, dy)
+        if length <= 0:
+            return None
+        if endtype == "start":
+            return (dx / length, dy / length)
+        return (dx / length, dy / length)
+
+    def _unconnected_node_hit(
+        self, pos: QtCore.QPoint
+    ) -> tuple[Point, tuple[float, float] | None] | None:
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        if transform is None:
+            return None
+
+        scale, offsets = transform
+        ox, oy = offsets
+        widget_height = self.height()
+        radius = self._node_radius_px
+        r2 = radius * radius
+
+        for i, section in enumerate(self._sections):
+            for endtype in ("start", "end"):
+                if not self._is_disconnected_endpoint(section, endtype):
+                    continue
+
+                world_point = section.start if endtype == "start" else section.end
+                px = ox + world_point[0] * scale
+                py_world = oy + world_point[1] * scale
+                py = widget_height - py_world
+
+                dx = px - pos.x()
+                dy = py - pos.y()
+                if dx * dx + dy * dy <= r2:
+                    return world_point, self._heading_for_endpoint(section, endtype)
+
+        return None
+
+    def _set_new_straight_active(self, active: bool) -> None:
+        if self._new_straight_active == active:
+            return
+
+        self._new_straight_active = active
+        self.newStraightModeChanged.emit(active)
 
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         widget_size = (self.width(), self.height())
