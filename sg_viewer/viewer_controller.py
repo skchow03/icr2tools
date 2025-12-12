@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
 from pathlib import Path
 
 from PyQt5 import QtWidgets
@@ -20,6 +22,7 @@ class SGViewerController:
         self._window = window
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
+        self._current_path: Path | None = None
 
         self._create_actions()
         self._create_menus()
@@ -35,8 +38,10 @@ class SGViewerController:
             return
 
         self._window.statusBar().showMessage(f"Loaded {path}")
+        self._current_path = path
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
+        self._save_action.setEnabled(True)
         self._update_section_table()
         self._update_heading_table()
         self._populate_xsect_choices()
@@ -46,6 +51,11 @@ class SGViewerController:
         self._open_action = QtWidgets.QAction("Open SG…", self._window)
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
+
+        self._save_action = QtWidgets.QAction("Save SG As…", self._window)
+        self._save_action.setShortcut("Ctrl+Shift+S")
+        self._save_action.setEnabled(False)
+        self._save_action.triggered.connect(self._save_file_dialog)
 
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
@@ -70,6 +80,7 @@ class SGViewerController:
     def _create_menus(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._save_action)
         file_menu.addAction(self._open_background_action)
         file_menu.addAction(self._background_settings_action)
         file_menu.addSeparator()
@@ -148,6 +159,69 @@ class SGViewerController:
         )
         if file_path:
             self.load_sg(Path(file_path))
+
+    def _save_file_dialog(self) -> None:
+        if self._window.preview.sgfile is None:
+            QtWidgets.QMessageBox.information(
+                self._window, "No SG Loaded", "Load an SG file before saving."
+            )
+            return
+
+        default_path = str(self._current_path) if self._current_path else ""
+        options = QtWidgets.QFileDialog.Options()
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Save SG As",
+            default_path,
+            "SG files (*.sg *.SG);;All files (*)",
+            options=options,
+        )
+        if not file_path:
+            return
+
+        path = Path(file_path)
+        if path.suffix.lower() != ".sg":
+            path = path.with_suffix(".sg")
+
+        try:
+            self._window.preview.save_sg(path)
+        except Exception as exc:  # pragma: no cover - UI feedback only
+            QtWidgets.QMessageBox.critical(
+                self._window, "Failed to save SG", str(exc)
+            )
+            logger.exception("Failed to save SG file")
+            return
+
+        self._current_path = path
+        self._window.statusBar().showMessage(f"Saved {path}")
+        self._convert_sg_to_csv(path)
+
+    def _convert_sg_to_csv(self, sg_path: Path) -> None:
+        sg2csv_path = Path(__file__).resolve().parent.parent / "icr2_core" / "trk" / "sg2csv.py"
+
+        try:
+            result = subprocess.run(
+                [sys.executable, str(sg2csv_path), str(sg_path)],
+                cwd=sg2csv_path.parent,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:  # pragma: no cover - UI feedback only
+            error_output = exc.stderr or exc.stdout or str(exc)
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "CSV Export Failed",
+                f"SG saved but CSV export failed:\n{error_output}",
+            )
+            logger.exception("Failed to convert SG to CSV")
+            return
+
+        if result.stdout:
+            logger.info(result.stdout)
+        self._window.statusBar().showMessage(
+            f"Saved {sg_path} and exported CSVs next to it"
+        )
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
