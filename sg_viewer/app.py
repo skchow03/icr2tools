@@ -51,6 +51,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
+        self._scale_label = QtWidgets.QLabel("Scale: –")
         self._section_label = QtWidgets.QLabel("Section: None")
         self._type_label = QtWidgets.QLabel("Type: –")
         self._dlong_label = QtWidgets.QLabel("DLONG: –")
@@ -79,6 +80,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
+        sidebar_layout.addWidget(self._scale_label)
         sidebar_layout.addWidget(self._section_label)
         sidebar_layout.addWidget(self._type_label)
         sidebar_layout.addWidget(self._dlong_label)
@@ -163,6 +165,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
+
+    def update_scale_label(self, scale: float | None) -> None:
+        if scale is None or scale <= 0:
+            self._scale_label.setText("Scale: –")
+            return
+
+        self._scale_label.setText(f"Scale: 1px = {1 / scale:.1f} 500ths")
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:

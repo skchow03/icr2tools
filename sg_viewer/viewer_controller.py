@@ -73,7 +73,7 @@ class SGViewerController:
 
         self._save_action = QtWidgets.QAction("Save SG As…", self._window)
         self._save_action.setShortcut("Ctrl+Shift+S")
-        self._save_action.setEnabled(False)
+        self._save_action.setEnabled(True)
         self._save_action.triggered.connect(self._save_file_dialog)
 
         self._open_background_action = QtWidgets.QAction(
@@ -130,6 +130,7 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
+        self._window.preview.scaleChanged.connect(self._on_scale_changed)
 
     def _should_confirm_reset(self) -> bool:
         return bool(self._window.preview.sgfile) or self._window.preview.has_unsaved_changes
@@ -157,6 +158,9 @@ class SGViewerController:
             button.setStyleSheet("background-color: #b53f3f; color: white;")
         else:
             button.setStyleSheet(self._delete_default_style)
+
+    def _on_scale_changed(self, scale: float) -> None:
+        self._window.update_scale_label(scale)
 
     def _open_background_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -243,7 +247,7 @@ class SGViewerController:
         self._window.xsect_combo.setEnabled(False)
         self._window.xsect_combo.blockSignals(False)
         self._window.profile_widget.set_profile_data(None)
-        self._save_action.setEnabled(False)
+        self._save_action.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.statusBar().showMessage(
@@ -373,7 +377,7 @@ class SGViewerController:
         self._window.delete_section_button.setEnabled(has_sections)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
-        self._save_action.setEnabled(self._window.preview.sgfile is not None)
+        self._save_action.setEnabled(True)
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
