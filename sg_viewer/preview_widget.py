@@ -138,7 +138,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
     @staticmethod
     def _create_empty_sgfile() -> SGFile:
         header = np.zeros(6, dtype=np.int32)
-        return SGFile(header, 0, 0, np.zeros(0, dtype=np.int32), [])
+        xsect_dlats = np.array([-300_000, 300_000], dtype=np.int32)
+        num_xsects = len(xsect_dlats)
+        header[5] = num_xsects
+        return SGFile(header, 0, num_xsects, xsect_dlats, [])
 
     # ------------------------------------------------------------------
     # State delegation
