@@ -32,6 +32,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
         self._new_straight_button = QtWidgets.QPushButton("New Straight")
+        self._new_straight_button.setCheckable(True)
         self._new_straight_button.setEnabled(False)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
