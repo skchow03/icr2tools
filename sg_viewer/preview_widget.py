@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import List, Tuple
 
+import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.sg_classes import SGFile
@@ -133,6 +134,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._has_unsaved_changes = False
 
         self._set_default_view_bounds()
+
+    @staticmethod
+    def _create_empty_sgfile() -> SGFile:
+        header = np.zeros(6, dtype=np.int32)
+        return SGFile(header, 0, 0, np.zeros(0, dtype=np.int32), [])
 
     # ------------------------------------------------------------------
     # State delegation
@@ -301,6 +307,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def start_new_track(self) -> None:
         self.clear("New track ready. Click New Straight to start drawing.")
+        self._sgfile = self._create_empty_sgfile()
         self._set_default_view_bounds()
         self._sampled_centerline = []
         self._track_length = 0.0

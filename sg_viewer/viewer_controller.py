@@ -133,7 +133,8 @@ class SGViewerController:
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
 
     def _should_confirm_reset(self) -> bool:
-        return bool(self._window.preview.sgfile) or self._window.preview.has_unsaved_changes
+        sections, _ = self._window.preview.get_section_set()
+        return self._window.preview.has_unsaved_changes or bool(sections)
 
     def _on_new_straight_mode_changed(self, active: bool) -> None:
         button = self._window.new_straight_button
