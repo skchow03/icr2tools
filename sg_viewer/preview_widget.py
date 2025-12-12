@@ -87,6 +87,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._controller.sgfile = value
 
     @property
+    def sgfile(self) -> SGFile | None:
+        return self._controller.sgfile
+
+    @property
     def _trk(self) -> TRKFile | None:
         return self._controller.trk
 
@@ -629,6 +633,65 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         self.sectionsChanged.emit()  # NEW
         self.update()
+
+    def save_sg(self, path: Path) -> None:
+        """Write the current SG (and any edits) to ``path``."""
+
+        if self._sgfile is None:
+            raise ValueError("No SG file loaded.")
+
+        if not self._sections:
+            raise ValueError("No sections available to save.")
+
+        if len(self._sections) != len(self._sgfile.sects):
+            raise ValueError("Section count mismatch between SG file and preview state.")
+
+        sgfile = self._sgfile
+        sgfile.num_sects = len(self._sections)
+        if len(sgfile.header) > 4:
+            sgfile.header[4] = len(self._sections)
+
+        def _as_int(value: float | int | None, fallback: int = 0) -> int:
+            if value is None:
+                return fallback
+            return int(round(value))
+
+        for sg_section, preview_section in zip(sgfile.sects, self._sections):
+            sg_section.type = 2 if preview_section.type_name == "curve" else 1
+            sg_section.sec_prev = _as_int(preview_section.previous_id, -1)
+            sg_section.sec_next = _as_int(preview_section.next_id, -1)
+
+            start_x, start_y = preview_section.start
+            end_x, end_y = preview_section.end
+            sg_section.start_x = _as_int(start_x)
+            sg_section.start_y = _as_int(start_y)
+            sg_section.end_x = _as_int(end_x)
+            sg_section.end_y = _as_int(end_y)
+
+            sg_section.start_dlong = _as_int(preview_section.start_dlong)
+            sg_section.length = _as_int(preview_section.length)
+
+            center_x, center_y = preview_section.center or (0.0, 0.0)
+            sg_section.center_x = _as_int(center_x)
+            sg_section.center_y = _as_int(center_y)
+
+            start_heading = preview_section.start_heading or (
+                preview_section.sang1,
+                preview_section.sang2,
+            )
+            end_heading = preview_section.end_heading or (
+                preview_section.eang1,
+                preview_section.eang2,
+            )
+
+            sg_section.sang1 = _as_int(start_heading[0] if start_heading else None)
+            sg_section.sang2 = _as_int(start_heading[1] if start_heading else None)
+            sg_section.eang1 = _as_int(end_heading[0] if end_heading else None)
+            sg_section.eang2 = _as_int(end_heading[1] if end_heading else None)
+
+            sg_section.radius = _as_int(preview_section.radius)
+
+        sgfile.output_sg(str(path))
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
         return self._selection.get_section_headings()
