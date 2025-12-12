@@ -17,7 +17,11 @@ from sg_viewer import preview_state
 from sg_viewer import rendering_service, selection
 from sg_viewer.preview_state_controller import PreviewStateController
 from sg_viewer.preview_interaction import PreviewInteraction
-from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
+from sg_viewer.sg_geometry import (
+    rebuild_centerline_from_sections,
+    signed_radius_from_heading,
+    update_section_geometry,
+)
 from sg_viewer.curve_solver import (
     _solve_curve_drag as _solve_curve_drag_util,
     _solve_curve_with_fixed_heading,
@@ -45,7 +49,7 @@ def _curve_angles(
     Eang2 = End_X - Center_X
 
     Each component is multiplied by the sign of ``radius`` (positive when the
-    curve bends right, negative when it bends left).
+    curve bends left, negative when it bends right).
     """
 
     cx, cy = center
@@ -986,6 +990,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return None
 
         best_candidate = min(candidates, key=lambda sect: sect.length)
+        signed_radius = signed_radius_from_heading(
+            heading, start_point, best_candidate.center, best_candidate.radius
+        )
+        if signed_radius != best_candidate.radius:
+            best_candidate = replace(best_candidate, radius=signed_radius)
+
         return update_section_geometry(best_candidate)
 
     def _heading_for_endpoint(
