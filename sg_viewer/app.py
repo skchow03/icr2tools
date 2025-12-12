@@ -31,6 +31,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sidebar = QtWidgets.QWidget()
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
+        self._new_straight_button = QtWidgets.QPushButton("New Straight")
+        self._new_straight_button.setEnabled(False)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
@@ -58,6 +60,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout = QtWidgets.QHBoxLayout()
         navigation_layout.addWidget(self._prev_button)
         navigation_layout.addWidget(self._next_button)
+        navigation_layout.addWidget(self._new_straight_button)
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
@@ -109,6 +112,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def next_button(self) -> QtWidgets.QPushButton:
         return self._next_button
+
+    @property
+    def new_straight_button(self) -> QtWidgets.QPushButton:
+        return self._new_straight_button
 
     @property
     def radii_button(self) -> QtWidgets.QPushButton:

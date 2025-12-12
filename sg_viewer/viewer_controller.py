@@ -41,6 +41,7 @@ class SGViewerController:
         self._current_path = path
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
+        self._window.new_straight_button.setEnabled(True)
         self._save_action.setEnabled(True)
         self._update_section_table()
         self._update_heading_table()
@@ -92,6 +93,7 @@ class SGViewerController:
         )
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
         self._window.next_button.clicked.connect(self._window.preview.select_next_section)
+        self._window.new_straight_button.clicked.connect(self._start_new_straight)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
@@ -221,6 +223,17 @@ class SGViewerController:
             logger.info(result.stdout)
         self._window.statusBar().showMessage(
             f"Saved {sg_path} and exported CSVs next to it"
+        )
+
+    def _start_new_straight(self) -> None:
+        if not self._window.preview.begin_new_straight():
+            self._window.statusBar().showMessage(
+                "Load an SG file before creating new straights."
+            )
+            return
+
+        self._window.statusBar().showMessage(
+            "Click to place the start of the new straight."
         )
 
     def _show_section_table(self) -> None:

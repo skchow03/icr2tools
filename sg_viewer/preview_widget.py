@@ -74,6 +74,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
+        self._new_straight_active = False
+        self._new_straight_start: Point | None = None
+        self._new_straight_end: Point | None = None
 
     # ------------------------------------------------------------------
     # State delegation
@@ -150,6 +153,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_signatures = []
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
+        self._new_straight_active = False
+        self._new_straight_start = None
+        self._new_straight_end = None
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
@@ -179,6 +185,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
+        self._new_straight_active = False
+        self._new_straight_start = None
+        self._new_straight_end = None
         self._status_message = data.status_message
         self._selection.reset(
             self._sections,
@@ -197,6 +206,70 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._background_image = image
         self.update()
+
+    # ------------------------------------------------------------------
+    # New straight creation
+    # ------------------------------------------------------------------
+    def begin_new_straight(self) -> bool:
+        if not self._sampled_centerline:
+            return False
+
+        self._new_straight_active = True
+        self._new_straight_start = None
+        self._new_straight_end = None
+        self._status_message = "Click to place the start of the new straight."
+        self.update()
+        return True
+
+    def _finalize_new_straight(self, end_point: Point) -> None:
+        if not self._new_straight_active or self._new_straight_start is None:
+            return
+
+        start_point = self._new_straight_start
+        length = math.hypot(end_point[0] - start_point[0], end_point[1] - start_point[1])
+        next_start_dlong = self._next_section_start_dlong()
+        new_index = len(self._sections)
+
+        new_section = SectionPreview(
+            section_id=new_index,
+            type_name="straight",
+            previous_id=-1,
+            next_id=-1,
+            start=start_point,
+            end=end_point,
+            start_dlong=next_start_dlong,
+            length=length,
+            center=None,
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=None,
+            start_heading=None,
+            end_heading=None,
+            polyline=[start_point, end_point],
+        )
+
+        updated_sections = list(self._sections) + [update_section_geometry(new_section)]
+        new_track_length = next_start_dlong + length
+        if self._track_length is not None:
+            self._track_length = max(self._track_length, new_track_length)
+        else:
+            self._track_length = new_track_length
+
+        self.set_sections(updated_sections)
+        self._selection.set_selected_section(new_index)
+        self._new_straight_active = False
+        self._new_straight_start = None
+        self._new_straight_end = None
+        self._status_message = f"Added new straight #{new_index}."
+
+    def _next_section_start_dlong(self) -> float:
+        if not self._sections:
+            return 0.0
+
+        last = self._sections[-1]
+        return float(last.start_dlong + last.length)
 
     def set_background_settings(
         self, scale_500ths_per_px: float, origin: Point
@@ -379,8 +452,32 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
         # If we have no transform yet (no track), we’re done
-        if transform is None or not self._sections:
+        if transform is None:
             return
+
+        if self._new_straight_active and self._new_straight_start is not None:
+            start = self._new_straight_start
+            end = self._new_straight_end or self._new_straight_start
+            scale, offsets = transform
+            ox, oy = offsets
+            widget_height = self.height()
+
+            start_point = QtCore.QPointF(
+                ox + start[0] * scale, widget_height - (oy + start[1] * scale)
+            )
+            end_point = QtCore.QPointF(
+                ox + end[0] * scale, widget_height - (oy + end[1] * scale)
+            )
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            painter.setPen(QtGui.QPen(QtGui.QColor("cyan"), 2))
+            painter.drawLine(start_point, end_point)
+            painter.setBrush(QtGui.QColor("cyan"))
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.drawEllipse(start_point, 5, 5)
+            painter.drawEllipse(end_point, 5, 5)
+            painter.restore()
 
         # ---------------------------------------------------------
         # NEW NODE DRAWING BLOCK
@@ -460,9 +557,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._handle_new_straight_press(event):
+            return
+
 # ---------------------------------------------------------
 # NEW: Node disconnect only if that section is selected
 # ---------------------------------------------------------
+        if self._new_straight_active:
+            event.accept()
+            return
+
         if self._interaction.handle_mouse_press(event):
             logger.debug("mousePressEvent handled by interaction at %s", event.pos())
             return
@@ -488,6 +592,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._update_new_straight_position(event.pos()):
+            event.accept()
+            return
+
+        if self._new_straight_active:
+            event.accept()
+            return
+
         if self._interaction.handle_mouse_move(event):
             logger.debug("mouseMoveEvent handled by interaction at %s", event.pos())
             return
@@ -513,6 +625,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() == QtCore.Qt.LeftButton:
+            if self._new_straight_active:
+                event.accept()
+                return
             if self._interaction.handle_mouse_release(event):
                 logger.debug("mouseReleaseEvent handled by interaction at %s", event.pos())
                 return
@@ -542,6 +657,61 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     # Selection
     # ------------------------------------------------------------------
+    def _handle_new_straight_press(self, event: QtGui.QMouseEvent) -> bool:
+        if not self._new_straight_active or event.button() != QtCore.Qt.LeftButton:
+            return False
+
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        track_point = self._controller.map_to_track(
+            QtCore.QPointF(event.pos()), widget_size, self.height(), transform
+        )
+        if track_point is None:
+            return False
+
+        if self._new_straight_start is None:
+            self._new_straight_start = track_point
+            self._new_straight_end = track_point
+            self._status_message = (
+                "Move the mouse to position the new straight, then click to finish."
+            )
+            self._is_panning = False
+            self._last_mouse_pos = None
+            self._press_pos = None
+            self.update()
+        else:
+            self._finalize_new_straight(track_point)
+
+        event.accept()
+        return True
+
+    def _update_new_straight_position(self, pos: QtCore.QPoint) -> bool:
+        if not self._new_straight_active or self._new_straight_start is None:
+            return False
+
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        track_point = self._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.height(), transform
+        )
+        if track_point is None:
+            return False
+
+        self._new_straight_end = track_point
+        length = math.hypot(
+            track_point[0] - self._new_straight_start[0],
+            track_point[1] - self._new_straight_start[1],
+        )
+        self._status_message = f"New straight length: {length:.1f} (click to set end)."
+        self.update()
+        return True
+
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         widget_size = (self.width(), self.height())
         transform = self._controller.current_transform(widget_size)
