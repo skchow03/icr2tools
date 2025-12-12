@@ -8,6 +8,7 @@ from pathlib import Path
 from PyQt5 import QtWidgets
 
 from sg_viewer.background_image_dialog import BackgroundImageDialog
+from sg_viewer.history import FileHistory
 from sg_viewer.heading_table_dialog import HeadingTableWindow
 from sg_viewer.sg_model import SectionPreview
 from sg_viewer.section_table_dialog import SectionTableWindow
@@ -23,6 +24,7 @@ class SGViewerController:
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
         self._current_path: Path | None = None
+        self._history = FileHistory()
         self._new_straight_default_style = window.new_straight_button.styleSheet()
         self._new_curve_default_style = window.new_curve_button.styleSheet()
         self._delete_default_style = window.delete_section_button.styleSheet()
@@ -30,9 +32,12 @@ class SGViewerController:
         self._create_actions()
         self._create_menus()
         self._connect_signals()
+        self._refresh_recent_menu()
         self._window.statusBar().showMessage("Select File → Open SG to begin.")
 
     def load_sg(self, path: Path) -> None:
+        path = path.resolve()
+        self._clear_background_state()
         try:
             self._window.preview.load_sg_file(path)
         except Exception as exc:
@@ -42,12 +47,15 @@ class SGViewerController:
 
         self._window.statusBar().showMessage(f"Loaded {path}")
         self._current_path = path
+        self._history.record_open(path)
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.delete_section_button.setEnabled(True)
         self._save_action.setEnabled(True)
+        self._apply_saved_background()
+        self._refresh_recent_menu()
         self._update_section_table()
         self._update_heading_table()
         self._populate_xsect_choices()
@@ -57,6 +65,8 @@ class SGViewerController:
         self._open_action = QtWidgets.QAction("Open SG…", self._window)
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
+
+        self._open_recent_menu = QtWidgets.QMenu("Open Recent", self._window)
 
         self._save_action = QtWidgets.QAction("Save SG As…", self._window)
         self._save_action.setShortcut("Ctrl+Shift+S")
@@ -86,6 +96,7 @@ class SGViewerController:
     def _create_menus(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._open_action)
+        file_menu.addMenu(self._open_recent_menu)
         file_menu.addAction(self._save_action)
         file_menu.addAction(self._open_background_action)
         file_menu.addAction(self._background_settings_action)
@@ -162,6 +173,7 @@ class SGViewerController:
 
         self._background_settings_action.setEnabled(True)
         self._window.statusBar().showMessage(f"Loaded background image {file_path}")
+        self._persist_background_state()
 
     def _show_background_settings_dialog(self) -> None:
         if not self._window.preview.has_background_image():
@@ -187,6 +199,7 @@ class SGViewerController:
                 new_scale, (new_u, new_v)
             )
             self._window.statusBar().showMessage("Updated background image settings")
+            self._persist_background_state()
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -234,6 +247,9 @@ class SGViewerController:
 
         self._current_path = path
         self._window.statusBar().showMessage(f"Saved {path}")
+        self._history.record_save(path)
+        self._refresh_recent_menu()
+        self._persist_background_state()
         self._convert_sg_to_csv(path)
 
     def _convert_sg_to_csv(self, sg_path: Path) -> None:
@@ -299,6 +315,20 @@ class SGViewerController:
             self._window.statusBar().showMessage("Click a section to delete it.")
         else:
             self._window.preview.cancel_delete_section()
+
+    def _refresh_recent_menu(self) -> None:
+        self._open_recent_menu.clear()
+        recent_paths = self._history.get_recent_paths()
+        if not recent_paths:
+            empty_action = QtWidgets.QAction("No recent files", self._open_recent_menu)
+            empty_action.setEnabled(False)
+            self._open_recent_menu.addAction(empty_action)
+            return
+
+        for path in recent_paths:
+            action = QtWidgets.QAction(str(path), self._open_recent_menu)
+            action.triggered.connect(lambda checked=False, p=path: self.load_sg(p))
+            self._open_recent_menu.addAction(action)
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
@@ -375,3 +405,46 @@ class SGViewerController:
 
         profile = self._window.preview.build_elevation_profile(int(current_index))
         self._window.profile_widget.set_profile_data(profile)
+
+    def _clear_background_state(self) -> None:
+        self._window.preview.clear_background_image()
+        self._background_settings_action.setEnabled(False)
+
+    def _apply_saved_background(self) -> None:
+        if self._current_path is None:
+            return
+
+        background_data = self._history.get_background(self._current_path)
+        if not background_data:
+            return
+
+        image_path, scale, origin = background_data
+        if not image_path.exists():
+            logger.info("Stored background image %s is missing", image_path)
+            return
+
+        try:
+            self._window.preview.load_background_image(image_path)
+            self._window.preview.set_background_settings(scale, origin)
+        except Exception as exc:  # pragma: no cover - UI feedback only
+            logger.exception("Failed to restore background image", exc_info=exc)
+            self._window.statusBar().showMessage(
+                f"Could not restore background image {image_path}"
+            )
+            return
+
+        self._background_settings_action.setEnabled(True)
+        self._window.statusBar().showMessage(
+            f"Restored background image {image_path} for {self._current_path.name}"
+        )
+
+    def _persist_background_state(self) -> None:
+        if self._current_path is None:
+            return
+
+        background_path = self._window.preview.get_background_image_path()
+        if background_path is None:
+            return
+
+        scale, origin = self._window.preview.get_background_settings()
+        self._history.set_background(self._current_path, background_path, scale, origin)
