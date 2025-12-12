@@ -13,7 +13,7 @@ class FileHistory:
 
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or self.DEFAULT_PATH
-        self._config = ConfigParser(strict=False)
+        self._config = ConfigParser(strict=False, delimiters=("=",))
         self._config.optionxform = str
         self._load()
 
