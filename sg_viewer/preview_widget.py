@@ -177,7 +177,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         self._cline = data.cline
-        self._centerline_polylines = [list(data.sampled_centerline)] if data.sampled_centerline else []
+        self._centerline_polylines = [sect.polyline for sect in data.sections]
         self._sampled_dlongs = data.sampled_dlongs
         self._sampled_bounds = data.sampled_bounds
         self._centerline_index = data.centerline_index
