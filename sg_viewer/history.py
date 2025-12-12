@@ -8,12 +8,13 @@ from pathlib import Path
 class FileHistory:
     """Persistent history for SG viewer activity and background settings."""
 
-    DEFAULT_PATH = Path.home() / ".icr2tools_sg_viewer.ini"
+    DEFAULT_PATH = Path(__file__).resolve().parent / ".icr2tools_sg_viewer.ini"
     MAX_RECENT = 10
 
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or self.DEFAULT_PATH
-        self._config = ConfigParser()
+        self._config = ConfigParser(strict=False)
+        self._config.optionxform = str
         self._load()
 
     # ------------------------------------------------------------------
