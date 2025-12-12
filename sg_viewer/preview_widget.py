@@ -88,6 +88,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._controller = PreviewStateController()
 
         self._background_image: QtGui.QImage | None = None
+        self._background_image_path: Path | None = None
         self._background_scale_500ths_per_px: float = 1.0
         self._background_origin: Point = (0.0, 0.0)
 
@@ -264,6 +265,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
             raise ValueError(f"Unable to load image from {path}")
 
         self._background_image = image
+        self._background_image_path = path
+        self.update()
+
+    def clear_background_image(self) -> None:
+        self._background_image = None
+        self._background_image_path = None
+        self._background_scale_500ths_per_px = 1.0
+        self._background_origin = (0.0, 0.0)
         self.update()
 
     # ------------------------------------------------------------------
@@ -409,6 +418,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def get_background_settings(self) -> tuple[float, Point]:
         return self._background_scale_500ths_per_px, self._background_origin
+
+    def get_background_image_path(self) -> Path | None:
+        return self._background_image_path
 
     def has_background_image(self) -> bool:
         return self._background_image is not None
