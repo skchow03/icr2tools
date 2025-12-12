@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
+MILE_IN_500THS = 63_360 * 500
+DEFAULT_VIEW_HALF_SPAN_500THS = MILE_IN_500THS  # 1 mile to either side = 2 miles wide
+
 
 def _curve_angles(
     start: tuple[float, float],
@@ -128,6 +131,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._delete_section_active = False
         self._has_unsaved_changes = False
 
+        self._set_default_view_bounds()
+
     # ------------------------------------------------------------------
     # State delegation
     # ------------------------------------------------------------------
@@ -221,9 +226,21 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._interaction.reset()
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
+        self._set_default_view_bounds()
         self._update_node_status()
         self._has_unsaved_changes = False
+        self._controller.update_fit_scale((self.width(), self.height()))
         self.update()
+
+    def _set_default_view_bounds(self) -> None:
+        half_span = DEFAULT_VIEW_HALF_SPAN_500THS
+        default_bounds = (
+            -float(half_span),
+            float(half_span),
+            -float(half_span),
+            float(half_span),
+        )
+        self._sampled_bounds = default_bounds
 
     # ------------------------------------------------------------------
     # Loading
@@ -268,8 +285,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def start_new_track(self) -> None:
         self.clear("New track ready. Click New Straight to start drawing.")
-        default_bounds = (-1000.0, 1000.0, -1000.0, 1000.0)
-        self._sampled_bounds = default_bounds
+        self._set_default_view_bounds()
         self._sampled_centerline = []
         self._track_length = 0.0
         self._has_unsaved_changes = False

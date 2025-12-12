@@ -44,12 +44,10 @@ def paint_preview(
 
     if not sampled_centerline:
         sg_rendering.draw_placeholder(painter, rect, status_message)
-        painter.end()
         return
 
     if not transform:
         sg_rendering.draw_placeholder(painter, rect, "Unable to fit view")
-        painter.end()
         return
 
     sg_rendering.draw_centerlines(
