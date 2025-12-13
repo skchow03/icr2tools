@@ -252,9 +252,19 @@ class SGViewerController:
         if self._current_path is not None:
             payload["sg_path"] = str(self._current_path)
 
+        calibrator_path = Path(__file__).with_name("bg_calibrator_minimal.py")
+        if not calibrator_path.exists():
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Calibrator Not Found",
+                f"{calibrator_path} could not be located.",
+            )
+            logger.error("Background calibrator script missing at %s", calibrator_path)
+            return
+
         try:
             result = subprocess.run(
-                ["bg_calibrator_minimal"],
+                [sys.executable, str(calibrator_path)],
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
@@ -264,7 +274,7 @@ class SGViewerController:
             QtWidgets.QMessageBox.critical(
                 self._window,
                 "Calibrator Not Found",
-                "bg_calibrator_minimal could not be located on the PATH.",
+                f"{calibrator_path} could not be located.",
             )
             logger.exception("Failed to launch background calibrator")
             return
