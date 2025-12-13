@@ -92,12 +92,12 @@ class SGViewerController:
             self._show_background_settings_dialog
         )
 
-        self._calibrate_background_action = QtWidgets.QAction(
-            "Open Background Calibrator", self._window
-        )
-        self._calibrate_background_action.triggered.connect(
-            self._launch_background_calibrator
-        )
+        # self._calibrate_background_action = QtWidgets.QAction(
+        #     "Open Background Calibrator", self._window
+        # )
+        # self._calibrate_background_action.triggered.connect(
+        #     self._launch_background_calibrator
+        # )
 
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
@@ -110,7 +110,7 @@ class SGViewerController:
         file_menu.addAction(self._save_action)
         file_menu.addAction(self._open_background_action)
         file_menu.addAction(self._background_settings_action)
-        file_menu.addAction(self._calibrate_background_action)
+#        file_menu.addAction(self._calibrate_background_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -222,31 +222,31 @@ class SGViewerController:
             self._window.statusBar().showMessage("Updated background image settings")
             self._persist_background_state()
 
-    def _launch_background_calibrator(self) -> None:
-        calibrator_path = Path(__file__).with_name("bg_calibrator_minimal.py")
-        if not calibrator_path.exists():
-            QtWidgets.QMessageBox.critical(
-                self._window,
-                "Calibrator Not Found",
-                f"{calibrator_path} could not be located.",
-            )
-            logger.error("Background calibrator script missing at %s", calibrator_path)
-            return
+    # def _launch_background_calibrator(self) -> None:
+    #     calibrator_path = Path(__file__).with_name("bg_calibrator_minimal.py")
+    #     if not calibrator_path.exists():
+    #         QtWidgets.QMessageBox.critical(
+    #             self._window,
+    #             "Calibrator Not Found",
+    #             f"{calibrator_path} could not be located.",
+    #         )
+    #         logger.error("Background calibrator script missing at %s", calibrator_path)
+    #         return
 
-        try:
-            subprocess.Popen([sys.executable, str(calibrator_path)])
-        except FileNotFoundError:
-            QtWidgets.QMessageBox.critical(
-                self._window,
-                "Calibrator Not Found",
-                f"{calibrator_path} could not be located.",
-            )
-            logger.exception("Failed to launch background calibrator")
-            return
+    #     try:
+    #         subprocess.Popen([sys.executable, str(calibrator_path)])
+    #     except FileNotFoundError:
+    #         QtWidgets.QMessageBox.critical(
+    #             self._window,
+    #             "Calibrator Not Found",
+    #             f"{calibrator_path} could not be located.",
+    #         )
+    #         logger.exception("Failed to launch background calibrator")
+    #         return
 
-        self._window.statusBar().showMessage(
-            "Opened background calibrator in a separate window"
-        )
+    #     self._window.statusBar().showMessage(
+    #         "Opened background calibrator in a separate window"
+    #     )
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -493,7 +493,7 @@ class SGViewerController:
     def _clear_background_state(self) -> None:
         self._window.preview.clear_background_image()
         self._background_settings_action.setEnabled(False)
-        self._calibrate_background_action.setEnabled(False)
+#        self._calibrate_background_action.setEnabled(False)
 
     def _apply_saved_background(self, sg_path: Path | None = None) -> None:
         path = sg_path or self._current_path
@@ -520,7 +520,7 @@ class SGViewerController:
             return
 
         self._background_settings_action.setEnabled(True)
-        self._calibrate_background_action.setEnabled(True)
+#        self._calibrate_background_action.setEnabled(True)
         self._window.statusBar().showMessage(
             f"Restored background image {image_path} for {path.name}"
         )
