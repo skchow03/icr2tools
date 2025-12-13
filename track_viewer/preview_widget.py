@@ -112,7 +112,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
-        self._current_scale: float | None = None
+        self._current_scale: float | None = 1.0
         self._user_transform_active = False
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
@@ -164,7 +164,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._current_track = None
         self._view_center = None
         self._fit_scale = None
-        self._current_scale = None
+        self._current_scale = 1.0
         self._user_transform_active = False
         self._is_panning = False
         self._last_mouse_pos = None
@@ -509,10 +509,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         return True, "\n".join(lines)
 
     def _default_center(self) -> Tuple[float, float] | None:
-        if not self._bounds:
-            return None
-        min_x, max_x, min_y, max_y = self._bounds
-        return ((min_x + max_x) / 2, (min_y + max_y) / 2)
+        if self._bounds:
+            min_x, max_x, min_y, max_y = self._bounds
+            return ((min_x + max_x) / 2, (min_y + max_y) / 2)
+        return 0.0, 0.0
 
     def _calculate_fit_scale(self) -> float | None:
         if not self._bounds:
@@ -650,12 +650,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._invalidate_cache()
 
     def _current_transform(self) -> Tuple[float, Tuple[float, float]] | None:
-        if not self._bounds:
-            return None
         if self._current_scale is None:
             self._update_fit_scale()
         if self._current_scale is None:
-            return None
+            self._current_scale = 1.0
         center = self._view_center or self._default_center()
         if center is None:
             return None
@@ -833,8 +831,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     # Interaction handlers
     # ------------------------------------------------------------------
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401 - Qt signature
-        if not self._surface_mesh or not self._bounds:
-            return
+        if self._current_scale is None:
+            self._current_scale = self._fit_scale or 1.0
         delta = event.angleDelta().y()
         if delta == 0:
             return
@@ -864,8 +862,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 event.accept()
                 return
 
-        if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
-            if self._handle_camera_press(event.pos()):
+        if event.button() == QtCore.Qt.LeftButton:
+            if self._surface_mesh and self._handle_camera_press(event.pos()):
                 event.accept()
                 return
             self._is_panning = True
@@ -911,7 +909,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if event.button() == QtCore.Qt.LeftButton and self._surface_mesh:
+        if event.button() == QtCore.Qt.LeftButton:
             if self._dragging_camera_index is not None:
                 self._dragging_camera_index = None
                 self._camera_dragged = False
@@ -922,7 +920,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._last_mouse_pos = None
             self._left_press_pos = None
             self._dragged_during_press = False
-            if click_without_drag:
+            if click_without_drag and self._surface_mesh:
                 self._handle_primary_click(event.pos())
             event.accept()
             return
