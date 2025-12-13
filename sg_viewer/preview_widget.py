@@ -822,28 +822,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
-        if not self._sampled_centerline:
-            return
         widget_size = (self.width(), self.height())
         transform = self._controller.current_transform(widget_size)
         if transform is None:
             return
         state = self._transform_state
-        if state.view_center is None:
-            center = self._controller.default_center()
-            if center is None:
-                return
-            state = replace(state, view_center=center)
-            self._transform_state = state
-        if state.current_scale is None or state.view_center is None:
+        if state.current_scale is None:
             return
 
         delta = event.angleDelta().y()
         factor = 1.15 if delta > 0 else 1 / 1.15
         new_scale = self._controller.clamp_scale(state.current_scale * factor)
-        cursor_track = self._controller.map_to_track(event.pos(), widget_size, self.height())
+        center = state.view_center or self._controller.default_center()
+        cursor_track = self._controller.map_to_track(
+            event.pos(), widget_size, self.height(), transform
+        )
         if cursor_track is None:
-            cursor_track = state.view_center
+            cursor_track = center
+        if center is None or cursor_track is None:
+            return
         w, h = self.width(), self.height()
         px, py = event.pos().x(), event.pos().y()
         cx = cursor_track[0] - (px - w / 2) / new_scale
@@ -886,7 +883,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # ---------------------------------------------------------
         if (
             event.button() == QtCore.Qt.LeftButton
-            and self._sampled_centerline
+            and self._controller.current_transform((self.width(), self.height())) is not None
             and not self._interaction.is_dragging_node
             and not self._interaction.is_dragging_section
         ):
