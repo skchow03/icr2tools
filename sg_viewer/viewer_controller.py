@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import sys
@@ -92,6 +93,14 @@ class SGViewerController:
             self._show_background_settings_dialog
         )
 
+        self._calibrate_background_action = QtWidgets.QAction(
+            "Calibrate Background…", self._window
+        )
+        self._calibrate_background_action.setEnabled(False)
+        self._calibrate_background_action.triggered.connect(
+            self._launch_background_calibrator
+        )
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -103,6 +112,7 @@ class SGViewerController:
         file_menu.addAction(self._save_action)
         file_menu.addAction(self._open_background_action)
         file_menu.addAction(self._background_settings_action)
+        file_menu.addAction(self._calibrate_background_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -185,6 +195,7 @@ class SGViewerController:
             return
 
         self._background_settings_action.setEnabled(True)
+        self._calibrate_background_action.setEnabled(True)
         self._window.statusBar().showMessage(f"Loaded background image {file_path}")
         self._persist_background_state()
 
@@ -213,6 +224,115 @@ class SGViewerController:
             )
             self._window.statusBar().showMessage("Updated background image settings")
             self._persist_background_state()
+
+    def _launch_background_calibrator(self) -> None:
+        if not self._window.preview.has_background_image():
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No Background",
+                "Load a background image before calibrating it.",
+            )
+            return
+
+        background_path = self._window.preview.get_background_image_path()
+        if background_path is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No Background",
+                "Load a background image before calibrating it.",
+            )
+            return
+
+        scale, origin = self._window.preview.get_background_settings()
+        payload: dict[str, object] = {
+            "background_image": str(background_path),
+            "scale_500ths_per_px": scale,
+            "origin": origin,
+        }
+        if self._current_path is not None:
+            payload["sg_path"] = str(self._current_path)
+
+        try:
+            result = subprocess.run(
+                ["bg_calibrator_minimal"],
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except FileNotFoundError:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Calibrator Not Found",
+                "bg_calibrator_minimal could not be located on the PATH.",
+            )
+            logger.exception("Failed to launch background calibrator")
+            return
+        except subprocess.CalledProcessError as exc:  # pragma: no cover - UI feedback only
+            error_output = exc.stderr or exc.stdout or str(exc)
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Calibration Failed",
+                f"Background calibration failed:\n{error_output}",
+            )
+            logger.exception("Background calibration failed")
+            return
+
+        parsed = self._parse_calibrator_output(result.stdout)
+        if parsed is None:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Calibration Result",
+                "Could not read calibration settings from bg_calibrator_minimal.",
+            )
+            return
+
+        new_scale, (new_u, new_v) = parsed
+        if new_scale <= 0:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Scale",
+                "500ths per pixel must be greater than zero.",
+            )
+            return
+
+        self._window.preview.set_background_settings(new_scale, (new_u, new_v))
+        self._background_settings_action.setEnabled(True)
+        self._calibrate_background_action.setEnabled(True)
+        self._window.statusBar().showMessage(
+            "Updated background image settings from calibrator"
+        )
+        self._persist_background_state()
+
+    @staticmethod
+    def _parse_calibrator_output(
+        output: str,
+    ) -> tuple[float, tuple[float, float]] | None:
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            data = None
+
+        if isinstance(data, dict):
+            scale = data.get("scale_500ths_per_px") or data.get("scale")
+            origin = data.get("origin")
+            origin_u = data.get("origin_u")
+            origin_v = data.get("origin_v")
+            if origin is None and origin_u is not None and origin_v is not None:
+                origin = (origin_u, origin_v)
+            if scale is not None and origin is not None and len(origin) >= 2:
+                try:
+                    return float(scale), (float(origin[0]), float(origin[1]))
+                except (TypeError, ValueError):
+                    return None
+
+        parts = output.replace(",", " ").split()
+        if len(parts) >= 3:
+            try:
+                return float(parts[0]), (float(parts[1]), float(parts[2]))
+            except ValueError:
+                return None
+        return None
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -459,6 +579,7 @@ class SGViewerController:
     def _clear_background_state(self) -> None:
         self._window.preview.clear_background_image()
         self._background_settings_action.setEnabled(False)
+        self._calibrate_background_action.setEnabled(False)
 
     def _apply_saved_background(self, sg_path: Path | None = None) -> None:
         path = sg_path or self._current_path
@@ -485,6 +606,7 @@ class SGViewerController:
             return
 
         self._background_settings_action.setEnabled(True)
+        self._calibrate_background_action.setEnabled(True)
         self._window.statusBar().showMessage(
             f"Restored background image {image_path} for {path.name}"
         )
