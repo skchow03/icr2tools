@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Tuple, List
+import json
 
 import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -159,6 +161,8 @@ class Calibrator(QtWidgets.QMainWindow):
         self.bg_item = None
         self.points: List[CalPoint] = []
         self.image_size: Optional[Tuple[int, int]] = None
+        self.current_image_path: Optional[str] = None
+        self._suppress_table_edit = False
 
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["#", "px", "py", "lat, lon"])
@@ -172,9 +176,15 @@ class Calibrator(QtWidgets.QMainWindow):
 
         open_btn = QtWidgets.QPushButton("Open Image…")
         open_btn.clicked.connect(self.open_image)
+        save_btn = QtWidgets.QPushButton("Save Settings…")
+        save_btn.clicked.connect(self.save_settings)
+        load_btn = QtWidgets.QPushButton("Load Settings…")
+        load_btn.clicked.connect(self.load_settings)
 
         right = QtWidgets.QVBoxLayout()
         right.addWidget(open_btn)
+        right.addWidget(save_btn)
+        right.addWidget(load_btn)
         right.addWidget(self.table)
         right.addWidget(QtWidgets.QLabel("500ths per pixel"))
         right.addWidget(self.out_scale)
@@ -200,7 +210,14 @@ class Calibrator(QtWidgets.QMainWindow):
         if not fn:
             return
 
+        self._load_image(fn)
+
+    def _load_image(self, fn: str) -> bool:
         pm = QtGui.QPixmap(fn)
+        if pm.isNull():
+            QtWidgets.QMessageBox.warning(self, "Open Image", "Failed to load image")
+            return False
+
         self.scene.clear()
         self.bg_item = self.scene.addPixmap(pm)
         self.scene.setSceneRect(0.0, 0.0, float(pm.width()), float(pm.height()))
@@ -211,8 +228,14 @@ class Calibrator(QtWidgets.QMainWindow):
         self.table.setRowCount(0)
         self.out_scale.clear()
         self.out_ul.clear()
+        self.current_image_path = fn
+
+        return True
 
     def add_point(self, x, y):
+        self._add_point(x, y)
+
+    def _add_point(self, x, y, lat=None, lon=None):
         pen = QtGui.QPen(QtGui.QColor("cyan"))
         pen.setWidthF(1.0)
         size = 6.0
@@ -220,7 +243,7 @@ class Calibrator(QtWidgets.QMainWindow):
         h = self.scene.addLine(x - size, y, x + size, y, pen)
         v = self.scene.addLine(x, y - size, x, y + size, pen)
 
-        p = CalPoint(px=x, py=y, items=[h, v])
+        p = CalPoint(px=x, py=y, lat=lat, lon=lon, items=[h, v])
         self.points.append(p)
 
         row = self.table.rowCount()
@@ -228,9 +251,15 @@ class Calibrator(QtWidgets.QMainWindow):
         self.table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row + 1)))
         self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{x:.6f}"))
         self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{y:.6f}"))
-        self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(""))
+        latlon_text = "" if lat is None or lon is None else f"{lat:.6f}, {lon:.6f}"
+
+        self._suppress_table_edit = True
+        self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(latlon_text))
+        self._suppress_table_edit = False
 
     def on_table_edit(self, item):
+        if self._suppress_table_edit:
+            return
         if item.column() != 3:
             return
 
@@ -277,6 +306,104 @@ class Calibrator(QtWidgets.QMainWindow):
 
         self.out_scale.setText(f"{s:.9f}")
         self.out_ul.setText(f"{world_ul[0]:.3f}, {world_ul[1]:.3f}")
+
+    # -------------------------------------------------
+
+    def save_settings(self):
+        if self.image_size is None or not self.current_image_path:
+            QtWidgets.QMessageBox.warning(self, "Save Settings", "Load an image first")
+            return
+
+        self.recompute()
+
+        scale = self._parse_float(self.out_scale.text())
+        upper_left = self._parse_pair(self.out_ul.text())
+
+        settings = {
+            "image_path": self.current_image_path,
+            "points": [
+                {
+                    "px": p.px,
+                    "py": p.py,
+                    "lat": p.lat,
+                    "lon": p.lon,
+                }
+                for p in self.points
+            ],
+            "units_per_pixel": scale,
+            "upper_left": upper_left,
+        }
+
+        fn, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save Settings", "", "Calibration files (*.json)"
+        )
+        if not fn:
+            return
+
+        try:
+            with open(fn, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2)
+        except OSError as e:
+            QtWidgets.QMessageBox.warning(
+                self, "Save Settings", f"Failed to save file:\n{e}"
+            )
+
+    def load_settings(self):
+        fn, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Load Settings", "", "Calibration files (*.json)"
+        )
+        if not fn:
+            return
+
+        try:
+            with open(fn, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except OSError as e:
+            QtWidgets.QMessageBox.warning(
+                self, "Load Settings", f"Failed to read file:\n{e}"
+            )
+            return
+
+        image_path = data.get("image_path")
+        if not image_path:
+            QtWidgets.QMessageBox.warning(
+                self, "Load Settings", "No image path found in settings"
+            )
+            return
+
+        img_path = Path(image_path)
+        if not img_path.is_absolute():
+            img_path = Path(fn).parent / img_path
+
+        if not self._load_image(str(img_path)):
+            return
+
+        points = data.get("points", [])
+        for p in points:
+            self._add_point(p.get("px"), p.get("py"), p.get("lat"), p.get("lon"))
+
+        saved_scale = data.get("units_per_pixel")
+        saved_ul = data.get("upper_left")
+
+        self.recompute()
+
+        if saved_scale is not None:
+            self.out_scale.setText(f"{saved_scale:.9f}")
+        if isinstance(saved_ul, (list, tuple)) and len(saved_ul) == 2:
+            self.out_ul.setText(f"{saved_ul[0]:.3f}, {saved_ul[1]:.3f}")
+
+    def _parse_float(self, text: str) -> Optional[float]:
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_pair(self, text: str) -> Optional[Tuple[float, float]]:
+        try:
+            x_str, y_str = text.split(",")
+            return float(x_str.strip()), float(y_str.strip())
+        except Exception:
+            return None
 
 # -------------------------------------------------
 
