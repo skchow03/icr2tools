@@ -75,6 +75,17 @@ def current_transform(
     if state.current_scale is None:
         updated_state = update_fit_scale(state, sampled_bounds, widget_size, default_center_value)
 
+    if updated_state.current_scale is None or updated_state.view_center is None:
+        fit_scale = calculate_fit_scale(sampled_bounds, widget_size)
+        if fit_scale is None:
+            return None, updated_state
+        updated_state = replace(
+            updated_state,
+            fit_scale=updated_state.fit_scale or fit_scale,
+            current_scale=updated_state.current_scale or fit_scale,
+            view_center=updated_state.view_center or default_center_value,
+        )
+
     scale = updated_state.current_scale
     center = updated_state.view_center or default_center_value
     if scale is None or center is None:
