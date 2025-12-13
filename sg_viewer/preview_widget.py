@@ -125,11 +125,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_start: Point | None = None
         self._new_straight_end: Point | None = None
         self._new_straight_heading: tuple[float, float] | None = None
+        self._new_straight_connection: tuple[int, str] | None = None
         self._new_curve_active = False
         self._new_curve_start: Point | None = None
         self._new_curve_end: Point | None = None
         self._new_curve_heading: tuple[float, float] | None = None
         self._new_curve_preview: SectionPreview | None = None
+        self._new_curve_connection: tuple[int, str] | None = None
         self._delete_section_active = False
         self._has_unsaved_changes = False
 
@@ -346,6 +348,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_start = None
         self._new_straight_end = None
         self._new_straight_heading = None
+        self._new_straight_connection = None
         self._status_message = "Click to place the start of the new straight."
         self.update()
         return True
@@ -359,6 +362,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_curve_end = None
         self._new_curve_heading = None
         self._new_curve_preview = None
+        self._new_curve_connection = None
         self._status_message = "Click an unconnected node to start the new curve."
         self.update()
         return True
@@ -393,7 +397,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
             polyline=[start_point, end_point],
         )
 
-        updated_sections = list(self._sections) + [update_section_geometry(new_section)]
+        updated_sections = list(self._sections)
+        updated_sections, new_section = self._connect_new_section(
+            updated_sections, new_section, self._new_straight_connection
+        )
+        updated_sections.append(update_section_geometry(new_section))
         new_track_length = next_start_dlong + length
         if self._track_length is not None:
             self._track_length = max(self._track_length, new_track_length)
@@ -406,6 +414,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_start = None
         self._new_straight_end = None
         self._new_straight_heading = None
+        self._new_straight_connection = None
         self._status_message = f"Added new straight #{new_index}."
 
     def _finalize_new_curve(self) -> None:
@@ -421,7 +430,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         next_start_dlong = self._next_section_start_dlong()
         new_section = replace(new_section, section_id=new_index, start_dlong=next_start_dlong)
 
-        updated_sections = list(self._sections) + [update_section_geometry(new_section)]
+        updated_sections = list(self._sections)
+        updated_sections, new_section = self._connect_new_section(
+            updated_sections, new_section, self._new_curve_connection
+        )
+        updated_sections.append(update_section_geometry(new_section))
         new_track_length = next_start_dlong + new_section.length
         if self._track_length is not None:
             self._track_length = max(self._track_length, new_track_length)
@@ -435,6 +448,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_curve_end = None
         self._new_curve_heading = None
         self._new_curve_preview = None
+        self._new_curve_connection = None
         self._status_message = f"Added new curve #{new_index}."
 
     def _next_section_start_dlong(self) -> float:
@@ -987,10 +1001,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._new_straight_start is None:
             constrained_start = self._unconnected_node_hit(event.pos())
             if constrained_start is not None:
-                start_point, heading = constrained_start
+                section_index, endtype, start_point, heading = constrained_start
                 self._new_straight_start = start_point
                 self._new_straight_end = start_point
                 self._new_straight_heading = heading
+                self._new_straight_connection = (section_index, endtype)
                 self._status_message = (
                     "Extending from unconnected node; move to set the length."
                 )
@@ -998,6 +1013,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._new_straight_start = track_point
                 self._new_straight_end = track_point
                 self._new_straight_heading = None
+                self._new_straight_connection = None
                 self._status_message = (
                     "Move the mouse to position the new straight, then click to finish."
                 )
@@ -1039,7 +1055,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 event.accept()
                 return True
 
-            start_point, heading = constrained_start
+            section_index, endtype, start_point, heading = constrained_start
             if heading is None:
                 self._status_message = "Selected node does not have a usable heading."
                 self.update()
@@ -1050,6 +1066,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._new_curve_end = start_point
             self._new_curve_heading = heading
             self._new_curve_preview = None
+            self._new_curve_connection = (section_index, endtype)
             self._status_message = (
                 "Extending curve from unconnected node; move to set the arc."
             )
@@ -1201,7 +1218,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _unconnected_node_hit(
         self, pos: QtCore.QPoint
-    ) -> tuple[Point, tuple[float, float] | None] | None:
+    ) -> tuple[int, str, Point, tuple[float, float] | None] | None:
         widget_size = (self.width(), self.height())
         transform = self._controller.current_transform(widget_size)
         if transform is None:
@@ -1226,9 +1243,35 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 dx = px - pos.x()
                 dy = py - pos.y()
                 if dx * dx + dy * dy <= r2:
-                    return world_point, self._heading_for_endpoint(section, endtype)
+                    return i, endtype, world_point, self._heading_for_endpoint(
+                        section, endtype
+                    )
 
         return None
+
+    def _connect_new_section(
+        self,
+        sections: list[SectionPreview],
+        new_section: SectionPreview,
+        connection: tuple[int, str] | None,
+    ) -> tuple[list[SectionPreview], SectionPreview]:
+        if connection is None:
+            return sections, new_section
+
+        neighbor_index, endtype = connection
+        if neighbor_index < 0 or neighbor_index >= len(sections):
+            return sections, new_section
+
+        neighbor = sections[neighbor_index]
+        if endtype == "end":
+            new_section = replace(new_section, previous_id=neighbor_index)
+            neighbor = replace(neighbor, next_id=new_section.section_id)
+        else:
+            new_section = replace(new_section, next_id=neighbor_index)
+            neighbor = replace(neighbor, previous_id=new_section.section_id)
+
+        sections[neighbor_index] = neighbor
+        return sections, new_section
 
     def _set_new_straight_active(self, active: bool) -> None:
         if self._new_straight_active == active:
@@ -1237,6 +1280,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_active = active
         if active:
             self._set_delete_section_active(False)
+        else:
+            self._new_straight_connection = None
         self.newStraightModeChanged.emit(active)
 
     def _set_new_curve_active(self, active: bool) -> None:
@@ -1246,6 +1291,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_curve_active = active
         if active:
             self._set_delete_section_active(False)
+        else:
+            self._new_curve_connection = None
         self.newCurveModeChanged.emit(active)
 
     def _handle_click(self, pos: QtCore.QPoint) -> None:
