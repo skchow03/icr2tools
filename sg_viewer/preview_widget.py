@@ -38,6 +38,278 @@ MILE_IN_500THS = 63_360 * 500
 DEFAULT_VIEW_HALF_SPAN_500THS = MILE_IN_500THS  # 1 mile to either side = 2 miles wide
 
 
+class StraightCreationInteraction:
+    def __init__(self, widget: "SGPreviewWidget") -> None:
+        self.widget = widget
+        self.active = False
+        self.start: Point | None = None
+        self.end: Point | None = None
+        self.heading: tuple[float, float] | None = None
+        self.connection: tuple[int, str] | None = None
+
+    def reset(self) -> None:
+        self.active = False
+        self.start = None
+        self.end = None
+        self.heading = None
+        self.connection = None
+
+    def begin(self) -> bool:
+        if not self.widget._sampled_bounds:
+            return False
+
+        self.widget._set_new_straight_active(True)
+        self.start = None
+        self.end = None
+        self.heading = None
+        self.connection = None
+        self.widget._status_message = "Click to place the start of the new straight."
+        self.widget.update()
+        return True
+
+    def handle_press(self, event: QtGui.QMouseEvent) -> bool:
+        if not self.active or event.button() != QtCore.Qt.LeftButton:
+            return False
+
+        widget_size = (self.widget.width(), self.widget.height())
+        transform = self.widget._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        track_point = self.widget._controller.map_to_track(
+            event.pos(), widget_size, self.widget.height(), transform
+        )
+        if track_point is None:
+            return False
+
+        if self.start is None:
+            constrained_start = self.widget._unconnected_node_hit(event.pos())
+            if constrained_start is None:
+                self.start = track_point
+                self.widget._status_message = (
+                    "Selected start; move cursor to set heading, click to finalize."
+                )
+                self.widget.update()
+            else:
+                section_index, endtype, start_point, heading = constrained_start
+                self.start = start_point
+                self.end = start_point
+                self.heading = heading
+                self.connection = (section_index, endtype)
+                self.widget._status_message = (
+                    "Extending straight from unconnected node; move to set the heading."
+                )
+                self.widget._is_panning = False
+                self.widget._last_mouse_pos = None
+                self.widget._press_pos = None
+                self.widget.update()
+        else:
+            if self.end is None:
+                return True
+
+            self.widget._finalize_new_straight()
+
+        event.accept()
+        return True
+
+    def handle_move(self, pos: QtCore.QPoint) -> bool:
+        if not self.active or self.start is None:
+            return False
+
+        widget_size = (self.widget.width(), self.widget.height())
+        transform = self.widget._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        track_point = self.widget._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.widget.height(), transform
+        )
+        if track_point is None:
+            return False
+
+        constrained_end = self.apply_heading_constraint(self.start, track_point)
+        self.end = constrained_end
+        length = math.hypot(
+            constrained_end[0] - self.start[0], constrained_end[1] - self.start[1]
+        )
+        self.widget._status_message = f"New straight length: {length:.1f} (click to set end)."
+        self.widget.update()
+        return True
+
+    def apply_heading_constraint(self, start_point: Point, candidate: Point) -> Point:
+        if self.heading is None:
+            return candidate
+
+        hx, hy = self.heading
+        vx = candidate[0] - start_point[0]
+        vy = candidate[1] - start_point[1]
+        projected_length = max(0.0, vx * hx + vy * hy)
+        return (start_point[0] + hx * projected_length, start_point[1] + hy * projected_length)
+
+
+class CurveCreationInteraction:
+    def __init__(self, widget: "SGPreviewWidget") -> None:
+        self.widget = widget
+        self.active = False
+        self.start: Point | None = None
+        self.end: Point | None = None
+        self.heading: tuple[float, float] | None = None
+        self.preview: SectionPreview | None = None
+        self.connection: tuple[int, str] | None = None
+
+    def reset(self) -> None:
+        self.active = False
+        self.start = None
+        self.end = None
+        self.heading = None
+        self.preview = None
+        self.connection = None
+
+    def begin(self) -> bool:
+        if not self.widget._sampled_bounds:
+            return False
+
+        self.widget._set_new_curve_active(True)
+        self.start = None
+        self.end = None
+        self.heading = None
+        self.preview = None
+        self.connection = None
+        self.widget._status_message = "Click an unconnected node to start the new curve."
+        self.widget.update()
+        return True
+
+    def handle_press(self, event: QtGui.QMouseEvent) -> bool:
+        if not self.active or event.button() != QtCore.Qt.LeftButton:
+            return False
+
+        widget_size = (self.widget.width(), self.widget.height())
+        transform = self.widget._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        track_point = self.widget._controller.map_to_track(
+            event.pos(), widget_size, self.widget.height(), transform
+        )
+        if track_point is None:
+            return False
+
+        if self.start is None:
+            constrained_start = self.widget._unconnected_node_hit(event.pos())
+            if constrained_start is None:
+                self.widget._status_message = (
+                    "New curve must start from an unconnected node."
+                )
+                self.widget.update()
+                event.accept()
+                return True
+
+            section_index, endtype, start_point, heading = constrained_start
+            if heading is None:
+                self.widget._status_message = "Selected node does not have a usable heading."
+                self.widget.update()
+                event.accept()
+                return True
+
+            self.start = start_point
+            self.end = start_point
+            self.heading = heading
+            self.preview = None
+            self.connection = (section_index, endtype)
+            self.widget._status_message = (
+                "Extending curve from unconnected node; move to set the arc."
+            )
+            self.widget._is_panning = False
+            self.widget._last_mouse_pos = None
+            self.widget._press_pos = None
+            self.widget.update()
+        else:
+            preview = self._build_candidate(track_point)
+            if preview is None:
+                self.widget._status_message = "Unable to solve a curve for that end point."
+                self.widget.update()
+            else:
+                self.preview = preview
+                self.end = preview.end
+                self.widget._finalize_new_curve()
+
+        event.accept()
+        return True
+
+    def handle_move(self, pos: QtCore.QPoint) -> bool:
+        if not self.active or self.start is None:
+            return False
+
+        widget_size = (self.widget.width(), self.widget.height())
+        transform = self.widget._controller.current_transform(widget_size)
+        if transform is None:
+            return False
+
+        track_point = self.widget._controller.map_to_track(
+            QtCore.QPointF(pos), widget_size, self.widget.height(), transform
+        )
+        if track_point is None:
+            return False
+
+        preview = self._build_candidate(track_point)
+        if preview is None:
+            self.widget._status_message = "Unable to solve a curve for that position."
+            self.widget.update()
+            return True
+
+        self.preview = preview
+        self.end = preview.end
+        self.widget._status_message = f"New curve length: {preview.length:.1f} (click to set end)."
+        self.widget.update()
+        return True
+
+    def _build_candidate(self, end_point: Point) -> SectionPreview | None:
+        if self.start is None or self.heading is None:
+            return None
+
+        start_point = self.start
+        heading = self.heading
+        template = SectionPreview(
+            section_id=len(self.widget._sections),
+            type_name="curve",
+            previous_id=-1,
+            next_id=-1,
+            start=start_point,
+            end=end_point,
+            start_dlong=0.0,
+            length=0.0,
+            center=None,
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=None,
+            start_heading=heading,
+            end_heading=None,
+            polyline=[start_point, end_point],
+        )
+
+        candidates = _solve_curve_with_fixed_heading(
+            template,
+            start_point,
+            end_point,
+            fixed_point=start_point,
+            fixed_heading=heading,
+            fixed_point_is_start=True,
+            orientation_hint=1.0,
+        )
+        if not candidates:
+            return None
+
+        best_candidate = min(candidates, key=lambda sect: sect.length)
+        signed_radius = signed_radius_from_heading(
+            heading, start_point, best_candidate.center, best_candidate.radius
+        )
+        if signed_radius != best_candidate.radius:
+            best_candidate = replace(best_candidate, radius=signed_radius)
+
+        return update_section_geometry(best_candidate)
+
 def _curve_angles(
     start: tuple[float, float],
     end: tuple[float, float],
@@ -121,17 +393,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
-        self._new_straight_active = False
-        self._new_straight_start: Point | None = None
-        self._new_straight_end: Point | None = None
-        self._new_straight_heading: tuple[float, float] | None = None
-        self._new_straight_connection: tuple[int, str] | None = None
-        self._new_curve_active = False
-        self._new_curve_start: Point | None = None
-        self._new_curve_end: Point | None = None
-        self._new_curve_heading: tuple[float, float] | None = None
-        self._new_curve_preview: SectionPreview | None = None
-        self._new_curve_connection: tuple[int, str] | None = None
+        self._straight_creation = StraightCreationInteraction(self)
+        self._curve_creation = CurveCreationInteraction(self)
         self._delete_section_active = False
         self._has_unsaved_changes = False
 
@@ -205,6 +468,94 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._controller.status_message = value
 
     @property
+    def _new_straight_active(self) -> bool:
+        return self._straight_creation.active
+
+    @_new_straight_active.setter
+    def _new_straight_active(self, value: bool) -> None:
+        self._straight_creation.active = value
+
+    @property
+    def _new_straight_start(self) -> Point | None:
+        return self._straight_creation.start
+
+    @_new_straight_start.setter
+    def _new_straight_start(self, value: Point | None) -> None:
+        self._straight_creation.start = value
+
+    @property
+    def _new_straight_end(self) -> Point | None:
+        return self._straight_creation.end
+
+    @_new_straight_end.setter
+    def _new_straight_end(self, value: Point | None) -> None:
+        self._straight_creation.end = value
+
+    @property
+    def _new_straight_heading(self) -> tuple[float, float] | None:
+        return self._straight_creation.heading
+
+    @_new_straight_heading.setter
+    def _new_straight_heading(self, value: tuple[float, float] | None) -> None:
+        self._straight_creation.heading = value
+
+    @property
+    def _new_straight_connection(self) -> tuple[int, str] | None:
+        return self._straight_creation.connection
+
+    @_new_straight_connection.setter
+    def _new_straight_connection(self, value: tuple[int, str] | None) -> None:
+        self._straight_creation.connection = value
+
+    @property
+    def _new_curve_active(self) -> bool:
+        return self._curve_creation.active
+
+    @_new_curve_active.setter
+    def _new_curve_active(self, value: bool) -> None:
+        self._curve_creation.active = value
+
+    @property
+    def _new_curve_start(self) -> Point | None:
+        return self._curve_creation.start
+
+    @_new_curve_start.setter
+    def _new_curve_start(self, value: Point | None) -> None:
+        self._curve_creation.start = value
+
+    @property
+    def _new_curve_end(self) -> Point | None:
+        return self._curve_creation.end
+
+    @_new_curve_end.setter
+    def _new_curve_end(self, value: Point | None) -> None:
+        self._curve_creation.end = value
+
+    @property
+    def _new_curve_heading(self) -> tuple[float, float] | None:
+        return self._curve_creation.heading
+
+    @_new_curve_heading.setter
+    def _new_curve_heading(self, value: tuple[float, float] | None) -> None:
+        self._curve_creation.heading = value
+
+    @property
+    def _new_curve_preview(self) -> SectionPreview | None:
+        return self._curve_creation.preview
+
+    @_new_curve_preview.setter
+    def _new_curve_preview(self, value: SectionPreview | None) -> None:
+        self._curve_creation.preview = value
+
+    @property
+    def _new_curve_connection(self) -> tuple[int, str] | None:
+        return self._curve_creation.connection
+
+    @_new_curve_connection.setter
+    def _new_curve_connection(self, value: tuple[int, str] | None) -> None:
+        self._curve_creation.connection = value
+
+    @property
     def _transform_state(self) -> preview_state.TransformState:
         return self._controller.transform_state
 
@@ -239,13 +590,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_signatures = []
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
-        self._new_straight_active = False
-        self._new_straight_start = None
-        self._new_straight_end = None
-        self._new_curve_active = False
-        self._new_curve_start = None
-        self._new_curve_end = None
-        self._new_curve_preview = None
+        self._straight_creation.reset()
+        self._curve_creation.reset()
+        self._set_new_straight_active(False)
+        self._set_new_curve_active(False)
         self._delete_section_active = False
         self._is_panning = False
         self._last_mouse_pos = None
@@ -289,15 +637,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
+        self._straight_creation.reset()
+        self._curve_creation.reset()
         self._set_new_straight_active(False)
-        self._new_straight_start = None
-        self._new_straight_end = None
-        self._new_straight_heading = None
         self._set_new_curve_active(False)
-        self._new_curve_start = None
-        self._new_curve_end = None
-        self._new_curve_heading = None
-        self._new_curve_preview = None
         self._status_message = data.status_message
         self._selection.reset(
             self._sections,
@@ -341,38 +684,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # New straight creation
     # ------------------------------------------------------------------
     def begin_new_straight(self) -> bool:
-        if not self._sampled_bounds:
-            return False
-
-        self._set_new_straight_active(True)
-        self._new_straight_start = None
-        self._new_straight_end = None
-        self._new_straight_heading = None
-        self._new_straight_connection = None
-        self._status_message = "Click to place the start of the new straight."
-        self.update()
-        return True
+        return self._straight_creation.begin()
 
     def begin_new_curve(self) -> bool:
-        if not self._sampled_bounds:
-            return False
-
-        self._set_new_curve_active(True)
-        self._new_curve_start = None
-        self._new_curve_end = None
-        self._new_curve_heading = None
-        self._new_curve_preview = None
-        self._new_curve_connection = None
-        self._status_message = "Click an unconnected node to start the new curve."
-        self.update()
-        return True
+        return self._curve_creation.begin()
 
     def _finalize_new_straight(self, end_point: Point) -> None:
         if not self._new_straight_active or self._new_straight_start is None:
             return
 
         start_point = self._new_straight_start
-        end_point = self._apply_heading_constraint(start_point, end_point)
+        end_point = self._straight_creation.apply_heading_constraint(start_point, end_point)
         length = math.hypot(end_point[0] - start_point[0], end_point[1] - start_point[1])
         next_start_dlong = self._next_section_start_dlong()
         new_index = len(self._sections)
@@ -855,9 +1177,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._handle_new_curve_press(event):
+        if self._curve_creation.handle_press(event):
             return
-        if self._handle_new_straight_press(event):
+        if self._straight_creation.handle_press(event):
             return
 
         if self._delete_section_active and event.button() == QtCore.Qt.LeftButton:
@@ -899,10 +1221,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._update_new_curve_position(event.pos()):
+        if self._curve_creation.handle_move(event.pos()):
             event.accept()
             return
-        if self._update_new_straight_position(event.pos()):
+        if self._straight_creation.handle_move(event.pos()):
             event.accept()
             return
 
@@ -980,220 +1302,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     # Selection
     # ------------------------------------------------------------------
-    def _handle_new_straight_press(self, event: QtGui.QMouseEvent) -> bool:
-        if not self._new_straight_active or event.button() != QtCore.Qt.LeftButton:
-            return False
-
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        if transform is None:
-            return False
-
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(event.pos()), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return False
-
-        if self._new_straight_start is None:
-            constrained_start = self._unconnected_node_hit(event.pos())
-            if constrained_start is not None:
-                section_index, endtype, start_point, heading = constrained_start
-                self._new_straight_start = start_point
-                self._new_straight_end = start_point
-                self._new_straight_heading = heading
-                self._new_straight_connection = (section_index, endtype)
-                self._status_message = (
-                    "Extending from unconnected node; move to set the length."
-                )
-            else:
-                self._new_straight_start = track_point
-                self._new_straight_end = track_point
-                self._new_straight_heading = None
-                self._new_straight_connection = None
-                self._status_message = (
-                    "Move the mouse to position the new straight, then click to finish."
-                )
-            self._is_panning = False
-            self._last_mouse_pos = None
-            self._press_pos = None
-            self.update()
-        else:
-            constrained_end = self._apply_heading_constraint(
-                self._new_straight_start, track_point
-            )
-            self._finalize_new_straight(constrained_end)
-
-        event.accept()
-        return True
-
-    def _handle_new_curve_press(self, event: QtGui.QMouseEvent) -> bool:
-        if not self._new_curve_active or event.button() != QtCore.Qt.LeftButton:
-            return False
-
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        if transform is None:
-            return False
-
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(event.pos()), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return False
-
-        if self._new_curve_start is None:
-            constrained_start = self._unconnected_node_hit(event.pos())
-            if constrained_start is None:
-                self._status_message = (
-                    "New curve must start from an unconnected node."
-                )
-                self.update()
-                event.accept()
-                return True
-
-            section_index, endtype, start_point, heading = constrained_start
-            if heading is None:
-                self._status_message = "Selected node does not have a usable heading."
-                self.update()
-                event.accept()
-                return True
-
-            self._new_curve_start = start_point
-            self._new_curve_end = start_point
-            self._new_curve_heading = heading
-            self._new_curve_preview = None
-            self._new_curve_connection = (section_index, endtype)
-            self._status_message = (
-                "Extending curve from unconnected node; move to set the arc."
-            )
-            self._is_panning = False
-            self._last_mouse_pos = None
-            self._press_pos = None
-            self.update()
-        else:
-            preview = self._build_new_curve_candidate(track_point)
-            if preview is None:
-                self._status_message = "Unable to solve a curve for that end point."
-                self.update()
-            else:
-                self._new_curve_preview = preview
-                self._new_curve_end = preview.end
-                self._finalize_new_curve()
-
-        event.accept()
-        return True
-
-    def _update_new_straight_position(self, pos: QtCore.QPoint) -> bool:
-        if not self._new_straight_active or self._new_straight_start is None:
-            return False
-
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        if transform is None:
-            return False
-
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return False
-
-        constrained_end = self._apply_heading_constraint(
-            self._new_straight_start, track_point
-        )
-        self._new_straight_end = constrained_end
-        length = math.hypot(
-            constrained_end[0] - self._new_straight_start[0],
-            constrained_end[1] - self._new_straight_start[1],
-        )
-        self._status_message = f"New straight length: {length:.1f} (click to set end)."
-        self.update()
-        return True
-
-    def _update_new_curve_position(self, pos: QtCore.QPoint) -> bool:
-        if not self._new_curve_active or self._new_curve_start is None:
-            return False
-
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        if transform is None:
-            return False
-
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self.height(), transform
-        )
-        if track_point is None:
-            return False
-
-        preview = self._build_new_curve_candidate(track_point)
-        if preview is None:
-            self._status_message = "Unable to solve a curve for that position."
-            self.update()
-            return True
-
-        self._new_curve_preview = preview
-        self._new_curve_end = preview.end
-        self._status_message = f"New curve length: {preview.length:.1f} (click to set end)."
-        self.update()
-        return True
-
-    def _apply_heading_constraint(self, start_point: Point, candidate: Point) -> Point:
-        if self._new_straight_heading is None:
-            return candidate
-
-        hx, hy = self._new_straight_heading
-        vx = candidate[0] - start_point[0]
-        vy = candidate[1] - start_point[1]
-        projected_length = max(0.0, vx * hx + vy * hy)
-        return (start_point[0] + hx * projected_length, start_point[1] + hy * projected_length)
-
-    def _build_new_curve_candidate(self, end_point: Point) -> SectionPreview | None:
-        if self._new_curve_start is None or self._new_curve_heading is None:
-            return None
-
-        start_point = self._new_curve_start
-        heading = self._new_curve_heading
-        template = SectionPreview(
-            section_id=len(self._sections),
-            type_name="curve",
-            previous_id=-1,
-            next_id=-1,
-            start=start_point,
-            end=end_point,
-            start_dlong=0.0,
-            length=0.0,
-            center=None,
-            sang1=None,
-            sang2=None,
-            eang1=None,
-            eang2=None,
-            radius=None,
-            start_heading=heading,
-            end_heading=None,
-            polyline=[start_point, end_point],
-        )
-
-        candidates = _solve_curve_with_fixed_heading(
-            template,
-            start_point,
-            end_point,
-            fixed_point=start_point,
-            fixed_heading=heading,
-            fixed_point_is_start=True,
-            orientation_hint=1.0,
-        )
-        if not candidates:
-            return None
-
-        best_candidate = min(candidates, key=lambda sect: sect.length)
-        signed_radius = signed_radius_from_heading(
-            heading, start_point, best_candidate.center, best_candidate.radius
-        )
-        if signed_radius != best_candidate.radius:
-            best_candidate = replace(best_candidate, radius=signed_radius)
-
-        return update_section_geometry(best_candidate)
 
     def _heading_for_endpoint(
         self, section: SectionPreview, endtype: str
