@@ -123,23 +123,32 @@ class ImageView(QtWidgets.QGraphicsView):
         )
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
         self.setCursor(QtCore.Qt.OpenHandCursor)
+        self._adding_point = False
+
+    def start_point_add(self):
+        self._adding_point = True
+        self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+        self.setCursor(QtCore.Qt.ArrowCursor)
+
+    def finish_point_add(self):
+        self._adding_point = False
+        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+        self.setCursor(QtCore.Qt.OpenHandCursor)
 
     def wheelEvent(self, e):
         factor = 1.25 if e.angleDelta().y() > 0 else 1 / 1.25
         self.scale(factor, factor)
 
     def mouseMoveEvent(self, e):
-        self.setCursor(
-            QtCore.Qt.CrossCursor
-            if e.modifiers() & QtCore.Qt.ControlModifier
-            else QtCore.Qt.OpenHandCursor
-        )
+        if not self._adding_point:
+            self.setCursor(QtCore.Qt.OpenHandCursor)
         super().mouseMoveEvent(e)
 
     def mousePressEvent(self, e):
-        if e.button() == QtCore.Qt.LeftButton and e.modifiers() & QtCore.Qt.ControlModifier:
+        if e.button() == QtCore.Qt.LeftButton and self._adding_point:
             sp = self.mapToScene(e.pos())
             self.pointAdded.emit(float(sp.x()), float(sp.y()))
+            self.finish_point_add()
             e.accept()
             return
         super().mousePressEvent(e)
@@ -176,6 +185,8 @@ class Calibrator(QtWidgets.QMainWindow):
 
         open_btn = QtWidgets.QPushButton("Open Image…")
         open_btn.clicked.connect(self.open_image)
+        add_point_btn = QtWidgets.QPushButton("Add calibration point")
+        add_point_btn.clicked.connect(self.view.start_point_add)
         save_btn = QtWidgets.QPushButton("Save Settings…")
         save_btn.clicked.connect(self.save_settings)
         load_btn = QtWidgets.QPushButton("Load Settings…")
@@ -183,6 +194,7 @@ class Calibrator(QtWidgets.QMainWindow):
 
         right = QtWidgets.QVBoxLayout()
         right.addWidget(open_btn)
+        right.addWidget(add_point_btn)
         right.addWidget(save_btn)
         right.addWidget(load_btn)
         right.addWidget(self.table)
