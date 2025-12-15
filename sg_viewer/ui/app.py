@@ -251,3 +251,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _format_section_link(prefix: str, section_id: int) -> str:
         connection = "Not connected" if section_id == -1 else str(section_id)
         return f"{prefix} Section: {connection}"
+    
+    def update_window_title(
+        self,
+        *,
+        path: Path | None,
+        is_dirty: bool,
+        is_untitled: bool = False,
+    ) -> None:
+        if is_untitled:
+            name = "Untitled"
+        elif path is not None:
+            name = path.name
+        else:
+            self.setWindowTitle("SG Viewer")
+            return
+
+        dirty_marker = "*" if is_dirty else ""
+        self.setWindowTitle(f"{name}{dirty_marker} — SG Viewer")
+

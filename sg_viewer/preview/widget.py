@@ -238,6 +238,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
     @property
     def _delete_section_active(self) -> bool:
         return self._editor.delete_section_active
+    
+    @property
+    def has_unsaved_changes(self) -> bool:
+        return self._has_unsaved_changes
 
     def _update_fit_scale(self) -> None:
         self._viewport.update_fit_scale(

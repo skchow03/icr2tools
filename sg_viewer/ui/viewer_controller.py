@@ -28,15 +28,28 @@ class SGViewerController:
         self._new_straight_default_style = window.new_straight_button.styleSheet()
         self._new_curve_default_style = window.new_curve_button.styleSheet()
         self._delete_default_style = window.delete_section_button.styleSheet()
+        self._is_untitled = False
+
 
         self._create_actions()
         self._create_menus()
         self._connect_signals()
+        self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.statusBar().showMessage(
             "Click New Straight to begin drawing or File → Open SG."
         )
+
+    def _on_sections_changed(self) -> None:
+        if self._current_path is None:
+            return
+
+        self._window.update_window_title(
+            path=self._current_path,
+            is_dirty=True,
+        )
+
 
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
@@ -50,7 +63,14 @@ class SGViewerController:
 
         self._window.statusBar().showMessage(f"Loaded {path}")
         self._current_path = path
+        self._is_untitled = False
         self._history.record_open(path)
+
+        self._window.update_window_title(
+            path=path,
+            is_dirty=False,
+        )
+
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
@@ -63,6 +83,7 @@ class SGViewerController:
         self._update_heading_table()
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
+
 
     def _create_actions(self) -> None:
         self._open_action = QtWidgets.QAction("Open SG…", self._window)
@@ -288,6 +309,14 @@ class SGViewerController:
         self._window.statusBar().showMessage(
             "New track ready. Click New Straight to start drawing."
         )
+        self._is_untitled = True
+        self._window.update_window_title(
+            path=None,
+            is_dirty=False,
+            is_untitled=True,
+        )
+
+
 
     def _save_file_dialog(self) -> None:
         if self._window.preview.sgfile is None:
@@ -327,6 +356,12 @@ class SGViewerController:
         self._refresh_recent_menu()
         self._persist_background_state()
         self._convert_sg_to_csv(path)
+
+        self._window.update_window_title(
+            path=self._current_path,
+            is_dirty=False,
+        )
+
 
     def _convert_sg_to_csv(self, sg_path: Path) -> None:
         sg2csv_path = (
@@ -411,10 +446,26 @@ class SGViewerController:
     def _on_sections_changed(self) -> None:
         sections, _ = self._window.preview.get_section_set()
         has_sections = bool(sections)
+
         self._window.delete_section_button.setEnabled(has_sections)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
+
+        # Save is allowed once anything exists or changes
         self._save_action.setEnabled(True)
+
+        # Mark document dirty
+        if self._is_untitled:
+            self._window.update_window_title(
+                path=None,
+                is_dirty=True,
+                is_untitled=True,
+            )
+        elif self._current_path is not None:
+            self._window.update_window_title(
+                path=self._current_path,
+                is_dirty=True,
+            )
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
