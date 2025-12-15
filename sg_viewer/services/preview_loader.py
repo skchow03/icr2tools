@@ -7,9 +7,9 @@ from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from track_viewer.geometry import build_centerline_index, sample_centerline
 
-from sg_viewer.centerline_utils import compute_centerline_normal_and_tangent
-from sg_viewer.sg_geometry import build_section_polyline, derive_heading_vectors
-from sg_viewer.sg_model import Point, PreviewData, SectionPreview
+from sg_viewer.geometry.centerline_utils import compute_centerline_normal_and_tangent
+from sg_viewer.geometry.sg_geometry import build_section_polyline, derive_heading_vectors
+from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
 
 def load_preview(path: Path) -> PreviewData:
     sgfile = SGFile.from_sg(str(path))

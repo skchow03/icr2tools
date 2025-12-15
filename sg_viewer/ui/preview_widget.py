@@ -13,26 +13,27 @@ from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
-from sg_viewer.elevation_profile import ElevationProfileData
-from sg_viewer import preview_state, preview_transform
-from sg_viewer import preview_painter, selection
-from sg_viewer.preview_background import PreviewBackground
-from sg_viewer.preview_editor import PreviewEditor
-from sg_viewer.preview_interaction import PreviewInteraction
-from sg_viewer.preview_interactions_create import PreviewCreationAdapter
-from sg_viewer.preview_state_controller import PreviewStateController
-from sg_viewer.preview_state_utils import (
+from sg_viewer.geometry import preview_transform
+from sg_viewer.models import preview_state, selection
+from sg_viewer.services import preview_painter
+from sg_viewer.services.preview_background import PreviewBackground
+from sg_viewer.ui.elevation_profile import ElevationProfileData
+from sg_viewer.ui.preview_editor import PreviewEditor
+from sg_viewer.ui.preview_interaction import PreviewInteraction
+from sg_viewer.ui.preview_interactions_create import PreviewCreationAdapter
+from sg_viewer.ui.preview_state_controller import PreviewStateController
+from sg_viewer.models.preview_state_utils import (
     compute_section_signatures,
     is_disconnected_endpoint,
     section_signature,
     update_node_status,
 )
-from sg_viewer.sg_geometry import (
+from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
 )
-from sg_viewer.curve_solver import _solve_curve_drag as _solve_curve_drag_util
-from sg_viewer.sg_model import SectionPreview
+from sg_viewer.geometry.curve_solver import _solve_curve_drag as _solve_curve_drag_util
+from sg_viewer.models.sg_model import SectionPreview
 
 logger = logging.getLogger(__name__)
 

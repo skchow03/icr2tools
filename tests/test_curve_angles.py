@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 try:  # pragma: no cover - allows tests to be skipped in headless CI without PyQt5
-    from sg_viewer.preview_widget import _curve_angles
+    from sg_viewer.ui.preview_widget import _curve_angles
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 

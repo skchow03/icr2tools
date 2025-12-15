@@ -4,10 +4,10 @@ from typing import List
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.elevation_profile import ElevationProfileWidget
-from sg_viewer.preview_widget import SGPreviewWidget
-from sg_viewer.selection import SectionSelection
-from sg_viewer.viewer_controller import SGViewerController
+from sg_viewer.ui.elevation_profile import ElevationProfileWidget
+from sg_viewer.ui.preview_widget import SGPreviewWidget
+from sg_viewer.models.selection import SectionSelection
+from sg_viewer.ui.viewer_controller import SGViewerController
 
 
 class SGViewerApp(QtWidgets.QApplication):
