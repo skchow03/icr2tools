@@ -1,15 +1,21 @@
 """Geometry helpers for SG preview logic.
 
-These functions operate on track/world coordinates only and avoid Qt types.
+All functions operate on SG track/world coordinates, where ``x`` increases to
+the right and ``y`` increases upward. Screen-space conversion (including the
+inverted ``y`` axis used by Qt) is handled elsewhere.
 """
 from __future__ import annotations
 
 import math
 from typing import Tuple
 
+from sg_viewer.geometry.curve_solver import _solve_curve_drag as _solve_curve_drag_util
 from sg_viewer.models.sg_model import SectionPreview
 
 Point = Tuple[float, float]
+
+# Curve solve tolerance in inches.
+CURVE_SOLVE_TOLERANCE = 1.0
 
 
 def curve_angles(
@@ -38,6 +44,21 @@ def curve_angles(
     return sang1, sang2, eang1, eang2
 
 
+def apply_heading_constraint(
+    start_point: Point, heading: tuple[float, float] | None, candidate: Point
+) -> Point:
+    """Project ``candidate`` along ``heading`` from ``start_point`` if provided."""
+
+    if heading is None:
+        return candidate
+
+    hx, hy = heading
+    vx = candidate[0] - start_point[0]
+    vy = candidate[1] - start_point[1]
+    projected_length = max(0.0, vx * hx + vy * hy)
+    return (start_point[0] + hx * projected_length, start_point[1] + hy * projected_length)
+
+
 def heading_for_endpoint(
     section: SectionPreview, endtype: str
 ) -> tuple[float, float] | None:
@@ -61,6 +82,14 @@ def heading_for_endpoint(
     if endtype == "start":
         return (-hx, -hy)
     return (hx, hy)
+
+
+def solve_curve_drag(
+    sect: SectionPreview, start: Point, end: Point, tolerance: float = CURVE_SOLVE_TOLERANCE
+) -> SectionPreview | None:
+    """Solve a dragged curve section within ``tolerance`` inches."""
+
+    return _solve_curve_drag_util(sect, start, end, tolerance)
 
 
 def distance_to_polyline(point: Point, polyline: list[Point]) -> float:

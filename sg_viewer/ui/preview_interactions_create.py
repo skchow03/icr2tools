@@ -8,6 +8,7 @@ from PyQt5 import QtCore, QtGui
 
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import signed_radius_from_heading, update_section_geometry
+from sg_viewer.preview.geometry import apply_heading_constraint
 from sg_viewer.models.sg_model import SectionPreview
 
 if TYPE_CHECKING:
@@ -116,14 +117,7 @@ class StraightCreationInteraction:
         return True
 
     def apply_heading_constraint(self, start_point: Point, candidate: Point) -> Point:
-        if self.heading is None:
-            return candidate
-
-        hx, hy = self.heading
-        vx = candidate[0] - start_point[0]
-        vy = candidate[1] - start_point[1]
-        projected_length = max(0.0, vx * hx + vy * hy)
-        return (start_point[0] + hx * projected_length, start_point[1] + hy * projected_length)
+        return apply_heading_constraint(start_point, self.heading, candidate)
 
 
 class CurveCreationInteraction:

@@ -13,7 +13,10 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.models import preview_state, selection
-from sg_viewer.preview.geometry import curve_angles, distance_to_polyline, heading_for_endpoint
+from sg_viewer.preview.geometry import (
+    CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
+    curve_angles,
+)
 from sg_viewer.preview.render_state import split_nodes_by_status
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
@@ -27,7 +30,6 @@ from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.models.preview_state_utils import update_node_status
-from sg_viewer.geometry.curve_solver import _solve_curve_drag as _solve_curve_drag_util
 from sg_viewer.models.sg_model import SectionPreview
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     deleteModeChanged = QtCore.pyqtSignal(bool)
     scaleChanged = QtCore.pyqtSignal(float)
 
-    CURVE_SOLVE_TOLERANCE = 1.0  # inches
+    CURVE_SOLVE_TOLERANCE = CURVE_SOLVE_TOLERANCE_DEFAULT  # inches
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -747,11 +749,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Selection
     # ------------------------------------------------------------------
 
-    def _heading_for_endpoint(
-        self, section: SectionPreview, endtype: str
-    ) -> tuple[float, float] | None:
-        return heading_for_endpoint(section, endtype)
-
     def _unconnected_node_hit(
         self, pos: QtCore.QPoint
     ) -> tuple[int, str, Point, tuple[float, float] | None] | None:
@@ -1061,14 +1058,5 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
-
-    def _solve_curve_drag(
-        self, sect: SectionPreview, start: Point, end: Point
-    ) -> SectionPreview | None:
-        return _solve_curve_drag_util(sect, start, end, self.CURVE_SOLVE_TOLERANCE)
-
-    @staticmethod
-    def _distance_to_polyline(point: Point, polyline: list[Point]) -> float:
-        return distance_to_polyline(point, polyline)
 
 
