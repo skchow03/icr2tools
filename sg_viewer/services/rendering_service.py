@@ -4,7 +4,7 @@ from typing import Iterable, Tuple
 
 from PyQt5 import QtGui
 
-from sg_viewer import sg_rendering
+from sg_viewer.services import sg_rendering
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
