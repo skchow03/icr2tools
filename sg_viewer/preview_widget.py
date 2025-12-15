@@ -15,7 +15,7 @@ from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_state
-from sg_viewer import rendering_service, selection
+from sg_viewer import preview_painter, selection
 from sg_viewer.preview_background import PreviewBackground
 from sg_viewer.preview_editor import PreviewEditor
 from sg_viewer.preview_interaction import PreviewInteraction
@@ -596,82 +596,41 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # Get the current transform once, reuse it
         transform = self._controller.current_transform((self.width(), self.height()))
 
-        # Let the rendering service draw everything (track, endpoints, etc.)
-        rendering_service.paint_preview(
+        preview_painter.paint_preview(
             painter,
-            self.rect(),
-            self.palette().color(QtGui.QPalette.Window),
-            self._background.image,
-            self._background.scale_500ths_per_px,
-            self._background.origin,
-            self._sampled_centerline,
-            self._centerline_polylines,
-            self._selection.selected_section_points,
-            None,
-            self._selection.selected_section_index,
-            self._show_curve_markers,
-            self._sections,
-            self._selection.selected_curve_index,
-            self._start_finish_mapping,
+            preview_painter.BasePreviewState(
+                rect=self.rect(),
+                background_color=self.palette().color(QtGui.QPalette.Window),
+                background_image=self._background.image,
+                background_scale_500ths_per_px=self._background.scale_500ths_per_px,
+                background_origin=self._background.origin,
+                sampled_centerline=self._sampled_centerline,
+                centerline_polylines=self._centerline_polylines,
+                selected_section_points=self._selection.selected_section_points,
+                section_endpoints=self._section_endpoints,
+                selected_section_index=self._selection.selected_section_index,
+                show_curve_markers=self._show_curve_markers,
+                sections=self._sections,
+                selected_curve_index=self._selection.selected_curve_index,
+                start_finish_mapping=self._start_finish_mapping,
+                status_message=self._status_message,
+            ),
+            preview_painter.CreationOverlayState(
+                new_straight_active=self._new_straight_active,
+                new_straight_start=self._new_straight_start,
+                new_straight_end=self._new_straight_end,
+                new_curve_active=self._new_curve_active,
+                new_curve_start=self._new_curve_start,
+                new_curve_end=self._new_curve_end,
+                new_curve_preview=self._new_curve_preview,
+            ),
             transform,
             self.height(),
-            self._status_message,
         )
 
         # If we have no transform yet (no track), we’re done
         if transform is None:
             return
-
-        if self._new_straight_active and self._new_straight_start is not None:
-            start = self._new_straight_start
-            end = self._new_straight_end or self._new_straight_start
-            scale, offsets = transform
-            ox, oy = offsets
-            widget_height = self.height()
-
-            start_point = QtCore.QPointF(
-                ox + start[0] * scale, widget_height - (oy + start[1] * scale)
-            )
-            end_point = QtCore.QPointF(
-                ox + end[0] * scale, widget_height - (oy + end[1] * scale)
-            )
-
-            painter.save()
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-            painter.setPen(QtGui.QPen(QtGui.QColor("cyan"), 2))
-            painter.drawLine(start_point, end_point)
-            painter.setBrush(QtGui.QColor("cyan"))
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.drawEllipse(start_point, 5, 5)
-            painter.drawEllipse(end_point, 5, 5)
-            painter.restore()
-
-        if self._new_curve_active and self._new_curve_start is not None:
-            preview_section = self._new_curve_preview
-            scale, offsets = transform
-            ox, oy = offsets
-            widget_height = self.height()
-
-            if preview_section and preview_section.polyline:
-                polyline_points = preview_section.polyline
-            else:
-                end_point = self._new_curve_end or self._new_curve_start
-                polyline_points = [self._new_curve_start, end_point]
-
-            painter.save()
-            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-            painter.setPen(QtGui.QPen(QtGui.QColor("magenta"), 2))
-            qp_points = [
-                QtCore.QPointF(ox + x * scale, widget_height - (oy + y * scale))
-                for x, y in polyline_points
-            ]
-            if len(qp_points) >= 2:
-                painter.drawPolyline(QtGui.QPolygonF(qp_points))
-            for point in qp_points:
-                painter.setBrush(QtGui.QColor("magenta"))
-                painter.setPen(QtCore.Qt.NoPen)
-                painter.drawEllipse(point, 5, 5)
-            painter.restore()
 
         # ---------------------------------------------------------
         # NEW NODE DRAWING BLOCK
