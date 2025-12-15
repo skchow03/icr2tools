@@ -329,7 +329,9 @@ class SGViewerController:
         self._convert_sg_to_csv(path)
 
     def _convert_sg_to_csv(self, sg_path: Path) -> None:
-        sg2csv_path = Path(__file__).resolve().parent.parent / "icr2_core" / "trk" / "sg2csv.py"
+        sg2csv_path = (
+            Path(__file__).resolve().parents[2] / "icr2_core" / "trk" / "sg2csv.py"
+        )
 
         try:
             result = subprocess.run(
