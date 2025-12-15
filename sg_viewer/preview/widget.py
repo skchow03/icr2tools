@@ -13,6 +13,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.models import preview_state, selection
+from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import (
     CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
     curve_angles,
@@ -24,12 +25,7 @@ from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.ui.elevation_profile import ElevationProfileData
 from sg_viewer.ui.preview_editor import PreviewEditor
-from sg_viewer.preview.creation_controller import (
-    CreationController,
-    CreationEvent,
-    CreationEventContext,
-    CreationUpdate,
-)
+from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
@@ -43,7 +39,7 @@ Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
 
-class SGPreviewWidget(QtWidgets.QWidget):
+class SGPreviewWidget(QtWidgets.QWidget, PreviewContext):
     """Minimal preview widget that draws an SG file centreline."""
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
@@ -85,7 +81,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
 
-        self._interaction = PreviewInteraction(self, self._controller, self._selection)
+        self._interaction = PreviewInteraction(
+            self,
+            self._selection,
+            self._section_manager,
+            self._editor,
+            self.set_sections,
+            self._node_radius_px,
+            self._stop_panning,
+        )
         self._creation_controller = CreationController()
         self._straight_creation = self._creation_controller.straight_interaction
         self._curve_creation = self._creation_controller.curve_interaction
@@ -104,6 +108,40 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._has_unsaved_changes = False
 
         self._set_default_view_bounds()
+
+    def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
+        return self._controller.current_transform(widget_size)
+
+    def map_to_track(
+        self,
+        screen_pos: tuple[float, float] | Point,
+        widget_size: tuple[int, int],
+        widget_height: int,
+        transform: Transform | None = None,
+    ) -> Point | None:
+        point = (
+            QtCore.QPointF(*screen_pos)
+            if isinstance(screen_pos, tuple)
+            else QtCore.QPointF(screen_pos)
+        )
+        return self._controller.map_to_track(point, widget_size, widget_height, transform)
+
+    def set_status(self, text: str) -> None:
+        self._status_message = text
+
+    def request_repaint(self) -> None:
+        self.update()
+
+    def widget_size(self) -> tuple[int, int]:
+        return (self.width(), self.height())
+
+    def widget_height(self) -> int:
+        return self.height()
+
+    def _stop_panning(self) -> None:
+        self._is_panning = False
+        self._last_mouse_pos = None
+        self._press_pos = None
 
     @staticmethod
     def _create_empty_sgfile() -> SGFile:
@@ -448,9 +486,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if update is None:
             return
         if update.stop_panning:
-            self._is_panning = False
-            self._last_mouse_pos = None
-            self._press_pos = None
+            self._stop_panning()
         if update.status_changed:
             self._status_message = self._creation_controller.status_text
         if update.straight_mode_changed:
