@@ -17,6 +17,7 @@ from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_state
 from sg_viewer import rendering_service, selection
 from sg_viewer.preview_background import PreviewBackground
+from sg_viewer.preview_editor import PreviewEditor
 from sg_viewer.preview_interaction import PreviewInteraction
 from sg_viewer.preview_interactions_create import PreviewCreationAdapter
 from sg_viewer.preview_state_controller import PreviewStateController
@@ -111,6 +112,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._interaction = PreviewInteraction(self, self._controller, self._selection)
         self._creation_interactions = PreviewCreationAdapter(self)
+        self._editor = PreviewEditor(
+            self._controller,
+            self._selection,
+            self._creation_interactions.straight,
+            self._creation_interactions.curve,
+        )
 
         self._show_curve_markers = True
 
@@ -119,7 +126,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._node_radius_px = 6
         self._straight_creation = self._creation_interactions.straight
         self._curve_creation = self._creation_interactions.curve
-        self._delete_section_active = False
         self._has_unsaved_changes = False
 
         self._set_default_view_bounds()
@@ -293,6 +299,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         ):
             self.scaleChanged.emit(value.current_scale)
 
+    @property
+    def _delete_section_active(self) -> bool:
+        return self._editor.delete_section_active
+
     def _update_fit_scale(self) -> None:
         previous = self._transform_state
         new_state = self._controller.update_fit_scale((self.width(), self.height()))
@@ -315,9 +325,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
         self._creation_interactions.reset()
+        self._editor.reset()
         self._set_new_straight_active(False)
         self._set_new_curve_active(False)
-        self._delete_section_active = False
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
@@ -403,47 +413,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def begin_new_curve(self) -> bool:
         return self._curve_creation.begin()
 
-    def _finalize_new_straight(self, end_point: Point) -> None:
-        if not self._new_straight_active or self._new_straight_start is None:
+    def _finalize_new_straight(self) -> None:
+        updated_sections, track_length, new_index, status = self._editor.finalize_new_straight(
+            self._sections, self._track_length
+        )
+        if new_index is None:
             return
 
-        start_point = self._new_straight_start
-        end_point = self._straight_creation.apply_heading_constraint(start_point, end_point)
-        length = math.hypot(end_point[0] - start_point[0], end_point[1] - start_point[1])
-        next_start_dlong = self._next_section_start_dlong()
-        new_index = len(self._sections)
-
-        new_section = SectionPreview(
-            section_id=new_index,
-            type_name="straight",
-            previous_id=-1,
-            next_id=-1,
-            start=start_point,
-            end=end_point,
-            start_dlong=next_start_dlong,
-            length=length,
-            center=None,
-            sang1=None,
-            sang2=None,
-            eang1=None,
-            eang2=None,
-            radius=None,
-            start_heading=self._new_straight_heading,
-            end_heading=self._new_straight_heading,
-            polyline=[start_point, end_point],
-        )
-
-        updated_sections = list(self._sections)
-        updated_sections, new_section = self._connect_new_section(
-            updated_sections, new_section, self._new_straight_connection
-        )
-        updated_sections.append(update_section_geometry(new_section))
-        new_track_length = next_start_dlong + length
-        if self._track_length is not None:
-            self._track_length = max(self._track_length, new_track_length)
-        else:
-            self._track_length = new_track_length
-
+        self._track_length = track_length
         self.set_sections(updated_sections)
         self._selection.set_selected_section(new_index)
         self._set_new_straight_active(False)
@@ -451,32 +428,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_straight_end = None
         self._new_straight_heading = None
         self._new_straight_connection = None
-        self._status_message = f"Added new straight #{new_index}."
+        if status:
+            self._status_message = status
 
     def _finalize_new_curve(self) -> None:
-        if (
-            not self._new_curve_active
-            or self._new_curve_start is None
-            or self._new_curve_preview is None
-        ):
+        updated_sections, track_length, new_index, status = self._editor.finalize_new_curve(
+            self._sections, self._track_length
+        )
+        if new_index is None:
             return
 
-        new_section = self._new_curve_preview
-        new_index = len(self._sections)
-        next_start_dlong = self._next_section_start_dlong()
-        new_section = replace(new_section, section_id=new_index, start_dlong=next_start_dlong)
-
-        updated_sections = list(self._sections)
-        updated_sections, new_section = self._connect_new_section(
-            updated_sections, new_section, self._new_curve_connection
-        )
-        updated_sections.append(update_section_geometry(new_section))
-        new_track_length = next_start_dlong + new_section.length
-        if self._track_length is not None:
-            self._track_length = max(self._track_length, new_track_length)
-        else:
-            self._track_length = new_track_length
-
+        self._track_length = track_length
         self.set_sections(updated_sections)
         self._selection.set_selected_section(new_index)
         self._set_new_curve_active(False)
@@ -485,14 +447,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._new_curve_heading = None
         self._new_curve_preview = None
         self._new_curve_connection = None
-        self._status_message = f"Added new curve #{new_index}."
+        if status:
+            self._status_message = status
 
     def _next_section_start_dlong(self) -> float:
-        if not self._sections:
-            return 0.0
-
-        last = self._sections[-1]
-        return float(last.start_dlong + last.length)
+        return self._editor.next_section_start_dlong(self._sections)
 
     # ------------------------------------------------------------------
     # Delete section
@@ -510,10 +469,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._set_delete_section_active(False)
 
     def _set_delete_section_active(self, active: bool) -> None:
-        if self._delete_section_active == active:
+        if active:
+            changed = self._editor.begin_delete_section(self._sections)
+        else:
+            changed = self._editor.cancel_delete_section()
+
+        if not changed:
             return
 
-        self._delete_section_active = active
         if active:
             self._set_new_straight_active(False)
             self._set_new_curve_active(False)
@@ -577,13 +540,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         for i, sect in enumerate(sections):
             # Start node color
-            if sect.previous_id is None or sect.previous_id < 0 or sect.previous_id >= total:
+            if self._editor.is_disconnected_endpoint(sections, sect, "start"):
                 self._node_status[(i, "start")] = "orange"
             else:
                 self._node_status[(i, "start")] = "green"
 
             # End node color
-            if sect.next_id is None or sect.next_id < 0 or sect.next_id >= total:
+            if self._editor.is_disconnected_endpoint(sections, sect, "end"):
                 self._node_status[(i, "end")] = "orange"
             else:
                 self._node_status[(i, "end")] = "green"
@@ -596,98 +559,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return pos
 
     def _is_invalid_id(self, value: int | None) -> bool:
-        return value is None or value < 0 or value >= len(self._sections)
+        return self._editor.is_invalid_id(self._sections, value)
 
     def _is_disconnected_endpoint(self, section: SectionPreview, endtype: str) -> bool:
-        if endtype == "start":
-            return self._is_invalid_id(section.previous_id)
-        return self._is_invalid_id(section.next_id)
+        return self._editor.is_disconnected_endpoint(self._sections, section, endtype)
 
     def _can_drag_section_node(self, section: SectionPreview) -> bool:
-        return (
-            section.type_name == "straight"
-            and self._is_invalid_id(section.previous_id)
-            and self._is_invalid_id(section.next_id)
-        )
+        return self._editor.can_drag_section_node(self._sections, section)
 
     def _can_drag_section_polyline(self, section: SectionPreview, index: int | None = None) -> bool:
-        chain = self._get_drag_chain(index) if index is not None else None
-        if chain is not None:
-            return True
-
-        if section.type_name == "curve":
-            return self._is_invalid_id(section.previous_id) and self._is_invalid_id(
-                section.next_id
-            )
-        return self._can_drag_section_node(section)
+        return self._editor.can_drag_section_polyline(self._sections, section, index)
 
     def _connected_neighbor_index(self, index: int, direction: str) -> int | None:
-        if index < 0 or index >= len(self._sections):
-            return None
-
-        section = self._sections[index]
-        neighbor_index = section.previous_id if direction == "previous" else section.next_id
-        if self._is_invalid_id(neighbor_index):
-            return None
-
-        neighbor = self._sections[neighbor_index]
-        if direction == "previous" and neighbor.next_id != index:
-            return None
-        if direction == "next" and neighbor.previous_id != index:
-            return None
-
-        return neighbor_index
+        return self._editor.connected_neighbor_index(self._sections, index, direction)
 
     def _get_drag_chain(self, index: int | None) -> list[int] | None:
-        if index is None or index < 0 or index >= len(self._sections):
-            return None
-
-        chain: list[int] = [index]
-        visited = {index}
-
-        prev_idx = self._connected_neighbor_index(index, "previous")
-        while prev_idx is not None and prev_idx not in visited:
-            chain.insert(0, prev_idx)
-            visited.add(prev_idx)
-            prev_idx = self._connected_neighbor_index(prev_idx, "previous")
-        head_closed_loop = prev_idx == index
-
-        next_idx = self._connected_neighbor_index(index, "next")
-        while next_idx is not None and next_idx not in visited:
-            chain.append(next_idx)
-            visited.add(next_idx)
-            next_idx = self._connected_neighbor_index(next_idx, "next")
-        tail_closed_loop = next_idx == chain[0] or next_idx == index
-
-        if not chain:
-            return None
-
-        head = self._sections[chain[0]]
-        tail = self._sections[chain[-1]]
-        head_open = self._is_invalid_id(head.previous_id)
-        tail_open = self._is_invalid_id(tail.next_id)
-
-        closed_loop = (
-            not head_open
-            and not tail_open
-            and self._connected_neighbor_index(chain[0], "previous") == chain[-1]
-            and self._connected_neighbor_index(chain[-1], "next") == chain[0]
-            and (head_closed_loop or tail_closed_loop)
-        )
-
-        if not closed_loop and not (head_open and tail_open):
-            return None
-
-        return chain
+        return self._editor.get_drag_chain(self._sections, index)
 
     def _can_drag_node(self, section: SectionPreview, endtype: str) -> bool:
-        if section.type_name == "straight":
-            return self._can_drag_section_node(section) or self._is_disconnected_endpoint(
-                section, endtype
-            )
-        if section.type_name == "curve":
-            return self._is_disconnected_endpoint(section, endtype)
-        return False
+        return self._editor.can_drag_node(self._sections, section, endtype)
 
 
 
@@ -1030,30 +920,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         return None
 
-    def _connect_new_section(
-        self,
-        sections: list[SectionPreview],
-        new_section: SectionPreview,
-        connection: tuple[int, str] | None,
-    ) -> tuple[list[SectionPreview], SectionPreview]:
-        if connection is None:
-            return sections, new_section
-
-        neighbor_index, endtype = connection
-        if neighbor_index < 0 or neighbor_index >= len(sections):
-            return sections, new_section
-
-        neighbor = sections[neighbor_index]
-        if endtype == "end":
-            new_section = replace(new_section, previous_id=neighbor_index)
-            neighbor = replace(neighbor, next_id=new_section.section_id)
-        else:
-            new_section = replace(new_section, next_id=neighbor_index)
-            neighbor = replace(neighbor, previous_id=new_section.section_id)
-
-        sections[neighbor_index] = neighbor
-        return sections, new_section
-
     def _set_new_straight_active(self, active: bool) -> None:
         if self._new_straight_active == active:
             return
@@ -1118,40 +984,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return True
 
     def _delete_section(self, index: int) -> None:
-        if not self._sections or index < 0 or index >= len(self._sections):
+        new_sections, track_length, status = self._editor.delete_section(
+            list(self._sections), index
+        )
+        if not status:
             return
 
-        removed_id = self._sections[index].section_id
-        removed_targets = {removed_id, index}
-        survivors = [sect for idx, sect in enumerate(self._sections) if idx != index]
-        id_mapping = {sect.section_id: new_idx for new_idx, sect in enumerate(survivors)}
-
-        new_sections: list[SectionPreview] = []
-        cursor = 0.0
-        for sect in survivors:
-            new_prev = -1
-            if sect.previous_id not in (None, -1) and sect.previous_id not in removed_targets:
-                new_prev = id_mapping.get(sect.previous_id, -1)
-
-            new_next = -1
-            if sect.next_id not in (None, -1) and sect.next_id not in removed_targets:
-                new_next = id_mapping.get(sect.next_id, -1)
-
-            new_index = id_mapping.get(sect.section_id, -1)
-            updated_section = replace(
-                sect,
-                section_id=new_index,
-                previous_id=new_prev,
-                next_id=new_next,
-                start_dlong=cursor,
-            )
-            new_sections.append(update_section_geometry(updated_section))
-            cursor += float(updated_section.length)
-
-        self._track_length = cursor if new_sections else None
+        self._track_length = track_length
         self.set_sections(new_sections)
         self._selection.set_selected_section(None)
-        self._status_message = f"Deleted section #{index}."
+        self._status_message = status
         self._set_delete_section_active(False)
 
     def get_section_set(self) -> tuple[list[SectionPreview], float | None]:

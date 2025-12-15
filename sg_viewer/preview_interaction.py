@@ -209,26 +209,10 @@ class PreviewInteraction:
             self._start_node_drag(node, pos)
             return True
 
-        if endtype == "start":
-            prev_id = sect.previous_id
-            sect = replace(sect, previous_id=-1)
-            self._widget._sections[sect_index] = sect
-
-            if 0 <= prev_id < len(self._widget._sections):
-                prev_sect = self._widget._sections[prev_id]
-                prev_sect = replace(prev_sect, next_id=-1)
-                self._widget._sections[prev_id] = prev_sect
-        else:
-            next_id = sect.next_id
-            sect = replace(sect, next_id=-1)
-            self._widget._sections[sect_index] = sect
-
-            if 0 <= next_id < len(self._widget._sections):
-                next_sect = self._widget._sections[next_id]
-                next_sect = replace(next_sect, previous_id=-1)
-                self._widget._sections[next_id] = next_sect
-
-        self._apply_section_updates(list(self._widget._sections))
+        updated_sections = self._widget._editor.disconnect_neighboring_section(
+            list(self._widget._sections), sect_index, endtype
+        )
+        self._apply_section_updates(updated_sections)
         return True
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
