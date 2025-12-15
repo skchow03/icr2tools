@@ -8,6 +8,7 @@ from sg_viewer.preview_interactions_create import (
     CurveCreationInteraction,
     StraightCreationInteraction,
 )
+from sg_viewer.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.preview_state_controller import PreviewStateController
 from sg_viewer.selection import SelectionManager
 from sg_viewer.sg_geometry import update_section_geometry
@@ -245,7 +246,7 @@ class PreviewEditor:
 
         section = sections[index]
         neighbor_index = section.previous_id if direction == "previous" else section.next_id
-        if self._is_invalid_id(sections, neighbor_index):
+        if is_invalid_id(sections, neighbor_index):
             return None
 
         neighbor = sections[neighbor_index]
@@ -284,8 +285,8 @@ class PreviewEditor:
 
         head = sections[chain[0]]
         tail = sections[chain[-1]]
-        head_open = self._is_invalid_id(sections, head.previous_id)
-        tail_open = self._is_invalid_id(sections, tail.next_id)
+        head_open = is_invalid_id(sections, head.previous_id)
+        tail_open = is_invalid_id(sections, tail.next_id)
 
         closed_loop = (
             not head_open
@@ -303,8 +304,8 @@ class PreviewEditor:
     def can_drag_section_node(self, sections: list[SectionPreview], section: SectionPreview) -> bool:
         return (
             section.type_name == "straight"
-            and self._is_invalid_id(sections, section.previous_id)
-            and self._is_invalid_id(sections, section.next_id)
+            and is_invalid_id(sections, section.previous_id)
+            and is_invalid_id(sections, section.next_id)
         )
 
     def can_drag_section_polyline(
@@ -318,7 +319,7 @@ class PreviewEditor:
             return True
 
         if section.type_name == "curve":
-            return self._is_invalid_id(sections, section.previous_id) and self._is_invalid_id(
+            return is_invalid_id(sections, section.previous_id) and is_invalid_id(
                 sections, section.next_id
             )
         return self.can_drag_section_node(sections, section)
@@ -337,12 +338,10 @@ class PreviewEditor:
     def is_disconnected_endpoint(
         self, sections: list[SectionPreview], section: SectionPreview, endtype: str
     ) -> bool:
-        if endtype == "start":
-            return self._is_invalid_id(sections, section.previous_id)
-        return self._is_invalid_id(sections, section.next_id)
+        return is_disconnected_endpoint(sections, section, endtype)
 
     def is_invalid_id(self, sections: list[SectionPreview], value: int | None) -> bool:
-        return self._is_invalid_id(sections, value)
+        return is_invalid_id(sections, value)
 
     def next_section_start_dlong(self, sections: list[SectionPreview]) -> float:
         return self._next_section_start_dlong(sections)
@@ -355,6 +354,3 @@ class PreviewEditor:
             return 0.0
         last = sections[-1]
         return float(last.start_dlong + last.length)
-
-    def _is_invalid_id(self, sections: list[SectionPreview], value: int | None) -> bool:
-        return value is None or value < 0 or value >= len(sections)
