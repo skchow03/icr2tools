@@ -86,7 +86,7 @@ class StraightCreationInteraction:
             if self.end is None:
                 return True
 
-            self.widget._finalize_new_straight(self.end)
+            self.widget._finalize_new_straight()
 
         event.accept()
         return True
