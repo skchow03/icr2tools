@@ -8,6 +8,7 @@ from PyQt5 import QtCore, QtGui
 
 from sg_viewer.curve_solver import _project_point_along_heading
 from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
+from sg_viewer.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
 
 if TYPE_CHECKING:
     from sg_viewer.preview_widget import SGPreviewWidget
@@ -254,8 +255,8 @@ class PreviewInteraction:
 
         start = sect.start
         end = sect.end
-        disconnected_start = self._widget._is_disconnected_endpoint(sect, "start")
-        disconnected_end = self._widget._is_disconnected_endpoint(sect, "end")
+        disconnected_start = is_disconnected_endpoint(self._widget._sections, sect, "start")
+        disconnected_end = is_disconnected_endpoint(self._widget._sections, sect, "end")
         if sect.type_name == "curve":
             if endtype == "start":
                 start = track_point
@@ -398,8 +399,8 @@ class PreviewInteraction:
     # ------------------------------------------------------------------
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
         self._widget._sections = sections
-        self._widget._section_signatures = [self._widget._section_signature(s) for s in sections]
         self._widget._section_endpoints = [(s.start, s.end) for s in sections]
+        self._widget._section_signatures = compute_section_signatures(sections)
 
         points, dlongs, bounds, index = rebuild_centerline_from_sections(self._widget._sections)
         self._widget._centerline_polylines = [s.polyline for s in self._widget._sections]

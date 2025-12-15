@@ -21,6 +21,12 @@ from sg_viewer.preview_editor import PreviewEditor
 from sg_viewer.preview_interaction import PreviewInteraction
 from sg_viewer.preview_interactions_create import PreviewCreationAdapter
 from sg_viewer.preview_state_controller import PreviewStateController
+from sg_viewer.preview_state_utils import (
+    compute_section_signatures,
+    is_disconnected_endpoint,
+    section_signature,
+    update_node_status,
+)
 from sg_viewer.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
@@ -357,7 +363,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._centerline_index = data.centerline_index
         self._track_length = data.track_length
         self._sections = data.sections
-        self._section_signatures = [self._section_signature(sect) for sect in data.sections]
+        self._section_signatures = compute_section_signatures(data.sections)
         self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
@@ -516,31 +522,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return self._background.image is not None
 
     def _update_node_status(self) -> None:
-        """
-        Determine node colors directly from section connectivity.
-        A node is green if it has a valid neighbor via prev_id or next_id.
-        A node is orange if that endpoint is not connected to another section.
-        """
-        self._node_status.clear()
-
-        sections = self._sections
-        if not sections:
-            return
-
-        total = len(sections)
-
-        for i, sect in enumerate(sections):
-            # Start node color
-            if self._editor.is_disconnected_endpoint(sections, sect, "start"):
-                self._node_status[(i, "start")] = "orange"
-            else:
-                self._node_status[(i, "start")] = "green"
-
-            # End node color
-            if self._editor.is_disconnected_endpoint(sections, sect, "end"):
-                self._node_status[(i, "end")] = "orange"
-            else:
-                self._node_status[(i, "end")] = "green"
+        """Update cached node colors directly from section connectivity."""
+        update_node_status(self._sections, self._node_status)
 
     def _build_node_positions(self):
         pos = {}
@@ -548,12 +531,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
             pos[(i, "start")] = sect.start
             pos[(i, "end")] = sect.end
         return pos
-
-    def _is_invalid_id(self, value: int | None) -> bool:
-        return self._editor.is_invalid_id(self._sections, value)
-
-    def _is_disconnected_endpoint(self, section: SectionPreview, endtype: str) -> bool:
-        return self._editor.is_disconnected_endpoint(self._sections, section, endtype)
 
     def _can_drag_section_node(self, section: SectionPreview) -> bool:
         return self._editor.can_drag_section_node(self._sections, section)
@@ -853,7 +830,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         for i, section in enumerate(self._sections):
             for endtype in ("start", "end"):
-                if not self._is_disconnected_endpoint(section, endtype):
+                if not is_disconnected_endpoint(self._sections, section, endtype):
                     continue
 
                 world_point = section.start if endtype == "start" else section.end
@@ -950,25 +927,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._sections), track_length
 
-    @staticmethod
-    def _section_signature(section: SectionPreview) -> tuple:
-        return (
-            section.section_id,
-            section.type_name,
-            section.previous_id,
-            section.next_id,
-            section.start,
-            section.end,
-            section.start_dlong,
-            section.length,
-            section.center,
-            section.sang1,
-            section.sang2,
-            section.eang1,
-            section.eang2,
-            section.radius,
-        )
-
     def set_sections(self, sections: list[SectionPreview]) -> None:
         previous_signatures = self._section_signatures
 
@@ -977,7 +935,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         changed_indices: list[int] = []
 
         for idx, sect in enumerate(sections):
-            signature = self._section_signature(sect)
+            signature = section_signature(sect)
             new_signatures.append(signature)
             prev_signature = previous_signatures[idx] if idx < len(previous_signatures) else None
 
