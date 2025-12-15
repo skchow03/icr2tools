@@ -13,7 +13,6 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.models import preview_state, selection
-from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import (
     CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
     curve_angles,
@@ -39,7 +38,7 @@ Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
 
-class SGPreviewWidget(QtWidgets.QWidget, PreviewContext):
+class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
 
     selectedSectionChanged = QtCore.pyqtSignal(object)
