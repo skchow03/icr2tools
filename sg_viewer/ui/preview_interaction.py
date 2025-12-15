@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from PyQt5 import QtCore, QtGui
 
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 from sg_viewer.models.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
+from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
 
 if TYPE_CHECKING:
-    from sg_viewer.ui.preview_widget import SGPreviewWidget
-    from sg_viewer.ui.preview_state_controller import PreviewStateController
     from sg_viewer.models.selection import SelectionManager
     from sg_viewer.models.sg_model import SectionPreview
+    from sg_viewer.ui.preview_editor import PreviewEditor
+    from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 
 
 Point = tuple[float, float]
@@ -24,13 +25,21 @@ Point = tuple[float, float]
 class PreviewInteraction:
     def __init__(
         self,
-        widget: "SGPreviewWidget",
-        controller: "PreviewStateController",
+        context: PreviewContext,
         selection: "SelectionManager",
+        section_manager: "PreviewSectionManager",
+        editor: "PreviewEditor",
+        set_sections: Callable[[list["SectionPreview"]], None],
+        node_radius_px: int,
+        stop_panning: Callable[[], None],
     ) -> None:
-        self._widget = widget
-        self._controller = controller
+        self._context = context
         self._selection = selection
+        self._section_manager = section_manager
+        self._editor = editor
+        self._set_sections = set_sections
+        self._node_radius_px = node_radius_px
+        self._stop_panning = stop_panning
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -124,15 +133,15 @@ class PreviewInteraction:
     def _hit_test_node(
         self, pos: QtCore.QPoint, preferred_index: int | None
     ) -> tuple[int, str] | None:
-        widget_size = (self._widget.width(), self._widget.height())
-        transform = self._controller.current_transform(widget_size)
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
         if transform is None:
             return None
 
         scale, offsets = transform
         ox, oy = offsets
-        widget_height = self._widget.height()
-        radius = self._widget._node_radius_px
+        widget_height = self._context.widget_height()
+        radius = self._node_radius_px
         r2 = radius * radius
 
         def _sorted_indices(total: int, prefer: int | None) -> list[int]:
@@ -143,7 +152,7 @@ class PreviewInteraction:
             indices.insert(0, prefer)
             return indices
 
-        sections = self._widget._section_manager.sections
+        sections = self._section_manager.sections
         if not sections:
             return None
 
@@ -170,21 +179,23 @@ class PreviewInteraction:
             return None
 
         index = self._selection.selected_section_index
-        sections = self._widget._section_manager.sections
+        sections = self._section_manager.sections
         if not sections or index < 0 or index >= len(sections):
             return None
 
         section = sections[index]
-        if not self._widget._can_drag_section_polyline(section, index):
+        if not self._editor.can_drag_section_polyline(
+            self._section_manager.sections, section, index
+        ):
             return None
 
-        widget_size = (self._widget.width(), self._widget.height())
-        transform = self._controller.current_transform(widget_size)
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
         if transform is None:
             return None
 
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self._widget.height(), transform
+        track_point = self._context.map_to_track(
+            (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
         )
         if track_point is None:
             return None
@@ -205,48 +216,46 @@ class PreviewInteraction:
         self, node: tuple[int, str], pos: QtCore.QPoint
     ) -> bool:
         sect_index, endtype = node
-        sections = self._widget._section_manager.sections
+        sections = self._section_manager.sections
         if sect_index < 0 or sect_index >= len(sections):
             return False
 
         sect = sections[sect_index]
-        if self._widget._can_drag_node(sect, endtype):
+        if self._editor.can_drag_node(self._section_manager.sections, sect, endtype):
             self._start_node_drag(node, pos)
             return True
 
-        updated_sections = self._widget._editor.disconnect_neighboring_section(
+        updated_sections = self._editor.disconnect_neighboring_section(
             list(sections), sect_index, endtype
         )
         self._apply_section_updates(updated_sections)
         return True
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
-        widget_size = (self._widget.width(), self._widget.height())
-        transform = self._controller.current_transform(widget_size)
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self._widget.height(), transform
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
+        track_point = self._context.map_to_track(
+            (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
         )
         if track_point is None:
             return
         self._active_node = node
         self._is_dragging_node = True
-        self._widget._is_panning = False
-        self._widget._press_pos = None
-        self._widget._last_mouse_pos = None
+        self._stop_panning()
         self._update_dragged_section(track_point)
 
     def _update_drag_position(self, pos: QtCore.QPoint) -> None:
-        widget_size = (self._widget.width(), self._widget.height())
-        transform = self._controller.current_transform(widget_size)
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self._widget.height(), transform
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
+        track_point = self._context.map_to_track(
+            (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
         )
         if track_point is None or self._active_node is None:
             return
         self._update_dragged_section(track_point)
 
     def _update_dragged_section(self, track_point: Point) -> None:
-        sections = self._widget._section_manager.sections
+        sections = self._section_manager.sections
         if self._active_node is None or not sections:
             return
 
@@ -255,7 +264,7 @@ class PreviewInteraction:
             return
 
         sect = sections[sect_index]
-        if not self._widget._can_drag_node(sect, endtype):
+        if not self._editor.can_drag_node(self._section_manager.sections, sect, endtype):
             return
 
         start = sect.start
@@ -310,14 +319,16 @@ class PreviewInteraction:
         if self._selection.selected_section_index is None:
             return
         index = self._selection.selected_section_index
-        sections = self._widget._section_manager.sections
+        sections = self._section_manager.sections
         if index < 0 or index >= len(sections):
             return
         sect = sections[index]
-        if not self._widget._can_drag_section_polyline(sect, index):
+        if not self._editor.can_drag_section_polyline(
+            self._section_manager.sections, sect, index
+        ):
             return
 
-        chain_indices = self._widget._get_drag_chain(index)
+        chain_indices = self._editor.get_drag_chain(self._section_manager.sections, index)
         if chain_indices is None:
             return
 
@@ -328,22 +339,20 @@ class PreviewInteraction:
         self._section_drag_center = sect.center
         self._chain_drag_origins = {
             i: (
-                self._widget._section_manager.sections[i].start,
-                self._widget._section_manager.sections[i].end,
-                self._widget._section_manager.sections[i].center,
+                self._section_manager.sections[i].start,
+                self._section_manager.sections[i].end,
+                self._section_manager.sections[i].center,
             )
             for i in chain_indices
         }
         self._is_dragging_section = True
-        self._widget._is_panning = False
-        self._widget._press_pos = None
-        self._widget._last_mouse_pos = None
+        self._stop_panning()
 
     def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
-        widget_size = (self._widget.width(), self._widget.height())
-        transform = self._controller.current_transform(widget_size)
-        track_point = self._controller.map_to_track(
-            QtCore.QPointF(pos), widget_size, self._widget.height(), transform
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
+        track_point = self._context.map_to_track(
+            (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
         )
         if track_point is None:
             return
@@ -360,11 +369,13 @@ class PreviewInteraction:
             return
 
         index = self._active_section_index
-        sections = self._widget._section_manager.sections
+        sections = self._section_manager.sections
         if index < 0 or index >= len(sections):
             return
         sect = sections[index]
-        if not self._widget._can_drag_section_polyline(sect, index):
+        if not self._editor.can_drag_section_polyline(
+            self._section_manager.sections, sect, index
+        ):
             return
 
         dx = track_point[0] - self._section_drag_origin[0]
@@ -409,7 +420,7 @@ class PreviewInteraction:
     # Utilities
     # ------------------------------------------------------------------
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
-        self._widget.set_sections(sections)
+        self._set_sections(sections)
 
     def _project_point_along_heading(
         self, origin: Point, heading: tuple[float, float] | None, target: Point
