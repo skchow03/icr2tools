@@ -24,8 +24,13 @@ from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.ui.elevation_profile import ElevationProfileData
 from sg_viewer.ui.preview_editor import PreviewEditor
+from sg_viewer.preview.creation_controller import (
+    CreationController,
+    CreationEvent,
+    CreationEventContext,
+    CreationUpdate,
+)
 from sg_viewer.ui.preview_interaction import PreviewInteraction
-from sg_viewer.ui.preview_interactions_create import PreviewCreationAdapter
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
@@ -81,12 +86,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selection.selectionChanged.connect(self._on_selection_changed)
 
         self._interaction = PreviewInteraction(self, self._controller, self._selection)
-        self._creation_interactions = PreviewCreationAdapter(self)
+        self._creation_controller = CreationController()
+        self._straight_creation = self._creation_controller.straight_interaction
+        self._curve_creation = self._creation_controller.curve_interaction
         self._editor = PreviewEditor(
             self._controller,
             self._selection,
-            self._creation_interactions.straight,
-            self._creation_interactions.curve,
+            self._straight_creation,
+            self._curve_creation,
         )
 
         self._show_curve_markers = True
@@ -94,8 +101,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
-        self._straight_creation = self._creation_interactions.straight
-        self._curve_creation = self._creation_interactions.curve
         self._has_unsaved_changes = False
 
         self._set_default_view_bounds()
@@ -168,94 +173,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._controller.status_message = value
 
     @property
-    def _new_straight_active(self) -> bool:
-        return self._straight_creation.active
-
-    @_new_straight_active.setter
-    def _new_straight_active(self, value: bool) -> None:
-        self._straight_creation.active = value
-
-    @property
-    def _new_straight_start(self) -> Point | None:
-        return self._straight_creation.start
-
-    @_new_straight_start.setter
-    def _new_straight_start(self, value: Point | None) -> None:
-        self._straight_creation.start = value
-
-    @property
-    def _new_straight_end(self) -> Point | None:
-        return self._straight_creation.end
-
-    @_new_straight_end.setter
-    def _new_straight_end(self, value: Point | None) -> None:
-        self._straight_creation.end = value
-
-    @property
-    def _new_straight_heading(self) -> tuple[float, float] | None:
-        return self._straight_creation.heading
-
-    @_new_straight_heading.setter
-    def _new_straight_heading(self, value: tuple[float, float] | None) -> None:
-        self._straight_creation.heading = value
-
-    @property
-    def _new_straight_connection(self) -> tuple[int, str] | None:
-        return self._straight_creation.connection
-
-    @_new_straight_connection.setter
-    def _new_straight_connection(self, value: tuple[int, str] | None) -> None:
-        self._straight_creation.connection = value
-
-    @property
-    def _new_curve_active(self) -> bool:
-        return self._curve_creation.active
-
-    @_new_curve_active.setter
-    def _new_curve_active(self, value: bool) -> None:
-        self._curve_creation.active = value
-
-    @property
-    def _new_curve_start(self) -> Point | None:
-        return self._curve_creation.start
-
-    @_new_curve_start.setter
-    def _new_curve_start(self, value: Point | None) -> None:
-        self._curve_creation.start = value
-
-    @property
-    def _new_curve_end(self) -> Point | None:
-        return self._curve_creation.end
-
-    @_new_curve_end.setter
-    def _new_curve_end(self, value: Point | None) -> None:
-        self._curve_creation.end = value
-
-    @property
-    def _new_curve_heading(self) -> tuple[float, float] | None:
-        return self._curve_creation.heading
-
-    @_new_curve_heading.setter
-    def _new_curve_heading(self, value: tuple[float, float] | None) -> None:
-        self._curve_creation.heading = value
-
-    @property
-    def _new_curve_preview(self) -> SectionPreview | None:
-        return self._curve_creation.preview
-
-    @_new_curve_preview.setter
-    def _new_curve_preview(self, value: SectionPreview | None) -> None:
-        self._curve_creation.preview = value
-
-    @property
-    def _new_curve_connection(self) -> tuple[int, str] | None:
-        return self._curve_creation.connection
-
-    @_new_curve_connection.setter
-    def _new_curve_connection(self, value: tuple[int, str] | None) -> None:
-        self._curve_creation.connection = value
-
-    @property
     def _transform_state(self) -> preview_state.TransformState:
         return self._controller.transform_state
 
@@ -290,10 +207,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = None
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
-        self._creation_interactions.reset()
+        self._apply_creation_update(self._creation_controller.reset())
         self._editor.reset()
-        self._set_new_straight_active(False)
-        self._set_new_curve_active(False)
         self._is_panning = False
         self._last_mouse_pos = None
         self._press_pos = None
@@ -334,9 +249,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = data.track_length
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
-        self._creation_interactions.reset()
-        self._set_new_straight_active(False)
-        self._set_new_curve_active(False)
+        self._apply_creation_update(self._creation_controller.reset())
         self._status_message = data.status_message
         self._selection.reset(
             self._section_manager.sections,
@@ -372,10 +285,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # New straight creation
     # ------------------------------------------------------------------
     def begin_new_straight(self) -> bool:
-        return self._straight_creation.begin()
+        update = self._creation_controller.begin_new_straight(
+            bool(self._sampled_bounds)
+        )
+        self._apply_creation_update(update)
+        return update.handled
 
     def begin_new_curve(self) -> bool:
-        return self._curve_creation.begin()
+        update = self._creation_controller.begin_new_curve(bool(self._sampled_bounds))
+        self._apply_creation_update(update)
+        return update.handled
 
     def _finalize_new_straight(self) -> None:
         updated_sections, track_length, new_index, status = self._editor.finalize_new_straight(
@@ -387,13 +306,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = track_length
         self.set_sections(updated_sections)
         self._selection.set_selected_section(new_index)
-        self._set_new_straight_active(False)
-        self._new_straight_start = None
-        self._new_straight_end = None
-        self._new_straight_heading = None
-        self._new_straight_connection = None
-        if status:
-            self._status_message = status
+        self._apply_creation_update(self._creation_controller.finish_straight(status))
 
     def _finalize_new_curve(self) -> None:
         updated_sections, track_length, new_index, status = self._editor.finalize_new_curve(
@@ -405,14 +318,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = track_length
         self.set_sections(updated_sections)
         self._selection.set_selected_section(new_index)
-        self._set_new_curve_active(False)
-        self._new_curve_start = None
-        self._new_curve_end = None
-        self._new_curve_heading = None
-        self._new_curve_preview = None
-        self._new_curve_connection = None
-        if status:
-            self._status_message = status
+        self._apply_creation_update(self._creation_controller.finish_curve(status))
 
     def _next_section_start_dlong(self) -> float:
         return self._editor.next_section_start_dlong(self._section_manager.sections)
@@ -442,8 +348,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         if active:
-            self._set_new_straight_active(False)
-            self._set_new_curve_active(False)
+            self._apply_creation_update(
+                self._creation_controller.deactivate_creation()
+            )
         self.deleteModeChanged.emit(active)
 
     def set_background_settings(
@@ -511,6 +418,96 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._section_manager.sections, section, endtype
         )
 
+    def _creation_context(self) -> CreationEventContext | None:
+        widget_size = (self.width(), self.height())
+        transform = self._controller.current_transform(widget_size)
+        if transform is None:
+            return None
+
+        def map_to_track(point: tuple[float, float]) -> Point | None:
+            return self._controller.map_to_track(
+                QtCore.QPointF(*point), widget_size, self.height(), transform
+            )
+
+        def find_unconnected_node(
+            point: tuple[float, float],
+        ) -> tuple[int, str, Point, tuple[float, float] | None] | None:
+            return find_unconnected_node_hit(
+                point,
+                self._section_manager.sections,
+                transform,
+                self.height(),
+                self._node_radius_px,
+            )
+
+        return CreationEventContext(
+            map_to_track=map_to_track, find_unconnected_node=find_unconnected_node
+        )
+
+    def _apply_creation_update(self, update: CreationUpdate) -> None:
+        if update is None:
+            return
+        if update.stop_panning:
+            self._is_panning = False
+            self._last_mouse_pos = None
+            self._press_pos = None
+        if update.status_changed:
+            self._status_message = self._creation_controller.status_text
+        if update.straight_mode_changed:
+            if self._creation_controller.straight_active:
+                self._set_delete_section_active(False)
+            self.newStraightModeChanged.emit(self._creation_controller.straight_active)
+        if update.curve_mode_changed:
+            if self._creation_controller.curve_active:
+                self._set_delete_section_active(False)
+            self.newCurveModeChanged.emit(self._creation_controller.curve_active)
+        if update.finalize_straight:
+            self._finalize_new_straight()
+        if update.finalize_curve:
+            self._finalize_new_curve()
+        if update.repaint:
+            self.update()
+
+    def _creation_active(self) -> bool:
+        return self._creation_controller.straight_active or self._creation_controller.curve_active
+
+    def _handle_creation_mouse_press(self, event: QtGui.QMouseEvent) -> bool:
+        context = self._creation_context()
+        if context is None:
+            return False
+
+        button = "left" if event.button() == QtCore.Qt.LeftButton else None
+        creation_event = CreationEvent(
+            pos=(event.pos().x(), event.pos().y()), button=button
+        )
+        update = self._creation_controller.handle_mouse_press(creation_event, context)
+        self._apply_creation_update(update)
+        return update.handled
+
+    def _handle_creation_mouse_move(self, pos: QtCore.QPoint) -> bool:
+        context = self._creation_context()
+        if context is None:
+            return False
+
+        update = self._creation_controller.handle_mouse_move(
+            (pos.x(), pos.y()), context
+        )
+        self._apply_creation_update(update)
+        return update.handled
+
+    def _handle_creation_mouse_release(self, event: QtGui.QMouseEvent) -> bool:
+        context = self._creation_context()
+        if context is None:
+            return False
+
+        button = "left" if event.button() == QtCore.Qt.LeftButton else None
+        creation_event = CreationEvent(
+            pos=(event.pos().x(), event.pos().y()), button=button
+        )
+        update = self._creation_controller.handle_mouse_release(creation_event, context)
+        self._apply_creation_update(update)
+        return update.handled
+
 
 
     # ------------------------------------------------------------------
@@ -536,6 +533,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 node_radius_px=self._node_radius_px,
             )
 
+        creation_preview = self._creation_controller.preview_sections()
+
         preview_painter.paint_preview(
             painter,
             preview_painter.BasePreviewState(
@@ -556,13 +555,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 status_message=self._status_message,
             ),
             preview_painter.CreationOverlayState(
-                new_straight_active=self._new_straight_active,
-                new_straight_start=self._new_straight_start,
-                new_straight_end=self._new_straight_end,
-                new_curve_active=self._new_curve_active,
-                new_curve_start=self._new_curve_start,
-                new_curve_end=self._new_curve_end,
-                new_curve_preview=self._new_curve_preview,
+                new_straight_active=creation_preview.new_straight_active,
+                new_straight_start=creation_preview.new_straight_start,
+                new_straight_end=creation_preview.new_straight_end,
+                new_curve_active=creation_preview.new_curve_active,
+                new_curve_start=creation_preview.new_curve_start,
+                new_curve_end=creation_preview.new_curve_end,
+                new_curve_preview=creation_preview.new_curve_preview,
             ),
             node_state,
             transform,
@@ -593,7 +592,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._creation_interactions.handle_mouse_press(event):
+        if self._handle_creation_mouse_press(event):
             return
 
         if self._delete_section_active and event.button() == QtCore.Qt.LeftButton:
@@ -606,7 +605,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 # ---------------------------------------------------------
 # NEW: Node disconnect only if that section is selected
 # ---------------------------------------------------------
-        if self._creation_interactions.is_active():
+        if self._creation_active():
             event.accept()
             return
 
@@ -635,11 +634,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._creation_interactions.handle_mouse_move(event.pos()):
+        if self._handle_creation_mouse_move(event.pos()):
             event.accept()
             return
 
-        if self._creation_interactions.is_active():
+        if self._creation_active():
             event.accept()
             return
 
@@ -673,6 +672,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._handle_creation_mouse_release(event):
+            return
+
         if event.button() == QtCore.Qt.LeftButton:
             if self._delete_section_active:
                 if (
@@ -683,7 +685,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._press_pos = None
                 event.accept()
                 return
-            if self._creation_interactions.is_active():
+            if self._creation_active():
                 event.accept()
                 return
             if self._interaction.handle_mouse_release(event):
@@ -715,41 +717,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     # Selection
     # ------------------------------------------------------------------
-
-    def _unconnected_node_hit(
-        self, pos: QtCore.QPoint
-    ) -> tuple[int, str, Point, tuple[float, float] | None] | None:
-        widget_size = (self.width(), self.height())
-        transform = self._controller.current_transform(widget_size)
-        return find_unconnected_node_hit(
-            (pos.x(), pos.y()),
-            self._section_manager.sections,
-            transform,
-            self.height(),
-            self._node_radius_px,
-        )
-
-    def _set_new_straight_active(self, active: bool) -> None:
-        if self._new_straight_active == active:
-            return
-
-        self._new_straight_active = active
-        if active:
-            self._set_delete_section_active(False)
-        else:
-            self._new_straight_connection = None
-        self.newStraightModeChanged.emit(active)
-
-    def _set_new_curve_active(self, active: bool) -> None:
-        if self._new_curve_active == active:
-            return
-
-        self._new_curve_active = active
-        if active:
-            self._set_delete_section_active(False)
-        else:
-            self._new_curve_connection = None
-        self.newCurveModeChanged.emit(active)
 
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         if self._delete_section_active and self._handle_delete_click(pos):

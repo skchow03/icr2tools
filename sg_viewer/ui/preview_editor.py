@@ -4,7 +4,7 @@ import math
 from dataclasses import replace
 from typing import Iterable
 
-from sg_viewer.ui.preview_interactions_create import (
+from sg_viewer.preview.creation_controller import (
     CurveCreationInteraction,
     StraightCreationInteraction,
 )
