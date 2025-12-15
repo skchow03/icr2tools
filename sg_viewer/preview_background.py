@@ -5,7 +5,7 @@ from typing import Tuple
 
 from PyQt5 import QtGui
 
-from sg_viewer import preview_state
+from sg_viewer import preview_transform
 
 Point = Tuple[float, float]
 
@@ -67,21 +67,5 @@ class PreviewBackground:
     def fit_view(
         self, sampled_bounds: tuple[float, float, float, float] | None, widget_size: tuple[int, int]
     ) -> tuple[float, Point, tuple[float, float, float, float]] | None:
-        background_bounds = self.bounds()
-        if background_bounds is None:
-            return None
-
-        active_bounds = background_bounds
-        if sampled_bounds:
-            active_bounds = self.combine_bounds(sampled_bounds)
-
-        fit_scale = preview_state.calculate_fit_scale(active_bounds, widget_size)
-        if fit_scale is None:
-            return None
-
-        center = (
-            (active_bounds[0] + active_bounds[1]) / 2,
-            (active_bounds[2] + active_bounds[3]) / 2,
-        )
-        return fit_scale, center, active_bounds
+        return preview_transform.fit_view(sampled_bounds, self.bounds(), widget_size)
 

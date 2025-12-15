@@ -14,7 +14,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
-from sg_viewer import preview_state
+from sg_viewer import preview_state, preview_transform
 from sg_viewer import preview_painter, selection
 from sg_viewer.preview_background import PreviewBackground
 from sg_viewer.preview_editor import PreviewEditor
@@ -32,9 +32,6 @@ logger = logging.getLogger(__name__)
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
-
-MILE_IN_500THS = 63_360 * 500
-DEFAULT_VIEW_HALF_SPAN_500THS = MILE_IN_500THS  # 1 mile to either side = 2 miles wide
 
 
 def _curve_angles(
@@ -304,13 +301,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return self._editor.delete_section_active
 
     def _update_fit_scale(self) -> None:
-        previous = self._transform_state
-        new_state = self._controller.update_fit_scale((self.width(), self.height()))
-        if (
-            new_state.current_scale is not None
-            and new_state.current_scale != previous.current_scale
-        ):
-            self.scaleChanged.emit(new_state.current_scale)
+        new_state = preview_transform.update_fit_scale(
+            self._transform_state,
+            self._sampled_bounds,
+            (self.width(), self.height()),
+        )
+        self._transform_state = new_state
 
 
     def clear(self, message: str | None = None) -> None:
@@ -341,14 +337,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def _set_default_view_bounds(self) -> None:
-        half_span = DEFAULT_VIEW_HALF_SPAN_500THS
-        default_bounds = (
-            -float(half_span),
-            float(half_span),
-            -float(half_span),
-            float(half_span),
-        )
-        self._sampled_bounds = default_bounds
+        self._sampled_bounds = preview_transform.default_bounds()
 
     # ------------------------------------------------------------------
     # Loading
@@ -362,7 +351,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._cline = data.cline
         self._centerline_polylines = [sect.polyline for sect in data.sections]
         self._sampled_dlongs = data.sampled_dlongs
-        self._sampled_bounds = data.sampled_bounds
+        self._sampled_bounds = preview_transform.active_bounds(
+            data.sampled_bounds, self._background.bounds()
+        )
         self._centerline_index = data.centerline_index
         self._track_length = data.track_length
         self._sections = data.sections
@@ -499,7 +490,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _combine_bounds_with_background(
         self, bounds: tuple[float, float, float, float]
     ) -> tuple[float, float, float, float]:
-        return self._background.combine_bounds(bounds)
+        return preview_transform.active_bounds(bounds, self._background.bounds())
 
     def _fit_view_to_background(self) -> None:
         result = self._background.fit_view(
