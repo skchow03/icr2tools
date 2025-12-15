@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import replace
-import logging
 from pathlib import Path
 from typing import List, Tuple
 
@@ -16,6 +16,7 @@ from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.elevation_profile import ElevationProfileData
 from sg_viewer import preview_state
 from sg_viewer import rendering_service, selection
+from sg_viewer.preview_background import PreviewBackground
 from sg_viewer.preview_interaction import PreviewInteraction
 from sg_viewer.preview_interactions_create import PreviewCreationAdapter
 from sg_viewer.preview_state_controller import PreviewStateController
@@ -89,10 +90,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._controller = PreviewStateController()
 
-        self._background_image: QtGui.QImage | None = None
-        self._background_image_path: Path | None = None
-        self._background_scale_500ths_per_px: float = 1.0
-        self._background_origin: Point = (0.0, 0.0)
+        self._background = PreviewBackground()
 
         self._cline: List[Point] | None = None
         self._centerline_polylines: list[list[Point]] = []
@@ -388,20 +386,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def load_background_image(self, path: Path) -> None:
-        image = QtGui.QImage(str(path))
-        if image.isNull():
-            raise ValueError(f"Unable to load image from {path}")
-
-        self._background_image = image
-        self._background_image_path = path
+        self._background.load_image(path)
         self._fit_view_to_background()
         self.update()
 
     def clear_background_image(self) -> None:
-        self._background_image = None
-        self._background_image_path = None
-        self._background_scale_500ths_per_px = 1.0
-        self._background_origin = (0.0, 0.0)
+        self._background.clear()
         self.update()
 
     # ------------------------------------------------------------------
@@ -532,64 +522,31 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def set_background_settings(
         self, scale_500ths_per_px: float, origin: Point
     ) -> None:
-        self._background_scale_500ths_per_px = scale_500ths_per_px
-        self._background_origin = origin
+        self._background.scale_500ths_per_px = scale_500ths_per_px
+        self._background.origin = origin
         self._fit_view_to_background()
         self.update()
 
     def get_background_settings(self) -> tuple[float, Point]:
-        return self._background_scale_500ths_per_px, self._background_origin
+        return self._background.scale_500ths_per_px, self._background.origin
 
     def _background_bounds(self) -> tuple[float, float, float, float] | None:
-        if self._background_image is None:
-            return None
-
-        scale = self._background_scale_500ths_per_px
-        if scale <= 0:
-            return None
-
-        origin_x, origin_y = self._background_origin
-        return (
-            origin_x,
-            origin_x + self._background_image.width() * scale,
-            origin_y,
-            origin_y + self._background_image.height() * scale,
-        )
+        return self._background.bounds()
 
     def _combine_bounds_with_background(
         self, bounds: tuple[float, float, float, float]
     ) -> tuple[float, float, float, float]:
-        background_bounds = self._background_bounds()
-        if background_bounds is None:
-            return bounds
-
-        min_x = min(bounds[0], background_bounds[0])
-        max_x = max(bounds[1], background_bounds[1])
-        min_y = min(bounds[2], background_bounds[2])
-        max_y = max(bounds[3], background_bounds[3])
-        return (min_x, max_x, min_y, max_y)
+        return self._background.combine_bounds(bounds)
 
     def _fit_view_to_background(self) -> None:
-        background_bounds = self._background_bounds()
-        if background_bounds is None:
+        result = self._background.fit_view(
+            self._sampled_bounds, (self.width(), self.height())
+        )
+        if result is None:
             return
 
-        active_bounds = background_bounds
-        if self._sampled_bounds:
-            active_bounds = self._combine_bounds_with_background(self._sampled_bounds)
-
+        fit_scale, center, active_bounds = result
         self._sampled_bounds = active_bounds
-
-        fit_scale = preview_state.calculate_fit_scale(
-            active_bounds, (self.width(), self.height())
-        )
-        if fit_scale is None:
-            return
-
-        center = (
-            (active_bounds[0] + active_bounds[1]) / 2,
-            (active_bounds[2] + active_bounds[3]) / 2,
-        )
         self._transform_state = replace(
             self._transform_state,
             fit_scale=fit_scale,
@@ -599,10 +556,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
     def get_background_image_path(self) -> Path | None:
-        return self._background_image_path
+        return self._background.image_path
 
     def has_background_image(self) -> bool:
-        return self._background_image is not None
+        return self._background.image is not None
 
     def _update_node_status(self) -> None:
         """
@@ -754,9 +711,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
             painter,
             self.rect(),
             self.palette().color(QtGui.QPalette.Window),
-            self._background_image,
-            self._background_scale_500ths_per_px,
-            self._background_origin,
+            self._background.image,
+            self._background.scale_500ths_per_px,
+            self._background.origin,
             self._sampled_centerline,
             self._centerline_polylines,
             self._selection.selected_section_points,
