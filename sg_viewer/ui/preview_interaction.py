@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
 from sg_viewer.models.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
+from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
 
 if TYPE_CHECKING:
     from sg_viewer.ui.preview_widget import SGPreviewWidget
@@ -193,7 +194,7 @@ class PreviewInteraction:
             return None
 
         tolerance = 6 / scale
-        if self._widget._distance_to_polyline(track_point, section.polyline) <= tolerance:
+        if distance_to_polyline(track_point, section.polyline) <= tolerance:
             return track_point
         return None
 
@@ -285,7 +286,7 @@ class PreviewInteraction:
                     end = track_point
 
         if sect.type_name == "curve":
-            updated_section = self._widget._solve_curve_drag(sect, start, end)
+            updated_section = solve_curve_drag(sect, start, end)
         else:
             length = math.hypot(end[0] - start[0], end[1] - start[1])
             updated_section = replace(sect, start=start, end=end, length=length)
