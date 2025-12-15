@@ -5,7 +5,7 @@ from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer import rendering_service
+from sg_viewer.services import rendering_service
 from sg_viewer.models.sg_model import SectionPreview
 
 Point = Tuple[float, float]
