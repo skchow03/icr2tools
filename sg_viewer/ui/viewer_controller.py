@@ -7,11 +7,11 @@ from pathlib import Path
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.background_image_dialog import BackgroundImageDialog
-from sg_viewer.history import FileHistory
-from sg_viewer.heading_table_dialog import HeadingTableWindow
-from sg_viewer.sg_model import SectionPreview
-from sg_viewer.section_table_dialog import SectionTableWindow
+from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
+from sg_viewer.models.history import FileHistory
+from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
+from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.ui.section_table_dialog import SectionTableWindow
 
 logger = logging.getLogger(__name__)
 

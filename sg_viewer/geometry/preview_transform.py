@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from sg_viewer import preview_state
+from sg_viewer.models import preview_state
 
 Point = Tuple[float, float]
 Bounds = tuple[float, float, float, float]

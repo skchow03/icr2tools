@@ -6,15 +6,15 @@ from typing import TYPE_CHECKING
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.curve_solver import _project_point_along_heading
-from sg_viewer.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
-from sg_viewer.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
+from sg_viewer.geometry.curve_solver import _project_point_along_heading
+from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
+from sg_viewer.models.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
 
 if TYPE_CHECKING:
-    from sg_viewer.preview_widget import SGPreviewWidget
-    from sg_viewer.preview_state_controller import PreviewStateController
-    from sg_viewer.selection import SelectionManager
-    from sg_viewer.sg_model import SectionPreview
+    from sg_viewer.ui.preview_widget import SGPreviewWidget
+    from sg_viewer.ui.preview_state_controller import PreviewStateController
+    from sg_viewer.models.selection import SelectionManager
+    from sg_viewer.models.sg_model import SectionPreview
 
 
 Point = tuple[float, float]

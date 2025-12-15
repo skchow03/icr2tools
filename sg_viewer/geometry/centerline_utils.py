@@ -4,7 +4,7 @@ from typing import Iterable
 
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import getxyz
-from sg_viewer.sg_model import Point
+from sg_viewer.models.sg_model import Point
 
 
 def compute_centerline_normal_and_tangent(

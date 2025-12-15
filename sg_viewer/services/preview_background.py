@@ -5,7 +5,7 @@ from typing import Tuple
 
 from PyQt5 import QtGui
 
-from sg_viewer import preview_transform
+from sg_viewer.geometry import preview_transform
 
 Point = Tuple[float, float]
 
