@@ -249,7 +249,7 @@ class CurveCreationInteraction:
         start_point = self.start
         heading = self.heading
         template = SectionPreview(
-            section_id=len(self.widget._sections),
+            section_id=len(self.widget._section_manager.sections),
             type_name="curve",
             previous_id=-1,
             next_id=-1,

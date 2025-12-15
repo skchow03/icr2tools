@@ -142,15 +142,16 @@ class PreviewInteraction:
             indices.insert(0, prefer)
             return indices
 
-        if not self._widget._sections:
+        sections = self._widget._section_manager.sections
+        if not sections:
             return None
 
-        for i in _sorted_indices(len(self._widget._sections), preferred_index):
+        for i in _sorted_indices(len(sections), preferred_index):
             for endtype in ("start", "end"):
                 world_point = (
-                    self._widget._sections[i].start
+                    sections[i].start
                     if endtype == "start"
-                    else self._widget._sections[i].end
+                    else sections[i].end
                 )
                 px = ox + world_point[0] * scale
                 py_world = oy + world_point[1] * scale
@@ -168,10 +169,11 @@ class PreviewInteraction:
             return None
 
         index = self._selection.selected_section_index
-        if not self._widget._sections or index < 0 or index >= len(self._widget._sections):
+        sections = self._widget._section_manager.sections
+        if not sections or index < 0 or index >= len(sections):
             return None
 
-        section = self._widget._sections[index]
+        section = sections[index]
         if not self._widget._can_drag_section_polyline(section, index):
             return None
 
@@ -202,16 +204,17 @@ class PreviewInteraction:
         self, node: tuple[int, str], pos: QtCore.QPoint
     ) -> bool:
         sect_index, endtype = node
-        if sect_index < 0 or sect_index >= len(self._widget._sections):
+        sections = self._widget._section_manager.sections
+        if sect_index < 0 or sect_index >= len(sections):
             return False
 
-        sect = self._widget._sections[sect_index]
+        sect = sections[sect_index]
         if self._widget._can_drag_node(sect, endtype):
             self._start_node_drag(node, pos)
             return True
 
         updated_sections = self._widget._editor.disconnect_neighboring_section(
-            list(self._widget._sections), sect_index, endtype
+            list(sections), sect_index, endtype
         )
         self._apply_section_updates(updated_sections)
         return True
@@ -242,21 +245,22 @@ class PreviewInteraction:
         self._update_dragged_section(track_point)
 
     def _update_dragged_section(self, track_point: Point) -> None:
-        if self._active_node is None or not self._widget._sections:
+        sections = self._widget._section_manager.sections
+        if self._active_node is None or not sections:
             return
 
         sect_index, endtype = self._active_node
-        if sect_index < 0 or sect_index >= len(self._widget._sections):
+        if sect_index < 0 or sect_index >= len(sections):
             return
 
-        sect = self._widget._sections[sect_index]
+        sect = sections[sect_index]
         if not self._widget._can_drag_node(sect, endtype):
             return
 
         start = sect.start
         end = sect.end
-        disconnected_start = is_disconnected_endpoint(self._widget._sections, sect, "start")
-        disconnected_end = is_disconnected_endpoint(self._widget._sections, sect, "end")
+        disconnected_start = is_disconnected_endpoint(sections, sect, "start")
+        disconnected_end = is_disconnected_endpoint(sections, sect, "end")
         if sect.type_name == "curve":
             if endtype == "start":
                 start = track_point
@@ -289,7 +293,7 @@ class PreviewInteraction:
         if updated_section is None:
             return
 
-        sections = list(self._widget._sections)
+        sections = list(sections)
         sections[sect_index] = updated_section
         sections[sect_index] = update_section_geometry(sections[sect_index])
         self._apply_section_updates(sections)
@@ -305,9 +309,10 @@ class PreviewInteraction:
         if self._selection.selected_section_index is None:
             return
         index = self._selection.selected_section_index
-        if index < 0 or index >= len(self._widget._sections):
+        sections = self._widget._section_manager.sections
+        if index < 0 or index >= len(sections):
             return
-        sect = self._widget._sections[index]
+        sect = sections[index]
         if not self._widget._can_drag_section_polyline(sect, index):
             return
 
@@ -321,7 +326,11 @@ class PreviewInteraction:
         self._section_drag_start_end = (sect.start, sect.end)
         self._section_drag_center = sect.center
         self._chain_drag_origins = {
-            i: (self._widget._sections[i].start, self._widget._sections[i].end, self._widget._sections[i].center)
+            i: (
+                self._widget._section_manager.sections[i].start,
+                self._widget._section_manager.sections[i].end,
+                self._widget._section_manager.sections[i].center,
+            )
             for i in chain_indices
         }
         self._is_dragging_section = True
@@ -350,16 +359,17 @@ class PreviewInteraction:
             return
 
         index = self._active_section_index
-        if index < 0 or index >= len(self._widget._sections):
+        sections = self._widget._section_manager.sections
+        if index < 0 or index >= len(sections):
             return
-        sect = self._widget._sections[index]
+        sect = sections[index]
         if not self._widget._can_drag_section_polyline(sect, index):
             return
 
         dx = track_point[0] - self._section_drag_origin[0]
         dy = track_point[1] - self._section_drag_origin[1]
 
-        sections = list(self._widget._sections)
+        sections = list(sections)
 
         for chain_index in self._active_chain_indices:
             if chain_index not in self._chain_drag_origins or chain_index < 0 or chain_index >= len(sections):
@@ -398,25 +408,7 @@ class PreviewInteraction:
     # Utilities
     # ------------------------------------------------------------------
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
-        self._widget._sections = sections
-        self._widget._section_endpoints = [(s.start, s.end) for s in sections]
-        self._widget._section_signatures = compute_section_signatures(sections)
-
-        points, dlongs, bounds, index = rebuild_centerline_from_sections(self._widget._sections)
-        self._widget._centerline_polylines = [s.polyline for s in self._widget._sections]
-        self._widget._sampled_centerline = points
-        self._widget._sampled_dlongs = dlongs
-        self._widget._sampled_bounds = bounds
-        self._widget._centerline_index = index
-
-        self._widget._selection.update_context(
-            self._widget._sections,
-            self._widget._track_length,
-            self._widget._centerline_index,
-            self._widget._sampled_dlongs,
-        )
-        self._widget._update_node_status()
-        self._widget.update()
+        self._widget.set_sections(sections)
 
     def _project_point_along_heading(
         self, origin: Point, heading: tuple[float, float] | None, target: Point
