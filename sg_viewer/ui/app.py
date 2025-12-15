@@ -4,6 +4,7 @@ from typing import List
 
 from PyQt5 import QtWidgets
 
+from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.preview_widget import SGPreviewWidget
 from sg_viewer.models.selection import SectionSelection
@@ -27,7 +28,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("SG Viewer")
         self.resize(960, 720)
 
-        self._preview = SGPreviewWidget()
+        self._preview: PreviewContext = SGPreviewWidget()
         self._sidebar = QtWidgets.QWidget()
         self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
@@ -119,7 +120,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.controller = SGViewerController(self)
 
     @property
-    def preview(self) -> SGPreviewWidget:
+    def preview(self) -> PreviewContext:
         return self._preview
 
     @property
