@@ -80,6 +80,27 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
 
+        self._creation_controller = CreationController()
+
+
+        self._straight_creation = self._creation_controller.straight_interaction
+        self._curve_creation = self._creation_controller.curve_interaction
+
+        self._editor = PreviewEditor(
+            self._controller,
+            self._selection,
+            self._straight_creation,
+            self._curve_creation,
+        )
+
+
+        self._show_curve_markers = True
+
+        self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
+        self._disconnected_nodes: set[tuple[int, str]] = set()
+        self._node_radius_px = 6
+        self._has_unsaved_changes = False
+
         self._interaction = PreviewInteraction(
             self,
             self._selection,
@@ -89,24 +110,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._node_radius_px,
             self._stop_panning,
         )
-        self._creation_controller = CreationController()
-        self._straight_creation = self._creation_controller.straight_interaction
-        self._curve_creation = self._creation_controller.curve_interaction
-        self._editor = PreviewEditor(
-            self._controller,
-            self._selection,
-            self._straight_creation,
-            self._curve_creation,
-        )
 
-        self._show_curve_markers = True
-
-        self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
-        self._disconnected_nodes: set[tuple[int, str]] = set()
-        self._node_radius_px = 6
-        self._has_unsaved_changes = False
 
         self._set_default_view_bounds()
+
+        assert hasattr(self, "_editor")
+
 
     def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
         return self._controller.current_transform(widget_size)
