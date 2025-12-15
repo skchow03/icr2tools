@@ -8,7 +8,7 @@ from PyQt5 import QtCore
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from sg_viewer import preview_loader_service, preview_state
+from sg_viewer import preview_loader_service, preview_state, preview_transform
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -119,23 +119,19 @@ class PreviewStateController:
     # Transform helpers
     # ------------------------------------------------------------------
     def default_center(self) -> Point | None:
-        return preview_state.default_center(self._sampled_bounds)
+        return preview_state.default_center(
+            preview_transform.apply_default_bounds(self._sampled_bounds)
+        )
 
     def update_fit_scale(self, widget_size: tuple[int, int]) -> preview_state.TransformState:
-        self._transform_state = preview_state.update_fit_scale(
-            self._transform_state,
-            self._sampled_bounds,
-            widget_size,
-            self.default_center(),
+        self._transform_state = preview_transform.update_fit_scale(
+            self._transform_state, self._sampled_bounds, widget_size
         )
         return self._transform_state
 
     def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
-        transform, updated_state = preview_state.current_transform(
-            self._transform_state,
-            self._sampled_bounds,
-            widget_size,
-            self.default_center(),
+        transform, updated_state = preview_transform.current_transform(
+            self._transform_state, self._sampled_bounds, widget_size
         )
         if updated_state is not self._transform_state:
             self._transform_state = updated_state
