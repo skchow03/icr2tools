@@ -5,8 +5,9 @@ from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.services import rendering_service
 from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.preview.render_state import split_nodes_by_status
+from sg_viewer.services import sg_rendering
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -32,6 +33,13 @@ class BasePreviewState:
 
 
 @dataclass
+class NodeOverlayState:
+    node_positions: dict[tuple[int, str], Point]
+    node_status: dict[tuple[int, str], str]
+    node_radius_px: float
+
+
+@dataclass
 class CreationOverlayState:
     new_straight_active: bool
     new_straight_start: Point | None
@@ -46,36 +54,57 @@ def paint_preview(
     painter: QtGui.QPainter,
     base_state: BasePreviewState,
     creation_state: CreationOverlayState,
+    node_state: NodeOverlayState | None,
     transform: Transform | None,
     widget_height: int,
 ) -> None:
     """Draw the preview and any active creation overlays."""
 
-    rendering_service.paint_preview(
+    _draw_background(
         painter,
         base_state.rect,
         base_state.background_color,
         base_state.background_image,
         base_state.background_scale_500ths_per_px,
         base_state.background_origin,
-        base_state.sampled_centerline,
+        transform,
+        widget_height,
+    )
+
+    if not base_state.sampled_centerline:
+        _draw_placeholder(painter, base_state.rect, base_state.status_message)
+        return
+
+    if transform is None:
+        _draw_placeholder(painter, base_state.rect, "Unable to fit view")
+        return
+
+    _draw_centerlines(
+        painter,
         base_state.centerline_polylines,
         base_state.selected_section_points,
-        base_state.section_endpoints,
-        base_state.selected_section_index,
-        base_state.show_curve_markers,
-        base_state.sections,
-        base_state.selected_curve_index,
+        transform,
+        widget_height,
+    )
+
+    if base_state.show_curve_markers:
+        _draw_curve_markers(
+            painter,
+            [sect for sect in base_state.sections if getattr(sect, "center", None) is not None],
+            base_state.selected_curve_index,
+            transform,
+            widget_height,
+        )
+
+    _draw_start_finish_line(
+        painter,
         base_state.start_finish_mapping,
         transform,
         widget_height,
-        base_state.status_message,
     )
 
-    if transform is None:
-        return
-
     _draw_creation_overlays(painter, creation_state, transform, widget_height)
+    _draw_nodes(painter, node_state, transform, widget_height)
 
 
 def _draw_creation_overlays(
@@ -88,13 +117,77 @@ def _draw_creation_overlays(
     _draw_new_curve(painter, creation_state, transform, widget_height)
 
 
+def _draw_background(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRect,
+    background_color: QtGui.QColor,
+    background_image: QtGui.QImage | None,
+    background_scale_500ths_per_px: float | None,
+    background_origin: Point | None,
+    transform: Transform | None,
+    widget_height: int,
+) -> None:
+    painter.fillRect(rect, background_color)
+
+    if (
+        transform
+        and background_image
+        and background_scale_500ths_per_px
+        and background_scale_500ths_per_px > 0
+    ):
+        sg_rendering.draw_background_image(
+            painter,
+            background_image,
+            background_origin or (0.0, 0.0),
+            background_scale_500ths_per_px,
+            transform,
+            widget_height,
+        )
+
+
+def _draw_placeholder(
+    painter: QtGui.QPainter, rect: QtCore.QRect, message: str
+) -> None:
+    sg_rendering.draw_placeholder(painter, rect, message)
+
+
+def _draw_centerlines(
+    painter: QtGui.QPainter,
+    centerline_polylines: Iterable[Iterable[Point]],
+    selected_section_points: Iterable[Point],
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    sg_rendering.draw_centerlines(
+        painter, centerline_polylines, selected_section_points, transform, widget_height
+    )
+
+
+def _draw_curve_markers(
+    painter: QtGui.QPainter,
+    sections,
+    selected_curve_index: int | None,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    sg_rendering.draw_curve_markers(
+        painter, sections, selected_curve_index, transform, widget_height
+    )
+
+
+def _draw_start_finish_line(
+    painter: QtGui.QPainter,
+    mapping: tuple[Point, Point, Point] | None,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    sg_rendering.draw_start_finish_line(painter, mapping, transform, widget_height)
+
+
 def _map_point(
     point: Point, transform: Transform, widget_height: int
 ) -> QtCore.QPointF:
-    scale, offsets = transform
-    ox, oy = offsets
-    x, y = point
-    return QtCore.QPointF(ox + x * scale, widget_height - (oy + y * scale))
+    return sg_rendering.map_point(point[0], point[1], transform, widget_height)
 
 
 def _draw_new_straight(
@@ -150,4 +243,35 @@ def _draw_new_curve(
     painter.setPen(QtCore.Qt.NoPen)
     for point in qp_points:
         painter.drawEllipse(point, 5, 5)
+    painter.restore()
+
+
+def _draw_nodes(
+    painter: QtGui.QPainter,
+    node_state: NodeOverlayState | None,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    if node_state is None:
+        return
+
+    green_nodes, orange_nodes = split_nodes_by_status(
+        node_state.node_positions, node_state.node_status
+    )
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+    for _, (x, y) in green_nodes:
+        point = _map_point((x, y), transform, widget_height)
+        painter.setBrush(QtGui.QColor("limegreen"))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawEllipse(point, node_state.node_radius_px, node_state.node_radius_px)
+
+    for _, (x, y) in orange_nodes:
+        point = _map_point((x, y), transform, widget_height)
+        painter.setBrush(QtGui.QColor("orange"))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawEllipse(point, node_state.node_radius_px, node_state.node_radius_px)
+
     painter.restore()

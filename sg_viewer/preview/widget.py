@@ -528,6 +528,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # Get the current transform once, reuse it
         transform = self._controller.current_transform((self.width(), self.height()))
 
+        node_state = None
+        if transform is not None:
+            node_state = preview_painter.NodeOverlayState(
+                node_positions=self._build_node_positions(),
+                node_status=self._node_status,
+                node_radius_px=self._node_radius_px,
+            )
+
         preview_painter.paint_preview(
             painter,
             preview_painter.BasePreviewState(
@@ -556,51 +564,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 new_curve_end=self._new_curve_end,
                 new_curve_preview=self._new_curve_preview,
             ),
+            node_state,
             transform,
             self.height(),
         )
-
-        # If we have no transform yet (no track), we’re done
-        if transform is None:
-            return
-
-        # ---------------------------------------------------------
-        # NEW NODE DRAWING BLOCK
-        # ---------------------------------------------------------
-
-        scale, offsets = transform
-        ox, oy = offsets
-        widget_height = self.height()
-
-        node_positions = self._build_node_positions()
-        green_nodes, orange_nodes = split_nodes_by_status(
-            node_positions, self._node_status
-        )
-
-        # First draw all green nodes
-        for (i, endtype), (x, y) in green_nodes:
-            # compute screen coords
-            px = ox + x * scale
-            py_world = oy + y * scale
-            py = widget_height - py_world
-
-            painter.setBrush(QtGui.QColor("limegreen"))   # green
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.drawEllipse(QtCore.QPointF(px, py), 6, 6)
-
-
-        # Then draw all ORANGE nodes on top (larger + outline)
-        for (i, endtype), (x, y) in orange_nodes:
-            # compute screen coords
-            px = ox + x * scale
-            py_world = oy + y * scale
-            py = widget_height - py_world
-
-            painter.setBrush(QtGui.QColor("orange"))   # orange
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.drawEllipse(QtCore.QPointF(px, py), 6, 6)
-
-
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         widget_size = (self.width(), self.height())
