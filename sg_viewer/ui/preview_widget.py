@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import replace
 from pathlib import Path
 from typing import List, Tuple
 
@@ -13,7 +12,6 @@ from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
-from sg_viewer.geometry import preview_transform
 from sg_viewer.models import preview_state, selection
 from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
@@ -22,15 +20,11 @@ from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_interactions_create import PreviewCreationAdapter
 from sg_viewer.ui.preview_state_controller import PreviewStateController
+from sg_viewer.ui.preview_section_manager import PreviewSectionManager
+from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.models.preview_state_utils import (
-    compute_section_signatures,
     is_disconnected_endpoint,
-    section_signature,
     update_node_status,
-)
-from sg_viewer.geometry.sg_geometry import (
-    rebuild_centerline_from_sections,
-    update_section_geometry,
 )
 from sg_viewer.geometry.curve_solver import _solve_curve_drag as _solve_curve_drag_util
 from sg_viewer.models.sg_model import SectionPreview
@@ -96,17 +90,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._controller = PreviewStateController()
 
         self._background = PreviewBackground()
+        self._viewport = PreviewViewport(
+            background=self._background,
+            get_transform_state=lambda: self._transform_state,
+            set_transform_state=self._set_transform_state,
+        )
+        self._section_manager = PreviewSectionManager(
+            self._viewport.combine_bounds_with_background
+        )
 
         self._cline: List[Point] | None = None
-        self._centerline_polylines: list[list[Point]] = []
-        self._sampled_dlongs: List[float] = []
-        self._centerline_index: CenterlineIndex | None = None
-
-        self._sections: list[SectionPreview] = []
-        self._section_endpoints: list[tuple[Point, Point]] = []
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
-
-        self._section_signatures: list[tuple] = []
 
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
@@ -303,28 +297,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
         ):
             self.scaleChanged.emit(value.current_scale)
 
+    def _set_transform_state(self, value: preview_state.TransformState) -> None:
+        self._transform_state = value
+
     @property
     def _delete_section_active(self) -> bool:
         return self._editor.delete_section_active
 
     def _update_fit_scale(self) -> None:
-        new_state = preview_transform.update_fit_scale(
-            self._transform_state,
-            self._sampled_bounds,
-            (self.width(), self.height()),
+        self._viewport.update_fit_scale(
+            self._section_manager.sampled_bounds, (self.width(), self.height())
         )
-        self._transform_state = new_state
 
 
     def clear(self, message: str | None = None) -> None:
         self._controller.clear(message)
         self._cline = None
-        self._centerline_polylines = []
-        self._sampled_dlongs = []
-        self._centerline_index = None
-        self._section_endpoints = []
-        self._sections = []
-        self._section_signatures = []
+        self._section_manager.reset()
+        self._sampled_centerline = []
+        self._sampled_bounds = None
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
         self._creation_interactions.reset()
@@ -344,7 +335,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def _set_default_view_bounds(self) -> None:
-        self._sampled_bounds = preview_transform.default_bounds()
+        default_bounds = self._viewport.default_bounds()
+        self._section_manager.sampled_bounds = default_bounds
+        self._sampled_bounds = default_bounds
 
     # ------------------------------------------------------------------
     # Loading
@@ -356,16 +349,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         self._cline = data.cline
-        self._centerline_polylines = [sect.polyline for sect in data.sections]
-        self._sampled_dlongs = data.sampled_dlongs
-        self._sampled_bounds = preview_transform.active_bounds(
-            data.sampled_bounds, self._background.bounds()
+        self._section_manager.load_sections(
+            sections=data.sections,
+            section_endpoints=data.section_endpoints,
+            sampled_centerline=data.sampled_centerline,
+            sampled_dlongs=data.sampled_dlongs,
+            sampled_bounds=data.sampled_bounds,
+            centerline_index=data.centerline_index,
         )
-        self._centerline_index = data.centerline_index
+        self._sampled_bounds = self._section_manager.sampled_bounds
+        self._sampled_centerline = self._section_manager.sampled_centerline
         self._track_length = data.track_length
-        self._sections = data.sections
-        self._section_signatures = compute_section_signatures(data.sections)
-        self._section_endpoints = data.section_endpoints
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
         self._creation_interactions.reset()
@@ -373,10 +367,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._set_new_curve_active(False)
         self._status_message = data.status_message
         self._selection.reset(
-            self._sections,
+            self._section_manager.sections,
             self._track_length,
-            self._centerline_index,
-            self._sampled_dlongs,
+            self._section_manager.centerline_index,
+            self._section_manager.sampled_dlongs,
         )
         self._update_node_status()
         self._update_fit_scale()
@@ -413,7 +407,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _finalize_new_straight(self) -> None:
         updated_sections, track_length, new_index, status = self._editor.finalize_new_straight(
-            self._sections, self._track_length
+            self._section_manager.sections, self._track_length
         )
         if new_index is None:
             return
@@ -431,7 +425,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _finalize_new_curve(self) -> None:
         updated_sections, track_length, new_index, status = self._editor.finalize_new_curve(
-            self._sections, self._track_length
+            self._section_manager.sections, self._track_length
         )
         if new_index is None:
             return
@@ -449,13 +443,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._status_message = status
 
     def _next_section_start_dlong(self) -> float:
-        return self._editor.next_section_start_dlong(self._sections)
+        return self._editor.next_section_start_dlong(self._section_manager.sections)
 
     # ------------------------------------------------------------------
     # Delete section
     # ------------------------------------------------------------------
     def begin_delete_section(self) -> bool:
-        if not self._sections:
+        if not self._section_manager.sections:
             return False
 
         self._set_delete_section_active(True)
@@ -468,7 +462,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _set_delete_section_active(self, active: bool) -> None:
         if active:
-            changed = self._editor.begin_delete_section(self._sections)
+            changed = self._editor.begin_delete_section(self._section_manager.sections)
         else:
             changed = self._editor.cancel_delete_section()
 
@@ -497,24 +491,17 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def _combine_bounds_with_background(
         self, bounds: tuple[float, float, float, float]
     ) -> tuple[float, float, float, float]:
-        return preview_transform.active_bounds(bounds, self._background.bounds())
+        return self._viewport.combine_bounds_with_background(bounds)
 
     def _fit_view_to_background(self) -> None:
-        result = self._background.fit_view(
-            self._sampled_bounds, (self.width(), self.height())
+        active_bounds = self._viewport.fit_view_to_background(
+            self._section_manager.sampled_bounds, (self.width(), self.height())
         )
-        if result is None:
+        if active_bounds is None:
             return
 
-        fit_scale, center, active_bounds = result
+        self._section_manager.sampled_bounds = active_bounds
         self._sampled_bounds = active_bounds
-        self._transform_state = replace(
-            self._transform_state,
-            fit_scale=fit_scale,
-            current_scale=fit_scale,
-            view_center=center,
-            user_transform_active=False,
-        )
 
     def get_background_image_path(self) -> Path | None:
         return self._background.image_path
@@ -524,29 +511,37 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _update_node_status(self) -> None:
         """Update cached node colors directly from section connectivity."""
-        update_node_status(self._sections, self._node_status)
+        update_node_status(self._section_manager.sections, self._node_status)
 
     def _build_node_positions(self):
         pos = {}
-        for i, sect in enumerate(self._sections):
+        for i, sect in enumerate(self._section_manager.sections):
             pos[(i, "start")] = sect.start
             pos[(i, "end")] = sect.end
         return pos
 
     def _can_drag_section_node(self, section: SectionPreview) -> bool:
-        return self._editor.can_drag_section_node(self._sections, section)
+        return self._editor.can_drag_section_node(
+            self._section_manager.sections, section
+        )
 
     def _can_drag_section_polyline(self, section: SectionPreview, index: int | None = None) -> bool:
-        return self._editor.can_drag_section_polyline(self._sections, section, index)
+        return self._editor.can_drag_section_polyline(
+            self._section_manager.sections, section, index
+        )
 
     def _connected_neighbor_index(self, index: int, direction: str) -> int | None:
-        return self._editor.connected_neighbor_index(self._sections, index, direction)
+        return self._editor.connected_neighbor_index(
+            self._section_manager.sections, index, direction
+        )
 
     def _get_drag_chain(self, index: int | None) -> list[int] | None:
-        return self._editor.get_drag_chain(self._sections, index)
+        return self._editor.get_drag_chain(self._section_manager.sections, index)
 
     def _can_drag_node(self, section: SectionPreview, endtype: str) -> bool:
-        return self._editor.can_drag_node(self._sections, section, endtype)
+        return self._editor.can_drag_node(
+            self._section_manager.sections, section, endtype
+        )
 
 
 
@@ -573,13 +568,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 background_image=self._background.image,
                 background_scale_500ths_per_px=self._background.scale_500ths_per_px,
                 background_origin=self._background.origin,
-                sampled_centerline=self._sampled_centerline,
-                centerline_polylines=self._centerline_polylines,
+                sampled_centerline=self._section_manager.sampled_centerline,
+                centerline_polylines=self._section_manager.centerline_polylines,
                 selected_section_points=self._selection.selected_section_points,
-                section_endpoints=self._section_endpoints,
+                section_endpoints=self._section_manager.section_endpoints,
                 selected_section_index=self._selection.selected_section_index,
                 show_curve_markers=self._show_curve_markers,
-                sections=self._sections,
+                sections=self._section_manager.sections,
                 selected_curve_index=self._selection.selected_curve_index,
                 start_finish_mapping=self._start_finish_mapping,
                 status_message=self._status_message,
@@ -829,9 +824,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         radius = self._node_radius_px
         r2 = radius * radius
 
-        for i, section in enumerate(self._sections):
+        for i, section in enumerate(self._section_manager.sections):
             for endtype in ("start", "end"):
-                if not is_disconnected_endpoint(self._sections, section, endtype):
+                if not is_disconnected_endpoint(
+                    self._section_manager.sections, section, endtype
+                ):
                     continue
 
                 world_point = section.start if endtype == "start" else section.end
@@ -913,7 +910,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _delete_section(self, index: int) -> None:
         new_sections, track_length, status = self._editor.delete_section(
-            list(self._sections), index
+            list(self._section_manager.sections), index
         )
         if not status:
             return
@@ -926,54 +923,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def get_section_set(self) -> tuple[list[SectionPreview], float | None]:
         track_length = float(self._track_length) if self._track_length is not None else None
-        return list(self._sections), track_length
+        return list(self._section_manager.sections), track_length
 
     def set_sections(self, sections: list[SectionPreview]) -> None:
-        previous_signatures = self._section_signatures
+        needs_rebuild = self._section_manager.set_sections(sections)
 
-        new_sections: list[SectionPreview] = []
-        new_signatures: list[tuple] = []
-        changed_indices: list[int] = []
-
-        for idx, sect in enumerate(sections):
-            signature = section_signature(sect)
-            new_signatures.append(signature)
-            prev_signature = previous_signatures[idx] if idx < len(previous_signatures) else None
-
-            if (
-                prev_signature is not None
-                and prev_signature == signature
-                and idx < len(self._sections)
-            ):
-                new_sections.append(self._sections[idx])
-            else:
-                new_sections.append(update_section_geometry(sect))
-                changed_indices.append(idx)
-
-        length_changed = len(sections) != len(self._sections)
-        needs_rebuild = length_changed or bool(changed_indices)
-
-        self._sections = new_sections
-        self._section_signatures = new_signatures
-        self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
+        self._sampled_bounds = self._section_manager.sampled_bounds
+        self._sampled_centerline = self._section_manager.sampled_centerline
 
         if needs_rebuild:
-            points, dlongs, bounds, index = rebuild_centerline_from_sections(self._sections)
-            self._centerline_polylines = [sect.polyline for sect in self._sections]
-            self._sampled_centerline = points
-            self._sampled_dlongs = dlongs
-            self._sampled_bounds = self._combine_bounds_with_background(bounds)
-            self._centerline_index = index
             self._update_fit_scale()
 
         self._update_node_status()
 
 
         self._selection.update_context(
-            self._sections,
+            self._section_manager.sections,
             self._track_length,
-            self._centerline_index,
-            self._sampled_dlongs,
+            self._section_manager.centerline_index,
+            self._section_manager.sampled_dlongs,
         )
         self._has_unsaved_changes = True
         self.sectionsChanged.emit()  # NEW
@@ -985,12 +953,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._sgfile is None:
             raise ValueError("No SG file loaded.")
 
-        if not self._sections:
+        if not self._section_manager.sections:
             raise ValueError("No sections available to save.")
 
         sgfile = self._sgfile
 
-        desired_section_count = len(self._sections)
+        desired_section_count = len(self._section_manager.sections)
         current_section_count = len(sgfile.sects)
 
         if desired_section_count != current_section_count:
@@ -1013,7 +981,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 return fallback
             return int(round(value))
 
-        for sg_section, preview_section in zip(sgfile.sects, self._sections):
+        for sg_section, preview_section in zip(
+            sgfile.sects, self._section_manager.sections
+        ):
             sg_section.type = 2 if preview_section.type_name == "curve" else 1
             sg_section.sec_prev = _as_int(preview_section.previous_id, -1)
             sg_section.sec_next = _as_int(preview_section.next_id, -1)
@@ -1076,10 +1046,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return [(idx, float(dlat)) for idx, dlat in enumerate(self._sgfile.xsect_dlats)]
 
     def get_section_range(self, index: int) -> tuple[float, float] | None:
-        if not self._sections or index < 0 or index >= len(self._sections):
+        if (
+            not self._section_manager.sections
+            or index < 0
+            or index >= len(self._section_manager.sections)
+        ):
             return None
-        start = float(self._sections[index].start_dlong)
-        end = start + float(self._sections[index].length)
+        start = float(self._section_manager.sections[index].start_dlong)
+        end = start + float(self._section_manager.sections[index].length)
         return start, end
 
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
