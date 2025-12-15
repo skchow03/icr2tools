@@ -8,10 +8,10 @@ from PyQt5 import QtCore, QtGui
 
 from sg_viewer.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.sg_geometry import signed_radius_from_heading, update_section_geometry
+from sg_viewer.sg_model import SectionPreview
 
 if TYPE_CHECKING:
     from sg_viewer.preview_widget import SGPreviewWidget
-    from sg_viewer.sg_model import SectionPreview
 
 
 Point = tuple[float, float]
