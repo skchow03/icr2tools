@@ -37,7 +37,7 @@ class NodeOverlayState:
     node_positions: dict[tuple[int, str], Point]
     node_status: dict[tuple[int, str], str]
     node_radius_px: float
-
+    hovered_node: tuple[int, str] | None = None
 
 @dataclass
 class CreationOverlayState:
@@ -273,5 +273,24 @@ def _draw_nodes(
         painter.setBrush(QtGui.QColor("orange"))
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawEllipse(point, node_state.node_radius_px, node_state.node_radius_px)
+
+    # --------------------------------------------------
+    # Hovered unconnected node (drawn on top)
+    # --------------------------------------------------
+    if node_state.hovered_node is not None:
+        key = node_state.hovered_node
+        pos = node_state.node_positions.get(key)
+        if pos is not None:
+            x, y = pos
+            point = _map_point((x, y), transform, widget_height)
+
+            painter.setPen(QtGui.QPen(QtGui.QColor("yellow"), 3))
+            painter.setBrush(QtGui.QColor(255, 255, 0, 160))
+            painter.drawEllipse(
+                point,
+                node_state.node_radius_px + 3,
+                node_state.node_radius_px + 3,
+            )
+
 
     painter.restore()

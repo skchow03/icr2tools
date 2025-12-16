@@ -31,6 +31,8 @@ from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.models.preview_state_utils import update_node_status
 from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.preview.hover_detection import find_hovered_unconnected_node
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selection.selectionChanged.connect(self._on_selection_changed)
 
         self._creation_controller = CreationController()
+        self._hovered_endpoint: tuple[int, str] | None = None
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -579,6 +582,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 node_positions=self._build_node_positions(),
                 node_status=self._node_status,
                 node_radius_px=self._node_radius_px,
+                hovered_node=self._hovered_endpoint,
             )
 
         creation_preview = self._creation_controller.preview_sections()
@@ -682,6 +686,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        
         if self._handle_creation_mouse_move(event.pos()):
             event.accept()
             return
@@ -717,6 +722,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
                     self.update()
             event.accept()
             return
+        
+        context = self._creation_context()
+        if context is not None:
+            hover = find_hovered_unconnected_node(
+                (event.pos().x(), event.pos().y()),
+                context,
+            )
+
+            if hover != self._hovered_endpoint:
+                self._hovered_endpoint = hover
+                self.update()
+
+
+
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
