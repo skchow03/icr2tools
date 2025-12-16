@@ -17,6 +17,10 @@ timing_log.txt
 *.csv
 *.cam
 *.scr
+*.sg
+*.xlsx
+*.png
+*.txt
 
 # Virtual environments
 venv/
