@@ -86,6 +86,11 @@ class SGViewerController:
 
 
     def _create_actions(self) -> None:
+        self._new_action = QtWidgets.QAction("New", self._window)
+        self._new_action.setShortcut("Ctrl+N")
+        self._new_action.triggered.connect(self._start_new_track)
+
+
         self._open_action = QtWidgets.QAction("Open SG…", self._window)
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
@@ -126,6 +131,8 @@ class SGViewerController:
 
     def _create_menus(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
+        file_menu.addAction(self._new_action)
+        file_menu.addSeparator()
         file_menu.addAction(self._open_action)
         file_menu.addMenu(self._open_recent_menu)
         file_menu.addAction(self._save_action)
@@ -142,7 +149,7 @@ class SGViewerController:
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
         self._window.next_button.clicked.connect(self._window.preview.select_next_section)
-        self._window.new_track_button.clicked.connect(self._start_new_track)
+        #self._window.new_track_button.clicked.connect(self._start_new_track)
         self._window.new_straight_button.clicked.connect(self._start_new_straight)
         self._window.new_curve_button.clicked.connect(self._start_new_curve)
         self._window.preview.newStraightModeChanged.connect(
