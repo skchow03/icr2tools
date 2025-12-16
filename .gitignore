@@ -21,6 +21,7 @@ timing_log.txt
 *.xlsx
 *.png
 *.txt
+repo_dump.py
 
 # Virtual environments
 venv/
