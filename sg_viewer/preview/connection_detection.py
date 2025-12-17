@@ -20,7 +20,9 @@ def find_unconnected_node_target(
     dragged_node = None
 
     for key, pos in node_positions.items():
-        connected = not is_disconnected_endpoint(sections, key)
+        section_index, endtype = key
+        section = sections[section_index]
+        connected = not is_disconnected_endpoint(sections, section, endtype)
 
         node = {
             "key": key,
