@@ -12,7 +12,8 @@ from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
 )
-from sg_viewer.models.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
+from sg_viewer.models.preview_state_utils import is_disconnected_endpoint
+from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
 
@@ -47,6 +48,7 @@ class PreviewInteraction:
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
+        self._connection_target: tuple[int, str] | None = None
         self._is_dragging_section = False
         self._active_section_index: int | None = None
         self._section_drag_origin: Point | None = None
@@ -66,9 +68,14 @@ class PreviewInteraction:
     def is_dragging_section(self) -> bool:
         return self._is_dragging_section
 
+    @property
+    def connection_target(self) -> tuple[int, str] | None:
+        return self._connection_target
+
     def reset(self) -> None:
         self._is_dragging_node = False
         self._active_node = None
+        self._connection_target = None
         self._is_dragging_section = False
         self._active_section_index = None
         self._section_drag_origin = None
@@ -105,7 +112,21 @@ class PreviewInteraction:
 
     def handle_mouse_move(self, event: QtGui.QMouseEvent) -> bool:
         if self._is_dragging_node and self._active_node is not None:
-            self._update_drag_position(event.pos())
+            widget_size = self._context.widget_size()
+            transform = self._context.current_transform(widget_size)
+            track_point = self._context.map_to_track(
+                (event.pos().x(), event.pos().y()),
+                widget_size,
+                self._context.widget_height(),
+                transform,
+            )
+            if track_point is None:
+                self._connection_target = None
+                event.accept()
+                return True
+
+            self._update_connection_target(track_point, transform)
+            self._update_dragged_section(track_point)
             event.accept()
             return True
 
@@ -121,7 +142,11 @@ class PreviewInteraction:
             return False
 
         if self._is_dragging_node:
+            active_node = self._active_node
+            connection_target = self._connection_target
             self._end_node_drag()
+            if active_node is not None and connection_target is not None:
+                self._connect_nodes(active_node, connection_target)
             event.accept()
             return True
         if self._is_dragging_section:
@@ -245,17 +270,8 @@ class PreviewInteraction:
             return
         self._active_node = node
         self._is_dragging_node = True
+        self._connection_target = None
         self._stop_panning()
-        self._update_dragged_section(track_point)
-
-    def _update_drag_position(self, pos: QtCore.QPoint) -> None:
-        widget_size = self._context.widget_size()
-        transform = self._context.current_transform(widget_size)
-        track_point = self._context.map_to_track(
-            (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
-        )
-        if track_point is None or self._active_node is None:
-            return
         self._update_dragged_section(track_point)
 
     def _update_dragged_section(self, track_point: Point) -> None:
@@ -312,9 +328,90 @@ class PreviewInteraction:
         sections[sect_index] = update_section_geometry(sections[sect_index])
         self._apply_section_updates(sections)
 
+    def _update_connection_target(
+        self,
+        track_point: Point,
+        transform: tuple[float, tuple[float, float]] | None,
+    ) -> None:
+        if self._active_node is None:
+            self._connection_target = None
+            return
+
+        if transform is None:
+            self._connection_target = None
+            return
+
+        scale, _ = transform
+        if scale <= 0:
+            self._connection_target = None
+            return
+
+        sections = self._section_manager.sections
+        if not sections:
+            self._connection_target = None
+            return
+
+        snap_radius = self._node_radius_px / scale
+
+        target = find_unconnected_node_target(
+            dragged_key=self._active_node,
+            dragged_pos=track_point,
+            sections=sections,
+            snap_radius=snap_radius,
+        )
+
+        if target == self._active_node:
+            target = None
+
+        self._connection_target = target
+        self._context.request_repaint()
+
     def _end_node_drag(self) -> None:
         self._is_dragging_node = False
         self._active_node = None
+        self._connection_target = None
+
+    def _connect_nodes(
+        self, source: tuple[int, str], target: tuple[int, str]
+    ) -> None:
+        sections = list(self._section_manager.sections)
+
+        if not sections:
+            return
+
+        src_index, src_end = source
+        tgt_index, tgt_end = target
+
+        if src_index == tgt_index:
+            return
+
+        if src_index < 0 or src_index >= len(sections):
+            return
+        if tgt_index < 0 or tgt_index >= len(sections):
+            return
+
+        src_section = sections[src_index]
+        tgt_section = sections[tgt_index]
+
+        if not is_disconnected_endpoint(sections, src_section, src_end):
+            return
+        if not is_disconnected_endpoint(sections, tgt_section, tgt_end):
+            return
+
+        if src_end == "start":
+            src_section = replace(src_section, previous_id=tgt_index)
+        else:
+            src_section = replace(src_section, next_id=tgt_index)
+
+        if tgt_end == "start":
+            tgt_section = replace(tgt_section, previous_id=src_index)
+        else:
+            tgt_section = replace(tgt_section, next_id=src_index)
+
+        sections[src_index] = update_section_geometry(src_section)
+        sections[tgt_index] = update_section_geometry(tgt_section)
+
+        self._apply_section_updates(sections)
 
     # ------------------------------------------------------------------
     # Section dragging

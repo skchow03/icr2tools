@@ -50,4 +50,10 @@ def find_unconnected_node_target(
         snap_radius=snap_radius,
     )
 
-    return target["key"] if target else None
+    if target is None:
+        return None
+
+    if target["key"] == dragged_key:
+        return None
+
+    return target["key"]

@@ -84,8 +84,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._creation_controller = CreationController()
         self._hovered_endpoint: tuple[int, str] | None = None
-        self._connection_target: tuple[int, str] | None = None
-        self._dragged_endpoint: tuple[int, str] | None = None
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -585,7 +583,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 node_status=self._node_status,
                 node_radius_px=self._node_radius_px,
                 hovered_node=self._hovered_endpoint,
-                connection_target=self._connection_target,
+                connection_target=self._interaction.connection_target,
             )
 
         creation_preview = self._creation_controller.preview_sections()
@@ -647,12 +645,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-
-        if event.buttons() & QtCore.Qt.LeftButton:
-            if self._hovered_endpoint is not None:
-                self._dragged_endpoint = self._hovered_endpoint
-
-
         if self._handle_creation_mouse_press(event):
             return
 
@@ -711,42 +703,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
         # --------------------------------------------------
-        # Detect endpoint-to-endpoint connection intent
-        # (MUST run while dragging)
-        # --------------------------------------------------
-        if self._interaction.is_dragging_node:
-            context = self._creation_context()
-            if context is not None:
-                hit = context.find_unconnected_node(
-                    (event.pos().x(), event.pos().y())
-                )
-
-                if hit is not None:
-                    section_index, endtype, _pos, _heading = hit
-                    target = (section_index, endtype)
-
-                    dragged = self._dragged_endpoint
-                    if dragged is not None and target != dragged:
-                        self._connection_target = target
-                    else:
-                        self._connection_target = None
-
-
-
-                    if target != dragged:
-                        self._connection_target = target
-                    else:
-                        self._connection_target = None
-                else:
-                    self._connection_target = None
-
-            # force repaint while dragging
-            self.update()
-
-        # --------------------------------------------------
         # THEN let interaction handle the move
         # --------------------------------------------------
         if self._interaction.handle_mouse_move(event):
+            self.update()
             return
 
 
@@ -786,19 +746,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-
-        self._dragged_endpoint = None
-        self._connection_target = None
-
-
-        if (
-            self._interaction.is_dragging_node
-            and self._connection_target is not None
-        ):
-            self._commit_endpoint_connection()
-
-        self._connection_target = None
-
         if self._handle_creation_mouse_release(event):
             return
 
