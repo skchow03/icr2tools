@@ -7,6 +7,9 @@ from typing import TYPE_CHECKING, Callable
 from PyQt5 import QtCore, QtGui
 
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
+from sg_viewer.geometry.connect_curve_to_straight import (
+    solve_curve_end_to_straight_start,
+)
 from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
     rebuild_centerline_from_sections,
@@ -158,11 +161,31 @@ class PreviewInteraction:
                         and target_section.type_name == "straight"
                         and target_end == "start"
                     ):
-                        self._show_status("Valid curve → straight connection detected")
+                        result = solve_curve_end_to_straight_start(
+                            dragged_section,
+                            target_section,
+                        )
 
-                self._clear_drag_state()
-                event.accept()
-                return True
+                        if result is None:
+                            self._show_status("Curve → straight connection failed")
+                            self._clear_drag_state()
+                            return True
+
+                        new_curve, new_straight = result
+
+                        sections = list(self._section_manager.sections)
+                        sections[dragged_idx] = new_curve
+                        sections[target_idx] = new_straight
+
+                        self._set_sections(sections)
+
+                        self._show_status("Curve → straight connected")
+                        self._clear_drag_state()
+                        return True
+
+                    self._clear_drag_state()
+                    event.accept()
+                    return True
 
             active_node = self._active_node
             connection_target = self._connection_target
