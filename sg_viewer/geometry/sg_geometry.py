@@ -183,6 +183,12 @@ def derive_heading_vectors(
     return rounded, rounded
 
 
+def assert_section_geometry_consistent(section: SectionPreview) -> None:
+    if section.polyline:
+        assert section.polyline[0] == section.start
+        assert section.polyline[-1] == section.end
+
+
 def update_section_geometry(section: SectionPreview) -> SectionPreview:
     start_heading = section.start_heading
     end_heading = section.end_heading
