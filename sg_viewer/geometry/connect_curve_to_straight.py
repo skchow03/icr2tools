@@ -8,6 +8,12 @@ from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 
+DEBUG_CURVE_STRAIGHT = True
+
+def _deg_between(a, b):
+    dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
+    return math.degrees(math.acos(dot))
+
 
 def _angle_between(a: tuple[float, float], b: tuple[float, float]) -> float:
     """Return angle between two unit vectors in radians."""
@@ -45,6 +51,8 @@ def solve_curve_end_to_straight_start(
     Returns (new_curve, new_straight) or None on failure.
     """
 
+
+
     # ------------------------
     # Preconditions
     # ------------------------
@@ -69,6 +77,26 @@ def solve_curve_end_to_straight_start(
     straight_heading = (straight_heading[0] / sh_len, straight_heading[1] / sh_len)
     hx, hy = straight_heading
 
+    if DEBUG_CURVE_STRAIGHT:
+        print("\n=== CURVE → STRAIGHT SOLVE ATTEMPT ===")
+        print("Curve start:", curve.start)
+        print("Curve end (original):", curve.end)
+        print("Curve start heading:", curve.start_heading)
+        print("Curve radius:", curve.radius)
+        print("Straight start:", straight.start)
+        print("Straight end:", straight.end)
+        print("Straight length:", straight.length)
+        print("Straight forward heading:", straight_heading)
+    if DEBUG_CURVE_STRAIGHT:
+        sh = straight_heading
+        angle = math.degrees(math.atan2(sh[1], sh[0]))
+        print(f"Straight heading angle: {angle:.2f}°")
+    if DEBUG_CURVE_STRAIGHT:
+        ch = curve.start_heading
+        angle = math.degrees(math.atan2(ch[1], ch[0]))
+        print(f"Curve start heading angle: {angle:.2f}°")
+
+
     # ------------------------
     # Solve curve by scanning along straight heading
     # ------------------------
@@ -91,6 +119,10 @@ def solve_curve_end_to_straight_start(
             straight.start[1] + hy * t,
         )
 
+        if DEBUG_CURVE_STRAIGHT:
+            print(f"\nTrying join point P = {P}")
+
+
         curve_template = replace(
             curve,
             start=curve_start,
@@ -107,6 +139,10 @@ def solve_curve_end_to_straight_start(
             fixed_point_is_start=True,
             orientation_hint=1.0,
         )
+        if DEBUG_CURVE_STRAIGHT:
+            print("  Candidates returned:", len(candidates))
+
+
 
         if not candidates:
             continue
@@ -115,23 +151,42 @@ def solve_curve_end_to_straight_start(
 
         for cand in candidates:
             if cand.end_heading is None:
+                if DEBUG_CURVE_STRAIGHT:
+                    print("  Reject: no end heading")
                 continue
 
             # normalize candidate end heading
             eh = cand.end_heading
             eh_len = math.hypot(eh[0], eh[1])
             if eh_len <= 0:
+                if DEBUG_CURVE_STRAIGHT:
+                    print("  Reject: zero end heading vector")
                 continue
             eh = (eh[0] / eh_len, eh[1] / eh_len)
+            delta = _deg_between(eh, straight_heading)
 
+            if DEBUG_CURVE_STRAIGHT:
+                print(
+                    f"  Candidate: radius={cand.radius:.1f}, "
+                    f"arc_len={cand.length:.1f}, "
+                    f"end_heading_delta={delta:.2f}°"
+                )
             if _angle_between(eh, straight_heading) <= heading_tol:
                 valid.append(cand)
+
+            if delta <= heading_tolerance_deg:
+                valid.append(cand)
+            else:
+                if DEBUG_CURVE_STRAIGHT:
+                    print("    Reject: heading tolerance")
 
         if valid:
             best_solution = update_section_geometry(min(valid, key=score))
             break
 
     if best_solution is None:
+        if DEBUG_CURVE_STRAIGHT:
+            print("\nSOLVE FAILED: no valid candidates found")
         return None
 
     # ------------------------
