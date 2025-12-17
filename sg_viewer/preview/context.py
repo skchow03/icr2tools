@@ -23,6 +23,9 @@ class PreviewContext(Protocol):
     def set_status(self, text: str) -> None:
         ...
 
+    def set_status_text(self, text: str) -> None:
+        ...
+
     def request_repaint(self) -> None:
         ...
 
