@@ -34,6 +34,11 @@ def find_unconnected_node_target(
             node["position"] = dragged_pos
             dragged_node = node
 
+            # Treat the dragged endpoint as temporarily disconnected so we can
+            # still find a snap target even if the underlying connectivity
+            # metadata has not been updated yet.
+            node["connected"] = False
+
         nodes.append(node)
 
     if dragged_node is None:
