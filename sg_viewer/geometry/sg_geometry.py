@@ -154,6 +154,11 @@ def build_section_polyline(
         y = cy + math.sin(angle) * radius_length
         points.append((x, y))
 
+    # Preserve the exact start/end points to avoid floating-point drift that can
+    # otherwise break downstream consistency checks.
+    points[0] = start
+    points[-1] = end
+
     return points
 
 
