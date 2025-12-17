@@ -1,4 +1,8 @@
 # preview/connection_preview.py
+#
+# Connection previews are intentionally ephemeral. The sections returned from
+# this module are for visualization only: do not store them in the
+# authoritative section list or feed them into hit-testing.
 from __future__ import annotations
 
 from dataclasses import replace

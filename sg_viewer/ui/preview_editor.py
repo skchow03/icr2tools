@@ -11,7 +11,10 @@ from sg_viewer.preview.creation_controller import (
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.models.selection import SelectionManager
-from sg_viewer.geometry.sg_geometry import update_section_geometry
+from sg_viewer.geometry.sg_geometry import (
+    assert_section_geometry_consistent,
+    update_section_geometry,
+)
 from sg_viewer.models.sg_model import SectionPreview
 
 Point = tuple[float, float]
@@ -109,6 +112,7 @@ class PreviewEditor:
         else:
             track_length = new_track_length
 
+        self._assert_sections_consistent(updated_sections)
         return (
             updated_sections,
             track_length,
@@ -143,6 +147,7 @@ class PreviewEditor:
         else:
             track_length = new_track_length
 
+        self._assert_sections_consistent(updated_sections)
         return (
             updated_sections,
             track_length,
@@ -211,7 +216,13 @@ class PreviewEditor:
             cursor += float(updated_section.length)
 
         self._delete_section_active = False
+        self._assert_sections_consistent(new_sections)
         return new_sections, (cursor if new_sections else None), f"Deleted section #{index}."
+
+    def _assert_sections_consistent(self, sections: list[SectionPreview]) -> None:
+        if __debug__:
+            for section in sections:
+                assert_section_geometry_consistent(section)
 
     # ------------------------------------------------------------------
     # Drag helpers

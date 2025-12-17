@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Callable
 from PyQt5 import QtCore, QtGui
 
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
-from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, update_section_geometry
+from sg_viewer.geometry.sg_geometry import (
+    assert_section_geometry_consistent,
+    rebuild_centerline_from_sections,
+    update_section_geometry,
+)
 from sg_viewer.models.preview_state_utils import compute_section_signatures, is_disconnected_endpoint
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
@@ -420,6 +424,9 @@ class PreviewInteraction:
     # Utilities
     # ------------------------------------------------------------------
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
+        if __debug__:
+            for section in sections:
+                assert_section_geometry_consistent(section)
         self._set_sections(sections)
 
     def _project_point_along_heading(
