@@ -142,6 +142,28 @@ class PreviewInteraction:
             return False
 
         if self._is_dragging_node:
+            if self._connection_target is not None:
+                if self._active_node is not None:
+                    dragged_idx, dragged_end = self._active_node
+                    target_idx, target_end = self._connection_target
+
+                    dragged_section = self._section_manager.sections[dragged_idx]
+                    target_section = self._section_manager.sections[target_idx]
+
+                    if (
+                        dragged_section.type_name == "curve"
+                        and dragged_end == "end"
+                        and target_section.type_name == "straight"
+                        and target_end == "start"
+                    ):
+                        self._context.set_status_text(
+                            "Valid curve → straight connection detected"
+                        )
+
+                self._clear_drag_state()
+                event.accept()
+                return True
+
             active_node = self._active_node
             connection_target = self._connection_target
             self._end_node_drag()
@@ -367,6 +389,9 @@ class PreviewInteraction:
         self._context.request_repaint()
 
     def _end_node_drag(self) -> None:
+        self._clear_drag_state()
+
+    def _clear_drag_state(self) -> None:
         self._is_dragging_node = False
         self._active_node = None
         self._connection_target = None

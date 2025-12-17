@@ -140,6 +140,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def set_status(self, text: str) -> None:
         self._status_message = text
 
+    def set_status_text(self, text: str) -> None:
+        self.set_status(text)
+
     def request_repaint(self) -> None:
         self.update()
 
