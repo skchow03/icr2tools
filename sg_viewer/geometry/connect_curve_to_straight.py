@@ -5,7 +5,6 @@ from dataclasses import replace
 from typing import Optional, Tuple
 
 from sg_viewer.models.sg_model import SectionPreview
-from sg_viewer.preview.geometry import heading_for_endpoint
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 
@@ -14,6 +13,21 @@ def _angle_between(a: tuple[float, float], b: tuple[float, float]) -> float:
     """Return angle between two unit vectors in radians."""
     dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
     return math.acos(dot)
+
+
+def _straight_forward_heading(straight: SectionPreview) -> Optional[tuple[float, float]]:
+    heading = straight.start_heading
+    if heading is None:
+        heading = (
+            straight.end[0] - straight.start[0],
+            straight.end[1] - straight.start[1],
+        )
+
+    h_len = math.hypot(heading[0], heading[1])
+    if h_len <= 0:
+        return None
+
+    return heading[0] / h_len, heading[1] / h_len
 
 
 def solve_curve_end_to_straight_start(
@@ -44,7 +58,7 @@ def solve_curve_end_to_straight_start(
     if curve_start_heading is None:
         return None
 
-    straight_heading = heading_for_endpoint(straight, "start")
+    straight_heading = _straight_forward_heading(straight)
     if straight_heading is None:
         return None
 
