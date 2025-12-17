@@ -28,7 +28,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("SG Viewer")
         self.resize(960, 720)
 
-        self._preview: PreviewContext = SGPreviewWidget()
+        self._preview: PreviewContext = SGPreviewWidget(
+            show_status=self.statusBar().showMessage
+        )
         self._sidebar = QtWidgets.QWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
