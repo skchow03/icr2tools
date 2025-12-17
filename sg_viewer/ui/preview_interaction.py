@@ -37,6 +37,7 @@ class PreviewInteraction:
         set_sections: Callable[[list["SectionPreview"]], None],
         node_radius_px: int,
         stop_panning: Callable[[], None],
+        show_status: Callable[[str], None],
     ) -> None:
         self._context = context
         self._selection = selection
@@ -45,6 +46,7 @@ class PreviewInteraction:
         self._set_sections = set_sections
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
+        self._show_status = show_status
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -156,9 +158,7 @@ class PreviewInteraction:
                         and target_section.type_name == "straight"
                         and target_end == "start"
                     ):
-                        self._context.set_status_text(
-                            "Valid curve → straight connection detected"
-                        )
+                        self._show_status("Valid curve → straight connection detected")
 
                 self._clear_drag_state()
                 event.accept()

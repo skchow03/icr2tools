@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -52,7 +52,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     CURVE_SOLVE_TOLERANCE = CURVE_SOLVE_TOLERANCE_DEFAULT  # inches
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        show_status: Callable[[str], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setMinimumSize(640, 480)
         self.setMouseTracking(True)
@@ -103,6 +107,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
         self._has_unsaved_changes = False
+        self._show_status = show_status or (lambda _text: None)
 
         self._interaction = PreviewInteraction(
             self,
@@ -112,6 +117,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self.set_sections,
             self._node_radius_px,
             self._stop_panning,
+            show_status=self._show_status,
         )
 
 
