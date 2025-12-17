@@ -53,65 +53,13 @@ def solve_curve_end_to_straight_start(
     if sh_len <= 0:
         return None
     straight_heading = (straight_heading[0] / sh_len, straight_heading[1] / sh_len)
+    hx, hy = straight_heading
 
     # ------------------------
-    # Connection point
-    # ------------------------
-    # Baby step: use current straight start as the join point
-    P = straight.start
-
-    # ------------------------
-    # Build curve template
-    # ------------------------
-    curve_template = replace(
-        curve,
-        start=curve_start,
-        end=P,
-        polyline=[curve_start, P],
-    )
-
-    # ------------------------
-    # Solve curve with fixed start heading
-    # ------------------------
-    candidates = _solve_curve_with_fixed_heading(
-        sect=curve_template,
-        start=curve_start,
-        end=P,
-        fixed_point=curve_start,
-        fixed_heading=curve_start_heading,
-        fixed_point_is_start=True,
-        orientation_hint=1.0,
-    )
-
-    if not candidates:
-        return None
-
-    # ------------------------
-    # Filter by end heading match
+    # Solve curve by scanning along straight heading
     # ------------------------
     heading_tol = math.radians(heading_tolerance_deg)
-    valid: list[SectionPreview] = []
 
-    for cand in candidates:
-        if cand.end_heading is None:
-            continue
-
-        # normalize candidate end heading
-        eh = cand.end_heading
-        eh_len = math.hypot(eh[0], eh[1])
-        if eh_len <= 0:
-            continue
-        eh = (eh[0] / eh_len, eh[1] / eh_len)
-
-        if _angle_between(eh, straight_heading) <= heading_tol:
-            valid.append(cand)
-
-    if not valid:
-        return None
-
-    # ------------------------
-    # Choose best candidate
-    # ------------------------
     # Prefer minimal radius change, then minimal arc length
     def score(c: SectionPreview) -> float:
         radius_delta = 0.0
@@ -119,19 +67,68 @@ def solve_curve_end_to_straight_start(
             radius_delta = abs(abs(c.radius) - abs(curve.radius))
         return radius_delta * 10.0 + c.length
 
-    best = min(valid, key=score)
+    offsets = [-100, -50, -25, 0, 25, 50, 100]
 
-    best = update_section_geometry(best)
+    best_solution: Optional[SectionPreview] = None
+
+    for t in offsets:
+        P = (
+            straight.start[0] + hx * t,
+            straight.start[1] + hy * t,
+        )
+
+        curve_template = replace(
+            curve,
+            start=curve_start,
+            end=P,
+            polyline=[curve_start, P],
+        )
+
+        candidates = _solve_curve_with_fixed_heading(
+            sect=curve_template,
+            start=curve_start,
+            end=P,
+            fixed_point=curve_start,
+            fixed_heading=curve_start_heading,
+            fixed_point_is_start=True,
+            orientation_hint=1.0,
+        )
+
+        if not candidates:
+            continue
+
+        valid: list[SectionPreview] = []
+
+        for cand in candidates:
+            if cand.end_heading is None:
+                continue
+
+            # normalize candidate end heading
+            eh = cand.end_heading
+            eh_len = math.hypot(eh[0], eh[1])
+            if eh_len <= 0:
+                continue
+            eh = (eh[0] / eh_len, eh[1] / eh_len)
+
+            if _angle_between(eh, straight_heading) <= heading_tol:
+                valid.append(cand)
+
+        if valid:
+            best_solution = update_section_geometry(min(valid, key=score))
+            break
+
+    if best_solution is None:
+        return None
 
     # ------------------------
     # Rebuild straight
     # ------------------------
-    new_straight_start = best.end
+    new_straight_start = best_solution.end
     L = straight.length
 
     new_straight_end = (
-        new_straight_start[0] + straight_heading[0] * L,
-        new_straight_start[1] + straight_heading[1] * L,
+        new_straight_start[0] + hx * L,
+        new_straight_start[1] + hy * L,
     )
 
     new_straight = replace(
@@ -141,4 +138,4 @@ def solve_curve_end_to_straight_start(
         polyline=[new_straight_start, new_straight_end],
     )
 
-    return best, new_straight
+    return best_solution, new_straight
