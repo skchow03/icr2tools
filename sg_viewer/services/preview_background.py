@@ -53,7 +53,7 @@ class PreviewBackground:
             x0,
             x0 + w * scale,
             y0,
-            y0 + h * scale,
+            y0 - h * scale,
         )
 
 
