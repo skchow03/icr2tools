@@ -20,6 +20,10 @@ from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
 
+from sg_viewer.geometry.topology import is_closed_loop
+from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
+
+
 if TYPE_CHECKING:
     from sg_viewer.models.selection import SelectionManager
     from sg_viewer.models.sg_model import SectionPreview
@@ -28,6 +32,7 @@ if TYPE_CHECKING:
 
 
 Point = tuple[float, float]
+DEBUG_LOOP_DETECTION = True
 
 
 class PreviewInteraction:
@@ -172,7 +177,7 @@ class PreviewInteraction:
                             return True
 
                         new_curve, new_straight = result
-
+                        old_sections = list(self._section_manager.sections)
                         sections = list(self._section_manager.sections)
 
                         # Update connectivity
@@ -190,6 +195,43 @@ class PreviewInteraction:
                         sections[target_idx] = new_straight
 
                         self._set_sections(sections)
+
+
+                        sections = self._section_manager.sections
+
+                        old_closed = is_closed_loop(old_sections)
+                        new_closed = is_closed_loop(sections)
+
+                        if DEBUG_LOOP_DETECTION:
+                            print("=== LOOP DETECTION CHECK ===")
+                            print(f"Old closed: {old_closed}")
+                            print(f"New closed: {new_closed}")
+                            print(f"Sections: {len(sections)}")
+                            for i, s in enumerate(sections):
+                                print(
+                                    f"  [{i}] prev={s.previous_id} next={s.next_id}"
+                                )
+
+                        if not old_closed and new_closed:
+
+                            sections = canonicalize_closed_loop(
+                                sections,
+                                start_idx=dragged_idx,
+                            )
+
+                            self._set_sections(sections)
+
+                            self._show_status("Closed loop detected — track direction fixed")
+
+                        if DEBUG_LOOP_DETECTION and not new_closed:
+                            disconnected = []
+                            for i, s in enumerate(sections):
+                                if s.previous_id is None or s.next_id is None:
+                                    disconnected.append(i)
+
+                            if disconnected:
+                                print("Not closed — disconnected sections:", disconnected)
+
 
 
                         self._show_status("Curve → straight connected")

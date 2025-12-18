@@ -1,0 +1,46 @@
+from dataclasses import replace
+from typing import List
+
+from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.geometry.sg_geometry import update_section_geometry
+from sg_viewer.geometry.topology import is_closed_loop
+
+
+def set_start_finish(
+    sections: List[SectionPreview],
+    start_idx: int,
+) -> List[SectionPreview]:
+    """
+    Reassign start_dlong so that `start_idx` is the start/finish (DLONG = 0).
+    Requires a closed loop.
+    """
+    if not is_closed_loop(sections):
+        raise ValueError("Track must be a closed loop to set start/finish")
+
+    n = len(sections)
+
+    # Walk traversal order starting at start_idx
+    order = []
+    i = start_idx
+    visited = set()
+
+    while i not in visited:
+        visited.add(i)
+        order.append(i)
+        i = sections[i].next_id
+
+    if len(order) != n:
+        raise RuntimeError("Invalid loop topology")
+
+    # Reassign start_dlongs
+    new_sections = list(sections)
+    cursor = 0.0
+
+    for idx in order:
+        s = new_sections[idx]
+        s = replace(s, start_dlong=cursor)
+        s = update_section_geometry(s)
+        new_sections[idx] = s
+        cursor += float(s.length)
+
+    return new_sections
