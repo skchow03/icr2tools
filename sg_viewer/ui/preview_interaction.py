@@ -174,7 +174,8 @@ class PreviewInteraction:
 
                 sections = set_start_finish(sections, start_idx)
                 self._set_sections(sections)
-                self._show_status(f"Start/finish set at section {start_idx}")
+                self._selection.set_selected_section(0)
+                self._show_status("Start/finish set to selected section (now section 0)")
                 self._set_start_finish_mode = False
                 return True
 
