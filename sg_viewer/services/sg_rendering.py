@@ -30,7 +30,7 @@ def draw_background_image(
     top_left = map_point(origin_x, origin_y, transform, widget_height)
     bottom_right = map_point(
         origin_x + image.width() * pixel_scale,
-        origin_y + image.height() * pixel_scale,
+        origin_y - image.height() * pixel_scale,
         transform,
         widget_height,
     )
