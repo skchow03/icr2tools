@@ -15,7 +15,7 @@ class PreviewBackground:
         self.image: QtGui.QImage | None = None
         self.image_path: Path | None = None
         self.scale_500ths_per_px: float = 1.0
-        self.origin: Point = (0.0, 0.0)
+        self.world_xy_at_image_uv_00: Point = (0.0, 0.0)
 
     # ------------------------------------------------------------------
     # State management
@@ -32,7 +32,7 @@ class PreviewBackground:
         self.image = None
         self.image_path = None
         self.scale_500ths_per_px = 1.0
-        self.origin = (0.0, 0.0)
+        self.world_xy_at_image_uv_00 = (0.0, 0.0)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -45,13 +45,17 @@ class PreviewBackground:
         if scale <= 0:
             return None
 
-        origin_x, origin_y = self.origin
+        x0, y0 = self.world_xy_at_image_uv_00
+        w = self.image.width()
+        h = self.image.height()
+
         return (
-            origin_x,
-            origin_x + self.image.width() * scale,
-            origin_y - self.image.height() * scale,
-            origin_y,
+            x0,
+            x0 + w * scale,
+            y0,
+            y0 + h * scale,
         )
+
 
     def combine_bounds(self, bounds: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
         background_bounds = self.bounds()

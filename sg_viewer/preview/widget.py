@@ -424,12 +424,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self, scale_500ths_per_px: float, origin: Point
     ) -> None:
         self._background.scale_500ths_per_px = scale_500ths_per_px
-        self._background.origin = origin
+        self._background.world_xy_at_image_uv_00 = origin
         self._fit_view_to_background()
         self.update()
 
     def get_background_settings(self) -> tuple[float, Point]:
-        return self._background.scale_500ths_per_px, self._background.origin
+        return self._background.scale_500ths_per_px, self._background.world_xy_at_image_uv_00
 
     def _background_bounds(self) -> tuple[float, float, float, float] | None:
         return self._background.bounds()
@@ -609,7 +609,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 background_color=self.palette().color(QtGui.QPalette.Window),
                 background_image=self._background.image,
                 background_scale_500ths_per_px=self._background.scale_500ths_per_px,
-                background_origin=self._background.origin,
+                background_origin=self._background.world_xy_at_image_uv_00,
                 sampled_centerline=self._section_manager.sampled_centerline,
                 centerline_polylines=self._section_manager.centerline_polylines,
                 selected_section_points=self._selection.selected_section_points,

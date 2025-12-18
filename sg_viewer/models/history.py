@@ -45,8 +45,8 @@ class FileHistory:
             {
                 "background_image": str(image_path),
                 "background_scale": scale_500ths_per_px,
-                "background_origin_u": origin[0],
-                "background_origin_v": origin[1],
+                "background_upperleft_x": origin[0],
+                "background_upperleft_y": origin[1],
             }
         )
         self._store_file_entry(sg_path, data)
@@ -63,7 +63,7 @@ class FileHistory:
             if not image.is_absolute():
                 image = (sg_path.parent / image).resolve()
             scale = float(data["background_scale"])
-            origin = (float(data["background_origin_u"]), float(data["background_origin_v"]))
+            origin = (float(data["background_upperleft_x"]), float(data["background_upperleft_y"]))
             return image, scale, origin
         except KeyError:
             return None
