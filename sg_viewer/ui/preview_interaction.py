@@ -10,6 +10,7 @@ from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.connect_curve_to_straight import (
     solve_curve_end_to_straight_start,
 )
+from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
     rebuild_centerline_from_sections,
@@ -66,6 +67,7 @@ class PreviewInteraction:
         self._section_drag_center: Point | None = None
         self._active_chain_indices: list[int] | None = None
         self._chain_drag_origins: dict[int, tuple[Point, Point, Point | None]] | None = None
+        self._set_start_finish_mode = False
 
     # ------------------------------------------------------------------
     # State helpers
@@ -93,6 +95,10 @@ class PreviewInteraction:
         self._section_drag_center = None
         self._active_chain_indices = None
         self._chain_drag_origins = None
+        self._set_start_finish_mode = False
+
+    def set_set_start_finish_mode(self, active: bool) -> None:
+        self._set_start_finish_mode = active
 
     # ------------------------------------------------------------------
     # Mouse interaction entry points
@@ -150,6 +156,27 @@ class PreviewInteraction:
     def handle_mouse_release(self, event: QtGui.QMouseEvent) -> bool:
         if event.button() != QtCore.Qt.LeftButton:
             return False
+
+        if self._set_start_finish_mode:
+            hit = self._hit_test_node(event.pos(), None)
+            if hit is not None:
+                section_idx, endtype = hit
+                sections = self._section_manager.sections
+                if not is_closed_loop(sections):
+                    self._show_status("Track must be closed to set start/finish")
+                    self._set_start_finish_mode = False
+                    return True
+
+                if endtype == "end":
+                    start_idx = sections[section_idx].next_id
+                else:
+                    start_idx = section_idx
+
+                sections = set_start_finish(sections, start_idx)
+                self._set_sections(sections)
+                self._show_status(f"Start/finish set at section {start_idx}")
+                self._set_start_finish_mode = False
+                return True
 
         if self._is_dragging_node:
             if self._connection_target is not None:
