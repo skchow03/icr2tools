@@ -44,6 +44,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._delete_section_button = QtWidgets.QPushButton("Delete Section")
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
+        self._set_start_finish_button = QtWidgets.QPushButton("Set Start/Finish")
+        self._set_start_finish_button.setEnabled(False)
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
@@ -78,6 +80,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._new_straight_button)
         navigation_layout.addWidget(self._new_curve_button)
         navigation_layout.addWidget(self._delete_section_button)
+        navigation_layout.addWidget(self._set_start_finish_button)
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._section_table_button)
@@ -148,6 +151,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def delete_section_button(self) -> QtWidgets.QPushButton:
         return self._delete_section_button
+
+    @property
+    def set_start_finish_button(self) -> QtWidgets.QPushButton:
+        return self._set_start_finish_button
 
     @property
     def radii_button(self) -> QtWidgets.QPushButton:

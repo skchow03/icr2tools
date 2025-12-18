@@ -42,6 +42,8 @@ class SGViewerController:
         )
 
     def _on_sections_changed(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        self._window.set_start_finish_button.setEnabled(bool(sections))
         if self._current_path is None:
             return
 
@@ -76,6 +78,8 @@ class SGViewerController:
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.delete_section_button.setEnabled(True)
+        sections, _ = self._window.preview.get_section_set()
+        self._window.set_start_finish_button.setEnabled(bool(sections))
         self._save_action.setEnabled(True)
         self._apply_saved_background(path)
         self._refresh_recent_menu()
@@ -152,6 +156,9 @@ class SGViewerController:
         #self._window.new_track_button.clicked.connect(self._start_new_track)
         self._window.new_straight_button.clicked.connect(self._start_new_straight)
         self._window.new_curve_button.clicked.connect(self._start_new_curve)
+        self._window.set_start_finish_button.clicked.connect(
+            self._window.preview.activate_set_start_finish_mode
+        )
         self._window.preview.newStraightModeChanged.connect(
             self._on_new_straight_mode_changed
         )
@@ -305,6 +312,7 @@ class SGViewerController:
         self._window.section_table_button.setEnabled(False)
         self._window.heading_table_button.setEnabled(False)
         self._window.delete_section_button.setEnabled(False)
+        self._window.set_start_finish_button.setEnabled(False)
         self._window.xsect_combo.blockSignals(True)
         self._window.xsect_combo.clear()
         self._window.xsect_combo.setEnabled(False)

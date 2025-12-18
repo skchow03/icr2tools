@@ -1054,6 +1054,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._show_curve_markers = visible
         self.update()
 
+    def activate_set_start_finish_mode(self) -> None:
+        self._interaction.set_set_start_finish_mode(True)
+        self._status_message = "Click a node to set start/finish."
+        self.update()
+
     def select_next_section(self) -> None:
         if not self._selection.sections:
             return
