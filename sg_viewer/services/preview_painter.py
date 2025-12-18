@@ -26,6 +26,7 @@ class BasePreviewState:
     section_endpoints: list[tuple[Point, Point]]
     selected_section_index: int | None
     show_curve_markers: bool
+    show_axes: bool
     sections: Iterable
     selected_curve_index: int | None
     start_finish_mapping: tuple[Point, Point, Point] | None
@@ -80,6 +81,8 @@ def paint_preview(
     if transform is None:
         _draw_placeholder(painter, base_state.rect, "Unable to fit view")
         return
+
+    _draw_axes(painter, base_state.rect, base_state.show_axes, transform, widget_height)
 
     _draw_centerlines(
         painter,
@@ -151,6 +154,43 @@ def _draw_placeholder(
     painter: QtGui.QPainter, rect: QtCore.QRect, message: str
 ) -> None:
     sg_rendering.draw_placeholder(painter, rect, message)
+
+
+def _draw_axes(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRect,
+    show_axes: bool,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    if not show_axes:
+        return
+
+    scale, offsets = transform
+    if scale == 0:
+        return
+
+    offset_x, offset_y = offsets
+    world_left = (0 - offset_x) / scale
+    world_right = (rect.width() - offset_x) / scale
+    world_bottom = (-offset_y) / scale
+    world_top = (widget_height - offset_y) / scale
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor(170, 170, 170), 1)
+    pen.setStyle(QtCore.Qt.SolidLine)
+    painter.setPen(pen)
+
+    painter.drawLine(
+        sg_rendering.map_point(0, world_bottom, transform, widget_height),
+        sg_rendering.map_point(0, world_top, transform, widget_height),
+    )
+    painter.drawLine(
+        sg_rendering.map_point(world_left, 0, transform, widget_height),
+        sg_rendering.map_point(world_right, 0, transform, widget_height),
+    )
+    painter.restore()
 
 
 def _draw_centerlines(

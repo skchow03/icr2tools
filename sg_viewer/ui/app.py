@@ -49,6 +49,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
+        self._axes_button = QtWidgets.QPushButton("Axes")
+        self._axes_button.setCheckable(True)
+        self._axes_button.setChecked(False)
         self._section_table_button = QtWidgets.QPushButton("Section Table")
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
@@ -83,6 +86,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._set_start_finish_button)
         sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
+        sidebar_layout.addWidget(self._axes_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
@@ -159,6 +163,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def radii_button(self) -> QtWidgets.QPushButton:
         return self._radii_button
+
+    @property
+    def axes_button(self) -> QtWidgets.QPushButton:
+        return self._axes_button
 
     @property
     def section_table_button(self) -> QtWidgets.QPushButton:
