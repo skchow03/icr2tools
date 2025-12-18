@@ -49,8 +49,8 @@ class PreviewBackground:
         return (
             origin_x,
             origin_x + self.image.width() * scale,
+            origin_y - self.image.height() * scale,
             origin_y,
-            origin_y + self.image.height() * scale,
         )
 
     def combine_bounds(self, bounds: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
