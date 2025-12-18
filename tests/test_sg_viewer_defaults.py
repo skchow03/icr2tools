@@ -18,6 +18,7 @@ def qapp():
 def test_new_track_has_default_xsects(qapp):
     sgfile = SGPreviewWidget._create_empty_sgfile()
 
+    assert list(sgfile.header[:4]) == [int.from_bytes(b"\x00\x00GS", "little"), 1, 1, 0]
     assert sgfile.num_xsects == 2
     assert list(sgfile.xsect_dlats) == [-300_000, 300_000]
 
