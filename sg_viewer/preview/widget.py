@@ -104,6 +104,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
         self._show_curve_markers = True
+        self._show_axes = False
 
         self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
@@ -616,6 +617,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 section_endpoints=self._section_manager.section_endpoints,
                 selected_section_index=self._selection.selected_section_index,
                 show_curve_markers=self._show_curve_markers,
+                show_axes=self._show_axes,
                 sections=self._section_manager.sections,
                 selected_curve_index=self._selection.selected_curve_index,
                 start_finish_mapping=self._start_finish_mapping,
@@ -1057,6 +1059,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     def set_show_curve_markers(self, visible: bool) -> None:
         self._show_curve_markers = visible
+        self.update()
+
+    def set_show_axes(self, visible: bool) -> None:
+        self._show_axes = visible
         self.update()
 
     def activate_set_start_finish_mode(self) -> None:
