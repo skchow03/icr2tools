@@ -7,9 +7,19 @@ from typing import Optional, Tuple
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import update_section_geometry
+from sg_viewer.geometry.sg_geometry import signed_radius_from_heading
 
 DEBUG_CURVE_STRAIGHT = True
 DEBUG_CURVE_STRAIGHT_VERBOSE = False
+
+def _signed_angle_deg(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """
+    Signed angle from a → b in degrees.
+    Positive = CCW, negative = CW.
+    """
+    dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
+    cross = a[0] * b[1] - a[1] * b[0]
+    return math.degrees(math.atan2(cross, dot))
 
 def _deg_between(a, b):
     dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
@@ -48,7 +58,7 @@ def _straight_forward_heading(straight: SectionPreview) -> Optional[tuple[float,
 def solve_curve_end_to_straight_start(
     curve: SectionPreview,
     straight: SectionPreview,
-    heading_tolerance_deg: float = 2.0,
+    heading_tolerance_deg: float = 1e-4,
 ) -> Optional[Tuple[SectionPreview, SectionPreview]]:
     """
     Attempt to refit a curve so that:
@@ -115,8 +125,10 @@ def solve_curve_end_to_straight_start(
     heading_tol = heading_tolerance_deg
 
     best_solution: Optional[SectionPreview] = None
-    best_delta = float("inf")
+    best_abs_delta = float("inf")   # absolute degrees
+    best_signed_delta = 0.0         # signed degrees (for debugging)
     best_L: Optional[float] = None
+
     tries_total = 0
     tries_candidates = 0
 
@@ -124,7 +136,9 @@ def solve_curve_end_to_straight_start(
     L0 = straight.length
 
     def try_L(L: float):
-        nonlocal best_solution, best_delta, best_L, tries_total, tries_candidates
+        nonlocal best_solution, best_abs_delta, best_signed_delta, best_L, tries_total, tries_candidates
+
+
         tries_total += 1
         if L <= 1.0:
             return
@@ -163,12 +177,15 @@ def solve_curve_end_to_straight_start(
                     continue
                 eh = (eh[0] / eh_len, eh[1] / eh_len)
 
-                delta = _deg_between(eh, straight_heading)
+                delta = _signed_angle_deg(eh, straight_heading)
 
-                if delta < best_delta:
-                    best_delta = delta
+                abs_delta = abs(delta)
+                if abs_delta < best_abs_delta:
+                    best_abs_delta = abs_delta
+                    best_signed_delta = delta
                     best_solution = cand
                     best_L = L
+
 
                     if DEBUG_CURVE_STRAIGHT_VERBOSE:
                         print(
@@ -178,15 +195,62 @@ def solve_curve_end_to_straight_start(
                             f"radius={cand.radius:,.1f}"
                         )
 
+    def delta_for_L(L: float) -> Optional[float]:
+        if L <= 1.0:
+            return None
+
+        P = (E[0] - hx * L, E[1] - hy * L)
+
+        curve_template = replace(
+            curve,
+            start=curve_start,
+            end=P,
+            polyline=[curve_start, P],
+        )
+
+        for orient in (+1.0, -1.0):
+            candidates = _solve_curve_with_fixed_heading(
+                sect=curve_template,
+                start=curve_start,
+                end=P,
+                fixed_point=curve_start,
+                fixed_heading=curve_start_heading,
+                fixed_point_is_start=True,
+                orientation_hint=orient,
+            )
+
+            for cand in candidates:
+                if cand.end_heading is None:
+                    continue
+
+                eh = cand.end_heading
+                l = math.hypot(eh[0], eh[1])
+                if l <= 0:
+                    continue
+
+                eh = (eh[0] / l, eh[1] / l)
+                return _signed_angle_deg(eh, straight_heading)
+
+        return None
 
 
     # ------------------------
     # Phase 1: coarse scan
     # ------------------------
+    bracket = None
+    prev_L = None
+    prev_delta = None
 
     for i in range(1, 2000):   # 0.01 → 20x straight length
         L = L0 * (i * 0.01)
         try_L(L)
+        d = delta_for_L(L)
+        if d is not None and prev_delta is not None:
+            if d * prev_delta < 0:
+                bracket = (prev_L, L)
+                break
+        prev_L = L
+        prev_delta = d
 
     if best_L is None:
         if DEBUG_CURVE_STRAIGHT:
@@ -205,12 +269,51 @@ def solve_curve_end_to_straight_start(
         L = best_L + (i * span / steps)
         try_L(L)
 
+    if bracket is not None:
+        lo, hi = bracket
+        dlo = delta_for_L(lo)
+
+        for _ in range(40):  # 40 iters = extreme precision
+            mid = 0.5 * (lo + hi)
+            dmid = delta_for_L(mid)
+
+            if dmid is None:
+                break
+
+            if abs(dmid) < 1e-4:
+                best_L = mid
+                break
+
+            if dmid * dlo < 0:
+                hi = mid
+            else:
+                lo = mid
+                dlo = dmid
+
+        best_L = 0.5 * (lo + hi)
+        try_L(best_L)
+
+    # ------------------------
+    # Final Newton-style micro refinement
+    # ------------------------
+    if best_L is not None:
+        eps = max(1.0, best_L * 1e-6)
+
+        d0 = delta_for_L(best_L)
+        d1 = delta_for_L(best_L + eps)
+
+        if d0 is not None and d1 is not None:
+            deriv = (d1 - d0) / eps
+            if abs(deriv) > 1e-9:
+                L_new = best_L - d0 / deriv
+                try_L(L_new)
 
     # ------------------------
     # Accept or reject
     # ------------------------
 
-    if best_solution is None or best_delta > heading_tol:
+    if best_solution is None or best_abs_delta > heading_tol:
+
         if DEBUG_CURVE_STRAIGHT:
             print(
                 f"\nSOLVE FAILED: best Δ={best_delta:.3f}° "
@@ -219,6 +322,19 @@ def solve_curve_end_to_straight_start(
         return None
 
     best_solution = update_section_geometry(best_solution)
+
+    # after you decide best_solution is the curve you will use:
+    signed_r = signed_radius_from_heading(
+        curve_start_heading,      # (hx, hy) at curve start
+        curve_start,              # curve start point
+        best_solution.center,     # solved center
+        best_solution.radius,     # solved (unsigned) radius
+    )
+    if signed_r != best_solution.radius:
+        best_solution = replace(best_solution, radius=signed_r)
+
+    best_solution = update_section_geometry(best_solution)
+
 
 
     # ------------------------
@@ -277,7 +393,8 @@ def solve_curve_end_to_straight_start(
         print("\n=== CURVE → STRAIGHT SOLVE SUMMARY ===")
         print(f"Total L samples tested: {tries_total:,}")
         print(f"Total curve candidates evaluated: {tries_candidates:,}")
-        print(f"Best join Δ heading: {best_delta:.4f}°")
+        print(f"Best join Δ heading: {best_signed_delta:.6f}° (abs {best_abs_delta:.6f}°)")
+
         print(f"Join L: {best_L:,.2f}")
         print(
             f"Curve radius: {curve.radius:,.1f} → {best_solution.radius:,.1f}"
