@@ -1,9 +1,9 @@
 from dataclasses import replace
 from typing import List
 
-from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.topology import is_closed_loop
+from sg_viewer.models.sg_model import SectionPreview
 
 
 def set_start_finish(
@@ -32,15 +32,21 @@ def set_start_finish(
     if len(order) != n:
         raise RuntimeError("Invalid loop topology")
 
-    # Reassign start_dlongs
-    new_sections = list(sections)
+    # Reassign start_dlongs and rewrite indices/connectivity
+    new_sections: list[SectionPreview] = []
     cursor = 0.0
 
-    for idx in order:
-        s = new_sections[idx]
-        s = replace(s, start_dlong=cursor)
+    for new_idx, old_idx in enumerate(order):
+        s = sections[old_idx]
+        s = replace(
+            s,
+            section_id=new_idx,
+            previous_id=(new_idx - 1) % n,
+            next_id=(new_idx + 1) % n,
+            start_dlong=cursor,
+        )
         s = update_section_geometry(s)
-        new_sections[idx] = s
+        new_sections.append(s)
         cursor += float(s.length)
 
     return new_sections

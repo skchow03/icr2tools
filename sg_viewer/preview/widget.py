@@ -32,6 +32,8 @@ from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.models.preview_state_utils import update_node_status
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.hover_detection import find_hovered_unconnected_node
+from sg_viewer.geometry.dlong import set_start_finish
+from sg_viewer.geometry.topology import is_closed_loop
 
 
 logger = logging.getLogger(__name__)
@@ -1055,9 +1057,41 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.update()
 
     def activate_set_start_finish_mode(self) -> None:
-        self._interaction.set_set_start_finish_mode(True)
-        self._status_message = "Click a node to set start/finish."
-        self.update()
+        """Backward-compatible alias for setting start/finish."""
+        self.set_start_finish_at_selected_section()
+
+    def set_start_finish_at_selected_section(self) -> None:
+        if not self._section_manager.sections:
+            return
+
+        selected_index = self._selection.selected_section_index
+        if selected_index is None:
+            self._show_status("Select a section to set start/finish")
+            return
+
+        if not is_closed_loop(self._section_manager.sections):
+            self._show_status("Track must be closed to set start/finish")
+            return
+
+        try:
+            new_sections = set_start_finish(
+                self._section_manager.sections, selected_index
+            )
+        except ValueError:
+            self._show_status("Track must be closed to set start/finish")
+            return
+        except RuntimeError:
+            self._show_status("Invalid loop topology; cannot set start/finish")
+            return
+
+        if new_sections:
+            self._track_length = float(
+                new_sections[-1].start_dlong + new_sections[-1].length
+            )
+
+        self.set_sections(new_sections)
+        self._selection.set_selected_section(0)
+        self._show_status("Start/finish set to selected section (now section 0)")
 
     def select_next_section(self) -> None:
         if not self._selection.sections:
