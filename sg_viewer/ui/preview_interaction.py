@@ -174,10 +174,23 @@ class PreviewInteraction:
                         new_curve, new_straight = result
 
                         sections = list(self._section_manager.sections)
+
+                        # Update connectivity
+                        new_curve = replace(
+                            new_curve,
+                            next_id=target_idx,
+                        )
+
+                        new_straight = replace(
+                            new_straight,
+                            previous_id=dragged_idx,
+                        )
+
                         sections[dragged_idx] = new_curve
                         sections[target_idx] = new_straight
 
                         self._set_sections(sections)
+
 
                         self._show_status("Curve → straight connected")
                         self._clear_drag_state()
