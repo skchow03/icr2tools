@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 import types
 
@@ -48,12 +49,17 @@ if "PyQt5" not in sys.modules:
 
 from PyQt5 import QtCore
 
-from sg_viewer import preview_state
-from sg_viewer.selection import SelectionManager
-from sg_viewer.sg_model import SectionPreview
+from sg_viewer.models import preview_state
+from sg_viewer.models.selection import SelectionManager
+from sg_viewer.models.sg_model import SectionPreview
 
 
-def _make_section(section_id: int, polyline: list[tuple[float, float]], start_dlong: float) -> SectionPreview:
+def _make_section(
+    section_id: int,
+    polyline: list[tuple[float, float]],
+    start_dlong: float,
+    length: float = 50.0,
+) -> SectionPreview:
     return SectionPreview(
         section_id=section_id,
         type_name="test",
@@ -62,7 +68,7 @@ def _make_section(section_id: int, polyline: list[tuple[float, float]], start_dl
         start=polyline[0],
         end=polyline[-1],
         start_dlong=start_dlong,
-        length=50.0,
+        length=length,
         center=None,
         sang1=None,
         sang2=None,
@@ -118,3 +124,18 @@ def test_prefers_moved_segment_over_dlong_order():
     manager.handle_click(click_point, _map_to_track(transform, widget_height), transform)
 
     assert manager.selected_section_index == 1
+
+
+def test_section_ranges_follow_trk_data():
+    sections = [
+        _make_section(0, [(0.0, 0.0), (1.0, 0.0)], 0.0, length=120.0),
+        _make_section(1, [(0.0, 1.0), (1.0, 1.0)], 120.0, length=80.0),
+    ]
+
+    manager = SelectionManager()
+    manager.update_context(sections, track_length=200.0, centerline_index=None, sampled_dlongs=[])
+
+    assert manager._section_ranges == [(0.0, 120.0), (120.0, 200.0)]
+    assert math.isclose(
+        sum(end - start for start, end in manager._section_ranges), manager._track_length
+    )

@@ -280,17 +280,24 @@ class SelectionManager(QtCore.QObject):
 
     def _compute_section_ranges(self, sections: list[SectionPreview]) -> list[tuple[float, float]]:
         ranges: list[tuple[float, float]] = []
-        cursor = 0.0
+        total_length = 0.0
 
         for sect in sections:
-            if not sect.polyline or len(sect.polyline) < 2:
-                continue
+            start_dlong = float(sect.start_dlong)
+            length = float(sect.length)
+            total_length += length
+            ranges.append((start_dlong, start_dlong + length))
 
-            length = self._section_length(sect.polyline)
-
-            start_dlong = cursor
-            cursor += length
-            ranges.append((start_dlong, cursor))
+        if (
+            self._track_length is not None
+            and ranges
+            and not math.isclose(total_length, float(self._track_length), rel_tol=1e-6, abs_tol=1e-3)
+        ):
+            logger.warning(
+                "Section ranges total length %.6f differs from track length %.6f",
+                total_length,
+                float(self._track_length),
+            )
 
         return ranges
 
