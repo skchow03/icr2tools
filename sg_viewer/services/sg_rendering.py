@@ -25,16 +25,19 @@ def draw_background_image(
         return
 
     origin_x, origin_y = origin
+    pixel_scale = scale_500ths_per_px
+
     top_left = map_point(origin_x, origin_y, transform, widget_height)
-    scale, _ = transform
-    dest_width = image.width() * scale_500ths_per_px * scale
-    dest_height = image.height() * scale_500ths_per_px * scale
+    bottom_right = map_point(
+        origin_x + image.width() * pixel_scale,
+        origin_y + image.height() * pixel_scale,
+        transform,
+        widget_height,
+    )
 
     painter.save()
     painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
-    painter.drawImage(
-        QtCore.QRectF(top_left.x(), top_left.y(), dest_width, dest_height), image
-    )
+    painter.drawImage(QtCore.QRectF(top_left, bottom_right).normalized(), image)
     painter.restore()
 
 
