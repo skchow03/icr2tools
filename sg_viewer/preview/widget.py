@@ -28,7 +28,11 @@ from sg_viewer.geometry.centerline_utils import (
     compute_centerline_normal_and_tangent,
     compute_start_finish_mapping_from_centerline,
 )
-from sg_viewer.geometry.sg_geometry import build_section_polyline, derive_heading_vectors
+from sg_viewer.geometry.sg_geometry import (
+    build_section_polyline,
+    derive_heading_vectors,
+    rebuild_centerline_from_sections,
+)
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
 from sg_viewer.ui.preview_interaction import PreviewInteraction
@@ -124,6 +128,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._section_manager,
             self._editor,
             self.set_sections,
+            self.rebuild_after_start_finish,
             self._node_radius_px,
             self._stop_panning,
             show_status=self._show_status,
@@ -926,6 +931,49 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.sectionsChanged.emit()  # NEW
         self.update()
 
+    def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
+        (
+            cline,
+            sampled_dlongs,
+            sampled_bounds,
+            centerline_index,
+        ) = rebuild_centerline_from_sections(sections)
+
+        track_length = sampled_dlongs[-1] if sampled_dlongs else 0.0
+
+        self._section_manager.load_sections(
+            sections=sections,
+            section_endpoints=[(sect.start, sect.end) for sect in sections],
+            sampled_centerline=cline,
+            sampled_dlongs=sampled_dlongs,
+            sampled_bounds=sampled_bounds or (0.0, 0.0, 0.0, 0.0),
+            centerline_index=centerline_index,
+        )
+        self._sampled_bounds = self._section_manager.sampled_bounds
+        self._sampled_centerline = self._section_manager.sampled_centerline
+        self._track_length = track_length
+        self._start_finish_mapping = None
+
+        previous_block_state = self._selection.blockSignals(True)
+        try:
+            self._selection.reset(
+                self._section_manager.sections,
+                self._track_length,
+                self._section_manager.centerline_index,
+                self._section_manager.sampled_dlongs,
+            )
+            self._update_node_status()
+            self._update_start_finish_mapping(0.0 if track_length > 0 else None)
+        finally:
+            self._selection.blockSignals(previous_block_state)
+
+        self._has_unsaved_changes = True
+        self.sectionsChanged.emit()
+        self._selection.set_selected_section(
+            0 if self._section_manager.sections else None
+        )
+
+
     def _compute_start_finish_mapping_from_samples(
         self, start_dlong: float | None
     ) -> tuple[Point, Point, Point] | None:
@@ -1203,8 +1251,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._show_status("Track must be closed to set start/finish")
             return
 
-        start_finish_dlong = float(self._section_manager.sections[selected_index].start_dlong)
-
         try:
             new_sections = set_start_finish(
                 self._section_manager.sections, selected_index
@@ -1216,13 +1262,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._show_status("Invalid loop topology; cannot set start/finish")
             return
 
-        if new_sections:
-            self._track_length = float(
-                new_sections[-1].start_dlong + new_sections[-1].length
-            )
-
-        self.set_sections(new_sections, start_finish_dlong=start_finish_dlong)
-        self._selection.set_selected_section(0)
+        self.rebuild_after_start_finish(new_sections)
         self._show_status("Start/finish set to selected section (now section 0)")
 
     def select_next_section(self) -> None:
