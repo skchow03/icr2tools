@@ -246,7 +246,7 @@ class SGFile:
             return a
 
         def recompute_curve_length(self) -> None:
-            if self.type != 2 or self.radius <= 0:
+            if self.type != 2:
                 return
 
             sx = self.start_x - self.center_x
@@ -254,25 +254,40 @@ class SGFile:
             ex = self.end_x - self.center_x
             ey = self.end_y - self.center_y
 
-            start_angle = math.atan2(sy, sx)
-            end_angle   = math.atan2(ey, ex)
+            r0 = math.hypot(sx, sy)
+            r1 = math.hypot(ex, ey)
+            if r0 <= 0 or r1 <= 0:
+                return
 
-            sweep = end_angle - start_angle
+            # Use geometric radius (Papyrus behaves closer to this than trusting stored radius)
+            r = 0.5 * (r0 + r1)
 
-            heading_start = self._angle_from_fixed_sincos(self.sang1, self.sang2)
-            heading_end   = self._angle_from_fixed_sincos(self.eang1, self.eang2)
-            heading_delta = self._normalize_angle(heading_end - heading_start)
+            # Signed smallest-angle sweep from start vector to end vector
+            dot = sx * ex + sy * ey
+            cross = sx * ey - sy * ex
+            sweep = math.atan2(cross, dot)  # [-pi, pi]
 
+            # IMPORTANT: sang/eang are typically (cos, sin) in SG.
+            heading_start = math.atan2(self.sang2 / FP_SCALE, self.sang1 / FP_SCALE)
+            heading_end   = math.atan2(self.eang2 / FP_SCALE, self.eang1 / FP_SCALE)
+
+            def norm(a: float) -> float:
+                while a <= -math.pi: a += 2 * math.pi
+                while a >  math.pi: a -= 2 * math.pi
+                return a
+
+            heading_delta = norm(heading_end - heading_start)
+
+            # If sweep direction disagrees with heading change, take the long way around
             if sweep * heading_delta < 0:
-                if sweep > 0:
-                    sweep -= 2 * math.pi
-                else:
-                    sweep += 2 * math.pi
+                sweep = sweep - 2 * math.pi if sweep > 0 else sweep + 2 * math.pi
 
-            arc_length = abs(self.radius * sweep)
+            arc_length = abs(r * sweep)
 
-            self.length = int(arc_length)   # truncate, do not round
+            # Papyrus-style: truncate (not round)
+            self.length = int(arc_length)
             self.end_dlong = self.start_dlong + self.length
+
 
     def output_sg_header_xsects(self, output_file):
         """
