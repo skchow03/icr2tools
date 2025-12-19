@@ -28,6 +28,7 @@ class SGViewerController:
         self._new_straight_default_style = window.new_straight_button.styleSheet()
         self._new_curve_default_style = window.new_curve_button.styleSheet()
         self._delete_default_style = window.delete_section_button.styleSheet()
+        self._split_default_style = window.split_section_button.styleSheet()
         self._is_untitled = False
 
 
@@ -44,6 +45,9 @@ class SGViewerController:
     def _on_sections_changed(self) -> None:
         sections, _ = self._window.preview.get_section_set()
         self._window.set_start_finish_button.setEnabled(bool(sections))
+        self._window.split_section_button.setEnabled(bool(sections))
+        if not sections:
+            self._window.split_section_button.setChecked(False)
         if self._current_path is None:
             return
 
@@ -80,6 +84,8 @@ class SGViewerController:
         self._window.delete_section_button.setEnabled(True)
         sections, _ = self._window.preview.get_section_set()
         self._window.set_start_finish_button.setEnabled(bool(sections))
+        self._window.split_section_button.setEnabled(bool(sections))
+        self._window.split_section_button.setChecked(False)
         self._save_action.setEnabled(True)
         self._apply_saved_background(path)
         self._refresh_recent_menu()
@@ -175,7 +181,11 @@ class SGViewerController:
         self._window.delete_section_button.toggled.connect(
             self._toggle_delete_section_mode
         )
+        self._window.split_section_button.toggled.connect(
+            self._toggle_split_section_mode
+        )
         self._window.preview.deleteModeChanged.connect(self._on_delete_mode_changed)
+        self._window.preview.splitSectionModeChanged.connect(self._on_split_mode_changed)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
         self._window.section_table_button.clicked.connect(self._show_section_table)
@@ -212,6 +222,14 @@ class SGViewerController:
             button.setStyleSheet("background-color: #b53f3f; color: white;")
         else:
             button.setStyleSheet(self._delete_default_style)
+
+    def _on_split_mode_changed(self, active: bool) -> None:
+        button = self._window.split_section_button
+        button.setChecked(active)
+        if active:
+            button.setStyleSheet("background-color: #3fb5b5; color: white;")
+        else:
+            button.setStyleSheet(self._split_default_style)
 
     def _on_scale_changed(self, scale: float) -> None:
         self._window.update_scale_label(scale)
@@ -322,6 +340,8 @@ class SGViewerController:
         self._window.section_table_button.setEnabled(False)
         self._window.heading_table_button.setEnabled(False)
         self._window.delete_section_button.setEnabled(False)
+        self._window.split_section_button.setChecked(False)
+        self._window.split_section_button.setEnabled(False)
         self._window.set_start_finish_button.setEnabled(False)
         self._window.xsect_combo.blockSignals(True)
         self._window.xsect_combo.clear()
@@ -435,6 +455,7 @@ class SGViewerController:
 
     def _start_new_straight(self) -> None:
         self._window.delete_section_button.setChecked(False)
+        self._window.split_section_button.setChecked(False)
         if not self._window.preview.begin_new_straight():
             self._window.statusBar().showMessage(
                 "Start a new track or load an SG file before creating new straights."
@@ -448,6 +469,7 @@ class SGViewerController:
 
     def _start_new_curve(self) -> None:
         self._window.delete_section_button.setChecked(False)
+        self._window.split_section_button.setChecked(False)
         if not self._window.preview.begin_new_curve():
             self._window.statusBar().showMessage(
                 "Create a track with an unconnected node before adding a curve."
@@ -463,12 +485,27 @@ class SGViewerController:
         if checked:
             self._window.new_straight_button.setChecked(False)
             self._window.new_curve_button.setChecked(False)
+            self._window.split_section_button.setChecked(False)
             if not self._window.preview.begin_delete_section():
                 self._window.delete_section_button.setChecked(False)
                 return
             self._window.statusBar().showMessage("Click a section to delete it.")
         else:
             self._window.preview.cancel_delete_section()
+
+    def _toggle_split_section_mode(self, checked: bool) -> None:
+        if checked:
+            self._window.delete_section_button.setChecked(False)
+            self._window.new_straight_button.setChecked(False)
+            self._window.new_curve_button.setChecked(False)
+            if not self._window.preview.begin_split_section():
+                self._window.split_section_button.setChecked(False)
+                return
+            self._window.statusBar().showMessage(
+                "Hover over a straight section to choose split point."
+            )
+        else:
+            self._window.preview.cancel_split_section()
 
     def _refresh_recent_menu(self) -> None:
         self._open_recent_menu.clear()
@@ -489,6 +526,9 @@ class SGViewerController:
         has_sections = bool(sections)
 
         self._window.delete_section_button.setEnabled(has_sections)
+        self._window.split_section_button.setEnabled(has_sections)
+        if not has_sections:
+            self._window.split_section_button.setChecked(False)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
 

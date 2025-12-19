@@ -28,6 +28,7 @@ from sg_viewer.geometry.centerline_utils import (
     compute_centerline_normal_and_tangent,
     compute_start_finish_mapping_from_centerline,
 )
+from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import (
     build_section_polyline,
     derive_heading_vectors,
@@ -60,6 +61,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     newStraightModeChanged = QtCore.pyqtSignal(bool)
     newCurveModeChanged = QtCore.pyqtSignal(bool)
     deleteModeChanged = QtCore.pyqtSignal(bool)
+    splitSectionModeChanged = QtCore.pyqtSignal(bool)
     scaleChanged = QtCore.pyqtSignal(float)
 
     CURVE_SOLVE_TOLERANCE = CURVE_SOLVE_TOLERANCE_DEFAULT  # inches
@@ -100,6 +102,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._creation_controller = CreationController()
         self._hovered_endpoint: tuple[int, str] | None = None
+
+        self._split_section_mode = False
+        self._split_hover_point: Point | None = None
+        self._split_hover_section_index: int | None = None
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -287,6 +293,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
         self._apply_creation_update(self._creation_controller.reset())
+        self.cancel_split_section()
         self._editor.reset()
         self._is_panning = False
         self._last_mouse_pos = None
@@ -309,6 +316,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # Loading
     # ------------------------------------------------------------------
     def load_sg_file(self, path: Path) -> None:
+        self.cancel_split_section()
         data = self._controller.load_sg_file(path)
         if data is None:
             self.clear()
@@ -395,6 +403,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
     # New straight creation
     # ------------------------------------------------------------------
     def begin_new_straight(self) -> bool:
+        self.cancel_split_section()
         update = self._creation_controller.begin_new_straight(
             bool(self._sampled_bounds)
         )
@@ -402,6 +411,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return update.handled
 
     def begin_new_curve(self) -> bool:
+        self.cancel_split_section()
         update = self._creation_controller.begin_new_curve(bool(self._sampled_bounds))
         self._apply_creation_update(update)
         return update.handled
@@ -458,10 +468,83 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         if active:
+            self.cancel_split_section()
             self._apply_creation_update(
                 self._creation_controller.deactivate_creation()
             )
         self.deleteModeChanged.emit(active)
+
+    # ------------------------------------------------------------------
+    # Split section
+    # ------------------------------------------------------------------
+    def begin_split_section(self) -> bool:
+        if not self._section_manager.sections:
+            return False
+
+        if self._split_section_mode:
+            return True
+
+        self._clear_split_hover()
+        self._split_section_mode = True
+        self._apply_creation_update(self._creation_controller.deactivate_creation())
+        self.set_status_text("Hover over a straight section to choose split point.")
+        self.splitSectionModeChanged.emit(True)
+        self.request_repaint()
+        return True
+
+    def cancel_split_section(self) -> None:
+        if not self._split_section_mode and self._split_hover_point is None:
+            return
+
+        self._split_section_mode = False
+        self._clear_split_hover()
+        self.splitSectionModeChanged.emit(False)
+        self.request_repaint()
+
+    def _update_split_hover(self, screen_pos: QtCore.QPoint) -> None:
+        widget_size = (self.width(), self.height())
+        transform = self.current_transform(widget_size)
+        if transform is None:
+            self._clear_split_hover()
+            return
+
+        track_point = self.map_to_track(
+            screen_pos, widget_size, self.height(), transform
+        )
+        if track_point is None:
+            self._clear_split_hover()
+            return
+
+        section_index = self._selection.find_section_at_point(
+            screen_pos,
+            lambda p: self.map_to_track(p, widget_size, self.height(), transform),
+            transform,
+        )
+        if section_index is None:
+            self._clear_split_hover()
+            return
+
+        section = self._section_manager.sections[section_index]
+        if section.type_name != "straight":
+            self._clear_split_hover()
+            return
+
+        projected = project_point_to_segment(
+            track_point, section.start, section.end
+        )
+        if projected is None:
+            self._clear_split_hover()
+            return
+
+        self._split_hover_point = projected
+        self._split_hover_section_index = section_index
+        self.request_repaint()
+
+    def _clear_split_hover(self) -> None:
+        if self._split_hover_point is not None or self._split_hover_section_index is not None:
+            self._split_hover_point = None
+            self._split_hover_section_index = None
+            self.request_repaint()
 
     def set_background_settings(
         self, scale_500ths_per_px: float, origin: Point
@@ -564,10 +647,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if update.straight_mode_changed:
             if self._creation_controller.straight_active:
                 self._set_delete_section_active(False)
+                self.cancel_split_section()
             self.newStraightModeChanged.emit(self._creation_controller.straight_active)
         if update.curve_mode_changed:
             if self._creation_controller.curve_active:
                 self._set_delete_section_active(False)
+                self.cancel_split_section()
             self.newCurveModeChanged.emit(self._creation_controller.curve_active)
         if update.finalize_straight:
             self._finalize_new_straight()
@@ -664,6 +749,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 selected_curve_index=self._selection.selected_curve_index,
                 start_finish_mapping=self._start_finish_mapping,
                 status_message=self._status_message,
+                split_section_mode=self._split_section_mode,
+                split_hover_point=self._split_hover_point,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,
@@ -720,6 +807,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
             event.accept()
             return
 
+        if self._split_section_mode:
+            self._is_panning = False
+            self._last_mouse_pos = None
+            self._press_pos = None
+            event.accept()
+            return
+
         if self._interaction.handle_mouse_press(event):
             logger.debug("mousePressEvent handled by interaction at %s", event.pos())
             return
@@ -755,6 +849,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         if self._delete_section_active:
+            event.accept()
+            return
+
+        if self._split_section_mode:
+            self._update_split_hover(event.pos())
             event.accept()
             return
 
@@ -817,6 +916,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._press_pos = None
                 event.accept()
                 return
+            if self._split_section_mode:
+                self._press_pos = None
+                event.accept()
+                return
             if self._creation_active():
                 event.accept()
                 return
@@ -845,6 +948,10 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 )
             self._press_pos = None
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
+        self._clear_split_hover()
+        super().leaveEvent(event)
 
     # ------------------------------------------------------------------
     # Selection
@@ -909,6 +1016,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return list(self._section_manager.sections), track_length
 
     def set_sections(self, sections: list[SectionPreview], start_finish_dlong: float | None = None) -> None:
+        self._clear_split_hover()
         needs_rebuild = self._section_manager.set_sections(sections)
 
         self._sampled_bounds = self._section_manager.sampled_bounds

@@ -41,6 +41,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._new_curve_button = QtWidgets.QPushButton("New Curve")
         self._new_curve_button.setCheckable(True)
         self._new_curve_button.setEnabled(False)
+        self._split_section_button = QtWidgets.QPushButton("Split")
+        self._split_section_button.setCheckable(True)
+        self._split_section_button.setEnabled(False)
         self._delete_section_button = QtWidgets.QPushButton("Delete Section")
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
@@ -82,6 +85,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._next_button)
         navigation_layout.addWidget(self._new_straight_button)
         navigation_layout.addWidget(self._new_curve_button)
+        navigation_layout.addWidget(self._split_section_button)
         navigation_layout.addWidget(self._delete_section_button)
         navigation_layout.addWidget(self._set_start_finish_button)
         sidebar_layout.addLayout(navigation_layout)
@@ -151,6 +155,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def new_curve_button(self) -> QtWidgets.QPushButton:
         return self._new_curve_button
+
+    @property
+    def split_section_button(self) -> QtWidgets.QPushButton:
+        return self._split_section_button
 
     @property
     def delete_section_button(self) -> QtWidgets.QPushButton:
@@ -286,4 +294,3 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         dirty_marker = "*" if is_dirty else ""
         self.setWindowTitle(f"{name}{dirty_marker} — SG Viewer")
-

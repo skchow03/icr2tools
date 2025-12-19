@@ -31,6 +31,8 @@ class BasePreviewState:
     selected_curve_index: int | None
     start_finish_mapping: tuple[Point, Point, Point] | None
     status_message: str
+    split_section_mode: bool
+    split_hover_point: Point | None
 
 
 @dataclass
@@ -107,6 +109,14 @@ def paint_preview(
         transform,
         widget_height,
     )
+
+    if base_state.split_section_mode and base_state.split_hover_point is not None:
+        _draw_split_hover_node(
+            painter,
+            base_state.split_hover_point,
+            transform,
+            widget_height,
+        )
 
     _draw_creation_overlays(painter, creation_state, transform, widget_height)
     _draw_nodes(painter, node_state, transform, widget_height)
@@ -224,6 +234,22 @@ def _draw_start_finish_line(
     widget_height: int,
 ) -> None:
     sg_rendering.draw_start_finish_line(painter, mapping, transform, widget_height)
+
+
+def _draw_split_hover_node(
+    painter: QtGui.QPainter,
+    point: Point,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    mapped_point = _map_point(point, transform, widget_height)
+    radius = 5
+
+    painter.save()
+    painter.setPen(QtGui.QPen(QtCore.Qt.yellow, 1))
+    painter.setBrush(QtGui.QBrush(QtCore.Qt.yellow))
+    painter.drawEllipse(mapped_point, radius, radius)
+    painter.restore()
 
 
 def _map_point(

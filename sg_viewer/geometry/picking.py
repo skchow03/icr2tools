@@ -46,3 +46,22 @@ def find_connection_target(
             best_d2 = d2
 
     return best
+
+
+def project_point_to_segment(
+    p: Tuple[float, float], a: Tuple[float, float], b: Tuple[float, float]
+) -> Optional[Tuple[float, float]]:
+    ax, ay = a
+    bx, by = b
+    px, py = p
+
+    vx = bx - ax
+    vy = by - ay
+    denom = vx * vx + vy * vy
+    if denom <= 0:
+        return None
+
+    t = ((px - ax) * vx + (py - ay) * vy) / denom
+    t = max(0.0, min(1.0, t))
+
+    return (ax + t * vx, ay + t * vy)
