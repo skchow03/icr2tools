@@ -546,6 +546,26 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._split_hover_section_index = None
             self.request_repaint()
 
+    def _commit_split(self) -> None:
+        idx = self._split_hover_section_index
+        point = self._split_hover_point
+
+        if idx is None or point is None:
+            return
+
+        result = self._editor.split_straight_section(
+            list(self._section_manager.sections), idx, point
+        )
+        if result is None:
+            return
+
+        sections, track_length = result
+        self._track_length = track_length
+        self.set_sections(sections)
+        self._clear_split_hover()
+        self._split_section_mode = False
+        self.request_repaint()
+
     def set_background_settings(
         self, scale_500ths_per_px: float, origin: Point
     ) -> None:
@@ -904,6 +924,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._handle_creation_mouse_release(event):
+            return
+
+        if self._split_section_mode:
+            if event.button() == QtCore.Qt.LeftButton and self._split_hover_point is not None:
+                self._commit_split()
+            self._press_pos = None
+            event.accept()
             return
 
         if event.button() == QtCore.Qt.LeftButton:
