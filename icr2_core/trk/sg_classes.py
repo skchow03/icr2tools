@@ -297,6 +297,62 @@ class SGFile:
             self.end_dlong = self.start_dlong + self.length
 
 
+    def connect_straight_to_curve(
+        self,
+        straight_idx: int,
+        radius: float,
+        sweep: float,
+        turn: int,
+    ) -> None:
+        straight = self.sects[straight_idx]
+        curve = self.sects[straight_idx + 1]
+
+        if straight.type != 1:
+            return
+
+        print("STRAIGHT → CURVE SOLVER CALLED")
+
+        px = straight.end_x
+        py = straight.end_y
+
+        theta = straight.heading_angle()
+
+        tx = math.cos(theta)
+        ty = math.sin(theta)
+
+        nx = -ty
+        ny = tx
+
+        cx = px + turn * radius * nx
+        cy = py + turn * radius * ny
+
+        # Promote section to curve
+        curve.type = 2
+        curve.start_x = px
+        curve.start_y = py
+        curve.center_x = int(cx)
+        curve.center_y = int(cy)
+        curve.radius = int(radius)
+
+        vx = px - cx
+        vy = py - cy
+
+        ang0 = math.atan2(vy, vx)
+        ang1 = ang0 + sweep * turn
+
+        curve.end_x = int(cx + radius * math.cos(ang1))
+        curve.end_y = int(cy + radius * math.sin(ang1))
+
+        curve.sang1 = int(math.cos(theta) * FP_SCALE)
+        curve.sang2 = int(math.sin(theta) * FP_SCALE)
+
+        end_heading = theta + sweep * turn
+        curve.eang1 = int(math.cos(end_heading) * FP_SCALE)
+        curve.eang2 = int(math.sin(end_heading) * FP_SCALE)
+
+        curve.recompute_curve_length()
+
+
     def output_sg_header_xsects(self, output_file):
         """
         Outputs the header and xsect DLATs data from the SGFile to a CSV file.

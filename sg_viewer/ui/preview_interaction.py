@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Callable
 
 from PyQt5 import QtCore, QtGui
 
+from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.connect_curve_to_straight import (
     solve_curve_end_to_straight_start,
@@ -274,6 +275,81 @@ class PreviewInteraction:
 
 
                         self._show_status("Curve → straight connected")
+                        self._clear_drag_state()
+                        return True
+                    if (
+                        dragged_section.type_name == "straight"
+                        and dragged_end == "end"
+                        and target_section.type_name == "curve"
+                        and target_end == "start"
+                    ):
+                        sgfile = self._apply_preview_to_sgfile_safe()
+                        if sgfile is None:
+                            self._show_status("SG data not available for straight → curve connect")
+                            self._clear_drag_state()
+                            return True
+
+                        straight_idx = dragged_idx
+                        curve_idx = target_idx
+
+                        if curve_idx != straight_idx + 1:
+                            self._show_status("Straight → curve requires adjacent sections")
+                            self._clear_drag_state()
+                            return True
+
+                        radius = target_section.radius
+                        center = target_section.center
+
+                        if radius is None or center is None:
+                            self._show_status("Target curve is missing center or radius")
+                            self._clear_drag_state()
+                            return True
+
+                        if radius == 0:
+                            self._show_status("Curve radius must be non-zero")
+                            self._clear_drag_state()
+                            return True
+
+                        if straight_idx + 1 >= getattr(sgfile, "num_sects", 0):
+                            self._show_status("Straight → curve requires a following section")
+                            self._clear_drag_state()
+                            return True
+
+                        sx, sy = target_section.start
+                        ex, ey = target_section.end
+                        cx, cy = center
+
+                        start_vec = (sx - cx, sy - cy)
+                        end_vec = (ex - cx, ey - cy)
+
+                        cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+                        dot = start_vec[0] * end_vec[0] + start_vec[1] * end_vec[1]
+
+                        sweep_angle = math.atan2(cross, dot)
+                        turn = 1 if sweep_angle >= 0 else -1
+                        sweep = abs(sweep_angle)
+
+                        if sweep <= 0:
+                            self._show_status("Invalid curve sweep for straight → curve solve")
+                            self._clear_drag_state()
+                            return True
+
+                        try:
+                            sgfile.connect_straight_to_curve(
+                                straight_idx,
+                                abs(radius),
+                                sweep,
+                                turn,
+                            )
+                            sgfile.rebuild_dlongs(straight_idx)
+                        except (IndexError, ValueError):
+                            self._show_status("Failed to solve straight → curve connection")
+                            self._clear_drag_state()
+                            return True
+
+                        self._refresh_from_sgfile(sgfile)
+
+                        self._show_status("Straight → curve connected")
                         self._clear_drag_state()
                         return True
 
@@ -554,6 +630,23 @@ class PreviewInteraction:
         sections[tgt_index] = update_section_geometry(tgt_section)
 
         self._apply_section_updates(sections)
+
+    def _apply_preview_to_sgfile_safe(self) -> SGFile | None:
+        apply_fn = getattr(self._context, "apply_preview_to_sgfile", None)
+        if apply_fn is None:
+            return None
+
+        try:
+            return apply_fn()
+        except Exception:
+            return None
+
+    def _refresh_from_sgfile(self, _sgfile: SGFile) -> None:
+        refresh_fn = getattr(self._context, "refresh_geometry", None)
+        if refresh_fn is None:
+            return
+
+        refresh_fn()
 
     # ------------------------------------------------------------------
     # Section dragging
