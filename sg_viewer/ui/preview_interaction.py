@@ -44,6 +44,7 @@ class PreviewInteraction:
         section_manager: "PreviewSectionManager",
         editor: "PreviewEditor",
         set_sections: Callable[[list["SectionPreview"], float | None], None],
+        rebuild_after_start_finish: Callable[[list["SectionPreview"]], None],
         node_radius_px: int,
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
@@ -53,6 +54,7 @@ class PreviewInteraction:
         self._section_manager = section_manager
         self._editor = editor
         self._set_sections = set_sections
+        self._rebuild_after_start_finish = rebuild_after_start_finish
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
         self._show_status = show_status
@@ -172,10 +174,18 @@ class PreviewInteraction:
                 else:
                     start_idx = section_idx
 
-                start_finish_dlong = float(sections[start_idx].start_dlong)
-                sections = set_start_finish(sections, start_idx)
-                self._set_sections(sections, start_finish_dlong=start_finish_dlong)
-                self._selection.set_selected_section(0)
+                try:
+                    sections = set_start_finish(sections, start_idx)
+                except ValueError:
+                    self._show_status("Track must be closed to set start/finish")
+                    self._set_start_finish_mode = False
+                    return True
+                except RuntimeError:
+                    self._show_status("Invalid loop topology; cannot set start/finish")
+                    self._set_start_finish_mode = False
+                    return True
+
+                self._rebuild_after_start_finish(sections)
                 self._show_status("Start/finish set to selected section (now section 0)")
                 self._set_start_finish_mode = False
                 return True
