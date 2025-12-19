@@ -106,6 +106,12 @@ class SGViewerController:
         self._save_action.setEnabled(True)
         self._save_action.triggered.connect(self._save_file_dialog)
 
+        self._recalc_action = QtWidgets.QAction(
+            "Recalculate Lengths && DLONGs",
+            self._window,
+        )
+        self._recalc_action.triggered.connect(self._recalculate_dlongs)
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -145,6 +151,9 @@ class SGViewerController:
 #        file_menu.addAction(self._calibrate_background_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
+
+        tools_menu = self._window.menuBar().addMenu("Tools")
+        tools_menu.addAction(self._recalc_action)
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -376,6 +385,22 @@ class SGViewerController:
         self._window.update_window_title(
             path=self._current_path,
             is_dirty=False,
+        )
+
+    def _recalculate_dlongs(self) -> None:
+        preview = self._window.preview
+        try:
+            sgfile = preview.apply_preview_to_sgfile()
+        except ValueError:
+            return
+
+        sgfile.rebuild_dlongs(0, 0)
+
+        preview.refresh_geometry()
+        preview.sectionsChanged.emit()
+
+        self._window.statusBar().showMessage(
+            "Recalculated all curve lengths and DLONGs"
         )
 
 
