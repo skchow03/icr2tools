@@ -1,375 +1,248 @@
 # SG Viewer Architecture
 
-This document describes the current architecture of **SG Viewer**, reflecting the recent refactors to reduce module size, improve separation of concerns, and decouple UI widgets from editing logic.
+## Overview
+
+`sg_viewer` is an interactive editor and viewer for Papyrus IndyCar Racing II `.SG` track geometry files.  
+The application is structured around a strict separation between:
+
+- **Authoritative SG data** (what will be saved to disk)
+- **Derived preview geometry** (recomputed, disposable)
+- **User interaction logic** (selection, dragging, creation)
+- **Rendering and coordinate transforms**
+- **Qt UI plumbing**
+
+Preview state is intentionally *lossy and recomputable*. Only SG-backed values are considered canonical.
 
 ---
 
-## High-Level Overview
+## High-Level Data Flow
 
-This document is written to be consumed by **both humans and LLM-based code assistants**. It is intentionally explicit about ownership, data flow, and dependency direction so that automated refactors do not collapse boundaries or reintroduce large, tightly coupled modules.
+.SG file
+↓
+SG parsing / model creation
+↓
+SectionPreview objects
+↓
+Geometry derivation (polylines, headings, bounds)
+↓
+Preview transform + view state
+↓
+Interaction controllers (selection, dragging, creation)
+↓
+Rendering services
+↓
+Qt widgets
 
-When modifying this repository with the help of an LLM:
-
-* Prefer small, local changes
-* Never move initialization order inside Qt widgets without understanding dependencies
-* Treat architectural boundaries described below as constraints, not suggestions
-
----
-
-## High-Level Overview
-
-SG Viewer is a Qt-based desktop application for inspecting and editing `.SG` track geometry files used by IndyCar Racing II. The application is structured around a thin UI layer, a preview canvas for visualization and interaction, and a set of domain-focused helpers and controllers that encapsulate geometry, selection, editing, and rendering behavior.
-
-The primary architectural goals are:
-
-* Keep Qt widgets thin and focused on event forwarding and painting
-* Isolate math, geometry, and selection logic into pure-Python modules
-* Decouple interaction logic from concrete widget classes
-* Make incremental refactoring safe by enforcing clear ownership and initialization order
 
 ---
 
-## Entry Points and Application Shell
+## Core Domains
 
-### `sg_viewer/main.py`
+### 1. SG / Track Data (Authoritative)
 
-**Purpose:** process entry point only.
+**Purpose:** Represent real `.SG` semantics and values.
+
+**Primary module:**
+- `models/sg_model.py`
+
+**Key type:**
+- `SectionPreview`
+
+`SectionPreview` contains:
+- SG-backed values:  
+  `section_id`, `type_name`, `previous_id`, `next_id`,  
+  `start_dlong`, `length`,  
+  `sang1/sang2`, `eang1/eang2`, `radius`
+- World-space endpoints: `start`, `end`
+- Derived values: `polyline`, `start_heading`, `end_heading`
+
+Rules:
+- `start_dlong`, `length`, connectivity IDs are authoritative
+- Angles and radius follow SG conventions
+- Derived geometry may temporarily diverge during editing
+
+---
+
+### 2. Geometry Derivation (Pure, Stateless)
+
+**Purpose:** Convert SG-style parameters into drawable geometry.
+
+**Modules:**
+- `geometry/sg_geometry.py`
+- `geometry/curve_solver.py`
+- `geometry/connect.py`
 
 Responsibilities:
+- Build section polylines from SG parameters
+- Infer headings when not explicitly stored
+- Solve curve geometry from constraints (dragging, fixed heading)
+- Flatten sections into a centerline representation
 
-* Parse command-line arguments
-* Configure logging
-* Create the Qt application instance
-* Instantiate and show the main window
-
-Non-responsibilities:
-
-* No preview logic
-* No editor logic
-* No domain imports beyond `ui.app`
-
-LLM guidance:
-
-> Do not add features or logic here. This file should remain boring and stable.
+Design constraints:
+- No Qt dependencies
+- No persistent state
+- Safe to recompute at any time
+- Deterministic given inputs
 
 ---
 
-### `sg_viewer/main.py`
+### 3. Preview State & Coordinate Transforms
+
+**Purpose:** Maintain view state independent of SG data.
+
+**Modules:**
+- `models/preview_state.py`
+- `geometry/preview_transform.py`
+- `preview/transform.py`
+
+Key concepts:
+- **World coordinates:** SG space (x right, y up)
+- **Screen coordinates:** Qt space (x right, y down)
+- **Transform:** `(scale, (offset_x, offset_y))`
+
+`TransformState` tracks:
+- `fit_scale` – auto-fit scale from bounds
+- `current_scale` – user-modified scale
+- `view_center` – world-space center
+- `user_transform_active` – disables auto-fit when true
+
+Notes:
+- Background image bounds participate in fit calculations
+- Auto-fit is suppressed once the user pans or zooms
+
+---
+
+### 4. Selection & Interaction Logic
+
+**Purpose:** Interpret user intent and manage live editing state.
+
+**Modules:**
+- `models/selection.py`
+- `models/preview_state_utils.py`
+- `preview/selection.py`
+- `preview/edit_interactions.py`
+- `preview/creation_controller.py`
+- `preview/connection_detection.py`
 
 Responsibilities:
+- Hit-testing against section polylines or centerline
+- Mapping screen clicks to world coordinates and DLONGs
+- Tracking selected sections and endpoints
+- Enforcing connectivity rules (disconnected endpoints only)
+- Producing speculative previews during drag or creation
 
-* Parse command-line arguments
-* Configure logging
-* Create the Qt application instance
-* Instantiate and show the main window
-
-This file intentionally contains no application logic beyond startup and shutdown.
+Rules:
+- Interaction logic never writes SG values directly
+- All edits operate on preview representations first
+- Commit happens explicitly after interaction completes
 
 ---
 
-### `sg_viewer/ui/app.py`
+### 5. Rendering Services
 
-Defines the main application window and top-level UI composition.
+**Purpose:** Convert preview state into drawing commands.
+
+**Modules:**
+- `services/preview_painter.py`
+- `services/sg_rendering.py`
+- `services/rendering_service.py`
+- `services/preview_background.py`
 
 Responsibilities:
+- Draw sections, nodes, centerline
+- Apply transforms
+- Manage draw order and styling
+- Render calibrated background images
 
-* Construct the main window layout
-* Instantiate the preview widget
-* Own high-level UI controls (buttons, labels, menus)
-* Wire signals between UI elements and controllers
-
-The main window treats the preview widget as an opaque component that satisfies the `PreviewContext` interface.
-
----
-
-## Preview System
-
-The preview system is the core of SG Viewer. It is deliberately split into multiple layers to prevent a single "god widget" from forming.
-
-### `sg_viewer/preview/widget.py` — **SGPreviewWidget**
-
-Role:
-
-* Subclasses `QWidget`
-* Owns the Qt paint lifecycle (`paintEvent`)
-* Forwards mouse, wheel, and resize events
-* Acts as the *concrete runtime provider* of `PreviewContext`
-
-Key invariants:
-
-* All collaborator objects are created in `__init__`
-* Initialization order matters and must not be reordered casually
-* `_controller`, `_selection`, and `_editor` must exist before use
-
-Non-responsibilities:
-
-* No geometry math
-* No hit-testing logic
-* No editing state ownership
-* No domain decisions
-
-LLM guidance:
-
-> Do not move logic *into* this widget. If code grows here, extract it outward.
+Rendering is intentionally passive:
+- No geometry inference
+- No SG mutation
+- No interaction decisions
 
 ---
 
-### `sg_viewer/preview/widget.py` — **SGPreviewWidget**
+### 6. UI Layer (Qt)
 
-Role:
+**Purpose:** User-facing widgets and application wiring.
 
-* Subclasses `QWidget`
-* Owns the Qt paint lifecycle (`paintEvent`)
-* Forwards mouse and wheel events
-* Acts as the concrete implementation of `PreviewContext`
-
-Non-responsibilities:
-
-* No geometry math
-* No selection algorithms
-* No editing state ownership
-* No direct business logic
-
-The widget’s job is to *coordinate*, not decide.
-
----
-
-### `sg_viewer/preview/context.py` — **PreviewContext**
-
-`PreviewContext` is a `typing.Protocol` that defines the *minimum surface area* required by non-UI logic.
-
-Design intent:
-
-* Enables duck typing
-* Prevents interaction and controller code from depending on Qt widgets
-* Allows future replacement or wrapping of the preview widget
-
-Important rules:
-
-* **Never inherit from `PreviewContext`** (especially in Qt classes)
-* Only use it for type hints
-* Methods must remain simple and side-effect transparent
-
-LLM guidance:
-
-> Adding methods to this interface is a breaking architectural change. Do so only when strictly necessary.
-
----
-
-### `sg_viewer/preview/context.py` — **PreviewContext**
-
-A `typing.Protocol` defining the minimal interface required by interaction and editing logic.
+**Modules:**
+- `ui/preview_widget.py`
+- `ui/preview_editor.py`
+- `ui/preview_viewport.py`
+- `ui/preview_state_controller.py`
+- `ui/app.py`
+- `ui/*_dialog.py`
 
 Responsibilities:
+- Wire mouse/keyboard events to controllers
+- Own widgets and layouts
+- Display dialogs and status text
+- Manage application lifecycle
 
-* Abstract access to coordinate transforms
-* Provide repaint and status update hooks
-
-Key property:
-
-* **Duck-typed** only
-* Never inherited from by Qt widgets
-
-This allows interactions and controllers to remain widget-agnostic.
-
----
-
-## Controllers and State
-
-Controllers are long-lived objects that own mutable application state. They are created by `SGPreviewWidget` and outlive individual user interactions.
-
-Controllers:
-
-* Never import Qt widgets
-* May depend on `PreviewContext`
-* May depend on pure helper modules
-
-They represent the *behavioral core* of the preview system.
+UI code does **not**:
+- Solve geometry
+- Interpret SG semantics
+- Perform coordinate math beyond delegation
 
 ---
 
-## Controllers and State
+## Background Image System
 
-### Preview State Controllers
+**Modules:**
+- `services/preview_background.py`
+- `ui/bg_calibrator_minimal.py`
+- `models/history.py`
 
-These classes own mutable preview/editor state and are created by `SGPreviewWidget` during initialization.
+Concepts:
+- Images exist in world coordinates
+- Scale stored as *500ths per pixel*
+- Image origin corresponds to UV (0,0)
+- Image bounds are included in auto-fit calculations
 
-Typical responsibilities include:
-
-* Track state
-* Selection state
-* Edit mode and creation state
-
-Strict rule:
-
-> Controllers may depend on `PreviewContext`, but never on concrete widget classes.
-
----
-
-### Creation / Interaction Controllers
-
-Creation logic (new straight, new curve, delete, etc.) is implemented via dedicated controllers and interaction classes.
-
-Responsibilities:
-
-* Interpret mouse input into domain actions
-* Maintain temporary creation state
-* Generate preview geometry
-* Emit status text
-
-They do **not**:
-
-* Paint
-* Access widget internals
-* Perform geometry math directly
+Persistence:
+- Stored per SG file in history INI
+- Relative paths resolved against SG location
 
 ---
 
-## Helper Modules
+## Preview vs SG Truth
 
-Helper modules are intentionally boring. They should contain pure, testable logic with no side effects.
+The following are allowed to diverge temporarily during editing:
+- Polylines
+- Headings
+- Curve center and radius
+- Section continuity
 
-LLM guidance:
+The following are always authoritative:
+- Section order
+- Connectivity (`previous_id`, `next_id`)
+- `start_dlong` and `length` once committed
 
-> If a helper module needs Qt, it probably belongs in a painter or widget instead.
-
----
-
-## Helper Modules
-
-### Geometry
-
-**Location:** `sg_viewer/preview/geometry.py`
-
-Contains all math-only helpers:
-
-* Heading calculations
-* Tangent / normal computation
-* Curve angle math
-* Coordinate reconstruction
-
-Pure Python. No Qt imports.
+Preview state must always be regenerable from SG data.
 
 ---
 
-### Selection
+## Extension Guidelines
 
-**Location:** `sg_viewer/preview/selection.py`
+Safe extension areas:
+- New interaction modes → `preview/*`
+- New geometry constraints → `geometry/*`
+- New rendering styles → `services/*`
+- New dialogs → `ui/*`
 
-Responsibilities:
-
-* Hit testing
-* Nearest-section lookup
-* Selection resolution
-
-Pure Python. No Qt imports.
-
----
-
-### Transforms
-
-**Location:** `sg_viewer/preview/transform.py`
-
-Responsibilities:
-
-* World ↔ screen coordinate transforms
-* Pan / zoom math
-
-Pure Python. No Qt imports.
+Avoid:
+- Qt dependencies in `geometry`
+- Writing SG values from rendering code
+- Treating preview state as authoritative
 
 ---
 
-### Rendering
+## Non-Goals
 
-**Location:** `sg_viewer/services/preview_painter.py`
+The architecture does **not** guarantee:
+- Fully valid geometry during active edits
+- Continuous section chains mid-interaction
+- Normalized angles before save
+- Presence of a centerline at all times
 
-Responsibilities:
-
-* All QPainter-based drawing
-* Background imagery
-* Centerline and section drawing
-* Selection highlights
-* Creation previews
-
-Qt-dependent by design, but stateless and function-based.
-
----
-
-## Dependency Rules (Important)
-
-These rules are **hard constraints**, not stylistic preferences. Violating them will reintroduce the problems this architecture was designed to eliminate.
-
-Allowed dependencies:
-
-* Widgets → Controllers → Helpers
-* Widgets → Painters
-* Controllers → Helpers
-
-Forbidden dependencies:
-
-* Helpers → Qt
-* Controllers → Widgets
-* Painters → Controllers
-* Cross-imports between helpers
-
-Initialization rules:
-
-* Widgets must fully construct collaborators before passing references
-* Controllers must not assume widget attributes beyond the `PreviewContext` interface
-
-LLM guidance:
-
-> If you are about to add an import that violates these rules, stop and reconsider the design.
-
----
-
-## Dependency Rules (Important)
-
-The following rules are enforced by convention:
-
-* Qt widgets do **not** import geometry, selection, or math helpers directly
-* Geometry / selection helpers never import Qt
-* Controllers depend on `PreviewContext`, not widgets
-* Widgets create controllers; controllers never create widgets
-* Initialization order in widgets is explicit and guarded
-
-These rules prevent circular dependencies and make future refactors predictable.
-
----
-
-## Known Extension Points
-
-Designed extension areas:
-
-* New edit modes (via new interaction/controller classes)
-* Additional overlays in the painter layer
-* Alternative background imagery sources
-* Additional export or analysis tools
-
-Areas intentionally frozen:
-
-* Preview widget public surface
-* Context interface shape
-
----
-
-## Summary
-
-This architecture exists to protect the project from two common failure modes:
-
-1. **God widgets** that mix UI, math, and domain logic
-2. **Uncontrolled LLM refactors** that accidentally collapse boundaries
-
-By enforcing explicit ownership, clear dependency direction, and minimal interfaces, SG Viewer remains evolvable even as features grow.
-
-LLM guidance:
-
-> Prefer extracting new modules over extending existing ones. Small files are a feature, not a problem.
-
----
-
-## Summary
-
-SG Viewer’s architecture prioritizes long-term maintainability over short-term convenience. By enforcing strict separation between UI, interaction, math, and rendering, the project remains flexible even as feature complexity grows.
-
-Further structural refactors should only be undertaken deliberately, as the current layout represents a stable and extensible baseline.
+These tradeoffs are intentional to support interactive editing.
