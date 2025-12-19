@@ -238,6 +238,9 @@ class SGFile:
         def _angle_from_fixed_sincos(self, sin_fp: int, cos_fp: int) -> float:
             return math.atan2(sin_fp / FP_SCALE, cos_fp / FP_SCALE)
 
+        def heading_angle(self) -> float:
+            return math.atan2(self.sang2 / FP_SCALE, self.sang1 / FP_SCALE)
+
         def _normalize_angle(self, a: float) -> float:
             while a <= -math.pi:
                 a += 2 * math.pi

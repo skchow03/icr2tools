@@ -4,6 +4,7 @@ import math
 from dataclasses import replace
 from typing import Optional, Tuple
 
+from icr2_core.trk.sg_classes import FP_SCALE, SGFile
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import update_section_geometry
@@ -405,3 +406,59 @@ def solve_curve_end_to_straight_start(
 
 
     return best_solution, new_straight
+
+
+def connect_straight_to_curve(
+    straight: SGFile.Section,
+    curve: SGFile.Section,
+    radius: float,
+    sweep: float,
+    turn: int,  # +1 = left, -1 = right
+) -> None:
+
+    px = straight.end_x
+    py = straight.end_y
+
+    theta = straight.heading_angle()
+
+    tx = math.cos(theta)
+    ty = math.sin(theta)
+
+    nx = -ty
+    ny = tx
+
+    cx = px + turn * radius * nx
+    cy = py + turn * radius * ny
+
+    # Curve start
+    curve.start_x = int(px)
+    curve.start_y = int(py)
+    curve.center_x = int(cx)
+    curve.center_y = int(cy)
+    curve.radius = int(radius)
+
+    # Start vector
+    vx = px - cx
+    vy = py - cy
+
+    ang0 = math.atan2(vy, vx)
+    ang1 = ang0 + sweep * turn
+
+    # Compute curve end
+    ex = cx + radius * math.cos(ang1)
+    ey = cy + radius * math.sin(ang1)
+
+    curve.end_x = int(ex)
+    curve.end_y = int(ey)
+
+    # Set SG heading fields
+    curve.sang1 = int(math.cos(theta) * FP_SCALE)
+    curve.sang2 = int(math.sin(theta) * FP_SCALE)
+
+    end_heading = theta + sweep * turn
+    curve.eang1 = int(math.cos(end_heading) * FP_SCALE)
+    curve.eang2 = int(math.sin(end_heading) * FP_SCALE)
+
+    # Finalize
+    curve.type = 2
+    curve.recompute_curve_length()
