@@ -249,21 +249,18 @@ class SGFile:
             if self.type != 2 or self.radius <= 0:
                 return
 
-            # vectors from center to endpoints
             sx = self.start_x - self.center_x
             sy = self.start_y - self.center_y
             ex = self.end_x - self.center_x
             ey = self.end_y - self.center_y
 
-            # geometric angles
             start_angle = math.atan2(sy, sx)
-            end_angle = math.atan2(ey, ex)
+            end_angle   = math.atan2(ey, ex)
 
-            sweep = self._normalize_angle(end_angle - start_angle)
+            sweep = end_angle - start_angle
 
-            # heading-based direction correction
             heading_start = self._angle_from_fixed_sincos(self.sang1, self.sang2)
-            heading_end = self._angle_from_fixed_sincos(self.eang1, self.eang2)
+            heading_end   = self._angle_from_fixed_sincos(self.eang1, self.eang2)
             heading_delta = self._normalize_angle(heading_end - heading_start)
 
             if sweep * heading_delta < 0:
@@ -274,8 +271,7 @@ class SGFile:
 
             arc_length = abs(self.radius * sweep)
 
-            # Papyrus-style integer DLONG
-            self.length = int(round(arc_length))
+            self.length = int(arc_length)   # truncate, do not round
             self.end_dlong = self.start_dlong + self.length
 
     def output_sg_header_xsects(self, output_file):
@@ -416,3 +412,27 @@ class SGFile:
         output_array = np.array(output_array)
         output_array.astype('int32').tofile(output_file)
         print ('done')
+
+    def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
+        """
+        Recompute curve lengths from geometry and rebuild all DLONGs
+        sequentially starting from start_index.
+        """
+
+        if start_index < 0 or start_index >= self.num_sects:
+            raise ValueError("Invalid start_index")
+
+        dlong = start_dlong
+
+        for i in range(start_index, self.num_sects):
+            sec = self.sects[i]
+
+            sec.start_dlong = dlong
+
+            if sec.type == 2:
+                sec.recompute_curve_length()
+            else:
+                # straights: keep existing length for now
+                sec.end_dlong = sec.start_dlong + sec.length
+
+            dlong = sec.end_dlong
