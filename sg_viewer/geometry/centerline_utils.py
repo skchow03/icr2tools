@@ -39,3 +39,28 @@ def compute_centerline_normal_and_tangent(
     normal = (-vy / length, vx / length)
 
     return (cx, cy), normal, tangent
+
+
+def compute_start_finish_mapping_from_centerline(
+    sampled_centerline: Iterable[Point],
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None:
+    """Compute start/finish mapping from a sampled centreline polyline.
+
+    This is a lightweight alternative to ``compute_centerline_normal_and_tangent``
+    that uses the preview centreline rather than the TRK sampling logic.
+    """
+    iterator = iter(sampled_centerline)
+    start = next(iterator, None)
+    if start is None:
+        return None
+
+    for point in iterator:
+        dx = point[0] - start[0]
+        dy = point[1] - start[1]
+        length = (dx * dx + dy * dy) ** 0.5
+        if length > 0:
+            tangent = (dx / length, dy / length)
+            normal = (-tangent[1], tangent[0])
+            return start, normal, tangent
+
+    return None
