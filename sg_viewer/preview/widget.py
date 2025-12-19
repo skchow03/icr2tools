@@ -23,6 +23,7 @@ from sg_viewer.preview.transform import pan_transform_state, zoom_transform_stat
 from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.ui.elevation_profile import ElevationProfileData
+from sg_viewer.geometry.sg_geometry import build_section_polyline, derive_heading_vectors
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
 from sg_viewer.ui.preview_interaction import PreviewInteraction
@@ -338,6 +339,37 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._track_length = 0.0
         self._has_unsaved_changes = False
         self._update_fit_scale()
+        self.update()
+
+    def refresh_geometry(self) -> None:
+        if self._sgfile is None:
+            return
+
+        sections = self._sections_from_sgfile()
+
+        if sections:
+            last_section = sections[-1]
+            self._track_length = float(last_section.start_dlong + last_section.length)
+        else:
+            self._track_length = None
+
+        needs_rebuild = self._section_manager.set_sections(sections)
+
+        self._sampled_bounds = self._section_manager.sampled_bounds
+        self._sampled_centerline = self._section_manager.sampled_centerline
+
+        if needs_rebuild:
+            self._update_fit_scale()
+
+        self._update_node_status()
+
+        self._selection.update_context(
+            self._section_manager.sections,
+            self._track_length,
+            self._section_manager.centerline_index,
+            self._section_manager.sampled_dlongs,
+        )
+        self._has_unsaved_changes = True
         self.update()
 
     def load_background_image(self, path: Path) -> None:
@@ -888,9 +920,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.sectionsChanged.emit()  # NEW
         self.update()
 
+    def apply_preview_to_sgfile(self) -> SGFile:
+        return self._apply_preview_to_sgfile()
+
     def save_sg(self, path: Path) -> None:
         """Write the current SG (and any edits) to ``path``."""
 
+        sgfile = self._apply_preview_to_sgfile()
+
+        sgfile.output_sg(str(path))
+        self._has_unsaved_changes = False
+
+    def _apply_preview_to_sgfile(self) -> SGFile:
         if self._sgfile is None:
             raise ValueError("No SG file loaded.")
 
@@ -977,8 +1018,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
             sg_section.recompute_curve_length()
 
-        sgfile.output_sg(str(path))
-        self._has_unsaved_changes = False
+        return sgfile
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
         return self._selection.get_section_headings()
@@ -1126,3 +1166,63 @@ class SGPreviewWidget(QtWidgets.QWidget):
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
 
+    def _sections_from_sgfile(self) -> list[SectionPreview]:
+        if self._sgfile is None:
+            return []
+
+        sections: list[SectionPreview] = []
+        for idx, sg_section in enumerate(self._sgfile.sects):
+            type_name = "curve" if sg_section.type == 2 else "straight"
+            start = (float(sg_section.start_x), float(sg_section.start_y))
+            end = (float(sg_section.end_x), float(sg_section.end_y))
+
+            center = (
+                (float(sg_section.center_x), float(sg_section.center_y))
+                if type_name == "curve"
+                else None
+            )
+            radius = float(sg_section.radius) if type_name == "curve" else None
+
+            sang1 = sang2 = eang1 = eang2 = None
+            if type_name == "curve":
+                sang1 = float(sg_section.sang1)
+                sang2 = float(sg_section.sang2)
+                eang1 = float(sg_section.eang1)
+                eang2 = float(sg_section.eang2)
+
+            polyline = build_section_polyline(
+                type_name,
+                start,
+                end,
+                center,
+                radius,
+                (sang1, sang2) if sang1 is not None and sang2 is not None else None,
+                (eang1, eang2) if eang1 is not None and eang2 is not None else None,
+            )
+            start_heading, end_heading = derive_heading_vectors(
+                polyline, sang1, sang2, eang1, eang2
+            )
+
+            sections.append(
+                SectionPreview(
+                    section_id=idx,
+                    type_name=type_name,
+                    previous_id=int(getattr(sg_section, "sec_prev", idx - 1)),
+                    next_id=int(getattr(sg_section, "sec_next", idx + 1)),
+                    start=start,
+                    end=end,
+                    start_dlong=float(sg_section.start_dlong),
+                    length=float(sg_section.length),
+                    center=center,
+                    sang1=sang1,
+                    sang2=sang2,
+                    eang1=eang1,
+                    eang2=eang2,
+                    radius=radius,
+                    start_heading=start_heading,
+                    end_heading=end_heading,
+                    polyline=polyline,
+                )
+            )
+
+        return sections
