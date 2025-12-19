@@ -263,6 +263,11 @@ class SGFile:
             r = 0.5 * (r0 + r1)
 
             # Signed smallest-angle sweep from start vector to end vector
+            sx = float(sx)
+            sy = float(sy)
+            ex = float(ex)
+            ey = float(ey)
+
             dot = sx * ex + sy * ey
             cross = sx * ey - sy * ex
             sweep = math.atan2(cross, dot)  # [-pi, pi]
