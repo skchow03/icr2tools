@@ -288,16 +288,16 @@ class SelectionManager(QtCore.QObject):
             total_length += length
             ranges.append((start_dlong, start_dlong + length))
 
-        if (
-            self._track_length is not None
-            and ranges
-            and not math.isclose(total_length, float(self._track_length), rel_tol=1e-6, abs_tol=1e-3)
-        ):
-            logger.warning(
-                "Section ranges total length %.6f differs from track length %.6f",
-                total_length,
-                float(self._track_length),
-            )
+        # if (
+        #     self._track_length is not None
+        #     and ranges
+        #     and not math.isclose(total_length, float(self._track_length), rel_tol=1e-6, abs_tol=1e-3)
+        # ):
+        #     logger.warning(
+        #         "Section ranges total length %.6f differs from track length %.6f",
+        #         total_length,
+        #         float(self._track_length),
+        #     )
 
         return ranges
 
