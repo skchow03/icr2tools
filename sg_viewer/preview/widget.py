@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable, List, Tuple
@@ -925,19 +926,71 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.sectionsChanged.emit()  # NEW
         self.update()
 
-    def _update_start_finish_mapping(self, start_dlong: float | None) -> None:
-        mapping = None
-
+    def _compute_start_finish_mapping_from_samples(
+        self, start_dlong: float | None
+    ) -> tuple[Point, Point, Point] | None:
         if (
-            start_dlong is not None
-            and self._trk is not None
-            and self._cline is not None
-            and self._track_length
-            and self._track_length > 0
+            start_dlong is None
+            or self._track_length is None
+            or self._track_length <= 0
         ):
-            mapping = compute_centerline_normal_and_tangent(
-                self._trk, self._cline, self._track_length, start_dlong
-            )
+            return None
+
+        points = self._section_manager.sampled_centerline
+        dlongs = self._section_manager.sampled_dlongs
+        if len(points) < 2 or len(points) != len(dlongs):
+            return None
+
+        target = float(start_dlong) % float(self._track_length)
+
+        for idx in range(len(dlongs) - 1):
+            seg_start = points[idx]
+            seg_end = points[idx + 1]
+            seg_span = dlongs[idx + 1] - dlongs[idx]
+            if seg_span <= 0:
+                continue
+            if not (dlongs[idx] <= target <= dlongs[idx + 1]):
+                continue
+
+            fraction = (target - dlongs[idx]) / seg_span
+            cx = seg_start[0] + (seg_end[0] - seg_start[0]) * fraction
+            cy = seg_start[1] + (seg_end[1] - seg_start[1]) * fraction
+
+            dx = seg_end[0] - seg_start[0]
+            dy = seg_end[1] - seg_start[1]
+            length = math.hypot(dx, dy)
+            if length == 0:
+                return None
+
+            tangent = (dx / length, dy / length)
+            normal = (-tangent[1], tangent[0])
+            return (cx, cy), normal, tangent
+
+        start = points[0]
+        end = points[1]
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = math.hypot(dx, dy)
+        if length == 0:
+            return None
+
+        tangent = (dx / length, dy / length)
+        normal = (-tangent[1], tangent[0])
+        return start, normal, tangent
+
+    def _update_start_finish_mapping(self, start_dlong: float | None) -> None:
+        mapping = self._compute_start_finish_mapping_from_samples(start_dlong)
+
+        if mapping is None and start_dlong is not None:
+            if (
+                self._trk is not None
+                and self._cline is not None
+                and self._track_length
+                and self._track_length > 0
+            ):
+                mapping = compute_centerline_normal_and_tangent(
+                    self._trk, self._cline, self._track_length, start_dlong
+                )
 
         if mapping is None:
             mapping = compute_start_finish_mapping_from_centerline(
