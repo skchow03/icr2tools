@@ -219,6 +219,93 @@ class PreviewEditor:
         self._assert_sections_consistent(new_sections)
         return new_sections, (cursor if new_sections else None), f"Deleted section #{index}."
 
+    def split_straight_section(
+        self, sections: list[SectionPreview], index: int, split_point: Point
+    ) -> tuple[list[SectionPreview], float | None] | None:
+        if not sections or index < 0 or index >= len(sections):
+            return None
+
+        sec = sections[index]
+        if sec.type_name != "straight":
+            return None
+
+        ax, ay = sec.start
+        bx, by = sec.end
+        px, py = split_point
+
+        vx = bx - ax
+        vy = by - ay
+        den = vx * vx + vy * vy
+        if den <= 0:
+            return None
+
+        t = ((px - ax) * vx + (py - ay) * vy) / den
+
+        MIN_T = 0.02
+        if t <= MIN_T or t >= (1.0 - MIN_T):
+            return None
+
+        sx = ax + t * vx
+        sy = ay + t * vy
+        split = (sx, sy)
+
+        def _adjust_id(value: int | None) -> int:
+            if value is None or value < 0 or value >= len(sections):
+                return -1
+            return value + 1 if value > index else value
+
+        first_length = math.hypot(split[0] - sec.start[0], split[1] - sec.start[1])
+        second_length = math.hypot(sec.end[0] - split[0], sec.end[1] - split[1])
+
+        first_prev = _adjust_id(sec.previous_id)
+        second_next = _adjust_id(sec.next_id)
+
+        s1 = replace(
+            sec,
+            end=split,
+            length=first_length,
+            previous_id=first_prev,
+            next_id=index + 1,
+        )
+        s2 = replace(
+            sec,
+            start=split,
+            length=second_length,
+            previous_id=index,
+            next_id=second_next,
+        )
+
+        new_sections: list[SectionPreview] = []
+        for i, sect in enumerate(sections):
+            if i == index:
+                new_sections.append(s1)
+                new_sections.append(s2)
+                continue
+
+            adjusted_prev = _adjust_id(sect.previous_id)
+            adjusted_next = _adjust_id(sect.next_id)
+            new_sections.append(
+                replace(sect, previous_id=adjusted_prev, next_id=adjusted_next)
+            )
+
+        if 0 <= first_prev < len(new_sections):
+            prev_section = new_sections[first_prev]
+            new_sections[first_prev] = replace(prev_section, next_id=index)
+
+        if 0 <= second_next < len(new_sections):
+            next_section = new_sections[second_next]
+            new_sections[second_next] = replace(next_section, previous_id=index + 1)
+
+        dlong = 0.0
+        for i, sect in enumerate(new_sections):
+            updated_section = replace(sect, section_id=i, start_dlong=dlong)
+            updated_section = update_section_geometry(updated_section)
+            new_sections[i] = updated_section
+            dlong += float(updated_section.length)
+
+        self._assert_sections_consistent(new_sections)
+        return new_sections, (dlong if new_sections else None)
+
     def _assert_sections_consistent(self, sections: list[SectionPreview]) -> None:
         if __debug__:
             for section in sections:
