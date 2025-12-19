@@ -23,6 +23,10 @@ from sg_viewer.preview.transform import pan_transform_state, zoom_transform_stat
 from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.ui.elevation_profile import ElevationProfileData
+from sg_viewer.geometry.centerline_utils import (
+    compute_centerline_normal_and_tangent,
+    compute_start_finish_mapping_from_centerline,
+)
 from sg_viewer.geometry.sg_geometry import build_section_polyline, derive_heading_vectors
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
@@ -898,11 +902,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._section_manager.sections), track_length
 
-    def set_sections(self, sections: list[SectionPreview]) -> None:
+    def set_sections(self, sections: list[SectionPreview], start_finish_dlong: float | None = None) -> None:
         needs_rebuild = self._section_manager.set_sections(sections)
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
+        self._update_start_finish_mapping(start_finish_dlong)
 
         if needs_rebuild:
             self._update_fit_scale()
@@ -919,6 +924,27 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._has_unsaved_changes = True
         self.sectionsChanged.emit()  # NEW
         self.update()
+
+    def _update_start_finish_mapping(self, start_dlong: float | None) -> None:
+        mapping = None
+
+        if (
+            start_dlong is not None
+            and self._trk is not None
+            and self._cline is not None
+            and self._track_length
+            and self._track_length > 0
+        ):
+            mapping = compute_centerline_normal_and_tangent(
+                self._trk, self._cline, self._track_length, start_dlong
+            )
+
+        if mapping is None:
+            mapping = compute_start_finish_mapping_from_centerline(
+                self._section_manager.sampled_centerline
+            )
+
+        self._start_finish_mapping = mapping
 
     def apply_preview_to_sgfile(self) -> SGFile:
         return self._apply_preview_to_sgfile()
@@ -1124,6 +1150,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._show_status("Track must be closed to set start/finish")
             return
 
+        start_finish_dlong = float(self._section_manager.sections[selected_index].start_dlong)
+
         try:
             new_sections = set_start_finish(
                 self._section_manager.sections, selected_index
@@ -1140,7 +1168,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 new_sections[-1].start_dlong + new_sections[-1].length
             )
 
-        self.set_sections(new_sections)
+        self.set_sections(new_sections, start_finish_dlong=start_finish_dlong)
         self._selection.set_selected_section(0)
         self._show_status("Start/finish set to selected section (now section 0)")
 

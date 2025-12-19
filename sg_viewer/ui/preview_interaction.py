@@ -43,7 +43,7 @@ class PreviewInteraction:
         selection: "SelectionManager",
         section_manager: "PreviewSectionManager",
         editor: "PreviewEditor",
-        set_sections: Callable[[list["SectionPreview"]], None],
+        set_sections: Callable[[list["SectionPreview"], float | None], None],
         node_radius_px: int,
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
@@ -172,8 +172,9 @@ class PreviewInteraction:
                 else:
                     start_idx = section_idx
 
+                start_finish_dlong = float(sections[start_idx].start_dlong)
                 sections = set_start_finish(sections, start_idx)
-                self._set_sections(sections)
+                self._set_sections(sections, start_finish_dlong=start_finish_dlong)
                 self._selection.set_selected_section(0)
                 self._show_status("Start/finish set to selected section (now section 0)")
                 self._set_start_finish_mode = False
