@@ -1,5 +1,8 @@
+import math
 import numpy as np
 import csv
+
+FP_SCALE = 32768.0
 
 class SGFile:
     """
@@ -76,6 +79,10 @@ class SGFile:
             sec_data = a[sections_start + i * sections_length: \
                          sections_start + (i + 1) * sections_length]
             sects.append(cls.Section(sec_data, num_xsects))
+
+        for s in sects:
+            if s.type == 2:
+                s.recompute_curve_length()
         return cls(header, num_sects, num_xsects, xsect_dlats, sects)
 
 
@@ -227,6 +234,49 @@ class SGFile:
 
             self.num_ground_fsects = len(self.ground_ftype)
             self.num_boundaries = len(self.bound_ftype1)
+
+        def _angle_from_fixed_sincos(self, sin_fp: int, cos_fp: int) -> float:
+            return math.atan2(sin_fp / FP_SCALE, cos_fp / FP_SCALE)
+
+        def _normalize_angle(self, a: float) -> float:
+            while a <= -math.pi:
+                a += 2 * math.pi
+            while a > math.pi:
+                a -= 2 * math.pi
+            return a
+
+        def recompute_curve_length(self) -> None:
+            if self.type != 2 or self.radius <= 0:
+                return
+
+            # vectors from center to endpoints
+            sx = self.start_x - self.center_x
+            sy = self.start_y - self.center_y
+            ex = self.end_x - self.center_x
+            ey = self.end_y - self.center_y
+
+            # geometric angles
+            start_angle = math.atan2(sy, sx)
+            end_angle = math.atan2(ey, ex)
+
+            sweep = self._normalize_angle(end_angle - start_angle)
+
+            # heading-based direction correction
+            heading_start = self._angle_from_fixed_sincos(self.sang1, self.sang2)
+            heading_end = self._angle_from_fixed_sincos(self.eang1, self.eang2)
+            heading_delta = self._normalize_angle(heading_end - heading_start)
+
+            if sweep * heading_delta < 0:
+                if sweep > 0:
+                    sweep -= 2 * math.pi
+                else:
+                    sweep += 2 * math.pi
+
+            arc_length = abs(self.radius * sweep)
+
+            # Papyrus-style integer DLONG
+            self.length = int(round(arc_length))
+            self.end_dlong = self.start_dlong + self.length
 
     def output_sg_header_xsects(self, output_file):
         """

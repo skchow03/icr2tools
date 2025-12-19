@@ -975,6 +975,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
             sg_section.radius = _as_int(preview_section.radius)
 
+            sg_section.recompute_curve_length()
+
         sgfile.output_sg(str(path))
         self._has_unsaved_changes = False
 
@@ -1123,5 +1125,4 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
-
 
