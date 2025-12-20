@@ -12,6 +12,36 @@ from sg_viewer.geometry.sg_geometry import signed_radius_from_heading
 DEBUG_CURVE_STRAIGHT = True
 DEBUG_CURVE_STRAIGHT_VERBOSE = False
 
+
+def _reverse_section_endpoints(section: SectionPreview) -> SectionPreview:
+    """
+    Return a copy of ``section`` with its start/end swapped for solving.
+
+    Connectivity is preserved; callers remain responsible for updating
+    previous/next IDs to reflect any new attachment.
+    """
+
+    reversed_polyline = list(reversed(section.polyline)) if section.polyline else []
+
+    reversed_section = replace(
+        section,
+        start=section.end,
+        end=section.start,
+        start_heading=section.end_heading,
+        end_heading=section.start_heading,
+        sang1=section.eang1,
+        sang2=section.eang2,
+        eang1=section.sang1,
+        eang2=section.sang2,
+        polyline=reversed_polyline,
+    )
+
+    if section.type_name == "curve" and section.radius is not None:
+        reversed_section = replace(reversed_section, radius=-section.radius)
+
+    return reversed_section
+
+
 def _signed_angle_deg(a: tuple[float, float], b: tuple[float, float]) -> float:
     """
     Signed angle from a → b in degrees.
@@ -316,7 +346,7 @@ def solve_curve_end_to_straight_start(
 
         if DEBUG_CURVE_STRAIGHT:
             print(
-                f"\nSOLVE FAILED: best Δ={best_delta:.3f}° "
+                f"\nSOLVE FAILED: best Δ={best_signed_delta:.3f}° "
                 f"(tolerance {heading_tol:.3f}°)"
             )
         return None
@@ -343,11 +373,16 @@ def solve_curve_end_to_straight_start(
     new_straight_start = best_solution.end
     new_straight_end = straight.end
 
+    new_straight_length = math.hypot(
+        new_straight_end[0] - new_straight_start[0],
+        new_straight_end[1] - new_straight_start[1],
+    )
 
     new_straight = replace(
         straight,
         start=new_straight_start,
         end=new_straight_end,
+        length=new_straight_length,
         polyline=[new_straight_start, new_straight_end],
     )
 
@@ -404,4 +439,61 @@ def solve_curve_end_to_straight_start(
         )
 
 
+    new_straight = update_section_geometry(new_straight)
+
     return best_solution, new_straight
+
+
+def solve_straight_end_to_curve_endpoint(
+    straight: SectionPreview,
+    straight_end: str,
+    curve: SectionPreview,
+    curve_end: str,
+    *,
+    heading_tolerance_deg: float = 1e-4,
+    min_straight_length: float = 1.0,
+) -> Optional[Tuple[SectionPreview, SectionPreview]]:
+    """
+    Attempt to refit a curve so that its ``curve_end`` meets the straight's
+    ``straight_end`` with matching heading. The straight may slide along its
+    heading (changing length) while the curve is re-solved to match.
+
+    Returns (new_straight, new_curve) or None on failure.
+    """
+
+    if curve.type_name != "curve":
+        return None
+    if straight.type_name != "straight":
+        return None
+    if curve_end not in {"start", "end"}:
+        return None
+    if straight_end not in {"start", "end"}:
+        return None
+
+    curve_for_solving = curve if curve_end == "end" else _reverse_section_endpoints(curve)
+    straight_for_solving = (
+        straight if straight_end == "start" else _reverse_section_endpoints(straight)
+    )
+
+    solved = solve_curve_end_to_straight_start(
+        curve_for_solving,
+        straight_for_solving,
+        heading_tolerance_deg=heading_tolerance_deg,
+    )
+    if solved is None:
+        return None
+
+    solved_curve, solved_straight = solved
+
+    if straight_end == "end":
+        solved_straight = _reverse_section_endpoints(solved_straight)
+    if curve_end == "start":
+        solved_curve = _reverse_section_endpoints(solved_curve)
+
+    solved_curve = update_section_geometry(solved_curve)
+    solved_straight = update_section_geometry(solved_straight)
+
+    if solved_straight.length < min_straight_length:
+        return None
+
+    return solved_straight, solved_curve
