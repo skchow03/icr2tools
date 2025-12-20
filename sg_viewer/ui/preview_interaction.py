@@ -11,6 +11,7 @@ from sg_viewer.geometry.connect_curve_to_straight import (
     solve_curve_end_to_straight_start,
 )
 from sg_viewer.geometry.dlong import set_start_finish
+from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
     rebuild_centerline_from_sections,
@@ -418,6 +419,9 @@ class PreviewInteraction:
         if self._active_node is None or not sections:
             return
 
+        if self._apply_constrained_shared_straight_drag(self._active_node, track_point):
+            return
+
         sect_index, endtype = self._active_node
         if sect_index < 0 or sect_index >= len(sections):
             return
@@ -670,6 +674,70 @@ class PreviewInteraction:
             for section in sections:
                 assert_section_geometry_consistent(section)
         self._set_sections(sections)
+
+    def _apply_constrained_shared_straight_drag(
+        self, dragged_key: tuple[int, str], track_point: Point
+    ) -> bool:
+        section_index, end_type = dragged_key
+        sections = self._section_manager.sections
+
+        if section_index < 0 or section_index >= len(sections):
+            return False
+
+        if end_type == "end":
+            s1_idx = section_index
+            s2_idx = sections[s1_idx].next_id
+        elif end_type == "start":
+            s2_idx = section_index
+            s1_idx = sections[s2_idx].previous_id
+        else:
+            return False
+
+        if is_invalid_id(sections, s1_idx) or is_invalid_id(sections, s2_idx):
+            return False
+
+        s1 = sections[s1_idx]
+        s2 = sections[s2_idx]
+
+        if s1.type_name != "straight" or s2.type_name != "straight":
+            return False
+
+        if s1.end != s2.start:
+            return False
+
+        A = s1.start
+        C = s2.end
+
+        P = project_point_to_segment(track_point, A, C)
+        if P is None:
+            return False
+
+        MIN_LEN = 50.0
+        total_len = math.hypot(C[0] - A[0], C[1] - A[1])
+        if total_len <= 0:
+            return False
+
+        t = math.hypot(P[0] - A[0], P[1] - A[1]) / total_len
+        min_t = MIN_LEN / total_len
+        t = max(min_t, min(1.0 - min_t, t))
+
+        Px = A[0] + t * (C[0] - A[0])
+        Py = A[1] + t * (C[1] - A[1])
+        P = (Px, Py)
+
+        s1_new = replace(s1, end=P)
+        s2_new = replace(s2, start=P)
+
+        s1_new = update_section_geometry(s1_new)
+        s2_new = update_section_geometry(s2_new)
+
+        sections = list(sections)
+        sections[s1_idx] = s1_new
+        sections[s2_idx] = s2_new
+
+        self._apply_section_updates(sections)
+        self._context.request_repaint()
+        return True
 
     def _apply_shared_node_drag_constraint(
         self,
