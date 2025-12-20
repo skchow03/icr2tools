@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.connect_curve_to_straight import (
     solve_curve_end_to_straight_start,
+    solve_straight_end_to_curve_endpoint,
 )
 from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.picking import project_point_to_segment
@@ -230,64 +231,47 @@ class PreviewInteraction:
                             return True
 
                         new_curve, new_straight = result
-                        old_sections = list(self._section_manager.sections)
-                        sections = list(self._section_manager.sections)
-
-                        # Update connectivity
-                        new_curve = replace(
-                            new_curve,
-                            next_id=target_idx,
+                        self._apply_curve_straight_connection(
+                            curve_idx=dragged_idx,
+                            curve_end=dragged_end,
+                            straight_idx=target_idx,
+                            straight_end=target_end,
+                            curve=new_curve,
+                            straight=new_straight,
                         )
-
-                        new_straight = replace(
-                            new_straight,
-                            previous_id=dragged_idx,
-                        )
-
-                        sections[dragged_idx] = new_curve
-                        sections[target_idx] = new_straight
-
-                        self._set_sections(sections)
-
-
-                        sections = self._section_manager.sections
-
-                        old_closed = is_closed_loop(old_sections)
-                        new_closed = is_closed_loop(sections)
-
-                        if DEBUG_LOOP_DETECTION:
-                            print("=== LOOP DETECTION CHECK ===")
-                            print(f"Old closed: {old_closed}")
-                            print(f"New closed: {new_closed}")
-                            print(f"Sections: {len(sections)}")
-                            for i, s in enumerate(sections):
-                                print(
-                                    f"  [{i}] prev={s.previous_id} next={s.next_id}"
-                                )
-
-                        if not old_closed and new_closed:
-
-                            sections = canonicalize_closed_loop(
-                                sections,
-                                start_idx=dragged_idx,
-                            )
-
-                            self._set_sections(sections)
-
-                            self._show_status("Closed loop detected — track direction fixed")
-
-                        if DEBUG_LOOP_DETECTION and not new_closed:
-                            disconnected = []
-                            for i, s in enumerate(sections):
-                                if s.previous_id is None or s.next_id is None:
-                                    disconnected.append(i)
-
-                            if disconnected:
-                                print("Not closed — disconnected sections:", disconnected)
-
-
 
                         self._show_status("Curve → straight connected")
+                        self._clear_drag_state()
+                        return True
+
+                    if (
+                        dragged_section.type_name == "straight"
+                        and target_section.type_name == "curve"
+                    ):
+                        result = solve_straight_end_to_curve_endpoint(
+                            dragged_section,
+                            dragged_end,
+                            target_section,
+                            target_end,
+                        )
+
+                        if result is None:
+                            self._show_status("Straight → curve connection failed")
+                            self._clear_drag_state()
+                            return True
+
+                        new_straight, new_curve = result
+
+                        self._apply_curve_straight_connection(
+                            curve_idx=target_idx,
+                            curve_end=target_end,
+                            straight_idx=dragged_idx,
+                            straight_end=dragged_end,
+                            curve=new_curve,
+                            straight=new_straight,
+                        )
+
+                        self._show_status("Straight → curve connected")
                         self._clear_drag_state()
                         return True
 
@@ -694,6 +678,75 @@ class PreviewInteraction:
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
+    def _apply_curve_straight_connection(
+        self,
+        *,
+        curve_idx: int,
+        curve_end: str,
+        straight_idx: int,
+        straight_end: str,
+        curve: "SectionPreview",
+        straight: "SectionPreview",
+    ) -> None:
+        old_sections = list(self._section_manager.sections)
+        sections = list(self._section_manager.sections)
+
+        if curve_end == "start":
+            curve = replace(curve, previous_id=straight_idx)
+        else:
+            curve = replace(curve, next_id=straight_idx)
+
+        if straight_end == "start":
+            straight = replace(straight, previous_id=curve_idx)
+        else:
+            straight = replace(straight, next_id=curve_idx)
+
+        sections[curve_idx] = update_section_geometry(curve)
+        sections[straight_idx] = update_section_geometry(straight)
+
+        self._finalize_connection_updates(old_sections, sections, start_idx=curve_idx)
+
+    def _finalize_connection_updates(
+        self,
+        old_sections: list["SectionPreview"],
+        updated_sections: list["SectionPreview"],
+        *,
+        start_idx: int,
+    ) -> None:
+        self._set_sections(updated_sections)
+
+        sections = self._section_manager.sections
+
+        old_closed = is_closed_loop(old_sections)
+        new_closed = is_closed_loop(sections)
+
+        if DEBUG_LOOP_DETECTION:
+            print("=== LOOP DETECTION CHECK ===")
+            print(f"Old closed: {old_closed}")
+            print(f"New closed: {new_closed}")
+            print(f"Sections: {len(sections)}")
+            for i, s in enumerate(sections):
+                print(f"  [{i}] prev={s.previous_id} next={s.next_id}")
+
+        if not old_closed and new_closed:
+            sections = canonicalize_closed_loop(
+                sections,
+                start_idx=start_idx,
+            )
+
+            self._set_sections(sections)
+
+            self._show_status("Closed loop detected — track direction fixed")
+
+        if DEBUG_LOOP_DETECTION and not new_closed:
+            disconnected = []
+            for i, s in enumerate(sections):
+                if s.previous_id is None or s.next_id is None:
+                    disconnected.append(i)
+
+            if disconnected:
+                print("Not closed — disconnected sections:", disconnected)
+
     def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
         if __debug__:
             for section in sections:
