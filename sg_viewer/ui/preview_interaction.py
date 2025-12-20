@@ -395,6 +395,10 @@ class PreviewInteraction:
             self._start_node_drag(node, pos)
             return True
 
+        if self._can_start_shared_curve_drag(node):
+            self._start_node_drag(node, pos)
+            return True
+
         if allow_disconnect:
             self._disconnect_node(node)
             return True
@@ -429,6 +433,9 @@ class PreviewInteraction:
             return
 
         if self._apply_constrained_shared_straight_drag(self._active_node, track_point):
+            return
+
+        if self._apply_constrained_shared_curve_drag(self._active_node, track_point):
             return
 
         sect_index, endtype = self._active_node
@@ -788,6 +795,62 @@ class PreviewInteraction:
 
         return s1_idx, s2_idx, s1, s2
 
+    def _shared_curve_pair(
+        self, dragged_key: tuple[int, str]
+    ) -> tuple[int, int, "SectionPreview", "SectionPreview", Point, float, float] | None:
+        section_index, end_type = dragged_key
+        sections = self._section_manager.sections
+
+        if section_index < 0 or section_index >= len(sections):
+            return None
+
+        if end_type == "end":
+            s1_idx = section_index
+            s2_idx = sections[s1_idx].next_id
+        elif end_type == "start":
+            s2_idx = section_index
+            s1_idx = sections[s2_idx].previous_id
+        else:
+            return None
+
+        if is_invalid_id(sections, s1_idx) or is_invalid_id(sections, s2_idx):
+            return None
+
+        s1 = sections[s1_idx]
+        s2 = sections[s2_idx]
+
+        if s1.type_name != "curve" or s2.type_name != "curve":
+            return None
+
+        if not self._points_close(s1.end, s2.start):
+            return None
+
+        if s1.center is None or s2.center is None:
+            return None
+
+        if not self._points_close(s1.center, s2.center):
+            return None
+
+        if s1.radius is None or s2.radius is None:
+            return None
+
+        radius = abs(s1.radius)
+        if radius <= 0:
+            return None
+
+        if abs(abs(s1.radius) - abs(s2.radius)) > 1e-6:
+            return None
+
+        orientation_1 = self._curve_orientation(s1)
+        orientation_2 = self._curve_orientation(s2)
+        if orientation_1 is None or orientation_2 is None:
+            return None
+
+        if orientation_1 * orientation_2 < 0:
+            return None
+
+        return s1_idx, s2_idx, s1, s2, s1.center, radius, orientation_1
+
     def _can_start_shared_straight_drag(self, node: tuple[int, str]) -> bool:
         shared_pair = self._shared_straight_pair(node)
         if shared_pair is None:
@@ -846,6 +909,106 @@ class PreviewInteraction:
         sections[s2_idx] = s2_new
 
         self._apply_section_updates(sections)
+        self._context.request_repaint()
+        return True
+
+    def _can_start_shared_curve_drag(self, node: tuple[int, str]) -> bool:
+        shared_pair = self._shared_curve_pair(node)
+        if shared_pair is None:
+            return False
+
+        sect_index, _ = node
+        sections = self._section_manager.sections
+
+        if sect_index < 0 or sect_index >= len(sections):
+            return False
+
+        selected_section = sections[sect_index]
+        return selected_section.type_name == "curve"
+
+    def _apply_constrained_shared_curve_drag(
+        self, dragged_key: tuple[int, str], track_point: Point
+    ) -> bool:
+        shared_pair = self._shared_curve_pair(dragged_key)
+        if shared_pair is None:
+            return False
+
+        s1_idx, s2_idx, s1, s2, center, radius, orientation = shared_pair
+        cx, cy = center
+
+        start_vec = (s1.start[0] - cx, s1.start[1] - cy)
+        end_vec = (s2.end[0] - cx, s2.end[1] - cy)
+
+        start_angle = math.atan2(start_vec[1], start_vec[0])
+        end_angle = math.atan2(end_vec[1], end_vec[0])
+        total_span = self._directed_angle(start_angle, end_angle, orientation)
+        if abs(total_span) <= 1e-9:
+            return False
+
+        target_vec = (track_point[0] - cx, track_point[1] - cy)
+        target_mag = math.hypot(*target_vec)
+        if target_mag <= 0:
+            return False
+
+        target_unit = (target_vec[0] / target_mag, target_vec[1] / target_mag)
+        target_on_circle = (cx + target_unit[0] * radius, cy + target_unit[1] * radius)
+        target_angle = math.atan2(target_on_circle[1] - cy, target_on_circle[0] - cx)
+        target_span = self._directed_angle(start_angle, target_angle, orientation)
+
+        fraction = target_span / total_span
+
+        MIN_FRACTION = 0.02
+        fraction = max(MIN_FRACTION, min(1.0 - MIN_FRACTION, fraction))
+        constrained_span = total_span * fraction
+        constrained_angle = start_angle + constrained_span
+        constrained_point = (
+            cx + math.cos(constrained_angle) * radius,
+            cy + math.sin(constrained_angle) * radius,
+        )
+
+        s1_length = abs(constrained_span) * radius
+        s2_length = abs(total_span - constrained_span) * radius
+
+        def _tangent(vec: Point) -> tuple[float, float] | None:
+            return self._curve_tangent(vec, orientation)
+
+        start_heading = s1.start_heading or _tangent(start_vec)
+        end_heading = s2.end_heading or _tangent(end_vec)
+        shared_heading = _tangent((constrained_point[0] - cx, constrained_point[1] - cy))
+        if shared_heading is None:
+            return False
+
+        updated_sections = list(self._section_manager.sections)
+
+        updated_section_1 = replace(
+            s1,
+            end=constrained_point,
+            length=s1_length,
+            start_heading=start_heading,
+            sang1=start_heading[0] if start_heading else None,
+            sang2=start_heading[1] if start_heading else None,
+            end_heading=shared_heading,
+            eang1=shared_heading[0],
+            eang2=shared_heading[1],
+            center=center,
+        )
+        updated_section_2 = replace(
+            s2,
+            start=constrained_point,
+            length=s2_length,
+            start_heading=shared_heading,
+            sang1=shared_heading[0],
+            sang2=shared_heading[1],
+            end_heading=end_heading,
+            eang1=end_heading[0] if end_heading else None,
+            eang2=end_heading[1] if end_heading else None,
+            center=center,
+        )
+
+        updated_sections[s1_idx] = update_section_geometry(updated_section_1)
+        updated_sections[s2_idx] = update_section_geometry(updated_section_2)
+
+        self._apply_section_updates(updated_sections)
         self._context.request_repaint()
         return True
 
@@ -939,3 +1102,56 @@ class PreviewInteraction:
         self, origin: Point, heading: tuple[float, float] | None, target: Point
     ) -> Point | None:
         return _project_point_along_heading(origin, heading, target)
+
+    def _points_close(self, a: Point, b: Point, tol: float = 1e-6) -> bool:
+        return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol
+
+    def _curve_orientation(self, section: "SectionPreview") -> float | None:
+        if section.center is None:
+            return None
+
+        start_vec = (section.start[0] - section.center[0], section.start[1] - section.center[1])
+        radius = math.hypot(*start_vec)
+        if radius <= 0:
+            return None
+
+        heading = section.start_heading or section.end_heading
+        if heading is not None:
+            hx, hy = heading
+            mag = math.hypot(hx, hy)
+            if mag > 0:
+                hx /= mag
+                hy /= mag
+                ccw_tangent = (-start_vec[1] / radius, start_vec[0] / radius)
+                cw_tangent = (start_vec[1] / radius, -start_vec[0] / radius)
+                ccw_dot = ccw_tangent[0] * hx + ccw_tangent[1] * hy
+                cw_dot = cw_tangent[0] * hx + cw_tangent[1] * hy
+                if abs(ccw_dot - cw_dot) > 1e-9:
+                    return 1.0 if ccw_dot > cw_dot else -1.0
+
+        if section.radius is not None and section.radius < 0:
+            return -1.0
+
+        end_vec = (section.end[0] - section.center[0], section.end[1] - section.center[1])
+        cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+        if abs(cross) > 1e-9:
+            return 1.0 if cross > 0 else -1.0
+
+        return 1.0
+
+    def _directed_angle(self, start_angle: float, end_angle: float, orientation: float) -> float:
+        angle = end_angle - start_angle
+        if orientation > 0:
+            while angle <= 0:
+                angle += 2 * math.pi
+        else:
+            while angle >= 0:
+                angle -= 2 * math.pi
+        return angle
+
+    def _curve_tangent(self, vec: Point, orientation: float) -> tuple[float, float] | None:
+        vx, vy = vec
+        mag = math.hypot(vx, vy)
+        if mag <= 0:
+            return None
+        return (-orientation * vy / mag, orientation * vx / mag)
