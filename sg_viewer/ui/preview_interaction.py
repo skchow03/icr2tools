@@ -16,7 +16,7 @@ from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
 )
-from sg_viewer.models.preview_state_utils import is_disconnected_endpoint
+from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
@@ -426,6 +426,9 @@ class PreviewInteraction:
         if not self._editor.can_drag_node(self._section_manager.sections, sect, endtype):
             return
 
+        if self._apply_shared_node_drag_constraint(sections, sect_index, endtype, track_point):
+            return
+
         start = sect.start
         end = sect.end
         disconnected_start = is_disconnected_endpoint(sections, sect, "start")
@@ -667,6 +670,92 @@ class PreviewInteraction:
             for section in sections:
                 assert_section_geometry_consistent(section)
         self._set_sections(sections)
+
+    def _apply_shared_node_drag_constraint(
+        self,
+        sections: list["SectionPreview"],
+        sect_index: int,
+        endtype: str,
+        track_point: Point,
+    ) -> bool:
+        section_1_index: int | None
+        section_2_index: int | None
+        section_1: "SectionPreview" | None
+        section_2: "SectionPreview" | None
+
+        if endtype == "end":
+            section_1_index = sect_index
+            section_1 = sections[sect_index]
+            next_idx = section_1.next_id
+            section_2_index = None if is_invalid_id(sections, next_idx) else next_idx
+            section_2 = None if section_2_index is None else sections[section_2_index]
+        elif endtype == "start":
+            section_2_index = sect_index
+            section_2 = sections[sect_index]
+            prev_idx = section_2.previous_id
+            section_1_index = None if is_invalid_id(sections, prev_idx) else prev_idx
+            section_1 = None if section_1_index is None else sections[section_1_index]
+        else:
+            return False
+
+        if (
+            section_1 is None
+            or section_2 is None
+            or section_1.type_name != "straight"
+            or section_2.type_name != "straight"
+        ):
+            return False
+
+        if section_1.end != section_2.start:
+            return False
+
+        def heading(a: Point, b: Point) -> tuple[float, float] | None:
+            dx = b[0] - a[0]
+            dy = b[1] - a[1]
+            length = math.hypot(dx, dy)
+            if length <= 0:
+                return None
+            return (dx / length, dy / length)
+
+        heading_1 = heading(section_1.start, section_1.end)
+        heading_2 = heading(section_2.start, section_2.end)
+        if heading_1 is None or heading_2 is None:
+            return False
+
+        dot = heading_1[0] * heading_2[0] + heading_1[1] * heading_2[1]
+        if dot < math.cos(math.radians(0.1)):
+            return False
+
+        ax, ay = section_1.start
+        cx, cy = section_2.end
+        vx = cx - ax
+        vy = cy - ay
+        length_sq = vx * vx + vy * vy
+        if length_sq <= 0:
+            return False
+
+        px, py = track_point
+        t = ((px - ax) * vx + (py - ay) * vy) / length_sq
+
+        total_len = math.sqrt(length_sq)
+        MIN_LEN = 50.0
+        min_t = MIN_LEN / total_len
+        t = max(min_t, min(1.0 - min_t, t))
+
+        bx = ax + t * vx
+        by = ay + t * vy
+        constrained_point = (bx, by)
+
+        updated_sections = list(sections)
+        updated_section_1 = replace(section_1, end=constrained_point)
+        updated_section_2 = replace(section_2, start=constrained_point)
+
+        updated_sections[section_1_index] = update_section_geometry(updated_section_1)
+        updated_sections[section_2_index] = update_section_geometry(updated_section_2)
+
+        self._apply_section_updates(updated_sections)
+        self._context.request_repaint()
+        return True
 
     def _project_point_along_heading(
         self, origin: Point, heading: tuple[float, float] | None, target: Point
