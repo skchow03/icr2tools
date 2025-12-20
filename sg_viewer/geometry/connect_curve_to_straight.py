@@ -454,9 +454,16 @@ def solve_straight_end_to_curve_endpoint(
     min_straight_length: float = 1.0,
 ) -> Optional[Tuple[SectionPreview, SectionPreview]]:
     """
-    Connect a straight's ``straight_end`` to a curve's ``curve_end`` by
-    sliding/rotating the straight (preserving length) so its end matches the
-    curve tangent. Curve geometry is not modified.
+    Connect a straight's ``straight_end`` to a curve's ``curve_end``.
+
+    Special cases:
+      - straight_end == "end" and curve_end == "start":
+        * preserve straight start position + heading
+        * preserve curve end position + heading
+        * slide straight end along its heading and refit curve radius/start
+          heading to meet tangentially
+      - all other combinations preserve curve geometry and slide the straight
+        endpoint along the curve tangent (maintaining straight length)
 
     Returns (new_straight, new_curve) or None on failure.
     """
