@@ -729,9 +729,12 @@ class PreviewInteraction:
                 print(f"  [{i}] prev={s.previous_id} next={s.next_id}")
 
         if not old_closed and new_closed:
+            # Preserve Section 0 as the canonical start so the start/finish marker
+            # always remains anchored to the beginning of the first section.
+            canonical_start_idx = 0
             sections = canonicalize_closed_loop(
                 sections,
-                start_idx=start_idx,
+                start_idx=canonical_start_idx,
             )
 
             self._set_sections(sections)
