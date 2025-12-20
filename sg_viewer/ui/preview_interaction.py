@@ -407,6 +407,10 @@ class PreviewInteraction:
             self._start_node_drag(node, pos)
             return True
 
+        if self._can_start_shared_straight_drag(node):
+            self._start_node_drag(node, pos)
+            return True
+
         if allow_disconnect:
             self._disconnect_node(node)
             return True
@@ -696,14 +700,14 @@ class PreviewInteraction:
                 assert_section_geometry_consistent(section)
         self._set_sections(sections)
 
-    def _apply_constrained_shared_straight_drag(
-        self, dragged_key: tuple[int, str], track_point: Point
-    ) -> bool:
+    def _shared_straight_pair(
+        self, dragged_key: tuple[int, str]
+    ) -> tuple[int, int, "SectionPreview", "SectionPreview"] | None:
         section_index, end_type = dragged_key
         sections = self._section_manager.sections
 
         if section_index < 0 or section_index >= len(sections):
-            return False
+            return None
 
         if end_type == "end":
             s1_idx = section_index
@@ -712,19 +716,45 @@ class PreviewInteraction:
             s2_idx = section_index
             s1_idx = sections[s2_idx].previous_id
         else:
-            return False
+            return None
 
         if is_invalid_id(sections, s1_idx) or is_invalid_id(sections, s2_idx):
-            return False
+            return None
 
         s1 = sections[s1_idx]
         s2 = sections[s2_idx]
 
         if s1.type_name != "straight" or s2.type_name != "straight":
-            return False
+            return None
 
         if s1.end != s2.start:
+            return None
+
+        return s1_idx, s2_idx, s1, s2
+
+    def _can_start_shared_straight_drag(self, node: tuple[int, str]) -> bool:
+        shared_pair = self._shared_straight_pair(node)
+        if shared_pair is None:
             return False
+
+        sect_index, _ = node
+        sections = self._section_manager.sections
+
+        if sect_index < 0 or sect_index >= len(sections):
+            return False
+
+        selected_section = sections[sect_index]
+        return selected_section.type_name == "straight"
+
+    def _apply_constrained_shared_straight_drag(
+        self, dragged_key: tuple[int, str], track_point: Point
+    ) -> bool:
+        shared_pair = self._shared_straight_pair(dragged_key)
+        if shared_pair is None:
+            return False
+
+        s1_idx, s2_idx, s1, s2 = shared_pair
+        sections = self._section_manager.sections
 
         A = s1.start
         C = s2.end
@@ -746,8 +776,11 @@ class PreviewInteraction:
         Py = A[1] + t * (C[1] - A[1])
         P = (Px, Py)
 
-        s1_new = replace(s1, end=P)
-        s2_new = replace(s2, start=P)
+        s1_length = math.hypot(P[0] - A[0], P[1] - A[1])
+        s2_length = math.hypot(C[0] - P[0], C[1] - P[1])
+
+        s1_new = replace(s1, end=P, length=s1_length)
+        s2_new = replace(s2, start=P, length=s2_length)
 
         s1_new = update_section_geometry(s1_new)
         s2_new = update_section_geometry(s2_new)
