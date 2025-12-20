@@ -177,7 +177,7 @@ class SelectionManager(QtCore.QObject):
         self._selected_section_index = index
         section = self._sections[index]
         self._selected_section_points = list(section.polyline)
-        self._selected_curve_index = index if section.center is not None else None
+        self._selected_curve_index = section.section_id if section.center is not None else None
         logger.debug(
             "Selection set to index %d type=%s start_dlong=%.3f length=%.3f", 
             index,
