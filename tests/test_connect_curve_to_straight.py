@@ -139,6 +139,41 @@ def test_solve_straight_to_curve_endpoint_aligns_headings():
     assert math.isclose(dot, 1.0, rel_tol=1e-6)
 
 
+def test_solve_straight_to_curve_endpoint_preserves_length_and_curve():
+    curve = _make_curve_section(
+        section_id=1,
+        start=(0.0, 0.0),
+        end=(100.0, 100.0),
+        center=(0.0, 100.0),
+        radius=100.0,
+        start_heading=(1.0, 0.0),
+        end_heading=(0.0, 1.0),
+    )
+    straight = _make_straight_section(
+        section_id=0,
+        start=(100.0, -50.0),
+        end=(100.0, 50.0),
+    )
+
+    solved = solve_straight_end_to_curve_endpoint(
+        straight,
+        "start",
+        curve,
+        "end",
+    )
+
+    assert solved is not None
+    new_straight, new_curve = solved
+
+    assert math.isclose(new_straight.length, straight.length, rel_tol=1e-9)
+    assert new_straight.start == curve.end
+
+    assert new_curve.start == curve.start
+    assert new_curve.end == curve.end
+    assert math.isclose(new_curve.length, curve.length, rel_tol=1e-9)
+    assert math.isclose(new_curve.radius, curve.radius, rel_tol=1e-9)
+
+
 def test_solve_straight_to_curve_endpoint_rejects_short_solutions():
     curve = _make_curve_section(
         section_id=1,
