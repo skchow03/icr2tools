@@ -1042,13 +1042,44 @@ class SGPreviewWidget(QtWidgets.QWidget):
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._section_manager.sections), track_length
 
+    def _current_start_finish_dlong(self) -> float | None:
+        if (
+            self._start_finish_mapping is None
+            or self._section_manager.centerline_index is None
+            or not self._section_manager.sampled_dlongs
+        ):
+            return None
+
+        track_length = self._track_length
+        if track_length is None and self._section_manager.sampled_dlongs:
+            track_length = self._section_manager.sampled_dlongs[-1]
+
+        if track_length is None or track_length <= 0:
+            return None
+
+        (cx, cy), _, _ = self._start_finish_mapping
+        _, nearest_dlong, _ = project_point_to_centerline(
+            (cx, cy),
+            self._section_manager.centerline_index,
+            self._section_manager.sampled_dlongs,
+            track_length,
+        )
+        return nearest_dlong
+
     def set_sections(self, sections: list[SectionPreview], start_finish_dlong: float | None = None) -> None:
         self._clear_split_hover()
+
+        preserved_start_finish_dlong = start_finish_dlong
+        if preserved_start_finish_dlong is None:
+            preserved_start_finish_dlong = self._current_start_finish_dlong()
+
         needs_rebuild = self._section_manager.set_sections(sections)
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
-        self._update_start_finish_mapping(start_finish_dlong)
+        if self._section_manager.sampled_dlongs:
+            self._track_length = self._section_manager.sampled_dlongs[-1]
+        self._update_start_finish_mapping(preserved_start_finish_dlong)
 
         if needs_rebuild:
             self._update_fit_scale()
