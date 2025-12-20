@@ -53,6 +53,26 @@ Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
 
+def _project_point_to_polyline(point: Point, polyline: list[Point]) -> Point | None:
+    if len(polyline) < 2:
+        return None
+
+    best_point: Point | None = None
+    best_distance_sq = float("inf")
+    for start, end in zip(polyline, polyline[1:]):
+        projection = project_point_to_segment(point, start, end)
+        if projection is None:
+            continue
+        dx = projection[0] - point[0]
+        dy = projection[1] - point[1]
+        distance_sq = dx * dx + dy * dy
+        if distance_sq < best_distance_sq:
+            best_distance_sq = distance_sq
+            best_point = projection
+
+    return best_point
+
+
 class SGPreviewWidget(QtWidgets.QWidget):
     """Minimal preview widget that draws an SG file centreline."""
 
@@ -487,7 +507,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._clear_split_hover()
         self._split_section_mode = True
         self._apply_creation_update(self._creation_controller.deactivate_creation())
-        self.set_status_text("Hover over a straight section to choose split point.")
+        self.set_status_text("Hover over a straight or curve section to choose split point.")
         self.splitSectionModeChanged.emit(True)
         self.request_repaint()
         return True
@@ -525,13 +545,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         section = self._section_manager.sections[section_index]
-        if section.type_name != "straight":
+        if section.type_name not in {"straight", "curve"}:
             self._clear_split_hover()
             return
 
-        projected = project_point_to_segment(
-            track_point, section.start, section.end
-        )
+        if section.type_name == "straight":
+            projected = project_point_to_segment(track_point, section.start, section.end)
+        else:
+            projected = _project_point_to_polyline(track_point, section.polyline)
         if projected is None:
             self._clear_split_hover()
             return
@@ -553,9 +574,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if idx is None or point is None:
             return
 
-        result = self._editor.split_straight_section(
-            list(self._section_manager.sections), idx, point
-        )
+        section = self._section_manager.sections[idx]
+        if section.type_name == "curve":
+            result = self._editor.split_curve_section(
+                list(self._section_manager.sections), idx, point
+            )
+        else:
+            result = self._editor.split_straight_section(
+                list(self._section_manager.sections), idx, point
+            )
         if result is None:
             return
 
