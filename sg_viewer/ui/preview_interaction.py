@@ -107,16 +107,29 @@ class PreviewInteraction:
     # Mouse interaction entry points
     # ------------------------------------------------------------------
     def handle_mouse_press(self, event: QtGui.QMouseEvent) -> bool:
+        selected_section = self._selection.selected_section_index
+
+        if event.button() == QtCore.Qt.RightButton:
+            hit = self._hit_test_node(event.pos(), selected_section)
+            if hit is None:
+                return False
+
+            if selected_section is None or selected_section != hit[0]:
+                return False
+
+            self._disconnect_node(hit)
+            event.accept()
+            return True
+
         if event.button() != QtCore.Qt.LeftButton:
             return False
 
-        selected_section = self._selection.selected_section_index
         hit = self._hit_test_node(event.pos(), selected_section)
         if hit is not None:
             if selected_section is None or selected_section != hit[0]:
                 return False
 
-            if self._start_node_interaction(hit, event.pos()):
+            if self._start_node_interaction(hit, event.pos(), allow_disconnect=False):
                 event.accept()
                 return True
             return False
@@ -382,7 +395,7 @@ class PreviewInteraction:
     # Node dragging / disconnect
     # ------------------------------------------------------------------
     def _start_node_interaction(
-        self, node: tuple[int, str], pos: QtCore.QPoint
+        self, node: tuple[int, str], pos: QtCore.QPoint, *, allow_disconnect: bool = True
     ) -> bool:
         sect_index, endtype = node
         sections = self._section_manager.sections
@@ -394,11 +407,19 @@ class PreviewInteraction:
             self._start_node_drag(node, pos)
             return True
 
+        if allow_disconnect:
+            self._disconnect_node(node)
+            return True
+
+        return False
+
+    def _disconnect_node(self, node: tuple[int, str]) -> None:
+        sect_index, endtype = node
+        sections = self._section_manager.sections
         updated_sections = self._editor.disconnect_neighboring_section(
             list(sections), sect_index, endtype
         )
         self._apply_section_updates(updated_sections)
-        return True
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
         widget_size = self._context.widget_size()
