@@ -275,11 +275,168 @@ class PreviewEditor:
             next_id=second_next,
         )
 
+        return self._finalize_split_sections(sections, index, sec, s1, s2)
+
+    def split_curve_section(
+        self, sections: list[SectionPreview], index: int, split_point: Point
+    ) -> tuple[list[SectionPreview], float | None] | None:
+        if not sections or index < 0 or index >= len(sections):
+            return None
+
+        sec = sections[index]
+        if sec.type_name != "curve" or sec.center is None:
+            return None
+
+        cx, cy = sec.center
+        start_vec = (sec.start[0] - cx, sec.start[1] - cy)
+        end_vec = (sec.end[0] - cx, sec.end[1] - cy)
+        radius = abs(sec.radius) if sec.radius not in (None, 0.0) else math.hypot(*start_vec)
+        if radius <= 0:
+            return None
+
+        orientation = self._curve_orientation(sec, start_vec)
+        if orientation is None:
+            return None
+
+        sv_len = math.hypot(*start_vec)
+        if sv_len <= 0:
+            return None
+
+        split_vec = (split_point[0] - cx, split_point[1] - cy)
+        sv_mag = math.hypot(*split_vec)
+        if sv_mag <= 0:
+            return None
+
+        split_unit = (split_vec[0] / sv_mag, split_vec[1] / sv_mag)
+        split_on_circle = (cx + split_unit[0] * radius, cy + split_unit[1] * radius)
+
+        def _angle(vec: Point) -> float:
+            return math.atan2(vec[1], vec[0])
+
+        start_angle = _angle(start_vec)
+        end_angle = _angle(end_vec)
+        split_angle = _angle((split_on_circle[0] - cx, split_on_circle[1] - cy))
+
+        total_span = self._directed_angle(start_angle, end_angle, orientation)
+        split_span = self._directed_angle(start_angle, split_angle, orientation)
+        total_angle = abs(total_span)
+        if total_angle <= 1e-9:
+            return None
+
+        MIN_FRACTION = 0.02
+        if split_span == 0 or split_span / total_span <= 0 or abs(split_span) >= abs(total_span):
+            return None
+
+        first_fraction = abs(split_span) / total_angle
+        second_fraction = 1.0 - first_fraction
+        if first_fraction <= MIN_FRACTION or second_fraction <= MIN_FRACTION:
+            return None
+
+        first_length = abs(split_span) * radius
+        second_length = abs(total_span - split_span) * radius
+
+        def _tangent_heading(vec: Point) -> tuple[float, float] | None:
+            vx, vy = vec
+            mag = math.hypot(vx, vy)
+            if mag <= 0:
+                return None
+            return (-orientation * vy / mag, orientation * vx / mag)
+
+        start_heading = sec.start_heading or _tangent_heading(start_vec)
+        end_heading = sec.end_heading or _tangent_heading(end_vec)
+        split_heading = _tangent_heading((split_on_circle[0] - cx, split_on_circle[1] - cy))
+        if split_heading is None:
+            return None
+
+        first_section = replace(
+            sec,
+            end=split_on_circle,
+            length=first_length,
+            start_heading=start_heading,
+            sang1=start_heading[0] if start_heading else None,
+            sang2=start_heading[1] if start_heading else None,
+            end_heading=split_heading,
+            eang1=split_heading[0],
+            eang2=split_heading[1],
+        )
+        second_section = replace(
+            sec,
+            start=split_on_circle,
+            length=second_length,
+            start_heading=split_heading,
+            sang1=split_heading[0],
+            sang2=split_heading[1],
+            end_heading=end_heading,
+            eang1=end_heading[0] if end_heading else None,
+            eang2=end_heading[1] if end_heading else None,
+        )
+
+        return self._finalize_split_sections(sections, index, sec, first_section, second_section)
+
+    def _directed_angle(self, start_angle: float, end_angle: float, orientation: float) -> float:
+        angle = end_angle - start_angle
+        if orientation > 0:
+            while angle <= 0:
+                angle += 2 * math.pi
+        else:
+            while angle >= 0:
+                angle -= 2 * math.pi
+        return angle
+
+    def _curve_orientation(self, sec: SectionPreview, start_vec: Point) -> float | None:
+        radius = math.hypot(*start_vec)
+        if radius <= 0:
+            return None
+
+        heading = sec.start_heading or sec.end_heading
+        if heading is not None:
+            hx, hy = heading
+            mag = math.hypot(hx, hy)
+            if mag > 0:
+                hx /= mag
+                hy /= mag
+                ccw_tangent = (-start_vec[1] / radius, start_vec[0] / radius)
+                cw_tangent = (start_vec[1] / radius, -start_vec[0] / radius)
+                ccw_dot = ccw_tangent[0] * hx + ccw_tangent[1] * hy
+                cw_dot = cw_tangent[0] * hx + cw_tangent[1] * hy
+                if abs(ccw_dot - cw_dot) > 1e-9:
+                    return 1.0 if ccw_dot > cw_dot else -1.0
+
+        if sec.radius is not None and sec.radius < 0:
+            return -1.0
+
+        if sec.center is not None:
+            end_vec = (sec.end[0] - sec.center[0], sec.end[1] - sec.center[1])
+            cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+            if abs(cross) > 1e-9:
+                return 1.0 if cross > 0 else -1.0
+
+        return 1.0
+
+    def _finalize_split_sections(
+        self,
+        sections: list[SectionPreview],
+        index: int,
+        original: SectionPreview,
+        first: SectionPreview,
+        second: SectionPreview,
+    ) -> tuple[list[SectionPreview], float | None]:
+        def _adjust_id(value: int | None) -> int:
+            if value is None or value < 0 or value >= len(sections):
+                return -1
+            return value + 1 if value > index else value
+
+        first_prev = _adjust_id(original.previous_id)
+        second_next = _adjust_id(original.next_id)
+
+        first = replace(first, previous_id=first_prev, next_id=index + 1)
+        second = replace(second, previous_id=index, next_id=second_next)
+
         new_sections: list[SectionPreview] = []
         for i, sect in enumerate(sections):
             if i == index:
-                new_sections.append(s1)
-                new_sections.append(s2)
+                new_sections.append(first)
+                new_sections.append(second)
                 continue
 
             adjusted_prev = _adjust_id(sect.previous_id)

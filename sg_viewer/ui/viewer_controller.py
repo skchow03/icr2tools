@@ -502,7 +502,7 @@ class SGViewerController:
                 self._window.split_section_button.setChecked(False)
                 return
             self._window.statusBar().showMessage(
-                "Hover over a straight section to choose split point."
+                "Hover over a section to choose where to split it."
             )
         else:
             self._window.preview.cancel_split_section()
