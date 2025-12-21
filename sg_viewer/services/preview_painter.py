@@ -76,47 +76,52 @@ def paint_preview(
         widget_height,
     )
 
-    if not base_state.sampled_centerline:
-        _draw_placeholder(painter, base_state.rect, base_state.status_message)
-        return
-
     if transform is None:
         _draw_placeholder(painter, base_state.rect, "Unable to fit view")
         return
 
-    _draw_axes(painter, base_state.rect, base_state.show_axes, transform, widget_height)
+    if not base_state.sampled_centerline:
+        _draw_placeholder(painter, base_state.rect, base_state.status_message)
+    else:
+        _draw_axes(
+            painter, base_state.rect, base_state.show_axes, transform, widget_height
+        )
 
-    _draw_centerlines(
-        painter,
-        base_state.centerline_polylines,
-        base_state.selected_section_points,
-        transform,
-        widget_height,
-    )
-
-    if base_state.show_curve_markers:
-        _draw_curve_markers(
+        _draw_centerlines(
             painter,
-            [sect for sect in base_state.sections if getattr(sect, "center", None) is not None],
-            base_state.selected_curve_index,
+            base_state.centerline_polylines,
+            base_state.selected_section_points,
             transform,
             widget_height,
         )
 
-    _draw_start_finish_line(
-        painter,
-        base_state.start_finish_mapping,
-        transform,
-        widget_height,
-    )
+        if base_state.show_curve_markers:
+            _draw_curve_markers(
+                painter,
+                [
+                    sect
+                    for sect in base_state.sections
+                    if getattr(sect, "center", None) is not None
+                ],
+                base_state.selected_curve_index,
+                transform,
+                widget_height,
+            )
 
-    if base_state.split_section_mode and base_state.split_hover_point is not None:
-        _draw_split_hover_node(
+        _draw_start_finish_line(
             painter,
-            base_state.split_hover_point,
+            base_state.start_finish_mapping,
             transform,
             widget_height,
         )
+
+        if base_state.split_section_mode and base_state.split_hover_point is not None:
+            _draw_split_hover_node(
+                painter,
+                base_state.split_hover_point,
+                transform,
+                widget_height,
+            )
 
     _draw_creation_overlays(painter, creation_state, transform, widget_height)
     _draw_nodes(painter, node_state, transform, widget_height)
