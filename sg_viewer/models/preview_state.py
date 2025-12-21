@@ -99,7 +99,7 @@ def current_transform(
 def clamp_scale(scale: float, state: TransformState) -> float:
     base = state.fit_scale or state.current_scale or 1.0
     min_scale = base * 0.1
-    max_scale = base * 25.0
+    max_scale = max(base * 25.0, 1.0)  # Allow zooming in to 1px = 1 500th
     return max(min_scale, min(max_scale, scale))
 
 
