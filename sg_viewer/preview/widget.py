@@ -684,6 +684,22 @@ class SGPreviewWidget(QtWidgets.QWidget):
             map_to_track=map_to_track, find_unconnected_node=find_unconnected_node
         )
 
+    def _lock_user_transform(self) -> None:
+        """Prevent auto-fit from overriding the current zoom/pan during creation."""
+        state = self._transform_state
+        if state.user_transform_active:
+            return
+
+        if state.current_scale is None or state.view_center is None:
+            self._update_fit_scale()
+            state = self._transform_state
+
+        self._transform_state = replace(
+            state,
+            user_transform_active=True,
+            current_scale=state.current_scale or state.fit_scale,
+        )
+
     def _apply_creation_update(self, update: CreationUpdate) -> None:
         if update is None:
             return
@@ -695,11 +711,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
             if self._creation_controller.straight_active:
                 self._set_delete_section_active(False)
                 self.cancel_split_section()
+                self._lock_user_transform()
             self.newStraightModeChanged.emit(self._creation_controller.straight_active)
         if update.curve_mode_changed:
             if self._creation_controller.curve_active:
                 self._set_delete_section_active(False)
                 self.cancel_split_section()
+                self._lock_user_transform()
             self.newCurveModeChanged.emit(self._creation_controller.curve_active)
         if update.finalize_straight:
             self._finalize_new_straight()
@@ -1362,19 +1380,42 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (
             self._sgfile is None
-            or self._trk is None
             or self._track_length is None
             or xsect_index < 0
             or xsect_index >= self._sgfile.num_xsects
         ):
             return None
 
+        def _xsect_label(dlat_value: float) -> str:
+            return f"X-Section {xsect_index} (DLAT {dlat_value:.0f})"
+
+        dlat_values = (
+            self._trk.xsect_dlats
+            if self._trk is not None
+            else self._sgfile.xsect_dlats
+        )
+        if xsect_index >= len(dlat_values):
+            return None
+
+        dlat_value = float(dlat_values[xsect_index])
+
+        if self._trk is None or self._track_length <= 0:
+            track_length = float(self._track_length or 0.0)
+            track_length = track_length if track_length > 0 else 1.0
+            return ElevationProfileData(
+                dlongs=[0.0, track_length],
+                sg_altitudes=[0.0, 0.0],
+                trk_altitudes=[0.0, 0.0],
+                section_ranges=[],
+                track_length=track_length,
+                xsect_label=_xsect_label(dlat_value),
+            )
+
         dlongs: list[float] = []
         sg_altitudes: list[float] = []
         trk_altitudes: list[float] = []
         section_ranges: list[tuple[float, float]] = []
 
-        dlat_value = float(self._trk.xsect_dlats[xsect_index])
         for sect_idx, (sg_sect, trk_sect) in enumerate(zip(self._sgfile.sects, self._trk.sects)):
             prev_idx = (sect_idx - 1) % self._sgfile.num_sects
             begin_alt = float(self._sgfile.sects[prev_idx].alt[xsect_index])
@@ -1406,14 +1447,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 sg_altitudes.append(sg_alt)
                 trk_altitudes.append(trk_alt)
 
-        label = f"X-Section {xsect_index} (DLAT {dlat_value:.0f})"
         return ElevationProfileData(
             dlongs=dlongs,
             sg_altitudes=sg_altitudes,
             trk_altitudes=trk_altitudes,
             section_ranges=section_ranges,
             track_length=float(self._track_length),
-            xsect_label=label,
+            xsect_label=_xsect_label(dlat_value),
         )
 
     # ------------------------------------------------------------------
