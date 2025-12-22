@@ -36,8 +36,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "set_start_finish": "Ctrl+Alt+F",
         }
 
-        def _button_label(label: str, shortcut: str) -> str:
-            return f"{label} ({shortcut})"
+        def _set_button_shortcut(
+            button: QtWidgets.QPushButton, label: str, shortcut: str
+        ) -> None:
+            button.setText(label)
+            button.setToolTip(f"{label} ({shortcut})")
+            button.setShortcut(shortcut)
 
         self._preview: PreviewContext = SGPreviewWidget(
             show_status=self.statusBar().showMessage
@@ -46,36 +50,38 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
-        self._new_straight_button = QtWidgets.QPushButton(
-            _button_label("New Straight", shortcut_labels["new_straight"])
-        )
+        self._new_straight_button = QtWidgets.QPushButton("New Straight")
         self._new_straight_button.setCheckable(True)
         self._new_straight_button.setEnabled(False)
-        self._new_straight_button.setShortcut(shortcut_labels["new_straight"])
-        self._new_curve_button = QtWidgets.QPushButton(
-            _button_label("New Curve", shortcut_labels["new_curve"])
+        _set_button_shortcut(
+            self._new_straight_button, "New Straight", shortcut_labels["new_straight"]
         )
+        self._new_curve_button = QtWidgets.QPushButton("New Curve")
         self._new_curve_button.setCheckable(True)
         self._new_curve_button.setEnabled(False)
-        self._new_curve_button.setShortcut(shortcut_labels["new_curve"])
-        self._split_section_button = QtWidgets.QPushButton(
-            _button_label("Split", shortcut_labels["split_section"])
+        _set_button_shortcut(
+            self._new_curve_button, "New Curve", shortcut_labels["new_curve"]
         )
+        self._split_section_button = QtWidgets.QPushButton("Split")
         self._split_section_button.setCheckable(True)
         self._split_section_button.setEnabled(False)
-        self._split_section_button.setShortcut(shortcut_labels["split_section"])
-        self._delete_section_button = QtWidgets.QPushButton(
-            _button_label("Delete Section", shortcut_labels["delete_section"])
+        _set_button_shortcut(
+            self._split_section_button, "Split", shortcut_labels["split_section"]
         )
+        self._delete_section_button = QtWidgets.QPushButton("Delete Section")
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
-        self._delete_section_button.setShortcut(shortcut_labels["delete_section"])
-        self._set_start_finish_button = QtWidgets.QPushButton(
-            _button_label("Set Start/Finish", shortcut_labels["set_start_finish"])
+        _set_button_shortcut(
+            self._delete_section_button,
+            "Delete Section",
+            shortcut_labels["delete_section"],
         )
+        self._set_start_finish_button = QtWidgets.QPushButton("Set Start/Finish")
         self._set_start_finish_button.setEnabled(False)
-        self._set_start_finish_button.setShortcut(
-            shortcut_labels["set_start_finish"]
+        _set_button_shortcut(
+            self._set_start_finish_button,
+            "Set Start/Finish",
+            shortcut_labels["set_start_finish"],
         )
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
@@ -117,7 +123,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._split_section_button)
         navigation_layout.addWidget(self._delete_section_button)
         navigation_layout.addWidget(self._set_start_finish_button)
-        sidebar_layout.addLayout(navigation_layout)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._axes_button)
         sidebar_layout.addWidget(self._section_table_button)
@@ -144,6 +149,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
+        preview_column_layout.addLayout(navigation_layout)
         preview_column_layout.addWidget(self._preview, stretch=5)
 
         profile_controls = QtWidgets.QHBoxLayout()
