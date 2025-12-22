@@ -32,6 +32,7 @@ from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import (
     build_section_polyline,
     derive_heading_vectors,
+    scale_section,
     rebuild_centerline_from_sections,
 )
 from sg_viewer.ui.preview_editor import PreviewEditor
@@ -1103,6 +1104,34 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         miles = total_length / (500.0 * 12 * 5280)
         return f"Track length: {total_length:.0f} DLONG (500ths) — {miles:.3f} miles"
+
+    def scale_track_to_length(self, target_length: float) -> str | None:
+        """Scale the current closed loop to ``target_length`` DLONG (500ths)."""
+
+        sections = self._section_manager.sections
+        if not sections or not is_closed_loop(sections):
+            return None
+
+        try:
+            current_length = loop_length(sections)
+        except ValueError:
+            return None
+
+        if current_length <= 0:
+            return None
+
+        factor = target_length / current_length
+        if math.isclose(factor, 1.0, rel_tol=1e-9):
+            return "Track already at desired length."
+
+        scaled_sections = [scale_section(sect, factor) for sect in sections]
+        scaled_start_finish = self._start_finish_dlong
+        if scaled_start_finish is not None:
+            scaled_start_finish *= factor
+
+        self.set_sections(scaled_sections, start_finish_dlong=scaled_start_finish)
+
+        return f"Scaled track by {factor:.3f}× to {target_length:.0f} DLONG."
 
     def _current_start_finish_dlong(self) -> float | None:
         if self._track_length is None or self._track_length <= 0:

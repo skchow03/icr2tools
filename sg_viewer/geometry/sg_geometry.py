@@ -219,6 +219,34 @@ def update_section_geometry(section: SectionPreview) -> SectionPreview:
     return replace(section, polyline=polyline, start_heading=start_heading, end_heading=end_heading)
 
 
+def scale_section(section: SectionPreview, factor: float) -> SectionPreview:
+    """Return a copy of ``section`` scaled uniformly by ``factor``."""
+
+    def _scale_point(point: Point | None) -> Point | None:
+        if point is None:
+            return None
+        return (point[0] * factor, point[1] * factor)
+
+    scaled_polyline = []
+    if section.polyline:
+        for point in section.polyline:
+            scaled_point = _scale_point(point)
+            if scaled_point is None:
+                continue
+            scaled_polyline.append(scaled_point)
+
+    return replace(
+        section,
+        start=_scale_point(section.start) or section.start,
+        end=_scale_point(section.end) or section.end,
+        center=_scale_point(section.center),
+        start_dlong=section.start_dlong * factor if section.start_dlong is not None else None,
+        length=section.length * factor if section.length is not None else 0.0,
+        radius=None if section.radius is None else section.radius * factor,
+        polyline=scaled_polyline,
+    )
+
+
 def rebuild_centerline_from_sections(
     sections: list[SectionPreview],
 ) -> tuple[list[Point], list[float], tuple[float, float, float, float] | None, CenterlineIndex | None]:
