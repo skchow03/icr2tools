@@ -801,6 +801,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
             )
 
         creation_preview = self._creation_controller.preview_sections()
+        drag_heading_state = None
+        if transform is not None:
+            dragged_heading = self._interaction.dragged_curve_heading()
+            if dragged_heading is not None:
+                drag_section, drag_end_point = dragged_heading
+                drag_heading_state = preview_painter.DragHeadingState(
+                    section=drag_section,
+                    end_point=drag_end_point,
+                )
 
         preview_painter.paint_preview(
             painter,
@@ -834,6 +843,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 new_curve_preview=creation_preview.new_curve_preview,
             ),
             node_state,
+            drag_heading_state,
             transform,
             self.height(),
         )

@@ -55,11 +55,18 @@ class CreationOverlayState:
     new_curve_preview: SectionPreview | None
 
 
+@dataclass
+class DragHeadingState:
+    section: SectionPreview | None
+    end_point: Point | None
+
+
 def paint_preview(
     painter: QtGui.QPainter,
     base_state: BasePreviewState,
     creation_state: CreationOverlayState,
     node_state: NodeOverlayState | None,
+    drag_heading_state: DragHeadingState | None,
     transform: Transform | None,
     widget_height: int,
 ) -> None:
@@ -124,6 +131,13 @@ def paint_preview(
             )
 
     _draw_creation_overlays(painter, base_state.rect, creation_state, transform, widget_height)
+    _draw_drag_heading_guide(
+        painter,
+        base_state.rect,
+        drag_heading_state,
+        transform,
+        widget_height,
+    )
     _draw_nodes(painter, node_state, transform, widget_height)
 
 
@@ -136,6 +150,29 @@ def _draw_creation_overlays(
 ) -> None:
     _draw_new_straight(painter, creation_state, transform, widget_height)
     _draw_new_curve(painter, rect, creation_state, transform, widget_height)
+
+
+def _draw_drag_heading_guide(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRect,
+    drag_heading_state: DragHeadingState | None,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    if drag_heading_state is None:
+        return
+
+    if drag_heading_state.section is None or drag_heading_state.end_point is None:
+        return
+
+    end_point = _map_point(drag_heading_state.end_point, transform, widget_height)
+    _draw_curve_heading_line(
+        painter,
+        rect,
+        drag_heading_state.section,
+        end_point,
+        transform,
+    )
 
 
 def _draw_background(
