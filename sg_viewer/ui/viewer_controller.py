@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import logging
+import math
 import subprocess
 import sys
 from pathlib import Path
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
+from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
-from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
+from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
+from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 
 logger = logging.getLogger(__name__)
@@ -105,6 +108,13 @@ class SGViewerController:
         )
         self._recalc_action.triggered.connect(self._recalculate_dlongs)
 
+        self._scale_track_action = QtWidgets.QAction(
+            "Scale Track to Length…",
+            self._window,
+        )
+        self._scale_track_action.setEnabled(False)
+        self._scale_track_action.triggered.connect(self._scale_track)
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -147,6 +157,7 @@ class SGViewerController:
 
         tools_menu = self._window.menuBar().addMenu("Tools")
         tools_menu.addAction(self._recalc_action)
+        tools_menu.addAction(self._scale_track_action)
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -330,6 +341,7 @@ class SGViewerController:
         self._window.split_section_button.setChecked(False)
         self._window.split_section_button.setEnabled(False)
         self._window.set_start_finish_button.setEnabled(False)
+        self._scale_track_action.setEnabled(False)
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
         self._save_action.setEnabled(True)
@@ -517,6 +529,9 @@ class SGViewerController:
         self._window.set_start_finish_button.setEnabled(has_sections)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
+        self._scale_track_action.setEnabled(
+            has_sections and is_closed_loop(sections)
+        )
 
         # Save is allowed once anything exists or changes
         self._save_action.setEnabled(True)
@@ -586,6 +601,55 @@ class SGViewerController:
 
         headings = self._window.preview.get_section_headings()
         self._heading_table_window.set_headings(headings)
+
+    def _scale_track(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections or not is_closed_loop(sections):
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Scale Track",
+                "Scaling is only available when the track forms a closed loop.",
+            )
+            return
+
+        try:
+            current_length = loop_length(sections)
+        except ValueError:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Scale Track",
+                "Scaling is only available when the track forms a closed loop.",
+            )
+            return
+
+        dialog = ScaleTrackDialog(self._window, current_length)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        target_length = dialog.get_target_length()
+        if target_length <= 0:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Scale Track",
+                "Desired track length must be greater than zero.",
+            )
+            return
+
+        if math.isclose(target_length, current_length, rel_tol=1e-6):
+            self._window.statusBar().showMessage("Track already at desired length.")
+            return
+
+        status = self._window.preview.scale_track_to_length(target_length)
+        if not status:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Scale Track",
+                "Scaling could not be applied. Ensure the track is a valid closed loop.",
+            )
+            return
+
+        self._window.statusBar().showMessage(status)
+        self._update_track_length_display()
 
     def _populate_xsect_choices(self) -> None:
         metadata = self._window.preview.get_xsect_metadata()
