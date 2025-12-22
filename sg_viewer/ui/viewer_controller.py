@@ -42,21 +42,6 @@ class SGViewerController:
             "Click New Straight to begin drawing or File → Open SG."
         )
 
-    def _on_sections_changed(self) -> None:
-        sections, _ = self._window.preview.get_section_set()
-        self._window.set_start_finish_button.setEnabled(bool(sections))
-        self._window.split_section_button.setEnabled(bool(sections))
-        if not sections:
-            self._window.split_section_button.setChecked(False)
-        if self._current_path is None:
-            return
-
-        self._window.update_window_title(
-            path=self._current_path,
-            is_dirty=True,
-        )
-
-
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
         self._clear_background_state()
@@ -526,6 +511,7 @@ class SGViewerController:
         self._window.split_section_button.setEnabled(has_sections)
         if not has_sections:
             self._window.split_section_button.setChecked(False)
+        self._window.set_start_finish_button.setEnabled(has_sections)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
 
