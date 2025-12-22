@@ -44,7 +44,7 @@ from sg_viewer.models.preview_state_utils import update_node_status
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.hover_detection import find_hovered_unconnected_node
 from sg_viewer.geometry.dlong import set_start_finish
-from sg_viewer.geometry.topology import is_closed_loop
+from sg_viewer.geometry.topology import is_closed_loop, loop_length
 
 
 logger = logging.getLogger(__name__)
@@ -1090,6 +1090,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def get_section_set(self) -> tuple[list[SectionPreview], float | None]:
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._section_manager.sections), track_length
+
+    def track_length_message(self) -> str:
+        sections = self._section_manager.sections
+        if not sections or not is_closed_loop(sections):
+            return "Complete the loop to show track length"
+
+        try:
+            total_length = loop_length(sections)
+        except ValueError:
+            return "Complete the loop to show track length"
+
+        miles = total_length / (500.0 * 12 * 5280)
+        return f"Track length: {total_length:.0f} DLONG (500ths) — {miles:.3f} miles"
 
     def _current_start_finish_dlong(self) -> float | None:
         if self._track_length is None or self._track_length <= 0:
