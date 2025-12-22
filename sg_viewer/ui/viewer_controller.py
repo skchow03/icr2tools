@@ -41,6 +41,7 @@ class SGViewerController:
         self._window.statusBar().showMessage(
             "Click New Straight to begin drawing or File → Open SG."
         )
+        self._update_track_length_display()
 
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
@@ -78,6 +79,7 @@ class SGViewerController:
         self._update_heading_table()
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
+        self._update_track_length_display()
 
 
     def _create_actions(self) -> None:
@@ -342,6 +344,7 @@ class SGViewerController:
             is_dirty=False,
             is_untitled=True,
         )
+        self._update_track_length_display()
 
 
 
@@ -531,6 +534,8 @@ class SGViewerController:
                 is_dirty=True,
             )
 
+        self._update_track_length_display()
+
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
         if not sections:
@@ -652,3 +657,7 @@ class SGViewerController:
 
         scale, origin = self._window.preview.get_background_settings()
         self._history.set_background(self._current_path, background_path, scale, origin)
+
+    def _update_track_length_display(self) -> None:
+        text = self._window.preview.track_length_message()
+        self._window.update_track_length_label(text)

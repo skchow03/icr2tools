@@ -42,3 +42,25 @@ def is_closed_loop(sections) -> bool:
             return False
 
     return True
+
+
+def loop_length(sections) -> float:
+    """Return the total length of a closed loop of sections.
+
+    Raises ValueError if the sections do not form a closed loop.
+    """
+
+    if not is_closed_loop(sections):
+        raise ValueError("Track must be a closed loop to compute length")
+
+    total = 0.0
+    visited: set[int] = set()
+    index = 0
+
+    while index not in visited:
+        visited.add(index)
+        section = sections[index]
+        total += float(getattr(section, "length", 0.0))
+        index = section.next_id
+
+    return total
