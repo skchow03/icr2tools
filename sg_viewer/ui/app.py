@@ -28,6 +28,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("SG Viewer")
         self.resize(960, 720)
 
+        shortcut_labels = {
+            "new_straight": "Ctrl+Shift+1",
+            "new_curve": "Ctrl+Shift+2",
+            "split_section": "Ctrl+Shift+3",
+            "delete_section": "Ctrl+Shift+4",
+            "set_start_finish": "Ctrl+Shift+5",
+        }
+
+        def _button_label(label: str, shortcut: str) -> str:
+            return f"{label} ({shortcut})"
+
         self._preview: PreviewContext = SGPreviewWidget(
             show_status=self.statusBar().showMessage
         )
@@ -35,20 +46,37 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
-        self._new_straight_button = QtWidgets.QPushButton("New Straight")
+        self._new_straight_button = QtWidgets.QPushButton(
+            _button_label("New Straight", shortcut_labels["new_straight"])
+        )
         self._new_straight_button.setCheckable(True)
         self._new_straight_button.setEnabled(False)
-        self._new_curve_button = QtWidgets.QPushButton("New Curve")
+        self._new_straight_button.setShortcut(shortcut_labels["new_straight"])
+        self._new_curve_button = QtWidgets.QPushButton(
+            _button_label("New Curve", shortcut_labels["new_curve"])
+        )
         self._new_curve_button.setCheckable(True)
         self._new_curve_button.setEnabled(False)
-        self._split_section_button = QtWidgets.QPushButton("Split")
+        self._new_curve_button.setShortcut(shortcut_labels["new_curve"])
+        self._split_section_button = QtWidgets.QPushButton(
+            _button_label("Split", shortcut_labels["split_section"])
+        )
         self._split_section_button.setCheckable(True)
         self._split_section_button.setEnabled(False)
-        self._delete_section_button = QtWidgets.QPushButton("Delete Section")
+        self._split_section_button.setShortcut(shortcut_labels["split_section"])
+        self._delete_section_button = QtWidgets.QPushButton(
+            _button_label("Delete Section", shortcut_labels["delete_section"])
+        )
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
-        self._set_start_finish_button = QtWidgets.QPushButton("Set Start/Finish")
+        self._delete_section_button.setShortcut(shortcut_labels["delete_section"])
+        self._set_start_finish_button = QtWidgets.QPushButton(
+            _button_label("Set Start/Finish", shortcut_labels["set_start_finish"])
+        )
         self._set_start_finish_button.setEnabled(False)
+        self._set_start_finish_button.setShortcut(
+            shortcut_labels["set_start_finish"]
+        )
         self._radii_button = QtWidgets.QPushButton("Radii")
         self._radii_button.setCheckable(True)
         self._radii_button.setChecked(True)
