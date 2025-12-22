@@ -123,18 +123,19 @@ def paint_preview(
                 widget_height,
             )
 
-    _draw_creation_overlays(painter, creation_state, transform, widget_height)
+    _draw_creation_overlays(painter, base_state.rect, creation_state, transform, widget_height)
     _draw_nodes(painter, node_state, transform, widget_height)
 
 
 def _draw_creation_overlays(
     painter: QtGui.QPainter,
+    rect: QtCore.QRect,
     creation_state: CreationOverlayState,
     transform: Transform,
     widget_height: int,
 ) -> None:
     _draw_new_straight(painter, creation_state, transform, widget_height)
-    _draw_new_curve(painter, creation_state, transform, widget_height)
+    _draw_new_curve(painter, rect, creation_state, transform, widget_height)
 
 
 def _draw_background(
@@ -291,6 +292,7 @@ def _draw_new_straight(
 
 def _draw_new_curve(
     painter: QtGui.QPainter,
+    rect: QtCore.QRect,
     creation_state: CreationOverlayState,
     transform: Transform,
     widget_height: int,
@@ -316,6 +318,15 @@ def _draw_new_curve(
     painter.setPen(QtCore.Qt.NoPen)
     for point in qp_points:
         painter.drawEllipse(point, 5, 5)
+
+    _draw_curve_heading_line(
+        painter,
+        rect,
+        preview_section,
+        qp_points[-1] if qp_points else None,
+        transform,
+    )
+
     painter.restore()
 
 
@@ -386,3 +397,61 @@ def _draw_nodes(
 
 
     painter.restore()
+
+
+def _draw_curve_heading_line(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRect,
+    preview_section: SectionPreview | None,
+    end_point: QtCore.QPointF | None,
+    transform: Transform,
+) -> None:
+    if preview_section is None or preview_section.end_heading is None or end_point is None:
+        return
+
+    scale, _ = transform
+    heading_dx, heading_dy = preview_section.end_heading
+    if scale == 0:
+        return
+
+    direction = QtCore.QPointF(heading_dx * scale, -heading_dy * scale)
+    if direction.manhattanLength() == 0:
+        return
+
+    target = _project_to_rect_edge(end_point, direction, rect)
+    if target is None:
+        return
+
+    pen = QtGui.QPen(QtGui.QColor("magenta"), 1)
+    pen.setStyle(QtCore.Qt.DotLine)
+    pen.setCapStyle(QtCore.Qt.FlatCap)
+    painter.setPen(pen)
+    painter.setBrush(QtCore.Qt.NoBrush)
+    painter.drawLine(end_point, target)
+
+
+def _project_to_rect_edge(
+    start: QtCore.QPointF, direction: QtCore.QPointF, rect: QtCore.QRect
+) -> QtCore.QPointF | None:
+    rectf = QtCore.QRectF(rect)
+    dx = direction.x()
+    dy = direction.y()
+
+    candidates: list[float] = []
+
+    if dx > 0:
+        candidates.append((rectf.right() - start.x()) / dx)
+    elif dx < 0:
+        candidates.append((rectf.left() - start.x()) / dx)
+
+    if dy > 0:
+        candidates.append((rectf.bottom() - start.y()) / dy)
+    elif dy < 0:
+        candidates.append((rectf.top() - start.y()) / dy)
+
+    positive_steps = [t for t in candidates if t > 0]
+    if not positive_steps:
+        return None
+
+    step = min(positive_steps)
+    return QtCore.QPointF(start.x() + dx * step, start.y() + dy * step)
