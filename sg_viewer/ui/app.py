@@ -29,11 +29,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.resize(960, 720)
 
         shortcut_labels = {
-            "new_straight": "Ctrl+Shift+1",
-            "new_curve": "Ctrl+Shift+2",
-            "split_section": "Ctrl+Shift+3",
-            "delete_section": "Ctrl+Shift+4",
-            "set_start_finish": "Ctrl+Shift+5",
+            "new_straight": "Ctrl+Alt+S",
+            "new_curve": "Ctrl+Alt+C",
+            "split_section": "Ctrl+Alt+P",
+            "delete_section": "Ctrl+Alt+D",
+            "set_start_finish": "Ctrl+Alt+F",
         }
 
         def _button_label(label: str, shortcut: str) -> str:
