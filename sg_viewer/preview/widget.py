@@ -594,6 +594,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         sections, track_length = result
         self._track_length = track_length
         self.set_sections(sections)
+        if idx + 1 < len(sections):
+            self._selection.set_selected_section(idx + 1)
         self._clear_split_hover()
         self._split_section_mode = False
         self.request_repaint()
