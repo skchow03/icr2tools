@@ -88,6 +88,24 @@ class PreviewInteraction:
     def connection_target(self) -> tuple[int, str] | None:
         return self._connection_target
 
+    def dragged_curve_heading(self) -> tuple["SectionPreview", Point] | None:
+        if not self._is_dragging_node or self._active_node is None:
+            return None
+
+        section_index, endtype = self._active_node
+        if endtype != "end":
+            return None
+
+        sections = self._section_manager.sections
+        if section_index < 0 or section_index >= len(sections):
+            return None
+
+        section = sections[section_index]
+        if section.type_name != "curve" or section.end_heading is None:
+            return None
+
+        return section, section.end
+
     def reset(self) -> None:
         self._is_dragging_node = False
         self._active_node = None
