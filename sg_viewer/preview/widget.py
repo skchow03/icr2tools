@@ -126,6 +126,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._hovered_endpoint: tuple[int, str] | None = None
 
         self._split_section_mode = False
+        self._split_previous_status_message: str | None = None
         self._split_hover_point: Point | None = None
         self._split_hover_section_index: int | None = None
 
@@ -509,6 +510,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._split_section_mode:
             return True
 
+        self._split_previous_status_message = self._status_message
         self._clear_split_hover()
         self._split_section_mode = True
         self._apply_creation_update(self._creation_controller.deactivate_creation())
@@ -521,10 +523,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if not self._split_section_mode and self._split_hover_point is None:
             return
 
-        self._split_section_mode = False
-        self._clear_split_hover()
-        self.splitSectionModeChanged.emit(False)
-        self.request_repaint()
+        self._exit_split_section_mode()
 
     def _update_split_hover(self, screen_pos: QtCore.QPoint) -> None:
         widget_size = (self.width(), self.height())
@@ -596,8 +595,18 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self.set_sections(sections)
         if idx + 1 < len(sections):
             self._selection.set_selected_section(idx + 1)
-        self._clear_split_hover()
+        self._exit_split_section_mode("Split complete.")
+
+    def _exit_split_section_mode(self, status_message: str | None = None) -> None:
         self._split_section_mode = False
+        self._clear_split_hover()
+        if status_message is not None:
+            self._status_message = status_message
+        elif self._split_previous_status_message is not None:
+            self._status_message = self._split_previous_status_message
+        self._split_previous_status_message = None
+        self.splitSectionModeChanged.emit(False)
+        self._show_status(self._status_message)
         self.request_repaint()
 
     def set_background_settings(
