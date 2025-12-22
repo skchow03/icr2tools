@@ -112,6 +112,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
         self._cline: List[Point] | None = None
+        self._start_finish_dlong: float | None = None
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
 
         self._is_panning = False
@@ -310,6 +311,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._section_manager.reset()
         self._sampled_centerline = []
         self._sampled_bounds = None
+        self._start_finish_dlong = None
         self._start_finish_mapping = None
         self._disconnected_nodes.clear()
         self._apply_creation_update(self._creation_controller.reset())
@@ -354,6 +356,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
         self._track_length = data.track_length
+        self._start_finish_dlong = 0.0 if data.track_length else None
         self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
         self._apply_creation_update(self._creation_controller.reset())
@@ -375,6 +378,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._set_default_view_bounds()
         self._sampled_centerline = []
         self._track_length = 0.0
+        self._start_finish_dlong = None
         self._has_unsaved_changes = False
         self._update_fit_scale()
         self.update()
@@ -1088,6 +1092,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         return list(self._section_manager.sections), track_length
 
     def _current_start_finish_dlong(self) -> float | None:
+        if self._track_length is None or self._track_length <= 0:
+            return None
+
+        if self._start_finish_dlong is not None:
+            return float(self._start_finish_dlong) % float(self._track_length)
+
         if (
             self._start_finish_mapping is None
             or self._section_manager.centerline_index is None
@@ -1116,6 +1126,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         preserved_start_finish_dlong = start_finish_dlong
         if preserved_start_finish_dlong is None:
+            preserved_start_finish_dlong = self._start_finish_dlong
+        if preserved_start_finish_dlong is None:
             preserved_start_finish_dlong = self._current_start_finish_dlong()
 
         needs_rebuild = self._section_manager.set_sections(sections)
@@ -1138,6 +1150,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
+        if preserved_start_finish_dlong is not None and self._track_length:
+            self._start_finish_dlong = float(preserved_start_finish_dlong) % float(self._track_length)
         self._has_unsaved_changes = True
         self.sectionsChanged.emit()  # NEW
         self.update()
@@ -1164,6 +1178,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_centerline = self._section_manager.sampled_centerline
         self._track_length = track_length
         self._start_finish_mapping = None
+        self._start_finish_dlong = 0.0 if track_length > 0 else None
 
         previous_block_state = self._selection.blockSignals(True)
         try:
@@ -1257,6 +1272,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             )
 
         self._start_finish_mapping = mapping
+        if start_dlong is not None and self._track_length:
+            self._start_finish_dlong = float(start_dlong) % float(self._track_length)
 
     def apply_preview_to_sgfile(self) -> SGFile:
         return self._apply_preview_to_sgfile()
