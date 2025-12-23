@@ -44,7 +44,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             button.setShortcut(shortcut)
 
         self._preview: PreviewContext = SGPreviewWidget(
-            show_status=self.statusBar().showMessage
+            show_status=self.show_status_message
         )
         self._sidebar = QtWidgets.QWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
@@ -227,6 +227,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
+
+    def show_status_message(self, message: str) -> None:
+        self._preview.set_status_text(message)
 
     def update_scale_label(self, scale: float | None) -> None:
         if scale is None or scale <= 0:
