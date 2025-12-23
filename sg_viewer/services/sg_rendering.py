@@ -17,10 +17,22 @@ def draw_status_message(painter: QtGui.QPainter, rect: QtCore.QRect, message: st
 
     padding = QtCore.QMargins(10, 8, 10, 8)
     metrics = painter.fontMetrics()
-    text_rect = metrics.boundingRect(message)
+    offset = QtCore.QPoint(12, 12)
+    available_width = max(
+        0,
+        rect.width() - offset.x() * 2 - padding.left() - padding.right(),
+    )
+    text_rect = metrics.boundingRect(
+        0,
+        0,
+        available_width,
+        0,
+        QtCore.Qt.TextWordWrap,
+        message,
+    )
     box = QtCore.QRect(
-        rect.left() + 12,
-        rect.top() + 12,
+        rect.left() + offset.x(),
+        rect.top() + offset.y(),
         text_rect.width() + padding.left() + padding.right(),
         text_rect.height() + padding.top() + padding.bottom(),
     )
@@ -280,6 +292,5 @@ def draw_start_finish_line(
     painter.drawLine(QtCore.QLineF(start, end))
     painter.drawLine(QtCore.QLineF(direction_start, direction_end))
     painter.restore()
-
 
 
