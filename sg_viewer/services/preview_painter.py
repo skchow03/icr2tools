@@ -139,6 +139,7 @@ def paint_preview(
         widget_height,
     )
     _draw_nodes(painter, node_state, transform, widget_height)
+    _draw_status_overlay(painter, base_state.rect, base_state.status_message)
 
 
 def _draw_creation_overlays(
@@ -434,6 +435,15 @@ def _draw_nodes(
 
 
     painter.restore()
+
+
+def _draw_status_overlay(
+    painter: QtGui.QPainter, rect: QtCore.QRect, message: str
+) -> None:
+    if not message:
+        return
+
+    sg_rendering.draw_status_message(painter, rect, message)
 
 
 def _draw_curve_heading_line(

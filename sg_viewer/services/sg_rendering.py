@@ -8,9 +8,44 @@ Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
 
+def draw_status_message(painter: QtGui.QPainter, rect: QtCore.QRect, message: str) -> None:
+    if not message:
+        return
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+    padding = QtCore.QMargins(10, 8, 10, 8)
+    metrics = painter.fontMetrics()
+    text_rect = metrics.boundingRect(message)
+    box = QtCore.QRect(
+        rect.left() + 12,
+        rect.top() + 12,
+        text_rect.width() + padding.left() + padding.right(),
+        text_rect.height() + padding.top() + padding.bottom(),
+    )
+
+    painter.setBrush(QtGui.QColor(0, 0, 0, 170))
+    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180)))
+    painter.drawRoundedRect(box, 6, 6)
+
+    painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+    painter.drawText(
+        box.adjusted(
+            padding.left(),
+            padding.top(),
+            -padding.right(),
+            -padding.bottom(),
+        ),
+        QtCore.Qt.TextWordWrap,
+        message,
+    )
+
+    painter.restore()
+
+
 def draw_placeholder(painter: QtGui.QPainter, rect: QtCore.QRect, message: str) -> None:
-    painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
-    painter.drawText(rect, QtCore.Qt.AlignCenter, message)
+    draw_status_message(painter, rect, message)
 
 
 def draw_background_image(
@@ -245,7 +280,6 @@ def draw_start_finish_line(
     painter.drawLine(QtCore.QLineF(start, end))
     painter.drawLine(QtCore.QLineF(direction_start, direction_end))
     painter.restore()
-
 
 
 

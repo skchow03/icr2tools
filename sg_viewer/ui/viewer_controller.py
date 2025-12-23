@@ -41,7 +41,7 @@ class SGViewerController:
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._refresh_recent_menu()
         self._start_new_track(confirm=False)
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             "Click New Straight to begin drawing or File → Open SG."
         )
         self._update_track_length_display()
@@ -56,7 +56,7 @@ class SGViewerController:
             logger.exception("Failed to load SG file")
             return
 
-        self._window.statusBar().showMessage(f"Loaded {path}")
+        self._window.show_status_message(f"Loaded {path}")
         self._current_path = path
         self._is_untitled = False
         self._history.record_open(path)
@@ -254,7 +254,7 @@ class SGViewerController:
             return
 
         self._background_settings_action.setEnabled(True)
-        self._window.statusBar().showMessage(f"Loaded background image {file_path}")
+        self._window.show_status_message(f"Loaded background image {file_path}")
         self._persist_background_state()
 
     def _show_background_settings_dialog(self) -> None:
@@ -280,7 +280,7 @@ class SGViewerController:
             self._window.preview.set_background_settings(
                 new_scale, (new_u, new_v)
             )
-            self._window.statusBar().showMessage("Updated background image settings")
+            self._window.show_status_message("Updated background image settings")
             self._persist_background_state()
 
     # def _launch_background_calibrator(self) -> None:
@@ -305,7 +305,7 @@ class SGViewerController:
     #         logger.exception("Failed to launch background calibrator")
     #         return
 
-    #     self._window.statusBar().showMessage(
+    #     self._window.show_status_message(
     #         "Opened background calibrator in a separate window"
     #     )
 
@@ -347,7 +347,7 @@ class SGViewerController:
         self._save_action.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             "New track ready. Click New Straight to start drawing."
         )
         self._is_untitled = True
@@ -393,7 +393,7 @@ class SGViewerController:
             return
 
         self._current_path = path
-        self._window.statusBar().showMessage(f"Saved {path}")
+        self._window.show_status_message(f"Saved {path}")
         self._history.record_save(path)
         self._refresh_recent_menu()
         self._persist_background_state()
@@ -416,7 +416,7 @@ class SGViewerController:
         preview.refresh_geometry()
         preview.sectionsChanged.emit()
 
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             "Recalculated all curve lengths and DLONGs"
         )
 
@@ -446,7 +446,7 @@ class SGViewerController:
 
         if result.stdout:
             logger.info(result.stdout)
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             f"Saved {sg_path} and exported CSVs next to it"
         )
 
@@ -454,13 +454,13 @@ class SGViewerController:
         self._window.delete_section_button.setChecked(False)
         self._window.split_section_button.setChecked(False)
         if not self._window.preview.begin_new_straight():
-            self._window.statusBar().showMessage(
+            self._window.show_status_message(
                 "Start a new track or load an SG file before creating new straights."
             )
             self._on_new_straight_mode_changed(False)
             return
 
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             "Click to place the start of the new straight."
         )
 
@@ -468,13 +468,13 @@ class SGViewerController:
         self._window.delete_section_button.setChecked(False)
         self._window.split_section_button.setChecked(False)
         if not self._window.preview.begin_new_curve():
-            self._window.statusBar().showMessage(
+            self._window.show_status_message(
                 "Create a track with an unconnected node before adding a curve."
             )
             self._on_new_curve_mode_changed(False)
             return
 
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             "Click an unconnected node to start the new curve."
         )
 
@@ -486,7 +486,7 @@ class SGViewerController:
             if not self._window.preview.begin_delete_section():
                 self._window.delete_section_button.setChecked(False)
                 return
-            self._window.statusBar().showMessage("Click a section to delete it.")
+            self._window.show_status_message("Click a section to delete it.")
         else:
             self._window.preview.cancel_delete_section()
 
@@ -498,7 +498,7 @@ class SGViewerController:
             if not self._window.preview.begin_split_section():
                 self._window.split_section_button.setChecked(False)
                 return
-            self._window.statusBar().showMessage(
+            self._window.show_status_message(
                 "Hover over a section to choose where to split it."
             )
         else:
@@ -636,7 +636,7 @@ class SGViewerController:
             return
 
         if math.isclose(target_length, current_length, rel_tol=1e-6):
-            self._window.statusBar().showMessage("Track already at desired length.")
+            self._window.show_status_message("Track already at desired length.")
             return
 
         status = self._window.preview.scale_track_to_length(target_length)
@@ -648,7 +648,7 @@ class SGViewerController:
             )
             return
 
-        self._window.statusBar().showMessage(status)
+        self._window.show_status_message(status)
         self._update_track_length_display()
 
     def _populate_xsect_choices(self) -> None:
@@ -700,14 +700,14 @@ class SGViewerController:
             self._window.preview.set_background_settings(scale, origin)
         except Exception as exc:  # pragma: no cover - UI feedback only
             logger.exception("Failed to restore background image", exc_info=exc)
-            self._window.statusBar().showMessage(
+            self._window.show_status_message(
                 f"Could not restore background image {image_path}"
             )
             return
 
         self._background_settings_action.setEnabled(True)
 #        self._calibrate_background_action.setEnabled(True)
-        self._window.statusBar().showMessage(
+        self._window.show_status_message(
             f"Restored background image {image_path} for {path.name}"
         )
 

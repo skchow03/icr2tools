@@ -149,7 +149,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
         self._has_unsaved_changes = False
-        self._show_status = show_status or (lambda _text: None)
+        self._show_status = show_status or self.set_status_text
 
         self._interaction = PreviewInteraction(
             self,
@@ -188,6 +188,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def set_status(self, text: str) -> None:
         self._status_message = text
+        self.update()
 
     def set_status_text(self, text: str) -> None:
         self.set_status(text)
