@@ -271,6 +271,30 @@ def draw_ai_lines(
         painter.drawPolyline(QtGui.QPolygonF(mapped))
 
 
+def draw_lp_segment(
+    painter: QtGui.QPainter,
+    start: Point2D,
+    end: Point2D,
+    transform: Transform,
+    viewport_height: int,
+    *,
+    color: QtGui.QColor | str = "#ffeb3b",
+    width: int = 4,
+) -> None:
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor(color), width)
+    pen.setCapStyle(QtCore.Qt.RoundCap)
+    painter.setPen(pen)
+    painter.drawLine(
+        QtCore.QLineF(
+            map_point(start[0], start[1], transform, viewport_height),
+            map_point(end[0], end[1], transform, viewport_height),
+        )
+    )
+    painter.restore()
+
+
 def draw_flags(
     painter: QtGui.QPainter,
     flags: Sequence[Point2D],

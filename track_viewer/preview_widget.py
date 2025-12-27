@@ -111,6 +111,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._track_length: float | None = None
         self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._active_lp_line = "center-line"
+        self._selected_lp_line: str | None = None
+        self._selected_lp_index: int | None = None
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -192,6 +194,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._available_lp_files = []
         self._boundary_edges = []
         self._active_lp_line = "center-line"
+        self._selected_lp_line = None
+        self._selected_lp_index = None
         self._camera_service.reset()
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -280,6 +284,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if target == self._active_lp_line:
             return
         self._active_lp_line = target
+        self._selected_lp_line = None
+        self._selected_lp_index = None
         self._projection_cached_point = None
         self._projection_cached_result = None
         self._set_projection_data(None, None, None, None, None, None, None)
@@ -290,6 +296,25 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if name == "center-line" or name not in self._available_lp_files:
             return []
         return self._get_ai_line_records(name)
+
+    def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
+        if name is None or index is None:
+            if self._selected_lp_line is None and self._selected_lp_index is None:
+                return
+            self._selected_lp_line = None
+            self._selected_lp_index = None
+            self.update()
+            return
+        if name not in self._available_lp_files:
+            return
+        records = self._get_ai_line_records(name)
+        if index < 0 or index >= len(records):
+            return
+        if self._selected_lp_line == name and self._selected_lp_index == index:
+            return
+        self._selected_lp_line = name
+        self._selected_lp_index = index
+        self.update()
 
     def lp_color(self, name: str) -> str:
         try:
@@ -777,6 +802,29 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 line_width=self._ai_line_width,
                 acceleration_window=self._ai_acceleration_window,
             )
+            if (
+                self._selected_lp_line
+                and self._selected_lp_index is not None
+                and self._selected_lp_line in self._visible_lp_files
+            ):
+                records = self._get_ai_line_records(self._selected_lp_line)
+                if len(records) >= 2:
+                    index = self._selected_lp_index
+                    start_index = index
+                    end_index = index + 1
+                    if end_index >= len(records):
+                        end_index = index
+                        start_index = index - 1
+                    if 0 <= start_index < len(records) and 0 <= end_index < len(records):
+                        start_record = records[start_index]
+                        end_record = records[end_index]
+                        rendering.draw_lp_segment(
+                            painter,
+                            (start_record.x, start_record.y),
+                            (end_record.x, end_record.y),
+                            transform,
+                            self.height(),
+                        )
             rendering.draw_flags(
                 painter, self._flags, self._selected_flag, transform, self.height()
             )
