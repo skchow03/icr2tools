@@ -66,6 +66,77 @@ class LpPoint:
     lateral_speed: float
 
 
+def load_ai_line_records(
+    trk: TRKFile | None,
+    cline: list[tuple[float, float]],
+    track_path: Path | None,
+    track_length: float | None,
+    lp_name: str,
+) -> list[LpPoint]:
+    if trk is None or not cline or track_path is None:
+        return []
+
+    lp_path = track_path / f"{lp_name}.LP"
+    if not lp_path.exists():
+        return []
+
+    length_arg = int(track_length) if track_length is not None else None
+    try:
+        ai_line = load_lp_file(lp_path, track_length=length_arg)
+    except Exception:
+        return []
+
+    points: list[LpPoint] = []
+    for record in ai_line:
+        try:
+            x, y, _ = getxyz(trk, float(record.dlong), record.dlat, cline)
+        except Exception:
+            continue
+        points.append(
+            LpPoint(
+                x=x,
+                y=y,
+                dlong=float(record.dlong),
+                dlat=float(record.dlat),
+                speed_mph=float(record.speed_mph),
+                lateral_speed=float(record.coriolis),
+            )
+        )
+    return points
+
+
+class AiLineLoadTask(QtCore.QObject, QtCore.QRunnable):
+    loaded = QtCore.pyqtSignal(int, str, list)
+
+    def __init__(
+        self,
+        generation: int,
+        lp_name: str,
+        trk: TRKFile | None,
+        cline: list[tuple[float, float]],
+        track_path: Path | None,
+        track_length: float | None,
+    ) -> None:
+        super().__init__()
+        self.setAutoDelete(True)
+        self._generation = generation
+        self._lp_name = lp_name
+        self._trk = trk
+        self._cline = cline
+        self._track_path = track_path
+        self._track_length = track_length
+
+    def run(self) -> None:
+        records = load_ai_line_records(
+            self._trk,
+            self._cline,
+            self._track_path,
+            self._track_length,
+            self._lp_name,
+        )
+        self.loaded.emit(self._generation, self._lp_name, records)
+
+
 class TrackPreviewWidget(QtWidgets.QFrame):
     """Renders the TRK ground surface similar to the timing overlay."""
 
@@ -74,6 +145,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     camerasChanged = QtCore.pyqtSignal(list, list)
     selectedCameraChanged = QtCore.pyqtSignal(object, object)
     activeLpLineChanged = QtCore.pyqtSignal(str)
+    aiLineLoaded = QtCore.pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -96,6 +168,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_bounds: Tuple[float, float, float, float] | None = None
         self._centerline_index: CenterlineIndex | None = None
         self._ai_lines: dict[str, List[LpPoint]] | None = None
+        self._pending_ai_line_loads: set[str] = set()
+        self._ai_line_tasks: set[AiLineLoadTask] = set()
+        self._ai_line_generation = 0
         self._cached_surface_pixmap: QtGui.QPixmap | None = None
         self._pixmap_size: QtCore.QSize | None = None
         self._current_track: Path | None = None
@@ -163,6 +238,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._sampled_bounds = None
         self._centerline_index = None
         self._ai_lines = None
+        self._pending_ai_line_loads.clear()
+        self._ai_line_tasks.clear()
+        self._ai_line_generation += 1
         self._cached_surface_pixmap = None
         self._pixmap_size = None
         self._current_track = None
@@ -262,6 +340,43 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._ai_line_width = clamped
             self.update()
 
+    def _queue_ai_line_load(self, lp_name: str) -> None:
+        if (
+            self._current_track is None
+            or lp_name in self._pending_ai_line_loads
+            or lp_name not in self._available_lp_files
+        ):
+            return
+        if self._ai_lines is not None and lp_name in self._ai_lines:
+            return
+        self._pending_ai_line_loads.add(lp_name)
+        task = AiLineLoadTask(
+            self._ai_line_generation,
+            lp_name,
+            self.trk,
+            list(self._cline),
+            self._current_track,
+            self._track_length,
+        )
+        task.loaded.connect(self._handle_ai_line_loaded)
+        self._ai_line_tasks.add(task)
+        QtCore.QThreadPool.globalInstance().start(task)
+
+    def _handle_ai_line_loaded(
+        self, generation: int, lp_name: str, records: list[LpPoint]
+    ) -> None:
+        task = self.sender()
+        if isinstance(task, AiLineLoadTask):
+            self._ai_line_tasks.discard(task)
+        self._pending_ai_line_loads.discard(lp_name)
+        if generation != self._ai_line_generation:
+            return
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        self._ai_lines[lp_name] = records
+        self.aiLineLoaded.emit(lp_name)
+        self.update()
+
     def visible_lp_files(self) -> list[str]:
         return sorted(self._visible_lp_files)
 
@@ -270,6 +385,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if valid == self._visible_lp_files:
             return
         self._visible_lp_files = valid
+        for name in sorted(valid):
+            self._queue_ai_line_load(name)
         self.update()
 
     def active_lp_line(self) -> str:
@@ -290,6 +407,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._projection_cached_result = None
         self._set_projection_data(None, None, None, None, None, None, None)
         self.activeLpLineChanged.emit(target)
+        if target != "center-line":
+            self._queue_ai_line_load(target)
         self.update()
 
     def ai_line_records(self, name: str) -> list[LpPoint]:
@@ -467,9 +586,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._bounds = self._merge_bounds(track_data.surface_bounds, sampled_bounds)
         self._available_lp_files = track_data.available_lp_files
         self._ai_lines = None
+        self._pending_ai_line_loads.clear()
+        self._ai_line_tasks.clear()
+        self._ai_line_generation += 1
         self._visible_lp_files = {
             name for name in self._visible_lp_files if name in self._available_lp_files
         }
+        for name in sorted(self._visible_lp_files):
+            self._queue_ai_line_load(name)
         if self._active_lp_line not in {"center-line", *self._available_lp_files}:
             self._active_lp_line = "center-line"
         self._set_projection_data(None, None, None, None, None, None, None)
@@ -575,41 +699,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._ai_lines = {}
 
         if lp_name not in self._ai_lines:
-            self._ai_lines[lp_name] = self._load_ai_line_records(lp_name)
-
+            self._queue_ai_line_load(lp_name)
+            return []
         return self._ai_lines.get(lp_name) or []
-
-    def _load_ai_line_records(self, lp_name: str) -> List[LpPoint]:
-        if self.trk is None or not self._cline:
-            return []
-
-        lp_path = self._current_track / f"{lp_name}.LP"
-        if not lp_path.exists():
-            return []
-
-        length_arg = int(self._track_length) if self._track_length is not None else None
-        try:
-            ai_line = load_lp_file(lp_path, track_length=length_arg)
-        except Exception:
-            return []
-
-        points: List[LpPoint] = []
-        for record in ai_line:
-            try:
-                x, y, _ = getxyz(self.trk, float(record.dlong), record.dlat, self._cline)
-            except Exception:
-                continue
-            points.append(
-                LpPoint(
-                    x=x,
-                    y=y,
-                    dlong=float(record.dlong),
-                    dlat=float(record.dlat),
-                    speed_mph=float(record.speed_mph),
-                    lateral_speed=float(record.coriolis),
-                )
-            )
-        return points
 
     def _merge_bounds(
         self, *bounds: Tuple[float, float, float, float] | None

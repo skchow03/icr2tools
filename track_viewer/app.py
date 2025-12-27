@@ -343,6 +343,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.activeLpLineChanged.connect(
             self._update_lp_records_table
         )
+        self.visualization_widget.aiLineLoaded.connect(self._handle_ai_line_loaded)
         self._sidebar.type7_details.parametersChanged.connect(
             self.visualization_widget.update
         )
@@ -731,6 +732,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                     self._lp_records_table.setItem(row, column, item)
             self._lp_records_table.clearSelection()
         self.visualization_widget.set_selected_lp_record(None, None)
+
+    def _handle_ai_line_loaded(self, name: str) -> None:
+        if name == self.visualization_widget.active_lp_line():
+            self._update_lp_records_table(name)
 
     def _handle_lp_record_selected(self) -> None:
         selection = self._lp_records_table.selectionModel()
