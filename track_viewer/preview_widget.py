@@ -149,6 +149,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     selectedCameraChanged = QtCore.pyqtSignal(object, object)
     activeLpLineChanged = QtCore.pyqtSignal(str)
     aiLineLoaded = QtCore.pyqtSignal(str)
+    lpRecordSelected = QtCore.pyqtSignal(str, int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -1559,12 +1560,76 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if flag_index is not None:
             self._set_selected_flag(flag_index)
             return
+        active_line = self._active_lp_line or "center-line"
+        if (
+            active_line != "center-line"
+            and active_line in self._visible_lp_files
+            and self._surface_mesh
+        ):
+            lp_index = self._lp_record_at_point(point, active_line)
+            if lp_index is not None:
+                self.set_selected_lp_record(active_line, lp_index)
+                self.lpRecordSelected.emit(active_line, lp_index)
+                return
         coords = self._map_to_track(point)
         if coords is None:
             return
         self._flags.append(coords)
         self._set_selected_flag(len(self._flags) - 1)
         self.update()
+
+    def _lp_record_at_point(
+        self, point: QtCore.QPointF, lp_name: str
+    ) -> int | None:
+        records = self._get_ai_line_records(lp_name)
+        if not records:
+            return None
+        transform = self._current_transform()
+        if not transform:
+            return None
+        cursor_track = self._map_to_track(point)
+        if cursor_track is None:
+            return None
+
+        cursor_x, cursor_y = cursor_track
+        best_point = None
+        best_distance_sq = math.inf
+        best_start_index = None
+        best_end_index = None
+
+        for idx in range(len(records)):
+            p0 = records[idx]
+            p1 = records[(idx + 1) % len(records)]
+            seg_dx = p1.x - p0.x
+            seg_dy = p1.y - p0.y
+            seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
+            if seg_len_sq == 0:
+                continue
+            t = ((cursor_x - p0.x) * seg_dx + (cursor_y - p0.y) * seg_dy) / seg_len_sq
+            t = max(0.0, min(1.0, t))
+            proj_x = p0.x + seg_dx * t
+            proj_y = p0.y + seg_dy * t
+            dist_sq = (cursor_x - proj_x) ** 2 + (cursor_y - proj_y) ** 2
+            if dist_sq < best_distance_sq:
+                best_distance_sq = dist_sq
+                best_point = (proj_x, proj_y)
+                best_start_index = idx
+                best_end_index = (idx + 1) % len(records)
+
+        if best_point is None or best_start_index is None or best_end_index is None:
+            return None
+
+        mapped_point = rendering.map_point(
+            best_point[0], best_point[1], transform, self.height()
+        )
+        if (mapped_point - point).manhattanLength() > 16:
+            return None
+
+        start_record = records[best_start_index]
+        end_record = records[best_end_index]
+        dist_start = (cursor_x - start_record.x) ** 2 + (cursor_y - start_record.y) ** 2
+        dist_end = (cursor_x - end_record.x) ** 2 + (cursor_y - end_record.y) ** 2
+        return best_start_index if dist_start <= dist_end else best_end_index
 
     def _handle_flag_removal(self, point: QtCore.QPointF) -> bool:
         flag_index = self._flag_at_point(point)

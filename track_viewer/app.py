@@ -344,6 +344,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._update_lp_records_table
         )
         self.visualization_widget.aiLineLoaded.connect(self._handle_ai_line_loaded)
+        self.visualization_widget.lpRecordSelected.connect(
+            self._handle_lp_record_clicked
+        )
         self._sidebar.type7_details.parametersChanged.connect(
             self.visualization_widget.update
         )
@@ -751,6 +754,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.set_selected_lp_record(None, None)
             return
         self.visualization_widget.set_selected_lp_record(lp_name, row)
+
+    def _handle_lp_record_clicked(self, lp_name: str, row: int) -> None:
+        if lp_name != self.visualization_widget.active_lp_line():
+            return
+        if row < 0 or row >= self._lp_records_table.rowCount():
+            return
+        with QtCore.QSignalBlocker(self._lp_records_table):
+            self._lp_records_table.selectRow(row)
+            item = self._lp_records_table.item(row, 0)
+            if item is not None:
+                self._lp_records_table.scrollToItem(
+                    item, QtWidgets.QAbstractItemView.PositionAtCenter
+                )
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
