@@ -273,8 +273,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
 
-        self._track_list = QtWidgets.QListWidget()
-        self._track_list.currentItemChanged.connect(self._on_track_selected)
+        self._track_list = QtWidgets.QComboBox()
+        self._track_list.currentIndexChanged.connect(self._on_track_selected)
 
         self._lp_list = QtWidgets.QListWidget()
         self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
@@ -502,21 +502,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         with QtCore.QSignalBlocker(self._track_list):
             self._track_list.clear()
             for label, folder in entries:
-                item = QtWidgets.QListWidgetItem(label)
-                item.setData(QtCore.Qt.UserRole, folder)
-                self._track_list.addItem(item)
+                self._track_list.addItem(label, folder)
         self._track_list.setEnabled(enabled)
         if enabled and 0 <= default_index < self._track_list.count():
-            self._track_list.setCurrentRow(default_index)
+            self._track_list.setCurrentIndex(default_index)
         else:
-            self._track_list.setCurrentRow(-1)
+            self._track_list.setCurrentIndex(-1)
 
-    def _on_track_selected(
-        self,
-        current: Optional[QtWidgets.QListWidgetItem],
-        _previous: Optional[QtWidgets.QListWidgetItem],
-    ) -> None:
-        folder = current.data(QtCore.Qt.UserRole) if current else None
+    def _on_track_selected(self, index: int) -> None:
+        folder = self._track_list.itemData(index) if index >= 0 else None
         self.controller.set_selected_track(folder)
 
     def _apply_ai_line_state(
