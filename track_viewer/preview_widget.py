@@ -63,6 +63,7 @@ class LpPoint:
     dlong: float
     dlat: float
     speed_mph: float
+    lateral_speed: float
 
 
 class TrackPreviewWidget(QtWidgets.QFrame):
@@ -580,6 +581,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     dlong=float(record.dlong),
                     dlat=float(record.dlat),
                     speed_mph=float(record.speed_mph),
+                    lateral_speed=float(record.coriolis),
                 )
             )
         return points
