@@ -101,7 +101,6 @@ class WindowController(QtCore.QObject):
     # ------------------------------------------------------------------
     def set_visible_lp_files(self, names: list[str]) -> None:
         self.preview_widget.set_visible_lp_files(names)
-        self.sync_ai_lines()
 
     def sync_ai_lines(self) -> None:
         available_files = self.preview_widget.available_lp_files()
