@@ -284,7 +284,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._lp_records_table = QtWidgets.QTableWidget(0, 6)
+        self._lp_records_table = QtWidgets.QTableWidget(0, 4)
         self._lp_records_table.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers
         )
@@ -293,11 +293,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._lp_records_table.setAlternatingRowColors(True)
         self._lp_records_table.setHorizontalHeaderLabels(
-            ["#", "X", "Y", "DLONG", "DLAT", "Speed (mph)"]
+            ["DLONG", "DLAT", "Speed (mph)", "Lateral Speed"]
         )
         header = self._lp_records_table.horizontalHeader()
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        for column in range(1, 6):
+        for column in range(0, 4):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
         self._lp_records_table.verticalHeader().setVisible(False)
 
@@ -317,10 +316,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(lp_label)
         left_layout.addWidget(self._lp_list)
         left_layout.addWidget(self._lp_records_label)
-        left_layout.addWidget(self._lp_records_table)
+        self._lp_records_table.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+        left_layout.addWidget(self._lp_records_table, 1)
         left_layout.addWidget(self._sidebar.type7_details)
         left_layout.addWidget(self._sidebar.type6_editor)
-        left_layout.addStretch(1)
         left_sidebar.setLayout(left_layout)
         self.visualization_widget.cursorPositionChanged.connect(
             self._sidebar.update_cursor_position
@@ -714,12 +715,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_records_table.setRowCount(len(records))
         for row, record in enumerate(records):
             values = [
-                str(row + 1),
-                f"{record.x:.2f}",
-                f"{record.y:.2f}",
                 f"{record.dlong:.2f}",
                 f"{record.dlat:.2f}",
                 f"{record.speed_mph:.2f}",
+                f"{record.lateral_speed:.2f}",
             ]
             for column, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(value)
