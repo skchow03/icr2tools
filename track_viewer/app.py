@@ -284,7 +284,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._lp_records_table = QtWidgets.QTableWidget(0, 4)
+        self._lp_records_table = QtWidgets.QTableWidget(0, 5)
         self._lp_records_table.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers
         )
@@ -293,12 +293,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._lp_records_table.setAlternatingRowColors(True)
         self._lp_records_table.setHorizontalHeaderLabels(
-            ["DLONG", "DLAT", "Speed (mph)", "Lateral Speed"]
+            ["Index", "DLONG", "DLAT", "Speed (mph)", "Lateral Speed"]
         )
         header = self._lp_records_table.horizontalHeader()
-        for column in range(0, 4):
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        for column in range(1, 5):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
         self._lp_records_table.verticalHeader().setVisible(False)
+        self._lp_records_table.itemSelectionChanged.connect(
+            self._handle_lp_record_selected
+        )
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -712,18 +716,37 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             label = f"LP records: {lp_name}"
         self._lp_records_label.setText(label)
 
-        self._lp_records_table.setRowCount(len(records))
-        for row, record in enumerate(records):
-            values = [
-                f"{record.dlong:.2f}",
-                f"{record.dlat:.2f}",
-                f"{record.speed_mph:.2f}",
-                f"{record.lateral_speed:.2f}",
-            ]
-            for column, value in enumerate(values):
-                item = QtWidgets.QTableWidgetItem(value)
-                item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                self._lp_records_table.setItem(row, column, item)
+        with QtCore.QSignalBlocker(self._lp_records_table):
+            self._lp_records_table.setRowCount(len(records))
+            for row, record in enumerate(records):
+                values = [
+                    str(row),
+                    f"{record.dlong:.2f}",
+                    f"{record.dlat:.2f}",
+                    f"{record.speed_mph:.2f}",
+                    f"{record.lateral_speed:.2f}",
+                ]
+                for column, value in enumerate(values):
+                    item = QtWidgets.QTableWidgetItem(value)
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                    self._lp_records_table.setItem(row, column, item)
+            self._lp_records_table.clearSelection()
+        self.visualization_widget.set_selected_lp_record(None, None)
+
+    def _handle_lp_record_selected(self) -> None:
+        selection = self._lp_records_table.selectionModel()
+        if selection is None:
+            return
+        rows = selection.selectedRows()
+        if not rows:
+            self.visualization_widget.set_selected_lp_record(None, None)
+            return
+        row = rows[0].row()
+        lp_name = self.visualization_widget.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            self.visualization_widget.set_selected_lp_record(None, None)
+            return
+        self.visualization_widget.set_selected_lp_record(lp_name, row)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
