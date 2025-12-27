@@ -706,7 +706,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         name = button.property("lp-name")
         if isinstance(name, str):
             self.visualization_widget.set_active_lp_line(name)
-            self._update_lp_records_table(name)
 
     def _update_lp_records_table(self, name: str | None = None) -> None:
         lp_name = name or self.visualization_widget.active_lp_line()
