@@ -105,9 +105,11 @@ def load_ai_line_records(
     return points
 
 
-class AiLineLoadTask(QtCore.QObject, QtCore.QRunnable):
+class AiLineLoadSignals(QtCore.QObject):
     loaded = QtCore.pyqtSignal(int, str, list)
 
+
+class AiLineLoadTask(QtCore.QRunnable):
     def __init__(
         self,
         generation: int,
@@ -119,6 +121,7 @@ class AiLineLoadTask(QtCore.QObject, QtCore.QRunnable):
     ) -> None:
         super().__init__()
         self.setAutoDelete(True)
+        self.signals = AiLineLoadSignals()
         self._generation = generation
         self._lp_name = lp_name
         self._trk = trk
@@ -134,7 +137,7 @@ class AiLineLoadTask(QtCore.QObject, QtCore.QRunnable):
             self._track_length,
             self._lp_name,
         )
-        self.loaded.emit(self._generation, self._lp_name, records)
+        self.signals.loaded.emit(self._generation, self._lp_name, records)
 
 
 class TrackPreviewWidget(QtWidgets.QFrame):
@@ -358,16 +361,22 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             self._current_track,
             self._track_length,
         )
-        task.loaded.connect(self._handle_ai_line_loaded)
+        task.signals.loaded.connect(
+            lambda generation, lp_name, records, task=task: self._handle_ai_line_loaded(
+                task, generation, lp_name, records
+            )
+        )
         self._ai_line_tasks.add(task)
         QtCore.QThreadPool.globalInstance().start(task)
 
     def _handle_ai_line_loaded(
-        self, generation: int, lp_name: str, records: list[LpPoint]
+        self,
+        task: AiLineLoadTask,
+        generation: int,
+        lp_name: str,
+        records: list[LpPoint],
     ) -> None:
-        task = self.sender()
-        if isinstance(task, AiLineLoadTask):
-            self._ai_line_tasks.discard(task)
+        self._ai_line_tasks.discard(task)
         self._pending_ai_line_loads.discard(lp_name)
         if generation != self._ai_line_generation:
             return
