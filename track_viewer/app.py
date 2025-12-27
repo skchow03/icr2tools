@@ -282,6 +282,24 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_button_group.setExclusive(True)
         self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
+        self._lp_records_label = QtWidgets.QLabel("LP records")
+        self._lp_records_label.setStyleSheet("font-weight: bold")
+        self._lp_records_table = QtWidgets.QTableWidget(0, 6)
+        self._lp_records_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self._lp_records_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._lp_records_table.setAlternatingRowColors(True)
+        self._lp_records_table.setHorizontalHeaderLabels(
+            ["#", "X", "Y", "DLONG", "DLAT", "Speed (mph)"]
+        )
+        header = self._lp_records_table.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        for column in range(1, 6):
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
+        self._lp_records_table.verticalHeader().setVisible(False)
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -298,6 +316,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
         left_layout.addWidget(self._lp_list)
+        left_layout.addWidget(self._lp_records_label)
+        left_layout.addWidget(self._lp_records_table)
         left_layout.addWidget(self._sidebar.type7_details)
         left_layout.addWidget(self._sidebar.type6_editor)
         left_layout.addStretch(1)
@@ -314,6 +334,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self.visualization_widget.camerasChanged.connect(
             self._sync_tv_mode_selector
+        )
+        self.visualization_widget.activeLpLineChanged.connect(
+            self._update_lp_records_table
         )
         self._sidebar.type7_details.parametersChanged.connect(
             self.visualization_widget.update
@@ -548,6 +571,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
             self.visualization_widget.set_active_lp_line(active_line)
         self._lp_list.setEnabled(enabled)
+        self._update_lp_records_table(active_line)
 
     def _add_lp_list_item(
         self,
@@ -677,6 +701,30 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         name = button.property("lp-name")
         if isinstance(name, str):
             self.visualization_widget.set_active_lp_line(name)
+            self._update_lp_records_table(name)
+
+    def _update_lp_records_table(self, name: str | None = None) -> None:
+        lp_name = name or self.visualization_widget.active_lp_line()
+        records = self.visualization_widget.ai_line_records(lp_name)
+        label = "LP records"
+        if lp_name and lp_name != "center-line":
+            label = f"LP records: {lp_name}"
+        self._lp_records_label.setText(label)
+
+        self._lp_records_table.setRowCount(len(records))
+        for row, record in enumerate(records):
+            values = [
+                str(row + 1),
+                f"{record.x:.2f}",
+                f"{record.y:.2f}",
+                f"{record.dlong:.2f}",
+                f"{record.dlat:.2f}",
+                f"{record.speed_mph:.2f}",
+            ]
+            for column, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self._lp_records_table.setItem(row, column, item)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2

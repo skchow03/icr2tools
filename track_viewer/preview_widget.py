@@ -72,6 +72,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     selectedFlagChanged = QtCore.pyqtSignal(object)
     camerasChanged = QtCore.pyqtSignal(list, list)
     selectedCameraChanged = QtCore.pyqtSignal(object, object)
+    activeLpLineChanged = QtCore.pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -281,6 +282,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._projection_cached_point = None
         self._projection_cached_result = None
         self._set_projection_data(None, None, None, None, None, None, None)
+        self.activeLpLineChanged.emit(target)
+        self.update()
+
+    def ai_line_records(self, name: str) -> list[LpPoint]:
+        if name == "center-line" or name not in self._available_lp_files:
+            return []
+        return self._get_ai_line_records(name)
 
     def lp_color(self, name: str) -> str:
         try:
