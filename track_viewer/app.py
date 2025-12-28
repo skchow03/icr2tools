@@ -362,7 +362,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.SingleSelection
         )
         self._lp_records_table.setAlternatingRowColors(True)
-        self._lp_records_table.setUniformRowHeights(True)
+        if hasattr(self._lp_records_table, "setUniformRowHeights"):
+            self._lp_records_table.setUniformRowHeights(True)
         header = self._lp_records_table.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         for column in range(1, 5):
