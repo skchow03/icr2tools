@@ -426,6 +426,42 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return []
         return self._get_ai_line_records(name)
 
+    def update_lp_record(self, lp_name: str, index: int) -> None:
+        if lp_name not in self._available_lp_files:
+            return
+        records = self._get_ai_line_records(lp_name)
+        if index < 0 or index >= len(records):
+            return
+        record = records[index]
+        if self.trk is not None and self._cline:
+            try:
+                x, y, _ = getxyz(self.trk, float(record.dlong), record.dlat, self._cline)
+            except Exception:
+                x = record.x
+                y = record.y
+            record.x = x
+            record.y = y
+        self._projection_cached_point = None
+        self._projection_cached_result = None
+        self.update()
+
+    def save_active_lp_line(self) -> tuple[bool, str]:
+        if self._current_track is None:
+            return False, "No track loaded to save LP data."
+        lp_name = self._active_lp_line
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to save."
+        if lp_name not in self._available_lp_files:
+            return False, f"{lp_name} is not available for saving."
+        records = self._get_ai_line_records(lp_name)
+        if not records:
+            return False, f"No {lp_name} LP records are loaded."
+        try:
+            message = self._io_service.save_lp_line(self._current_track, lp_name, records)
+        except Exception as exc:
+            return False, f"Failed to save {lp_name}.LP: {exc}"
+        return True, message
+
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         if name is None or index is None:
             if self._selected_lp_line is None and self._selected_lp_index is None:
