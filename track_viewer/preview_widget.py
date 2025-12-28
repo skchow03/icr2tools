@@ -63,6 +63,7 @@ class LpPoint:
     y: float
     dlong: float
     dlat: float
+    speed_raw: int
     speed_mph: float
     lateral_speed: float
     angle_deg: float | None = None
@@ -133,6 +134,7 @@ def load_ai_line_records(
                 y=y,
                 dlong=float(record.dlong),
                 dlat=float(record.dlat),
+                speed_raw=int(record.speed_raw),
                 speed_mph=float(record.speed_mph),
                 lateral_speed=float(record.coriolis),
             )
