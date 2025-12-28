@@ -454,9 +454,11 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
     def recalculate_lateral_speeds(self) -> bool:
         if len(self._records) < 3:
             return False
-        for index in range(1, len(self._records) - 1):
-            prev_record = self._records[index - 1]
-            next_record = self._records[index + 1]
+        total_records = len(self._records)
+        recalculated = [0.0] * total_records
+        for index in range(total_records):
+            prev_record = self._records[(index - 1) % total_records]
+            next_record = self._records[(index + 1) % total_records]
             record = self._records[index]
             dlong_delta = next_record.dlong - prev_record.dlong
             if dlong_delta == 0:
@@ -467,9 +469,11 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
                     / dlong_delta
                     * (record.speed_mph * self._LATERAL_SPEED_FACTOR)
                 )
-            record.lateral_speed = lateral_speed
-        start = self.index(1, 4)
-        end = self.index(len(self._records) - 2, 4)
+            recalculated[(index - 2) % total_records] = lateral_speed
+        for index, lateral_speed in enumerate(recalculated):
+            self._records[index].lateral_speed = lateral_speed
+        start = self.index(0, 4)
+        end = self.index(total_records - 1, 4)
         self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
         return True
 
