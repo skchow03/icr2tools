@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import struct
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -156,6 +157,24 @@ class TrackIOService:
                     scr_path.unlink()
 
         return f"Saved cameras for {track_name}"
+
+    def save_lp_line(self, track_folder: Path, lp_name: str, records: Sequence[object]) -> str:
+        lp_path = track_folder / f"{lp_name}.LP"
+        self._backup_file(lp_path)
+        record_count = len(records)
+        with lp_path.open("wb") as handle:
+            handle.write(struct.pack("<i", record_count))
+            for record in records:
+                speed_mph = float(getattr(record, "speed_mph"))
+                lateral_speed = float(getattr(record, "lateral_speed"))
+                dlat = float(getattr(record, "dlat"))
+                speed_raw = int(round(speed_mph * 5280 / 9))
+                coriolis = int(round(lateral_speed))
+                dlat_int = int(round(dlat))
+                handle.write(struct.pack("<i", speed_raw))
+                handle.write(struct.pack("<i", coriolis))
+                handle.write(struct.pack("<i", dlat_int))
+        return f"Saved {lp_name}.LP"
 
     def _load_cam_file(self, cam_path: Path) -> list[CameraPosition]:
         try:
