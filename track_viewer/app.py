@@ -267,6 +267,7 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
 
     _HEADERS = ["Index", "DLONG", "DLAT", "Speed (mph)", "Lateral Speed"]
     recordEdited = QtCore.pyqtSignal(int)
+    _LATERAL_SPEED_FACTOR = 31680000 / 54000
 
     def __init__(self, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
@@ -371,6 +372,28 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         self._records = list(records)
         self.endResetModel()
 
+    def recalculate_lateral_speeds(self) -> bool:
+        if len(self._records) < 3:
+            return False
+        for index in range(1, len(self._records) - 1):
+            prev_record = self._records[index - 1]
+            next_record = self._records[index + 1]
+            record = self._records[index]
+            dlong_delta = next_record.dlong - prev_record.dlong
+            if dlong_delta == 0:
+                lateral_speed = 0.0
+            else:
+                lateral_speed = (
+                    (next_record.dlat - prev_record.dlat)
+                    / dlong_delta
+                    * (record.speed_mph * self._LATERAL_SPEED_FACTOR)
+                )
+            record.lateral_speed = lateral_speed
+        start = self.index(1, 4)
+        end = self.index(len(self._records) - 2, 4)
+        self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        return True
+
 
 class TrackViewerWindow(QtWidgets.QMainWindow):
     """Minimal placeholder UI that demonstrates shared state wiring."""
@@ -394,6 +417,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
+        self._recalculate_lateral_speed_button = QtWidgets.QPushButton(
+            "Recalculate Lateral Speed"
+        )
+        self._recalculate_lateral_speed_button.setEnabled(False)
+        self._recalculate_lateral_speed_button.clicked.connect(
+            self._handle_recalculate_lateral_speed
+        )
         self._lp_records_model = LpRecordsModel(self)
         self._lp_records_table = QtWidgets.QTableView()
         self._lp_records_table.setModel(self._lp_records_model)
@@ -438,6 +468,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(lp_label)
         left_layout.addWidget(self._lp_list)
         left_layout.addWidget(self._lp_records_label)
+        left_layout.addWidget(self._recalculate_lateral_speed_button)
         self._lp_records_table.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -843,6 +874,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_records_label.setText(label)
         self._lp_records_model.set_records(records)
         self._update_save_lp_button_state(lp_name)
+        self._update_recalculate_lateral_speed_button_state(lp_name)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
             selection_model.clearSelection()
@@ -852,6 +884,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if name == self.visualization_widget.active_lp_line():
             self._update_lp_records_table(name)
         self._update_save_lp_button_state(self.visualization_widget.active_lp_line())
+        self._update_recalculate_lateral_speed_button_state(
+            self.visualization_widget.active_lp_line()
+        )
 
     def _handle_lp_record_selected(self) -> None:
         selection = self._lp_records_table.selectionModel()
@@ -905,9 +940,27 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._save_lp_button.setEnabled(enabled)
 
+    def _update_recalculate_lateral_speed_button_state(
+        self, lp_name: str | None = None
+    ) -> None:
+        name = lp_name or self.visualization_widget.active_lp_line()
+        enabled = (
+            bool(name)
+            and name != "center-line"
+            and bool(self.visualization_widget.ai_line_records(name))
+        )
+        self._recalculate_lateral_speed_button.setEnabled(enabled)
+
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
         self.visualization_widget.set_tv_mode_count(mode_count)
+
+    def _handle_recalculate_lateral_speed(self) -> None:
+        lp_name = self.visualization_widget.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            return
+        if self._lp_records_model.recalculate_lateral_speeds():
+            self.visualization_widget.update()
 
     def _sync_tv_mode_selector(
         self, _cameras: list[CameraPosition], views: list[CameraViewListing]
