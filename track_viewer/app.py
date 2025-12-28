@@ -676,6 +676,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_lp_button = QtWidgets.QPushButton("Save LP")
         self._save_lp_button.setEnabled(False)
+        self._export_lp_csv_button = QtWidgets.QPushButton("Export LP CSV")
+        self._export_lp_csv_button.setEnabled(False)
 
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
         self._trk_gaps_button.setEnabled(False)
@@ -721,6 +723,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._save_cameras_button.clicked.connect(self.camera_actions.save_cameras)
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
+        self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
         self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
         self.controller.sync_ai_lines()
 
@@ -737,6 +740,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._add_type7_camera_button)
         controls.addWidget(self._save_cameras_button)
         controls.addWidget(self._save_lp_button)
+        controls.addWidget(self._export_lp_csv_button)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._zoom_points_button)
@@ -985,6 +989,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_records_label.setText(label)
         self._lp_records_model.set_records(records)
         self._update_save_lp_button_state(lp_name)
+        self._update_export_lp_csv_button_state(lp_name)
         self._update_recalculate_lateral_speed_button_state(lp_name)
         self._update_smooth_dlat_button_state(lp_name)
         self._update_lp_speed_unit_button_state(lp_name)
@@ -997,6 +1002,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if name == self.visualization_widget.active_lp_line():
             self._update_lp_records_table(name)
         self._update_save_lp_button_state(self.visualization_widget.active_lp_line())
+        self._update_export_lp_csv_button_state(
+            self.visualization_widget.active_lp_line()
+        )
         self._update_recalculate_lateral_speed_button_state(
             self.visualization_widget.active_lp_line()
         )
@@ -1049,6 +1057,24 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _handle_export_lp_csv(self) -> None:
+        lp_name = self.visualization_widget.active_lp_line()
+        suggested = f"{lp_name}.csv" if lp_name else "lp.csv"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export LP CSV",
+            suggested,
+            "CSV Files (*.csv)",
+        )
+        if not path:
+            return
+        success, message = self.visualization_widget.export_active_lp_csv(Path(path))
+        title = "Export LP CSV"
+        if success:
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
     def _update_save_lp_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.visualization_widget.active_lp_line()
         enabled = (
@@ -1058,6 +1084,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             and bool(self.visualization_widget.ai_line_records(name))
         )
         self._save_lp_button.setEnabled(enabled)
+
+    def _update_export_lp_csv_button_state(self, lp_name: str | None = None) -> None:
+        name = lp_name or self.visualization_widget.active_lp_line()
+        enabled = (
+            bool(name)
+            and name != "center-line"
+            and bool(self.visualization_widget.ai_line_records(name))
+        )
+        self._export_lp_csv_button.setEnabled(enabled)
 
     def _update_recalculate_lateral_speed_button_state(
         self, lp_name: str | None = None

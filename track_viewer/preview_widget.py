@@ -524,6 +524,23 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return False, f"Failed to save {lp_name}.LP: {exc}"
         return True, message
 
+    def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
+        lp_name = self._active_lp_line
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to export."
+        if lp_name not in self._available_lp_files:
+            return False, f"{lp_name} is not available for export."
+        records = self._get_ai_line_records(lp_name)
+        if not records:
+            return False, f"No {lp_name} LP records are loaded."
+        if output_path.suffix.lower() != ".csv":
+            output_path = output_path.with_suffix(".csv")
+        try:
+            message = self._io_service.export_lp_csv(output_path, lp_name, records)
+        except Exception as exc:
+            return False, f"Failed to export {lp_name} CSV: {exc}"
+        return True, message
+
     def smooth_active_lp_line(self, amount: float) -> tuple[bool, str]:
         if amount <= 0:
             return False, "Smoothing amount must be greater than zero."
