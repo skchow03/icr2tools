@@ -424,6 +424,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._recalculate_lateral_speed_button.clicked.connect(
             self._handle_recalculate_lateral_speed
         )
+        self._smooth_dlat_button = QtWidgets.QPushButton("Smooth DLAT")
+        self._smooth_dlat_button.setEnabled(False)
+        self._smooth_dlat_button.clicked.connect(self._handle_smooth_dlat)
+        self._smooth_amount_label = QtWidgets.QLabel()
+        self._smooth_amount_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._smooth_amount_slider.setRange(0, 100)
+        self._smooth_amount_slider.setSingleStep(5)
+        self._smooth_amount_slider.setPageStep(10)
+        self._smooth_amount_slider.setValue(30)
+        self._smooth_amount_slider.setFixedWidth(120)
+        self._smooth_amount_slider.valueChanged.connect(
+            self._handle_smooth_amount_changed
+        )
+        self._update_smooth_amount_label(self._smooth_amount_slider.value())
         self._lp_records_model = LpRecordsModel(self)
         self._lp_records_table = QtWidgets.QTableView()
         self._lp_records_table.setModel(self._lp_records_model)
@@ -469,6 +483,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(self._lp_list)
         left_layout.addWidget(self._lp_records_label)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
+        smooth_layout = QtWidgets.QHBoxLayout()
+        smooth_layout.addWidget(self._smooth_amount_label)
+        smooth_layout.addWidget(self._smooth_amount_slider)
+        smooth_layout.addStretch(1)
+        left_layout.addLayout(smooth_layout)
+        left_layout.addWidget(self._smooth_dlat_button)
         self._lp_records_table.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -875,6 +895,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_records_model.set_records(records)
         self._update_save_lp_button_state(lp_name)
         self._update_recalculate_lateral_speed_button_state(lp_name)
+        self._update_smooth_dlat_button_state(lp_name)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
             selection_model.clearSelection()
@@ -885,6 +906,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._update_lp_records_table(name)
         self._update_save_lp_button_state(self.visualization_widget.active_lp_line())
         self._update_recalculate_lateral_speed_button_state(
+            self.visualization_widget.active_lp_line()
+        )
+        self._update_smooth_dlat_button_state(
             self.visualization_widget.active_lp_line()
         )
 
@@ -951,6 +975,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._recalculate_lateral_speed_button.setEnabled(enabled)
 
+    def _update_smooth_dlat_button_state(self, lp_name: str | None = None) -> None:
+        name = lp_name or self.visualization_widget.active_lp_line()
+        enabled = (
+            bool(name)
+            and name != "center-line"
+            and bool(self.visualization_widget.ai_line_records(name))
+        )
+        self._smooth_dlat_button.setEnabled(enabled)
+
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
         self.visualization_widget.set_tv_mode_count(mode_count)
@@ -961,6 +994,24 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         if self._lp_records_model.recalculate_lateral_speeds():
             self.visualization_widget.update()
+
+    def _update_smooth_amount_label(self, amount: int) -> None:
+        self._smooth_amount_label.setText(f"Smooth: {amount}%")
+
+    def _handle_smooth_amount_changed(self, amount: int) -> None:
+        self._update_smooth_amount_label(amount)
+
+    def _handle_smooth_dlat(self) -> None:
+        amount = self._smooth_amount_slider.value()
+        success, message = self.visualization_widget.smooth_active_lp_line(
+            amount / 100.0
+        )
+        title = "Smooth DLAT"
+        if success:
+            self._update_lp_records_table(self.visualization_widget.active_lp_line())
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
 
     def _sync_tv_mode_selector(
         self, _cameras: list[CameraPosition], views: list[CameraViewListing]
