@@ -7,6 +7,7 @@ from typing import List, Optional
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
+from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
@@ -296,10 +297,12 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
     ]
     recordEdited = QtCore.pyqtSignal(int)
     _LATERAL_SPEED_FACTOR = 31680000 / 54000
+    _SPEED_RAW_FACTOR = 5280 / 9
 
     def __init__(self, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._records: list[LpPoint] = []
+        self._show_speed_raw = False
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         if parent.isValid():
@@ -332,6 +335,12 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         if column == 2:
             return f"{record.dlat:.2f}" if role == QtCore.Qt.DisplayRole else record.dlat
         if column == 3:
+            if self._show_speed_raw:
+                return (
+                    str(record.speed_raw)
+                    if role == QtCore.Qt.DisplayRole
+                    else record.speed_raw
+                )
             return (
                 f"{record.speed_mph:.2f}"
                 if role == QtCore.Qt.DisplayRole
@@ -388,7 +397,13 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         if column == 2:
             record.dlat = parsed
         elif column == 3:
-            record.speed_mph = parsed
+            if self._show_speed_raw:
+                speed_raw = int(round(parsed))
+                record.speed_raw = speed_raw
+                record.speed_mph = papy_speed_to_mph(speed_raw)
+            else:
+                record.speed_mph = parsed
+                record.speed_raw = int(round(parsed * self._SPEED_RAW_FACTOR))
         elif column == 4:
             record.lateral_speed = parsed
         else:
@@ -407,6 +422,8 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             return None
         if orientation == QtCore.Qt.Horizontal:
             if 0 <= section < len(self._HEADERS):
+                if section == 3:
+                    return "Speed (raw)" if self._show_speed_raw else "Speed (mph)"
                 return self._HEADERS[section]
             return None
         return str(section)
@@ -415,6 +432,16 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         self.beginResetModel()
         self._records = list(records)
         self.endResetModel()
+
+    def set_speed_raw_visible(self, enabled: bool) -> None:
+        if self._show_speed_raw == enabled:
+            return
+        self._show_speed_raw = enabled
+        self.headerDataChanged.emit(QtCore.Qt.Horizontal, 3, 3)
+        if self._records:
+            start = self.index(0, 3)
+            end = self.index(len(self._records) - 1, 3)
+            self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
     @staticmethod
     def _normalize_angle_delta(delta: float) -> float:
@@ -469,6 +496,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
+        self._lp_speed_unit_button = QtWidgets.QPushButton("Show Speed Raw")
+        self._lp_speed_unit_button.setCheckable(True)
+        self._lp_speed_unit_button.setEnabled(False)
+        self._lp_speed_unit_button.toggled.connect(
+            self._handle_lp_speed_unit_toggled
+        )
         self._recalculate_lateral_speed_button = QtWidgets.QPushButton(
             "Recalculate Lateral Speed"
         )
@@ -533,7 +566,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
         left_layout.addWidget(self._lp_list)
-        left_layout.addWidget(self._lp_records_label)
+        lp_records_header = QtWidgets.QHBoxLayout()
+        lp_records_header.addWidget(self._lp_records_label)
+        lp_records_header.addStretch(1)
+        lp_records_header.addWidget(self._lp_speed_unit_button)
+        left_layout.addLayout(lp_records_header)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
         smooth_layout = QtWidgets.QHBoxLayout()
         smooth_layout.addWidget(self._smooth_amount_label)
@@ -950,6 +987,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_save_lp_button_state(lp_name)
         self._update_recalculate_lateral_speed_button_state(lp_name)
         self._update_smooth_dlat_button_state(lp_name)
+        self._update_lp_speed_unit_button_state(lp_name)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
             selection_model.clearSelection()
@@ -963,6 +1001,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.active_lp_line()
         )
         self._update_smooth_dlat_button_state(
+            self.visualization_widget.active_lp_line()
+        )
+        self._update_lp_speed_unit_button_state(
             self.visualization_widget.active_lp_line()
         )
 
@@ -1037,6 +1078,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             and bool(self.visualization_widget.ai_line_records(name))
         )
         self._smooth_dlat_button.setEnabled(enabled)
+
+    def _update_lp_speed_unit_button_state(self, lp_name: str | None = None) -> None:
+        name = lp_name or self.visualization_widget.active_lp_line()
+        enabled = (
+            bool(name)
+            and name != "center-line"
+            and bool(self.visualization_widget.ai_line_records(name))
+        )
+        self._lp_speed_unit_button.setEnabled(enabled)
+
+    def _handle_lp_speed_unit_toggled(self, enabled: bool) -> None:
+        self._lp_records_model.set_speed_raw_visible(enabled)
+        text = "Show Speed MPH" if enabled else "Show Speed Raw"
+        self._lp_speed_unit_button.setText(text)
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
         mode_count = 1 if index <= 0 else 2
