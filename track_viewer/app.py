@@ -21,13 +21,33 @@ from track_viewer.type7_details import Type7Details
 class TrackViewerApp(QtWidgets.QApplication):
     """Thin wrapper that stores shared state for the viewer."""
 
+    _INSTALLATION_PATH_KEY = "installation_path"
+
     def __init__(self, argv: List[str]):
         super().__init__(argv)
         self.setQuitOnLastWindowClosed(True)
 
-        self.installation_path: Optional[Path] = None
+        QtCore.QCoreApplication.setOrganizationName("icr2tools")
+        QtCore.QCoreApplication.setApplicationName("ICR2 Track Viewer")
+        self.settings = QtCore.QSettings()
+
+        self.installation_path = self._load_installation_path()
         self.tracks: List[str] = []
         self.window: Optional["TrackViewerWindow"] = None
+
+    def _load_installation_path(self) -> Optional[Path]:
+        stored_path = self.settings.value(self._INSTALLATION_PATH_KEY, type=str)
+        if not stored_path:
+            return None
+        path = Path(stored_path)
+        return path if path.exists() else None
+
+    def set_installation_path(self, path: Optional[Path]) -> None:
+        self.installation_path = path
+        if path is None:
+            self.settings.remove(self._INSTALLATION_PATH_KEY)
+        else:
+            self.settings.setValue(self._INSTALLATION_PATH_KEY, str(path))
 
     def update_tracks(self, tracks: List[str]) -> None:
         self.tracks = tracks
@@ -652,6 +672,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self._create_menus()
         self.statusBar().showMessage("Select an ICR2 folder to get started")
+        if self.app_state.installation_path:
+            self.controller.set_installation_path(self.app_state.installation_path)
 
         layout = QtWidgets.QVBoxLayout()
 

@@ -44,9 +44,14 @@ class WindowController(QtCore.QObject):
             start_dir,
         )
         if folder:
-            self.app_state.installation_path = Path(folder)
-            self.installationPathChanged.emit(self.app_state.installation_path)
-            self.load_tracks()
+            self.set_installation_path(Path(folder))
+
+    def set_installation_path(self, path: Path) -> None:
+        self.app_state.set_installation_path(path)
+        if self.app_state.installation_path is None:
+            return
+        self.installationPathChanged.emit(self.app_state.installation_path)
+        self.load_tracks()
 
     def load_tracks(self) -> None:
         track_root = self._tracks_root()
