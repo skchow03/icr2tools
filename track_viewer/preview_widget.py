@@ -65,6 +65,40 @@ class LpPoint:
     dlat: float
     speed_mph: float
     lateral_speed: float
+    angle_deg: float | None = None
+
+
+def _normalize_angle(angle: float) -> float:
+    while angle <= -math.pi:
+        angle += 2 * math.pi
+    while angle > math.pi:
+        angle -= 2 * math.pi
+    return angle
+
+
+def _centerline_heading(
+    trk: TRKFile,
+    cline: list[tuple[float, float]],
+    dlong: float,
+    track_length: float,
+    *,
+    delta: float = 1.0,
+) -> float | None:
+    if track_length <= 0:
+        return None
+    prev_dlong = dlong - delta
+    next_dlong = dlong + delta
+    if prev_dlong < 0:
+        prev_dlong += track_length
+    if next_dlong > track_length:
+        next_dlong -= track_length
+    prev_x, prev_y, _ = getxyz(trk, prev_dlong, 0, cline)
+    next_x, next_y, _ = getxyz(trk, next_dlong, 0, cline)
+    dx = next_x - prev_x
+    dy = next_y - prev_y
+    if dx == 0 and dy == 0:
+        return None
+    return math.atan2(dy, dx)
 
 
 def load_ai_line_records(
@@ -102,6 +136,31 @@ def load_ai_line_records(
                 speed_mph=float(record.speed_mph),
                 lateral_speed=float(record.coriolis),
             )
+        )
+    if len(points) < 2:
+        return points
+
+    track_length_value = float(track_length or trk.trklength or 0.0)
+    if track_length_value <= 0:
+        return points
+    for index, record in enumerate(points):
+        prev_record = points[index - 1]
+        next_record = points[(index + 1) % len(points)]
+        dx = next_record.x - prev_record.x
+        dy = next_record.y - prev_record.y
+        if dx == 0 and dy == 0:
+            continue
+        lp_heading = math.atan2(dy, dx)
+        centerline_heading = _centerline_heading(
+            trk,
+            cline,
+            record.dlong,
+            track_length_value,
+        )
+        if centerline_heading is None:
+            continue
+        record.angle_deg = math.degrees(
+            _normalize_angle(lp_heading - centerline_heading)
         )
     return points
 
