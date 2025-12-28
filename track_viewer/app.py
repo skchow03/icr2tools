@@ -292,6 +292,7 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         "Speed (mph)",
         "Lateral Speed",
         "Angle vs Centerline (deg)",
+        "Angle Change vs Prev (deg)",
     ]
     recordEdited = QtCore.pyqtSignal(int)
     _LATERAL_SPEED_FACTOR = 31680000 / 54000
@@ -350,6 +351,14 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
                 if role == QtCore.Qt.DisplayRole
                 else record.angle_deg
             )
+        if column == 6:
+            if row == 0:
+                return "" if role == QtCore.Qt.DisplayRole else None
+            prev_angle = self._records[row - 1].angle_deg
+            if record.angle_deg is None or prev_angle is None:
+                return "" if role == QtCore.Qt.DisplayRole else None
+            delta = self._normalize_angle_delta(record.angle_deg - prev_angle)
+            return f"{delta:.2f}" if role == QtCore.Qt.DisplayRole else delta
         return None
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
@@ -406,6 +415,14 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         self.beginResetModel()
         self._records = list(records)
         self.endResetModel()
+
+    @staticmethod
+    def _normalize_angle_delta(delta: float) -> float:
+        while delta <= -180.0:
+            delta += 360.0
+        while delta > 180.0:
+            delta -= 360.0
+        return delta
 
     def recalculate_lateral_speeds(self) -> bool:
         if len(self._records) < 3:
@@ -491,7 +508,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._lp_records_table.setUniformRowHeights(True)
         header = self._lp_records_table.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        for column in range(1, 6):
+        for column in range(1, self._lp_records_model.columnCount()):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
         self._lp_records_table.verticalHeader().setVisible(False)
         selection_model = self._lp_records_table.selectionModel()
