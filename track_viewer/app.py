@@ -10,7 +10,7 @@ from icr2_core.cam.helpers import CameraPosition
 from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
-from track_viewer.preview_widget import TrackPreviewWidget
+from track_viewer.preview_widget import LpPoint, TrackPreviewWidget
 from track_viewer.version import __version__
 from track_viewer.window_controller import WindowController
 from track_viewer.tv_modes_panel import TvModesPanel
@@ -262,6 +262,71 @@ class CoordinateSidebar(QtWidgets.QFrame):
         return f"{value:.2f}"
 
 
+class LpRecordsModel(QtCore.QAbstractTableModel):
+    """Table model that lazily renders LP records for the view."""
+
+    _HEADERS = ["Index", "DLONG", "DLAT", "Speed (mph)", "Lateral Speed"]
+
+    def __init__(self, parent: QtCore.QObject | None = None) -> None:
+        super().__init__(parent)
+        self._records: list[LpPoint] = []
+
+    def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self._records)
+
+    def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self._HEADERS)
+
+    def data(
+        self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole
+    ) -> object | None:
+        if not index.isValid():
+            return None
+        if role == QtCore.Qt.TextAlignmentRole:
+            return QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        if role != QtCore.Qt.DisplayRole:
+            return None
+        row = index.row()
+        if row < 0 or row >= len(self._records):
+            return None
+        record = self._records[row]
+        column = index.column()
+        if column == 0:
+            return str(row)
+        if column == 1:
+            return f"{record.dlong:.2f}"
+        if column == 2:
+            return f"{record.dlat:.2f}"
+        if column == 3:
+            return f"{record.speed_mph:.2f}"
+        if column == 4:
+            return f"{record.lateral_speed:.2f}"
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: QtCore.Qt.Orientation,
+        role: int = QtCore.Qt.DisplayRole,
+    ) -> object | None:
+        if role != QtCore.Qt.DisplayRole:
+            return None
+        if orientation == QtCore.Qt.Horizontal:
+            if 0 <= section < len(self._HEADERS):
+                return self._HEADERS[section]
+            return None
+        return str(section)
+
+    def set_records(self, records: list[LpPoint]) -> None:
+        self.beginResetModel()
+        self._records = list(records)
+        self.endResetModel()
+
+
 class TrackViewerWindow(QtWidgets.QMainWindow):
     """Minimal placeholder UI that demonstrates shared state wiring."""
 
@@ -284,25 +349,30 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._lp_records_table = QtWidgets.QTableWidget(0, 5)
+        self._lp_records_model = LpRecordsModel(self)
+        self._lp_records_table = QtWidgets.QTableView()
+        self._lp_records_table.setModel(self._lp_records_model)
         self._lp_records_table.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers
         )
         self._lp_records_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectRows
         )
-        self._lp_records_table.setAlternatingRowColors(True)
-        self._lp_records_table.setHorizontalHeaderLabels(
-            ["Index", "DLONG", "DLAT", "Speed (mph)", "Lateral Speed"]
+        self._lp_records_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
         )
+        self._lp_records_table.setAlternatingRowColors(True)
+        self._lp_records_table.setUniformRowHeights(True)
         header = self._lp_records_table.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         for column in range(1, 5):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
         self._lp_records_table.verticalHeader().setVisible(False)
-        self._lp_records_table.itemSelectionChanged.connect(
-            self._handle_lp_record_selected
-        )
+        selection_model = self._lp_records_table.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(
+                lambda *_: self._handle_lp_record_selected()
+            )
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -718,22 +788,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if lp_name and lp_name != "center-line":
             label = f"LP records: {lp_name}"
         self._lp_records_label.setText(label)
-
-        with QtCore.QSignalBlocker(self._lp_records_table):
-            self._lp_records_table.setRowCount(len(records))
-            for row, record in enumerate(records):
-                values = [
-                    str(row),
-                    f"{record.dlong:.2f}",
-                    f"{record.dlat:.2f}",
-                    f"{record.speed_mph:.2f}",
-                    f"{record.lateral_speed:.2f}",
-                ]
-                for column, value in enumerate(values):
-                    item = QtWidgets.QTableWidgetItem(value)
-                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                    self._lp_records_table.setItem(row, column, item)
-            self._lp_records_table.clearSelection()
+        self._lp_records_model.set_records(records)
+        selection_model = self._lp_records_table.selectionModel()
+        if selection_model is not None:
+            selection_model.clearSelection()
         self.visualization_widget.set_selected_lp_record(None, None)
 
     def _handle_ai_line_loaded(self, name: str) -> None:
@@ -758,14 +816,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_lp_record_clicked(self, lp_name: str, row: int) -> None:
         if lp_name != self.visualization_widget.active_lp_line():
             return
-        if row < 0 or row >= self._lp_records_table.rowCount():
+        if row < 0 or row >= self._lp_records_model.rowCount():
             return
         with QtCore.QSignalBlocker(self._lp_records_table):
             self._lp_records_table.selectRow(row)
-            item = self._lp_records_table.item(row, 0)
-            if item is not None:
-                self._lp_records_table.scrollToItem(
-                    item, QtWidgets.QAbstractItemView.PositionAtCenter
+            index = self._lp_records_model.index(row, 0)
+            if index.isValid():
+                self._lp_records_table.scrollTo(
+                    index, QtWidgets.QAbstractItemView.PositionAtCenter
                 )
 
     def _handle_tv_mode_selection_changed(self, index: int) -> None:
