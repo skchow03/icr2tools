@@ -754,6 +754,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._pending_ai_line_loads.clear()
         self._ai_line_tasks.clear()
         self._ai_line_generation += 1
+        self._current_track = track_folder
         self._visible_lp_files = {
             name for name in self._visible_lp_files if name in self._available_lp_files
         }
@@ -764,7 +765,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._set_projection_data(None, None, None, None, None, None, None)
         self._cached_surface_pixmap = None
         self._pixmap_size = None
-        self._current_track = track_folder
         self._status_message = f"Loaded {track_folder.name}" if track_folder else ""
         self._view_center = self._default_center()
         self._user_transform_active = False
