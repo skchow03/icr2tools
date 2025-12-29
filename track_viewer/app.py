@@ -487,15 +487,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if hasattr(self._lp_records_table, "setUniformRowHeights"):
             self._lp_records_table.setUniformRowHeights(True)
         header = self._lp_records_table.horizontalHeader()
-        if hasattr(header, "setWordWrap"):
-            header.setWordWrap(True)
-        if hasattr(header, "setTextElideMode"):
-            header.setTextElideMode(QtCore.Qt.ElideNone)
+        header.setWordWrap(True)
+        header.setTextElideMode(QtCore.Qt.ElideNone)
         header.setDefaultAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
-        header.setMinimumHeight(header.fontMetrics().lineSpacing() * 3 + 12)
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        for column in range(1, self._lp_records_model.columnCount()):
-            header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setMinimumHeight(56)
+        self._lp_records_table.setWordWrap(True)
         self._lp_records_table.verticalHeader().setVisible(False)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
