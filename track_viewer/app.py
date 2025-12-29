@@ -103,11 +103,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         layout.addWidget(self._tv_panel)
 
-        details_title = QtWidgets.QLabel("Camera details")
-        details_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(details_title)
-        layout.addWidget(self._camera_details)
-
         coords_title = QtWidgets.QLabel("World coordinates")
         coords_title.setStyleSheet("font-weight: bold")
         layout.addWidget(coords_title)
@@ -307,9 +302,13 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         if column == 0:
             return str(row)
         if column == 1:
-            return f"{record.dlong:.2f}" if role == QtCore.Qt.DisplayRole else record.dlong
+            return (
+                f"{record.dlong:.0f}" if role == QtCore.Qt.DisplayRole else record.dlong
+            )
         if column == 2:
-            return f"{record.dlat:.2f}" if role == QtCore.Qt.DisplayRole else record.dlat
+            return (
+                f"{record.dlat:.0f}" if role == QtCore.Qt.DisplayRole else record.dlat
+            )
         if column == 3:
             if self._show_speed_raw:
                 return (
@@ -383,7 +382,11 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         if orientation == QtCore.Qt.Horizontal:
             if 0 <= section < len(self._HEADERS):
                 if section == 3:
-                    return "Speed (raw)" if self._show_speed_raw else "Speed (mph)"
+                    return (
+                        "Speed (500ths per frame)"
+                        if self._show_speed_raw
+                        else "Speed (mph)"
+                    )
                 return self._HEADERS[section]
             return None
         return str(section)
@@ -452,7 +455,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._lp_speed_unit_button = QtWidgets.QPushButton("Show Speed Raw")
+        self._lp_speed_unit_button = QtWidgets.QPushButton(
+            "Show Speed 500ths per frame"
+        )
         self._lp_speed_unit_button.setCheckable(True)
         self._lp_speed_unit_button.setEnabled(False)
         self._lp_speed_unit_button.toggled.connect(
@@ -482,6 +487,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if hasattr(self._lp_records_table, "setUniformRowHeights"):
             self._lp_records_table.setUniformRowHeights(True)
         header = self._lp_records_table.horizontalHeader()
+        header.setWordWrap(True)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         for column in range(1, self._lp_records_model.columnCount()):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
@@ -593,8 +599,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_records_header = QtWidgets.QHBoxLayout()
         lp_records_header.addWidget(self._lp_records_label)
         lp_records_header.addStretch(1)
-        lp_records_header.addWidget(self._lp_speed_unit_button)
         left_layout.addLayout(lp_records_header)
+        left_layout.addWidget(self._lp_speed_unit_button)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
         left_layout.addWidget(self._save_lp_button)
         left_layout.addWidget(self._export_lp_csv_button)
@@ -1119,7 +1125,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_lp_speed_unit_toggled(self, enabled: bool) -> None:
         self._lp_records_model.set_speed_raw_visible(enabled)
-        text = "Show Speed MPH" if enabled else "Show Speed Raw"
+        text = "Show Speed MPH" if enabled else "Show Speed 500ths per frame"
         self._lp_speed_unit_button.setText(text)
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
