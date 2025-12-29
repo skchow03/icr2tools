@@ -518,68 +518,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self._sidebar = CoordinateSidebar()
-        left_sidebar = QtWidgets.QFrame()
-        left_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        left_layout = QtWidgets.QVBoxLayout()
-        left_layout.setSpacing(8)
-        track_label = QtWidgets.QLabel("Tracks")
-        track_label.setStyleSheet("font-weight: bold")
-        left_layout.addWidget(track_label)
-        left_layout.addWidget(self._track_list)
-        lp_label = QtWidgets.QLabel("AI and center lines")
-        lp_label.setStyleSheet("font-weight: bold")
-        left_layout.addWidget(lp_label)
-        left_layout.addWidget(self._lp_list)
-        lp_records_header = QtWidgets.QHBoxLayout()
-        lp_records_header.addWidget(self._lp_records_label)
-        lp_records_header.addStretch(1)
-        lp_records_header.addWidget(self._lp_speed_unit_button)
-        left_layout.addLayout(lp_records_header)
-        left_layout.addWidget(self._recalculate_lateral_speed_button)
-        self._lp_records_table.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-        )
-        left_layout.addWidget(self._lp_records_table, 1)
-        left_layout.addWidget(self._sidebar.type7_details)
-        left_layout.addWidget(self._sidebar.type6_editor)
-        left_sidebar.setLayout(left_layout)
-        self.visualization_widget.cursorPositionChanged.connect(
-            self._sidebar.update_cursor_position
-        )
-        self.visualization_widget.selectedFlagChanged.connect(
-            self._sidebar.update_flag_position
-        )
-        self.visualization_widget.camerasChanged.connect(self._sidebar.set_cameras)
-        self.visualization_widget.selectedCameraChanged.connect(
-            self._sidebar.update_selected_camera_details
-        )
-        self.visualization_widget.camerasChanged.connect(
-            self._sync_tv_mode_selector
-        )
-        self.visualization_widget.activeLpLineChanged.connect(
-            self._update_lp_records_table
-        )
-        self.visualization_widget.aiLineLoaded.connect(self._handle_ai_line_loaded)
-        self.visualization_widget.lpRecordSelected.connect(
-            self._handle_lp_record_clicked
-        )
-        self._sidebar.type7_details.parametersChanged.connect(
-            self.visualization_widget.update
-        )
-        self._sidebar.cameraSelectionChanged.connect(
-            self._handle_camera_selection_changed
-        )
-        self._sidebar.cameraDlongsUpdated.connect(
-            self._handle_camera_dlongs_updated
-        )
-        self._sidebar.cameraPositionUpdated.connect(
-            self._handle_camera_position_updated
-        )
-        self._sidebar.type6ParametersChanged.connect(
-            self._handle_type6_parameters_changed
-        )
-        self._sidebar.set_cameras([], [])
-        self._sidebar.update_selected_camera_details(None, None)
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
@@ -652,6 +590,67 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._tv_mode_selector.currentIndexChanged.connect(
             self._handle_tv_mode_selection_changed
         )
+        left_sidebar = QtWidgets.QFrame()
+        left_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        left_layout = QtWidgets.QVBoxLayout()
+        left_layout.setSpacing(8)
+        lp_label = QtWidgets.QLabel("AI and center lines")
+        lp_label.setStyleSheet("font-weight: bold")
+        left_layout.addWidget(lp_label)
+        left_layout.addWidget(self._lp_list)
+        lp_records_header = QtWidgets.QHBoxLayout()
+        lp_records_header.addWidget(self._lp_records_label)
+        lp_records_header.addStretch(1)
+        lp_records_header.addWidget(self._lp_speed_unit_button)
+        left_layout.addLayout(lp_records_header)
+        left_layout.addWidget(self._recalculate_lateral_speed_button)
+        left_layout.addWidget(self._save_lp_button)
+        left_layout.addWidget(self._ai_gradient_button)
+        left_layout.addWidget(self._ai_acceleration_button)
+        self._lp_records_table.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+        left_layout.addWidget(self._lp_records_table, 1)
+        left_layout.addWidget(self._sidebar.type7_details)
+        left_layout.addWidget(self._sidebar.type6_editor)
+        left_sidebar.setLayout(left_layout)
+        self.visualization_widget.cursorPositionChanged.connect(
+            self._sidebar.update_cursor_position
+        )
+        self.visualization_widget.selectedFlagChanged.connect(
+            self._sidebar.update_flag_position
+        )
+        self.visualization_widget.camerasChanged.connect(self._sidebar.set_cameras)
+        self.visualization_widget.selectedCameraChanged.connect(
+            self._sidebar.update_selected_camera_details
+        )
+        self.visualization_widget.camerasChanged.connect(
+            self._sync_tv_mode_selector
+        )
+        self.visualization_widget.activeLpLineChanged.connect(
+            self._update_lp_records_table
+        )
+        self.visualization_widget.aiLineLoaded.connect(self._handle_ai_line_loaded)
+        self.visualization_widget.lpRecordSelected.connect(
+            self._handle_lp_record_clicked
+        )
+        self._sidebar.type7_details.parametersChanged.connect(
+            self.visualization_widget.update
+        )
+        self._sidebar.cameraSelectionChanged.connect(
+            self._handle_camera_selection_changed
+        )
+        self._sidebar.cameraDlongsUpdated.connect(
+            self._handle_camera_dlongs_updated
+        )
+        self._sidebar.cameraPositionUpdated.connect(
+            self._handle_camera_position_updated
+        )
+        self._sidebar.type6ParametersChanged.connect(
+            self._handle_type6_parameters_changed
+        )
+        self._sidebar.set_cameras([], [])
+        self._sidebar.update_selected_camera_details(None, None)
 
         self.controller = WindowController(
             self.app_state, self.visualization_widget, parent=self
@@ -693,17 +692,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout()
 
         controls = QtWidgets.QHBoxLayout()
+        track_label = QtWidgets.QLabel("Tracks")
+        track_label.setStyleSheet("font-weight: bold")
+        controls.addWidget(track_label)
+        controls.addWidget(self._track_list)
         controls.addStretch(1)
-        controls.addWidget(self._add_type6_camera_button)
-        controls.addWidget(self._add_type7_camera_button)
-        controls.addWidget(self._save_cameras_button)
-        controls.addWidget(self._save_lp_button)
         controls.addWidget(self._export_lp_csv_button)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._zoom_points_button)
-        controls.addWidget(self._ai_gradient_button)
-        controls.addWidget(self._ai_acceleration_button)
         controls.addWidget(self._accel_window_label)
         controls.addWidget(self._accel_window_slider)
         controls.addWidget(self._ai_width_label)
@@ -712,11 +709,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
 
+        right_sidebar = QtWidgets.QFrame()
+        right_sidebar_layout = QtWidgets.QVBoxLayout()
+        right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        right_sidebar_layout.setSpacing(8)
+        right_sidebar_layout.addWidget(self._sidebar)
+        right_sidebar_layout.addWidget(self._add_type6_camera_button)
+        right_sidebar_layout.addWidget(self._add_type7_camera_button)
+        right_sidebar_layout.addWidget(self._save_cameras_button)
+        right_sidebar_layout.addWidget(self._zoom_points_button)
+        right_sidebar_layout.addStretch(1)
+        right_sidebar.setLayout(right_sidebar_layout)
+
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
         body.addWidget(left_sidebar)
         body.addWidget(self.visualization_widget)
-        body.addWidget(self._sidebar)
+        body.addWidget(right_sidebar)
         body.setSizes([220, 420, 200])
         layout.addWidget(body, stretch=1)
 
