@@ -70,9 +70,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         self._cursor_x = self._create_readonly_field("–")
         self._cursor_y = self._create_readonly_field("–")
-        self._camera_list = QtWidgets.QListWidget()
-        self._camera_list.setMinimumHeight(120)
-        self._camera_list.currentRowChanged.connect(self._on_camera_selected)
+        self._camera_list = QtWidgets.QComboBox()
+        self._camera_list.setMinimumWidth(160)
+        self._camera_list.currentIndexChanged.connect(self._on_camera_selected)
         self._tv_panel = TvModesPanel()
         self._camera_table = CameraCoordinateTable()
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
@@ -151,23 +151,22 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self._camera_list.addItem("(No cameras found)")
             self._camera_list.setEnabled(False)
             self._camera_details.setText("This track does not define any camera positions.")
-            self._camera_list.setCurrentRow(-1)
+            self._camera_list.setCurrentIndex(-1)
         else:
             for cam in cameras:
                 label = f"#{cam.index} (type {cam.camera_type})"
-                item = QtWidgets.QListWidgetItem(label)
-                self._camera_list.addItem(item)
+                self._camera_list.addItem(label)
             self._camera_list.setEnabled(True)
             self._camera_details.setText("Select a camera to inspect.")
-            self._camera_list.setCurrentRow(-1)
+            self._camera_list.setCurrentIndex(-1)
         self._camera_list.blockSignals(False)
 
     def select_camera(self, index: int | None) -> None:
         self._camera_list.blockSignals(True)
         if index is None:
-            self._camera_list.setCurrentRow(-1)
+            self._camera_list.setCurrentIndex(-1)
         else:
-            self._camera_list.setCurrentRow(index)
+            self._camera_list.setCurrentIndex(index)
         self._camera_list.blockSignals(False)
         self._tv_panel.select_camera(index)
         if index is None:
@@ -222,7 +221,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self._type7_details.set_camera(None, None)
 
         self._camera_details.setText("<br>".join(details))
-        if index is not None and self._camera_list.currentRow() != index:
+        if index is not None and self._camera_list.currentIndex() != index:
             self.select_camera(index)
 
     def _handle_camera_position_updated(
@@ -615,8 +614,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
         left_layout.addWidget(self._lp_records_table, 1)
-        left_layout.addWidget(self._sidebar.type7_details)
-        left_layout.addWidget(self._sidebar.type6_editor)
         left_sidebar.setLayout(left_layout)
         self.visualization_widget.cursorPositionChanged.connect(
             self._sidebar.update_cursor_position
@@ -712,6 +709,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         right_sidebar_layout.setSpacing(8)
         right_sidebar_layout.addWidget(self._sidebar)
+        right_sidebar_layout.addWidget(self._sidebar.type7_details)
+        right_sidebar_layout.addWidget(self._sidebar.type6_editor)
         right_sidebar_layout.addWidget(self._add_type6_camera_button)
         right_sidebar_layout.addWidget(self._add_type7_camera_button)
         right_sidebar_layout.addWidget(self._save_cameras_button)
