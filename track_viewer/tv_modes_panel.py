@@ -15,12 +15,18 @@ class TvModesPanel(QtWidgets.QWidget):
 
     cameraSelected = QtCore.pyqtSignal(object)
     dlongsUpdated = QtCore.pyqtSignal(int, object, object)
+    modeCountChanged = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self._track_length: Optional[int] = None
         self._views: List[CameraViewListing] = []
         self._cameras: List[CameraPosition] = []
+        self._mode_selector = QtWidgets.QComboBox()
+        self._mode_selector.addItems(["1", "2"])
+        self._mode_selector.currentIndexChanged.connect(
+            self._handle_mode_selection_changed
+        )
         self._tv_tabs = QtWidgets.QTabWidget()
         self._tv_tabs.setTabBarAutoHide(True)
         self._tv_tabs.setVisible(False)
@@ -37,8 +43,23 @@ class TvModesPanel(QtWidgets.QWidget):
         title = QtWidgets.QLabel("TV camera modes")
         title.setStyleSheet("font-weight: bold")
         layout.addWidget(title)
+        mode_layout = QtWidgets.QHBoxLayout()
+        mode_label = QtWidgets.QLabel("Number of TV modes")
+        mode_layout.addWidget(mode_label)
+        mode_layout.addStretch(1)
+        mode_layout.addWidget(self._mode_selector)
+        layout.addLayout(mode_layout)
         layout.addWidget(self._tv_tabs)
         self.setLayout(layout)
+
+    def set_mode_count(self, count: int) -> None:
+        target_index = 0 if count <= 1 else 1
+        with QtCore.QSignalBlocker(self._mode_selector):
+            self._mode_selector.setCurrentIndex(target_index)
+
+    def _handle_mode_selection_changed(self, index: int) -> None:
+        mode_count = 1 if index <= 0 else 2
+        self.modeCountChanged.emit(mode_count)
 
     def set_track_length(self, length: Optional[int]) -> None:
         self._track_length = length

@@ -61,6 +61,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
     cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
     cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
     type6ParametersChanged = QtCore.pyqtSignal()
+    tvModeCountChanged = QtCore.pyqtSignal(int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -87,6 +88,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         self._tv_panel.cameraSelected.connect(self.cameraSelectionChanged)
         self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
+        self._tv_panel.modeCountChanged.connect(self.tvModeCountChanged)
         self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
         self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
         self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
@@ -121,6 +123,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
     @property
     def type7_details(self) -> Type7Details:
         return self._type7_details
+
+    def set_tv_mode_count(self, count: int) -> None:
+        self._tv_panel.set_mode_count(count)
 
     def set_track_length(self, track_length: Optional[int]) -> None:
         self._track_length = track_length if track_length is not None else None
@@ -557,12 +562,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._show_cameras_button.toggled.connect(
             self.visualization_widget.set_show_cameras
         )
-
-        self._tv_mode_selector = QtWidgets.QComboBox()
-        self._tv_mode_selector.addItems(["One TV mode", "Two TV modes"])
-        self._tv_mode_selector.currentIndexChanged.connect(
-            self._handle_tv_mode_selection_changed
-        )
         self._selected_flag_x = self._create_readonly_field("–")
         self._selected_flag_y = self._create_readonly_field("–")
         selected_flag_title = QtWidgets.QLabel("Selected flag")
@@ -650,6 +649,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.type6ParametersChanged.connect(
             self._handle_type6_parameters_changed
         )
+        self._sidebar.tvModeCountChanged.connect(
+            self._handle_tv_mode_selection_changed
+        )
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
 
@@ -701,21 +703,31 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
-        controls.addWidget(self._show_cameras_button)
         layout.addLayout(controls)
 
         right_sidebar = QtWidgets.QFrame()
         right_sidebar_layout = QtWidgets.QVBoxLayout()
         right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         right_sidebar_layout.setSpacing(8)
+        view_settings_title = QtWidgets.QLabel("View camera settings")
+        view_settings_title.setStyleSheet("font-weight: bold")
+        view_settings_layout = QtWidgets.QVBoxLayout()
+        view_settings_layout.setContentsMargins(0, 0, 0, 0)
+        view_settings_layout.setSpacing(4)
+        view_settings_layout.addWidget(view_settings_title)
+        view_settings_layout.addWidget(self._show_cameras_button)
+        view_settings_layout.addWidget(self._zoom_points_button)
+        view_settings_widget = QtWidgets.QWidget()
+        view_settings_widget.setLayout(view_settings_layout)
+        right_sidebar_layout.addWidget(view_settings_widget)
         right_sidebar_layout.addWidget(self._sidebar)
         right_sidebar_layout.addWidget(self._sidebar.type7_details)
         right_sidebar_layout.addWidget(self._sidebar.type6_editor)
-        right_sidebar_layout.addWidget(self._add_type6_camera_button)
-        right_sidebar_layout.addWidget(self._add_type7_camera_button)
+        type_button_layout = QtWidgets.QHBoxLayout()
+        type_button_layout.addWidget(self._add_type6_camera_button)
+        type_button_layout.addWidget(self._add_type7_camera_button)
+        right_sidebar_layout.addLayout(type_button_layout)
         right_sidebar_layout.addWidget(self._save_cameras_button)
-        right_sidebar_layout.addWidget(self._tv_mode_selector)
-        right_sidebar_layout.addWidget(self._zoom_points_button)
         right_sidebar_layout.addStretch(1)
         right_sidebar.setLayout(right_sidebar_layout)
 
@@ -1101,8 +1113,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Show Speed MPH" if enabled else "Show Speed Raw"
         self._lp_speed_unit_button.setText(text)
 
-    def _handle_tv_mode_selection_changed(self, index: int) -> None:
-        mode_count = 1 if index <= 0 else 2
+    def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
         self.visualization_widget.set_tv_mode_count(mode_count)
 
     def _handle_recalculate_lateral_speed(self) -> None:
@@ -1116,12 +1127,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self, _cameras: list[CameraPosition], views: list[CameraViewListing]
     ) -> None:
         if not views:
-            target_index = 0
+            target_count = 1
         else:
             max_view = max((view.view for view in views), default=1)
-            target_index = 0 if max_view <= 1 else 1
-        with QtCore.QSignalBlocker(self._tv_mode_selector):
-            self._tv_mode_selector.setCurrentIndex(target_index)
+            target_count = 1 if max_view <= 1 else 2
+        self._sidebar.set_tv_mode_count(target_count)
 
     def _handle_camera_selection_changed(self, index: Optional[int]) -> None:
         self.visualization_widget.set_selected_camera(index)
