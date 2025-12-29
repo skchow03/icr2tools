@@ -489,6 +489,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         header = self._lp_records_table.horizontalHeader()
         if hasattr(header, "setWordWrap"):
             header.setWordWrap(True)
+        header.setMinimumHeight(header.fontMetrics().lineSpacing() * 2 + 12)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         for column in range(1, self._lp_records_model.columnCount()):
             header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
