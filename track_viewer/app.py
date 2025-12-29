@@ -55,7 +55,7 @@ class TrackViewerApp(QtWidgets.QApplication):
 
 
 class CoordinateSidebar(QtWidgets.QFrame):
-    """Utility sidebar that mirrors cursor, flag and camera details."""
+    """Utility sidebar that mirrors cursor and camera details."""
 
     cameraSelectionChanged = QtCore.pyqtSignal(object)
     cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
@@ -70,8 +70,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         self._cursor_x = self._create_readonly_field("–")
         self._cursor_y = self._create_readonly_field("–")
-        self._flag_x = self._create_readonly_field("–")
-        self._flag_y = self._create_readonly_field("–")
         self._camera_list = QtWidgets.QListWidget()
         self._camera_list.setMinimumHeight(120)
         self._camera_list.currentRowChanged.connect(self._on_camera_selected)
@@ -95,22 +93,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         layout = QtWidgets.QVBoxLayout()
         layout.setSpacing(12)
-
-        flag_title = QtWidgets.QLabel("Selected flag")
-        flag_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(flag_title)
-        flag_form = QtWidgets.QFormLayout()
-        flag_form.addRow("X", self._flag_x)
-        flag_form.addRow("Y", self._flag_y)
-        layout.addLayout(flag_form)
-
-        hint = QtWidgets.QLabel(
-            "Left click to drop/select flags.\n"
-            "Right click a flag to remove it."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #bbbbbb; font-size: 11px")
-        layout.addWidget(hint)
 
         camera_title = QtWidgets.QLabel("Track cameras")
         camera_title.setStyleSheet("font-weight: bold")
@@ -152,14 +134,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
             return
         self._cursor_x.setText(self._format_value(coords[0]))
         self._cursor_y.setText(self._format_value(coords[1]))
-
-    def update_flag_position(self, coords: Optional[tuple[float, float]]) -> None:
-        if coords is None:
-            self._flag_x.clear()
-            self._flag_y.clear()
-            return
-        self._flag_x.setText(self._format_value(coords[0]))
-        self._flag_y.setText(self._format_value(coords[1]))
 
     def set_cameras(
         self, cameras: List[CameraPosition], views: List[CameraViewListing]
@@ -590,6 +564,25 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._tv_mode_selector.currentIndexChanged.connect(
             self._handle_tv_mode_selection_changed
         )
+        self._selected_flag_x = self._create_readonly_field("–")
+        self._selected_flag_y = self._create_readonly_field("–")
+        selected_flag_title = QtWidgets.QLabel("Selected flag")
+        selected_flag_title.setStyleSheet("font-weight: bold")
+        selected_flag_form = QtWidgets.QFormLayout()
+        selected_flag_form.setContentsMargins(0, 0, 0, 0)
+        selected_flag_form.setSpacing(4)
+        selected_flag_form.addRow("X", self._selected_flag_x)
+        selected_flag_form.addRow("Y", self._selected_flag_y)
+        selected_flag_layout = QtWidgets.QVBoxLayout()
+        selected_flag_layout.setContentsMargins(0, 0, 0, 0)
+        selected_flag_layout.setSpacing(4)
+        selected_flag_layout.addWidget(selected_flag_title)
+        selected_flag_layout.addLayout(selected_flag_form)
+        selected_flag_widget = QtWidgets.QWidget()
+        selected_flag_widget.setLayout(selected_flag_layout)
+        selected_flag_widget.setToolTip(
+            "Left click to drop/select flags.\nRight click a flag to remove it."
+        )
         left_sidebar = QtWidgets.QFrame()
         left_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
         left_layout = QtWidgets.QVBoxLayout()
@@ -605,8 +598,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addLayout(lp_records_header)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
         left_layout.addWidget(self._save_lp_button)
+        left_layout.addWidget(self._export_lp_csv_button)
         left_layout.addWidget(self._ai_gradient_button)
         left_layout.addWidget(self._ai_acceleration_button)
+        accel_layout = QtWidgets.QHBoxLayout()
+        accel_layout.addWidget(self._accel_window_label)
+        accel_layout.addStretch(1)
+        accel_layout.addWidget(self._accel_window_slider)
+        left_layout.addLayout(accel_layout)
+        ai_width_layout = QtWidgets.QHBoxLayout()
+        ai_width_layout.addWidget(self._ai_width_label)
+        ai_width_layout.addStretch(1)
+        ai_width_layout.addWidget(self._ai_width_slider)
+        left_layout.addLayout(ai_width_layout)
         self._lp_records_table.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -618,7 +622,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._sidebar.update_cursor_position
         )
         self.visualization_widget.selectedFlagChanged.connect(
-            self._sidebar.update_flag_position
+            self._update_selected_flag_position
         )
         self.visualization_widget.camerasChanged.connect(self._sidebar.set_cameras)
         self.visualization_widget.selectedCameraChanged.connect(
@@ -696,17 +700,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_label.setStyleSheet("font-weight: bold")
         controls.addWidget(track_label)
         controls.addWidget(self._track_list)
+        controls.addWidget(selected_flag_widget)
         controls.addStretch(1)
-        controls.addWidget(self._export_lp_csv_button)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
-        controls.addWidget(self._zoom_points_button)
-        controls.addWidget(self._accel_window_label)
-        controls.addWidget(self._accel_window_slider)
-        controls.addWidget(self._ai_width_label)
-        controls.addWidget(self._ai_width_slider)
         controls.addWidget(self._show_cameras_button)
-        controls.addWidget(self._tv_mode_selector)
         layout.addLayout(controls)
 
         right_sidebar = QtWidgets.QFrame()
@@ -717,6 +715,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addWidget(self._add_type6_camera_button)
         right_sidebar_layout.addWidget(self._add_type7_camera_button)
         right_sidebar_layout.addWidget(self._save_cameras_button)
+        right_sidebar_layout.addWidget(self._tv_mode_selector)
         right_sidebar_layout.addWidget(self._zoom_points_button)
         right_sidebar_layout.addStretch(1)
         right_sidebar.setLayout(right_sidebar_layout)
@@ -736,6 +735,27 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
     # UI helpers
     # ------------------------------------------------------------------
+    def _create_readonly_field(self, placeholder: str) -> QtWidgets.QLineEdit:
+        field = QtWidgets.QLineEdit()
+        field.setReadOnly(True)
+        field.setPlaceholderText(placeholder)
+        field.setFocusPolicy(QtCore.Qt.ClickFocus)
+        return field
+
+    @staticmethod
+    def _format_value(value: float) -> str:
+        return f"{value:.2f}"
+
+    def _update_selected_flag_position(
+        self, coords: Optional[tuple[float, float]]
+    ) -> None:
+        if coords is None:
+            self._selected_flag_x.clear()
+            self._selected_flag_y.clear()
+            return
+        self._selected_flag_x.setText(self._format_value(coords[0]))
+        self._selected_flag_y.setText(self._format_value(coords[1]))
+
     def _create_menus(self) -> None:
         file_menu = self.menuBar().addMenu("File")
         open_action = QtWidgets.QAction("Open ICR2 folder", self)
