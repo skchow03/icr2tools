@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TrackViewerWindow</class>
+ <widget class="QMainWindow" name="TrackViewerWindow">
+  <property name="windowTitle">
+   <string>ICR2 Track Viewer</string>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="main_layout">
+    <item>
+     <layout class="QHBoxLayout" name="controls_layout">
+      <item>
+       <spacer name="controls_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="add_type6_camera_button">
+        <property name="text">
+         <string>Add Type 6 Camera</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="add_type7_camera_button">
+        <property name="text">
+         <string>Add Type 7 Camera</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="save_cameras_button">
+        <property name="text">
+         <string>Save Cameras</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="save_lp_button">
+        <property name="text">
+         <string>Save LP</string>
+        </property>
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="export_lp_csv_button">
+        <property name="text">
+         <string>Export LP CSV</string>
+        </property>
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="trk_gaps_button">
+        <property name="text">
+         <string>Run TRK Gaps</string>
+        </property>
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="boundary_button">
+        <property name="text">
+         <string>Hide Boundaries</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="zoom_points_button">
+        <property name="text">
+         <string>Show Zoom Points</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="ai_gradient_button">
+        <property name="text">
+         <string>Show AI Speed Gradient</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="ai_acceleration_button">
+        <property name="text">
+         <string>Show AI Acceleration Gradient</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="accel_window_label">
+        <property name="text">
+         <string>Accel avg:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QSlider" name="accel_window_slider">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>12</number>
+        </property>
+        <property name="singleStep">
+         <number>1</number>
+        </property>
+        <property name="pageStep">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="ai_width_label">
+        <property name="text">
+         <string>AI line width:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QSlider" name="ai_width_slider">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>8</number>
+        </property>
+        <property name="singleStep">
+         <number>1</number>
+        </property>
+        <property name="pageStep">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="show_cameras_button">
+        <property name="text">
+         <string>Show Cameras</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="tv_mode_selector">
+        <item>
+         <property name="text">
+          <string>One TV mode</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Two TV modes</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="body_layout">
+      <item>
+       <widget class="TrackPreviewWidget" name="visualization_widget">
+        <property name="frameShape">
+         <enum>QFrame::StyledPanel</enum>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QTabWidget" name="editors">
+        <property name="tabPosition">
+         <enum>QTabWidget::North</enum>
+        </property>
+        <widget class="QWidget" name="lp_editor_tab">
+         <attribute name="title">
+          <string>LP Editor</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="lp_editor_layout">
+          <item>
+           <widget class="QLabel" name="track_label">
+            <property name="text">
+             <string>Tracks</string>
+            </property>
+            <property name="styleSheet">
+             <string>font-weight: bold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="track_list"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="lp_label">
+            <property name="text">
+             <string>AI and center lines</string>
+            </property>
+            <property name="styleSheet">
+             <string>font-weight: bold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QListWidget" name="lp_list">
+            <property name="selectionMode">
+             <enum>QAbstractItemView::NoSelection</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="lp_records_header_layout">
+            <item>
+             <widget class="QLabel" name="lp_records_label">
+              <property name="text">
+               <string>LP records</string>
+              </property>
+              <property name="styleSheet">
+               <string>font-weight: bold</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="lp_records_spacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="lp_speed_unit_button">
+              <property name="text">
+               <string>Show Speed Raw</string>
+              </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+          <item>
+           <widget class="QPushButton" name="recalculate_lateral_speed_button">
+            <property name="text">
+             <string>Recalculate Lateral Speed</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="smooth_layout">
+            <item>
+             <widget class="QLabel" name="smooth_amount_label">
+              <property name="text">
+               <string>Smoothing</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+            <widget class="QSlider" name="smooth_amount_slider">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="minimum">
+              <number>0</number>
+             </property>
+             <property name="maximum">
+              <number>100</number>
+             </property>
+             <property name="singleStep">
+              <number>5</number>
+             </property>
+             <property name="pageStep">
+              <number>10</number>
+             </property>
+             <property name="value">
+              <number>30</number>
+             </property>
+            </widget>
+           </item>
+            <item>
+             <spacer name="smooth_spacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QPushButton" name="smooth_dlat_button">
+            <property name="text">
+             <string>Smooth DLAT</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTableView" name="lp_records_table"/>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="camera_editor_tab">
+         <attribute name="title">
+          <string>Camera Editor</string>
+         </attribute>
+         <layout class="QVBoxLayout" name="camera_editor_layout">
+          <item>
+           <widget class="CoordinateSidebar" name="sidebar"/>
+          </item>
+          <item>
+           <widget class="Type7Details" name="type7_details"/>
+          </item>
+          <item>
+           <widget class="Type6Editor" name="type6_editor"/>
+          </item>
+          <item>
+           <spacer name="camera_spacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TrackPreviewWidget</class>
+   <extends>QFrame</extends>
+   <header>track_viewer.preview_widget</header>
+  </customwidget>
+ <customwidget>
+  <class>CoordinateSidebar</class>
+  <extends>QFrame</extends>
+  <header>track_viewer.coordinate_sidebar</header>
+ </customwidget>
+  <customwidget>
+   <class>Type7Details</class>
+   <extends>QGroupBox</extends>
+   <header>track_viewer.type7_details</header>
+  </customwidget>
+  <customwidget>
+   <class>Type6Editor</class>
+   <extends>QGroupBox</extends>
+   <header>track_viewer.type6_editor</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Type6Editor</class>
+ <widget class="QGroupBox" name="Type6Editor">
+  <property name="title">
+   <string>Type 6 parameters</string>
+  </property>
+  <layout class="QVBoxLayout" name="type6_layout">
+   <item>
+    <widget class="QTableWidget" name="table">
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+     <property name="rowCount">
+      <number>3</number>
+     </property>
+     <property name="columnCount">
+      <number>3</number>
+     </property>
+     <attribute name="horizontalHeaderVisible">
+      <bool>true</bool>
+     </attribute>
+     <attribute name="verticalHeaderVisible">
+      <bool>true</bool>
+     </attribute>
+     <row>
+      <property name="text">
+       <string>Start</string>
+      </property>
+     </row>
+     <row>
+      <property name="text">
+       <string>Middle</string>
+      </property>
+     </row>
+     <row>
+      <property name="text">
+       <string>End</string>
+      </property>
+     </row>
+     <column>
+      <property name="text">
+       <string>DLONG</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Zoom factor</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Actions</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -6,6 +6,7 @@ from typing import Callable, Optional, Tuple
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition, Type6CameraParameters
+from track_viewer.ui_loader import load_ui
 
 
 class Type6Editor(QtWidgets.QGroupBox):
@@ -14,17 +15,16 @@ class Type6Editor(QtWidgets.QGroupBox):
     parametersChanged = QtCore.pyqtSignal()
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        super().__init__("Type 6 parameters", parent)
+        super().__init__(parent)
+        load_ui(self, "type6_editor.ui")
         self._track_length: Optional[int] = None
         self._camera_index: Optional[int] = None
         self._camera: Optional[CameraPosition] = None
         self._tv_dlongs_provider: Callable[[int], Tuple[Optional[int], Optional[int]]]
         self._tv_dlongs_provider = lambda _index: (None, None)
 
-        self._table = self._create_table()
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self._table)
-        self.setLayout(layout)
+        self._table = self.table
+        self._configure_table()
         self.setVisible(False)
 
     def set_track_length(self, length: Optional[int]) -> None:
@@ -49,37 +49,34 @@ class Type6Editor(QtWidgets.QGroupBox):
         self._populate(camera.type6)
         self.setVisible(True)
 
-    def _create_table(self) -> QtWidgets.QTableWidget:
-        table = QtWidgets.QTableWidget(3, 3)
-        table.setHorizontalHeaderLabels(["DLONG", "Zoom factor", "Actions"])
-        table.setVerticalHeaderLabels(["Start", "Middle", "End"])
-        table.setAlternatingRowColors(True)
-        table.horizontalHeader().setStretchLastSection(True)
-        table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        table.setEditTriggers(
+    def _configure_table(self) -> None:
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self._table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.SelectedClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
         )
-        table.setItemDelegate(_Type6ItemDelegate(self))
-        table.itemChanged.connect(self._handle_item_changed)
+        self._table.setItemDelegate(_Type6ItemDelegate(self))
+        self._table.itemChanged.connect(self._handle_item_changed)
         for row in range(3):
             for column in range(2):
-                item = QtWidgets.QTableWidgetItem()
+                item = self._table.item(row, column)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem()
+                    self._table.setItem(row, column, item)
                 item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
-                table.setItem(row, column, item)
         start_button = QtWidgets.QPushButton("Use TV Start")
         start_button.clicked.connect(lambda: self._apply_tv_dlong_to_row(0))
-        table.setCellWidget(0, 2, start_button)
+        self._table.setCellWidget(0, 2, start_button)
 
         average_button = QtWidgets.QPushButton("Average")
         average_button.clicked.connect(self._apply_middle_average)
-        table.setCellWidget(1, 2, average_button)
+        self._table.setCellWidget(1, 2, average_button)
 
         end_button = QtWidgets.QPushButton("Use TV End")
         end_button.clicked.connect(lambda: self._apply_tv_dlong_to_row(2))
-        table.setCellWidget(2, 2, end_button)
-        return table
+        self._table.setCellWidget(2, 2, end_button)
 
     def _populate(self, params: Type6CameraParameters) -> None:
         values = [

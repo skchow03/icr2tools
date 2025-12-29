@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Type7Details</class>
+ <widget class="QGroupBox" name="Type7Details">
+  <property name="title">
+   <string>Type 7 parameters</string>
+  </property>
+  <layout class="QFormLayout" name="type7_form">
+   <property name="fieldGrowthPolicy">
+    <enum>QFormLayout::ExpandingFieldsGrow</enum>
+   </property>
+   <item row="0" column="0">
+    <widget class="QLabel" name="z_axis_rotation_label">
+     <property name="text">
+      <string>Z-axis rotation</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <layout class="QHBoxLayout" name="z_axis_rotation_layout">
+     <item>
+      <widget class="QLineEdit" name="z_axis_rotation_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="z_axis_rotation_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="vertical_rotation_label">
+     <property name="text">
+      <string>Vertical rotation</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <layout class="QHBoxLayout" name="vertical_rotation_layout">
+     <item>
+      <widget class="QLineEdit" name="vertical_rotation_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="vertical_rotation_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="tilt_label">
+     <property name="text">
+      <string>Tilt</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <layout class="QHBoxLayout" name="tilt_layout">
+     <item>
+      <widget class="QLineEdit" name="tilt_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="tilt_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="zoom_label">
+     <property name="text">
+      <string>Zoom</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <layout class="QHBoxLayout" name="zoom_layout">
+     <item>
+      <widget class="QLineEdit" name="zoom_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="zoom_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="unknown1_label">
+     <property name="text">
+      <string>Unknown 1</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <layout class="QHBoxLayout" name="unknown1_layout">
+     <item>
+      <widget class="QLineEdit" name="unknown1_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="unknown1_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="unknown2_label">
+     <property name="text">
+      <string>Unknown 2</string>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <layout class="QHBoxLayout" name="unknown2_layout">
+     <item>
+      <widget class="QLineEdit" name="unknown2_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="unknown2_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="unknown3_label">
+     <property name="text">
+      <string>Unknown 3</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <layout class="QHBoxLayout" name="unknown3_layout">
+     <item>
+      <widget class="QLineEdit" name="unknown3_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="unknown3_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="unknown4_label">
+     <property name="text">
+      <string>Unknown 4</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <layout class="QHBoxLayout" name="unknown4_layout">
+     <item>
+      <widget class="QLineEdit" name="unknown4_field"/>
+     </item>
+     <item>
+      <widget class="QSlider" name="unknown4_slider">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

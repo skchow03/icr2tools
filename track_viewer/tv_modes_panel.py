@@ -8,6 +8,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import CameraPosition
 
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.ui_loader import load_ui
 
 
 class TvModesPanel(QtWidgets.QWidget):
@@ -18,10 +19,11 @@ class TvModesPanel(QtWidgets.QWidget):
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
+        load_ui(self, "tv_modes_panel.ui")
         self._track_length: Optional[int] = None
         self._views: List[CameraViewListing] = []
         self._cameras: List[CameraPosition] = []
-        self._tv_tabs = QtWidgets.QTabWidget()
+        self._tv_tabs = self.tv_tabs
         self._tv_tabs.setTabBarAutoHide(True)
         self._tv_tabs.setVisible(False)
         self._tv_trees: List[QtWidgets.QTreeWidget] = []
@@ -30,15 +32,6 @@ class TvModesPanel(QtWidgets.QWidget):
         self._tv_camera_items: Dict[
             int, List[Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]]
         ] = {}
-
-        layout = QtWidgets.QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        title = QtWidgets.QLabel("TV camera modes")
-        title.setStyleSheet("font-weight: bold")
-        layout.addWidget(title)
-        layout.addWidget(self._tv_tabs)
-        self.setLayout(layout)
 
     def set_track_length(self, length: Optional[int]) -> None:
         self._track_length = length

@@ -10,13 +10,10 @@ from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
-from track_viewer.camera_table import CameraCoordinateTable
-from track_viewer.preview_widget import LpPoint, TrackPreviewWidget
+from track_viewer.preview_widget import LpPoint
+from track_viewer.ui_loader import load_ui
 from track_viewer.version import __version__
 from track_viewer.window_controller import WindowController
-from track_viewer.tv_modes_panel import TvModesPanel
-from track_viewer.type6_editor import Type6Editor
-from track_viewer.type7_details import Type7Details
 
 
 class TrackViewerApp(QtWidgets.QApplication):
@@ -52,235 +49,6 @@ class TrackViewerApp(QtWidgets.QApplication):
 
     def update_tracks(self, tracks: List[str]) -> None:
         self.tracks = tracks
-
-
-class CoordinateSidebar(QtWidgets.QFrame):
-    """Utility sidebar that mirrors cursor, flag and camera details."""
-
-    cameraSelectionChanged = QtCore.pyqtSignal(object)
-    cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
-    cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
-    type6ParametersChanged = QtCore.pyqtSignal()
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setMinimumWidth(220)
-        self._track_length: int | None = None
-
-        self._cursor_x = self._create_readonly_field("–")
-        self._cursor_y = self._create_readonly_field("–")
-        self._flag_x = self._create_readonly_field("–")
-        self._flag_y = self._create_readonly_field("–")
-        self._camera_list = QtWidgets.QListWidget()
-        self._camera_list.setMinimumHeight(120)
-        self._camera_list.currentRowChanged.connect(self._on_camera_selected)
-        self._tv_panel = TvModesPanel()
-        self._camera_table = CameraCoordinateTable()
-        self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
-        self._camera_details.setTextFormat(QtCore.Qt.RichText)
-        self._camera_details.setWordWrap(True)
-        self._camera_details.setAlignment(QtCore.Qt.AlignTop)
-        self._camera_details.setStyleSheet("font-size: 12px")
-        self._type6_editor = Type6Editor()
-        self._type7_details = Type7Details()
-        self._cameras: List[CameraPosition] = []
-        self._selected_camera_index: int | None = None
-
-        self._tv_panel.cameraSelected.connect(self.cameraSelectionChanged)
-        self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
-        self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
-        self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
-        self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
-
-        layout = QtWidgets.QVBoxLayout()
-        layout.setSpacing(12)
-
-        flag_title = QtWidgets.QLabel("Selected flag")
-        flag_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(flag_title)
-        flag_form = QtWidgets.QFormLayout()
-        flag_form.addRow("X", self._flag_x)
-        flag_form.addRow("Y", self._flag_y)
-        layout.addLayout(flag_form)
-
-        hint = QtWidgets.QLabel(
-            "Left click to drop/select flags.\n"
-            "Right click a flag to remove it."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #bbbbbb; font-size: 11px")
-        layout.addWidget(hint)
-
-        camera_title = QtWidgets.QLabel("Track cameras")
-        camera_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(camera_title)
-        layout.addWidget(self._camera_list)
-
-        layout.addWidget(self._tv_panel)
-
-        details_title = QtWidgets.QLabel("Camera details")
-        details_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(details_title)
-        layout.addWidget(self._camera_details)
-
-        coords_title = QtWidgets.QLabel("World coordinates")
-        coords_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(coords_title)
-        layout.addWidget(self._camera_table)
-
-        layout.addStretch(1)
-        self.setLayout(layout)
-
-    @property
-    def type6_editor(self) -> Type6Editor:
-        return self._type6_editor
-
-    @property
-    def type7_details(self) -> Type7Details:
-        return self._type7_details
-
-    def set_track_length(self, track_length: Optional[int]) -> None:
-        self._track_length = track_length if track_length is not None else None
-        self._tv_panel.set_track_length(self._track_length)
-        self._type6_editor.set_track_length(self._track_length)
-
-    def update_cursor_position(self, coords: Optional[tuple[float, float]]) -> None:
-        if coords is None:
-            self._cursor_x.clear()
-            self._cursor_y.clear()
-            return
-        self._cursor_x.setText(self._format_value(coords[0]))
-        self._cursor_y.setText(self._format_value(coords[1]))
-
-    def update_flag_position(self, coords: Optional[tuple[float, float]]) -> None:
-        if coords is None:
-            self._flag_x.clear()
-            self._flag_y.clear()
-            return
-        self._flag_x.setText(self._format_value(coords[0]))
-        self._flag_y.setText(self._format_value(coords[1]))
-
-    def set_cameras(
-        self, cameras: List[CameraPosition], views: List[CameraViewListing]
-    ) -> None:
-        self._cameras = cameras
-        self._camera_views = views
-        self._selected_camera_index = None
-        self._camera_table.set_camera(None, None)
-        self._type6_editor.set_camera(None, None)
-        self._type7_details.set_camera(None, None)
-        self._tv_panel.set_views(views, cameras)
-        self._camera_list.blockSignals(True)
-        self._camera_list.clear()
-        if not cameras:
-            self._camera_list.addItem("(No cameras found)")
-            self._camera_list.setEnabled(False)
-            self._camera_details.setText("This track does not define any camera positions.")
-            self._camera_list.setCurrentRow(-1)
-        else:
-            for cam in cameras:
-                label = f"#{cam.index} (type {cam.camera_type})"
-                item = QtWidgets.QListWidgetItem(label)
-                self._camera_list.addItem(item)
-            self._camera_list.setEnabled(True)
-            self._camera_details.setText("Select a camera to inspect.")
-            self._camera_list.setCurrentRow(-1)
-        self._camera_list.blockSignals(False)
-
-    def select_camera(self, index: int | None) -> None:
-        self._camera_list.blockSignals(True)
-        if index is None:
-            self._camera_list.setCurrentRow(-1)
-        else:
-            self._camera_list.setCurrentRow(index)
-        self._camera_list.blockSignals(False)
-        self._tv_panel.select_camera(index)
-        if index is None:
-            self._camera_table.setCurrentCell(-1, -1)
-        elif self._camera_table.isEnabled():
-            self._camera_table.setCurrentCell(0, 0)
-
-    def update_selected_camera_details(
-        self, index: int | None, camera: Optional[CameraPosition]
-    ) -> None:
-        if camera is None:
-            self._camera_details.setText("Select a camera to inspect.")
-            self._selected_camera_index = None
-            self._camera_table.set_camera(None, None)
-            self._type6_editor.set_camera(None, None)
-            self._type7_details.set_camera(None, None)
-            if index is None:
-                self.select_camera(None)
-            return
-        self._selected_camera_index = index
-        self._camera_table.set_camera(index, camera)
-
-        details = [f"Index: {camera.index}", f"Type: {camera.camera_type}"]
-
-        if camera.camera_type == 6 and camera.type6 is not None:
-            details.append("Type 6 parameters can be edited below.")
-            self._type6_editor.set_camera(index, camera)
-        else:
-            self._type6_editor.set_camera(None, None)
-
-        if camera.camera_type == 7 and camera.type7 is not None:
-            params = camera.type7
-            details.append("Type 7 parameters:")
-            details.append(
-                "Z-axis rotation: {0}, vertical rotation: {1}, tilt: {2}, zoom: {3}".format(
-                    params.z_axis_rotation,
-                    params.vertical_rotation,
-                    params.tilt,
-                    params.zoom,
-                )
-            )
-            details.append(
-                "Unknowns: {0}, {1}, {2}, {3}".format(
-                    params.unknown1,
-                    params.unknown2,
-                    params.unknown3,
-                    params.unknown4,
-                )
-            )
-            self._type7_details.set_camera(index, camera)
-        else:
-            self._type7_details.set_camera(None, None)
-
-        self._camera_details.setText("<br>".join(details))
-        if index is not None and self._camera_list.currentRow() != index:
-            self.select_camera(index)
-
-    def _handle_camera_position_updated(
-        self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
-    ) -> None:
-        if (
-            self._selected_camera_index is not None
-            and index == self._selected_camera_index
-            and 0 <= index < len(self._cameras)
-        ):
-            self.update_selected_camera_details(index, self._cameras[index])
-        self.cameraPositionUpdated.emit(index, x, y, z)
-
-    def _handle_type6_parameters_changed(self) -> None:
-        self.type6ParametersChanged.emit()
-
-    def _on_camera_selected(self, index: int) -> None:
-        if not self._cameras or index < 0 or index >= len(self._cameras):
-            self.cameraSelectionChanged.emit(None)
-            return
-        self.cameraSelectionChanged.emit(index)
-
-    def _create_readonly_field(self, placeholder: str) -> QtWidgets.QLineEdit:
-        field = QtWidgets.QLineEdit()
-        field.setReadOnly(True)
-        field.setPlaceholderText(placeholder)
-        field.setFocusPolicy(QtCore.Qt.ClickFocus)
-        return field
-
-    @staticmethod
-    def _format_value(value: float) -> str:
-        return f"{value:.2f}"
 
 
 class LpRecordsModel(QtCore.QAbstractTableModel):
@@ -486,49 +254,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.app_state = app_state
         self.app_state.window = self
 
-        self.setWindowTitle("ICR2 Track Viewer")
-        self.resize(720, 480)
+        load_ui(self, "track_viewer_window.ui")
 
-        self._track_list = QtWidgets.QComboBox()
+        self._track_list = self.track_list
         self._track_list.currentIndexChanged.connect(self._on_track_selected)
 
-        self._lp_list = QtWidgets.QListWidget()
-        self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._lp_list = self.lp_list
         self._lp_button_group = QtWidgets.QButtonGroup(self)
         self._lp_button_group.setExclusive(True)
         self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
-        self._lp_records_label = QtWidgets.QLabel("LP records")
-        self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._lp_speed_unit_button = QtWidgets.QPushButton("Show Speed Raw")
-        self._lp_speed_unit_button.setCheckable(True)
-        self._lp_speed_unit_button.setEnabled(False)
+        self._lp_records_label = self.lp_records_label
+        self._lp_speed_unit_button = self.lp_speed_unit_button
         self._lp_speed_unit_button.toggled.connect(
             self._handle_lp_speed_unit_toggled
         )
-        self._recalculate_lateral_speed_button = QtWidgets.QPushButton(
-            "Recalculate Lateral Speed"
-        )
-        self._recalculate_lateral_speed_button.setEnabled(False)
+        self._recalculate_lateral_speed_button = self.recalculate_lateral_speed_button
         self._recalculate_lateral_speed_button.clicked.connect(
             self._handle_recalculate_lateral_speed
         )
-        self._smooth_dlat_button = QtWidgets.QPushButton("Smooth DLAT")
-        self._smooth_dlat_button.setEnabled(False)
+        self._smooth_dlat_button = self.smooth_dlat_button
         self._smooth_dlat_button.clicked.connect(self._handle_smooth_dlat)
-        self._smooth_amount_label = QtWidgets.QLabel()
-        self._smooth_amount_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._smooth_amount_slider.setRange(0, 100)
-        self._smooth_amount_slider.setSingleStep(5)
-        self._smooth_amount_slider.setPageStep(10)
-        self._smooth_amount_slider.setValue(30)
-        self._smooth_amount_slider.setFixedWidth(120)
+        self._smooth_amount_label = self.smooth_amount_label
+        self._smooth_amount_slider = self.smooth_amount_slider
         self._smooth_amount_slider.valueChanged.connect(
             self._handle_smooth_amount_changed
         )
         self._update_smooth_amount_label(self._smooth_amount_slider.value())
         self._lp_records_model = LpRecordsModel(self)
-        self._lp_records_table = QtWidgets.QTableView()
+        self._lp_records_table = self.lp_records_table
         self._lp_records_table.setModel(self._lp_records_model)
         self._lp_records_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
@@ -555,47 +309,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             )
         self._lp_records_model.recordEdited.connect(self._handle_lp_record_edited)
 
-        self.visualization_widget = TrackPreviewWidget()
-        self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self._sidebar = CoordinateSidebar()
-        lp_editor = QtWidgets.QFrame()
-        lp_editor.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        lp_layout = QtWidgets.QVBoxLayout()
-        lp_layout.setSpacing(8)
-        track_label = QtWidgets.QLabel("Tracks")
-        track_label.setStyleSheet("font-weight: bold")
-        lp_layout.addWidget(track_label)
-        lp_layout.addWidget(self._track_list)
-        lp_label = QtWidgets.QLabel("AI and center lines")
-        lp_label.setStyleSheet("font-weight: bold")
-        lp_layout.addWidget(lp_label)
-        lp_layout.addWidget(self._lp_list)
-        lp_records_header = QtWidgets.QHBoxLayout()
-        lp_records_header.addWidget(self._lp_records_label)
-        lp_records_header.addStretch(1)
-        lp_records_header.addWidget(self._lp_speed_unit_button)
-        lp_layout.addLayout(lp_records_header)
-        lp_layout.addWidget(self._recalculate_lateral_speed_button)
-        smooth_layout = QtWidgets.QHBoxLayout()
-        smooth_layout.addWidget(self._smooth_amount_label)
-        smooth_layout.addWidget(self._smooth_amount_slider)
-        smooth_layout.addStretch(1)
-        lp_layout.addLayout(smooth_layout)
-        lp_layout.addWidget(self._smooth_dlat_button)
-        self._lp_records_table.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-        )
-        lp_layout.addWidget(self._lp_records_table, 1)
-        lp_editor.setLayout(lp_layout)
-
-        camera_editor = QtWidgets.QWidget()
-        camera_layout = QtWidgets.QVBoxLayout()
-        camera_layout.setSpacing(8)
-        camera_layout.addWidget(self._sidebar)
-        camera_layout.addWidget(self._sidebar.type7_details)
-        camera_layout.addWidget(self._sidebar.type6_editor)
-        camera_layout.addStretch(1)
-        camera_editor.setLayout(camera_layout)
+        self._sidebar = self.sidebar
+        self._sidebar.attach_type_editors(self.type6_editor, self.type7_details)
         self.visualization_widget.cursorPositionChanged.connect(
             self._sidebar.update_cursor_position
         )
@@ -616,7 +331,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.lpRecordSelected.connect(
             self._handle_lp_record_clicked
         )
-        self._sidebar.type7_details.parametersChanged.connect(
+        self.type7_details.parametersChanged.connect(
             self.visualization_widget.update
         )
         self._sidebar.cameraSelectionChanged.connect(
@@ -633,75 +348,54 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
-        self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
-        self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
-        self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
-        self._boundary_button.setCheckable(True)
-        self._boundary_button.setChecked(True)
+        self._add_type6_camera_button = self.add_type6_camera_button
+        self._add_type7_camera_button = self.add_type7_camera_button
+        self._boundary_button = self.boundary_button
         self._boundary_button.toggled.connect(self._toggle_boundaries)
         self._toggle_boundaries(self._boundary_button.isChecked())
 
-        self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
-        self._zoom_points_button.setCheckable(True)
+        self._zoom_points_button = self.zoom_points_button
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
 
-        self._ai_gradient_button = QtWidgets.QPushButton("Show AI Speed Gradient")
-        self._ai_gradient_button.setCheckable(True)
+        self._ai_gradient_button = self.ai_gradient_button
         self._ai_gradient_button.toggled.connect(self._toggle_ai_gradient)
 
-        self._ai_acceleration_button = QtWidgets.QPushButton(
-            "Show AI Acceleration Gradient"
-        )
-        self._ai_acceleration_button.setCheckable(True)
+        self._ai_acceleration_button = self.ai_acceleration_button
         self._ai_acceleration_button.toggled.connect(
             self._toggle_ai_acceleration_gradient
         )
 
-        self._accel_window_label = QtWidgets.QLabel()
-        self._accel_window_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._accel_window_slider.setRange(1, 12)
-        self._accel_window_slider.setSingleStep(1)
-        self._accel_window_slider.setPageStep(1)
+        self._accel_window_label = self.accel_window_label
+        self._accel_window_slider = self.accel_window_slider
         self._accel_window_slider.setValue(
             self.visualization_widget.ai_acceleration_window()
         )
-        self._accel_window_slider.setFixedWidth(120)
         self._accel_window_slider.valueChanged.connect(
             self._handle_accel_window_changed
         )
         self._update_accel_window_label(self._accel_window_slider.value())
 
-        self._ai_width_label = QtWidgets.QLabel()
-        self._ai_width_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._ai_width_slider.setRange(1, 8)
-        self._ai_width_slider.setSingleStep(1)
-        self._ai_width_slider.setPageStep(1)
+        self._ai_width_label = self.ai_width_label
+        self._ai_width_slider = self.ai_width_slider
         self._ai_width_slider.setValue(self.visualization_widget.ai_line_width())
-        self._ai_width_slider.setFixedWidth(120)
         self._ai_width_slider.valueChanged.connect(self._handle_ai_line_width_changed)
         self._update_ai_line_width_label(self._ai_width_slider.value())
 
         self._ai_color_mode = "none"
         self._update_ai_color_mode("none")
 
-        self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
-        self._save_lp_button = QtWidgets.QPushButton("Save LP")
-        self._save_lp_button.setEnabled(False)
-        self._export_lp_csv_button = QtWidgets.QPushButton("Export LP CSV")
-        self._export_lp_csv_button.setEnabled(False)
+        self._save_cameras_button = self.save_cameras_button
+        self._save_lp_button = self.save_lp_button
+        self._export_lp_csv_button = self.export_lp_csv_button
 
-        self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
-        self._trk_gaps_button.setEnabled(False)
+        self._trk_gaps_button = self.trk_gaps_button
 
-        self._show_cameras_button = QtWidgets.QPushButton("Show Cameras")
-        self._show_cameras_button.setCheckable(True)
-        self._show_cameras_button.setChecked(True)
+        self._show_cameras_button = self.show_cameras_button
         self._show_cameras_button.toggled.connect(
             self.visualization_widget.set_show_cameras
         )
 
-        self._tv_mode_selector = QtWidgets.QComboBox()
-        self._tv_mode_selector.addItems(["One TV mode", "Two TV modes"])
+        self._tv_mode_selector = self.tv_mode_selector
         self._tv_mode_selector.currentIndexChanged.connect(
             self._handle_tv_mode_selection_changed
         )
@@ -742,41 +436,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage("Select an ICR2 folder to get started")
         if self.app_state.installation_path:
             self.controller.set_installation_path(self.app_state.installation_path)
-
-        layout = QtWidgets.QVBoxLayout()
-
-        controls = QtWidgets.QHBoxLayout()
-        controls.addStretch(1)
-        controls.addWidget(self._add_type6_camera_button)
-        controls.addWidget(self._add_type7_camera_button)
-        controls.addWidget(self._save_cameras_button)
-        controls.addWidget(self._save_lp_button)
-        controls.addWidget(self._export_lp_csv_button)
-        controls.addWidget(self._trk_gaps_button)
-        controls.addWidget(self._boundary_button)
-        controls.addWidget(self._zoom_points_button)
-        controls.addWidget(self._ai_gradient_button)
-        controls.addWidget(self._ai_acceleration_button)
-        controls.addWidget(self._accel_window_label)
-        controls.addWidget(self._accel_window_slider)
-        controls.addWidget(self._ai_width_label)
-        controls.addWidget(self._ai_width_slider)
-        controls.addWidget(self._show_cameras_button)
-        controls.addWidget(self._tv_mode_selector)
-        layout.addLayout(controls)
-
-        editors = QtWidgets.QTabWidget()
-        editors.addTab(lp_editor, "LP Editor")
-        editors.addTab(camera_editor, "Camera Editor")
-
-        body = QtWidgets.QHBoxLayout()
-        body.addWidget(self.visualization_widget, stretch=1)
-        body.addWidget(editors)
-        layout.addLayout(body, stretch=1)
-
-        wrapper = QtWidgets.QWidget()
-        wrapper.setLayout(layout)
-        self.setCentralWidget(wrapper)
 
     # ------------------------------------------------------------------
     # UI helpers

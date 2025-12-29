@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TvModesPanel</class>
+ <widget class="QWidget" name="TvModesPanel">
+  <layout class="QVBoxLayout" name="tv_modes_layout">
+   <property name="contentsMargins">
+    <left>0</left>
+    <top>0</top>
+    <right>0</right>
+    <bottom>0</bottom>
+   </property>
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="tv_modes_title">
+     <property name="text">
+      <string>TV camera modes</string>
+     </property>
+     <property name="styleSheet">
+      <string>font-weight: bold</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTabWidget" name="tv_tabs"/>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
