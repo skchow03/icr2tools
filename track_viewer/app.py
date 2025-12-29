@@ -292,8 +292,6 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         "DLAT",
         "Speed (mph)",
         "Lateral Speed",
-        "Angle vs Centerline (deg)",
-        "Angle Change vs Prev (deg)",
     ]
     recordEdited = QtCore.pyqtSignal(int)
     _LATERAL_SPEED_FACTOR = 31680000 / 54000
@@ -352,22 +350,6 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
                 if role == QtCore.Qt.DisplayRole
                 else record.lateral_speed
             )
-        if column == 5:
-            if record.angle_deg is None:
-                return "" if role == QtCore.Qt.DisplayRole else None
-            return (
-                f"{record.angle_deg:.2f}"
-                if role == QtCore.Qt.DisplayRole
-                else record.angle_deg
-            )
-        if column == 6:
-            if row == 0:
-                return "" if role == QtCore.Qt.DisplayRole else None
-            prev_angle = self._records[row - 1].angle_deg
-            if record.angle_deg is None or prev_angle is None:
-                return "" if role == QtCore.Qt.DisplayRole else None
-            delta = self._normalize_angle_delta(record.angle_deg - prev_angle)
-            return f"{delta:.2f}" if role == QtCore.Qt.DisplayRole else delta
         return None
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
@@ -443,14 +425,6 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             end = self.index(len(self._records) - 1, 3)
             self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-    @staticmethod
-    def _normalize_angle_delta(delta: float) -> float:
-        while delta <= -180.0:
-            delta += 360.0
-        while delta > 180.0:
-            delta -= 360.0
-        return delta
-
     def recalculate_lateral_speeds(self) -> bool:
         if len(self._records) < 3:
             return False
@@ -513,20 +487,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._recalculate_lateral_speed_button.clicked.connect(
             self._handle_recalculate_lateral_speed
         )
-        self._smooth_dlat_button = QtWidgets.QPushButton("Smooth DLAT")
-        self._smooth_dlat_button.setEnabled(False)
-        self._smooth_dlat_button.clicked.connect(self._handle_smooth_dlat)
-        self._smooth_amount_label = QtWidgets.QLabel()
-        self._smooth_amount_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._smooth_amount_slider.setRange(0, 100)
-        self._smooth_amount_slider.setSingleStep(5)
-        self._smooth_amount_slider.setPageStep(10)
-        self._smooth_amount_slider.setValue(30)
-        self._smooth_amount_slider.setFixedWidth(120)
-        self._smooth_amount_slider.valueChanged.connect(
-            self._handle_smooth_amount_changed
-        )
-        self._update_smooth_amount_label(self._smooth_amount_slider.value())
         self._lp_records_model = LpRecordsModel(self)
         self._lp_records_table = QtWidgets.QTableView()
         self._lp_records_table.setModel(self._lp_records_model)
@@ -576,12 +536,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_records_header.addWidget(self._lp_speed_unit_button)
         left_layout.addLayout(lp_records_header)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
-        smooth_layout = QtWidgets.QHBoxLayout()
-        smooth_layout.addWidget(self._smooth_amount_label)
-        smooth_layout.addWidget(self._smooth_amount_slider)
-        smooth_layout.addStretch(1)
-        left_layout.addLayout(smooth_layout)
-        left_layout.addWidget(self._smooth_dlat_button)
         self._lp_records_table.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -995,7 +949,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_save_lp_button_state(lp_name)
         self._update_export_lp_csv_button_state(lp_name)
         self._update_recalculate_lateral_speed_button_state(lp_name)
-        self._update_smooth_dlat_button_state(lp_name)
         self._update_lp_speed_unit_button_state(lp_name)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
@@ -1010,9 +963,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.active_lp_line()
         )
         self._update_recalculate_lateral_speed_button_state(
-            self.visualization_widget.active_lp_line()
-        )
-        self._update_smooth_dlat_button_state(
             self.visualization_widget.active_lp_line()
         )
         self._update_lp_speed_unit_button_state(
@@ -1109,15 +1059,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._recalculate_lateral_speed_button.setEnabled(enabled)
 
-    def _update_smooth_dlat_button_state(self, lp_name: str | None = None) -> None:
-        name = lp_name or self.visualization_widget.active_lp_line()
-        enabled = (
-            bool(name)
-            and name != "center-line"
-            and bool(self.visualization_widget.ai_line_records(name))
-        )
-        self._smooth_dlat_button.setEnabled(enabled)
-
     def _update_lp_speed_unit_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.visualization_widget.active_lp_line()
         enabled = (
@@ -1142,24 +1083,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         if self._lp_records_model.recalculate_lateral_speeds():
             self.visualization_widget.update()
-
-    def _update_smooth_amount_label(self, amount: int) -> None:
-        self._smooth_amount_label.setText(f"Smooth: {amount}%")
-
-    def _handle_smooth_amount_changed(self, amount: int) -> None:
-        self._update_smooth_amount_label(amount)
-
-    def _handle_smooth_dlat(self) -> None:
-        amount = self._smooth_amount_slider.value()
-        success, message = self.visualization_widget.smooth_active_lp_line(
-            amount / 100.0
-        )
-        title = "Smooth DLAT"
-        if success:
-            self._update_lp_records_table(self.visualization_widget.active_lp_line())
-            QtWidgets.QMessageBox.information(self, title, message)
-        else:
-            QtWidgets.QMessageBox.warning(self, title, message)
 
     def _sync_tv_mode_selector(
         self, _cameras: list[CameraPosition], views: list[CameraViewListing]

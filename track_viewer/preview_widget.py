@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import math
-from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -541,65 +540,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return False, f"Failed to export {lp_name} CSV: {exc}"
         return True, message
 
-    def smooth_active_lp_line(self, amount: float) -> tuple[bool, str]:
-        if amount <= 0:
-            return False, "Smoothing amount must be greater than zero."
-        lp_name = self._active_lp_line
-        if not lp_name or lp_name == "center-line":
-            return False, "Select a valid LP line to smooth."
-        if lp_name not in self._available_lp_files:
-            return False, f"{lp_name} is not available for smoothing."
-        records = self._get_ai_line_records(lp_name)
-        if len(records) < 3:
-            return False, f"Not enough {lp_name} records to smooth."
-        if (
-            "MINPANIC" not in self._available_lp_files
-            or "MAXPANIC" not in self._available_lp_files
-        ):
-            return False, "MINPANIC and MAXPANIC lines are required to bound smoothing."
-        minpanic_records = self._get_ai_line_records_immediate("MINPANIC")
-        maxpanic_records = self._get_ai_line_records_immediate("MAXPANIC")
-        if not minpanic_records or not maxpanic_records:
-            return False, "MINPANIC/MAXPANIC records could not be loaded for smoothing."
-
-        amount = min(max(amount, 0.0), 1.0)
-        window = max(1, 1 + int(round(amount * 4)))
-        original_dlats = [record.dlat for record in records]
-        min_sampler = self._build_dlat_sampler(minpanic_records)
-        max_sampler = self._build_dlat_sampler(maxpanic_records)
-
-        for index, record in enumerate(records):
-            start = max(0, index - window)
-            end = min(len(records) - 1, index + window)
-            window_values = original_dlats[start : end + 1]
-            average = sum(window_values) / len(window_values)
-            smoothed = original_dlats[index] + (average - original_dlats[index]) * amount
-            min_dlat = min_sampler(record.dlong)
-            max_dlat = max_sampler(record.dlong)
-            if min_dlat is not None and max_dlat is not None and min_dlat > max_dlat:
-                min_dlat, max_dlat = max_dlat, min_dlat
-            if min_dlat is not None:
-                smoothed = max(smoothed, min_dlat)
-            if max_dlat is not None:
-                smoothed = min(smoothed, max_dlat)
-            record.dlat = smoothed
-
-        if self.trk is not None and self._cline:
-            for record in records:
-                try:
-                    x, y, _ = getxyz(
-                        self.trk, float(record.dlong), record.dlat, self._cline
-                    )
-                except Exception:
-                    continue
-                record.x = x
-                record.y = y
-
-        self._projection_cached_point = None
-        self._projection_cached_result = None
-        self.update()
-        return True, f"Smoothed {lp_name} DLAT values."
-
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         if name is None or index is None:
             if self._selected_lp_line is None and self._selected_lp_index is None:
@@ -908,34 +848,6 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         )
         self._ai_lines[lp_name] = records
         return records
-
-    @staticmethod
-    def _build_dlat_sampler(
-        records: list[LpPoint],
-    ) -> Callable[[float], float | None]:
-        if not records:
-            return lambda _value: None
-        dlongs = [record.dlong for record in records]
-        dlats = [record.dlat for record in records]
-
-        def sample(target: float) -> float | None:
-            if not dlongs:
-                return None
-            idx = bisect_left(dlongs, target)
-            if idx <= 0:
-                return dlats[0]
-            if idx >= len(dlongs):
-                return dlats[-1]
-            if dlongs[idx] == target:
-                return dlats[idx]
-            prev = idx - 1
-            span = dlongs[idx] - dlongs[prev]
-            if span == 0:
-                return dlats[prev]
-            ratio = (target - dlongs[prev]) / span
-            return dlats[prev] + (dlats[idx] - dlats[prev]) * ratio
-
-        return sample
 
     def _merge_bounds(
         self, *bounds: Tuple[float, float, float, float] | None
