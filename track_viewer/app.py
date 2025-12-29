@@ -556,21 +556,22 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
         self._trk_gaps_button.setEnabled(False)
 
-        self._show_cameras_button = QtWidgets.QPushButton("Show Cameras")
+        self._show_cameras_button = QtWidgets.QPushButton("Hide Cameras")
         self._show_cameras_button.setCheckable(True)
         self._show_cameras_button.setChecked(True)
-        self._show_cameras_button.toggled.connect(
-            self.visualization_widget.set_show_cameras
-        )
+        self._show_cameras_button.toggled.connect(self._toggle_show_cameras)
         self._selected_flag_x = self._create_readonly_field("–")
         self._selected_flag_y = self._create_readonly_field("–")
         selected_flag_title = QtWidgets.QLabel("Selected flag")
         selected_flag_title.setStyleSheet("font-weight: bold")
-        selected_flag_form = QtWidgets.QFormLayout()
+        selected_flag_form = QtWidgets.QGridLayout()
         selected_flag_form.setContentsMargins(0, 0, 0, 0)
-        selected_flag_form.setSpacing(4)
-        selected_flag_form.addRow("X", self._selected_flag_x)
-        selected_flag_form.addRow("Y", self._selected_flag_y)
+        selected_flag_form.setHorizontalSpacing(8)
+        selected_flag_form.setVerticalSpacing(4)
+        selected_flag_form.addWidget(QtWidgets.QLabel("X"), 0, 0)
+        selected_flag_form.addWidget(self._selected_flag_x, 0, 1)
+        selected_flag_form.addWidget(QtWidgets.QLabel("Y"), 0, 2)
+        selected_flag_form.addWidget(self._selected_flag_y, 0, 3)
         selected_flag_layout = QtWidgets.QVBoxLayout()
         selected_flag_layout.setContentsMargins(0, 0, 0, 0)
         selected_flag_layout.setSpacing(4)
@@ -581,8 +582,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         selected_flag_widget.setToolTip(
             "Left click to drop/select flags.\nRight click a flag to remove it."
         )
-        left_sidebar = QtWidgets.QFrame()
-        left_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        lp_sidebar = QtWidgets.QFrame()
+        lp_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
         left_layout = QtWidgets.QVBoxLayout()
         left_layout.setSpacing(8)
         lp_label = QtWidgets.QLabel("AI and center lines")
@@ -613,7 +614,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
         left_layout.addWidget(self._lp_records_table, 1)
-        left_sidebar.setLayout(left_layout)
+        lp_sidebar.setLayout(left_layout)
         self.visualization_widget.cursorPositionChanged.connect(
             self._sidebar.update_cursor_position
         )
@@ -705,7 +706,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._boundary_button)
         layout.addLayout(controls)
 
-        right_sidebar = QtWidgets.QFrame()
+        camera_sidebar = QtWidgets.QFrame()
         right_sidebar_layout = QtWidgets.QVBoxLayout()
         right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         right_sidebar_layout.setSpacing(8)
@@ -729,14 +730,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addLayout(type_button_layout)
         right_sidebar_layout.addWidget(self._save_cameras_button)
         right_sidebar_layout.addStretch(1)
-        right_sidebar.setLayout(right_sidebar_layout)
+        camera_sidebar.setLayout(right_sidebar_layout)
+
+        tabs = QtWidgets.QTabWidget()
+        tabs.addTab(lp_sidebar, "LP editing")
+        tabs.addTab(camera_sidebar, "Camera editing")
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
-        body.addWidget(left_sidebar)
+        body.addWidget(tabs)
         body.addWidget(self.visualization_widget)
-        body.addWidget(right_sidebar)
-        body.setSizes([220, 420, 200])
+        body.setSizes([260, 640])
         layout.addWidget(body, stretch=1)
 
         wrapper = QtWidgets.QWidget()
@@ -906,6 +910,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
         self._zoom_points_button.setText(text)
         self.visualization_widget.set_show_zoom_points(enabled)
+
+    def _toggle_show_cameras(self, enabled: bool) -> None:
+        text = "Hide Cameras" if enabled else "Show Cameras"
+        self._show_cameras_button.setText(text)
+        self.visualization_widget.set_show_cameras(enabled)
 
     def _toggle_ai_gradient(self, enabled: bool) -> None:
         mode = (
