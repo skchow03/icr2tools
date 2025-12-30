@@ -10,6 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.lp.loader import load_lp_file
 from icr2_core.cam.helpers import CameraPosition, CameraSegmentRange
+from icr2_core.lp.lpcalc import get_trk_sect_radius
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import (
@@ -1601,8 +1602,17 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             "Type: Curve" if section.type == 2 else "Type: Straight",
         ]
         if section.type == 2:
-            radius = abs(section.radius)
-            section_lines.append(f"Radius: {int(round(radius))} ft")
+            radius_value: float | None = None
+            if hasattr(section, "radius"):
+                radius_value = float(section.radius)
+            elif sect_index < self.trk.num_sects - 1:
+                try:
+                    radius_value = get_trk_sect_radius(self.trk, sect_index)
+                except ZeroDivisionError:
+                    radius_value = None
+            if radius_value is not None and math.isfinite(radius_value):
+                radius = abs(radius_value)
+                section_lines.append(f"Radius: {int(round(radius))} ft")
         return section_lines
 
     @staticmethod
