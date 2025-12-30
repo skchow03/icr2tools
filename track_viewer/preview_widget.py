@@ -251,6 +251,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._ai_acceleration_window = 3
         self._ai_line_width = 2
         self._flag_radius = 0.0
+        self._show_radius_raw = False
         self._track_length: float | None = None
         self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._active_lp_line = "center-line"
@@ -418,6 +419,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._flag_radius != clamped:
             self._flag_radius = clamped
             self.update()
+
+    def set_radius_raw_visible(self, enabled: bool) -> None:
+        if self._show_radius_raw == enabled:
+            return
+        self._show_radius_raw = enabled
+        self.update()
 
     def _queue_ai_line_load(self, lp_name: str) -> None:
         if (
@@ -1612,7 +1619,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     radius_value = None
             if radius_value is not None and math.isfinite(radius_value):
                 radius = abs(radius_value)
-                section_lines.append(f"Radius: {int(round(radius))} ft")
+                if self._show_radius_raw:
+                    section_lines.append(f"Radius: {int(round(radius))} 500ths")
+                else:
+                    radius_feet = radius * rendering.DLONG_TO_FEET
+                    section_lines.append(f"Radius: {radius_feet:.2f} ft")
         return section_lines
 
     @staticmethod

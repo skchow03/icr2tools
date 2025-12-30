@@ -594,6 +594,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._flag_radius_input.valueChanged.connect(
             self._handle_flag_radius_changed
         )
+        self._radius_unit_button = QtWidgets.QPushButton("Show Radius 500ths")
+        self._radius_unit_button.setCheckable(True)
+        self._radius_unit_button.setToolTip(
+            "Toggle centerline curve radius units between feet and 500ths."
+        )
+        self._radius_unit_button.toggled.connect(self._handle_radius_unit_toggled)
         self._selected_flag_x = self._create_readonly_field("–")
         self._selected_flag_y = self._create_readonly_field("–")
         selected_flag_title = QtWidgets.QLabel("Selected flag")
@@ -741,6 +747,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._track_list)
         controls.addWidget(QtWidgets.QLabel("Flag radius"))
         controls.addWidget(self._flag_radius_input)
+        controls.addWidget(self._radius_unit_button)
         controls.addWidget(selected_flag_widget)
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
@@ -1119,6 +1126,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_flag_radius_changed(self, radius: float) -> None:
         self.visualization_widget.set_flag_radius(radius)
+
+    def _handle_radius_unit_toggled(self, enabled: bool) -> None:
+        self.visualization_widget.set_radius_raw_visible(enabled)
+        text = "Show Radius Feet" if enabled else "Show Radius 500ths"
+        self._radius_unit_button.setText(text)
 
     def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":
