@@ -13,6 +13,7 @@ from icr2_core.cam.helpers import CameraPosition, CameraSegmentRange
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import (
+    dlong2sect,
     get_cline_pos,
     getxyz,
     sect2xy,
@@ -1114,6 +1115,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             dlong_text = f"DLONG: {int(round(self._nearest_projection_dlong))}"
             painter.drawText(12, y, dlong_text)
             y += 16
+        if (
+            self._nearest_projection_line == "center-line"
+            and self._nearest_projection_dlong is not None
+        ):
+            for line in self._centerline_section_info(self._nearest_projection_dlong):
+                painter.drawText(12, y, line)
+                y += 16
         if self._nearest_projection_dlat is not None:
             dlat_text = f"DLAT: {int(round(self._nearest_projection_dlat))}"
             painter.drawText(12, y, dlat_text)
@@ -1577,6 +1585,25 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         for line in lines:
             painter.drawText(start_x, start_y, line)
             start_y += line_height
+
+    def _centerline_section_info(self, dlong: float) -> list[str]:
+        if self.trk is None:
+            return []
+        sect_info = dlong2sect(self.trk, dlong)
+        if not sect_info:
+            return []
+        sect_index, _ = sect_info
+        if sect_index is None or not (0 <= sect_index < self.trk.num_sects):
+            return []
+        section = self.trk.sects[sect_index]
+        section_lines = [
+            f"Section: {sect_index}",
+            "Type: Curve" if section.type == 2 else "Type: Straight",
+        ]
+        if section.type == 2:
+            radius = abs(section.radius)
+            section_lines.append(f"Radius: {int(round(radius))} ft")
+        return section_lines
 
     @staticmethod
     def _format_cursor_value(value: float) -> str:
