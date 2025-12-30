@@ -470,6 +470,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._recalculate_lateral_speed_button.clicked.connect(
             self._handle_recalculate_lateral_speed
         )
+        self._lp_dlat_step = QtWidgets.QSpinBox()
+        self._lp_dlat_step.setRange(1, 1_000_000)
+        self._lp_dlat_step.setSingleStep(500)
+        self._lp_dlat_step.setValue(6000)
+        self._lp_dlat_step.setSuffix(" DLAT")
+        self._lp_dlat_step.setToolTip(
+            "Arrow key step size for adjusting selected LP DLAT values."
+        )
         self._lp_records_model = LpRecordsModel(self)
         self._lp_records_table = QtWidgets.QTableView()
         self._lp_records_table.setModel(self._lp_records_model)
@@ -608,6 +616,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_records_header.addWidget(self._lp_records_label)
         lp_records_header.addStretch(1)
         left_layout.addLayout(lp_records_header)
+        dlat_step_layout = QtWidgets.QHBoxLayout()
+        dlat_step_layout.addWidget(QtWidgets.QLabel("DLAT step"))
+        dlat_step_layout.addStretch(1)
+        dlat_step_layout.addWidget(self._lp_dlat_step)
+        left_layout.addLayout(dlat_step_layout)
         left_layout.addWidget(self._lp_speed_unit_button)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
         left_layout.addWidget(self._save_lp_button)
@@ -761,6 +774,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         wrapper.setLayout(layout)
         self.setCentralWidget(wrapper)
 
+        QtWidgets.QApplication.instance().installEventFilter(self)
+
     # ------------------------------------------------------------------
     # UI helpers
     # ------------------------------------------------------------------
@@ -828,6 +843,110 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _on_track_selected(self, index: int) -> None:
         folder = self._track_list.itemData(index) if index >= 0 else None
         self.controller.set_selected_track(folder)
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802
+        if (
+            event.type() == QtCore.QEvent.KeyPress
+            and isinstance(obj, QtWidgets.QWidget)
+            and obj.window() is self
+        ):
+            if self._handle_lp_shortcut(event):
+                return True
+        return super().eventFilter(obj, event)
+
+    def _handle_lp_shortcut(self, event: QtGui.QKeyEvent) -> bool:
+        key = event.key()
+        if key not in {
+            QtCore.Qt.Key_Up,
+            QtCore.Qt.Key_Down,
+            QtCore.Qt.Key_Left,
+            QtCore.Qt.Key_Right,
+        }:
+            return False
+        if not self._can_handle_lp_shortcut():
+            return False
+        if key == QtCore.Qt.Key_Up:
+            return self._move_lp_record_selection(-1)
+        if key == QtCore.Qt.Key_Down:
+            return self._move_lp_record_selection(1)
+        if key == QtCore.Qt.Key_Left:
+            return self._adjust_lp_record_dlat(-self._lp_dlat_step.value())
+        if key == QtCore.Qt.Key_Right:
+            return self._adjust_lp_record_dlat(self._lp_dlat_step.value())
+        return False
+
+    def _can_handle_lp_shortcut(self) -> bool:
+        lp_name = self.visualization_widget.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            return False
+        if self._lp_records_table.state() == QtWidgets.QAbstractItemView.EditingState:
+            return False
+        focus = self.focusWidget()
+        if not self._lp_shortcut_focus_allowed(focus):
+            return False
+        if isinstance(focus, (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox)):
+            return False
+        return True
+
+    def _lp_shortcut_focus_allowed(self, focus: QtWidgets.QWidget | None) -> bool:
+        if focus is None:
+            return False
+        if focus is self.visualization_widget:
+            return True
+        if focus is self._lp_records_table:
+            return True
+        return self._lp_records_table.isAncestorOf(focus)
+
+    def _current_lp_selection(self) -> tuple[str, int] | None:
+        lp_name = self.visualization_widget.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            return None
+        selection = self._lp_records_table.selectionModel()
+        if selection is None:
+            return None
+        rows = selection.selectedRows()
+        if not rows:
+            return None
+        row = rows[0].row()
+        if row < 0 or row >= self._lp_records_model.rowCount():
+            return None
+        return lp_name, row
+
+    def _move_lp_record_selection(self, delta: int) -> bool:
+        current = self._current_lp_selection()
+        if current is None:
+            return False
+        _, row = current
+        total_rows = self._lp_records_model.rowCount()
+        if total_rows <= 0:
+            return False
+        target = max(0, min(total_rows - 1, row + delta))
+        if target == row:
+            return True
+        with QtCore.QSignalBlocker(self._lp_records_table):
+            self._lp_records_table.selectRow(target)
+        self._handle_lp_record_selected()
+        index = self._lp_records_model.index(target, 0)
+        if index.isValid():
+            self._lp_records_table.scrollTo(
+                index, QtWidgets.QAbstractItemView.PositionAtCenter
+            )
+        return True
+
+    def _adjust_lp_record_dlat(self, delta: int) -> bool:
+        current = self._current_lp_selection()
+        if current is None:
+            return False
+        _, row = current
+        index = self._lp_records_model.index(row, 2)
+        if not index.isValid():
+            return False
+        current_value = self._lp_records_model.data(index, QtCore.Qt.EditRole)
+        try:
+            next_value = float(current_value) + float(delta)
+        except (TypeError, ValueError):
+            return False
+        return self._lp_records_model.setData(index, next_value, QtCore.Qt.EditRole)
 
     def _apply_ai_line_state(
         self, available_files: list[str], visible_files: set[str], enabled: bool
