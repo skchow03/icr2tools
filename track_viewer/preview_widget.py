@@ -266,6 +266,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         self._dragging_camera_index: int | None = None
         self._camera_dragged = False
+        self._dragging_flag_index: int | None = None
 
         self._flags: List[Tuple[float, float]] = []
         self._selected_flag: int | None = None
@@ -320,6 +321,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._dragged_during_press = False
         self._dragging_camera_index = None
         self._camera_dragged = False
+        self._dragging_flag_index = None
         self._flags = []
         self._selected_flag = None
         self._selected_camera = None
@@ -1177,6 +1179,9 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             if self._surface_mesh and self._handle_camera_press(event.pos()):
                 event.accept()
                 return
+            if self._surface_mesh and self._handle_flag_press(event.pos()):
+                event.accept()
+                return
             self._is_panning = True
             self._last_mouse_pos = event.pos()
             self._left_press_pos = event.pos()
@@ -1190,6 +1195,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         handled = False
         if self._dragging_camera_index is not None:
             self._update_camera_position(event.pos())
+            event.accept()
+            handled = True
+        if self._dragging_flag_index is not None:
+            self._update_flag_position(event.pos())
             event.accept()
             handled = True
         if self._is_panning and self._last_mouse_pos is not None:
@@ -1224,6 +1233,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             if self._dragging_camera_index is not None:
                 self._dragging_camera_index = None
                 self._camera_dragged = False
+                event.accept()
+                return
+            if self._dragging_flag_index is not None:
+                self._dragging_flag_index = None
                 event.accept()
                 return
             click_without_drag = not self._dragged_during_press
@@ -1592,6 +1605,16 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._dragged_during_press = False
         return True
 
+    def _handle_flag_press(self, point: QtCore.QPointF) -> bool:
+        flag_index = self._flag_at_point(point)
+        if flag_index is None:
+            return False
+        self._set_selected_flag(flag_index)
+        self._dragging_flag_index = flag_index
+        self._is_panning = False
+        self._dragged_during_press = False
+        return True
+
     def _update_camera_position(self, point: QtCore.QPointF) -> None:
         if self._dragging_camera_index is None:
             return
@@ -1606,6 +1629,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         cam.y = int(round(coords[1]))
         self._camera_dragged = True
         self._emit_selected_camera()
+        self.update()
+
+    def _update_flag_position(self, point: QtCore.QPointF) -> None:
+        if self._dragging_flag_index is None:
+            return
+        coords = self._map_to_track(point)
+        if coords is None:
+            return
+        index = self._dragging_flag_index
+        if index < 0 or index >= len(self._flags):
+            return
+        self._flags[index] = coords
+        self.selectedFlagChanged.emit(coords)
         self.update()
 
     def _centerline_point_and_normal(
