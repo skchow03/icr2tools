@@ -583,7 +583,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._show_cameras_button.setChecked(True)
         self._show_cameras_button.toggled.connect(self._toggle_show_cameras)
         self._flag_radius_input = QtWidgets.QDoubleSpinBox()
-        self._flag_radius_input.setRange(0.0, 10000.0)
+        self._flag_radius_input.setRange(0.0, 2147483647.0)
         self._flag_radius_input.setDecimals(2)
         self._flag_radius_input.setSingleStep(1.0)
         self._flag_radius_input.setValue(self.visualization_widget.flag_radius())

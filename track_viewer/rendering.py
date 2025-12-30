@@ -307,6 +307,7 @@ def draw_flags(
         return
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     radius = 6
+    dot_radius = 3
     scale, _ = transform
     for index, (fx, fy) in enumerate(flags):
         point = map_point(fx, fy, transform, viewport_height)
@@ -335,6 +336,9 @@ def draw_flags(
                 point.y() - radius,
             )
             painter.drawLine(flag_pole)
+        painter.setPen(QtGui.QPen(QtGui.QColor("black")))
+        painter.setBrush(QtGui.QBrush(QtGui.QColor("black")))
+        painter.drawEllipse(point, dot_radius, dot_radius)
 
 
 def _draw_camera_orientation(
