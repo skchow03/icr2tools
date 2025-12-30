@@ -383,7 +383,7 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             if 0 <= section < len(self._HEADERS):
                 if section == 3:
                     return (
-                        "Speed (500ths per frame)"
+                        "Speed (500ths/frame)"
                         if self._show_speed_raw
                         else "Speed (mph)"
                     )
@@ -487,12 +487,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if hasattr(self._lp_records_table, "setUniformRowHeights"):
             self._lp_records_table.setUniformRowHeights(True)
         header = self._lp_records_table.horizontalHeader()
-        header.setWordWrap(True)
+
+        # Allow multi-line headers
         header.setTextElideMode(QtCore.Qt.ElideNone)
         header.setDefaultAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+
+        # Force header to be tall enough for wrapping
         header.setMinimumHeight(56)
+
+        # This is REQUIRED even though it looks unrelated
         self._lp_records_table.setWordWrap(True)
+
         self._lp_records_table.verticalHeader().setVisible(False)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
