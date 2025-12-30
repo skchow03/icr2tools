@@ -248,6 +248,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._ai_color_mode = "none"
         self._ai_acceleration_window = 3
         self._ai_line_width = 2
+        self._flag_radius = 0.0
         self._track_length: float | None = None
         self._boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._active_lp_line = "center-line"
@@ -403,6 +404,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         clamped = max(1, width)
         if self._ai_line_width != clamped:
             self._ai_line_width = clamped
+            self.update()
+
+    def flag_radius(self) -> float:
+        return self._flag_radius
+
+    def set_flag_radius(self, radius: float) -> None:
+        clamped = max(0.0, radius)
+        if self._flag_radius != clamped:
+            self._flag_radius = clamped
             self.update()
 
     def _queue_ai_line_load(self, lp_name: str) -> None:
@@ -1064,7 +1074,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                             self.height(),
                         )
             rendering.draw_flags(
-                painter, self._flags, self._selected_flag, transform, self.height()
+                painter,
+                self._flags,
+                self._selected_flag,
+                transform,
+                self.height(),
+                self._flag_radius,
             )
             if self._show_zoom_points:
                 rendering.draw_zoom_points(

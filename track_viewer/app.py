@@ -582,6 +582,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._show_cameras_button.setCheckable(True)
         self._show_cameras_button.setChecked(True)
         self._show_cameras_button.toggled.connect(self._toggle_show_cameras)
+        self._flag_radius_input = QtWidgets.QDoubleSpinBox()
+        self._flag_radius_input.setRange(0.0, 10000.0)
+        self._flag_radius_input.setDecimals(2)
+        self._flag_radius_input.setSingleStep(1.0)
+        self._flag_radius_input.setValue(self.visualization_widget.flag_radius())
+        self._flag_radius_input.setFixedWidth(110)
+        self._flag_radius_input.setToolTip(
+            "Draw a dotted circle around flags when radius is greater than zero."
+        )
+        self._flag_radius_input.valueChanged.connect(
+            self._handle_flag_radius_changed
+        )
         self._selected_flag_x = self._create_readonly_field("–")
         self._selected_flag_y = self._create_readonly_field("–")
         selected_flag_title = QtWidgets.QLabel("Selected flag")
@@ -727,6 +739,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_label.setStyleSheet("font-weight: bold")
         controls.addWidget(track_label)
         controls.addWidget(self._track_list)
+        controls.addWidget(QtWidgets.QLabel("Flag radius"))
+        controls.addWidget(self._flag_radius_input)
         controls.addWidget(selected_flag_widget)
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
@@ -1102,6 +1116,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_ai_line_width_changed(self, width: int) -> None:
         self._update_ai_line_width_label(width)
         self.visualization_widget.set_ai_line_width(width)
+
+    def _handle_flag_radius_changed(self, radius: float) -> None:
+        self.visualization_widget.set_flag_radius(radius)
 
     def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":
