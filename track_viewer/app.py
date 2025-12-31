@@ -1174,6 +1174,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
         name = button.property("lp-name")
         if isinstance(name, str):
+            if name != "center-line":
+                checkbox = self._lp_checkboxes.get(name)
+                if checkbox is not None and not checkbox.isChecked():
+                    checkbox.setChecked(True)
             self.visualization_widget.set_active_lp_line(name)
 
     def _update_lp_records_table(self, name: str | None = None) -> None:
