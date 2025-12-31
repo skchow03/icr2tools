@@ -1131,6 +1131,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     self._centerline_point,
                 )
 
+        self._draw_lp_index_indicator(painter)
         self._draw_lp_shortcut_overlay(painter)
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         y = 20
@@ -1181,6 +1182,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         self._draw_cursor_position(painter)
 
+    def _draw_lp_index_indicator(self, painter: QtGui.QPainter) -> None:
+        text = (
+            "LP index: —"
+            if self._selected_lp_index is None
+            else f"LP index: {self._selected_lp_index}"
+        )
+        metrics = painter.fontMetrics()
+        margin = 12
+        x = self.width() - margin - metrics.horizontalAdvance(text)
+        y = margin + metrics.ascent()
+        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+        painter.drawText(x, y, text)
+
     def _draw_lp_shortcut_overlay(self, painter: QtGui.QPainter) -> None:
         if not self._lp_shortcut_active:
             return
@@ -1196,9 +1210,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             f"RIGHT - decrease DLAT by {step_value}",
         ]
         max_width = max(metrics.horizontalAdvance(line) for line in lines)
+        lp_index_lines = 1
         cursor_lines = 0 if self._cursor_position is None else 2
         start_x = self.width() - margin - max_width
-        start_y = margin + metrics.ascent() + cursor_lines * line_height
+        start_y = margin + metrics.ascent() + (cursor_lines + lp_index_lines) * line_height
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         for line in lines:
             painter.drawText(start_x, start_y, line)
