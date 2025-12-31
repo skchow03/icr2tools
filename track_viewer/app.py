@@ -563,9 +563,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._update_accel_window_label(self._accel_window_slider.value())
 
-        self._selected_lp_index_label = QtWidgets.QLabel("LP index: —")
-        self._selected_lp_index_label.setToolTip("Currently selected LP record index.")
-
         self._ai_width_label = QtWidgets.QLabel()
         self._ai_width_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._ai_width_slider.setRange(1, 8)
@@ -612,21 +609,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._radius_unit_button.toggled.connect(self._handle_radius_unit_toggled)
         self._selected_flag_x = self._create_readonly_field("–")
         self._selected_flag_y = self._create_readonly_field("–")
-        selected_flag_title = QtWidgets.QLabel("Selected flag")
+        selected_flag_title = QtWidgets.QLabel("Selected Flag")
         selected_flag_title.setStyleSheet("font-weight: bold")
-        selected_flag_form = QtWidgets.QGridLayout()
-        selected_flag_form.setContentsMargins(0, 0, 0, 0)
-        selected_flag_form.setHorizontalSpacing(8)
-        selected_flag_form.setVerticalSpacing(4)
-        selected_flag_form.addWidget(QtWidgets.QLabel("X"), 0, 0)
-        selected_flag_form.addWidget(self._selected_flag_x, 0, 1)
-        selected_flag_form.addWidget(QtWidgets.QLabel("Y"), 0, 2)
-        selected_flag_form.addWidget(self._selected_flag_y, 0, 3)
-        selected_flag_layout = QtWidgets.QVBoxLayout()
+        selected_flag_layout = QtWidgets.QHBoxLayout()
         selected_flag_layout.setContentsMargins(0, 0, 0, 0)
-        selected_flag_layout.setSpacing(4)
+        selected_flag_layout.setSpacing(6)
         selected_flag_layout.addWidget(selected_flag_title)
-        selected_flag_layout.addLayout(selected_flag_form)
+        selected_flag_layout.addWidget(QtWidgets.QLabel("X"))
+        selected_flag_layout.addWidget(self._selected_flag_x)
+        selected_flag_layout.addWidget(QtWidgets.QLabel("Y"))
+        selected_flag_layout.addWidget(self._selected_flag_y)
         selected_flag_widget = QtWidgets.QWidget()
         selected_flag_widget.setLayout(selected_flag_layout)
         selected_flag_widget.setToolTip(
@@ -645,10 +637,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_records_header.addStretch(1)
         left_layout.addLayout(lp_records_header)
         dlat_step_layout = QtWidgets.QHBoxLayout()
+        dlat_step_layout.addWidget(self._lp_shortcut_button)
+        dlat_step_layout.addStretch(1)
         dlat_step_layout.addWidget(QtWidgets.QLabel("DLAT step"))
         dlat_step_layout.addWidget(self._lp_dlat_step)
-        dlat_step_layout.addStretch(1)
-        dlat_step_layout.addWidget(self._lp_shortcut_button)
         left_layout.addLayout(dlat_step_layout)
         left_layout.addWidget(self._lp_speed_unit_button)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
@@ -759,14 +751,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_label.setStyleSheet("font-weight: bold")
         controls.addWidget(track_label)
         controls.addWidget(self._track_list)
+        controls.addWidget(selected_flag_widget)
         controls.addWidget(QtWidgets.QLabel("Flag radius"))
         controls.addWidget(self._flag_radius_input)
         controls.addWidget(self._radius_unit_button)
-        controls.addWidget(selected_flag_widget)
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
-        controls.addWidget(self._selected_lp_index_label)
         layout.addLayout(controls)
 
         camera_sidebar = QtWidgets.QFrame()
@@ -1302,11 +1293,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             )
 
     def _update_selected_lp_index_label(self, row: int | None) -> None:
-        if row is None:
-            text = "LP index: —"
-        else:
-            text = f"LP index: {row}"
-        self._selected_lp_index_label.setText(text)
+        self.visualization_widget.update()
 
     def _handle_lp_record_edited(self, row: int) -> None:
         lp_name = self.visualization_widget.active_lp_line()
