@@ -478,6 +478,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_dlat_step.setToolTip(
             "Arrow key step size for adjusting selected LP DLAT values."
         )
+        self._lp_dlat_step.valueChanged.connect(self._handle_lp_dlat_step_changed)
         self._lp_shortcut_button = QtWidgets.QPushButton("Enable LP arrow-key editing")
         self._lp_shortcut_button.setCheckable(True)
         self._lp_shortcut_button.setEnabled(False)
@@ -521,6 +522,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.visualization_widget.set_lp_dlat_step(self._lp_dlat_step.value())
         self._lp_shortcut_active = False
         self._sidebar = CoordinateSidebar()
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
@@ -1239,6 +1241,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if self._lp_shortcut_active == active:
             return
         self._lp_shortcut_active = active
+        self.visualization_widget.set_lp_shortcut_active(active)
         text = (
             "Disable LP arrow-key editing"
             if active
@@ -1262,6 +1265,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             with QtCore.QSignalBlocker(self._lp_shortcut_button):
                 self._lp_shortcut_button.setChecked(False)
                 self._lp_shortcut_button.setText("Enable LP arrow-key editing")
+
+    def _handle_lp_dlat_step_changed(self, value: int) -> None:
+        self.visualization_widget.set_lp_dlat_step(value)
 
     def _handle_lp_record_clicked(self, lp_name: str, row: int) -> None:
         if lp_name != self.visualization_widget.active_lp_line():

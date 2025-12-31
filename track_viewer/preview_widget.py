@@ -258,6 +258,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._active_lp_line = "center-line"
         self._selected_lp_line: str | None = None
         self._selected_lp_index: int | None = None
+        self._lp_shortcut_active = False
+        self._lp_dlat_step = 0
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -580,6 +582,20 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_lp_line = name
         self._selected_lp_index = index
         self.update()
+
+    def set_lp_shortcut_active(self, active: bool) -> None:
+        if self._lp_shortcut_active == active:
+            return
+        self._lp_shortcut_active = active
+        self.update()
+
+    def set_lp_dlat_step(self, step: int) -> None:
+        clamped = max(0, int(step))
+        if self._lp_dlat_step == clamped:
+            return
+        self._lp_dlat_step = clamped
+        if self._lp_shortcut_active:
+            self.update()
 
     def lp_color(self, name: str) -> str:
         try:
@@ -1070,6 +1086,19 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 records = self._get_ai_line_records(self._selected_lp_line)
                 if len(records) >= 2:
                     index = self._selected_lp_index
+                    if 0 <= index < len(records):
+                        record = records[index]
+                        painter.setRenderHint(
+                            QtGui.QPainter.Antialiasing, True
+                        )
+                        marker = rendering.map_point(
+                            record.x, record.y, transform, self.height()
+                        )
+                        pen = QtGui.QPen(QtGui.QColor("#fdd835"))
+                        pen.setWidth(1)
+                        painter.setPen(pen)
+                        painter.setBrush(QtGui.QBrush(QtGui.QColor("#fdd835")))
+                        painter.drawEllipse(marker, 4, 4)
                     start_index = index
                     end_index = index + 1
                     if end_index >= len(records):
@@ -1102,6 +1131,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                     self._centerline_point,
                 )
 
+        self._draw_lp_shortcut_overlay(painter)
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         y = 20
         if self._track_length is not None:
@@ -1150,6 +1180,29 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             painter.drawText(12, y, elevation_text)
 
         self._draw_cursor_position(painter)
+
+    def _draw_lp_shortcut_overlay(self, painter: QtGui.QPainter) -> None:
+        if not self._lp_shortcut_active:
+            return
+        metrics = painter.fontMetrics()
+        line_height = metrics.height()
+        margin = 12
+        step_value = self._lp_dlat_step
+        lines = [
+            "LP arrow-key editing active:",
+            "UP - next LP record",
+            "DOWN - previous LP record",
+            f"LEFT - increase DLAT by {step_value}",
+            f"RIGHT - decrease DLAT by {step_value}",
+        ]
+        max_width = max(metrics.horizontalAdvance(line) for line in lines)
+        cursor_lines = 0 if self._cursor_position is None else 2
+        start_x = self.width() - margin - max_width
+        start_y = margin + metrics.ascent() + cursor_lines * line_height
+        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+        for line in lines:
+            painter.drawText(start_x, start_y, line)
+            start_y += line_height
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._pixmap_size = None
