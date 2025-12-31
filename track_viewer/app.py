@@ -478,6 +478,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_dlat_step.setToolTip(
             "Arrow key step size for adjusting selected LP DLAT values."
         )
+        self._lp_shortcut_button = QtWidgets.QPushButton("Enable LP arrow-key editing")
+        self._lp_shortcut_button.setCheckable(True)
+        self._lp_shortcut_button.setEnabled(False)
+        self._lp_shortcut_button.toggled.connect(self._handle_lp_shortcut_toggled)
         self._lp_records_model = LpRecordsModel(self)
         self._lp_records_table = QtWidgets.QTableView()
         self._lp_records_table.setModel(self._lp_records_model)
@@ -640,6 +644,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         dlat_step_layout.addStretch(1)
         dlat_step_layout.addWidget(self._lp_dlat_step)
         left_layout.addLayout(dlat_step_layout)
+        left_layout.addWidget(self._lp_shortcut_button)
         left_layout.addWidget(self._lp_speed_unit_button)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
         left_layout.addWidget(self._save_lp_button)
@@ -1182,6 +1187,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             selection_model.clearSelection()
         self.visualization_widget.set_selected_lp_record(None, None)
         self._set_lp_shortcut_active(False)
+        self._update_lp_shortcut_button_state()
 
     def _handle_ai_line_loaded(self, name: str) -> None:
         if name == self.visualization_widget.active_lp_line():
@@ -1205,14 +1211,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if not rows:
             self.visualization_widget.set_selected_lp_record(None, None)
             self._set_lp_shortcut_active(False)
+            self._update_lp_shortcut_button_state()
             return
         row = rows[0].row()
         lp_name = self.visualization_widget.active_lp_line()
         if not lp_name or lp_name == "center-line":
             self.visualization_widget.set_selected_lp_record(None, None)
             self._set_lp_shortcut_active(False)
+            self._update_lp_shortcut_button_state()
             return
         self.visualization_widget.set_selected_lp_record(lp_name, row)
+        self._update_lp_shortcut_button_state()
 
     def _handle_lp_shortcut_activation(self) -> None:
         if self._current_lp_selection() is None:
@@ -1220,16 +1229,39 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         self._set_lp_shortcut_active(True)
 
+    def _handle_lp_shortcut_toggled(self, active: bool) -> None:
+        if active and self._current_lp_selection() is None:
+            self._set_lp_shortcut_active(False)
+            return
+        self._set_lp_shortcut_active(active)
+
     def _set_lp_shortcut_active(self, active: bool) -> None:
         if self._lp_shortcut_active == active:
             return
         self._lp_shortcut_active = active
+        text = (
+            "Disable LP arrow-key editing"
+            if active
+            else "Enable LP arrow-key editing"
+        )
+        with QtCore.QSignalBlocker(self._lp_shortcut_button):
+            self._lp_shortcut_button.setChecked(active)
+            self._lp_shortcut_button.setText(text)
         if active:
             self.visualization_widget.setStyleSheet(
                 "QFrame { border: 2px solid #e53935; }"
             )
         else:
             self.visualization_widget.setStyleSheet("")
+        self._update_lp_shortcut_button_state()
+
+    def _update_lp_shortcut_button_state(self) -> None:
+        has_selection = self._current_lp_selection() is not None
+        self._lp_shortcut_button.setEnabled(has_selection)
+        if not has_selection:
+            with QtCore.QSignalBlocker(self._lp_shortcut_button):
+                self._lp_shortcut_button.setChecked(False)
+                self._lp_shortcut_button.setText("Enable LP arrow-key editing")
 
     def _handle_lp_record_clicked(self, lp_name: str, row: int) -> None:
         if lp_name != self.visualization_widget.active_lp_line():
