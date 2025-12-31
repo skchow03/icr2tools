@@ -563,6 +563,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._update_accel_window_label(self._accel_window_slider.value())
 
+        self._selected_lp_index_label = QtWidgets.QLabel("LP index: —")
+        self._selected_lp_index_label.setToolTip("Currently selected LP record index.")
+
         self._ai_width_label = QtWidgets.QLabel()
         self._ai_width_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._ai_width_slider.setRange(1, 8)
@@ -763,6 +766,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
+        controls.addWidget(self._selected_lp_index_label)
         layout.addLayout(controls)
 
         camera_sidebar = QtWidgets.QFrame()
@@ -1190,6 +1194,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.set_selected_lp_record(None, None)
         self._set_lp_shortcut_active(False)
         self._update_lp_shortcut_button_state()
+        self._update_selected_lp_index_label(None)
+        if lp_name and lp_name != "center-line" and records:
+            self._select_lp_record_row(0)
 
     def _handle_ai_line_loaded(self, name: str) -> None:
         if name == self.visualization_widget.active_lp_line():
@@ -1208,12 +1215,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_lp_record_selected(self) -> None:
         selection = self._lp_records_table.selectionModel()
         if selection is None:
+            self._update_selected_lp_index_label(None)
             return
         rows = selection.selectedRows()
         if not rows:
             self.visualization_widget.set_selected_lp_record(None, None)
             self._set_lp_shortcut_active(False)
             self._update_lp_shortcut_button_state()
+            self._update_selected_lp_index_label(None)
             return
         row = rows[0].row()
         lp_name = self.visualization_widget.active_lp_line()
@@ -1221,9 +1230,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.set_selected_lp_record(None, None)
             self._set_lp_shortcut_active(False)
             self._update_lp_shortcut_button_state()
+            self._update_selected_lp_index_label(None)
             return
         self.visualization_widget.set_selected_lp_record(lp_name, row)
         self._update_lp_shortcut_button_state()
+        self._update_selected_lp_index_label(row)
 
     def _handle_lp_shortcut_activation(self) -> None:
         if self._current_lp_selection() is None:
@@ -1274,13 +1285,24 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         if row < 0 or row >= self._lp_records_model.rowCount():
             return
+        self._select_lp_record_row(row)
+
+    def _select_lp_record_row(self, row: int) -> None:
         with QtCore.QSignalBlocker(self._lp_records_table):
             self._lp_records_table.selectRow(row)
-            index = self._lp_records_model.index(row, 0)
-            if index.isValid():
-                self._lp_records_table.scrollTo(
-                    index, QtWidgets.QAbstractItemView.PositionAtCenter
-                )
+        self._handle_lp_record_selected()
+        index = self._lp_records_model.index(row, 0)
+        if index.isValid():
+            self._lp_records_table.scrollTo(
+                index, QtWidgets.QAbstractItemView.PositionAtCenter
+            )
+
+    def _update_selected_lp_index_label(self, row: int | None) -> None:
+        if row is None:
+            text = "LP index: —"
+        else:
+            text = f"LP index: {row}"
+        self._selected_lp_index_label.setText(text)
 
     def _handle_lp_record_edited(self, row: int) -> None:
         lp_name = self.visualization_widget.active_lp_line()
