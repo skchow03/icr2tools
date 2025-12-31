@@ -213,6 +213,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     activeLpLineChanged = QtCore.pyqtSignal(str)
     aiLineLoaded = QtCore.pyqtSignal(str)
     lpRecordSelected = QtCore.pyqtSignal(str, int)
+    diagramClicked = QtCore.pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -1192,6 +1193,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 return
 
         if event.button() == QtCore.Qt.LeftButton:
+            self.diagramClicked.emit()
             if self._surface_mesh and self._handle_camera_press(event.pos()):
                 event.accept()
                 return

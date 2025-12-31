@@ -517,6 +517,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self._lp_shortcut_active = False
         self._sidebar = CoordinateSidebar()
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
@@ -679,6 +680,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.aiLineLoaded.connect(self._handle_ai_line_loaded)
         self.visualization_widget.lpRecordSelected.connect(
             self._handle_lp_record_clicked
+        )
+        self.visualization_widget.diagramClicked.connect(
+            self._handle_lp_shortcut_activation
         )
         self._sidebar.type7_details.parametersChanged.connect(
             self.visualization_widget.update
@@ -871,11 +875,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             and isinstance(obj, QtWidgets.QWidget)
             and obj.window() is self
         ):
+            if self._lp_shortcut_active:
+                if self._handle_lp_shortcut(event, ignore_focus=True):
+                    return True
+                self._set_lp_shortcut_active(False)
             if self._handle_lp_shortcut(event):
                 return True
         return super().eventFilter(obj, event)
 
-    def _handle_lp_shortcut(self, event: QtGui.QKeyEvent) -> bool:
+    def _handle_lp_shortcut(
+        self, event: QtGui.QKeyEvent, *, ignore_focus: bool = False
+    ) -> bool:
         key = event.key()
         if key not in {
             QtCore.Qt.Key_Up,
@@ -884,29 +894,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.Key_Right,
         }:
             return False
-        if not self._can_handle_lp_shortcut():
+        if not self._can_handle_lp_shortcut(ignore_focus=ignore_focus):
             return False
         if key == QtCore.Qt.Key_Up:
-            return self._move_lp_record_selection(-1)
-        if key == QtCore.Qt.Key_Down:
             return self._move_lp_record_selection(1)
+        if key == QtCore.Qt.Key_Down:
+            return self._move_lp_record_selection(-1)
         if key == QtCore.Qt.Key_Left:
-            return self._adjust_lp_record_dlat(-self._lp_dlat_step.value())
-        if key == QtCore.Qt.Key_Right:
             return self._adjust_lp_record_dlat(self._lp_dlat_step.value())
+        if key == QtCore.Qt.Key_Right:
+            return self._adjust_lp_record_dlat(-self._lp_dlat_step.value())
         return False
 
-    def _can_handle_lp_shortcut(self) -> bool:
+    def _can_handle_lp_shortcut(self, *, ignore_focus: bool = False) -> bool:
         lp_name = self.visualization_widget.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return False
-        if self._lp_records_table.state() == QtWidgets.QAbstractItemView.EditingState:
+        if not ignore_focus and not self._lp_shortcut_active:
             return False
-        focus = self.focusWidget()
-        if not self._lp_shortcut_focus_allowed(focus):
-            return False
-        if isinstance(focus, (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox)):
-            return False
+        if not ignore_focus:
+            if (
+                self._lp_records_table.state()
+                == QtWidgets.QAbstractItemView.EditingState
+            ):
+                return False
+            focus = self.focusWidget()
+            if not self._lp_shortcut_focus_allowed(focus):
+                return False
+            if isinstance(focus, (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox)):
+                return False
         return True
 
     def _lp_shortcut_focus_allowed(self, focus: QtWidgets.QWidget | None) -> bool:
@@ -1165,6 +1181,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if selection_model is not None:
             selection_model.clearSelection()
         self.visualization_widget.set_selected_lp_record(None, None)
+        self._set_lp_shortcut_active(False)
 
     def _handle_ai_line_loaded(self, name: str) -> None:
         if name == self.visualization_widget.active_lp_line():
@@ -1187,13 +1204,32 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         rows = selection.selectedRows()
         if not rows:
             self.visualization_widget.set_selected_lp_record(None, None)
+            self._set_lp_shortcut_active(False)
             return
         row = rows[0].row()
         lp_name = self.visualization_widget.active_lp_line()
         if not lp_name or lp_name == "center-line":
             self.visualization_widget.set_selected_lp_record(None, None)
+            self._set_lp_shortcut_active(False)
             return
         self.visualization_widget.set_selected_lp_record(lp_name, row)
+
+    def _handle_lp_shortcut_activation(self) -> None:
+        if self._current_lp_selection() is None:
+            self._set_lp_shortcut_active(False)
+            return
+        self._set_lp_shortcut_active(True)
+
+    def _set_lp_shortcut_active(self, active: bool) -> None:
+        if self._lp_shortcut_active == active:
+            return
+        self._lp_shortcut_active = active
+        if active:
+            self.visualization_widget.setStyleSheet(
+                "QFrame { border: 2px solid #e53935; }"
+            )
+        else:
+            self.visualization_widget.setStyleSheet("")
 
     def _handle_lp_record_clicked(self, lp_name: str, row: int) -> None:
         if lp_name != self.visualization_widget.active_lp_line():
