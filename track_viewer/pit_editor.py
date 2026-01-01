@@ -45,6 +45,10 @@ class PitParametersEditor(QtWidgets.QFrame):
         table.setAlternatingRowColors(True)
         table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSizeAdjustPolicy(
+            QtWidgets.QAbstractScrollArea.AdjustToContents
+        )
+        table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
         for index, (field, label, tooltip, _is_integer) in enumerate(
             PIT_PARAMETER_DEFINITIONS
@@ -81,6 +85,12 @@ class PitParametersEditor(QtWidgets.QFrame):
                 checkbox_layout.addWidget(checkbox)
                 table.setCellWidget(index, 3, checkbox_container)
 
+        table.resizeRowsToContents()
+        header_height = table.horizontalHeader().height()
+        row_height = table.verticalHeader().length()
+        table.setFixedHeight(
+            header_height + row_height + table.frameWidth() * 2
+        )
         layout.addWidget(table)
         self.setLayout(layout)
 

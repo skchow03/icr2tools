@@ -50,8 +50,8 @@ PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
     ),
     (
         "unknown_dlong",
-        "Unknown (race to pit transition) DLONG",
-        "DLONG - Unknown - possibly race to pit transition point",
+        "Unknown (usually 40-80 ft behind player stall)",
+        "DLONG - Unknown - usually 40-80 ft behind player stall",
         True,
     ),
     (
