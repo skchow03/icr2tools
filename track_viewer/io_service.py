@@ -6,7 +6,7 @@ import datetime
 import struct
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Sequence
 
@@ -26,6 +26,7 @@ from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip, build_ground_surface_mesh, compute_mesh_bounds
 from icr2_core.trk.trk_utils import get_cline_pos
 from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.pit_models import PIT_PARAMETER_DEFINITIONS, PitParameters
 
 LP_FILE_NAMES = [
     "RACE",
@@ -50,6 +51,25 @@ class TrackLoadResult:
     surface_bounds: tuple[float, float, float, float] | None
     available_lp_files: list[str]
     track_length: float
+
+
+@dataclass
+class TrackTxtLine:
+    """Represents a line in the track TXT file."""
+
+    raw: str
+    keyword: str | None = None
+    values: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TrackTxtResult:
+    """Parsed track TXT data."""
+
+    lines: list[TrackTxtLine]
+    pit: PitParameters | None
+    txt_path: Path
+    exists: bool
 
 
 @dataclass
@@ -131,6 +151,29 @@ class TrackIOService:
             tv_mode_count=tv_mode_count,
         )
 
+    def load_track_txt(self, track_folder: Path) -> TrackTxtResult:
+        track_name = track_folder.name
+        txt_path = track_folder / f"{track_name}.txt"
+        if not txt_path.exists():
+            return TrackTxtResult([], None, txt_path, False)
+        lines: list[TrackTxtLine] = []
+        pit: PitParameters | None = None
+        for raw_line in txt_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith(("#", ";")):
+                lines.append(TrackTxtLine(raw=raw_line))
+                continue
+            tokens = stripped.split()
+            keyword = tokens[0]
+            values = tokens[1:]
+            line = TrackTxtLine(raw=raw_line, keyword=keyword, values=values)
+            lines.append(line)
+            if keyword.upper() == "PIT" and pit is None:
+                parsed = self._parse_pit_values(values)
+                if parsed is not None:
+                    pit = parsed
+        return TrackTxtResult(lines, pit, txt_path, True)
+
     def save_cameras(
         self,
         track_folder: Path,
@@ -158,6 +201,32 @@ class TrackIOService:
                     scr_path.unlink()
 
         return f"Saved cameras for {track_name}"
+
+    def save_track_txt(
+        self,
+        track_folder: Path,
+        pit_params: PitParameters,
+        lines: Sequence[TrackTxtLine],
+    ) -> str:
+        track_name = track_folder.name
+        txt_path = track_folder / f"{track_name}.txt"
+        self._backup_file(txt_path)
+        pit_line = self._format_pit_line(pit_params)
+        output_lines: list[str] = []
+        pit_written = False
+        for line in lines:
+            if line.keyword and line.keyword.upper() == "PIT":
+                output_lines.append(pit_line)
+                pit_written = True
+            else:
+                output_lines.append(line.raw)
+        if not pit_written:
+            if output_lines:
+                output_lines.append(pit_line)
+            else:
+                output_lines = [pit_line]
+        txt_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
+        return f"Saved PIT parameters to {txt_path.name}"
 
     def save_lp_line(self, track_folder: Path, lp_name: str, records: Sequence[object]) -> str:
         lp_path = track_folder / f"{lp_name}.LP"
@@ -263,6 +332,32 @@ class TrackIOService:
         backup_path = path.with_suffix(path.suffix + f".bak.{timestamp}")
         shutil.copy2(path, backup_path)
         return backup_path
+
+    def _parse_pit_values(self, values: Sequence[str]) -> PitParameters | None:
+        if len(values) < len(PIT_PARAMETER_DEFINITIONS):
+            return None
+        numeric_values: list[float] = []
+        for value, (_, _, _, is_integer) in zip(values, PIT_PARAMETER_DEFINITIONS):
+            try:
+                parsed = float(value)
+            except ValueError:
+                return None
+            if is_integer:
+                parsed = int(round(parsed))
+            numeric_values.append(parsed)
+        return PitParameters.from_values(numeric_values)
+
+    @staticmethod
+    def _format_track_txt_value(value: float) -> str:
+        if float(value).is_integer():
+            return str(int(round(value)))
+        return f"{value:.6f}".rstrip("0").rstrip(".")
+
+    def _format_pit_line(self, pit_params: PitParameters) -> str:
+        formatted_values = [
+            self._format_track_txt_value(value) for value in pit_params.values()
+        ]
+        return "PIT " + " ".join(formatted_values)
 
     def _repack_dat(self, dat_path: Path, cam_path: Path, scr_path: Path) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
