@@ -5,42 +5,42 @@ from dataclasses import dataclass
 from typing import Sequence
 
 PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
-    ("pitwall_dlat", "Pit wall DLAT", "DLAT position of the pitwall", False),
+    ("pitwall_dlat", "Pit wall DLAT", "DLAT position of the pitwall", True),
     (
         "pit_access_start_dlong",
         "Pit access start DLONG",
         "DLONG of the beginning of the pit access road",
-        False,
+        True,
     ),
     (
         "pit_access_end_dlong",
         "Pit access end DLONG",
         "DLONG of the end of pit access road",
-        False,
+        True,
     ),
     (
         "player_pit_stall_dlong",
         "Player pit stall DLONG",
         "DLONG of the back end of the first pit stall (player pit)",
-        False,
+        True,
     ),
     (
         "last_pit_stall_dlong",
         "Last pit stall DLONG",
         "DLONG of the back end of the final pit stall (15-30 feet before end of pit lane)",
-        False,
+        True,
     ),
     (
         "pit_stall_center_dlat",
         "Pit stall center DLAT",
         "DLAT of the middle of car when parked in pit stall",
-        False,
+        True,
     ),
     (
         "pit_merge_dlong",
         "Pit merge DLONG",
         "DLONG where AI cars merge from PIT.LP to RACE.LP after pitting",
-        False,
+        True,
     ),
     (
         "pit_stall_count",
@@ -52,19 +52,25 @@ PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
         "unknown_dlong",
         "Unknown DLONG",
         "DLONG - Unknown - usually same value as pit wall start or slightly lower",
-        False,
+        True,
     ),
     (
         "pit_wall_start_dlong",
         "Pit wall start DLONG",
         "DLONG of the beginning of pit wall",
-        False,
+        True,
     ),
     (
         "pit_wall_end_dlong",
         "Pit wall end DLONG",
         "DLONG of the end of pit wall",
-        False,
+        True,
+    ),
+    (
+        "unknown2_dlong",
+        "Unknown DLONG (index 11)",
+        "DLONG - Unknown - extra PIT parameter at index 11",
+        True,
     ),
 ]
 
@@ -84,11 +90,15 @@ class PitParameters:
     unknown_dlong: float
     pit_wall_start_dlong: float
     pit_wall_end_dlong: float
+    unknown2_dlong: float
 
     @classmethod
     def from_values(cls, values: Sequence[float]) -> "PitParameters":
-        if len(values) < len(PIT_PARAMETER_DEFINITIONS):
-            raise ValueError("Expected 11 PIT parameter values.")
+        expected = len(PIT_PARAMETER_DEFINITIONS)
+        if len(values) < expected - 1:
+            raise ValueError(f"Expected {expected} PIT parameter values.")
+        if len(values) < expected:
+            values = list(values) + [0.0]
         coerced: list[float] = []
         for value, definition in zip(values, PIT_PARAMETER_DEFINITIONS):
             is_integer = definition[3]
@@ -108,6 +118,7 @@ class PitParameters:
             unknown_dlong=coerced[8],
             pit_wall_start_dlong=coerced[9],
             pit_wall_end_dlong=coerced[10],
+            unknown2_dlong=coerced[11],
         )
 
     @classmethod
@@ -127,4 +138,5 @@ class PitParameters:
             self.unknown_dlong,
             self.pit_wall_start_dlong,
             self.pit_wall_end_dlong,
+            self.unknown2_dlong,
         ]

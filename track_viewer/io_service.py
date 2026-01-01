@@ -334,7 +334,8 @@ class TrackIOService:
         return backup_path
 
     def _parse_pit_values(self, values: Sequence[str]) -> PitParameters | None:
-        if len(values) < len(PIT_PARAMETER_DEFINITIONS):
+        expected = len(PIT_PARAMETER_DEFINITIONS)
+        if len(values) < expected - 1:
             return None
         numeric_values: list[float] = []
         for value, (_, _, _, is_integer) in zip(values, PIT_PARAMETER_DEFINITIONS):
@@ -345,6 +346,8 @@ class TrackIOService:
             if is_integer:
                 parsed = int(round(parsed))
             numeric_values.append(parsed)
+        if len(numeric_values) < expected:
+            numeric_values.append(0.0)
         return PitParameters.from_values(numeric_values)
 
     @staticmethod
