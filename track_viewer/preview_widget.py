@@ -16,6 +16,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import (
     dlong2sect,
     get_cline_pos,
+    getbounddlat,
     getxyz,
     sect2xy,
 )
@@ -30,6 +31,11 @@ from track_viewer.geometry import (
     sample_centerline,
 )
 from track_viewer.io_service import TrackIOService
+from track_viewer.pit_models import (
+    PIT_DLONG_LINE_COLORS,
+    PIT_DLONG_LINE_INDICES,
+    PitParameters,
+)
 
 
 LP_FILE_NAMES = [
@@ -260,6 +266,8 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._selected_lp_index: int | None = None
         self._lp_shortcut_active = False
         self._lp_dlat_step = 0
+        self._pit_params: PitParameters | None = None
+        self._visible_pit_indices: set[int] = set(PIT_DLONG_LINE_INDICES)
 
         self._view_center: Tuple[float, float] | None = None
         self._fit_scale: float | None = None
@@ -348,6 +356,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._active_lp_line = "center-line"
         self._selected_lp_line = None
         self._selected_lp_index = None
+        self._pit_params = None
         self._camera_service.reset()
         self._status_message = message
         self.cursorPositionChanged.emit(None)
@@ -637,6 +646,18 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if self._show_cameras != show:
             self._show_cameras = show
             self.update()
+
+    def set_pit_parameters(self, params: PitParameters | None) -> None:
+        if params == self._pit_params:
+            return
+        self._pit_params = params
+        self.update()
+
+    def set_visible_pit_indices(self, indices: set[int]) -> None:
+        if indices == self._visible_pit_indices:
+            return
+        self._visible_pit_indices = set(indices)
+        self.update()
 
     def cameras(self) -> List[CameraPosition]:
         return list(self._camera_service.cameras)
@@ -1121,6 +1142,12 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 transform,
                 self.height(),
                 self._flag_radius,
+            )
+            rendering.draw_pit_dlong_lines(
+                painter,
+                self._pit_dlong_segments(),
+                transform,
+                self.height(),
             )
             if self._show_zoom_points:
                 rendering.draw_zoom_points(
@@ -1799,6 +1826,50 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         wrapped = dlong % track_length
         cx, cy, _ = getxyz(self.trk, wrapped, 0, self._cline)
         return cx, cy
+
+    def _pit_dlong_segments(
+        self,
+    ) -> list[tuple[tuple[float, float], tuple[float, float], str]]:
+        if (
+            self.trk is None
+            or not self._cline
+            or self._pit_params is None
+            or not self._visible_pit_indices
+        ):
+            return []
+        track_length = float(self.trk.trklength or 0.0)
+        if track_length <= 0:
+            return []
+        values = self._pit_params.values()
+        segments: list[tuple[tuple[float, float], tuple[float, float], str]] = []
+        for index in sorted(self._visible_pit_indices):
+            if index < 0 or index >= len(values):
+                continue
+            dlong = float(values[index])
+            dlong = dlong % track_length
+            sect_info = dlong2sect(self.trk, dlong)
+            if not sect_info:
+                continue
+            sect_index, subsect = sect_info
+            if sect_index is None or subsect is None:
+                continue
+            section = self.trk.sects[sect_index]
+            dlats: list[float] = []
+            for bound_index in range(section.num_bounds):
+                dlats.append(
+                    getbounddlat(self.trk, sect_index, subsect, bound_index)
+                )
+            if not dlats:
+                continue
+            min_dlat = min(dlats)
+            max_dlat = max(dlats)
+            start_x, start_y, _ = getxyz(
+                self.trk, dlong, min_dlat, self._cline
+            )
+            end_x, end_y, _ = getxyz(self.trk, dlong, max_dlat, self._cline)
+            color = PIT_DLONG_LINE_COLORS.get(index, "#ffffff")
+            segments.append(((start_x, start_y), (end_x, end_y), color))
+        return segments
 
     def _camera_view_ranges(self, camera_index: int | None) -> list[tuple[float, float]]:
         if camera_index is None:
