@@ -258,6 +258,54 @@ class CoordinateSidebar(QtWidgets.QFrame):
     def _format_value(value: float) -> str:
         return f"{value:.2f}"
 
+    @staticmethod
+    def _format_track_length(value: int | None) -> str | None:
+        if value is None:
+            return None
+        miles = value / 1000.0
+        return f"{value} ({miles:.3f} mi)"
+
+    @staticmethod
+    def _format_pit_window(start: int | None, end: int | None) -> str | None:
+        if start is None or end is None:
+            return None
+        return f"{start} to {end}"
+
+    def _set_track_txt_field(self, field: QtWidgets.QLineEdit, value: str | None) -> None:
+        if value:
+            field.setText(value)
+        else:
+            field.clear()
+
+    def _clear_track_txt_fields(self) -> None:
+        for field in (
+            self._track_name_field,
+            self._track_short_name_field,
+            self._track_pit_window_field,
+            self._track_length_field,
+            self._track_laps_field,
+            self._track_full_name_field,
+        ):
+            field.clear()
+
+    def _update_track_txt_fields(self, result: TrackTxtResult) -> None:
+        if not result.exists:
+            self._track_txt_status_label.setText(
+                f"No {result.txt_path.name} found."
+            )
+        else:
+            self._track_txt_status_label.setText(f"Loaded {result.txt_path.name}.")
+        metadata = result.metadata
+        self._set_track_txt_field(self._track_name_field, metadata.tname)
+        self._set_track_txt_field(self._track_short_name_field, metadata.sname)
+        pit_window = self._format_pit_window(metadata.spdwy_start, metadata.spdwy_end)
+        self._set_track_txt_field(self._track_pit_window_field, pit_window)
+        track_length = self._format_track_length(metadata.lengt)
+        self._set_track_txt_field(self._track_length_field, track_length)
+        laps = str(metadata.laps) if metadata.laps is not None else None
+        self._set_track_txt_field(self._track_laps_field, laps)
+        self._set_track_txt_field(self._track_full_name_field, metadata.fname)
+
 
 class LpRecordsModel(QtCore.QAbstractTableModel):
     """Table model that lazily renders LP records for the view."""
@@ -444,7 +492,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.app_state = app_state
         self.app_state.window = self
         self._io_service = TrackIOService()
-        self._pit_txt_result: TrackTxtResult | None = None
+        self._track_txt_result: TrackTxtResult | None = None
         self._current_track_folder: Path | None = None
 
         self.setWindowTitle("ICR2 Track Viewer")
@@ -536,6 +584,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "Select a track to edit pit parameters."
         )
         self._pit_status_label.setWordWrap(True)
+        self._track_txt_status_label = QtWidgets.QLabel(
+            "Select a track to view track.txt parameters."
+        )
+        self._track_txt_status_label.setWordWrap(True)
+        self._track_name_field = self._create_readonly_field("–")
+        self._track_short_name_field = self._create_readonly_field("–")
+        self._track_pit_window_field = self._create_readonly_field("–")
+        self._track_length_field = self._create_readonly_field("–")
+        self._track_laps_field = self._create_readonly_field("–")
+        self._track_full_name_field = self._create_readonly_field("–")
         self._pit_editor.parametersChanged.connect(self._handle_pit_params_changed)
         self._pit_editor.pitVisibilityChanged.connect(
             self._handle_pit_visibility_changed
@@ -817,10 +875,32 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         pit_layout.addWidget(self._pit_save_button)
         pit_sidebar.setLayout(pit_layout)
 
+        track_txt_sidebar = QtWidgets.QFrame()
+        track_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        track_txt_layout = QtWidgets.QVBoxLayout()
+        track_txt_layout.setSpacing(8)
+        track_txt_title = QtWidgets.QLabel("Track TXT parameters")
+        track_txt_title.setStyleSheet("font-weight: bold")
+        track_txt_layout.addWidget(track_txt_title)
+        track_txt_layout.addWidget(self._track_txt_status_label)
+        track_txt_form = QtWidgets.QFormLayout()
+        track_txt_form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        track_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
+        track_txt_form.addRow("Track name (TNAME)", self._track_name_field)
+        track_txt_form.addRow("Short name (SNAME)", self._track_short_name_field)
+        track_txt_form.addRow("Pit window (SPDWY)", self._track_pit_window_field)
+        track_txt_form.addRow("Length (LENGT)", self._track_length_field)
+        track_txt_form.addRow("Laps (LAPS)", self._track_laps_field)
+        track_txt_form.addRow("Full name (FNAME)", self._track_full_name_field)
+        track_txt_layout.addLayout(track_txt_form)
+        track_txt_layout.addStretch(1)
+        track_txt_sidebar.setLayout(track_txt_layout)
+
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(lp_sidebar, "LP editing")
         tabs.addTab(camera_sidebar, "Camera editing")
         tabs.addTab(pit_sidebar, "PIT parameters")
+        tabs.addTab(track_txt_sidebar, "Track parameters")
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
@@ -902,20 +982,25 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _on_track_selected(self, index: int) -> None:
         folder = self._track_list.itemData(index) if index >= 0 else None
         self.controller.set_selected_track(folder)
-        self._load_pit_params(folder)
+        self._load_track_txt_data(folder)
 
-    def _load_pit_params(self, folder: Path | None) -> None:
+    def _load_track_txt_data(self, folder: Path | None) -> None:
         self._current_track_folder = folder if isinstance(folder, Path) else None
         if self._current_track_folder is None:
-            self._pit_txt_result = None
+            self._track_txt_result = None
             self._pit_editor.set_parameters(None)
             self._pit_status_label.setText("Select a track to edit pit parameters.")
+            self._track_txt_status_label.setText(
+                "Select a track to view track.txt parameters."
+            )
+            self._clear_track_txt_fields()
             self._pit_save_button.setEnabled(False)
             self.visualization_widget.set_pit_parameters(None)
             return
 
         result = self._io_service.load_track_txt(self._current_track_folder)
-        self._pit_txt_result = result
+        self._track_txt_result = result
+        self._update_track_txt_fields(result)
         if result.pit is None:
             self._pit_editor.set_parameters(PitParameters.empty())
             if result.exists:
@@ -950,12 +1035,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self, "Save PIT", "No PIT parameters are available to save."
             )
             return
-        lines = self._pit_txt_result.lines if self._pit_txt_result else []
+        lines = self._track_txt_result.lines if self._track_txt_result else []
         message = self._io_service.save_track_txt(
             self._current_track_folder, pit_params, lines
         )
         self.statusBar().showMessage(message, 5000)
-        self._load_pit_params(self._current_track_folder)
+        self._load_track_txt_data(self._current_track_folder)
 
     def _handle_pit_params_changed(self) -> None:
         self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())

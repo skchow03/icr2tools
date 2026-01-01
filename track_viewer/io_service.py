@@ -68,8 +68,22 @@ class TrackTxtResult:
 
     lines: list[TrackTxtLine]
     pit: PitParameters | None
+    metadata: "TrackTxtMetadata"
     txt_path: Path
     exists: bool
+
+
+@dataclass
+class TrackTxtMetadata:
+    """Non-pit track TXT parameters."""
+
+    tname: str | None = None
+    sname: str | None = None
+    spdwy_start: int | None = None
+    spdwy_end: int | None = None
+    lengt: int | None = None
+    laps: int | None = None
+    fname: str | None = None
 
 
 @dataclass
@@ -155,9 +169,10 @@ class TrackIOService:
         track_name = track_folder.name
         txt_path = track_folder / f"{track_name}.txt"
         if not txt_path.exists():
-            return TrackTxtResult([], None, txt_path, False)
+            return TrackTxtResult([], None, TrackTxtMetadata(), txt_path, False)
         lines: list[TrackTxtLine] = []
         pit: PitParameters | None = None
+        metadata = TrackTxtMetadata()
         for raw_line in txt_path.read_text(encoding="utf-8", errors="ignore").splitlines():
             stripped = raw_line.strip()
             if not stripped or stripped.startswith(("#", ";")):
@@ -168,11 +183,30 @@ class TrackIOService:
             values = tokens[1:]
             line = TrackTxtLine(raw=raw_line, keyword=keyword, values=values)
             lines.append(line)
-            if keyword.upper() == "PIT" and pit is None:
+            keyword_upper = keyword.upper()
+            if keyword_upper == "PIT" and pit is None:
                 parsed = self._parse_pit_values(values)
                 if parsed is not None:
                     pit = parsed
-        return TrackTxtResult(lines, pit, txt_path, True)
+            elif keyword_upper == "TNAME" and metadata.tname is None and values:
+                metadata.tname = " ".join(values)
+            elif keyword_upper == "SNAME" and metadata.sname is None and values:
+                metadata.sname = " ".join(values)
+            elif keyword_upper == "FNAME" and metadata.fname is None and values:
+                metadata.fname = " ".join(values)
+            elif keyword_upper == "SPDWY" and metadata.spdwy_start is None:
+                parsed = self._parse_spdwy_values(values)
+                if parsed is not None:
+                    metadata.spdwy_start, metadata.spdwy_end = parsed
+            elif keyword_upper == "LENGT" and metadata.lengt is None and values:
+                parsed = self._parse_track_integer(values[0])
+                if parsed is not None:
+                    metadata.lengt = parsed
+            elif keyword_upper == "LAPS" and metadata.laps is None and values:
+                parsed = self._parse_track_integer(values[0])
+                if parsed is not None:
+                    metadata.laps = parsed
+        return TrackTxtResult(lines, pit, metadata, txt_path, True)
 
     def save_cameras(
         self,
@@ -349,6 +383,22 @@ class TrackIOService:
         if len(numeric_values) < expected:
             numeric_values.append(0.0)
         return PitParameters.from_values(numeric_values)
+
+    def _parse_spdwy_values(self, values: Sequence[str]) -> tuple[int, int] | None:
+        if len(values) < 3:
+            return None
+        start_value = self._parse_track_integer(values[1])
+        end_value = self._parse_track_integer(values[2])
+        if start_value is None or end_value is None:
+            return None
+        return start_value, end_value
+
+    @staticmethod
+    def _parse_track_integer(value: str) -> int | None:
+        try:
+            return int(round(float(value)))
+        except ValueError:
+            return None
 
     @staticmethod
     def _format_track_txt_value(value: float) -> str:
