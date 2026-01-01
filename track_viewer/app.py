@@ -258,55 +258,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
     def _format_value(value: float) -> str:
         return f"{value:.2f}"
 
-    @staticmethod
-    def _format_track_length(value: int | None) -> str | None:
-        if value is None:
-            return None
-        miles = value / 1000.0
-        return f"{value} ({miles:.3f} mi)"
-
-    @staticmethod
-    def _format_pit_window(start: int | None, end: int | None) -> str | None:
-        if start is None or end is None:
-            return None
-        return f"{start} to {end}"
-
-    def _set_track_txt_field(self, field: QtWidgets.QLineEdit, value: str | None) -> None:
-        if value:
-            field.setText(value)
-        else:
-            field.clear()
-
-    def _clear_track_txt_fields(self) -> None:
-        for field in (
-            self._track_name_field,
-            self._track_short_name_field,
-            self._track_pit_window_field,
-            self._track_length_field,
-            self._track_laps_field,
-            self._track_full_name_field,
-        ):
-            field.clear()
-
-    def _update_track_txt_fields(self, result: TrackTxtResult) -> None:
-        if not result.exists:
-            self._track_txt_status_label.setText(
-                f"No {result.txt_path.name} found."
-            )
-        else:
-            self._track_txt_status_label.setText(f"Loaded {result.txt_path.name}.")
-        metadata = result.metadata
-        self._set_track_txt_field(self._track_name_field, metadata.tname)
-        self._set_track_txt_field(self._track_short_name_field, metadata.sname)
-        pit_window = self._format_pit_window(metadata.spdwy_start, metadata.spdwy_end)
-        self._set_track_txt_field(self._track_pit_window_field, pit_window)
-        track_length = self._format_track_length(metadata.lengt)
-        self._set_track_txt_field(self._track_length_field, track_length)
-        laps = str(metadata.laps) if metadata.laps is not None else None
-        self._set_track_txt_field(self._track_laps_field, laps)
-        self._set_track_txt_field(self._track_full_name_field, metadata.fname)
-
-
 class LpRecordsModel(QtCore.QAbstractTableModel):
     """Table model that lazily renders LP records for the view."""
 
@@ -928,6 +879,56 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     @staticmethod
     def _format_value(value: float) -> str:
         return f"{value:.2f}"
+
+    @staticmethod
+    def _format_track_length(value: int | None) -> str | None:
+        if value is None:
+            return None
+        miles = value / 1000.0
+        return f"{value} ({miles:.3f} mi)"
+
+    @staticmethod
+    def _format_pit_window(start: int | None, end: int | None) -> str | None:
+        if start is None or end is None:
+            return None
+        return f"{start} to {end}"
+
+    def _set_track_txt_field(
+        self, field: QtWidgets.QLineEdit, value: str | None
+    ) -> None:
+        if value:
+            field.setText(value)
+        else:
+            field.clear()
+
+    def _clear_track_txt_fields(self) -> None:
+        for field in (
+            self._track_name_field,
+            self._track_short_name_field,
+            self._track_pit_window_field,
+            self._track_length_field,
+            self._track_laps_field,
+            self._track_full_name_field,
+        ):
+            field.clear()
+
+    def _update_track_txt_fields(self, result: TrackTxtResult) -> None:
+        if not result.exists:
+            self._track_txt_status_label.setText(
+                f"No {result.txt_path.name} found."
+            )
+        else:
+            self._track_txt_status_label.setText(f"Loaded {result.txt_path.name}.")
+        metadata = result.metadata
+        self._set_track_txt_field(self._track_name_field, metadata.tname)
+        self._set_track_txt_field(self._track_short_name_field, metadata.sname)
+        pit_window = self._format_pit_window(metadata.spdwy_start, metadata.spdwy_end)
+        self._set_track_txt_field(self._track_pit_window_field, pit_window)
+        track_length = self._format_track_length(metadata.lengt)
+        self._set_track_txt_field(self._track_length_field, track_length)
+        laps = str(metadata.laps) if metadata.laps is not None else None
+        self._set_track_txt_field(self._track_laps_field, laps)
+        self._set_track_txt_field(self._track_full_name_field, metadata.fname)
 
     def _update_selected_flag_position(
         self, coords: Optional[tuple[float, float]]
