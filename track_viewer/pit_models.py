@@ -37,9 +37,9 @@ PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
         True,
     ),
     (
-        "pit_merge_dlong",
-        "Pit merge DLONG",
-        "DLONG where AI cars merge from PIT.LP to RACE.LP after pitting",
+        "pit_to_race_transition_dlong",
+        "Pit to race transition DLONG",
+        "DLONG of the PIT to RACE transition point",
         True,
     ),
     (
@@ -50,26 +50,20 @@ PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
     ),
     (
         "unknown_dlong",
-        "Unknown DLONG",
-        "DLONG - Unknown - usually same value as pit wall start or slightly lower",
+        "Unknown (race to pit transition) DLONG",
+        "DLONG - Unknown - possibly race to pit transition point",
         True,
     ),
     (
-        "pit_wall_start_dlong",
-        "Pit wall start DLONG",
-        "DLONG of the beginning of pit wall",
+        "pit_speed_limit_start_dlong",
+        "Pit speed limit start DLONG",
+        "DLONG of the pit speed limit start",
         True,
     ),
     (
-        "pit_wall_end_dlong",
-        "Pit wall end DLONG",
-        "DLONG of the end of pit wall",
-        True,
-    ),
-    (
-        "unknown2_dlong",
-        "Unknown DLONG (index 11)",
-        "DLONG - Unknown - extra PIT parameter at index 11",
+        "pit_speed_limit_end_dlong",
+        "Pit speed limit end DLONG",
+        "DLONG of the pit speed limit end",
         True,
     ),
 ]
@@ -85,20 +79,17 @@ class PitParameters:
     player_pit_stall_dlong: float
     last_pit_stall_dlong: float
     pit_stall_center_dlat: float
-    pit_merge_dlong: float
+    pit_to_race_transition_dlong: float
     pit_stall_count: int
     unknown_dlong: float
-    pit_wall_start_dlong: float
-    pit_wall_end_dlong: float
-    unknown2_dlong: float
+    pit_speed_limit_start_dlong: float
+    pit_speed_limit_end_dlong: float
 
     @classmethod
     def from_values(cls, values: Sequence[float]) -> "PitParameters":
         expected = len(PIT_PARAMETER_DEFINITIONS)
-        if len(values) < expected - 1:
-            raise ValueError(f"Expected {expected} PIT parameter values.")
         if len(values) < expected:
-            values = list(values) + [0.0]
+            raise ValueError(f"Expected {expected} PIT parameter values.")
         coerced: list[float] = []
         for value, definition in zip(values, PIT_PARAMETER_DEFINITIONS):
             is_integer = definition[3]
@@ -113,12 +104,11 @@ class PitParameters:
             player_pit_stall_dlong=coerced[3],
             last_pit_stall_dlong=coerced[4],
             pit_stall_center_dlat=coerced[5],
-            pit_merge_dlong=coerced[6],
+            pit_to_race_transition_dlong=coerced[6],
             pit_stall_count=int(coerced[7]),
             unknown_dlong=coerced[8],
-            pit_wall_start_dlong=coerced[9],
-            pit_wall_end_dlong=coerced[10],
-            unknown2_dlong=coerced[11],
+            pit_speed_limit_start_dlong=coerced[9],
+            pit_speed_limit_end_dlong=coerced[10],
         )
 
     @classmethod
@@ -133,10 +123,9 @@ class PitParameters:
             self.player_pit_stall_dlong,
             self.last_pit_stall_dlong,
             self.pit_stall_center_dlat,
-            self.pit_merge_dlong,
+            self.pit_to_race_transition_dlong,
             float(self.pit_stall_count),
             self.unknown_dlong,
-            self.pit_wall_start_dlong,
-            self.pit_wall_end_dlong,
-            self.unknown2_dlong,
+            self.pit_speed_limit_start_dlong,
+            self.pit_speed_limit_end_dlong,
         ]
