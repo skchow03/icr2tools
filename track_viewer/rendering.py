@@ -146,6 +146,30 @@ def draw_track_boundaries(
     painter.restore()
 
 
+def draw_pit_dlong_lines(
+    painter: QtGui.QPainter,
+    segments: Sequence[tuple[Point2D, Point2D, str]],
+    transform: Transform,
+    viewport_height: int,
+    *,
+    width: int = 2,
+) -> None:
+    if not segments:
+        return
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    for start, end, color in segments:
+        pen = QtGui.QPen(QtGui.QColor(color), width)
+        painter.setPen(pen)
+        painter.drawLine(
+            QtCore.QLineF(
+                map_point(start[0], start[1], transform, viewport_height),
+                map_point(end[0], end[1], transform, viewport_height),
+            )
+        )
+    painter.restore()
+
+
 def draw_centerline(
     painter: QtGui.QPainter,
     sampled_centerline: Sequence[Point2D],

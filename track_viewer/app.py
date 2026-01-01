@@ -536,6 +536,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "Select a track to edit pit parameters."
         )
         self._pit_status_label.setWordWrap(True)
+        self._pit_editor.parametersChanged.connect(self._handle_pit_params_changed)
+        self._pit_editor.pitVisibilityChanged.connect(
+            self._handle_pit_visibility_changed
+        )
         self._pit_save_button = QtWidgets.QPushButton("Save PIT")
         self._pit_save_button.setEnabled(False)
         self._pit_save_button.clicked.connect(self._handle_save_pit_params)
@@ -907,6 +911,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_editor.set_parameters(None)
             self._pit_status_label.setText("Select a track to edit pit parameters.")
             self._pit_save_button.setEnabled(False)
+            self.visualization_widget.set_pit_parameters(None)
             return
 
         result = self._io_service.load_track_txt(self._current_track_folder)
@@ -928,6 +933,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_editor.set_parameters(result.pit)
             self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
         self._pit_save_button.setEnabled(True)
+        self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())
+        self.visualization_widget.set_visible_pit_indices(
+            self._pit_editor.pit_visible_indices()
+        )
 
     def _handle_save_pit_params(self) -> None:
         if self._current_track_folder is None:
@@ -947,6 +956,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self.statusBar().showMessage(message, 5000)
         self._load_pit_params(self._current_track_folder)
+
+    def _handle_pit_params_changed(self) -> None:
+        self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())
+
+    def _handle_pit_visibility_changed(self, indices: set[int]) -> None:
+        self.visualization_widget.set_visible_pit_indices(indices)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802
         if (

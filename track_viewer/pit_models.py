@@ -68,6 +68,19 @@ PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
     ),
 ]
 
+PIT_DLONG_LINE_INDICES: tuple[int, ...] = (1, 2, 3, 4, 6, 8, 9, 10)
+
+PIT_DLONG_LINE_COLORS: dict[int, str] = {
+    1: "#f44336",
+    2: "#ff9800",
+    3: "#ffeb3b",
+    4: "#4caf50",
+    6: "#009688",
+    8: "#2196f3",
+    9: "#3f51b5",
+    10: "#e91e63",
+}
+
 
 @dataclass
 class PitParameters:
