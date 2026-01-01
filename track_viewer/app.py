@@ -11,6 +11,9 @@ from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
+from track_viewer.io_service import TrackIOService, TrackTxtResult
+from track_viewer.pit_editor import PitParametersEditor
+from track_viewer.pit_models import PitParameters
 from track_viewer.preview_widget import LpPoint, TrackPreviewWidget
 from track_viewer.version import __version__
 from track_viewer.window_controller import WindowController
@@ -440,6 +443,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.app_state = app_state
         self.app_state.window = self
+        self._io_service = TrackIOService()
+        self._pit_txt_result: TrackTxtResult | None = None
+        self._current_track_folder: Path | None = None
 
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
@@ -525,6 +531,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.set_lp_dlat_step(self._lp_dlat_step.value())
         self._lp_shortcut_active = False
         self._sidebar = CoordinateSidebar()
+        self._pit_editor = PitParametersEditor()
+        self._pit_status_label = QtWidgets.QLabel(
+            "Select a track to edit pit parameters."
+        )
+        self._pit_status_label.setWordWrap(True)
+        self._pit_save_button = QtWidgets.QPushButton("Save PIT")
+        self._pit_save_button.setEnabled(False)
+        self._pit_save_button.clicked.connect(self._handle_save_pit_params)
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
@@ -786,9 +800,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addStretch(1)
         camera_sidebar.setLayout(right_sidebar_layout)
 
+        pit_sidebar = QtWidgets.QFrame()
+        pit_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        pit_layout = QtWidgets.QVBoxLayout()
+        pit_layout.setSpacing(8)
+        pit_title = QtWidgets.QLabel("PIT parameters")
+        pit_title.setStyleSheet("font-weight: bold")
+        pit_layout.addWidget(pit_title)
+        pit_layout.addWidget(self._pit_status_label)
+        pit_layout.addWidget(self._pit_editor)
+        pit_layout.addStretch(1)
+        pit_layout.addWidget(self._pit_save_button)
+        pit_sidebar.setLayout(pit_layout)
+
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(lp_sidebar, "LP editing")
         tabs.addTab(camera_sidebar, "Camera editing")
+        tabs.addTab(pit_sidebar, "PIT parameters")
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
@@ -870,6 +898,55 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _on_track_selected(self, index: int) -> None:
         folder = self._track_list.itemData(index) if index >= 0 else None
         self.controller.set_selected_track(folder)
+        self._load_pit_params(folder)
+
+    def _load_pit_params(self, folder: Path | None) -> None:
+        self._current_track_folder = folder if isinstance(folder, Path) else None
+        if self._current_track_folder is None:
+            self._pit_txt_result = None
+            self._pit_editor.set_parameters(None)
+            self._pit_status_label.setText("Select a track to edit pit parameters.")
+            self._pit_save_button.setEnabled(False)
+            return
+
+        result = self._io_service.load_track_txt(self._current_track_folder)
+        self._pit_txt_result = result
+        if result.pit is None:
+            self._pit_editor.set_parameters(PitParameters.empty())
+            if result.exists:
+                self._pit_status_label.setText(
+                    (
+                        f"No PIT line found in {result.txt_path.name}. "
+                        "Saving will append one."
+                    )
+                )
+            else:
+                self._pit_status_label.setText(
+                    f"No {result.txt_path.name} found. Saving will create it."
+                )
+        else:
+            self._pit_editor.set_parameters(result.pit)
+            self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
+        self._pit_save_button.setEnabled(True)
+
+    def _handle_save_pit_params(self) -> None:
+        if self._current_track_folder is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Save PIT", "No track is currently loaded."
+            )
+            return
+        pit_params = self._pit_editor.parameters()
+        if pit_params is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Save PIT", "No PIT parameters are available to save."
+            )
+            return
+        lines = self._pit_txt_result.lines if self._pit_txt_result else []
+        message = self._io_service.save_track_txt(
+            self._current_track_folder, pit_params, lines
+        )
+        self.statusBar().showMessage(message, 5000)
+        self._load_pit_params(self._current_track_folder)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802
         if (
