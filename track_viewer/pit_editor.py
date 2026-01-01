@@ -1,10 +1,11 @@
 """Widgets for editing PIT parameters from the track TXT file."""
 from __future__ import annotations
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from track_viewer.pit_models import (
     PIT_DLONG_LINE_INDICES,
+    PIT_DLONG_LINE_COLORS,
     PIT_PARAMETER_DEFINITIONS,
     PitParameters,
 )
@@ -26,10 +27,24 @@ class PitParametersEditor(QtWidgets.QFrame):
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        form_layout = QtWidgets.QFormLayout()
-        form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setHorizontalSpacing(12)
-        form_layout.setVerticalSpacing(6)
+        table = QtWidgets.QTableWidget()
+        table.setColumnCount(4)
+        table.setRowCount(len(PIT_PARAMETER_DEFINITIONS))
+        table.setHorizontalHeaderLabels(["Index", "Parameter", "Value", "Visible"])
+        table.horizontalHeader().setStretchLastSection(False)
+        table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.Stretch
+        )
+        table.horizontalHeader().setSectionResizeMode(
+            2, QtWidgets.QHeaderView.ResizeToContents
+        )
+        table.horizontalHeader().setSectionResizeMode(
+            3, QtWidgets.QHeaderView.ResizeToContents
+        )
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(True)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
         for index, (field, label, tooltip, _is_integer) in enumerate(
             PIT_PARAMETER_DEFINITIONS
@@ -41,37 +56,50 @@ class PitParametersEditor(QtWidgets.QFrame):
             if hasattr(input_widget, "valueChanged"):
                 input_widget.valueChanged.connect(self.parametersChanged.emit)
             self._inputs[field] = input_widget
-            label_widget = QtWidgets.QLabel(f"{index}: {label}")
-            label_widget.setToolTip(tooltip)
-            form_layout.addRow(label_widget, input_widget)
+            index_item = QtWidgets.QTableWidgetItem(str(index))
+            index_item.setFlags(QtCore.Qt.ItemIsEnabled)
+            table.setItem(index, 0, index_item)
 
-        layout.addLayout(form_layout)
-        layout.addWidget(self._build_visibility_controls())
+            label_widget = QtWidgets.QLabel(label)
+            label_widget.setToolTip(tooltip)
+            color = PIT_DLONG_LINE_COLORS.get(index)
+            if color:
+                label_widget.setStyleSheet(self._legend_style(color))
+            table.setCellWidget(index, 1, label_widget)
+
+            table.setCellWidget(index, 2, input_widget)
+
+            if index in PIT_DLONG_LINE_INDICES:
+                checkbox = QtWidgets.QCheckBox()
+                checkbox.setChecked(True)
+                checkbox.toggled.connect(self._handle_pit_visibility_changed)
+                self._pit_visibility_checkboxes[index] = checkbox
+                checkbox_container = QtWidgets.QWidget()
+                checkbox_layout = QtWidgets.QHBoxLayout(checkbox_container)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
+                checkbox_layout.addWidget(checkbox)
+                table.setCellWidget(index, 3, checkbox_container)
+
+        layout.addWidget(table)
         self.setLayout(layout)
 
-    def _build_visibility_controls(self) -> QtWidgets.QWidget:
-        group = QtWidgets.QGroupBox("Pit DLONG line visibility")
-        group.setToolTip(
-            "Toggle which PIT DLONG parameters are drawn on the track diagram."
-        )
-        group_layout = QtWidgets.QVBoxLayout()
-        group_layout.setContentsMargins(6, 6, 6, 6)
-        group_layout.setSpacing(4)
-        grid = QtWidgets.QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
-        columns = 4
-        for idx, param_index in enumerate(PIT_DLONG_LINE_INDICES):
-            checkbox = QtWidgets.QCheckBox(f"Index {param_index}")
-            checkbox.setChecked(True)
-            checkbox.toggled.connect(self._handle_pit_visibility_changed)
-            self._pit_visibility_checkboxes[param_index] = checkbox
-            row = idx // columns
-            col = idx % columns
-            grid.addWidget(checkbox, row, col)
-        group_layout.addLayout(grid)
-        group.setLayout(group_layout)
-        return group
+    @staticmethod
+    def _legend_style(color: str) -> str:
+        qcolor = QtGui.QColor(color)
+        if not qcolor.isValid():
+            return ""
+        luminance = (
+            0.299 * qcolor.red()
+            + 0.587 * qcolor.green()
+            + 0.114 * qcolor.blue()
+        ) / 255.0
+        if luminance > 0.7:
+            return (
+                f"color: {color}; background-color: #424242; padding: 1px 4px;"
+                " border-radius: 2px;"
+            )
+        return f"color: {color};"
 
     def _handle_pit_visibility_changed(self, _checked: bool) -> None:
         self.pitVisibilityChanged.emit(self.pit_visible_indices())
