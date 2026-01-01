@@ -548,6 +548,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_length_field = self._create_int_field("–")
         self._track_laps_field = self._create_int_field("–")
         self._track_full_name_field = self._create_text_field("–")
+        self._qual_mode_field = self._create_int_field("–")
+        self._qual_value_field = self._create_int_field("–")
+        self._blimp_x_field = self._create_int_field("–")
+        self._blimp_y_field = self._create_int_field("–")
+        self._gflag_field = self._create_int_field("–")
+        self._ttype_field = self._create_int_field("–")
         self._pacea_cars_abreast_field = self._create_int_field("–")
         self._pacea_start_dlong_field = self._create_int_field("–")
         self._pacea_right_dlat_field = self._create_int_field("–")
@@ -864,6 +870,26 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_txt_form.addRow("Length (LENGT)", self._track_length_field)
         track_txt_form.addRow("Laps (LAPS)", self._track_laps_field)
         track_txt_form.addRow("Full name (FNAME)", self._track_full_name_field)
+        qual_layout = QtWidgets.QHBoxLayout()
+        qual_layout.setContentsMargins(0, 0, 0, 0)
+        qual_layout.addWidget(QtWidgets.QLabel("Mode"))
+        qual_layout.addWidget(self._qual_mode_field)
+        qual_layout.addWidget(QtWidgets.QLabel("Value"))
+        qual_layout.addWidget(self._qual_value_field)
+        qual_widget = QtWidgets.QWidget()
+        qual_widget.setLayout(qual_layout)
+        track_txt_form.addRow("Qualifying (QUAL)", qual_widget)
+        blimp_layout = QtWidgets.QHBoxLayout()
+        blimp_layout.setContentsMargins(0, 0, 0, 0)
+        blimp_layout.addWidget(QtWidgets.QLabel("X"))
+        blimp_layout.addWidget(self._blimp_x_field)
+        blimp_layout.addWidget(QtWidgets.QLabel("Y"))
+        blimp_layout.addWidget(self._blimp_y_field)
+        blimp_widget = QtWidgets.QWidget()
+        blimp_widget.setLayout(blimp_layout)
+        track_txt_form.addRow("Blimp position (BLIMP)", blimp_widget)
+        track_txt_form.addRow("Green flag DLONG (GFLAG)", self._gflag_field)
+        track_txt_form.addRow("Track type (TTYPE)", self._ttype_field)
         pacea_layout = QtWidgets.QGridLayout()
         pacea_layout.setContentsMargins(0, 0, 0, 0)
         pacea_layout.setHorizontalSpacing(6)
@@ -951,6 +977,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._track_length_field,
             self._track_laps_field,
             self._track_full_name_field,
+            self._qual_mode_field,
+            self._qual_value_field,
+            self._blimp_x_field,
+            self._blimp_y_field,
+            self._gflag_field,
+            self._ttype_field,
             self._pacea_cars_abreast_field,
             self._pacea_start_dlong_field,
             self._pacea_right_dlat_field,
@@ -984,6 +1016,26 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         laps = str(metadata.laps) if metadata.laps is not None else None
         self._set_track_txt_field(self._track_laps_field, laps)
         self._set_track_txt_field(self._track_full_name_field, metadata.fname)
+        qual_mode = (
+            str(metadata.qual_session_mode)
+            if metadata.qual_session_mode is not None
+            else None
+        )
+        qual_value = (
+            str(metadata.qual_session_value)
+            if metadata.qual_session_value is not None
+            else None
+        )
+        self._set_track_txt_field(self._qual_mode_field, qual_mode)
+        self._set_track_txt_field(self._qual_value_field, qual_value)
+        blimp_x = str(metadata.blimp_x) if metadata.blimp_x is not None else None
+        blimp_y = str(metadata.blimp_y) if metadata.blimp_y is not None else None
+        self._set_track_txt_field(self._blimp_x_field, blimp_x)
+        self._set_track_txt_field(self._blimp_y_field, blimp_y)
+        gflag = str(metadata.gflag) if metadata.gflag is not None else None
+        self._set_track_txt_field(self._gflag_field, gflag)
+        ttype = str(metadata.ttype) if metadata.ttype is not None else None
+        self._set_track_txt_field(self._ttype_field, ttype)
         pacea_values = (
             metadata.pacea_cars_abreast,
             metadata.pacea_start_dlong,
@@ -1151,6 +1203,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         metadata.lengt = self._parse_optional_int(self._track_length_field.text())
         metadata.laps = self._parse_optional_int(self._track_laps_field.text())
         metadata.fname = self._track_full_name_field.text().strip() or None
+        metadata.qual_session_mode = self._parse_optional_int(
+            self._qual_mode_field.text()
+        )
+        metadata.qual_session_value = self._parse_optional_int(
+            self._qual_value_field.text()
+        )
+        metadata.blimp_x = self._parse_optional_int(self._blimp_x_field.text())
+        metadata.blimp_y = self._parse_optional_int(self._blimp_y_field.text())
+        metadata.gflag = self._parse_optional_int(self._gflag_field.text())
+        metadata.ttype = self._parse_optional_int(self._ttype_field.text())
         metadata.pacea_cars_abreast = self._parse_optional_int(
             self._pacea_cars_abreast_field.text()
         )

@@ -87,6 +87,12 @@ class TrackTxtMetadata:
     lengt: int | None = None
     laps: int | None = None
     fname: str | None = None
+    qual_session_mode: int | None = None
+    qual_session_value: int | None = None
+    blimp_x: int | None = None
+    blimp_y: int | None = None
+    gflag: int | None = None
+    ttype: int | None = None
     pacea_cars_abreast: int | None = None
     pacea_start_dlong: int | None = None
     pacea_right_dlat: int | None = None
@@ -206,6 +212,22 @@ class TrackIOService:
                 metadata.count = " ".join(values)
             elif keyword_upper == "FNAME" and metadata.fname is None and values:
                 metadata.fname = " ".join(values)
+            elif keyword_upper == "QUAL" and metadata.qual_session_mode is None:
+                parsed = self._parse_qual_values(values)
+                if parsed is not None:
+                    metadata.qual_session_mode, metadata.qual_session_value = parsed
+            elif keyword_upper == "BLIMP" and metadata.blimp_x is None:
+                parsed = self._parse_blimp_values(values)
+                if parsed is not None:
+                    metadata.blimp_x, metadata.blimp_y = parsed
+            elif keyword_upper == "GFLAG" and metadata.gflag is None and values:
+                parsed = self._parse_track_integer(values[0])
+                if parsed is not None:
+                    metadata.gflag = parsed
+            elif keyword_upper == "TTYPE" and metadata.ttype is None and values:
+                parsed = self._parse_track_integer(values[0])
+                if parsed is not None:
+                    metadata.ttype = parsed
             elif keyword_upper == "SPDWY" and metadata.spdwy_start is None:
                 parsed = self._parse_spdwy_values(values)
                 if parsed is not None:
@@ -426,6 +448,24 @@ class TrackIOService:
             return None
         return flag_value, start_value, end_value
 
+    def _parse_qual_values(self, values: Sequence[str]) -> tuple[int, int] | None:
+        if len(values) < 2:
+            return None
+        mode_value = self._parse_track_integer(values[0])
+        session_value = self._parse_track_integer(values[1])
+        if mode_value is None or session_value is None:
+            return None
+        return mode_value, session_value
+
+    def _parse_blimp_values(self, values: Sequence[str]) -> tuple[int, int] | None:
+        if len(values) < 2:
+            return None
+        x_value = self._parse_track_integer(values[0])
+        y_value = self._parse_track_integer(values[1])
+        if x_value is None or y_value is None:
+            return None
+        return x_value, y_value
+
     def _parse_pacea_values(
         self, values: Sequence[str]
     ) -> tuple[int, int, int, int, int] | None:
@@ -482,6 +522,25 @@ class TrackIOService:
         )
         replacements["FNAME"] = (
             f"FNAME {metadata.fname}" if metadata.fname else None
+        )
+        if (
+            metadata.qual_session_mode is not None
+            and metadata.qual_session_value is not None
+        ):
+            replacements["QUAL"] = (
+                f"QUAL {metadata.qual_session_mode} {metadata.qual_session_value}"
+            )
+        else:
+            replacements["QUAL"] = None
+        if metadata.blimp_x is not None and metadata.blimp_y is not None:
+            replacements["BLIMP"] = f"BLIMP {metadata.blimp_x} {metadata.blimp_y}"
+        else:
+            replacements["BLIMP"] = None
+        replacements["GFLAG"] = (
+            f"GFLAG {metadata.gflag}" if metadata.gflag is not None else None
+        )
+        replacements["TTYPE"] = (
+            f"TTYPE {metadata.ttype}" if metadata.ttype is not None else None
         )
         if metadata.spdwy_start is not None and metadata.spdwy_end is not None:
             flag = metadata.spdwy_flag if metadata.spdwy_flag is not None else 0
