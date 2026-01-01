@@ -11,7 +11,7 @@ from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
 from track_viewer.camera_table import CameraCoordinateTable
-from track_viewer.io_service import TrackIOService, TrackTxtResult
+from track_viewer.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
 from track_viewer.pit_editor import PitParametersEditor
 from track_viewer.pit_models import PitParameters
 from track_viewer.preview_widget import LpPoint, TrackPreviewWidget
@@ -536,15 +536,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._pit_status_label.setWordWrap(True)
         self._track_txt_status_label = QtWidgets.QLabel(
-            "Select a track to view track.txt parameters."
+            "Select a track to edit track.txt parameters."
         )
         self._track_txt_status_label.setWordWrap(True)
-        self._track_name_field = self._create_readonly_field("–")
-        self._track_short_name_field = self._create_readonly_field("–")
-        self._track_pit_window_field = self._create_readonly_field("–")
-        self._track_length_field = self._create_readonly_field("–")
-        self._track_laps_field = self._create_readonly_field("–")
-        self._track_full_name_field = self._create_readonly_field("–")
+        self._track_name_field = self._create_text_field("–")
+        self._track_short_name_field = self._create_text_field("–")
+        self._track_city_field = self._create_text_field("–")
+        self._track_country_field = self._create_text_field("–")
+        self._track_pit_window_start_field = self._create_int_field("–")
+        self._track_pit_window_end_field = self._create_int_field("–")
+        self._track_length_field = self._create_int_field("–")
+        self._track_laps_field = self._create_int_field("–")
+        self._track_full_name_field = self._create_text_field("–")
+        self._pacea_cars_abreast_field = self._create_int_field("–")
+        self._pacea_start_dlong_field = self._create_int_field("–")
+        self._pacea_right_dlat_field = self._create_int_field("–")
+        self._pacea_left_dlat_field = self._create_int_field("–")
+        self._pacea_unknown_field = self._create_int_field("–")
         self._pit_editor.parametersChanged.connect(self._handle_pit_params_changed)
         self._pit_editor.pitVisibilityChanged.connect(
             self._handle_pit_visibility_changed
@@ -552,6 +560,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._pit_save_button = QtWidgets.QPushButton("Save PIT")
         self._pit_save_button.setEnabled(False)
         self._pit_save_button.clicked.connect(self._handle_save_pit_params)
+        self._track_txt_save_button = QtWidgets.QPushButton("Save Track TXT")
+        self._track_txt_save_button.setEnabled(False)
+        self._track_txt_save_button.clicked.connect(self._handle_save_track_txt)
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
@@ -839,12 +850,39 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
         track_txt_form.addRow("Track name (TNAME)", self._track_name_field)
         track_txt_form.addRow("Short name (SNAME)", self._track_short_name_field)
-        track_txt_form.addRow("Pit window (SPDWY)", self._track_pit_window_field)
+        track_txt_form.addRow("City (CITYN)", self._track_city_field)
+        track_txt_form.addRow("Country (COUNT)", self._track_country_field)
+        spdwy_layout = QtWidgets.QHBoxLayout()
+        spdwy_layout.setContentsMargins(0, 0, 0, 0)
+        spdwy_layout.addWidget(QtWidgets.QLabel("Start"))
+        spdwy_layout.addWidget(self._track_pit_window_start_field)
+        spdwy_layout.addWidget(QtWidgets.QLabel("End"))
+        spdwy_layout.addWidget(self._track_pit_window_end_field)
+        spdwy_widget = QtWidgets.QWidget()
+        spdwy_widget.setLayout(spdwy_layout)
+        track_txt_form.addRow("Pit window (SPDWY)", spdwy_widget)
         track_txt_form.addRow("Length (LENGT)", self._track_length_field)
         track_txt_form.addRow("Laps (LAPS)", self._track_laps_field)
         track_txt_form.addRow("Full name (FNAME)", self._track_full_name_field)
+        pacea_layout = QtWidgets.QGridLayout()
+        pacea_layout.setContentsMargins(0, 0, 0, 0)
+        pacea_layout.setHorizontalSpacing(6)
+        pacea_layout.addWidget(QtWidgets.QLabel("Cars"), 0, 0)
+        pacea_layout.addWidget(self._pacea_cars_abreast_field, 0, 1)
+        pacea_layout.addWidget(QtWidgets.QLabel("Start DLONG"), 0, 2)
+        pacea_layout.addWidget(self._pacea_start_dlong_field, 0, 3)
+        pacea_layout.addWidget(QtWidgets.QLabel("Right DLAT"), 1, 0)
+        pacea_layout.addWidget(self._pacea_right_dlat_field, 1, 1)
+        pacea_layout.addWidget(QtWidgets.QLabel("Left DLAT"), 1, 2)
+        pacea_layout.addWidget(self._pacea_left_dlat_field, 1, 3)
+        pacea_layout.addWidget(QtWidgets.QLabel("Unknown"), 2, 0)
+        pacea_layout.addWidget(self._pacea_unknown_field, 2, 1)
+        pacea_widget = QtWidgets.QWidget()
+        pacea_widget.setLayout(pacea_layout)
+        track_txt_form.addRow("Pace lap (PACEA)", pacea_widget)
         track_txt_layout.addLayout(track_txt_form)
         track_txt_layout.addStretch(1)
+        track_txt_layout.addWidget(self._track_txt_save_button)
         track_txt_sidebar.setLayout(track_txt_layout)
 
         tabs = QtWidgets.QTabWidget()
@@ -876,27 +914,28 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         field.setFocusPolicy(QtCore.Qt.ClickFocus)
         return field
 
+    def _create_text_field(self, placeholder: str) -> QtWidgets.QLineEdit:
+        field = QtWidgets.QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setFocusPolicy(QtCore.Qt.ClickFocus)
+        return field
+
+    def _create_int_field(self, placeholder: str) -> QtWidgets.QLineEdit:
+        field = QtWidgets.QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setFocusPolicy(QtCore.Qt.ClickFocus)
+        validator = QtGui.QIntValidator(-2_147_483_648, 2_147_483_647, field)
+        field.setValidator(validator)
+        return field
+
     @staticmethod
     def _format_value(value: float) -> str:
         return f"{value:.2f}"
 
-    @staticmethod
-    def _format_track_length(value: int | None) -> str | None:
-        if value is None:
-            return None
-        miles = value / 1000.0
-        return f"{value} ({miles:.3f} mi)"
-
-    @staticmethod
-    def _format_pit_window(start: int | None, end: int | None) -> str | None:
-        if start is None or end is None:
-            return None
-        return f"{start} to {end}"
-
     def _set_track_txt_field(
         self, field: QtWidgets.QLineEdit, value: str | None
     ) -> None:
-        if value:
+        if value is not None:
             field.setText(value)
         else:
             field.clear()
@@ -905,10 +944,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         for field in (
             self._track_name_field,
             self._track_short_name_field,
-            self._track_pit_window_field,
+            self._track_city_field,
+            self._track_country_field,
+            self._track_pit_window_start_field,
+            self._track_pit_window_end_field,
             self._track_length_field,
             self._track_laps_field,
             self._track_full_name_field,
+            self._pacea_cars_abreast_field,
+            self._pacea_start_dlong_field,
+            self._pacea_right_dlat_field,
+            self._pacea_left_dlat_field,
+            self._pacea_unknown_field,
         ):
             field.clear()
 
@@ -922,13 +969,36 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         metadata = result.metadata
         self._set_track_txt_field(self._track_name_field, metadata.tname)
         self._set_track_txt_field(self._track_short_name_field, metadata.sname)
-        pit_window = self._format_pit_window(metadata.spdwy_start, metadata.spdwy_end)
-        self._set_track_txt_field(self._track_pit_window_field, pit_window)
-        track_length = self._format_track_length(metadata.lengt)
+        self._set_track_txt_field(self._track_city_field, metadata.cityn)
+        self._set_track_txt_field(self._track_country_field, metadata.count)
+        pit_window_start = (
+            str(metadata.spdwy_start) if metadata.spdwy_start is not None else None
+        )
+        pit_window_end = (
+            str(metadata.spdwy_end) if metadata.spdwy_end is not None else None
+        )
+        self._set_track_txt_field(self._track_pit_window_start_field, pit_window_start)
+        self._set_track_txt_field(self._track_pit_window_end_field, pit_window_end)
+        track_length = str(metadata.lengt) if metadata.lengt is not None else None
         self._set_track_txt_field(self._track_length_field, track_length)
         laps = str(metadata.laps) if metadata.laps is not None else None
         self._set_track_txt_field(self._track_laps_field, laps)
         self._set_track_txt_field(self._track_full_name_field, metadata.fname)
+        pacea_values = (
+            metadata.pacea_cars_abreast,
+            metadata.pacea_start_dlong,
+            metadata.pacea_right_dlat,
+            metadata.pacea_left_dlat,
+            metadata.pacea_unknown,
+        )
+        pacea_text = [
+            str(value) if value is not None else None for value in pacea_values
+        ]
+        self._set_track_txt_field(self._pacea_cars_abreast_field, pacea_text[0])
+        self._set_track_txt_field(self._pacea_start_dlong_field, pacea_text[1])
+        self._set_track_txt_field(self._pacea_right_dlat_field, pacea_text[2])
+        self._set_track_txt_field(self._pacea_left_dlat_field, pacea_text[3])
+        self._set_track_txt_field(self._pacea_unknown_field, pacea_text[4])
 
     def _update_selected_flag_position(
         self, coords: Optional[tuple[float, float]]
@@ -992,10 +1062,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_editor.set_parameters(None)
             self._pit_status_label.setText("Select a track to edit pit parameters.")
             self._track_txt_status_label.setText(
-                "Select a track to view track.txt parameters."
+                "Select a track to edit track.txt parameters."
             )
             self._clear_track_txt_fields()
             self._pit_save_button.setEnabled(False)
+            self._track_txt_save_button.setEnabled(False)
             self.visualization_widget.set_pit_parameters(None)
             return
 
@@ -1019,6 +1090,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_editor.set_parameters(result.pit)
             self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
         self._pit_save_button.setEnabled(True)
+        self._track_txt_save_button.setEnabled(True)
         self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())
         self.visualization_widget.set_visible_pit_indices(
             self._pit_editor.pit_visible_indices()
@@ -1038,10 +1110,73 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         lines = self._track_txt_result.lines if self._track_txt_result else []
         message = self._io_service.save_track_txt(
-            self._current_track_folder, pit_params, lines
+            self._current_track_folder, pit_params, None, lines
         )
         self.statusBar().showMessage(message, 5000)
         self._load_track_txt_data(self._current_track_folder)
+
+    def _handle_save_track_txt(self) -> None:
+        if self._current_track_folder is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Save Track TXT", "No track is currently loaded."
+            )
+            return
+        metadata = self._collect_track_txt_metadata()
+        pit_params = self._pit_editor.parameters()
+        lines = self._track_txt_result.lines if self._track_txt_result else []
+        message = self._io_service.save_track_txt(
+            self._current_track_folder, pit_params, metadata, lines
+        )
+        self.statusBar().showMessage(message, 5000)
+        self._load_track_txt_data(self._current_track_folder)
+
+    def _collect_track_txt_metadata(self) -> TrackTxtMetadata:
+        metadata = (
+            self._track_txt_result.metadata
+            if self._track_txt_result is not None
+            else TrackTxtMetadata()
+        )
+        metadata.tname = self._track_name_field.text().strip() or None
+        metadata.sname = self._track_short_name_field.text().strip() or None
+        metadata.cityn = self._track_city_field.text().strip() or None
+        metadata.count = self._track_country_field.text().strip() or None
+        metadata.spdwy_start = self._parse_optional_int(
+            self._track_pit_window_start_field.text()
+        )
+        metadata.spdwy_end = self._parse_optional_int(
+            self._track_pit_window_end_field.text()
+        )
+        if metadata.spdwy_flag is None:
+            metadata.spdwy_flag = 0
+        metadata.lengt = self._parse_optional_int(self._track_length_field.text())
+        metadata.laps = self._parse_optional_int(self._track_laps_field.text())
+        metadata.fname = self._track_full_name_field.text().strip() or None
+        metadata.pacea_cars_abreast = self._parse_optional_int(
+            self._pacea_cars_abreast_field.text()
+        )
+        metadata.pacea_start_dlong = self._parse_optional_int(
+            self._pacea_start_dlong_field.text()
+        )
+        metadata.pacea_right_dlat = self._parse_optional_int(
+            self._pacea_right_dlat_field.text()
+        )
+        metadata.pacea_left_dlat = self._parse_optional_int(
+            self._pacea_left_dlat_field.text()
+        )
+        metadata.pacea_unknown = self._parse_optional_int(
+            self._pacea_unknown_field.text()
+        )
+        return metadata
+
+    @staticmethod
+    def _parse_optional_int(value: str) -> int | None:
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return int(stripped)
+        except ValueError:
+            return None
 
     def _handle_pit_params_changed(self) -> None:
         self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())

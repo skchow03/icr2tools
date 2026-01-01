@@ -79,11 +79,19 @@ class TrackTxtMetadata:
 
     tname: str | None = None
     sname: str | None = None
+    cityn: str | None = None
+    count: str | None = None
     spdwy_start: int | None = None
     spdwy_end: int | None = None
+    spdwy_flag: int | None = None
     lengt: int | None = None
     laps: int | None = None
     fname: str | None = None
+    pacea_cars_abreast: int | None = None
+    pacea_start_dlong: int | None = None
+    pacea_right_dlat: int | None = None
+    pacea_left_dlat: int | None = None
+    pacea_unknown: int | None = None
 
 
 @dataclass
@@ -192,12 +200,20 @@ class TrackIOService:
                 metadata.tname = " ".join(values)
             elif keyword_upper == "SNAME" and metadata.sname is None and values:
                 metadata.sname = " ".join(values)
+            elif keyword_upper == "CITYN" and metadata.cityn is None and values:
+                metadata.cityn = " ".join(values)
+            elif keyword_upper == "COUNT" and metadata.count is None and values:
+                metadata.count = " ".join(values)
             elif keyword_upper == "FNAME" and metadata.fname is None and values:
                 metadata.fname = " ".join(values)
             elif keyword_upper == "SPDWY" and metadata.spdwy_start is None:
                 parsed = self._parse_spdwy_values(values)
                 if parsed is not None:
-                    metadata.spdwy_start, metadata.spdwy_end = parsed
+                    (
+                        metadata.spdwy_flag,
+                        metadata.spdwy_start,
+                        metadata.spdwy_end,
+                    ) = parsed
             elif keyword_upper == "LENGT" and metadata.lengt is None and values:
                 parsed = self._parse_track_integer(values[0])
                 if parsed is not None:
@@ -206,6 +222,16 @@ class TrackIOService:
                 parsed = self._parse_track_integer(values[0])
                 if parsed is not None:
                     metadata.laps = parsed
+            elif keyword_upper == "PACEA" and metadata.pacea_cars_abreast is None:
+                parsed = self._parse_pacea_values(values)
+                if parsed is not None:
+                    (
+                        metadata.pacea_cars_abreast,
+                        metadata.pacea_start_dlong,
+                        metadata.pacea_right_dlat,
+                        metadata.pacea_left_dlat,
+                        metadata.pacea_unknown,
+                    ) = parsed
         return TrackTxtResult(lines, pit, metadata, txt_path, True)
 
     def save_cameras(
@@ -239,28 +265,32 @@ class TrackIOService:
     def save_track_txt(
         self,
         track_folder: Path,
-        pit_params: PitParameters,
+        pit_params: PitParameters | None,
+        metadata: TrackTxtMetadata | None,
         lines: Sequence[TrackTxtLine],
     ) -> str:
         track_name = track_folder.name
         txt_path = track_folder / f"{track_name}.txt"
         self._backup_file(txt_path)
-        pit_line = self._format_pit_line(pit_params)
+        pit_line = self._format_pit_line(pit_params) if pit_params is not None else None
+        replacements = self._build_track_txt_replacements(pit_line, metadata)
         output_lines: list[str] = []
-        pit_written = False
+        written = set()
         for line in lines:
-            if line.keyword and line.keyword.upper() == "PIT":
-                output_lines.append(pit_line)
-                pit_written = True
-            else:
-                output_lines.append(line.raw)
-        if not pit_written:
-            if output_lines:
-                output_lines.append(pit_line)
-            else:
-                output_lines = [pit_line]
+            keyword = line.keyword.upper() if line.keyword else None
+            if keyword in replacements:
+                replacement = replacements[keyword]
+                if replacement is not None:
+                    output_lines.append(replacement)
+                    written.add(keyword)
+                continue
+            output_lines.append(line.raw)
+        for keyword, replacement in replacements.items():
+            if replacement is None or keyword in written:
+                continue
+            output_lines.append(replacement)
         txt_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
-        return f"Saved PIT parameters to {txt_path.name}"
+        return f"Saved track.txt parameters to {txt_path.name}"
 
     def save_lp_line(self, track_folder: Path, lp_name: str, records: Sequence[object]) -> str:
         lp_path = track_folder / f"{lp_name}.LP"
@@ -384,14 +414,30 @@ class TrackIOService:
             numeric_values.append(0.0)
         return PitParameters.from_values(numeric_values)
 
-    def _parse_spdwy_values(self, values: Sequence[str]) -> tuple[int, int] | None:
+    def _parse_spdwy_values(
+        self, values: Sequence[str]
+    ) -> tuple[int, int, int] | None:
         if len(values) < 3:
             return None
+        flag_value = self._parse_track_integer(values[0])
         start_value = self._parse_track_integer(values[1])
         end_value = self._parse_track_integer(values[2])
-        if start_value is None or end_value is None:
+        if flag_value is None or start_value is None or end_value is None:
             return None
-        return start_value, end_value
+        return flag_value, start_value, end_value
+
+    def _parse_pacea_values(
+        self, values: Sequence[str]
+    ) -> tuple[int, int, int, int, int] | None:
+        if len(values) < 5:
+            return None
+        parsed_values: list[int] = []
+        for value in values[:5]:
+            parsed = self._parse_track_integer(value)
+            if parsed is None:
+                return None
+            parsed_values.append(parsed)
+        return tuple(parsed_values)  # type: ignore[return-value]
 
     @staticmethod
     def _parse_track_integer(value: str) -> int | None:
@@ -411,6 +457,59 @@ class TrackIOService:
             self._format_track_txt_value(value) for value in pit_params.values()
         ]
         return "PIT " + " ".join(formatted_values)
+
+    def _build_track_txt_replacements(
+        self,
+        pit_line: str | None,
+        metadata: TrackTxtMetadata | None,
+    ) -> dict[str, str | None]:
+        replacements: dict[str, str | None] = {}
+        if pit_line is not None:
+            replacements["PIT"] = pit_line
+        if metadata is None:
+            return replacements
+        replacements["TNAME"] = (
+            f"TNAME {metadata.tname}" if metadata.tname else None
+        )
+        replacements["SNAME"] = (
+            f"SNAME {metadata.sname}" if metadata.sname else None
+        )
+        replacements["CITYN"] = (
+            f"CITYN {metadata.cityn}" if metadata.cityn else None
+        )
+        replacements["COUNT"] = (
+            f"COUNT {metadata.count}" if metadata.count else None
+        )
+        replacements["FNAME"] = (
+            f"FNAME {metadata.fname}" if metadata.fname else None
+        )
+        if metadata.spdwy_start is not None and metadata.spdwy_end is not None:
+            flag = metadata.spdwy_flag if metadata.spdwy_flag is not None else 0
+            replacements["SPDWY"] = (
+                f"SPDWY {flag} {metadata.spdwy_start} {metadata.spdwy_end}"
+            )
+        else:
+            replacements["SPDWY"] = None
+        replacements["LENGT"] = (
+            f"LENGT {metadata.lengt}" if metadata.lengt is not None else None
+        )
+        replacements["LAPS"] = (
+            f"LAPS {metadata.laps}" if metadata.laps is not None else None
+        )
+        pacea_values = (
+            metadata.pacea_cars_abreast,
+            metadata.pacea_start_dlong,
+            metadata.pacea_right_dlat,
+            metadata.pacea_left_dlat,
+            metadata.pacea_unknown,
+        )
+        if all(value is not None for value in pacea_values):
+            replacements["PACEA"] = "PACEA " + " ".join(
+                str(int(value)) for value in pacea_values  # type: ignore[arg-type]
+            )
+        else:
+            replacements["PACEA"] = None
+        return replacements
 
     def _repack_dat(self, dat_path: Path, cam_path: Path, scr_path: Path) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
