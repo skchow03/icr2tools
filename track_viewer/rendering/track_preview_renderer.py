@@ -9,11 +9,11 @@ from PyQt5 import QtCore, QtGui
 from icr2_core.lp.lpcalc import get_trk_sect_radius
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer import rendering
-from track_viewer.services.camera_service import CameraService
-from track_viewer.model.pit_models import PIT_DLONG_LINE_COLORS
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
+from track_viewer.model.pit_models import PIT_DLONG_LINE_COLORS
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
+from track_viewer.services.camera_service import CameraService
 
 
 class TrackPreviewRenderer:
