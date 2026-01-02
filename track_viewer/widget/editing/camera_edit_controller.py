@@ -5,7 +5,7 @@ from PyQt5 import QtCore
 
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
-from track_viewer.widget.interaction import InteractionCallbacks
+from track_viewer.widget.interaction import InteractionCallbacks, PreviewIntent
 from track_viewer.widget.selection.selection_controller import SelectionController
 
 
@@ -36,7 +36,7 @@ class CameraEditController:
         self._state.dragged_during_press = False
         if camera_index == self._state.selected_camera:
             self._selection.emit_selected_camera()
-            self._callbacks.update()
+            self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
         else:
             self._selection.set_selected_camera(camera_index)
         return True
@@ -55,7 +55,7 @@ class CameraEditController:
         cam.y = int(round(coords[1]))
         self._state.camera_dragged = True
         self._selection.emit_selected_camera()
-        self._callbacks.update()
+        self._callbacks.state_changed(PreviewIntent.CAMERA_CHANGED)
 
     def end_camera_drag(self) -> None:
         self._state.dragging_camera_index = None

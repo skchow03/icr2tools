@@ -6,7 +6,7 @@ from typing import Optional, TYPE_CHECKING
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from track_viewer.widget.track_preview_widget import TrackPreviewWidget
+from track_viewer.preview_api import TrackPreviewApi
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for type checking
     from track_viewer.widget.app import TrackViewerApp
@@ -24,12 +24,12 @@ class WindowController(QtCore.QObject):
     def __init__(
         self,
         app_state: TrackViewerApp,
-        preview_widget: TrackPreviewWidget,
+        preview_api: TrackPreviewApi,
         parent: Optional[QtWidgets.QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.app_state = app_state
-        self.preview_widget = preview_widget
+        self.preview_api = preview_api
         self._gap_results_window: QtWidgets.QDialog | None = None
         self._gap_results_text: QtWidgets.QPlainTextEdit | None = None
 
@@ -55,7 +55,7 @@ class WindowController(QtCore.QObject):
 
     def load_tracks(self) -> None:
         track_root = self._tracks_root()
-        self.preview_widget.clear()
+        self.preview_api.clear()
         self.trackLengthChanged.emit(None)
         self.trkGapsAvailabilityChanged.emit(False)
         self.app_state.update_tracks([])
@@ -83,41 +83,41 @@ class WindowController(QtCore.QObject):
 
     def set_selected_track(self, folder: Optional[Path]) -> None:
         if not folder:
-            self.preview_widget.clear()
+            self.preview_api.clear()
             self.trackLengthChanged.emit(None)
             self.trkGapsAvailabilityChanged.emit(False)
             self.sync_ai_lines()
             return
 
         if not isinstance(folder, Path):
-            self.preview_widget.clear("Select a valid track folder.")
+            self.preview_api.clear("Select a valid track folder.")
             self.trackLengthChanged.emit(None)
             self.trkGapsAvailabilityChanged.emit(False)
             self.sync_ai_lines()
             return
 
-        self.preview_widget.load_track(folder)
-        self.trackLengthChanged.emit(self.preview_widget.track_length())
-        self.trkGapsAvailabilityChanged.emit(self.preview_widget.trk is not None)
+        self.preview_api.load_track(folder)
+        self.trackLengthChanged.emit(self.preview_api.track_length())
+        self.trkGapsAvailabilityChanged.emit(self.preview_api.trk is not None)
         self.sync_ai_lines()
 
     # ------------------------------------------------------------------
     # AI line helpers
     # ------------------------------------------------------------------
     def set_visible_lp_files(self, names: list[str]) -> None:
-        self.preview_widget.set_visible_lp_files(names)
+        self.preview_api.set_visible_lp_files(names)
 
     def sync_ai_lines(self) -> None:
-        available_files = self.preview_widget.available_lp_files()
-        visible_files = set(self.preview_widget.visible_lp_files())
-        enabled = self.preview_widget.trk is not None
+        available_files = self.preview_api.available_lp_files()
+        visible_files = set(self.preview_api.visible_lp_files())
+        enabled = self.preview_api.trk is not None
         self.aiLinesUpdated.emit(available_files, visible_files, enabled)
 
     # ------------------------------------------------------------------
     # TRK gaps
     # ------------------------------------------------------------------
     def run_trk_gaps(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        success, message = self.preview_widget.run_trk_gaps()
+        success, message = self.preview_api.run_trk_gaps()
         title = "TRK Gaps"
         if not success:
             QtWidgets.QMessageBox.warning(parent or self.parent(), title, message)

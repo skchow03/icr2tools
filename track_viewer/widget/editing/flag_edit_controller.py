@@ -5,7 +5,7 @@ from PyQt5 import QtCore
 
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
-from track_viewer.widget.interaction import InteractionCallbacks
+from track_viewer.widget.interaction import InteractionCallbacks, PreviewIntent
 from track_viewer.widget.selection.selection_controller import SelectionController
 
 
@@ -45,7 +45,7 @@ class FlagEditController:
             return
         self._state.flags[index] = coords
         self._callbacks.selected_flag_changed(coords)
-        self._callbacks.update()
+        self._callbacks.state_changed(PreviewIntent.FLAG_CHANGED)
 
     def end_flag_drag(self) -> None:
         self._state.dragging_flag_index = None
@@ -62,7 +62,7 @@ class FlagEditController:
             if self._state.selected_flag > flag_index:
                 self._selection.set_selected_flag(self._state.selected_flag - 1)
                 return True
-        self._callbacks.update()
+        self._callbacks.state_changed(PreviewIntent.FLAG_CHANGED)
         return True
 
     def add_flag(self, coords: tuple[float, float]) -> None:
