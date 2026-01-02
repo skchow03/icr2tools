@@ -12,13 +12,21 @@ from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.controllers.camera_controller import CameraController
 from track_viewer.services.camera_service import CameraService
-from track_viewer.interaction import InteractionCallbacks, TrackPreviewInteraction
 from track_viewer.services.io_service import TrackIOService
 from track_viewer.model.pit_models import PitParameters
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.rendering.renderer import TrackPreviewRenderer
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
+from track_viewer.widget.editing.camera_edit_controller import CameraEditController
+from track_viewer.widget.editing.flag_edit_controller import FlagEditController
+from track_viewer.widget.editing.lp_edit_controller import LpEditController
+from track_viewer.widget.interaction import InteractionCallbacks
+from track_viewer.widget.interaction.keyboard_controller import (
+    TrackPreviewKeyboardController,
+)
+from track_viewer.widget.interaction.mouse_controller import TrackPreviewMouseController
+from track_viewer.widget.selection.selection_controller import SelectionController
 
 
 class TrackPreviewWidget(QtWidgets.QFrame):
@@ -50,19 +58,41 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._model.aiLineLoaded.connect(self._handle_model_ai_line_loaded)
         self._camera_service = CameraService(self._io_service, CameraController())
         self._renderer = TrackPreviewRenderer(self._model, self._camera_service, self._state)
-        self._interaction = TrackPreviewInteraction(
+        self._interaction_callbacks = InteractionCallbacks(
+            update=self.update,
+            cursor_position_changed=self.cursorPositionChanged.emit,
+            selected_flag_changed=self.selectedFlagChanged.emit,
+            selected_camera_changed=self.selectedCameraChanged.emit,
+            lp_record_selected=self._emit_lp_record_selected,
+            diagram_clicked=self.diagramClicked.emit,
+        )
+        self._selection_controller = SelectionController(
+            self._model, self._camera_service, self._state, self._interaction_callbacks
+        )
+        self._camera_edit_controller = CameraEditController(
             self._model,
             self._camera_service,
             self._state,
-            InteractionCallbacks(
-                update=self.update,
-                cursor_position_changed=self.cursorPositionChanged.emit,
-                selected_flag_changed=self.selectedFlagChanged.emit,
-                selected_camera_changed=self.selectedCameraChanged.emit,
-                lp_record_selected=self._emit_lp_record_selected,
-                diagram_clicked=self.diagramClicked.emit,
-            ),
+            self._selection_controller,
+            self._interaction_callbacks,
         )
+        self._flag_edit_controller = FlagEditController(
+            self._model,
+            self._state,
+            self._selection_controller,
+            self._interaction_callbacks,
+        )
+        self._lp_edit_controller = LpEditController(self._selection_controller)
+        self._mouse_controller = TrackPreviewMouseController(
+            self._model,
+            self._state,
+            self._interaction_callbacks,
+            self._selection_controller,
+            self._camera_edit_controller,
+            self._flag_edit_controller,
+            self._lp_edit_controller,
+        )
+        self._keyboard_controller = TrackPreviewKeyboardController()
 
     # ------------------------------------------------------------------
     # Public API
@@ -310,7 +340,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             return
 
         if self._state.selected_camera == camera_index:
-            self._emit_selected_camera()
+            self._selection_controller.emit_selected_camera()
         self.update()
 
     def update_camera_position(
@@ -326,24 +356,15 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         if z is not None:
             camera.z = int(z)
         if self._state.selected_camera == camera_index:
-            self._emit_selected_camera()
+            self._selection_controller.emit_selected_camera()
         self.update()
 
     def set_selected_camera(self, index: int | None) -> None:
-        if index == self._state.selected_camera:
-            return
-        if index is not None:
-            if index < 0 or index >= len(self._camera_service.cameras):
-                index = None
-        self._state.selected_camera = index
-        self._emit_selected_camera()
-        self.update()
+        self._selection_controller.set_selected_camera(index)
 
     def add_type6_camera(self) -> tuple[bool, str]:
         """Create a new type 6 camera relative to the current selection."""
-        success, message, selected = self._camera_service.add_type6_camera(
-            self._state.selected_camera, self._model.track_length
-        )
+        success, message, selected = self._camera_edit_controller.add_type6_camera()
         if success and selected is not None:
             self.set_selected_camera(selected)
         self.camerasChanged.emit(
@@ -355,9 +376,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
     def add_type7_camera(self) -> tuple[bool, str]:
         """Create a new type 7 camera relative to the current selection."""
-        success, message, selected = self._camera_service.add_type7_camera(
-            self._state.selected_camera, self._model.track_length
-        )
+        success, message, selected = self._camera_edit_controller.add_type7_camera()
         if success and selected is not None:
             self.set_selected_camera(selected)
         self.camerasChanged.emit(
@@ -397,7 +416,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._state.user_transform_active = False
         self._state.update_fit_scale(self._model.bounds, self.size())
         self._state.flags = []
-        self._set_selected_flag(None)
+        self._selection_controller.set_selected_flag(None)
         self._camera_service.load_for_track(track_folder)
         self.camerasChanged.emit(
             self._camera_service.cameras, self._camera_service.camera_views
@@ -469,55 +488,52 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._renderer.paint(painter, self.size())
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
-        self._interaction.handle_resize(self.size())
+        self._mouse_controller.handle_resize(self.size())
         super().resizeEvent(event)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401 - Qt signature
-        if self._interaction.handle_wheel(event, self.size()):
+        if self._mouse_controller.handle_wheel(event, self.size()):
             event.accept()
             return
         super().wheelEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if self._interaction.handle_mouse_press(event, self.size()):
+        if self._mouse_controller.handle_mouse_press(event, self.size()):
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        handled = self._interaction.handle_mouse_move(event, self.size())
+        handled = self._mouse_controller.handle_mouse_move(event, self.size())
         if handled:
             event.accept()
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if self._interaction.handle_mouse_release(event, self.size()):
+        if self._mouse_controller.handle_mouse_release(event, self.size()):
             event.accept()
             return
         super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event) -> None:  # noqa: D401 - Qt signature
-        self._interaction.handle_leave()
+        self._mouse_controller.handle_leave()
         super().leaveEvent(event)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # noqa: D401 - Qt signature
+        if self._keyboard_controller.handle_key_press(event):
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event: QtGui.QKeyEvent) -> None:  # noqa: D401 - Qt signature
+        if self._keyboard_controller.handle_key_release(event):
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
 
     # ------------------------------------------------------------------
     # Helper emitters
     # ------------------------------------------------------------------
-    def _emit_selected_camera(self) -> None:
-        selected = None
-        index = self._state.selected_camera
-        if index is not None and 0 <= index < len(self._camera_service.cameras):
-            selected = self._camera_service.cameras[index]
-        self.selectedCameraChanged.emit(index, selected)
-
     def _emit_lp_record_selected(self, name: str, index: int) -> None:
         self.lpRecordSelected.emit(name, index)
-
-    def _set_selected_flag(self, index: int | None) -> None:
-        self._state.selected_flag = index
-        coords = None
-        if index is not None and 0 <= index < len(self._state.flags):
-            coords = self._state.flags[index]
-        self.selectedFlagChanged.emit(coords)
-        self.update()

@@ -1,44 +1,42 @@
-"""Input interaction handlers for the track preview widget."""
+"""Mouse interaction logic for the track preview widget."""
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Callable, Tuple
 
 from PyQt5 import QtCore, QtGui
 
-from icr2_core.cam.helpers import CameraPosition
 from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
 from track_viewer.geometry import project_point_to_centerline
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
+from track_viewer.widget.editing.camera_edit_controller import CameraEditController
+from track_viewer.widget.editing.flag_edit_controller import FlagEditController
+from track_viewer.widget.editing.lp_edit_controller import LpEditController
+from track_viewer.widget.interaction import InteractionCallbacks
+from track_viewer.widget.selection.selection_controller import SelectionController
 
 
-@dataclass
-class InteractionCallbacks:
-    update: Callable[[], None]
-    cursor_position_changed: Callable[[tuple[float, float] | None], None]
-    selected_flag_changed: Callable[[tuple[float, float] | None], None]
-    selected_camera_changed: Callable[[int | None, CameraPosition | None], None]
-    lp_record_selected: Callable[[str, int], None]
-    diagram_clicked: Callable[[], None]
-
-
-class TrackPreviewInteraction:
-    """Encapsulates mouse/keyboard logic and hit testing."""
+class TrackPreviewMouseController:
+    """Encapsulates mouse logic and projection handling."""
 
     def __init__(
         self,
         model: TrackPreviewModel,
-        camera_service,
         state: TrackPreviewViewState,
         callbacks: InteractionCallbacks,
+        selection: SelectionController,
+        camera_edit: CameraEditController,
+        flag_edit: FlagEditController,
+        lp_edit: LpEditController,
     ) -> None:
         self._model = model
-        self._camera_service = camera_service
         self._state = state
         self._callbacks = callbacks
+        self._selection = selection
+        self._camera_edit = camera_edit
+        self._flag_edit = flag_edit
+        self._lp_edit = lp_edit
 
     def handle_resize(self, size: QtCore.QSize) -> None:
         self._state.pixmap_size = None
@@ -73,16 +71,18 @@ class TrackPreviewInteraction:
 
     def handle_mouse_press(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
         if event.button() == QtCore.Qt.RightButton and self._model.surface_mesh:
-            if self._handle_flag_removal(event.pos(), size):
+            if self._flag_edit.remove_flag_at_point(event.pos(), size):
                 return True
 
         if event.button() == QtCore.Qt.LeftButton:
             self._callbacks.diagram_clicked()
-            if self._model.surface_mesh and self._handle_camera_press(
+            if self._model.surface_mesh and self._camera_edit.handle_camera_press(
                 event.pos(), size
             ):
                 return True
-            if self._model.surface_mesh and self._handle_flag_press(event.pos(), size):
+            if self._model.surface_mesh and self._flag_edit.handle_flag_press(
+                event.pos(), size
+            ):
                 return True
             self._state.is_panning = True
             self._state.last_mouse_pos = event.pos()
@@ -95,10 +95,10 @@ class TrackPreviewInteraction:
     def handle_mouse_move(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
         handled = False
         if self._state.dragging_camera_index is not None:
-            self._update_camera_position(event.pos(), size)
+            self._camera_edit.update_camera_position(event.pos(), size)
             handled = True
         if self._state.dragging_flag_index is not None:
-            self._update_flag_position(event.pos(), size)
+            self._flag_edit.update_flag_position(event.pos(), size)
             handled = True
         if self._state.is_panning and self._state.last_mouse_pos is not None:
             transform = self._state.current_transform(self._model.bounds, size)
@@ -133,11 +133,10 @@ class TrackPreviewInteraction:
     ) -> bool:
         if event.button() == QtCore.Qt.LeftButton:
             if self._state.dragging_camera_index is not None:
-                self._state.dragging_camera_index = None
-                self._state.camera_dragged = False
+                self._camera_edit.end_camera_drag()
                 return True
             if self._state.dragging_flag_index is not None:
-                self._state.dragging_flag_index = None
+                self._flag_edit.end_flag_drag()
                 return True
             click_without_drag = not self._state.dragged_during_press
             self._state.is_panning = False
@@ -376,7 +375,7 @@ class TrackPreviewInteraction:
             return
 
         cursor_x, cursor_y = cursor_track
-        best_point: Tuple[float, float] | None = None
+        best_point: tuple[float, float] | None = None
         best_distance_sq = math.inf
         best_dlong = None
         best_dlat = None
@@ -458,91 +457,21 @@ class TrackPreviewInteraction:
         ):
             self._callbacks.update()
 
-    def _camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> int | None:
-        transform = self._state.current_transform(self._model.bounds, size)
-        if not transform:
-            return None
-        for index, cam in enumerate(self._camera_service.cameras):
-            camera_point = rendering.map_point(cam.x, cam.y, transform, size.height())
-            if (camera_point - point).manhattanLength() <= 10:
-                return index
-        return None
-
-    def _handle_camera_press(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
-        camera_index = self._camera_at_point(point, size)
-        if camera_index is None:
-            return False
-        self._state.selected_camera = camera_index
-        self._emit_selected_camera()
-        self._state.dragging_camera_index = camera_index
-        self._state.camera_dragged = False
-        self._state.is_panning = False
-        self._state.dragged_during_press = False
-        self._callbacks.update()
-        return True
-
-    def _handle_flag_press(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
-        flag_index = self._flag_at_point(point, size)
-        if flag_index is None:
-            return False
-        self._set_selected_flag(flag_index)
-        self._state.dragging_flag_index = flag_index
-        self._state.is_panning = False
-        self._state.dragged_during_press = False
-        return True
-
-    def _update_camera_position(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
-        if self._state.dragging_camera_index is None:
-            return
-        coords = self._state.map_to_track(point, self._model.bounds, size)
-        if coords is None:
-            return
-        index = self._state.dragging_camera_index
-        if index < 0 or index >= len(self._camera_service.cameras):
-            return
-        cam = self._camera_service.cameras[index]
-        cam.x = int(round(coords[0]))
-        cam.y = int(round(coords[1]))
-        self._state.camera_dragged = True
-        self._emit_selected_camera()
-        self._callbacks.update()
-
-    def _update_flag_position(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
-        if self._state.dragging_flag_index is None:
-            return
-        coords = self._state.map_to_track(point, self._model.bounds, size)
-        if coords is None:
-            return
-        index = self._state.dragging_flag_index
-        if index < 0 or index >= len(self._state.flags):
-            return
-        self._state.flags[index] = coords
-        self._callbacks.selected_flag_changed(coords)
-        self._callbacks.update()
-
-    def _flag_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> int | None:
-        transform = self._state.current_transform(self._model.bounds, size)
-        if not transform:
-            return None
-        for index, (fx, fy) in enumerate(self._state.flags):
-            flag_point = rendering.map_point(fx, fy, transform, size.height())
-            if (flag_point - point).manhattanLength() <= 8:
-                return index
-        return None
-
     def _handle_primary_click(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
         transform = self._state.current_transform(self._model.bounds, size)
         if not transform:
             return
-        camera_index = self._camera_at_point(point, size)
+        camera_index = self._selection.camera_at_point(point, size)
         if camera_index is not None:
-            self._state.selected_camera = camera_index
-            self._emit_selected_camera()
-            self._callbacks.update()
+            if camera_index == self._state.selected_camera:
+                self._selection.emit_selected_camera()
+                self._callbacks.update()
+            else:
+                self._selection.set_selected_camera(camera_index)
             return
-        flag_index = self._flag_at_point(point, size)
+        flag_index = self._selection.flag_at_point(point, size)
         if flag_index is not None:
-            self._set_selected_flag(flag_index)
+            self._selection.set_selected_flag(flag_index)
             return
         active_line = self._state.active_lp_line or "center-line"
         if (
@@ -550,97 +479,9 @@ class TrackPreviewInteraction:
             and active_line in self._model.visible_lp_files
             and self._model.surface_mesh
         ):
-            lp_index = self._lp_record_at_point(point, active_line, size)
-            if lp_index is not None:
-                self._state.selected_lp_line = active_line
-                self._state.selected_lp_index = lp_index
-                self._callbacks.lp_record_selected(active_line, lp_index)
-                self._callbacks.update()
+            if self._lp_edit.select_lp_record_at_point(point, active_line, size):
                 return
         coords = self._state.map_to_track(point, self._model.bounds, size)
         if coords is None:
             return
-        self._state.flags.append(coords)
-        self._set_selected_flag(len(self._state.flags) - 1)
-        self._callbacks.update()
-
-    def _lp_record_at_point(
-        self, point: QtCore.QPointF, lp_name: str, size: QtCore.QSize
-    ) -> int | None:
-        records = self._model.ai_line_records(lp_name)
-        if not records:
-            return None
-        transform = self._state.current_transform(self._model.bounds, size)
-        if not transform:
-            return None
-        cursor_track = self._state.map_to_track(point, self._model.bounds, size)
-        if cursor_track is None:
-            return None
-
-        cursor_x, cursor_y = cursor_track
-        best_point = None
-        best_distance_sq = math.inf
-        best_start_index = None
-        best_end_index = None
-
-        for idx in range(len(records)):
-            p0 = records[idx]
-            p1 = records[(idx + 1) % len(records)]
-            seg_dx = p1.x - p0.x
-            seg_dy = p1.y - p0.y
-            seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
-            if seg_len_sq == 0:
-                continue
-            t = ((cursor_x - p0.x) * seg_dx + (cursor_y - p0.y) * seg_dy) / seg_len_sq
-            t = max(0.0, min(1.0, t))
-            proj_x = p0.x + seg_dx * t
-            proj_y = p0.y + seg_dy * t
-            dist_sq = (cursor_x - proj_x) ** 2 + (cursor_y - proj_y) ** 2
-            if dist_sq < best_distance_sq:
-                best_distance_sq = dist_sq
-                best_point = (proj_x, proj_y)
-                best_start_index = idx
-                best_end_index = (idx + 1) % len(records)
-
-        if best_point is None or best_start_index is None or best_end_index is None:
-            return None
-
-        mapped_point = rendering.map_point(
-            best_point[0], best_point[1], transform, size.height()
-        )
-        if (mapped_point - point).manhattanLength() > 16:
-            return None
-
-        start_record = records[best_start_index]
-        end_record = records[best_end_index]
-        dist_start = (cursor_x - start_record.x) ** 2 + (cursor_y - start_record.y) ** 2
-        dist_end = (cursor_x - end_record.x) ** 2 + (cursor_y - end_record.y) ** 2
-        return best_start_index if dist_start <= dist_end else best_end_index
-
-    def _handle_flag_removal(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
-        flag_index = self._flag_at_point(point, size)
-        if flag_index is None:
-            return False
-        del self._state.flags[flag_index]
-        if self._state.selected_flag is not None:
-            if self._state.selected_flag == flag_index:
-                self._set_selected_flag(None)
-            elif self._state.selected_flag > flag_index:
-                self._set_selected_flag(self._state.selected_flag - 1)
-        self._callbacks.update()
-        return True
-
-    def _set_selected_flag(self, index: int | None) -> None:
-        self._state.selected_flag = index
-        coords = None
-        if index is not None and 0 <= index < len(self._state.flags):
-            coords = self._state.flags[index]
-        self._callbacks.selected_flag_changed(coords)
-        self._callbacks.update()
-
-    def _emit_selected_camera(self) -> None:
-        selected = None
-        index = self._state.selected_camera
-        if index is not None and 0 <= index < len(self._camera_service.cameras):
-            selected = self._camera_service.cameras[index]
-        self._callbacks.selected_camera_changed(index, selected)
+        self._flag_edit.add_flag(coords)
