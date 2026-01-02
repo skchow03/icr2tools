@@ -380,6 +380,10 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def track_length(self) -> Optional[int]:
         return int(self._model.track_length) if self._model.track_length is not None else None
 
+    @property
+    def trk(self) -> object | None:
+        return self._model.trk
+
     def set_show_cameras(self, show: bool) -> None:
         """Enable or disable rendering of track camera overlays."""
 
