@@ -550,7 +550,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_full_name_field = self._create_text_field("–")
         self._qual_mode_field = QtWidgets.QComboBox()
         self._qual_mode_field.addItem("0 - timed session", 0)
-        self._qual_mode_field.addItem("1 - single car", 1)
+        self._qual_mode_field.addItem("1 - multi-lap average", 1)
+        self._qual_mode_field.addItem("2 - best single lap", 2)
         self._qual_mode_field.setCurrentIndex(-1)
         self._qual_mode_field.currentIndexChanged.connect(
             self._handle_qual_mode_changed
@@ -560,7 +561,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._blimp_x_field = self._create_int_field("–")
         self._blimp_y_field = self._create_int_field("–")
         self._gflag_field = self._create_int_field("–")
-        self._ttype_field = self._create_int_field("–")
+        self._ttype_field = QtWidgets.QComboBox()
+        self._ttype_field.addItem("0 - short oval", 0)
+        self._ttype_field.addItem("1 - mid oval", 1)
+        self._ttype_field.addItem("2 - large oval", 2)
+        self._ttype_field.addItem("3 - superspeedway", 3)
+        self._ttype_field.addItem("4 - road course", 4)
+        self._ttype_field.addItem("5 - unknown", 5)
+        self._ttype_field.setCurrentIndex(-1)
         self._pacea_cars_abreast_field = self._create_int_field("–")
         self._pacea_start_dlong_field = self._create_int_field("–")
         self._pacea_right_dlat_field = self._create_int_field("–")
@@ -975,11 +983,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _set_qual_mode(self, mode: int | None) -> None:
         with QtCore.QSignalBlocker(self._qual_mode_field):
-            if mode in (0, 1):
+            if mode in (0, 1, 2):
                 self._qual_mode_field.setCurrentIndex(mode)
             else:
                 self._qual_mode_field.setCurrentIndex(-1)
         self._update_qual_value_label(mode)
+
+    def _set_track_type(self, ttype: int | None) -> None:
+        with QtCore.QSignalBlocker(self._ttype_field):
+            if ttype in (0, 1, 2, 3, 4, 5):
+                self._ttype_field.setCurrentIndex(ttype)
+            else:
+                self._ttype_field.setCurrentIndex(-1)
 
     def _clear_track_txt_fields(self) -> None:
         for field in (
@@ -996,7 +1011,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._blimp_x_field,
             self._blimp_y_field,
             self._gflag_field,
-            self._ttype_field,
             self._pacea_cars_abreast_field,
             self._pacea_start_dlong_field,
             self._pacea_right_dlat_field,
@@ -1005,6 +1019,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         ):
             field.clear()
         self._set_qual_mode(None)
+        self._set_track_type(None)
 
     def _update_track_txt_fields(self, result: TrackTxtResult) -> None:
         if not result.exists:
@@ -1045,8 +1060,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._set_track_txt_field(self._blimp_y_field, blimp_y)
         gflag = str(metadata.gflag) if metadata.gflag is not None else None
         self._set_track_txt_field(self._gflag_field, gflag)
-        ttype = str(metadata.ttype) if metadata.ttype is not None else None
-        self._set_track_txt_field(self._ttype_field, ttype)
+        self._set_track_type(metadata.ttype)
         pacea_values = (
             metadata.pacea_cars_abreast,
             metadata.pacea_start_dlong,
@@ -1070,8 +1084,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _update_qual_value_label(self, mode: int | None) -> None:
         if mode == 0:
             label = "Minutes"
-        elif mode == 1:
-            label = "Number of laps"
+        elif mode in (1, 2):
+            label = "Laps"
         else:
             label = "Value"
         self._qual_value_label.setText(label)
@@ -1238,7 +1252,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         metadata.blimp_x = self._parse_optional_int(self._blimp_x_field.text())
         metadata.blimp_y = self._parse_optional_int(self._blimp_y_field.text())
         metadata.gflag = self._parse_optional_int(self._gflag_field.text())
-        metadata.ttype = self._parse_optional_int(self._ttype_field.text())
+        metadata.ttype = (
+            self._ttype_field.currentData()
+            if self._ttype_field.currentIndex() >= 0
+            else None
+        )
         metadata.pacea_cars_abreast = self._parse_optional_int(
             self._pacea_cars_abreast_field.text()
         )
