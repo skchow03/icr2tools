@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from icr2_core.cam.helpers import CameraPosition, Type6CameraParameters, Type7CameraParameters
-from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
 
 
 @dataclass

@@ -11,8 +11,8 @@ from icr2_core.cam.helpers import CameraPosition
 from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
 from track_viewer.geometry import project_point_to_centerline
-from track_viewer.track_preview_model import TrackPreviewModel
-from track_viewer.view_state import TrackPreviewViewState
+from track_viewer.model.track_preview_model import TrackPreviewModel
+from track_viewer.model.view_state import TrackPreviewViewState
 
 
 @dataclass

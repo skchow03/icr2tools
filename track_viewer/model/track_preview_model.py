@@ -9,13 +9,13 @@ from PyQt5 import QtCore
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import getxyz
-from track_viewer.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
+from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
     sample_centerline,
 )
-from track_viewer.io_service import TrackIOService
+from track_viewer.services.io_service import TrackIOService
 
 
 class TrackPreviewModel(QtCore.QObject):

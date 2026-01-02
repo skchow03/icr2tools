@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Sequence
 
 from icr2_core.cam.helpers import CameraPosition
-from track_viewer.camera_controller import CameraController
-from track_viewer.camera_models import CameraViewListing
-from track_viewer.io_service import CameraLoadResult, TrackIOService
+from track_viewer.controllers.camera_controller import CameraController
+from track_viewer.model.camera_models import CameraViewListing
+from track_viewer.services.io_service import CameraLoadResult, TrackIOService
 
 
 class CameraService:

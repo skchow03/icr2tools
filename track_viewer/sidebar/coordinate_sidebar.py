@@ -6,12 +6,12 @@ from typing import Optional
 from PyQt5 import QtCore, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
-from track_viewer.camera_models import CameraViewListing
-from track_viewer.camera_table import CameraCoordinateTable
-from track_viewer.coordinate_sidebar_vm import CoordinateSidebarViewModel
-from track_viewer.tv_modes_panel import TvModesPanel
-from track_viewer.type6_editor import Type6Editor
-from track_viewer.type7_details import Type7Details
+from track_viewer.model.camera_models import CameraViewListing
+from track_viewer.sidebar.camera_table import CameraCoordinateTable
+from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
+from track_viewer.sidebar.tv_modes_panel import TvModesPanel
+from track_viewer.sidebar.type6_editor import Type6Editor
+from track_viewer.sidebar.type7_details import Type7Details
 
 
 class CoordinateSidebar(QtWidgets.QFrame):

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from icr2_core.cam.helpers import CameraPosition
-from track_viewer.camera_models import CameraViewListing
+from track_viewer.model.camera_models import CameraViewListing
 
 
 @dataclass(frozen=True)

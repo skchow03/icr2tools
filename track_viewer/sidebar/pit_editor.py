@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from track_viewer.pit_models import (
+from track_viewer.model.pit_models import (
     PIT_DLONG_LINE_INDICES,
     PIT_DLONG_LINE_COLORS,
     PIT_PARAMETER_DEFINITIONS,

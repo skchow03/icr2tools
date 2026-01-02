@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore
 
-from track_viewer.widget import TrackPreviewWidget
+from track_viewer.widget.track_preview_widget import TrackPreviewWidget
 
 
 class CameraActions(QtCore.QObject):
