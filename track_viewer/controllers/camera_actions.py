@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore
 
-from track_viewer.widget.track_preview_widget import TrackPreviewWidget
+from track_viewer.preview_api import TrackPreviewApi
 
 
 class CameraActions(QtCore.QObject):
@@ -12,18 +12,18 @@ class CameraActions(QtCore.QObject):
     infoMessage = QtCore.pyqtSignal(str, str)
     warningMessage = QtCore.pyqtSignal(str, str)
 
-    def __init__(self, preview_widget: TrackPreviewWidget):
+    def __init__(self, preview_api: TrackPreviewApi):
         super().__init__()
-        self._preview_widget = preview_widget
+        self._preview_api = preview_api
 
     def add_type6_camera(self) -> None:
-        self._emit_result(*self._preview_widget.add_type6_camera(), title="Add Type 6 Camera")
+        self._emit_result(*self._preview_api.add_type6_camera(), title="Add Type 6 Camera")
 
     def add_type7_camera(self) -> None:
-        self._emit_result(*self._preview_widget.add_type7_camera(), title="Add Type 7 Camera")
+        self._emit_result(*self._preview_api.add_type7_camera(), title="Add Type 7 Camera")
 
     def save_cameras(self) -> None:
-        self._emit_result(*self._preview_widget.save_cameras(), title="Save Cameras")
+        self._emit_result(*self._preview_api.save_cameras(), title="Save Cameras")
 
     def _emit_result(self, success: bool, message: str, *, title: str) -> None:
         target = self.infoMessage if success else self.warningMessage

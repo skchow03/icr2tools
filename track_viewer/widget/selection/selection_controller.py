@@ -8,7 +8,7 @@ from PyQt5 import QtCore
 from track_viewer import rendering
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
-from track_viewer.widget.interaction import InteractionCallbacks
+from track_viewer.widget.interaction import InteractionCallbacks, PreviewIntent
 
 
 class SelectionController:
@@ -40,7 +40,7 @@ class SelectionController:
             return
         self._state.selected_camera = index
         self.emit_selected_camera()
-        self._callbacks.update()
+        self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
     def set_selected_flag(self, index: int | None) -> None:
         self._state.selected_flag = index
@@ -48,13 +48,13 @@ class SelectionController:
         if index is not None and 0 <= index < len(self._state.flags):
             coords = self._state.flags[index]
         self._callbacks.selected_flag_changed(coords)
-        self._callbacks.update()
+        self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
     def select_lp_record(self, name: str, index: int) -> None:
         self._state.selected_lp_line = name
         self._state.selected_lp_index = index
         self._callbacks.lp_record_selected(name, index)
-        self._callbacks.update()
+        self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
     def camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> int | None:
         transform = self._state.current_transform(self._model.bounds, size)

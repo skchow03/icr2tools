@@ -325,7 +325,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self.visualization_widget = TrackPreviewWidget()
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.visualization_widget.set_lp_dlat_step(self._lp_dlat_step.value())
+        self.preview_api = self.visualization_widget.api
+        self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._lp_shortcut_active = False
         self._sidebar_vm = CoordinateSidebarViewModel()
         self._sidebar = CoordinateSidebar(self._sidebar_vm)
@@ -422,9 +423,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._accel_window_slider.setRange(1, 12)
         self._accel_window_slider.setSingleStep(1)
         self._accel_window_slider.setPageStep(1)
-        self._accel_window_slider.setValue(
-            self.visualization_widget.ai_acceleration_window()
-        )
+        self._accel_window_slider.setValue(self.preview_api.ai_acceleration_window())
         self._accel_window_slider.setFixedWidth(120)
         self._accel_window_slider.valueChanged.connect(
             self._handle_accel_window_changed
@@ -436,7 +435,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._ai_width_slider.setRange(1, 8)
         self._ai_width_slider.setSingleStep(1)
         self._ai_width_slider.setPageStep(1)
-        self._ai_width_slider.setValue(self.visualization_widget.ai_line_width())
+        self._ai_width_slider.setValue(self.preview_api.ai_line_width())
         self._ai_width_slider.setFixedWidth(120)
         self._ai_width_slider.valueChanged.connect(self._handle_ai_line_width_changed)
         self._update_ai_line_width_label(self._ai_width_slider.value())
@@ -461,7 +460,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._flag_radius_input.setRange(0.0, 2147483647.0)
         self._flag_radius_input.setDecimals(2)
         self._flag_radius_input.setSingleStep(1.0)
-        self._flag_radius_input.setValue(self.visualization_widget.flag_radius())
+        self._flag_radius_input.setValue(self.preview_api.flag_radius())
         self._flag_radius_input.setFixedWidth(110)
         self._flag_radius_input.setToolTip(
             "Draw a dotted circle around flags when radius is greater than zero."
@@ -576,7 +575,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.update_selected_camera_details(None, None)
 
         self.controller = WindowController(
-            self.app_state, self.visualization_widget, parent=self
+            self.app_state, self.preview_api, parent=self
         )
         self.controller.installationPathChanged.connect(self._handle_installation_path)
         self.controller.trackListUpdated.connect(self._apply_track_list_items)
@@ -584,7 +583,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.controller.trkGapsAvailabilityChanged.connect(self._trk_gaps_button.setEnabled)
         self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
 
-        self.camera_actions = CameraActions(self.visualization_widget)
+        self.camera_actions = CameraActions(self.preview_api)
         self.camera_actions.infoMessage.connect(
             lambda title, message: QtWidgets.QMessageBox.information(
                 self, title, message
@@ -1012,7 +1011,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._clear_track_txt_fields()
             self._pit_save_button.setEnabled(False)
             self._track_txt_save_button.setEnabled(False)
-            self.visualization_widget.set_pit_parameters(None)
+            self.preview_api.set_pit_parameters(None)
             return
 
         result = self._io_service.load_track_txt(self._current_track_folder)
@@ -1036,8 +1035,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
         self._pit_save_button.setEnabled(True)
         self._track_txt_save_button.setEnabled(True)
-        self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())
-        self.visualization_widget.set_visible_pit_indices(
+        self.preview_api.set_pit_parameters(self._pit_editor.parameters())
+        self.preview_api.set_visible_pit_indices(
             self._pit_editor.pit_visible_indices()
         )
 
@@ -1146,10 +1145,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return None
 
     def _handle_pit_params_changed(self) -> None:
-        self.visualization_widget.set_pit_parameters(self._pit_editor.parameters())
+        self.preview_api.set_pit_parameters(self._pit_editor.parameters())
 
     def _handle_pit_visibility_changed(self, indices: set[int]) -> None:
-        self.visualization_widget.set_visible_pit_indices(indices)
+        self.preview_api.set_visible_pit_indices(indices)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802
         if (
@@ -1189,7 +1188,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         return False
 
     def _can_handle_lp_shortcut(self, *, ignore_focus: bool = False) -> bool:
-        lp_name = self.visualization_widget.active_lp_line()
+        lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return False
         if not ignore_focus and not self._lp_shortcut_active:
@@ -1217,7 +1216,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         return self._lp_records_table.isAncestorOf(focus)
 
     def _current_lp_selection(self) -> tuple[str, int] | None:
-        lp_name = self.visualization_widget.active_lp_line()
+        lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return None
         selection = self._lp_records_table.selectionModel()
@@ -1277,7 +1276,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._lp_checkboxes = {}
             self._lp_list.clear()
 
-            active_line = self.visualization_widget.active_lp_line()
+            active_line = self.preview_api.active_lp_line()
             if active_line not in {"center-line", *available_files}:
                 active_line = "center-line"
 
@@ -1285,7 +1284,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 label="Center line",
                 name="center-line",
                 color=None,
-                visible=self.visualization_widget.center_line_visible(),
+                visible=self.preview_api.center_line_visible(),
                 selected=active_line == "center-line",
                 enabled=enabled,
             )
@@ -1294,13 +1293,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self._add_lp_list_item(
                     label=name,
                     name=name,
-                    color=self.visualization_widget.lp_color(name),
+                    color=self.preview_api.lp_color(name),
                     visible=name in visible_files,
                     selected=active_line == name,
                     enabled=enabled,
                 )
 
-            self.visualization_widget.set_active_lp_line(active_line)
+            self.preview_api.set_active_lp_line(active_line)
         self._lp_list.setEnabled(enabled)
         self._update_lp_records_table(active_line)
         self._update_save_lp_button_state(active_line)
@@ -1356,22 +1355,22 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _toggle_boundaries(self, enabled: bool) -> None:
         text = "Hide Boundaries" if enabled else "Show Boundaries"
         self._boundary_button.setText(text)
-        self.visualization_widget.set_show_boundaries(enabled)
+        self.preview_api.set_show_boundaries(enabled)
 
     def _toggle_section_dividers(self, enabled: bool) -> None:
         text = "Hide Section Dividers" if enabled else "Show Section Dividers"
         self._section_divider_button.setText(text)
-        self.visualization_widget.set_show_section_dividers(enabled)
+        self.preview_api.set_show_section_dividers(enabled)
 
     def _toggle_zoom_points(self, enabled: bool) -> None:
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
         self._zoom_points_button.setText(text)
-        self.visualization_widget.set_show_zoom_points(enabled)
+        self.preview_api.set_show_zoom_points(enabled)
 
     def _toggle_show_cameras(self, enabled: bool) -> None:
         text = "Hide Cameras" if enabled else "Show Cameras"
         self._show_cameras_button.setText(text)
-        self.visualization_widget.set_show_cameras(enabled)
+        self.preview_api.set_show_cameras(enabled)
 
     def _toggle_ai_gradient(self, enabled: bool) -> None:
         mode = (
@@ -1410,7 +1409,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._ai_gradient_button.setText(speed_text)
         self._ai_acceleration_button.setText(accel_text)
-        self.visualization_widget.set_ai_color_mode(mode)
+        self.preview_api.set_ai_color_mode(mode)
 
     def _update_accel_window_label(self, segments: int) -> None:
         plural = "s" if segments != 1 else ""
@@ -1418,29 +1417,29 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_accel_window_changed(self, segments: int) -> None:
         self._update_accel_window_label(segments)
-        self.visualization_widget.set_ai_acceleration_window(segments)
+        self.preview_api.set_ai_acceleration_window(segments)
 
     def _update_ai_line_width_label(self, width: int) -> None:
         self._ai_width_label.setText(f"AI line width: {width}px")
 
     def _handle_ai_line_width_changed(self, width: int) -> None:
         self._update_ai_line_width_label(width)
-        self.visualization_widget.set_ai_line_width(width)
+        self.preview_api.set_ai_line_width(width)
 
     def _handle_flag_radius_changed(self, radius: float) -> None:
-        self.visualization_widget.set_flag_radius(radius)
+        self.preview_api.set_flag_radius(radius)
 
     def _handle_radius_unit_toggled(self, enabled: bool) -> None:
-        self.visualization_widget.set_radius_raw_visible(enabled)
+        self.preview_api.set_radius_raw_visible(enabled)
         text = "Show Radius Feet" if enabled else "Show Radius 500ths"
         self._radius_unit_button.setText(text)
 
     def _handle_lp_visibility_changed(self, name: str, visible: bool) -> None:
         if name == "center-line":
-            self.visualization_widget.set_show_center_line(visible)
+            self.preview_api.set_show_center_line(visible)
             return
 
-        selected = set(self.visualization_widget.visible_lp_files())
+        selected = set(self.preview_api.visible_lp_files())
         if visible:
             selected.add(name)
         else:
@@ -1454,11 +1453,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 checkbox = self._lp_checkboxes.get(name)
                 if checkbox is not None and not checkbox.isChecked():
                     checkbox.setChecked(True)
-            self.visualization_widget.set_active_lp_line(name)
+            self.preview_api.set_active_lp_line(name)
 
     def _update_lp_records_table(self, name: str | None = None) -> None:
-        lp_name = name or self.visualization_widget.active_lp_line()
-        records = self.visualization_widget.ai_line_records(lp_name)
+        lp_name = name or self.preview_api.active_lp_line()
+        records = self.preview_api.ai_line_records(lp_name)
         label = "LP records"
         if lp_name and lp_name != "center-line":
             label = f"LP records: {lp_name}"
@@ -1471,7 +1470,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
             selection_model.clearSelection()
-        self.visualization_widget.set_selected_lp_record(None, None)
+        self.preview_api.set_selected_lp_record(None, None)
         self._set_lp_shortcut_active(False)
         self._update_lp_shortcut_button_state()
         self._update_selected_lp_index_label(None)
@@ -1479,17 +1478,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._select_lp_record_row(0)
 
     def _handle_ai_line_loaded(self, name: str) -> None:
-        if name == self.visualization_widget.active_lp_line():
+        if name == self.preview_api.active_lp_line():
             self._update_lp_records_table(name)
-        self._update_save_lp_button_state(self.visualization_widget.active_lp_line())
+        self._update_save_lp_button_state(self.preview_api.active_lp_line())
         self._update_export_lp_csv_button_state(
-            self.visualization_widget.active_lp_line()
+            self.preview_api.active_lp_line()
         )
         self._update_recalculate_lateral_speed_button_state(
-            self.visualization_widget.active_lp_line()
+            self.preview_api.active_lp_line()
         )
         self._update_lp_speed_unit_button_state(
-            self.visualization_widget.active_lp_line()
+            self.preview_api.active_lp_line()
         )
 
     def _handle_lp_record_selected(self) -> None:
@@ -1499,20 +1498,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         rows = selection.selectedRows()
         if not rows:
-            self.visualization_widget.set_selected_lp_record(None, None)
+            self.preview_api.set_selected_lp_record(None, None)
             self._set_lp_shortcut_active(False)
             self._update_lp_shortcut_button_state()
             self._update_selected_lp_index_label(None)
             return
         row = rows[0].row()
-        lp_name = self.visualization_widget.active_lp_line()
+        lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
-            self.visualization_widget.set_selected_lp_record(None, None)
+            self.preview_api.set_selected_lp_record(None, None)
             self._set_lp_shortcut_active(False)
             self._update_lp_shortcut_button_state()
             self._update_selected_lp_index_label(None)
             return
-        self.visualization_widget.set_selected_lp_record(lp_name, row)
+        self.preview_api.set_selected_lp_record(lp_name, row)
         self._update_lp_shortcut_button_state()
         self._update_selected_lp_index_label(row)
 
@@ -1532,7 +1531,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if self._lp_shortcut_active == active:
             return
         self._lp_shortcut_active = active
-        self.visualization_widget.set_lp_shortcut_active(active)
+        self.preview_api.set_lp_shortcut_active(active)
         text = (
             "Disable LP arrow-key editing"
             if active
@@ -1558,10 +1557,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self._lp_shortcut_button.setText("Enable LP arrow-key editing")
 
     def _handle_lp_dlat_step_changed(self, value: int) -> None:
-        self.visualization_widget.set_lp_dlat_step(value)
+        self.preview_api.set_lp_dlat_step(value)
 
     def _handle_lp_record_clicked(self, lp_name: str, row: int) -> None:
-        if lp_name != self.visualization_widget.active_lp_line():
+        if lp_name != self.preview_api.active_lp_line():
             return
         if row < 0 or row >= self._lp_records_model.rowCount():
             return
@@ -1581,13 +1580,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.update()
 
     def _handle_lp_record_edited(self, row: int) -> None:
-        lp_name = self.visualization_widget.active_lp_line()
+        lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return
-        self.visualization_widget.update_lp_record(lp_name, row)
+        self.preview_api.update_lp_record(lp_name, row)
 
     def _handle_save_lp_line(self) -> None:
-        success, message = self.visualization_widget.save_active_lp_line()
+        success, message = self.preview_api.save_active_lp_line()
         title = "Save LP"
         if success:
             QtWidgets.QMessageBox.information(self, title, message)
@@ -1595,7 +1594,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, title, message)
 
     def _handle_export_lp_csv(self) -> None:
-        lp_name = self.visualization_widget.active_lp_line()
+        lp_name = self.preview_api.active_lp_line()
         suggested = f"{lp_name}.csv" if lp_name else "lp.csv"
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
@@ -1605,7 +1604,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         if not path:
             return
-        success, message = self.visualization_widget.export_active_lp_csv(Path(path))
+        success, message = self.preview_api.export_active_lp_csv(Path(path))
         title = "Export LP CSV"
         if success:
             QtWidgets.QMessageBox.information(self, title, message)
@@ -1613,41 +1612,41 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, title, message)
 
     def _update_save_lp_button_state(self, lp_name: str | None = None) -> None:
-        name = lp_name or self.visualization_widget.active_lp_line()
+        name = lp_name or self.preview_api.active_lp_line()
         enabled = (
             bool(name)
             and name != "center-line"
-            and self.visualization_widget.trk is not None
-            and bool(self.visualization_widget.ai_line_records(name))
+            and self.preview_api.trk is not None
+            and bool(self.preview_api.ai_line_records(name))
         )
         self._save_lp_button.setEnabled(enabled)
 
     def _update_export_lp_csv_button_state(self, lp_name: str | None = None) -> None:
-        name = lp_name or self.visualization_widget.active_lp_line()
+        name = lp_name or self.preview_api.active_lp_line()
         enabled = (
             bool(name)
             and name != "center-line"
-            and bool(self.visualization_widget.ai_line_records(name))
+            and bool(self.preview_api.ai_line_records(name))
         )
         self._export_lp_csv_button.setEnabled(enabled)
 
     def _update_recalculate_lateral_speed_button_state(
         self, lp_name: str | None = None
     ) -> None:
-        name = lp_name or self.visualization_widget.active_lp_line()
+        name = lp_name or self.preview_api.active_lp_line()
         enabled = (
             bool(name)
             and name != "center-line"
-            and bool(self.visualization_widget.ai_line_records(name))
+            and bool(self.preview_api.ai_line_records(name))
         )
         self._recalculate_lateral_speed_button.setEnabled(enabled)
 
     def _update_lp_speed_unit_button_state(self, lp_name: str | None = None) -> None:
-        name = lp_name or self.visualization_widget.active_lp_line()
+        name = lp_name or self.preview_api.active_lp_line()
         enabled = (
             bool(name)
             and name != "center-line"
-            and bool(self.visualization_widget.ai_line_records(name))
+            and bool(self.preview_api.ai_line_records(name))
         )
         self._lp_speed_unit_button.setEnabled(enabled)
 
@@ -1657,10 +1656,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_speed_unit_button.setText(text)
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
-        self.visualization_widget.set_tv_mode_count(mode_count)
+        self.preview_api.set_tv_mode_count(mode_count)
 
     def _handle_recalculate_lateral_speed(self) -> None:
-        lp_name = self.visualization_widget.active_lp_line()
+        lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return
         if self._lp_records_model.recalculate_lateral_speeds():
@@ -1677,17 +1676,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.set_tv_mode_count(target_count)
 
     def _handle_camera_selection_changed(self, index: Optional[int]) -> None:
-        self.visualization_widget.set_selected_camera(index)
+        self.preview_api.set_selected_camera(index)
 
     def _handle_camera_dlongs_updated(
         self, camera_index: int, start: Optional[int], end: Optional[int]
     ) -> None:
-        self.visualization_widget.update_camera_dlongs(camera_index, start, end)
+        self.preview_api.update_camera_dlongs(camera_index, start, end)
 
     def _handle_camera_position_updated(
         self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
     ) -> None:
-        self.visualization_widget.update_camera_position(index, x, y, z)
+        self.preview_api.update_camera_position(index, x, y, z)
 
     def _handle_type6_parameters_changed(self) -> None:
         self.visualization_widget.update()
