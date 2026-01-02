@@ -252,6 +252,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
         self._show_boundaries = True
         self._show_cameras = True
         self._show_zoom_points = False
+        self._show_section_dividers = False
         self._visible_lp_files: set[str] = set()
         self._available_lp_files: List[str] = []
         self._ai_color_mode = "none"
@@ -394,6 +395,13 @@ class TrackPreviewWidget(QtWidgets.QFrame):
 
         if self._show_boundaries != show:
             self._show_boundaries = show
+            self.update()
+
+    def set_show_section_dividers(self, show: bool) -> None:
+        """Enable or disable rendering of TRK section divider lines."""
+
+        if self._show_section_dividers != show:
+            self._show_section_dividers = show
             self.update()
 
     def center_line_visible(self) -> bool:
@@ -1143,6 +1151,14 @@ class TrackPreviewWidget(QtWidgets.QFrame):
                 self.height(),
                 self._flag_radius,
             )
+            if self._show_section_dividers:
+                rendering.draw_pit_dlong_lines(
+                    painter,
+                    self._section_divider_segments(),
+                    transform,
+                    self.height(),
+                    width=1,
+                )
             rendering.draw_pit_dlong_lines(
                 painter,
                 self._pit_dlong_segments(),
@@ -1869,6 +1885,44 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             end_x, end_y, _ = getxyz(self.trk, dlong, max_dlat, self._cline)
             color = PIT_DLONG_LINE_COLORS.get(index, "#ffffff")
             segments.append(((start_x, start_y), (end_x, end_y), color))
+        return segments
+
+    def _section_divider_segments(
+        self,
+    ) -> list[tuple[tuple[float, float], tuple[float, float], str]]:
+        if self.trk is None or not self._cline:
+            return []
+        track_length = float(self.trk.trklength or 0.0)
+        if track_length <= 0:
+            return []
+        segments: list[tuple[tuple[float, float], tuple[float, float], str]] = []
+        seen_dlongs: set[float] = set()
+        for section in self.trk.sects:
+            try:
+                dlong = float(section.start_dlong)
+            except (TypeError, ValueError):
+                continue
+            dlong = dlong % track_length
+            if dlong in seen_dlongs:
+                continue
+            seen_dlongs.add(dlong)
+            sect_info = dlong2sect(self.trk, dlong)
+            if not sect_info:
+                continue
+            sect_index, subsect = sect_info
+            if sect_index is None or subsect is None:
+                continue
+            sect = self.trk.sects[sect_index]
+            dlats: list[float] = []
+            for bound_index in range(sect.num_bounds):
+                dlats.append(getbounddlat(self.trk, sect_index, subsect, bound_index))
+            if not dlats:
+                continue
+            min_dlat = min(dlats)
+            max_dlat = max(dlats)
+            start_x, start_y, _ = getxyz(self.trk, dlong, min_dlat, self._cline)
+            end_x, end_y, _ = getxyz(self.trk, dlong, max_dlat, self._cline)
+            segments.append(((start_x, start_y), (end_x, end_y), "lightgray"))
         return segments
 
     def _camera_view_ranges(self, camera_index: int | None) -> list[tuple[float, float]]:
