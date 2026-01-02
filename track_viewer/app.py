@@ -548,8 +548,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_length_field = self._create_int_field("–")
         self._track_laps_field = self._create_int_field("–")
         self._track_full_name_field = self._create_text_field("–")
-        self._qual_mode_field = self._create_int_field("–")
+        self._qual_mode_field = QtWidgets.QComboBox()
+        self._qual_mode_field.addItem("0 - timed session", 0)
+        self._qual_mode_field.addItem("1 - single car", 1)
+        self._qual_mode_field.setCurrentIndex(-1)
+        self._qual_mode_field.currentIndexChanged.connect(
+            self._handle_qual_mode_changed
+        )
         self._qual_value_field = self._create_int_field("–")
+        self._qual_value_label = QtWidgets.QLabel("Value")
         self._blimp_x_field = self._create_int_field("–")
         self._blimp_y_field = self._create_int_field("–")
         self._gflag_field = self._create_int_field("–")
@@ -874,7 +881,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         qual_layout.setContentsMargins(0, 0, 0, 0)
         qual_layout.addWidget(QtWidgets.QLabel("Mode"))
         qual_layout.addWidget(self._qual_mode_field)
-        qual_layout.addWidget(QtWidgets.QLabel("Value"))
+        qual_layout.addWidget(self._qual_value_label)
         qual_layout.addWidget(self._qual_value_field)
         qual_widget = QtWidgets.QWidget()
         qual_widget.setLayout(qual_layout)
@@ -966,6 +973,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             field.clear()
 
+    def _set_qual_mode(self, mode: int | None) -> None:
+        with QtCore.QSignalBlocker(self._qual_mode_field):
+            if mode in (0, 1):
+                self._qual_mode_field.setCurrentIndex(mode)
+            else:
+                self._qual_mode_field.setCurrentIndex(-1)
+        self._update_qual_value_label(mode)
+
     def _clear_track_txt_fields(self) -> None:
         for field in (
             self._track_name_field,
@@ -977,7 +992,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._track_length_field,
             self._track_laps_field,
             self._track_full_name_field,
-            self._qual_mode_field,
             self._qual_value_field,
             self._blimp_x_field,
             self._blimp_y_field,
@@ -990,6 +1004,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pacea_unknown_field,
         ):
             field.clear()
+        self._set_qual_mode(None)
 
     def _update_track_txt_fields(self, result: TrackTxtResult) -> None:
         if not result.exists:
@@ -1016,17 +1031,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         laps = str(metadata.laps) if metadata.laps is not None else None
         self._set_track_txt_field(self._track_laps_field, laps)
         self._set_track_txt_field(self._track_full_name_field, metadata.fname)
-        qual_mode = (
-            str(metadata.qual_session_mode)
-            if metadata.qual_session_mode is not None
-            else None
-        )
+        qual_mode_value = metadata.qual_session_mode
         qual_value = (
             str(metadata.qual_session_value)
             if metadata.qual_session_value is not None
             else None
         )
-        self._set_track_txt_field(self._qual_mode_field, qual_mode)
+        self._set_qual_mode(qual_mode_value)
         self._set_track_txt_field(self._qual_value_field, qual_value)
         blimp_x = str(metadata.blimp_x) if metadata.blimp_x is not None else None
         blimp_y = str(metadata.blimp_y) if metadata.blimp_y is not None else None
@@ -1051,6 +1062,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._set_track_txt_field(self._pacea_right_dlat_field, pacea_text[2])
         self._set_track_txt_field(self._pacea_left_dlat_field, pacea_text[3])
         self._set_track_txt_field(self._pacea_unknown_field, pacea_text[4])
+
+    def _handle_qual_mode_changed(self, index: int) -> None:
+        mode = self._qual_mode_field.itemData(index) if index >= 0 else None
+        self._update_qual_value_label(mode)
+
+    def _update_qual_value_label(self, mode: int | None) -> None:
+        if mode == 0:
+            label = "Minutes"
+        elif mode == 1:
+            label = "Number of laps"
+        else:
+            label = "Value"
+        self._qual_value_label.setText(label)
 
     def _update_selected_flag_position(
         self, coords: Optional[tuple[float, float]]
@@ -1203,8 +1227,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         metadata.lengt = self._parse_optional_int(self._track_length_field.text())
         metadata.laps = self._parse_optional_int(self._track_laps_field.text())
         metadata.fname = self._track_full_name_field.text().strip() or None
-        metadata.qual_session_mode = self._parse_optional_int(
-            self._qual_mode_field.text()
+        metadata.qual_session_mode = (
+            self._qual_mode_field.currentData()
+            if self._qual_mode_field.currentIndex() >= 0
+            else None
         )
         metadata.qual_session_value = self._parse_optional_int(
             self._qual_value_field.text()
