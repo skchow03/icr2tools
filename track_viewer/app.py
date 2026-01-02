@@ -10,16 +10,14 @@ from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.camera_actions import CameraActions
 from track_viewer.camera_models import CameraViewListing
-from track_viewer.camera_table import CameraCoordinateTable
+from track_viewer.coordinate_sidebar import CoordinateSidebar
+from track_viewer.coordinate_sidebar_vm import CoordinateSidebarViewModel
 from track_viewer.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
 from track_viewer.pit_editor import PitParametersEditor
 from track_viewer.pit_models import PitParameters
 from track_viewer.preview_widget import LpPoint, TrackPreviewWidget
 from track_viewer.version import __version__
 from track_viewer.window_controller import WindowController
-from track_viewer.tv_modes_panel import TvModesPanel
-from track_viewer.type6_editor import Type6Editor
-from track_viewer.type7_details import Type7Details
 
 
 class TrackViewerApp(QtWidgets.QApplication):
@@ -56,207 +54,6 @@ class TrackViewerApp(QtWidgets.QApplication):
     def update_tracks(self, tracks: List[str]) -> None:
         self.tracks = tracks
 
-
-class CoordinateSidebar(QtWidgets.QFrame):
-    """Utility sidebar that mirrors cursor and camera details."""
-
-    cameraSelectionChanged = QtCore.pyqtSignal(object)
-    cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
-    cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
-    type6ParametersChanged = QtCore.pyqtSignal()
-    tvModeCountChanged = QtCore.pyqtSignal(int)
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.setMinimumWidth(220)
-        self._track_length: int | None = None
-
-        self._cursor_x = self._create_readonly_field("–")
-        self._cursor_y = self._create_readonly_field("–")
-        self._camera_list = QtWidgets.QComboBox()
-        self._camera_list.setMinimumWidth(160)
-        self._camera_list.currentIndexChanged.connect(self._on_camera_selected)
-        self._tv_panel = TvModesPanel()
-        self._camera_table = CameraCoordinateTable()
-        self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
-        self._camera_details.setTextFormat(QtCore.Qt.RichText)
-        self._camera_details.setWordWrap(True)
-        self._camera_details.setAlignment(QtCore.Qt.AlignTop)
-        self._camera_details.setStyleSheet("font-size: 12px")
-        self._type6_editor = Type6Editor()
-        self._type7_details = Type7Details()
-        self._cameras: List[CameraPosition] = []
-        self._selected_camera_index: int | None = None
-
-        self._tv_panel.cameraSelected.connect(self.cameraSelectionChanged)
-        self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
-        self._tv_panel.modeCountChanged.connect(self.tvModeCountChanged)
-        self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
-        self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
-        self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
-
-        layout = QtWidgets.QVBoxLayout()
-        layout.setSpacing(12)
-
-        camera_title = QtWidgets.QLabel("Track cameras")
-        camera_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(camera_title)
-        layout.addWidget(self._camera_list)
-
-        layout.addWidget(self._tv_panel)
-
-        coords_title = QtWidgets.QLabel("World coordinates")
-        coords_title.setStyleSheet("font-weight: bold")
-        layout.addWidget(coords_title)
-        layout.addWidget(self._camera_table)
-
-        layout.addStretch(1)
-        self.setLayout(layout)
-
-    @property
-    def type6_editor(self) -> Type6Editor:
-        return self._type6_editor
-
-    @property
-    def type7_details(self) -> Type7Details:
-        return self._type7_details
-
-    def set_tv_mode_count(self, count: int) -> None:
-        self._tv_panel.set_mode_count(count)
-
-    def set_track_length(self, track_length: Optional[int]) -> None:
-        self._track_length = track_length if track_length is not None else None
-        self._tv_panel.set_track_length(self._track_length)
-        self._type6_editor.set_track_length(self._track_length)
-
-    def update_cursor_position(self, coords: Optional[tuple[float, float]]) -> None:
-        if coords is None:
-            self._cursor_x.clear()
-            self._cursor_y.clear()
-            return
-        self._cursor_x.setText(self._format_value(coords[0]))
-        self._cursor_y.setText(self._format_value(coords[1]))
-
-    def set_cameras(
-        self, cameras: List[CameraPosition], views: List[CameraViewListing]
-    ) -> None:
-        self._cameras = cameras
-        self._camera_views = views
-        self._selected_camera_index = None
-        self._camera_table.set_camera(None, None)
-        self._type6_editor.set_camera(None, None)
-        self._type7_details.set_camera(None, None)
-        self._tv_panel.set_views(views, cameras)
-        self._camera_list.blockSignals(True)
-        self._camera_list.clear()
-        if not cameras:
-            self._camera_list.addItem("(No cameras found)")
-            self._camera_list.setEnabled(False)
-            self._camera_details.setText("This track does not define any camera positions.")
-            self._camera_list.setCurrentIndex(-1)
-        else:
-            for cam in cameras:
-                label = f"#{cam.index} (type {cam.camera_type})"
-                self._camera_list.addItem(label)
-            self._camera_list.setEnabled(True)
-            self._camera_details.setText("Select a camera to inspect.")
-            self._camera_list.setCurrentIndex(-1)
-        self._camera_list.blockSignals(False)
-
-    def select_camera(self, index: int | None) -> None:
-        self._camera_list.blockSignals(True)
-        if index is None:
-            self._camera_list.setCurrentIndex(-1)
-        else:
-            self._camera_list.setCurrentIndex(index)
-        self._camera_list.blockSignals(False)
-        self._tv_panel.select_camera(index)
-        if index is None:
-            self._camera_table.setCurrentCell(-1, -1)
-        elif self._camera_table.isEnabled():
-            self._camera_table.setCurrentCell(0, 0)
-
-    def update_selected_camera_details(
-        self, index: int | None, camera: Optional[CameraPosition]
-    ) -> None:
-        if camera is None:
-            self._camera_details.setText("Select a camera to inspect.")
-            self._selected_camera_index = None
-            self._camera_table.set_camera(None, None)
-            self._type6_editor.set_camera(None, None)
-            self._type7_details.set_camera(None, None)
-            if index is None:
-                self.select_camera(None)
-            return
-        self._selected_camera_index = index
-        self._camera_table.set_camera(index, camera)
-
-        details = [f"Index: {camera.index}", f"Type: {camera.camera_type}"]
-
-        if camera.camera_type == 6 and camera.type6 is not None:
-            details.append("Type 6 parameters can be edited below.")
-            self._type6_editor.set_camera(index, camera)
-        else:
-            self._type6_editor.set_camera(None, None)
-
-        if camera.camera_type == 7 and camera.type7 is not None:
-            params = camera.type7
-            details.append("Type 7 parameters:")
-            details.append(
-                "Z-axis rotation: {0}, vertical rotation: {1}, tilt: {2}, zoom: {3}".format(
-                    params.z_axis_rotation,
-                    params.vertical_rotation,
-                    params.tilt,
-                    params.zoom,
-                )
-            )
-            details.append(
-                "Unknowns: {0}, {1}, {2}, {3}".format(
-                    params.unknown1,
-                    params.unknown2,
-                    params.unknown3,
-                    params.unknown4,
-                )
-            )
-            self._type7_details.set_camera(index, camera)
-        else:
-            self._type7_details.set_camera(None, None)
-
-        self._camera_details.setText("<br>".join(details))
-        if index is not None and self._camera_list.currentIndex() != index:
-            self.select_camera(index)
-
-    def _handle_camera_position_updated(
-        self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
-    ) -> None:
-        if (
-            self._selected_camera_index is not None
-            and index == self._selected_camera_index
-            and 0 <= index < len(self._cameras)
-        ):
-            self.update_selected_camera_details(index, self._cameras[index])
-        self.cameraPositionUpdated.emit(index, x, y, z)
-
-    def _handle_type6_parameters_changed(self) -> None:
-        self.type6ParametersChanged.emit()
-
-    def _on_camera_selected(self, index: int) -> None:
-        if not self._cameras or index < 0 or index >= len(self._cameras):
-            self.cameraSelectionChanged.emit(None)
-            return
-        self.cameraSelectionChanged.emit(index)
-
-    def _create_readonly_field(self, placeholder: str) -> QtWidgets.QLineEdit:
-        field = QtWidgets.QLineEdit()
-        field.setReadOnly(True)
-        field.setPlaceholderText(placeholder)
-        field.setFocusPolicy(QtCore.Qt.ClickFocus)
-        return field
-
-    @staticmethod
-    def _format_value(value: float) -> str:
-        return f"{value:.2f}"
 
 class LpRecordsModel(QtCore.QAbstractTableModel):
     """Table model that lazily renders LP records for the view."""
@@ -529,7 +326,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.visualization_widget.set_lp_dlat_step(self._lp_dlat_step.value())
         self._lp_shortcut_active = False
-        self._sidebar = CoordinateSidebar()
+        self._sidebar_vm = CoordinateSidebarViewModel()
+        self._sidebar = CoordinateSidebar(self._sidebar_vm)
         self._pit_editor = PitParametersEditor()
         self._pit_status_label = QtWidgets.QLabel(
             "Select a track to edit pit parameters."
