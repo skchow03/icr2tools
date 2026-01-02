@@ -16,7 +16,7 @@ from track_viewer.io_service import TrackIOService, TrackTxtMetadata, TrackTxtRe
 from track_viewer.pit_editor import PitParametersEditor
 from track_viewer.pit_models import PitParameters
 from track_viewer.ai_line_service import LpPoint
-from track_viewer.preview_widget import TrackPreviewWidget
+from track_viewer.widget import TrackPreviewWidget
 from track_viewer.version import __version__
 from track_viewer.window_controller import WindowController
 

@@ -6,7 +6,7 @@ from typing import Optional, TYPE_CHECKING
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from track_viewer.preview_widget import TrackPreviewWidget
+from track_viewer.widget import TrackPreviewWidget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for type checking
     from track_viewer.app import TrackViewerApp
