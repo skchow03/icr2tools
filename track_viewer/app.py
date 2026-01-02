@@ -548,6 +548,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_length_field = self._create_int_field("–")
         self._track_laps_field = self._create_int_field("–")
         self._track_full_name_field = self._create_text_field("–")
+        self._cars_min_field = self._create_int_field("–")
+        self._cars_max_field = self._create_int_field("–")
+        self._temp_avg_field = self._create_int_field("–")
+        self._temp_dev_field = self._create_int_field("–")
+        self._temp2_avg_field = self._create_int_field("–")
+        self._temp2_dev_field = self._create_int_field("–")
         self._qual_mode_field = QtWidgets.QComboBox()
         self._qual_mode_field.addItem("0 - timed session", 0)
         self._qual_mode_field.addItem("1 - multi-lap average", 1)
@@ -885,6 +891,33 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_txt_form.addRow("Length (LENGT)", self._track_length_field)
         track_txt_form.addRow("Laps (LAPS)", self._track_laps_field)
         track_txt_form.addRow("Full name (FNAME)", self._track_full_name_field)
+        cars_layout = QtWidgets.QHBoxLayout()
+        cars_layout.setContentsMargins(0, 0, 0, 0)
+        cars_layout.addWidget(QtWidgets.QLabel("Min"))
+        cars_layout.addWidget(self._cars_min_field)
+        cars_layout.addWidget(QtWidgets.QLabel("Max"))
+        cars_layout.addWidget(self._cars_max_field)
+        cars_widget = QtWidgets.QWidget()
+        cars_widget.setLayout(cars_layout)
+        track_txt_form.addRow("Cars (CARS)", cars_widget)
+        temp_layout = QtWidgets.QHBoxLayout()
+        temp_layout.setContentsMargins(0, 0, 0, 0)
+        temp_layout.addWidget(QtWidgets.QLabel("Average"))
+        temp_layout.addWidget(self._temp_avg_field)
+        temp_layout.addWidget(QtWidgets.QLabel("Deviation"))
+        temp_layout.addWidget(self._temp_dev_field)
+        temp_widget = QtWidgets.QWidget()
+        temp_widget.setLayout(temp_layout)
+        track_txt_form.addRow("Temperature (TEMP)", temp_widget)
+        temp2_layout = QtWidgets.QHBoxLayout()
+        temp2_layout.setContentsMargins(0, 0, 0, 0)
+        temp2_layout.addWidget(QtWidgets.QLabel("Average"))
+        temp2_layout.addWidget(self._temp2_avg_field)
+        temp2_layout.addWidget(QtWidgets.QLabel("Deviation"))
+        temp2_layout.addWidget(self._temp2_dev_field)
+        temp2_widget = QtWidgets.QWidget()
+        temp2_widget.setLayout(temp2_layout)
+        track_txt_form.addRow("Temperature 2 (TEMP2)", temp2_widget)
         qual_layout = QtWidgets.QHBoxLayout()
         qual_layout.setContentsMargins(0, 0, 0, 0)
         qual_layout.addWidget(QtWidgets.QLabel("Mode"))
@@ -1007,6 +1040,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._track_length_field,
             self._track_laps_field,
             self._track_full_name_field,
+            self._cars_min_field,
+            self._cars_max_field,
+            self._temp_avg_field,
+            self._temp_dev_field,
+            self._temp2_avg_field,
+            self._temp2_dev_field,
             self._qual_value_field,
             self._blimp_x_field,
             self._blimp_y_field,
@@ -1046,6 +1085,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         laps = str(metadata.laps) if metadata.laps is not None else None
         self._set_track_txt_field(self._track_laps_field, laps)
         self._set_track_txt_field(self._track_full_name_field, metadata.fname)
+        cars_min = str(metadata.cars_min) if metadata.cars_min is not None else None
+        cars_max = str(metadata.cars_max) if metadata.cars_max is not None else None
+        self._set_track_txt_field(self._cars_min_field, cars_min)
+        self._set_track_txt_field(self._cars_max_field, cars_max)
+        temp_avg = str(metadata.temp_avg) if metadata.temp_avg is not None else None
+        temp_dev = str(metadata.temp_dev) if metadata.temp_dev is not None else None
+        self._set_track_txt_field(self._temp_avg_field, temp_avg)
+        self._set_track_txt_field(self._temp_dev_field, temp_dev)
+        temp2_avg = str(metadata.temp2_avg) if metadata.temp2_avg is not None else None
+        temp2_dev = str(metadata.temp2_dev) if metadata.temp2_dev is not None else None
+        self._set_track_txt_field(self._temp2_avg_field, temp2_avg)
+        self._set_track_txt_field(self._temp2_dev_field, temp2_dev)
         qual_mode_value = metadata.qual_session_mode
         qual_value = (
             str(metadata.qual_session_value)
@@ -1241,6 +1292,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         metadata.lengt = self._parse_optional_int(self._track_length_field.text())
         metadata.laps = self._parse_optional_int(self._track_laps_field.text())
         metadata.fname = self._track_full_name_field.text().strip() or None
+        metadata.cars_min = self._parse_optional_int(self._cars_min_field.text())
+        metadata.cars_max = self._parse_optional_int(self._cars_max_field.text())
+        metadata.temp_avg = self._parse_optional_int(self._temp_avg_field.text())
+        metadata.temp_dev = self._parse_optional_int(self._temp_dev_field.text())
+        metadata.temp2_avg = self._parse_optional_int(self._temp2_avg_field.text())
+        metadata.temp2_dev = self._parse_optional_int(self._temp2_dev_field.text())
         metadata.qual_session_mode = (
             self._qual_mode_field.currentData()
             if self._qual_mode_field.currentIndex() >= 0

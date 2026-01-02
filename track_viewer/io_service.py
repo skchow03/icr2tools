@@ -98,6 +98,12 @@ class TrackTxtMetadata:
     pacea_right_dlat: int | None = None
     pacea_left_dlat: int | None = None
     pacea_unknown: int | None = None
+    cars_min: int | None = None
+    cars_max: int | None = None
+    temp_avg: int | None = None
+    temp_dev: int | None = None
+    temp2_avg: int | None = None
+    temp2_dev: int | None = None
 
 
 @dataclass
@@ -254,6 +260,18 @@ class TrackIOService:
                         metadata.pacea_left_dlat,
                         metadata.pacea_unknown,
                     ) = parsed
+            elif keyword_upper == "CARS" and metadata.cars_min is None:
+                parsed = self._parse_pair_values(values)
+                if parsed is not None:
+                    metadata.cars_min, metadata.cars_max = parsed
+            elif keyword_upper == "TEMP" and metadata.temp_avg is None:
+                parsed = self._parse_pair_values(values)
+                if parsed is not None:
+                    metadata.temp_avg, metadata.temp_dev = parsed
+            elif keyword_upper == "TEMP2" and metadata.temp2_avg is None:
+                parsed = self._parse_pair_values(values)
+                if parsed is not None:
+                    metadata.temp2_avg, metadata.temp2_dev = parsed
         return TrackTxtResult(lines, pit, metadata, txt_path, True)
 
     def save_cameras(
@@ -479,6 +497,15 @@ class TrackIOService:
             parsed_values.append(parsed)
         return tuple(parsed_values)  # type: ignore[return-value]
 
+    def _parse_pair_values(self, values: Sequence[str]) -> tuple[int, int] | None:
+        if len(values) < 2:
+            return None
+        first_value = self._parse_track_integer(values[0])
+        second_value = self._parse_track_integer(values[1])
+        if first_value is None or second_value is None:
+            return None
+        return first_value, second_value
+
     @staticmethod
     def _parse_track_integer(value: str) -> int | None:
         try:
@@ -568,6 +595,18 @@ class TrackIOService:
             )
         else:
             replacements["PACEA"] = None
+        if metadata.cars_min is not None and metadata.cars_max is not None:
+            replacements["CARS"] = f"CARS {metadata.cars_min} {metadata.cars_max}"
+        else:
+            replacements["CARS"] = None
+        if metadata.temp_avg is not None and metadata.temp_dev is not None:
+            replacements["TEMP"] = f"TEMP {metadata.temp_avg} {metadata.temp_dev}"
+        else:
+            replacements["TEMP"] = None
+        if metadata.temp2_avg is not None and metadata.temp2_dev is not None:
+            replacements["TEMP2"] = f"TEMP2 {metadata.temp2_avg} {metadata.temp2_dev}"
+        else:
+            replacements["TEMP2"] = None
         return replacements
 
     def _repack_dat(self, dat_path: Path, cam_path: Path, scr_path: Path) -> None:
