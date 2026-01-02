@@ -1,7 +1,7 @@
 """Tests for SCR segment serialization helpers."""
 
 from icr2_core.cam.helpers import _serialize_scr_segments
-from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
 
 
 def test_serialize_scr_segments_prefers_type_index_and_camera_type() -> None:

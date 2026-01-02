@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui
 
-from track_viewer.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
+from track_viewer.model.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
 
 
 @dataclass

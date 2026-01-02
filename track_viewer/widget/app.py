@@ -8,17 +8,17 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
-from track_viewer.camera_actions import CameraActions
-from track_viewer.camera_models import CameraViewListing
-from track_viewer.coordinate_sidebar import CoordinateSidebar
-from track_viewer.coordinate_sidebar_vm import CoordinateSidebarViewModel
-from track_viewer.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
-from track_viewer.pit_editor import PitParametersEditor
-from track_viewer.pit_models import PitParameters
-from track_viewer.ai_line_service import LpPoint
-from track_viewer.widget import TrackPreviewWidget
-from track_viewer.version import __version__
-from track_viewer.window_controller import WindowController
+from track_viewer.controllers.camera_actions import CameraActions
+from track_viewer.model.camera_models import CameraViewListing
+from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
+from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
+from track_viewer.services.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
+from track_viewer.sidebar.pit_editor import PitParametersEditor
+from track_viewer.model.pit_models import PitParameters
+from track_viewer.ai.ai_line_service import LpPoint
+from track_viewer.widget.track_preview_widget import TrackPreviewWidget
+from track_viewer.common.version import __version__
+from track_viewer.controllers.window_controller import WindowController
 
 
 class TrackViewerApp(QtWidgets.QApplication):

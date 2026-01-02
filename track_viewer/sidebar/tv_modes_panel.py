@@ -7,7 +7,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 
-from track_viewer.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
 
 
 class TvModesPanel(QtWidgets.QWidget):

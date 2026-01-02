@@ -18,8 +18,8 @@ from icr2_core.cam.helpers import (
 )
 from icr2_core.dat import packdat, unpackdat
 from icr2_core.dat.unpackdat import extract_file_bytes
-from track_viewer.camera_models import CameraViewEntry, CameraViewListing
-from track_viewer.io_service import CameraLoadResult, TrackIOService
+from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
+from track_viewer.services.io_service import CameraLoadResult, TrackIOService
 
 
 @pytest.fixture()
@@ -72,16 +72,16 @@ def test_load_track_uses_core_helpers(tmp_path: Path, monkeypatch: pytest.Monkey
     dummy_trk = object()
 
     monkeypatch.setattr(
-        "track_viewer.io_service.load_trk_from_folder",
+        "track_viewer.services.io_service.load_trk_from_folder",
         lambda path: dummy_trk if path == str(track_folder) else None,
     )
     monkeypatch.setattr(
-        "track_viewer.io_service.get_cline_pos", lambda trk: [(1.0, 2.0)] if trk is dummy_trk else []
+        "track_viewer.services.io_service.get_cline_pos", lambda trk: [(1.0, 2.0)] if trk is dummy_trk else []
     )
     monkeypatch.setattr(
-        "track_viewer.io_service.build_ground_surface_mesh", lambda trk, cline: ["mesh", trk, tuple(cline)]
+        "track_viewer.services.io_service.build_ground_surface_mesh", lambda trk, cline: ["mesh", trk, tuple(cline)]
     )
-    monkeypatch.setattr("track_viewer.io_service.compute_mesh_bounds", lambda mesh: (0.0, 1.0, -1.0, 2.0))
+    monkeypatch.setattr("track_viewer.services.io_service.compute_mesh_bounds", lambda mesh: (0.0, 1.0, -1.0, 2.0))
 
     result = service.load_track(track_folder)
 

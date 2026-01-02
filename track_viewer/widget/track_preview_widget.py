@@ -9,16 +9,16 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
-from track_viewer.ai_line_service import LpPoint
-from track_viewer.camera_controller import CameraController
-from track_viewer.camera_service import CameraService
+from track_viewer.ai.ai_line_service import LpPoint
+from track_viewer.controllers.camera_controller import CameraController
+from track_viewer.services.camera_service import CameraService
 from track_viewer.interaction import InteractionCallbacks, TrackPreviewInteraction
-from track_viewer.io_service import TrackIOService
-from track_viewer.pit_models import PitParameters
-from track_viewer.preview_constants import LP_COLORS, LP_FILE_NAMES
-from track_viewer.renderer import TrackPreviewRenderer
-from track_viewer.track_preview_model import TrackPreviewModel
-from track_viewer.view_state import TrackPreviewViewState
+from track_viewer.services.io_service import TrackIOService
+from track_viewer.model.pit_models import PitParameters
+from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
+from track_viewer.rendering.renderer import TrackPreviewRenderer
+from track_viewer.model.track_preview_model import TrackPreviewModel
+from track_viewer.model.view_state import TrackPreviewViewState
 
 
 class TrackPreviewWidget(QtWidgets.QFrame):
