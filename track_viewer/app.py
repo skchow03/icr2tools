@@ -597,6 +597,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._boundary_button.setChecked(True)
         self._boundary_button.toggled.connect(self._toggle_boundaries)
         self._toggle_boundaries(self._boundary_button.isChecked())
+        self._section_divider_button = QtWidgets.QPushButton("Show Section Dividers")
+        self._section_divider_button.setCheckable(True)
+        self._section_divider_button.toggled.connect(self._toggle_section_dividers)
+        self._toggle_section_dividers(self._section_divider_button.isChecked())
 
         self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
         self._zoom_points_button.setCheckable(True)
@@ -823,6 +827,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
         controls.addWidget(self._boundary_button)
+        controls.addWidget(self._section_divider_button)
         layout.addLayout(controls)
 
         camera_sidebar = QtWidgets.QFrame()
@@ -1553,6 +1558,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Boundaries" if enabled else "Show Boundaries"
         self._boundary_button.setText(text)
         self.visualization_widget.set_show_boundaries(enabled)
+
+    def _toggle_section_dividers(self, enabled: bool) -> None:
+        text = "Hide Section Dividers" if enabled else "Show Section Dividers"
+        self._section_divider_button.setText(text)
+        self.visualization_widget.set_show_section_dividers(enabled)
 
     def _toggle_zoom_points(self, enabled: bool) -> None:
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
