@@ -104,7 +104,7 @@ class PitParametersEditor(QtWidgets.QFrame):
             + 0.587 * qcolor.green()
             + 0.114 * qcolor.blue()
         ) / 255.0
-        if luminance > 0.7:
+        if luminance > 0.6:
             return (
                 f"color: {color}; background-color: #424242; padding: 1px 4px;"
                 " border-radius: 2px;"
