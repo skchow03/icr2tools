@@ -498,6 +498,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_label = QtWidgets.QLabel("AI and center lines")
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
+        lp_list_header = QtWidgets.QLabel(
+            "Radio selects the active LP. Checkbox toggles visibility."
+        )
+        lp_list_header.setWordWrap(True)
+        left_layout.addWidget(lp_list_header)
         left_layout.addWidget(self._lp_list)
         lp_records_header = QtWidgets.QHBoxLayout()
         lp_records_header.addWidget(self._lp_records_label)
