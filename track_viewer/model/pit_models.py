@@ -78,7 +78,7 @@ PIT_DLONG_LINE_COLORS: dict[int, str] = {
     6: "#009688",
     8: "#2196f3",
     9: "#3f51b5",
-    10: "#e91e63",
+    10: "#00ffe5",
 }
 
 
