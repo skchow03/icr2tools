@@ -33,6 +33,8 @@ class TrackPreviewViewState:
     visible_pit_indices: set[int] = field(
         default_factory=lambda: set(PIT_DLONG_LINE_INDICES)
     )
+    show_pit_stall_center_dlat: bool = True
+    show_pit_wall_dlat: bool = True
     view_center: Tuple[float, float] | None = None
     fit_scale: float | None = None
     current_scale: float | None = 1.0
@@ -87,6 +89,8 @@ class TrackPreviewViewState:
         self.lp_dlat_step = 0
         self.pit_params = None
         self.visible_pit_indices = set(PIT_DLONG_LINE_INDICES)
+        self.show_pit_stall_center_dlat = True
+        self.show_pit_wall_dlat = True
         self.view_center = None
         self.fit_scale = None
         self.current_scale = 1.0

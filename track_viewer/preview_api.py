@@ -128,6 +128,12 @@ class TrackPreviewApi:
     def set_visible_pit_indices(self, indices: set[int]) -> None:
         self._coordinator.set_visible_pit_indices(indices)
 
+    def set_show_pit_stall_center_dlat(self, show: bool) -> None:
+        self._coordinator.set_show_pit_stall_center_dlat(show)
+
+    def set_show_pit_wall_dlat(self, show: bool) -> None:
+        self._coordinator.set_show_pit_wall_dlat(show)
+
     def cameras(self) -> List[CameraPosition]:
         return self._coordinator.cameras()
 
