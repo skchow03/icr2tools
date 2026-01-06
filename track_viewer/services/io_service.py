@@ -573,11 +573,16 @@ class TrackIOService:
             return str(int(round(value)))
         return f"{value:.6f}".rstrip("0").rstrip(".")
 
+    @staticmethod
+    def _format_track_txt_line(keyword: str, value: str) -> str:
+        padded = keyword.ljust(5)
+        return f"{padded} {value}"
+
     def _format_pit_line(self, pit_params: PitParameters) -> str:
         formatted_values = [
             self._format_track_txt_value(value) for value in pit_params.values()
         ]
-        return "PIT " + " ".join(formatted_values)
+        return self._format_track_txt_line("PIT", " ".join(formatted_values))
 
     def _build_track_txt_replacements(
         self,
@@ -590,51 +595,65 @@ class TrackIOService:
         if metadata is None:
             return replacements
         replacements["TNAME"] = (
-            f"TNAME {metadata.tname}" if metadata.tname else None
+            self._format_track_txt_line("TNAME", metadata.tname) if metadata.tname else None
         )
         replacements["SNAME"] = (
-            f"SNAME {metadata.sname}" if metadata.sname else None
+            self._format_track_txt_line("SNAME", metadata.sname) if metadata.sname else None
         )
         replacements["CITYN"] = (
-            f"CITYN {metadata.cityn}" if metadata.cityn else None
+            self._format_track_txt_line("CITYN", metadata.cityn) if metadata.cityn else None
         )
         replacements["COUNT"] = (
-            f"COUNT {metadata.count}" if metadata.count else None
+            self._format_track_txt_line("COUNT", metadata.count) if metadata.count else None
         )
         replacements["FNAME"] = (
-            f"FNAME {metadata.fname}" if metadata.fname else None
+            self._format_track_txt_line("FNAME", metadata.fname) if metadata.fname else None
         )
         if (
             metadata.qual_session_mode is not None
             and metadata.qual_session_value is not None
         ):
             replacements["QUAL"] = (
-                f"QUAL {metadata.qual_session_mode} {metadata.qual_session_value}"
+                self._format_track_txt_line(
+                    "QUAL", f"{metadata.qual_session_mode} {metadata.qual_session_value}"
+                )
             )
         else:
             replacements["QUAL"] = None
         if metadata.blimp_x is not None and metadata.blimp_y is not None:
-            replacements["BLIMP"] = f"BLIMP {metadata.blimp_x} {metadata.blimp_y}"
+            replacements["BLIMP"] = self._format_track_txt_line(
+                "BLIMP", f"{metadata.blimp_x} {metadata.blimp_y}"
+            )
         else:
             replacements["BLIMP"] = None
         replacements["GFLAG"] = (
-            f"GFLAG {metadata.gflag}" if metadata.gflag is not None else None
+            self._format_track_txt_line("GFLAG", str(metadata.gflag))
+            if metadata.gflag is not None
+            else None
         )
         replacements["TTYPE"] = (
-            f"TTYPE {metadata.ttype}" if metadata.ttype is not None else None
+            self._format_track_txt_line("TTYPE", str(metadata.ttype))
+            if metadata.ttype is not None
+            else None
         )
         if metadata.spdwy_start is not None and metadata.spdwy_end is not None:
             flag = metadata.spdwy_flag if metadata.spdwy_flag is not None else 0
             replacements["SPDWY"] = (
-                f"SPDWY {flag} {metadata.spdwy_start} {metadata.spdwy_end}"
+                self._format_track_txt_line(
+                    "SPDWY", f"{flag} {metadata.spdwy_start} {metadata.spdwy_end}"
+                )
             )
         else:
             replacements["SPDWY"] = None
         replacements["LENGT"] = (
-            f"LENGT {metadata.lengt}" if metadata.lengt is not None else None
+            self._format_track_txt_line("LENGT", str(metadata.lengt))
+            if metadata.lengt is not None
+            else None
         )
         replacements["LAPS"] = (
-            f"LAPS {metadata.laps}" if metadata.laps is not None else None
+            self._format_track_txt_line("LAPS", str(metadata.laps))
+            if metadata.laps is not None
+            else None
         )
         pacea_values = (
             metadata.pacea_cars_abreast,
@@ -644,21 +663,28 @@ class TrackIOService:
             metadata.pacea_unknown,
         )
         if all(value is not None for value in pacea_values):
-            replacements["PACEA"] = "PACEA " + " ".join(
-                str(int(value)) for value in pacea_values  # type: ignore[arg-type]
+            replacements["PACEA"] = self._format_track_txt_line(
+                "PACEA",
+                " ".join(str(int(value)) for value in pacea_values),  # type: ignore[arg-type]
             )
         else:
             replacements["PACEA"] = None
         if metadata.cars_min is not None and metadata.cars_max is not None:
-            replacements["CARS"] = f"CARS {metadata.cars_min} {metadata.cars_max}"
+            replacements["CARS"] = self._format_track_txt_line(
+                "CARS", f"{metadata.cars_min} {metadata.cars_max}"
+            )
         else:
             replacements["CARS"] = None
         if metadata.temp_avg is not None and metadata.temp_dev is not None:
-            replacements["TEMP"] = f"TEMP {metadata.temp_avg} {metadata.temp_dev}"
+            replacements["TEMP"] = self._format_track_txt_line(
+                "TEMP", f"{metadata.temp_avg} {metadata.temp_dev}"
+            )
         else:
             replacements["TEMP"] = None
         if metadata.temp2_avg is not None and metadata.temp2_dev is not None:
-            replacements["TEMP2"] = f"TEMP2 {metadata.temp2_avg} {metadata.temp2_dev}"
+            replacements["TEMP2"] = self._format_track_txt_line(
+                "TEMP2", f"{metadata.temp2_avg} {metadata.temp2_dev}"
+            )
         else:
             replacements["TEMP2"] = None
         wind_values = (
@@ -669,8 +695,9 @@ class TrackIOService:
             metadata.wind_heading_adjust,
         )
         if all(value is not None for value in wind_values):
-            replacements["WIND"] = "WIND " + " ".join(
-                str(int(value)) for value in wind_values  # type: ignore[arg-type]
+            replacements["WIND"] = self._format_track_txt_line(
+                "WIND",
+                " ".join(str(int(value)) for value in wind_values),  # type: ignore[arg-type]
             )
         else:
             replacements["WIND"] = None
@@ -682,17 +709,22 @@ class TrackIOService:
             metadata.wind2_heading_adjust,
         )
         if all(value is not None for value in wind2_values):
-            replacements["WIND2"] = "WIND2 " + " ".join(
-                str(int(value)) for value in wind2_values  # type: ignore[arg-type]
+            replacements["WIND2"] = self._format_track_txt_line(
+                "WIND2",
+                " ".join(str(int(value)) for value in wind2_values),  # type: ignore[arg-type]
             )
         else:
             replacements["WIND2"] = None
         if metadata.rain_level is not None and metadata.rain_variation is not None:
-            replacements["RAIN"] = f"RAIN {metadata.rain_level} {metadata.rain_variation}"
+            replacements["RAIN"] = self._format_track_txt_line(
+                "RAIN", f"{metadata.rain_level} {metadata.rain_variation}"
+            )
         else:
             replacements["RAIN"] = None
         replacements["BLAP"] = (
-            f"BLAP {metadata.blap}" if metadata.blap is not None else None
+            self._format_track_txt_line("BLAP", str(metadata.blap))
+            if metadata.blap is not None
+            else None
         )
         return replacements
 
