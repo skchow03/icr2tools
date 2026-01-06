@@ -30,3 +30,27 @@ def draw_pit_dlong_lines(
             )
         )
     painter.restore()
+
+
+def draw_pit_stall_range(
+    painter: QtGui.QPainter,
+    points: Sequence[Point2D],
+    transform: Transform,
+    viewport_height: int,
+    *,
+    color: str = "#00ff00",
+    width: int = 2,
+) -> None:
+    if len(points) < 2:
+        return
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor(color), width)
+    pen.setStyle(QtCore.Qt.DashLine)
+    painter.setPen(pen)
+    mapped = [
+        map_point(point[0], point[1], transform, viewport_height)
+        for point in points
+    ]
+    painter.drawPolyline(QtGui.QPolygonF(mapped))
+    painter.restore()
