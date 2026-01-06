@@ -104,6 +104,19 @@ class TrackTxtMetadata:
     temp_dev: int | None = None
     temp2_avg: int | None = None
     temp2_dev: int | None = None
+    wind_dir: int | None = None
+    wind_var: int | None = None
+    wind_speed: int | None = None
+    wind_speed_var: int | None = None
+    wind_heading_adjust: int | None = None
+    wind2_dir: int | None = None
+    wind2_var: int | None = None
+    wind2_speed: int | None = None
+    wind2_speed_var: int | None = None
+    wind2_heading_adjust: int | None = None
+    rain_level: int | None = None
+    rain_variation: int | None = None
+    blap: int | None = None
 
 
 @dataclass
@@ -272,6 +285,34 @@ class TrackIOService:
                 parsed = self._parse_pair_values(values)
                 if parsed is not None:
                     metadata.temp2_avg, metadata.temp2_dev = parsed
+            elif keyword_upper == "WIND" and metadata.wind_dir is None:
+                parsed = self._parse_five_values(values)
+                if parsed is not None:
+                    (
+                        metadata.wind_dir,
+                        metadata.wind_var,
+                        metadata.wind_speed,
+                        metadata.wind_speed_var,
+                        metadata.wind_heading_adjust,
+                    ) = parsed
+            elif keyword_upper == "WIND2" and metadata.wind2_dir is None:
+                parsed = self._parse_five_values(values)
+                if parsed is not None:
+                    (
+                        metadata.wind2_dir,
+                        metadata.wind2_var,
+                        metadata.wind2_speed,
+                        metadata.wind2_speed_var,
+                        metadata.wind2_heading_adjust,
+                    ) = parsed
+            elif keyword_upper == "RAIN" and metadata.rain_level is None:
+                parsed = self._parse_pair_values(values)
+                if parsed is not None:
+                    metadata.rain_level, metadata.rain_variation = parsed
+            elif keyword_upper == "BLAP" and metadata.blap is None and values:
+                parsed = self._parse_track_integer(values[0])
+                if parsed is not None:
+                    metadata.blap = parsed
         return TrackTxtResult(lines, pit, metadata, txt_path, True)
 
     def save_cameras(
@@ -497,6 +538,19 @@ class TrackIOService:
             parsed_values.append(parsed)
         return tuple(parsed_values)  # type: ignore[return-value]
 
+    def _parse_five_values(
+        self, values: Sequence[str]
+    ) -> tuple[int, int, int, int, int] | None:
+        if len(values) < 5:
+            return None
+        parsed_values: list[int] = []
+        for value in values[:5]:
+            parsed = self._parse_track_integer(value)
+            if parsed is None:
+                return None
+            parsed_values.append(parsed)
+        return tuple(parsed_values)  # type: ignore[return-value]
+
     def _parse_pair_values(self, values: Sequence[str]) -> tuple[int, int] | None:
         if len(values) < 2:
             return None
@@ -607,6 +661,39 @@ class TrackIOService:
             replacements["TEMP2"] = f"TEMP2 {metadata.temp2_avg} {metadata.temp2_dev}"
         else:
             replacements["TEMP2"] = None
+        wind_values = (
+            metadata.wind_dir,
+            metadata.wind_var,
+            metadata.wind_speed,
+            metadata.wind_speed_var,
+            metadata.wind_heading_adjust,
+        )
+        if all(value is not None for value in wind_values):
+            replacements["WIND"] = "WIND " + " ".join(
+                str(int(value)) for value in wind_values  # type: ignore[arg-type]
+            )
+        else:
+            replacements["WIND"] = None
+        wind2_values = (
+            metadata.wind2_dir,
+            metadata.wind2_var,
+            metadata.wind2_speed,
+            metadata.wind2_speed_var,
+            metadata.wind2_heading_adjust,
+        )
+        if all(value is not None for value in wind2_values):
+            replacements["WIND2"] = "WIND2 " + " ".join(
+                str(int(value)) for value in wind2_values  # type: ignore[arg-type]
+            )
+        else:
+            replacements["WIND2"] = None
+        if metadata.rain_level is not None and metadata.rain_variation is not None:
+            replacements["RAIN"] = f"RAIN {metadata.rain_level} {metadata.rain_variation}"
+        else:
+            replacements["RAIN"] = None
+        replacements["BLAP"] = (
+            f"BLAP {metadata.blap}" if metadata.blap is not None else None
+        )
         return replacements
 
     def _repack_dat(self, dat_path: Path, cam_path: Path, scr_path: Path) -> None:

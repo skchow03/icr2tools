@@ -354,6 +354,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._temp_dev_field = self._create_int_field("–")
         self._temp2_avg_field = self._create_int_field("–")
         self._temp2_dev_field = self._create_int_field("–")
+        self._wind_dir_field = self._create_int_field("–")
+        self._wind_var_field = self._create_int_field("–")
+        self._wind_speed_field = self._create_int_field("–")
+        self._wind_speed_var_field = self._create_int_field("–")
+        self._wind_heading_adjust_field = self._create_int_field("–")
+        self._wind2_dir_field = self._create_int_field("–")
+        self._wind2_var_field = self._create_int_field("–")
+        self._wind2_speed_field = self._create_int_field("–")
+        self._wind2_speed_var_field = self._create_int_field("–")
+        self._wind2_heading_adjust_field = self._create_int_field("–")
+        self._rain_level_field = self._create_int_field("–")
+        self._rain_variation_field = self._create_int_field("–")
+        self._blap_field = self._create_int_field("–")
         self._qual_mode_field = QtWidgets.QComboBox()
         self._qual_mode_field.addItem("0 - timed session", 0)
         self._qual_mode_field.addItem("1 - multi-lap average", 1)
@@ -735,6 +748,48 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         temp2_widget = QtWidgets.QWidget()
         temp2_widget.setLayout(temp2_layout)
         track_txt_form.addRow("Temperature 2 (TEMP2)", temp2_widget)
+        wind_layout = QtWidgets.QGridLayout()
+        wind_layout.setContentsMargins(0, 0, 0, 0)
+        wind_layout.setHorizontalSpacing(6)
+        wind_layout.addWidget(QtWidgets.QLabel("Direction"), 0, 0)
+        wind_layout.addWidget(self._wind_dir_field, 0, 1)
+        wind_layout.addWidget(QtWidgets.QLabel("Variation"), 0, 2)
+        wind_layout.addWidget(self._wind_var_field, 0, 3)
+        wind_layout.addWidget(QtWidgets.QLabel("Speed (0.1 mph)"), 1, 0)
+        wind_layout.addWidget(self._wind_speed_field, 1, 1)
+        wind_layout.addWidget(QtWidgets.QLabel("Speed variation"), 1, 2)
+        wind_layout.addWidget(self._wind_speed_var_field, 1, 3)
+        wind_layout.addWidget(QtWidgets.QLabel("Heading adjust"), 2, 0)
+        wind_layout.addWidget(self._wind_heading_adjust_field, 2, 1)
+        wind_widget = QtWidgets.QWidget()
+        wind_widget.setLayout(wind_layout)
+        track_txt_form.addRow("Wind (WIND)", wind_widget)
+        wind2_layout = QtWidgets.QGridLayout()
+        wind2_layout.setContentsMargins(0, 0, 0, 0)
+        wind2_layout.setHorizontalSpacing(6)
+        wind2_layout.addWidget(QtWidgets.QLabel("Direction"), 0, 0)
+        wind2_layout.addWidget(self._wind2_dir_field, 0, 1)
+        wind2_layout.addWidget(QtWidgets.QLabel("Variation"), 0, 2)
+        wind2_layout.addWidget(self._wind2_var_field, 0, 3)
+        wind2_layout.addWidget(QtWidgets.QLabel("Speed (0.1 mph)"), 1, 0)
+        wind2_layout.addWidget(self._wind2_speed_field, 1, 1)
+        wind2_layout.addWidget(QtWidgets.QLabel("Speed variation"), 1, 2)
+        wind2_layout.addWidget(self._wind2_speed_var_field, 1, 3)
+        wind2_layout.addWidget(QtWidgets.QLabel("Heading adjust"), 2, 0)
+        wind2_layout.addWidget(self._wind2_heading_adjust_field, 2, 1)
+        wind2_widget = QtWidgets.QWidget()
+        wind2_widget.setLayout(wind2_layout)
+        track_txt_form.addRow("Wind 2 (WIND2)", wind2_widget)
+        rain_layout = QtWidgets.QHBoxLayout()
+        rain_layout.setContentsMargins(0, 0, 0, 0)
+        rain_layout.addWidget(QtWidgets.QLabel("Level"))
+        rain_layout.addWidget(self._rain_level_field)
+        rain_layout.addWidget(QtWidgets.QLabel("Variation"))
+        rain_layout.addWidget(self._rain_variation_field)
+        rain_widget = QtWidgets.QWidget()
+        rain_widget.setLayout(rain_layout)
+        track_txt_form.addRow("Rain (RAIN)", rain_widget)
+        track_txt_form.addRow("Pole lap (BLAP)", self._blap_field)
         qual_layout = QtWidgets.QHBoxLayout()
         qual_layout.setContentsMargins(0, 0, 0, 0)
         qual_layout.addWidget(QtWidgets.QLabel("Mode"))
@@ -863,6 +918,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._temp_dev_field,
             self._temp2_avg_field,
             self._temp2_dev_field,
+            self._wind_dir_field,
+            self._wind_var_field,
+            self._wind_speed_field,
+            self._wind_speed_var_field,
+            self._wind_heading_adjust_field,
+            self._wind2_dir_field,
+            self._wind2_var_field,
+            self._wind2_speed_field,
+            self._wind2_speed_var_field,
+            self._wind2_heading_adjust_field,
+            self._rain_level_field,
+            self._rain_variation_field,
+            self._blap_field,
             self._qual_value_field,
             self._blimp_x_field,
             self._blimp_y_field,
@@ -914,6 +982,50 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         temp2_dev = str(metadata.temp2_dev) if metadata.temp2_dev is not None else None
         self._set_track_txt_field(self._temp2_avg_field, temp2_avg)
         self._set_track_txt_field(self._temp2_dev_field, temp2_dev)
+        wind_values = (
+            metadata.wind_dir,
+            metadata.wind_var,
+            metadata.wind_speed,
+            metadata.wind_speed_var,
+            metadata.wind_heading_adjust,
+        )
+        wind_text = [
+            str(value) if value is not None else None for value in wind_values
+        ]
+        self._set_track_txt_field(self._wind_dir_field, wind_text[0])
+        self._set_track_txt_field(self._wind_var_field, wind_text[1])
+        self._set_track_txt_field(self._wind_speed_field, wind_text[2])
+        self._set_track_txt_field(self._wind_speed_var_field, wind_text[3])
+        self._set_track_txt_field(self._wind_heading_adjust_field, wind_text[4])
+        wind2_values = (
+            metadata.wind2_dir,
+            metadata.wind2_var,
+            metadata.wind2_speed,
+            metadata.wind2_speed_var,
+            metadata.wind2_heading_adjust,
+        )
+        wind2_text = [
+            str(value) if value is not None else None for value in wind2_values
+        ]
+        self._set_track_txt_field(self._wind2_dir_field, wind2_text[0])
+        self._set_track_txt_field(self._wind2_var_field, wind2_text[1])
+        self._set_track_txt_field(self._wind2_speed_field, wind2_text[2])
+        self._set_track_txt_field(self._wind2_speed_var_field, wind2_text[3])
+        self._set_track_txt_field(
+            self._wind2_heading_adjust_field, wind2_text[4]
+        )
+        rain_level = (
+            str(metadata.rain_level) if metadata.rain_level is not None else None
+        )
+        rain_variation = (
+            str(metadata.rain_variation)
+            if metadata.rain_variation is not None
+            else None
+        )
+        self._set_track_txt_field(self._rain_level_field, rain_level)
+        self._set_track_txt_field(self._rain_variation_field, rain_variation)
+        blap = str(metadata.blap) if metadata.blap is not None else None
+        self._set_track_txt_field(self._blap_field, blap)
         qual_mode_value = metadata.qual_session_mode
         qual_value = (
             str(metadata.qual_session_value)
@@ -1124,6 +1236,29 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         metadata.temp_dev = self._parse_optional_int(self._temp_dev_field.text())
         metadata.temp2_avg = self._parse_optional_int(self._temp2_avg_field.text())
         metadata.temp2_dev = self._parse_optional_int(self._temp2_dev_field.text())
+        metadata.wind_dir = self._parse_optional_int(self._wind_dir_field.text())
+        metadata.wind_var = self._parse_optional_int(self._wind_var_field.text())
+        metadata.wind_speed = self._parse_optional_int(self._wind_speed_field.text())
+        metadata.wind_speed_var = self._parse_optional_int(
+            self._wind_speed_var_field.text()
+        )
+        metadata.wind_heading_adjust = self._parse_optional_int(
+            self._wind_heading_adjust_field.text()
+        )
+        metadata.wind2_dir = self._parse_optional_int(self._wind2_dir_field.text())
+        metadata.wind2_var = self._parse_optional_int(self._wind2_var_field.text())
+        metadata.wind2_speed = self._parse_optional_int(self._wind2_speed_field.text())
+        metadata.wind2_speed_var = self._parse_optional_int(
+            self._wind2_speed_var_field.text()
+        )
+        metadata.wind2_heading_adjust = self._parse_optional_int(
+            self._wind2_heading_adjust_field.text()
+        )
+        metadata.rain_level = self._parse_optional_int(self._rain_level_field.text())
+        metadata.rain_variation = self._parse_optional_int(
+            self._rain_variation_field.text()
+        )
+        metadata.blap = self._parse_optional_int(self._blap_field.text())
         metadata.qual_session_mode = (
             self._qual_mode_field.currentData()
             if self._qual_mode_field.currentIndex() >= 0
