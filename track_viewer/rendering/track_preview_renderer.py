@@ -133,6 +133,12 @@ class TrackPreviewRenderer:
                     height,
                     width=1,
                 )
+            rendering.draw_pit_stall_range(
+                painter,
+                self._pit_stall_range_points(),
+                transform,
+                height,
+            )
             rendering.draw_pit_dlong_lines(
                 painter,
                 self._pit_dlong_segments(),
@@ -435,6 +441,42 @@ class TrackPreviewRenderer:
             color = PIT_DLONG_LINE_COLORS.get(index, "#ffffff")
             segments.append(((start_x, start_y), (end_x, end_y), color))
         return segments
+
+    def _pit_stall_range_points(self) -> list[tuple[float, float]]:
+        if (
+            self._model.trk is None
+            or not self._model.centerline
+            or self._state.pit_params is None
+        ):
+            return []
+        track_length = float(self._model.trk.trklength or 0.0)
+        if track_length <= 0:
+            return []
+        values = self._state.pit_params.values()
+        if len(values) <= 5:
+            return []
+        start_dlong = float(values[3]) % track_length
+        end_dlong = float(values[4]) % track_length
+        dlat = float(values[5])
+        if end_dlong < start_dlong:
+            end_dlong += track_length
+        step = max(5.0, track_length / 1000.0)
+        points: list[tuple[float, float]] = []
+        current = start_dlong
+        last_dlong = None
+        while current <= end_dlong:
+            dlong = current % track_length
+            px, py, _ = getxyz(self._model.trk, dlong, dlat, self._model.centerline)
+            points.append((px, py))
+            last_dlong = dlong
+            current += step
+        end_wrapped = end_dlong % track_length
+        if last_dlong != end_wrapped:
+            px, py, _ = getxyz(
+                self._model.trk, end_wrapped, dlat, self._model.centerline
+            )
+            points.append((px, py))
+        return points
 
     def _section_divider_segments(
         self,
