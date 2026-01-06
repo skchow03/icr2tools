@@ -133,12 +133,22 @@ class TrackPreviewRenderer:
                     height,
                     width=1,
                 )
-            rendering.draw_pit_stall_range(
-                painter,
-                self._pit_stall_range_points(),
-                transform,
-                height,
-            )
+            if self._state.show_pit_wall_dlat:
+                rendering.draw_pit_stall_range(
+                    painter,
+                    self._pit_wall_range_points(),
+                    transform,
+                    height,
+                    color="#ffeb3b",
+                    width=2,
+                )
+            if self._state.show_pit_stall_center_dlat:
+                rendering.draw_pit_stall_range(
+                    painter,
+                    self._pit_stall_range_points(),
+                    transform,
+                    height,
+                )
             rendering.draw_pit_dlong_lines(
                 painter,
                 self._pit_dlong_segments(),
@@ -442,22 +452,19 @@ class TrackPreviewRenderer:
             segments.append(((start_x, start_y), (end_x, end_y), color))
         return segments
 
-    def _pit_stall_range_points(self) -> list[tuple[float, float]]:
+    def _pit_range_points(
+        self, start_dlong: float, end_dlong: float, dlat: float
+    ) -> list[tuple[float, float]]:
         if (
             self._model.trk is None
             or not self._model.centerline
-            or self._state.pit_params is None
         ):
             return []
         track_length = float(self._model.trk.trklength or 0.0)
         if track_length <= 0:
             return []
-        values = self._state.pit_params.values()
-        if len(values) <= 5:
-            return []
-        start_dlong = float(values[3]) % track_length
-        end_dlong = float(values[4]) % track_length
-        dlat = float(values[5])
+        start_dlong = float(start_dlong) % track_length
+        end_dlong = float(end_dlong) % track_length
         if end_dlong < start_dlong:
             end_dlong += track_length
         step = max(5.0, track_length / 1000.0)
@@ -477,6 +484,24 @@ class TrackPreviewRenderer:
             )
             points.append((px, py))
         return points
+
+    def _pit_stall_range_points(self) -> list[tuple[float, float]]:
+        if self._state.pit_params is None:
+            return []
+        return self._pit_range_points(
+            self._state.pit_params.player_pit_stall_dlong,
+            self._state.pit_params.last_pit_stall_dlong,
+            self._state.pit_params.pit_stall_center_dlat,
+        )
+
+    def _pit_wall_range_points(self) -> list[tuple[float, float]]:
+        if self._state.pit_params is None:
+            return []
+        return self._pit_range_points(
+            self._state.pit_params.player_pit_stall_dlong,
+            self._state.pit_params.last_pit_stall_dlong,
+            self._state.pit_params.pitwall_dlat,
+        )
 
     def _section_divider_segments(
         self,

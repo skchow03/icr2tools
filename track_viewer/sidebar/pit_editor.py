@@ -4,8 +4,10 @@ from __future__ import annotations
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from track_viewer.model.pit_models import (
-    PIT_DLONG_LINE_INDICES,
+    PIT_DLAT_LINE_COLORS,
+    PIT_DLAT_LINE_INDICES,
     PIT_DLONG_LINE_COLORS,
+    PIT_DLONG_LINE_INDICES,
     PIT_PARAMETER_DEFINITIONS,
     PitParameters,
 )
@@ -16,11 +18,15 @@ class PitParametersEditor(QtWidgets.QFrame):
 
     parametersChanged = QtCore.pyqtSignal()
     pitVisibilityChanged = QtCore.pyqtSignal(set)
+    pitStallCenterVisibilityChanged = QtCore.pyqtSignal(bool)
+    pitWallVisibilityChanged = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._inputs: dict[str, QtWidgets.QAbstractSpinBox] = {}
         self._pit_visibility_checkboxes: dict[int, QtWidgets.QCheckBox] = {}
+        self._pit_stall_center_checkbox: QtWidgets.QCheckBox | None = None
+        self._pit_wall_checkbox: QtWidgets.QCheckBox | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -66,7 +72,9 @@ class PitParametersEditor(QtWidgets.QFrame):
 
             label_widget = QtWidgets.QLabel(label)
             label_widget.setToolTip(tooltip)
-            color = PIT_DLONG_LINE_COLORS.get(index)
+            color = PIT_DLONG_LINE_COLORS.get(index) or PIT_DLAT_LINE_COLORS.get(
+                index
+            )
             if color:
                 label_widget.setStyleSheet(self._legend_style(color))
             table.setCellWidget(index, 1, label_widget)
@@ -78,6 +86,25 @@ class PitParametersEditor(QtWidgets.QFrame):
                 checkbox.setChecked(True)
                 checkbox.toggled.connect(self._handle_pit_visibility_changed)
                 self._pit_visibility_checkboxes[index] = checkbox
+                checkbox_container = QtWidgets.QWidget()
+                checkbox_layout = QtWidgets.QHBoxLayout(checkbox_container)
+                checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                checkbox_layout.setAlignment(QtCore.Qt.AlignCenter)
+                checkbox_layout.addWidget(checkbox)
+                table.setCellWidget(index, 3, checkbox_container)
+            elif index in PIT_DLAT_LINE_INDICES:
+                checkbox = QtWidgets.QCheckBox()
+                checkbox.setChecked(True)
+                if index == 0:
+                    checkbox.toggled.connect(
+                        self.pitWallVisibilityChanged.emit
+                    )
+                    self._pit_wall_checkbox = checkbox
+                else:
+                    checkbox.toggled.connect(
+                        self.pitStallCenterVisibilityChanged.emit
+                    )
+                    self._pit_stall_center_checkbox = checkbox
                 checkbox_container = QtWidgets.QWidget()
                 checkbox_layout = QtWidgets.QHBoxLayout(checkbox_container)
                 checkbox_layout.setContentsMargins(0, 0, 0, 0)
@@ -125,6 +152,12 @@ class PitParametersEditor(QtWidgets.QFrame):
                     continue
                 value = getattr(parameters, field)
                 widget.setValue(int(round(value)))
+        for checkbox in self._pit_visibility_checkboxes.values():
+            checkbox.setEnabled(enabled)
+        if self._pit_wall_checkbox is not None:
+            self._pit_wall_checkbox.setEnabled(enabled)
+        if self._pit_stall_center_checkbox is not None:
+            self._pit_stall_center_checkbox.setEnabled(enabled)
 
     def parameters(self) -> PitParameters | None:
         if not all(widget.isEnabled() for widget in self._inputs.values()):
@@ -146,3 +179,25 @@ class PitParametersEditor(QtWidgets.QFrame):
         for index, checkbox in self._pit_visibility_checkboxes.items():
             with QtCore.QSignalBlocker(checkbox):
                 checkbox.setChecked(index in indices)
+
+    def pit_wall_visible(self) -> bool:
+        return self._pit_wall_checkbox.isChecked() if self._pit_wall_checkbox else True
+
+    def set_pit_wall_visible(self, visible: bool) -> None:
+        if self._pit_wall_checkbox is None:
+            return
+        with QtCore.QSignalBlocker(self._pit_wall_checkbox):
+            self._pit_wall_checkbox.setChecked(visible)
+
+    def pit_stall_center_visible(self) -> bool:
+        return (
+            self._pit_stall_center_checkbox.isChecked()
+            if self._pit_stall_center_checkbox
+            else True
+        )
+
+    def set_pit_stall_center_visible(self, visible: bool) -> None:
+        if self._pit_stall_center_checkbox is None:
+            return
+        with QtCore.QSignalBlocker(self._pit_stall_center_checkbox):
+            self._pit_stall_center_checkbox.setChecked(visible)

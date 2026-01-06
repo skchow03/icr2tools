@@ -384,6 +384,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._pit_editor.pitVisibilityChanged.connect(
             self._handle_pit_visibility_changed
         )
+        self._pit_editor.pitStallCenterVisibilityChanged.connect(
+            self._handle_pit_stall_center_visibility_changed
+        )
+        self._pit_editor.pitWallVisibilityChanged.connect(
+            self._handle_pit_wall_visibility_changed
+        )
         self._pit_save_button = QtWidgets.QPushButton("Save PIT")
         self._pit_save_button.setEnabled(False)
         self._pit_save_button.clicked.connect(self._handle_save_pit_params)
@@ -1044,6 +1050,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.set_visible_pit_indices(
             self._pit_editor.pit_visible_indices()
         )
+        self.preview_api.set_show_pit_stall_center_dlat(
+            self._pit_editor.pit_stall_center_visible()
+        )
+        self.preview_api.set_show_pit_wall_dlat(
+            self._pit_editor.pit_wall_visible()
+        )
 
     def _handle_save_pit_params(self) -> None:
         if self._current_track_folder is None:
@@ -1154,6 +1166,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_pit_visibility_changed(self, indices: set[int]) -> None:
         self.preview_api.set_visible_pit_indices(indices)
+
+    def _handle_pit_stall_center_visibility_changed(self, visible: bool) -> None:
+        self.preview_api.set_show_pit_stall_center_dlat(visible)
+
+    def _handle_pit_wall_visibility_changed(self, visible: bool) -> None:
+        self.preview_api.set_show_pit_wall_dlat(visible)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802
         if (
