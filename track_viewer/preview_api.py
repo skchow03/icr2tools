@@ -134,6 +134,9 @@ class TrackPreviewApi:
     def set_show_pit_wall_dlat(self, show: bool) -> None:
         self._coordinator.set_show_pit_wall_dlat(show)
 
+    def set_show_pit_stall_cars(self, show: bool) -> None:
+        self._coordinator.set_show_pit_stall_cars(show)
+
     def cameras(self) -> List[CameraPosition]:
         return self._coordinator.cameras()
 

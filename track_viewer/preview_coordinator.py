@@ -352,6 +352,11 @@ class PreviewCoordinator:
             self._state.show_pit_wall_dlat = show
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def set_show_pit_stall_cars(self, show: bool) -> None:
+        if self._state.show_pit_stall_cars != show:
+            self._state.show_pit_stall_cars = show
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
     def cameras(self) -> List[CameraPosition]:
         return list(self._camera_service.cameras)
 

@@ -19,6 +19,9 @@ from track_viewer.services.camera_service import CameraService
 class TrackPreviewRenderer:
     """Render track preview geometry using the shared view state."""
 
+    PIT_CAR_LENGTH_DLONG = 99208.0
+    PIT_CAR_WIDTH_DLAT = 40000.0
+
     def __init__(
         self,
         model: TrackPreviewModel,
@@ -146,6 +149,13 @@ class TrackPreviewRenderer:
                 rendering.draw_pit_stall_range(
                     painter,
                     self._pit_stall_range_points(),
+                    transform,
+                    height,
+                )
+            if self._state.show_pit_stall_cars:
+                rendering.draw_pit_stall_cars(
+                    painter,
+                    self._pit_stall_car_polygons(),
                     transform,
                     height,
                 )
@@ -502,6 +512,66 @@ class TrackPreviewRenderer:
             self._state.pit_params.last_pit_stall_dlong,
             self._state.pit_params.pitwall_dlat,
         )
+
+    def _pit_stall_car_polygons(self) -> list[list[tuple[float, float]]]:
+        if (
+            self._state.pit_params is None
+            or self._model.trk is None
+            or not self._model.centerline
+        ):
+            return []
+        track_length = float(self._model.trk.trklength or 0.0)
+        if track_length <= 0:
+            return []
+        count = max(0, int(self._state.pit_params.pit_stall_count))
+        if count <= 0:
+            return []
+        start_dlong = float(self._state.pit_params.player_pit_stall_dlong)
+        end_dlong = float(self._state.pit_params.last_pit_stall_dlong)
+        start_dlong = start_dlong % track_length
+        end_dlong = end_dlong % track_length
+        if end_dlong < start_dlong:
+            end_dlong += track_length
+        spacing = 0.0 if count == 1 else (end_dlong - start_dlong) / (count - 1)
+        center_dlat = float(self._state.pit_params.pit_stall_center_dlat)
+        half_width = self.PIT_CAR_WIDTH_DLAT / 2.0
+        polygons: list[list[tuple[float, float]]] = []
+        for index in range(count):
+            tail_dlong = (start_dlong + spacing * index) % track_length
+            head_dlong = (tail_dlong + self.PIT_CAR_LENGTH_DLONG) % track_length
+            tail_left_x, tail_left_y, _ = getxyz(
+                self._model.trk,
+                tail_dlong,
+                center_dlat + half_width,
+                self._model.centerline,
+            )
+            tail_right_x, tail_right_y, _ = getxyz(
+                self._model.trk,
+                tail_dlong,
+                center_dlat - half_width,
+                self._model.centerline,
+            )
+            head_right_x, head_right_y, _ = getxyz(
+                self._model.trk,
+                head_dlong,
+                center_dlat - half_width,
+                self._model.centerline,
+            )
+            head_left_x, head_left_y, _ = getxyz(
+                self._model.trk,
+                head_dlong,
+                center_dlat + half_width,
+                self._model.centerline,
+            )
+            polygons.append(
+                [
+                    (tail_left_x, tail_left_y),
+                    (tail_right_x, tail_right_y),
+                    (head_right_x, head_right_y),
+                    (head_left_x, head_left_y),
+                ]
+            )
+        return polygons
 
     def _section_divider_segments(
         self,
