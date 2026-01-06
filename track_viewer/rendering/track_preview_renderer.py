@@ -563,6 +563,47 @@ class TrackPreviewRenderer:
                 center_dlat + half_width,
                 self._model.centerline,
             )
+            track_midpoint = (tail_dlong + self.PIT_CAR_LENGTH_DLONG / 2.0) % track_length
+            mid_left_x, mid_left_y, _ = getxyz(
+                self._model.trk,
+                track_midpoint,
+                center_dlat + half_width,
+                self._model.centerline,
+            )
+            mid_right_x, mid_right_y, _ = getxyz(
+                self._model.trk,
+                track_midpoint,
+                center_dlat - half_width,
+                self._model.centerline,
+            )
+            along_x = head_left_x - tail_left_x
+            along_y = head_left_y - tail_left_y
+            along_length = math.hypot(along_x, along_y)
+            if along_length > 0.0:
+                scale = self.PIT_CAR_LENGTH_DLONG / along_length
+                mid_center_x = (mid_left_x + mid_right_x) / 2.0
+                mid_center_y = (mid_left_y + mid_right_y) / 2.0
+                along_unit_x = along_x / along_length
+                along_unit_y = along_y / along_length
+                width_vec_x = mid_left_x - mid_right_x
+                width_vec_y = mid_left_y - mid_right_y
+                width_length = math.hypot(width_vec_x, width_vec_y)
+                width_unit_x = width_vec_x / width_length if width_length > 0.0 else 0.0
+                width_unit_y = width_vec_y / width_length if width_length > 0.0 else 0.0
+                half_length = self.PIT_CAR_LENGTH_DLONG / 2.0
+                half_width_world = width_length / 2.0
+                tail_center_x = mid_center_x - along_unit_x * half_length
+                tail_center_y = mid_center_y - along_unit_y * half_length
+                head_center_x = mid_center_x + along_unit_x * half_length
+                head_center_y = mid_center_y + along_unit_y * half_length
+                tail_left_x = tail_center_x + width_unit_x * half_width_world
+                tail_left_y = tail_center_y + width_unit_y * half_width_world
+                tail_right_x = tail_center_x - width_unit_x * half_width_world
+                tail_right_y = tail_center_y - width_unit_y * half_width_world
+                head_right_x = head_center_x - width_unit_x * half_width_world
+                head_right_y = head_center_y - width_unit_y * half_width_world
+                head_left_x = head_center_x + width_unit_x * half_width_world
+                head_left_y = head_center_y + width_unit_y * half_width_world
             polygons.append(
                 [
                     (tail_left_x, tail_left_y),
