@@ -62,10 +62,10 @@ def draw_pit_stall_cars(
     transform: Transform,
     viewport_height: int,
     *,
-    color: str = "#00c853",
-    outline: str = "#007e33",
+    color: str = "#ffffff",
+    outline: str = "#ffffff",
     width: int = 1,
-    alpha: int = 110,
+    alpha: int = 255,
 ) -> None:
     if not polygons:
         return
