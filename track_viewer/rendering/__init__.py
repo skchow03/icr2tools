@@ -12,6 +12,7 @@ from track_viewer.rendering.overlays.camera_overlay import draw_camera_positions
 from track_viewer.rendering.overlays.flag_overlay import draw_flags
 from track_viewer.rendering.overlays.pit_overlay import (
     draw_pit_dlong_lines,
+    draw_pit_stall_cars,
     draw_pit_stall_range,
 )
 from track_viewer.rendering.overlays.surface_overlay import (
@@ -45,6 +46,7 @@ __all__ = [
     "draw_flags",
     "draw_lp_segment",
     "draw_pit_dlong_lines",
+    "draw_pit_stall_cars",
     "draw_pit_stall_range",
     "draw_start_finish_line",
     "draw_track_boundaries",

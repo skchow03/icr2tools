@@ -54,3 +54,34 @@ def draw_pit_stall_range(
     ]
     painter.drawPolyline(QtGui.QPolygonF(mapped))
     painter.restore()
+
+
+def draw_pit_stall_cars(
+    painter: QtGui.QPainter,
+    polygons: Sequence[Sequence[Point2D]],
+    transform: Transform,
+    viewport_height: int,
+    *,
+    color: str = "#00c853",
+    outline: str = "#007e33",
+    width: int = 1,
+    alpha: int = 110,
+) -> None:
+    if not polygons:
+        return
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    brush_color = QtGui.QColor(color)
+    brush_color.setAlpha(alpha)
+    painter.setBrush(QtGui.QBrush(brush_color))
+    pen = QtGui.QPen(QtGui.QColor(outline), width)
+    painter.setPen(pen)
+    for polygon in polygons:
+        if len(polygon) < 3:
+            continue
+        mapped = [
+            map_point(point[0], point[1], transform, viewport_height)
+            for point in polygon
+        ]
+        painter.drawPolygon(QtGui.QPolygonF(mapped))
+    painter.restore()

@@ -35,6 +35,7 @@ class TrackPreviewViewState:
     )
     show_pit_stall_center_dlat: bool = True
     show_pit_wall_dlat: bool = True
+    show_pit_stall_cars: bool = True
     view_center: Tuple[float, float] | None = None
     fit_scale: float | None = None
     current_scale: float | None = 1.0
@@ -91,6 +92,7 @@ class TrackPreviewViewState:
         self.visible_pit_indices = set(PIT_DLONG_LINE_INDICES)
         self.show_pit_stall_center_dlat = True
         self.show_pit_wall_dlat = True
+        self.show_pit_stall_cars = True
         self.view_center = None
         self.fit_scale = None
         self.current_scale = 1.0
