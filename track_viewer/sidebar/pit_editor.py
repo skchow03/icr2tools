@@ -65,9 +65,6 @@ class PitParametersEditor(QtWidgets.QFrame):
             input_widget: QtWidgets.QAbstractSpinBox = QtWidgets.QSpinBox()
             input_widget.setRange(-1_000_000_000, 1_000_000_000)
             input_widget.setSingleStep(1)
-            input_widget.setSizeAdjustPolicy(
-                QtWidgets.QAbstractSpinBox.AdjustToContents
-            )
             input_widget.setSizePolicy(
                 QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
             )
