@@ -700,6 +700,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         pit_layout.addStretch(1)
         pit_layout.addWidget(self._pit_save_button)
         pit_sidebar.setLayout(pit_layout)
+        pit_scroll = QtWidgets.QScrollArea()
+        pit_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        pit_scroll.setWidgetResizable(True)
+        pit_scroll.setWidget(pit_sidebar)
 
         track_txt_sidebar = QtWidgets.QFrame()
         track_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -883,7 +887,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(lp_sidebar, "LP editing")
         tabs.addTab(camera_sidebar, "Camera editing")
-        tabs.addTab(pit_sidebar, "PIT parameters")
+        tabs.addTab(pit_scroll, "PIT parameters")
         tabs.addTab(track_txt_sidebar, "Track parameters")
 
         body = QtWidgets.QSplitter()
