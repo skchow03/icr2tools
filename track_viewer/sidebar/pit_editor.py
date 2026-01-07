@@ -54,8 +54,9 @@ class PitParametersEditor(QtWidgets.QFrame):
         table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table.setSizeAdjustPolicy(
-            QtWidgets.QAbstractScrollArea.AdjustToContents
+            QtWidgets.QAbstractScrollArea.AdjustIgnored
         )
+        table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
         for index, (field, label, tooltip, _is_integer) in enumerate(
@@ -73,6 +74,7 @@ class PitParametersEditor(QtWidgets.QFrame):
             table.setItem(index, 0, index_item)
 
             label_widget = QtWidgets.QLabel(label)
+            label_widget.setWordWrap(True)
             label_widget.setToolTip(tooltip)
             color = PIT_DLONG_LINE_COLORS.get(index) or PIT_DLAT_LINE_COLORS.get(
                 index
