@@ -117,6 +117,13 @@ class TrackTxtMetadata:
     rain_level: int | None = None
     rain_variation: int | None = None
     blap: int | None = None
+    rels: int | None = None
+    theat: list[int] | None = None
+    tcff: list[int] | None = None
+    tcfr: list[int] | None = None
+    tires: list[int] | None = None
+    tire2: list[int] | None = None
+    sctns: list[int] | None = None
 
 
 @dataclass
@@ -313,6 +320,34 @@ class TrackIOService:
                 parsed = self._parse_track_integer(values[0])
                 if parsed is not None:
                     metadata.blap = parsed
+            elif keyword_upper == "RELS" and metadata.rels is None and values:
+                parsed = self._parse_track_integer(values[0])
+                if parsed is not None:
+                    metadata.rels = parsed
+            elif keyword_upper == "THEAT" and metadata.theat is None:
+                parsed = self._parse_n_values(values, 8)
+                if parsed is not None:
+                    metadata.theat = parsed
+            elif keyword_upper == "TCFF" and metadata.tcff is None:
+                parsed = self._parse_n_values(values, 8)
+                if parsed is not None:
+                    metadata.tcff = parsed
+            elif keyword_upper == "TCFR" and metadata.tcfr is None:
+                parsed = self._parse_n_values(values, 8)
+                if parsed is not None:
+                    metadata.tcfr = parsed
+            elif keyword_upper == "TIRES" and metadata.tires is None:
+                parsed = self._parse_n_values(values, 7)
+                if parsed is not None:
+                    metadata.tires = parsed
+            elif keyword_upper == "TIRE2" and metadata.tire2 is None:
+                parsed = self._parse_n_values(values, 7)
+                if parsed is not None:
+                    metadata.tire2 = parsed
+            elif keyword_upper == "SCTNS" and metadata.sctns is None:
+                parsed = self._parse_n_values(values, 3)
+                if parsed is not None:
+                    metadata.sctns = parsed
         return TrackTxtResult(lines, pit, metadata, txt_path, True)
 
     def save_cameras(
@@ -560,6 +595,17 @@ class TrackIOService:
             return None
         return first_value, second_value
 
+    def _parse_n_values(self, values: Sequence[str], count: int) -> list[int] | None:
+        if len(values) < count:
+            return None
+        parsed_values: list[int] = []
+        for value in values[:count]:
+            parsed = self._parse_track_integer(value)
+            if parsed is None:
+                return None
+            parsed_values.append(parsed)
+        return parsed_values
+
     @staticmethod
     def _parse_track_integer(value: str) -> int | None:
         try:
@@ -724,6 +770,53 @@ class TrackIOService:
         replacements["BLAP"] = (
             self._format_track_txt_line("BLAP", str(metadata.blap))
             if metadata.blap is not None
+            else None
+        )
+        replacements["RELS"] = (
+            self._format_track_txt_line("RELS", str(metadata.rels))
+            if metadata.rels is not None
+            else None
+        )
+        replacements["THEAT"] = (
+            self._format_track_txt_line(
+                "THEAT", " ".join(str(value) for value in metadata.theat)
+            )
+            if metadata.theat is not None
+            else None
+        )
+        replacements["TCFF"] = (
+            self._format_track_txt_line(
+                "TCFF", " ".join(str(value) for value in metadata.tcff)
+            )
+            if metadata.tcff is not None
+            else None
+        )
+        replacements["TCFR"] = (
+            self._format_track_txt_line(
+                "TCFR", " ".join(str(value) for value in metadata.tcfr)
+            )
+            if metadata.tcfr is not None
+            else None
+        )
+        replacements["TIRES"] = (
+            self._format_track_txt_line(
+                "TIRES", " ".join(str(value) for value in metadata.tires)
+            )
+            if metadata.tires is not None
+            else None
+        )
+        replacements["TIRE2"] = (
+            self._format_track_txt_line(
+                "TIRE2", " ".join(str(value) for value in metadata.tire2)
+            )
+            if metadata.tire2 is not None
+            else None
+        )
+        replacements["SCTNS"] = (
+            self._format_track_txt_line(
+                "SCTNS", " ".join(str(value) for value in metadata.sctns)
+            )
+            if metadata.sctns is not None
             else None
         )
         return replacements

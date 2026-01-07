@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -367,6 +367,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._rain_level_field = self._create_int_field("–")
         self._rain_variation_field = self._create_int_field("–")
         self._blap_field = self._create_int_field("–")
+        self._rels_field = self._create_int_field("–")
+        self._theat_fields = [self._create_int_field("–") for _ in range(8)]
+        self._tcff_fields = [self._create_int_field("–") for _ in range(8)]
+        self._tcfr_fields = [self._create_int_field("–") for _ in range(8)]
+        self._tires_fields = [self._create_int_field("–") for _ in range(7)]
+        self._tire2_fields = [self._create_int_field("–") for _ in range(7)]
+        self._sctns_fields = [self._create_int_field("–") for _ in range(3)]
         self._qual_mode_field = QtWidgets.QComboBox()
         self._qual_mode_field.addItem("0 - timed session", 0)
         self._qual_mode_field.addItem("1 - multi-lap average", 1)
@@ -811,6 +818,27 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         rain_widget.setLayout(rain_layout)
         track_txt_form.addRow("Rain (RAIN)", rain_widget)
         track_txt_form.addRow("Pole lap (BLAP)", self._blap_field)
+        track_txt_form.addRow("Relative strength (RELS)", self._rels_field)
+        track_txt_form.addRow(
+            "Tire heat (THEAT)", self._build_compound_grid(self._theat_fields)
+        )
+        track_txt_form.addRow(
+            "Tire compound friction front (TCFF)",
+            self._build_compound_grid(self._tcff_fields),
+        )
+        track_txt_form.addRow(
+            "Tire compound friction rear (TCFR)",
+            self._build_compound_grid(self._tcfr_fields),
+        )
+        track_txt_form.addRow(
+            "Goodyear tires (TIRES)", self._build_number_row(self._tires_fields)
+        )
+        track_txt_form.addRow(
+            "Firestone tires (TIRE2)", self._build_number_row(self._tire2_fields)
+        )
+        track_txt_form.addRow(
+            "Sections (SCTNS)", self._build_number_row(self._sctns_fields)
+        )
         qual_layout = QtWidgets.QHBoxLayout()
         qual_layout.setContentsMargins(0, 0, 0, 0)
         qual_layout.addWidget(QtWidgets.QLabel("Mode"))
@@ -895,6 +923,38 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         field.setValidator(validator)
         return field
 
+    def _build_compound_grid(
+        self, fields: Sequence[QtWidgets.QLineEdit]
+    ) -> QtWidgets.QWidget:
+        grid = QtWidgets.QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(6)
+        headers = ["Soft", "Medium", "Hard", "Rain"]
+        for column, label in enumerate(headers, start=1):
+            grid.addWidget(QtWidgets.QLabel(label), 0, column)
+        grid.addWidget(QtWidgets.QLabel("Dry"), 1, 0)
+        grid.addWidget(QtWidgets.QLabel("Wet"), 2, 0)
+        for index, field in enumerate(fields[:8]):
+            row = 1 if index < 4 else 2
+            column = (index % 4) + 1
+            grid.addWidget(field, row, column)
+        widget = QtWidgets.QWidget()
+        widget.setLayout(grid)
+        return widget
+
+    def _build_number_row(
+        self, fields: Sequence[QtWidgets.QLineEdit]
+    ) -> QtWidgets.QWidget:
+        grid = QtWidgets.QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(6)
+        for index, field in enumerate(fields):
+            grid.addWidget(QtWidgets.QLabel(str(index + 1)), 0, index)
+            grid.addWidget(field, 1, index)
+        widget = QtWidgets.QWidget()
+        widget.setLayout(grid)
+        return widget
+
     @staticmethod
     def _format_value(value: float) -> str:
         return f"{value:.2f}"
@@ -906,6 +966,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             field.setText(value)
         else:
             field.clear()
+
+    def _set_track_txt_sequence(
+        self, fields: Sequence[QtWidgets.QLineEdit], values: Sequence[int] | None
+    ) -> None:
+        for index, field in enumerate(fields):
+            if values is not None and index < len(values):
+                field.setText(str(values[index]))
+            else:
+                field.clear()
 
     def _set_qual_mode(self, mode: int | None) -> None:
         with QtCore.QSignalBlocker(self._qual_mode_field):
@@ -952,6 +1021,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._rain_level_field,
             self._rain_variation_field,
             self._blap_field,
+            self._rels_field,
             self._qual_value_field,
             self._blimp_x_field,
             self._blimp_y_field,
@@ -961,6 +1031,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pacea_right_dlat_field,
             self._pacea_left_dlat_field,
             self._pacea_unknown_field,
+        ):
+            field.clear()
+        for field in (
+            *self._theat_fields,
+            *self._tcff_fields,
+            *self._tcfr_fields,
+            *self._tires_fields,
+            *self._tire2_fields,
+            *self._sctns_fields,
         ):
             field.clear()
         self._set_qual_mode(None)
@@ -1047,6 +1126,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._set_track_txt_field(self._rain_variation_field, rain_variation)
         blap = str(metadata.blap) if metadata.blap is not None else None
         self._set_track_txt_field(self._blap_field, blap)
+        rels = str(metadata.rels) if metadata.rels is not None else None
+        self._set_track_txt_field(self._rels_field, rels)
+        self._set_track_txt_sequence(self._theat_fields, metadata.theat)
+        self._set_track_txt_sequence(self._tcff_fields, metadata.tcff)
+        self._set_track_txt_sequence(self._tcfr_fields, metadata.tcfr)
+        self._set_track_txt_sequence(self._tires_fields, metadata.tires)
+        self._set_track_txt_sequence(self._tire2_fields, metadata.tire2)
+        self._set_track_txt_sequence(self._sctns_fields, metadata.sctns)
         qual_mode_value = metadata.qual_session_mode
         qual_value = (
             str(metadata.qual_session_value)
@@ -1280,6 +1367,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._rain_variation_field.text()
         )
         metadata.blap = self._parse_optional_int(self._blap_field.text())
+        metadata.rels = self._parse_optional_int(self._rels_field.text())
+        metadata.theat = self._collect_int_sequence(self._theat_fields)
+        metadata.tcff = self._collect_int_sequence(self._tcff_fields)
+        metadata.tcfr = self._collect_int_sequence(self._tcfr_fields)
+        metadata.tires = self._collect_int_sequence(self._tires_fields)
+        metadata.tire2 = self._collect_int_sequence(self._tire2_fields)
+        metadata.sctns = self._collect_int_sequence(self._sctns_fields)
         metadata.qual_session_mode = (
             self._qual_mode_field.currentData()
             if self._qual_mode_field.currentIndex() >= 0
@@ -1322,6 +1416,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return int(stripped)
         except ValueError:
             return None
+
+    def _collect_int_sequence(
+        self, fields: Sequence[QtWidgets.QLineEdit]
+    ) -> list[int] | None:
+        parsed_values: list[int | None] = [
+            self._parse_optional_int(field.text()) for field in fields
+        ]
+        if all(value is None for value in parsed_values):
+            return None
+        if any(value is None for value in parsed_values):
+            return None
+        return [value for value in parsed_values if value is not None]
 
     def _handle_pit_params_changed(self) -> None:
         self.preview_api.set_pit_parameters(self._pit_editor.parameters())
