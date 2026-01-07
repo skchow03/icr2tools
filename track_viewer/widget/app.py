@@ -885,6 +885,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_txt_sidebar.setLayout(track_txt_layout)
         track_txt_scroll = QtWidgets.QScrollArea()
         track_txt_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        track_txt_scroll.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarAlwaysOff
+        )
+        track_txt_scroll.setVerticalScrollBarPolicy(
+            QtCore.Qt.ScrollBarAsNeeded
+        )
         track_txt_scroll.setWidgetResizable(True)
         track_txt_scroll.setWidget(track_txt_sidebar)
 
@@ -915,12 +921,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         field.setReadOnly(True)
         field.setPlaceholderText(placeholder)
         field.setFocusPolicy(QtCore.Qt.ClickFocus)
+        field.setMinimumWidth(0)
+        field.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
         return field
 
     def _create_text_field(self, placeholder: str) -> QtWidgets.QLineEdit:
         field = QtWidgets.QLineEdit()
         field.setPlaceholderText(placeholder)
         field.setFocusPolicy(QtCore.Qt.ClickFocus)
+        field.setMinimumWidth(0)
+        field.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
         return field
 
     def _create_int_field(self, placeholder: str) -> QtWidgets.QLineEdit:
@@ -929,6 +943,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         field.setFocusPolicy(QtCore.Qt.ClickFocus)
         validator = QtGui.QIntValidator(-2_147_483_648, 2_147_483_647, field)
         field.setValidator(validator)
+        field.setMinimumWidth(0)
+        field.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
         return field
 
     def _build_compound_grid(
