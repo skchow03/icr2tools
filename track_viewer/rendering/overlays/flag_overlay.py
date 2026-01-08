@@ -15,15 +15,20 @@ def draw_flags(
     transform: Transform,
     viewport_height: int,
     flag_radius: float,
+    *,
+    mapped_points: Sequence[QtCore.QPointF] | None = None,
 ) -> None:
-    if not flags:
+    if not flags and not mapped_points:
         return
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     radius = 6
     dot_radius = 4
     scale, _ = transform
-    for index, (fx, fy) in enumerate(flags):
-        point = map_point(fx, fy, transform, viewport_height)
+    if mapped_points is None:
+        mapped_points = [
+            map_point(fx, fy, transform, viewport_height) for fx, fy in flags
+        ]
+    for index, point in enumerate(mapped_points):
         color = QtGui.QColor("#ffcc33")
         if index == selected_flag:
             color = QtGui.QColor("#ff7f0e")

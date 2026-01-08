@@ -82,6 +82,9 @@ class TrackPreviewViewState:
     wind2_dir: int | None = None
     wind2_var: int | None = None
     dragging_weather_compass: str | None = None
+    render_cache: "TrackPreviewRenderCache" = field(
+        default_factory=lambda: TrackPreviewRenderCache()
+    )
 
     def reset(self, message: str) -> None:
         self.status_message = message
@@ -141,10 +144,12 @@ class TrackPreviewViewState:
         self.wind2_dir = None
         self.wind2_var = None
         self.dragging_weather_compass = None
+        self.render_cache = TrackPreviewRenderCache()
 
     def invalidate_cache(self) -> None:
         self.cached_surface_pixmap = None
         self.pixmap_size = None
+        self.render_cache.invalidate()
 
     def default_center(
         self, bounds: tuple[float, float, float, float] | None
@@ -262,6 +267,7 @@ class TrackPreviewViewState:
         margin = 16 + radius * 0.35
         return QtCore.QPointF(margin + radius, size.height() - margin - radius)
 
+
     def weather_compass_radius(self, size: QtCore.QSize) -> float:
         return min(40.0, max(24.0, min(size.width(), size.height()) * 0.08))
 
@@ -325,3 +331,59 @@ class TrackPreviewViewState:
             return False
         self.wind_var = value
         return True
+
+
+@dataclass
+class TrackPreviewRenderCache:
+    transform: tuple[float, tuple[float, float]] | None = None
+    viewport_size: QtCore.QSize | None = None
+    centerline_signature: tuple | None = None
+    centerline_polyline: QtGui.QPolygonF | None = None
+    boundaries_signature: tuple | None = None
+    boundary_lines: list[QtCore.QLineF] = field(default_factory=list)
+    pit_signature: tuple | None = None
+    pit_dlong_lines: list[tuple[QtCore.QLineF, QtGui.QColor]] = field(
+        default_factory=list
+    )
+    pit_stall_range: QtGui.QPolygonF | None = None
+    pit_wall_range: QtGui.QPolygonF | None = None
+    pit_stall_cars: list[QtGui.QPolygonF] = field(default_factory=list)
+    section_signature: tuple | None = None
+    section_divider_lines: list[tuple[QtCore.QLineF, QtGui.QColor]] = field(
+        default_factory=list
+    )
+    flags_signature: tuple | None = None
+    flag_points: list[QtCore.QPointF] = field(default_factory=list)
+    zoom_signature: tuple | None = None
+    zoom_points: list[tuple[QtCore.QPointF, QtGui.QColor]] = field(
+        default_factory=list
+    )
+
+    def invalidate(self) -> None:
+        self.transform = None
+        self.viewport_size = None
+        self.centerline_signature = None
+        self.centerline_polyline = None
+        self.boundaries_signature = None
+        self.boundary_lines = []
+        self.pit_signature = None
+        self.pit_dlong_lines = []
+        self.pit_stall_range = None
+        self.pit_wall_range = None
+        self.pit_stall_cars = []
+        self.section_signature = None
+        self.section_divider_lines = []
+        self.flags_signature = None
+        self.flag_points = []
+        self.zoom_signature = None
+        self.zoom_points = []
+
+    def update_transform(
+        self,
+        transform: tuple[float, tuple[float, float]] | None,
+        size: QtCore.QSize,
+    ) -> None:
+        if self.transform != transform or self.viewport_size != size:
+            self.invalidate()
+            self.transform = transform
+            self.viewport_size = QtCore.QSize(size)
