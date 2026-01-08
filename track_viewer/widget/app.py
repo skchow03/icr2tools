@@ -851,22 +851,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         tire_txt_form = QtWidgets.QFormLayout()
         tire_txt_form.setLabelAlignment(QtCore.Qt.AlignLeft)
         tire_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
+        tire_txt_form.addRow(QtWidgets.QLabel("Tire heat (THEAT)"))
+        tire_txt_form.addRow(self._build_compound_grid(self._theat_fields))
         tire_txt_form.addRow(
-            "Tire heat (THEAT)", self._build_compound_grid(self._theat_fields)
+            QtWidgets.QLabel("Tire compound friction front (TCFF)")
         )
+        tire_txt_form.addRow(self._build_compound_grid(self._tcff_fields))
         tire_txt_form.addRow(
-            "Tire compound friction front (TCFF)",
-            self._build_compound_grid(self._tcff_fields),
+            QtWidgets.QLabel("Tire compound friction rear (TCFR)")
         )
+        tire_txt_form.addRow(self._build_compound_grid(self._tcfr_fields))
+        tire_txt_form.addRow(QtWidgets.QLabel("Goodyear tires (TIRES)"))
         tire_txt_form.addRow(
-            "Tire compound friction rear (TCFR)",
-            self._build_compound_grid(self._tcfr_fields),
+            self._build_number_row(self._tires_fields, show_labels=False)
         )
+        tire_txt_form.addRow(QtWidgets.QLabel("Firestone tires (TIRE2)"))
         tire_txt_form.addRow(
-            "Goodyear tires (TIRES)", self._build_number_row(self._tires_fields)
-        )
-        tire_txt_form.addRow(
-            "Firestone tires (TIRE2)", self._build_number_row(self._tire2_fields)
+            self._build_number_row(self._tire2_fields, show_labels=False)
         )
         tire_txt_layout.addLayout(tire_txt_form)
         tire_txt_layout.addStretch(1)
@@ -925,7 +926,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         wind_layout.addWidget(self._wind_heading_adjust_field, 2, 1)
         wind_widget = QtWidgets.QWidget()
         wind_widget.setLayout(wind_layout)
-        weather_txt_form.addRow("Wind (WIND)", wind_widget)
+        weather_txt_form.addRow(QtWidgets.QLabel("Wind (WIND)"))
+        weather_txt_form.addRow(wind_widget)
         wind2_layout = QtWidgets.QGridLayout()
         wind2_layout.setContentsMargins(0, 0, 0, 0)
         wind2_layout.setHorizontalSpacing(6)
@@ -941,7 +943,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         wind2_layout.addWidget(self._wind2_heading_adjust_field, 2, 1)
         wind2_widget = QtWidgets.QWidget()
         wind2_widget.setLayout(wind2_layout)
-        weather_txt_form.addRow("Wind 2 (WIND2)", wind2_widget)
+        weather_txt_form.addRow(QtWidgets.QLabel("Wind 2 (WIND2)"))
+        weather_txt_form.addRow(wind2_widget)
         rain_layout = QtWidgets.QHBoxLayout()
         rain_layout.setContentsMargins(0, 0, 0, 0)
         rain_layout.addWidget(QtWidgets.QLabel("Parameter 1"))
@@ -950,7 +953,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         rain_layout.addWidget(self._rain_variation_field)
         rain_widget = QtWidgets.QWidget()
         rain_widget.setLayout(rain_layout)
-        weather_txt_form.addRow("Rain (RAIN)", rain_widget)
+        weather_txt_form.addRow(QtWidgets.QLabel("Rain (RAIN)"))
+        weather_txt_form.addRow(rain_widget)
         weather_txt_layout.addLayout(weather_txt_form)
         weather_txt_layout.addStretch(1)
         weather_txt_layout.addWidget(self._track_txt_weather_save_button)
@@ -967,12 +971,36 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         weather_txt_scroll.setWidget(weather_txt_sidebar)
 
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(lp_sidebar, "LP")
-        tabs.addTab(camera_sidebar, "Cameras")
-        tabs.addTab(pit_scroll, "Pit")
-        tabs.addTab(track_txt_scroll, "Track")
-        tabs.addTab(weather_txt_scroll, "Weather")
-        tabs.addTab(tire_txt_scroll, "Tires")
+        tabs.addTab(
+            lp_sidebar,
+            self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogInfoView),
+            "LP",
+        )
+        tabs.addTab(
+            camera_sidebar,
+            self.style().standardIcon(QtWidgets.QStyle.SP_DesktopIcon),
+            "Cameras",
+        )
+        tabs.addTab(
+            pit_scroll,
+            self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton),
+            "Pit",
+        )
+        tabs.addTab(
+            track_txt_scroll,
+            self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon),
+            "Track",
+        )
+        tabs.addTab(
+            weather_txt_scroll,
+            self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload),
+            "Weather",
+        )
+        tabs.addTab(
+            tire_txt_scroll,
+            self.style().standardIcon(QtWidgets.QStyle.SP_DriveHDIcon),
+            "Tires",
+        )
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
@@ -1043,14 +1071,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         return widget
 
     def _build_number_row(
-        self, fields: Sequence[QtWidgets.QLineEdit]
+        self,
+        fields: Sequence[QtWidgets.QLineEdit],
+        *,
+        show_labels: bool = True,
     ) -> QtWidgets.QWidget:
         grid = QtWidgets.QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(6)
         for index, field in enumerate(fields):
-            grid.addWidget(QtWidgets.QLabel(str(index + 1)), 0, index)
-            grid.addWidget(field, 1, index)
+            if show_labels:
+                grid.addWidget(QtWidgets.QLabel(str(index + 1)), 0, index)
+                grid.addWidget(field, 1, index)
+            else:
+                grid.addWidget(field, 0, index)
         widget = QtWidgets.QWidget()
         widget.setLayout(grid)
         return widget
