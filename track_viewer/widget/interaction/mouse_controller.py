@@ -8,6 +8,7 @@ from PyQt5 import QtCore, QtGui
 from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
 from track_viewer.common.weather_compass import (
+    heading_adjust_to_turns,
     turns_from_vector,
     turns_to_heading_adjust,
     turns_to_wind_direction,
@@ -95,7 +96,7 @@ class TrackPreviewMouseController:
         return False
 
     def handle_mouse_move(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
-        if self._state.dragging_weather_compass:
+        if self._state.dragging_weather_compass is not None:
             self._update_weather_compass_heading(event.pos(), size)
             return True
         handled = False
@@ -136,8 +137,8 @@ class TrackPreviewMouseController:
         self, event: QtGui.QMouseEvent, size: QtCore.QSize
     ) -> bool:
         if event.button() == QtCore.Qt.LeftButton:
-            if self._state.dragging_weather_compass:
-                self._state.dragging_weather_compass = False
+            if self._state.dragging_weather_compass is not None:
+                self._state.dragging_weather_compass = None
                 return True
             if self._state.dragging_camera_index is not None:
                 self._camera_edit.end_camera_drag()
@@ -157,7 +158,7 @@ class TrackPreviewMouseController:
 
     def handle_leave(self) -> None:
         self._callbacks.cursor_position_changed(None)
-        self._state.dragging_weather_compass = False
+        self._state.dragging_weather_compass = None
         if self._state.cursor_position is not None:
             self._state.cursor_position = None
             self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
@@ -189,14 +190,39 @@ class TrackPreviewMouseController:
         handle_radius = self._state.weather_compass_handle_radius(size)
         turns = self._state.weather_compass_turns()
         dx, dy = turns_to_unit_vector(turns)
-        handle = QtCore.QPointF(
+        wind_handle = QtCore.QPointF(
             center.x() + dx * radius, center.y() + dy * radius
         )
+        heading_adjust = (
+            self._state.wind2_heading_adjust
+            if self._state.weather_compass_source == "wind2"
+            else self._state.wind_heading_adjust
+        )
+        heading_turns = (
+            heading_adjust_to_turns(heading_adjust)
+            if heading_adjust is not None
+            else None
+        )
+        heading_handle = None
+        if heading_turns is not None:
+            heading_dx, heading_dy = turns_to_unit_vector(heading_turns)
+            heading_handle = QtCore.QPointF(
+                center.x() + heading_dx * radius,
+                center.y() + heading_dy * radius,
+            )
+        if heading_handle is not None:
+            if (
+                math.hypot(point.x() - heading_handle.x(), point.y() - heading_handle.y())
+                <= max(10.0, handle_radius * 2.0)
+            ):
+                self._state.dragging_weather_compass = "heading"
+                self._update_weather_compass_heading(point, size)
+                return True
         if (
-            math.hypot(point.x() - handle.x(), point.y() - handle.y())
+            math.hypot(point.x() - wind_handle.x(), point.y() - wind_handle.y())
             <= max(10.0, handle_radius * 2.5)
         ):
-            self._state.dragging_weather_compass = True
+            self._state.dragging_weather_compass = "wind"
             self._update_weather_compass_heading(point, size)
             return True
         return False
@@ -209,21 +235,24 @@ class TrackPreviewMouseController:
         dy = point.y() - center.y()
         turns = turns_from_vector(dx, dy)
         direction = turns_to_wind_direction(turns)
-        if self._state.set_weather_wind_direction(
-            self._state.weather_compass_source, direction
-        ):
-            self._callbacks.weather_wind_direction_changed(
+        if self._state.dragging_weather_compass == "wind":
+            if self._state.set_weather_wind_direction(
                 self._state.weather_compass_source, direction
-            )
-            self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
-        adjust = turns_to_heading_adjust(turns)
-        if self._state.set_weather_heading_adjust(
-            self._state.weather_compass_source, adjust
-        ):
-            self._callbacks.weather_heading_adjust_changed(
+            ):
+                self._callbacks.weather_wind_direction_changed(
+                    self._state.weather_compass_source, direction
+                )
+                self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
+            return
+        if self._state.dragging_weather_compass == "heading":
+            adjust = turns_to_heading_adjust(turns)
+            if self._state.set_weather_heading_adjust(
                 self._state.weather_compass_source, adjust
-            )
-            self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
+            ):
+                self._callbacks.weather_heading_adjust_changed(
+                    self._state.weather_compass_source, adjust
+                )
+                self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
 
     def _update_active_line_projection(
         self, point: QtCore.QPointF | None, size: QtCore.QSize
