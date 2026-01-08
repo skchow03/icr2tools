@@ -339,6 +339,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "Select a track to edit track.txt parameters."
         )
         self._track_txt_status_label.setWordWrap(True)
+        self._track_txt_tire_status_label = QtWidgets.QLabel(
+            "Select a track to edit track.txt parameters."
+        )
+        self._track_txt_tire_status_label.setWordWrap(True)
         self._track_txt_weather_status_label = QtWidgets.QLabel(
             "Select a track to edit track.txt parameters."
         )
@@ -423,6 +427,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_save_button = QtWidgets.QPushButton("Save Track TXT")
         self._track_txt_save_button.setEnabled(False)
         self._track_txt_save_button.clicked.connect(self._handle_save_track_txt)
+        self._track_txt_tire_save_button = QtWidgets.QPushButton(
+            "Save Track TXT"
+        )
+        self._track_txt_tire_save_button.setEnabled(False)
+        self._track_txt_tire_save_button.clicked.connect(
+            self._handle_save_track_txt
+        )
         self._track_txt_weather_save_button = QtWidgets.QPushButton(
             "Save Track TXT"
         )
@@ -776,23 +787,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_txt_form.addRow("Pole lap (BLAP)", self._blap_field)
         track_txt_form.addRow("Relative strength (RELS)", self._rels_field)
         track_txt_form.addRow(
-            "Tire heat (THEAT)", self._build_compound_grid(self._theat_fields)
-        )
-        track_txt_form.addRow(
-            "Tire compound friction front (TCFF)",
-            self._build_compound_grid(self._tcff_fields),
-        )
-        track_txt_form.addRow(
-            "Tire compound friction rear (TCFR)",
-            self._build_compound_grid(self._tcfr_fields),
-        )
-        track_txt_form.addRow(
-            "Goodyear tires (TIRES)", self._build_number_row(self._tires_fields)
-        )
-        track_txt_form.addRow(
-            "Firestone tires (TIRE2)", self._build_number_row(self._tire2_fields)
-        )
-        track_txt_form.addRow(
             "Sections (SCTNS)", self._build_number_row(self._sctns_fields)
         )
         qual_layout = QtWidgets.QHBoxLayout()
@@ -845,6 +839,47 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         track_txt_scroll.setWidgetResizable(True)
         track_txt_scroll.setWidget(track_txt_sidebar)
+
+        tire_txt_sidebar = QtWidgets.QFrame()
+        tire_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        tire_txt_layout = QtWidgets.QVBoxLayout()
+        tire_txt_layout.setSpacing(8)
+        tire_txt_title = QtWidgets.QLabel("Tire TXT parameters")
+        tire_txt_title.setStyleSheet("font-weight: bold")
+        tire_txt_layout.addWidget(tire_txt_title)
+        tire_txt_layout.addWidget(self._track_txt_tire_status_label)
+        tire_txt_form = QtWidgets.QFormLayout()
+        tire_txt_form.setLabelAlignment(QtCore.Qt.AlignLeft)
+        tire_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
+        tire_txt_form.addRow(
+            "Tire heat (THEAT)", self._build_compound_grid(self._theat_fields)
+        )
+        tire_txt_form.addRow(
+            "Tire compound friction front (TCFF)",
+            self._build_compound_grid(self._tcff_fields),
+        )
+        tire_txt_form.addRow(
+            "Tire compound friction rear (TCFR)",
+            self._build_compound_grid(self._tcfr_fields),
+        )
+        tire_txt_form.addRow(
+            "Goodyear tires (TIRES)", self._build_number_row(self._tires_fields)
+        )
+        tire_txt_form.addRow(
+            "Firestone tires (TIRE2)", self._build_number_row(self._tire2_fields)
+        )
+        tire_txt_layout.addLayout(tire_txt_form)
+        tire_txt_layout.addStretch(1)
+        tire_txt_layout.addWidget(self._track_txt_tire_save_button)
+        tire_txt_sidebar.setLayout(tire_txt_layout)
+        tire_txt_scroll = QtWidgets.QScrollArea()
+        tire_txt_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        tire_txt_scroll.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarAlwaysOff
+        )
+        tire_txt_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        tire_txt_scroll.setWidgetResizable(True)
+        tire_txt_scroll.setWidget(tire_txt_sidebar)
 
         weather_txt_sidebar = QtWidgets.QFrame()
         weather_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -932,11 +967,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         weather_txt_scroll.setWidget(weather_txt_sidebar)
 
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(lp_sidebar, "LP editing")
-        tabs.addTab(camera_sidebar, "Camera editing")
-        tabs.addTab(pit_scroll, "PIT parameters")
-        tabs.addTab(track_txt_scroll, "Track parameters")
-        tabs.addTab(weather_txt_scroll, "Weather parameters")
+        tabs.addTab(lp_sidebar, "LP")
+        tabs.addTab(camera_sidebar, "Cameras")
+        tabs.addTab(pit_scroll, "Pit")
+        tabs.addTab(track_txt_scroll, "Track")
+        tabs.addTab(weather_txt_scroll, "Weather")
+        tabs.addTab(tire_txt_scroll, "Tires")
 
         body = QtWidgets.QSplitter()
         body.setOrientation(QtCore.Qt.Horizontal)
@@ -1115,6 +1151,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             status_text = f"Loaded {result.txt_path.name}."
         self._track_txt_status_label.setText(status_text)
+        self._track_txt_tire_status_label.setText(status_text)
         self._track_txt_weather_status_label.setText(status_text)
         metadata = result.metadata
         self._set_track_txt_field(self._track_name_field, metadata.tname)
@@ -1305,10 +1342,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_status_label.setText("Select a track to edit pit parameters.")
             status_text = "Select a track to edit track.txt parameters."
             self._track_txt_status_label.setText(status_text)
+            self._track_txt_tire_status_label.setText(status_text)
             self._track_txt_weather_status_label.setText(status_text)
             self._clear_track_txt_fields()
             self._pit_save_button.setEnabled(False)
             self._track_txt_save_button.setEnabled(False)
+            self._track_txt_tire_save_button.setEnabled(False)
             self._track_txt_weather_save_button.setEnabled(False)
             self.preview_api.set_pit_parameters(None)
             return
@@ -1334,6 +1373,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
         self._pit_save_button.setEnabled(True)
         self._track_txt_save_button.setEnabled(True)
+        self._track_txt_tire_save_button.setEnabled(True)
         self._track_txt_weather_save_button.setEnabled(True)
         self.preview_api.set_pit_parameters(self._pit_editor.parameters())
         self.preview_api.set_visible_pit_indices(
