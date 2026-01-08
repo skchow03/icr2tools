@@ -12,6 +12,7 @@ from track_viewer import rendering
 from track_viewer.common.weather_compass import (
     heading_adjust_to_turns,
     turns_to_unit_vector,
+    wind_variation_to_turns,
 )
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.model.pit_models import PIT_DLONG_LINE_COLORS
@@ -397,7 +398,7 @@ class TrackPreviewRenderer:
             painter.drawEllipse(heading_tip, handle_radius * 0.85, handle_radius * 0.85)
         variation = self._state.weather_compass_variation()
         if variation:
-            delta_turns = variation / 360.0
+            delta_turns = wind_variation_to_turns(variation)
             dashed_pen = QtGui.QPen(line_color)
             dashed_pen.setWidth(1)
             dashed_pen.setStyle(QtCore.Qt.DashLine)
