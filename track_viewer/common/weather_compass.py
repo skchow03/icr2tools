@@ -8,7 +8,7 @@ TURN_SCALE_INT = 4_294_967_296
 HALF_TURN_SCALE = TURN_SCALE_INT // 2
 TURN_OFFSET = 0.25
 INT32_MIN = -2_147_483_648
-WIND_DIRECTION_SCALE = HALF_TURN_SCALE
+WIND_DIRECTION_SCALE = TURN_SCALE
 WIND_DIRECTION_OFFSET = 0.25
 
 
@@ -32,17 +32,27 @@ def turns_to_heading_adjust(turns: float) -> int:
 
 
 def wind_direction_to_turns(direction: int) -> float:
-    """Convert wind direction value into turns (0 = east, relative to north)."""
-    return (WIND_DIRECTION_OFFSET + direction / WIND_DIRECTION_SCALE) % 1.0
+    """Convert wind direction value into turns (0 = east, positive toward north)."""
+    return (WIND_DIRECTION_OFFSET - direction / WIND_DIRECTION_SCALE) % 1.0
 
 
 def turns_to_wind_direction(turns: float) -> int:
     """Convert turns (0 = up) into wind direction units (0 = east)."""
-    normalized_turns = (turns - WIND_DIRECTION_OFFSET) % 1.0
-    value = int(round(normalized_turns * WIND_DIRECTION_SCALE))
-    if value == WIND_DIRECTION_SCALE:
-        return 0
+    normalized_turns = turns % 1.0
+    value = int(
+        round((WIND_DIRECTION_OFFSET - normalized_turns) * WIND_DIRECTION_SCALE)
+    )
+    value %= TURN_SCALE_INT
+    if value > HALF_TURN_SCALE:
+        value -= TURN_SCALE_INT
+    if value == INT32_MIN:
+        return HALF_TURN_SCALE
     return value
+
+
+def wind_variation_to_turns(variation: int) -> float:
+    """Convert wind variation value into turns."""
+    return abs(variation) / WIND_DIRECTION_SCALE
 
 
 def turns_to_unit_vector(turns: float) -> tuple[float, float]:
