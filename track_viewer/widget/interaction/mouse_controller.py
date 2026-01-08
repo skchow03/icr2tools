@@ -9,6 +9,7 @@ from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
 from track_viewer.common.weather_compass import (
     turns_from_vector,
+    turns_to_degrees,
     turns_to_heading_adjust,
     turns_to_unit_vector,
 )
@@ -185,6 +186,7 @@ class TrackPreviewMouseController:
             return False
         center = self._state.weather_compass_center(size)
         radius = self._state.weather_compass_radius(size)
+        handle_radius = self._state.weather_compass_handle_radius(size)
         turns = self._state.weather_compass_turns()
         dx, dy = turns_to_unit_vector(turns)
         handle = QtCore.QPointF(
@@ -192,7 +194,7 @@ class TrackPreviewMouseController:
         )
         if (
             math.hypot(point.x() - handle.x(), point.y() - handle.y())
-            <= max(10.0, radius * 0.35)
+            <= max(10.0, handle_radius * 2.5)
         ):
             self._state.dragging_weather_compass = True
             self._update_weather_compass_heading(point, size)
@@ -206,6 +208,14 @@ class TrackPreviewMouseController:
         dx = point.x() - center.x()
         dy = point.y() - center.y()
         turns = turns_from_vector(dx, dy)
+        direction = turns_to_degrees(turns)
+        if self._state.set_weather_wind_direction(
+            self._state.weather_compass_source, direction
+        ):
+            self._callbacks.weather_wind_direction_changed(
+                self._state.weather_compass_source, direction
+            )
+            self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
         adjust = turns_to_heading_adjust(turns)
         if self._state.set_weather_heading_adjust(
             self._state.weather_compass_source, adjust
