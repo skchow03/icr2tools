@@ -49,20 +49,25 @@ def draw_track_boundaries(
     color: QtGui.QColor | str = "lightgray",
     width: int = 2,
     antialias: bool = True,
+    mapped_lines: Sequence[QtCore.QLineF] | None = None,
 ) -> None:
-    if not edges:
+    if not edges and not mapped_lines:
         return
 
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     painter.setPen(QtGui.QPen(QtGui.QColor(color), width))
-    for start, end in edges:
-        painter.drawLine(
-            QtCore.QLineF(
-                map_point(start[0], start[1], transform, viewport_height),
-                map_point(end[0], end[1], transform, viewport_height),
+    if mapped_lines is not None:
+        for line in mapped_lines:
+            painter.drawLine(line)
+    else:
+        for start, end in edges:
+            painter.drawLine(
+                QtCore.QLineF(
+                    map_point(start[0], start[1], transform, viewport_height),
+                    map_point(end[0], end[1], transform, viewport_height),
+                )
             )
-        )
     painter.restore()
 
 
@@ -74,8 +79,14 @@ def draw_centerline(
     *,
     color: QtGui.QColor | str = "white",
     width: int = 2,
+    mapped_polyline: QtGui.QPolygonF | None = None,
 ) -> None:
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    points = [map_point(x, y, transform, viewport_height) for x, y in sampled_centerline]
+    if mapped_polyline is None:
+        points = [
+            map_point(x, y, transform, viewport_height)
+            for x, y in sampled_centerline
+        ]
+        mapped_polyline = QtGui.QPolygonF(points)
     painter.setPen(QtGui.QPen(QtGui.QColor(color), width))
-    painter.drawPolyline(QtGui.QPolygonF(points))
+    painter.drawPolyline(mapped_polyline)

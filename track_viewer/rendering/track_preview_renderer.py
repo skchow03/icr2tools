@@ -47,6 +47,7 @@ class TrackPreviewRenderer:
             return
 
         transform = self._state.current_transform(self._model.bounds, size)
+        self._state.render_cache.update_transform(transform, size)
         if (
             self._state.cached_surface_pixmap is None
             or self._state.pixmap_size != size
@@ -61,20 +62,24 @@ class TrackPreviewRenderer:
         height = size.height()
 
         if transform and self._state.show_boundaries:
+            boundary_lines = self._cached_boundary_lines(transform, height)
             rendering.draw_track_boundaries(
                 painter,
                 self._model.boundary_edges,
                 transform,
                 height,
                 antialias=not self._state.low_quality_rendering,
+                mapped_lines=boundary_lines,
             )
 
         if transform and self._state.show_center_line and self._model.sampled_centerline:
+            centerline_poly = self._cached_centerline_polyline(transform, height)
             rendering.draw_centerline(
                 painter,
                 self._model.sampled_centerline,
                 transform,
                 height,
+                mapped_polyline=centerline_poly,
             )
 
         if transform and self._state.show_center_line:
@@ -133,6 +138,7 @@ class TrackPreviewRenderer:
                 antialias=not self._state.low_quality_rendering,
             )
             self._draw_selected_lp_segment(painter, transform, height)
+            flag_points = self._cached_flag_points(transform, height)
             rendering.draw_flags(
                 painter,
                 self._state.flags,
@@ -140,8 +146,10 @@ class TrackPreviewRenderer:
                 transform,
                 height,
                 self._state.flag_radius,
+                mapped_points=flag_points,
             )
             if self._state.show_section_dividers:
+                section_lines = self._cached_section_divider_lines(transform, height)
                 rendering.draw_pit_dlong_lines(
                     painter,
                     self._section_divider_segments(),
@@ -149,8 +157,10 @@ class TrackPreviewRenderer:
                     height,
                     width=1,
                     antialias=not self._state.low_quality_rendering,
+                    mapped_lines=section_lines,
                 )
             if self._state.show_pit_wall_dlat:
+                pit_wall = self._cached_pit_wall_range(transform, height)
                 rendering.draw_pit_stall_range(
                     painter,
                     self._pit_wall_range_points(),
@@ -159,37 +169,46 @@ class TrackPreviewRenderer:
                     color="#ffeb3b",
                     width=2,
                     antialias=not self._state.low_quality_rendering,
+                    mapped_polyline=pit_wall,
                 )
             if self._state.show_pit_stall_center_dlat:
+                pit_center = self._cached_pit_stall_range(transform, height)
                 rendering.draw_pit_stall_range(
                     painter,
                     self._pit_stall_range_points(),
                     transform,
                     height,
                     antialias=not self._state.low_quality_rendering,
+                    mapped_polyline=pit_center,
                 )
             if self._state.show_pit_stall_cars:
+                pit_cars = self._cached_pit_stall_cars(transform, height)
                 rendering.draw_pit_stall_cars(
                     painter,
                     self._pit_stall_car_polygons(),
                     transform,
                     height,
                     antialias=not self._state.low_quality_rendering,
+                    mapped_polygons=pit_cars,
                 )
+            pit_dlong_lines = self._cached_pit_dlong_lines(transform, height)
             rendering.draw_pit_dlong_lines(
                 painter,
                 self._pit_dlong_segments(),
                 transform,
                 height,
                 antialias=not self._state.low_quality_rendering,
+                mapped_lines=pit_dlong_lines,
             )
             if self._state.show_zoom_points:
+                zoom_points = self._cached_zoom_points(transform, height)
                 rendering.draw_zoom_points(
                     painter,
                     self._zoom_points_for_camera(),
                     transform,
                     height,
                     self._centerline_point,
+                    mapped_points=zoom_points,
                 )
 
         self._draw_lp_shortcut_overlay(painter, size)
@@ -794,3 +813,172 @@ class TrackPreviewRenderer:
             (params.middle_point, QtGui.QColor("#00e676")),
             (params.end_point, QtGui.QColor("#42a5f5")),
         ]
+
+    def _cached_centerline_polyline(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> QtGui.QPolygonF | None:
+        cache = self._state.render_cache
+        signature = (
+            id(self._model.sampled_centerline),
+            len(self._model.sampled_centerline),
+        )
+        if cache.centerline_signature != signature:
+            cache.centerline_signature = signature
+            points = [
+                rendering.map_point(x, y, transform, height)
+                for x, y in self._model.sampled_centerline
+            ]
+            cache.centerline_polyline = QtGui.QPolygonF(points)
+        return cache.centerline_polyline
+
+    def _cached_boundary_lines(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> list[QtCore.QLineF]:
+        cache = self._state.render_cache
+        signature = (
+            id(self._model.boundary_edges),
+            len(self._model.boundary_edges),
+        )
+        if cache.boundaries_signature != signature:
+            cache.boundaries_signature = signature
+            lines: list[QtCore.QLineF] = []
+            for start, end in self._model.boundary_edges:
+                lines.append(
+                    QtCore.QLineF(
+                        rendering.map_point(start[0], start[1], transform, height),
+                        rendering.map_point(end[0], end[1], transform, height),
+                    )
+                )
+            cache.boundary_lines = lines
+        return cache.boundary_lines
+
+    def _cached_pit_dlong_lines(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> list[tuple[QtCore.QLineF, QtGui.QColor]]:
+        self._ensure_pit_cache(transform, height)
+        return self._state.render_cache.pit_dlong_lines
+
+    def _cached_pit_stall_range(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> QtGui.QPolygonF | None:
+        self._ensure_pit_cache(transform, height)
+        return self._state.render_cache.pit_stall_range
+
+    def _cached_pit_wall_range(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> QtGui.QPolygonF | None:
+        self._ensure_pit_cache(transform, height)
+        return self._state.render_cache.pit_wall_range
+
+    def _cached_pit_stall_cars(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> list[QtGui.QPolygonF]:
+        self._ensure_pit_cache(transform, height)
+        return self._state.render_cache.pit_stall_cars
+
+    def _ensure_pit_cache(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> None:
+        cache = self._state.render_cache
+        pit_params = self._state.pit_params
+        signature = (
+            id(self._model.trk),
+            id(self._model.centerline),
+            tuple(pit_params.values()) if pit_params else None,
+            tuple(sorted(self._state.visible_pit_indices)),
+        )
+        if cache.pit_signature == signature:
+            return
+        cache.pit_signature = signature
+        cache.pit_dlong_lines = []
+        cache.pit_stall_range = None
+        cache.pit_wall_range = None
+        cache.pit_stall_cars = []
+        if pit_params is None:
+            return
+        pit_segments = self._pit_dlong_segments()
+        for start, end, color in pit_segments:
+            line = QtCore.QLineF(
+                rendering.map_point(start[0], start[1], transform, height),
+                rendering.map_point(end[0], end[1], transform, height),
+            )
+            cache.pit_dlong_lines.append((line, QtGui.QColor(color)))
+        pit_stall = self._pit_stall_range_points()
+        if len(pit_stall) >= 2:
+            cache.pit_stall_range = QtGui.QPolygonF(
+                [rendering.map_point(x, y, transform, height) for x, y in pit_stall]
+            )
+        pit_wall = self._pit_wall_range_points()
+        if len(pit_wall) >= 2:
+            cache.pit_wall_range = QtGui.QPolygonF(
+                [rendering.map_point(x, y, transform, height) for x, y in pit_wall]
+            )
+        pit_cars = self._pit_stall_car_polygons()
+        cache.pit_stall_cars = [
+            QtGui.QPolygonF(
+                [rendering.map_point(x, y, transform, height) for x, y in polygon]
+            )
+            for polygon in pit_cars
+            if len(polygon) >= 3
+        ]
+
+    def _cached_section_divider_lines(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> list[tuple[QtCore.QLineF, QtGui.QColor]]:
+        cache = self._state.render_cache
+        if self._model.trk is None:
+            signature = None
+        else:
+            signature = (
+                id(self._model.trk),
+                id(self._model.centerline),
+                tuple(float(section.start_dlong) for section in self._model.trk.sects),
+            )
+        if cache.section_signature == signature:
+            return cache.section_divider_lines
+        cache.section_signature = signature
+        cache.section_divider_lines = []
+        for start, end, color in self._section_divider_segments():
+            line = QtCore.QLineF(
+                rendering.map_point(start[0], start[1], transform, height),
+                rendering.map_point(end[0], end[1], transform, height),
+            )
+            cache.section_divider_lines.append((line, QtGui.QColor(color)))
+        return cache.section_divider_lines
+
+    def _cached_flag_points(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> list[QtCore.QPointF]:
+        cache = self._state.render_cache
+        signature = tuple(self._state.flags)
+        if cache.flags_signature != signature:
+            cache.flags_signature = signature
+            cache.flag_points = [
+                rendering.map_point(x, y, transform, height)
+                for x, y in self._state.flags
+            ]
+        return cache.flag_points
+
+    def _cached_zoom_points(
+        self, transform: Tuple[float, Tuple[float, float]], height: int
+    ) -> list[tuple[QtCore.QPointF, QtGui.QColor]]:
+        cache = self._state.render_cache
+        zoom_points = self._zoom_points_for_camera()
+        signature = (
+            self._state.show_zoom_points,
+            self._state.selected_camera,
+            tuple((point, color.name()) for point, color in zoom_points),
+        )
+        if cache.zoom_signature == signature:
+            return cache.zoom_points
+        cache.zoom_signature = signature
+        cache.zoom_points = []
+        for dlong, color in zoom_points:
+            if dlong is None:
+                continue
+            point = self._centerline_point(dlong)
+            if point is None:
+                continue
+            mapped = rendering.map_point(point[0], point[1], transform, height)
+            cache.zoom_points.append((mapped, color))
+        return cache.zoom_points
