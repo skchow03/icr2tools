@@ -83,6 +83,8 @@ The primary UI is implemented in `widget/app.py` (Qt `QMainWindow` shell + wirin
   - selected camera index, selected flag, selected LP line/record
   - visibility toggles (cameras, zoom points, section dividers, etc.)
   - AI line color mode (solid vs gradients) and rendering params (line width, accel window)
+- Low-quality rendering disables antialiasing on heavy overlays (AI lines, boundaries, pit guides)
+  to improve responsiveness; cursor markers keep high-quality antialiasing for clarity.
 - This state is read by the renderer, and mutated by widget interaction methods. :contentReference[oaicite:20]{index=20}
 
 ### 2) IO/service layer

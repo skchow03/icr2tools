@@ -15,11 +15,12 @@ def draw_pit_dlong_lines(
     viewport_height: int,
     *,
     width: int = 2,
+    antialias: bool = True,
 ) -> None:
     if not segments:
         return
     painter.save()
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     for start, end, color in segments:
         pen = QtGui.QPen(QtGui.QColor(color), width)
         painter.setPen(pen)
@@ -40,11 +41,12 @@ def draw_pit_stall_range(
     *,
     color: str = "#00ff00",
     width: int = 2,
+    antialias: bool = True,
 ) -> None:
     if len(points) < 2:
         return
     painter.save()
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     pen = QtGui.QPen(QtGui.QColor(color), width)
     pen.setStyle(QtCore.Qt.DashLine)
     painter.setPen(pen)
@@ -66,11 +68,12 @@ def draw_pit_stall_cars(
     outline: str = "#ffffff",
     width: int = 1,
     alpha: int = 255,
+    antialias: bool = True,
 ) -> None:
     if not polygons:
         return
     painter.save()
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     brush_color = QtGui.QColor(color)
     brush_color.setAlpha(alpha)
     painter.setBrush(QtGui.QBrush(brush_color))

@@ -40,6 +40,7 @@ class TrackPreviewViewState:
     show_pit_stall_center_dlat: bool = True
     show_pit_wall_dlat: bool = True
     show_pit_stall_cars: bool = True
+    low_quality_rendering: bool = False
     view_center: Tuple[float, float] | None = None
     fit_scale: float | None = None
     current_scale: float | None = 1.0
@@ -106,6 +107,7 @@ class TrackPreviewViewState:
         self.show_pit_stall_center_dlat = True
         self.show_pit_wall_dlat = True
         self.show_pit_stall_cars = True
+        self.low_quality_rendering = False
         self.view_center = None
         self.fit_scale = None
         self.current_scale = 1.0

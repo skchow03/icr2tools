@@ -62,8 +62,9 @@ def draw_ai_lines(
     get_records: Callable[[str], Sequence[object]] | None = None,
     line_width: int = 2,
     acceleration_window: int = 3,
+    antialias: bool = True,
 ) -> None:
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     window_size = max(1, acceleration_window)
     pen_width = max(1, line_width)
     for name in sorted(set(visible_lp_files)):

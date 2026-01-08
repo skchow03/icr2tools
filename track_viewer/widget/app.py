@@ -491,6 +491,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
         self._zoom_points_button.setCheckable(True)
         self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
+        self._low_quality_button = QtWidgets.QPushButton("Use Low-Quality Rendering")
+        self._low_quality_button.setCheckable(True)
+        self._low_quality_button.setChecked(self.preview_api.low_quality_rendering())
+        self._low_quality_button.toggled.connect(self._toggle_low_quality_rendering)
+        self._toggle_low_quality_rendering(self._low_quality_button.isChecked())
 
         self._ai_gradient_button = QtWidgets.QPushButton("Show AI Speed Gradient")
         self._ai_gradient_button.setCheckable(True)
@@ -737,6 +742,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         view_settings_layout.addWidget(view_settings_title)
         view_settings_layout.addWidget(self._show_cameras_button)
         view_settings_layout.addWidget(self._zoom_points_button)
+        view_settings_layout.addWidget(self._low_quality_button)
         view_settings_widget = QtWidgets.QWidget()
         view_settings_widget.setLayout(view_settings_layout)
         right_sidebar_layout.addWidget(view_settings_widget)
@@ -1924,6 +1930,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
         self._zoom_points_button.setText(text)
         self.preview_api.set_show_zoom_points(enabled)
+
+    def _toggle_low_quality_rendering(self, enabled: bool) -> None:
+        text = (
+            "Use High-Quality Rendering" if enabled else "Use Low-Quality Rendering"
+        )
+        self._low_quality_button.setText(text)
+        self.preview_api.set_low_quality_rendering(enabled)
 
     def _toggle_show_cameras(self, enabled: bool) -> None:
         text = "Hide Cameras" if enabled else "Show Cameras"
