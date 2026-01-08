@@ -34,6 +34,15 @@ class TrackPreviewApi:
     def set_show_section_dividers(self, show: bool) -> None:
         self._coordinator.set_show_section_dividers(show)
 
+    def set_show_weather_compass(self, show: bool) -> None:
+        self._coordinator.set_show_weather_compass(show)
+
+    def set_weather_compass_source(self, source: str) -> None:
+        self._coordinator.set_weather_compass_source(source)
+
+    def set_weather_heading_adjust(self, source: str, value: int | None) -> None:
+        self._coordinator.set_weather_heading_adjust(source, value)
+
     def center_line_visible(self) -> bool:
         return self._coordinator.center_line_visible()
 

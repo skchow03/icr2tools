@@ -6,6 +6,7 @@ from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui
 
+from track_viewer.common.weather_compass import heading_adjust_to_turns
 from track_viewer.model.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
 
 
@@ -68,6 +69,11 @@ class TrackPreviewViewState:
         str | None,
     ] | None = None
     cursor_position: Tuple[float, float] | None = None
+    show_weather_compass: bool = False
+    weather_compass_source: str = "wind"
+    wind_heading_adjust: int | None = None
+    wind2_heading_adjust: int | None = None
+    dragging_weather_compass: bool = False
 
     def reset(self, message: str) -> None:
         self.status_message = message
@@ -117,6 +123,11 @@ class TrackPreviewViewState:
         self.projection_cached_point = None
         self.projection_cached_result = None
         self.cursor_position = None
+        self.show_weather_compass = False
+        self.weather_compass_source = "wind"
+        self.wind_heading_adjust = None
+        self.wind2_heading_adjust = None
+        self.dragging_weather_compass = False
 
     def invalidate_cache(self) -> None:
         self.cached_surface_pixmap = None
@@ -232,3 +243,33 @@ class TrackPreviewViewState:
 
     def set_status_message(self, message: str) -> None:
         self.status_message = message
+
+    def weather_compass_center(self, size: QtCore.QSize) -> QtCore.QPointF:
+        radius = self.weather_compass_radius(size)
+        margin = 16
+        return QtCore.QPointF(margin + radius, size.height() - margin - radius)
+
+    def weather_compass_radius(self, size: QtCore.QSize) -> float:
+        return min(40.0, max(24.0, min(size.width(), size.height()) * 0.08))
+
+    def weather_compass_turns(self) -> float:
+        if self.weather_compass_source == "wind2":
+            adjust = self.wind2_heading_adjust
+        else:
+            adjust = self.wind_heading_adjust
+        if adjust is None:
+            return 0.0
+        return heading_adjust_to_turns(adjust)
+
+    def set_weather_heading_adjust(
+        self, source: str, value: int | None
+    ) -> bool:
+        if source == "wind2":
+            if self.wind2_heading_adjust == value:
+                return False
+            self.wind2_heading_adjust = value
+            return True
+        if self.wind_heading_adjust == value:
+            return False
+        self.wind_heading_adjust = value
+        return True

@@ -43,6 +43,7 @@ class PreviewCoordinator:
         ai_line_loaded: Callable[[str], None],
         lp_record_selected: Callable[[str, int], None],
         diagram_clicked: Callable[[], None],
+        weather_heading_adjust_changed: Callable[[str, int], None],
     ) -> None:
         self._request_repaint = request_repaint
         self._emit_cursor_position_changed = cursor_position_changed
@@ -53,6 +54,7 @@ class PreviewCoordinator:
         self._emit_ai_line_loaded = ai_line_loaded
         self._emit_lp_record_selected = lp_record_selected
         self._emit_diagram_clicked = diagram_clicked
+        self._emit_weather_heading_adjust_changed = weather_heading_adjust_changed
 
         self._state = TrackPreviewViewState()
         self._last_size = QtCore.QSize()
@@ -68,6 +70,7 @@ class PreviewCoordinator:
             selected_camera_changed=self._emit_selected_camera_changed,
             lp_record_selected=self._emit_lp_record_selected,
             diagram_clicked=self._emit_diagram_clicked,
+            weather_heading_adjust_changed=self._emit_weather_heading_adjust_changed,
         )
         self._selection_controller = SelectionController(
             self._model, self._camera_service, self._state, self._interaction_callbacks
@@ -160,6 +163,22 @@ class PreviewCoordinator:
                     None, None, None, None, None, None, None
                 ):
                     self._handle_intent(PreviewIntent.PROJECTION_CHANGED)
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
+    def set_show_weather_compass(self, show: bool) -> None:
+        if self._state.show_weather_compass != show:
+            self._state.show_weather_compass = show
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
+    def set_weather_compass_source(self, source: str) -> None:
+        if source not in {"wind", "wind2"}:
+            return
+        if self._state.weather_compass_source != source:
+            self._state.weather_compass_source = source
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
+    def set_weather_heading_adjust(self, source: str, value: int | None) -> None:
+        if self._state.set_weather_heading_adjust(source, value):
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
     def set_show_boundaries(self, show: bool) -> None:

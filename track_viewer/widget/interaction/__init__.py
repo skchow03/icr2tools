@@ -28,3 +28,4 @@ class InteractionCallbacks:
     selected_camera_changed: Callable[[int | None, CameraPosition | None], None]
     lp_record_selected: Callable[[str, int], None]
     diagram_clicked: Callable[[], None]
+    weather_heading_adjust_changed: Callable[[str, int], None]

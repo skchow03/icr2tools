@@ -7,6 +7,11 @@ from PyQt5 import QtCore, QtGui
 
 from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
+from track_viewer.common.weather_compass import (
+    turns_from_vector,
+    turns_to_heading_adjust,
+    turns_to_unit_vector,
+)
 from track_viewer.geometry import project_point_to_centerline
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
@@ -69,6 +74,8 @@ class TrackPreviewMouseController:
                 return True
 
         if event.button() == QtCore.Qt.LeftButton:
+            if self._handle_weather_compass_press(event.pos(), size):
+                return True
             self._callbacks.diagram_clicked()
             if self._model.surface_mesh and self._camera_edit.handle_camera_press(
                 event.pos(), size
@@ -87,6 +94,9 @@ class TrackPreviewMouseController:
         return False
 
     def handle_mouse_move(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
+        if self._state.dragging_weather_compass:
+            self._update_weather_compass_heading(event.pos(), size)
+            return True
         handled = False
         if self._state.dragging_camera_index is not None:
             self._camera_edit.update_camera_position(event.pos(), size)
@@ -125,6 +135,9 @@ class TrackPreviewMouseController:
         self, event: QtGui.QMouseEvent, size: QtCore.QSize
     ) -> bool:
         if event.button() == QtCore.Qt.LeftButton:
+            if self._state.dragging_weather_compass:
+                self._state.dragging_weather_compass = False
+                return True
             if self._state.dragging_camera_index is not None:
                 self._camera_edit.end_camera_drag()
                 return True
@@ -143,6 +156,7 @@ class TrackPreviewMouseController:
 
     def handle_leave(self) -> None:
         self._callbacks.cursor_position_changed(None)
+        self._state.dragging_weather_compass = False
         if self._state.cursor_position is not None:
             self._state.cursor_position = None
             self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
@@ -163,6 +177,43 @@ class TrackPreviewMouseController:
             self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
         self._callbacks.cursor_position_changed(coords)
         self._update_active_line_projection(point, size)
+
+    def _handle_weather_compass_press(
+        self, point: QtCore.QPointF, size: QtCore.QSize
+    ) -> bool:
+        if not self._state.show_weather_compass:
+            return False
+        center = self._state.weather_compass_center(size)
+        radius = self._state.weather_compass_radius(size)
+        turns = self._state.weather_compass_turns()
+        dx, dy = turns_to_unit_vector(turns)
+        handle = QtCore.QPointF(
+            center.x() + dx * radius, center.y() + dy * radius
+        )
+        if (
+            math.hypot(point.x() - handle.x(), point.y() - handle.y())
+            <= max(10.0, radius * 0.35)
+        ):
+            self._state.dragging_weather_compass = True
+            self._update_weather_compass_heading(point, size)
+            return True
+        return False
+
+    def _update_weather_compass_heading(
+        self, point: QtCore.QPointF, size: QtCore.QSize
+    ) -> None:
+        center = self._state.weather_compass_center(size)
+        dx = point.x() - center.x()
+        dy = point.y() - center.y()
+        turns = turns_from_vector(dx, dy)
+        adjust = turns_to_heading_adjust(turns)
+        if self._state.set_weather_heading_adjust(
+            self._state.weather_compass_source, adjust
+        ):
+            self._callbacks.weather_heading_adjust_changed(
+                self._state.weather_compass_source, adjust
+            )
+            self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
 
     def _update_active_line_projection(
         self, point: QtCore.QPointF | None, size: QtCore.QSize
