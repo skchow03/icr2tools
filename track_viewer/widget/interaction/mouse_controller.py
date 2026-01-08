@@ -234,7 +234,17 @@ class TrackPreviewMouseController:
         dx = point.x() - center.x()
         dy = point.y() - center.y()
         turns = turns_from_vector(dx, dy)
-        direction = turns_to_wind_direction(turns)
+        heading_adjust = (
+            self._state.wind2_heading_adjust
+            if self._state.weather_compass_source == "wind2"
+            else self._state.wind_heading_adjust
+        )
+        heading_turns = (
+            heading_adjust_to_turns(heading_adjust)
+            if heading_adjust is not None
+            else 0.0
+        )
+        direction = turns_to_wind_direction((turns - heading_turns) % 1.0)
         if self._state.dragging_weather_compass == "wind":
             if self._state.set_weather_wind_direction(
                 self._state.weather_compass_source, direction

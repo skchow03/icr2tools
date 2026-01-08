@@ -9,6 +9,7 @@ HALF_TURN_SCALE = TURN_SCALE_INT // 2
 TURN_OFFSET = 0.25
 INT32_MIN = -2_147_483_648
 WIND_DIRECTION_SCALE = HALF_TURN_SCALE
+WIND_DIRECTION_OFFSET = 0.25
 
 
 def heading_adjust_to_turns(adjust: int) -> float:
@@ -31,13 +32,13 @@ def turns_to_heading_adjust(turns: float) -> int:
 
 
 def wind_direction_to_turns(direction: int) -> float:
-    """Convert wind direction value into turns (0 = up)."""
-    return (direction / WIND_DIRECTION_SCALE) % 1.0
+    """Convert wind direction value into turns (0 = east, relative to north)."""
+    return (WIND_DIRECTION_OFFSET + direction / WIND_DIRECTION_SCALE) % 1.0
 
 
 def turns_to_wind_direction(turns: float) -> int:
-    """Convert turns (0 = up) into wind direction units."""
-    normalized_turns = turns % 1.0
+    """Convert turns (0 = up) into wind direction units (0 = east)."""
+    normalized_turns = (turns - WIND_DIRECTION_OFFSET) % 1.0
     value = int(round(normalized_turns * WIND_DIRECTION_SCALE))
     if value == WIND_DIRECTION_SCALE:
         return 0

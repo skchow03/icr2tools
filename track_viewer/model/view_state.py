@@ -278,15 +278,16 @@ class TrackPreviewViewState:
 
     def weather_compass_turns(self) -> float:
         direction = self.weather_compass_direction()
-        if direction is not None:
-            return wind_direction_to_turns(direction)
         if self.weather_compass_source == "wind2":
             adjust = self.wind2_heading_adjust
         else:
             adjust = self.wind_heading_adjust
+        heading_turns = heading_adjust_to_turns(adjust) if adjust is not None else 0.0
+        if direction is not None:
+            return (heading_turns + wind_direction_to_turns(direction)) % 1.0
         if adjust is None:
             return 0.0
-        return heading_adjust_to_turns(adjust)
+        return heading_turns
 
     def set_weather_heading_adjust(
         self, source: str, value: int | None
