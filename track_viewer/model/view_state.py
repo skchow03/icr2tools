@@ -7,8 +7,8 @@ from typing import List, Tuple
 from PyQt5 import QtCore, QtGui
 
 from track_viewer.common.weather_compass import (
-    degrees_to_turns,
     heading_adjust_to_turns,
+    wind_direction_to_turns,
 )
 from track_viewer.model.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
 
@@ -279,7 +279,7 @@ class TrackPreviewViewState:
     def weather_compass_turns(self) -> float:
         direction = self.weather_compass_direction()
         if direction is not None:
-            return degrees_to_turns(direction)
+            return wind_direction_to_turns(direction)
         if self.weather_compass_source == "wind2":
             adjust = self.wind2_heading_adjust
         else:
