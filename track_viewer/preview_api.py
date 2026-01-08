@@ -43,6 +43,12 @@ class TrackPreviewApi:
     def set_weather_heading_adjust(self, source: str, value: int | None) -> None:
         self._coordinator.set_weather_heading_adjust(source, value)
 
+    def set_weather_wind_direction(self, source: str, value: int | None) -> None:
+        self._coordinator.set_weather_wind_direction(source, value)
+
+    def set_weather_wind_variation(self, source: str, value: int | None) -> None:
+        self._coordinator.set_weather_wind_variation(source, value)
+
     def center_line_visible(self) -> bool:
         return self._coordinator.center_line_visible()
 

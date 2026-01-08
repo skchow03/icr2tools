@@ -29,3 +29,4 @@ class InteractionCallbacks:
     lp_record_selected: Callable[[str, int], None]
     diagram_clicked: Callable[[], None]
     weather_heading_adjust_changed: Callable[[str, int], None]
+    weather_wind_direction_changed: Callable[[str, int], None]

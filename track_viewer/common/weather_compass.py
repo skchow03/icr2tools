@@ -44,3 +44,13 @@ def turns_from_vector(dx: float, dy: float) -> float:
     if turns < 0:
         turns += 1.0
     return turns
+
+
+def degrees_to_turns(degrees: float) -> float:
+    """Convert degrees (0 = up) into turns."""
+    return (degrees / 360.0) % 1.0
+
+
+def turns_to_degrees(turns: float) -> int:
+    """Convert turns (0 = up) into degrees."""
+    return int(round((turns % 1.0) * 360.0)) % 360

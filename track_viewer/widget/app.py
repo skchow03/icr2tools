@@ -475,6 +475,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._wind2_heading_adjust_field.textChanged.connect(
             lambda text: self._handle_weather_heading_adjust_changed("wind2", text)
         )
+        self._wind_dir_field.textChanged.connect(
+            lambda text: self._handle_weather_direction_changed("wind", text)
+        )
+        self._wind_var_field.textChanged.connect(
+            lambda text: self._handle_weather_variation_changed("wind", text)
+        )
+        self._wind2_dir_field.textChanged.connect(
+            lambda text: self._handle_weather_direction_changed("wind2", text)
+        )
+        self._wind2_var_field.textChanged.connect(
+            lambda text: self._handle_weather_variation_changed("wind2", text)
+        )
 
         self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
         self._zoom_points_button.setCheckable(True)
@@ -634,6 +646,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self.visualization_widget.weatherCompassHeadingAdjustChanged.connect(
             self._handle_weather_compass_heading_adjust_changed
+        )
+        self.visualization_widget.weatherCompassWindDirectionChanged.connect(
+            self._handle_weather_compass_wind_direction_changed
         )
         self._sidebar.type7_details.parametersChanged.connect(
             self.visualization_widget.update
@@ -1349,6 +1364,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "wind2",
             self._parse_optional_int(self._wind2_heading_adjust_field.text()),
         )
+        self.preview_api.set_weather_wind_direction(
+            "wind", self._parse_optional_int(self._wind_dir_field.text())
+        )
+        self.preview_api.set_weather_wind_variation(
+            "wind", self._parse_optional_int(self._wind_var_field.text())
+        )
+        self.preview_api.set_weather_wind_direction(
+            "wind2", self._parse_optional_int(self._wind2_dir_field.text())
+        )
+        self.preview_api.set_weather_wind_variation(
+            "wind2", self._parse_optional_int(self._wind2_var_field.text())
+        )
 
     def _handle_weather_compass_source_changed(
         self, source: str, checked: bool
@@ -1365,6 +1392,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             source, self._parse_optional_int(text)
         )
 
+    def _handle_weather_direction_changed(self, source: str, text: str) -> None:
+        self.preview_api.set_weather_wind_direction(
+            source, self._parse_optional_int(text)
+        )
+
+    def _handle_weather_variation_changed(self, source: str, text: str) -> None:
+        self.preview_api.set_weather_wind_variation(
+            source, self._parse_optional_int(text)
+        )
+
     def _handle_weather_compass_heading_adjust_changed(
         self, source: str, value: int
     ) -> None:
@@ -1373,6 +1410,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             if source == "wind2"
             else self._wind_heading_adjust_field
         )
+        with QtCore.QSignalBlocker(field):
+            field.setText(str(value))
+
+    def _handle_weather_compass_wind_direction_changed(
+        self, source: str, value: int
+    ) -> None:
+        field = self._wind2_dir_field if source == "wind2" else self._wind_dir_field
         with QtCore.QSignalBlocker(field):
             field.setText(str(value))
 

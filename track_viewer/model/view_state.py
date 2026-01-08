@@ -6,7 +6,10 @@ from typing import List, Tuple
 
 from PyQt5 import QtCore, QtGui
 
-from track_viewer.common.weather_compass import heading_adjust_to_turns
+from track_viewer.common.weather_compass import (
+    degrees_to_turns,
+    heading_adjust_to_turns,
+)
 from track_viewer.model.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
 
 
@@ -73,6 +76,10 @@ class TrackPreviewViewState:
     weather_compass_source: str = "wind"
     wind_heading_adjust: int | None = None
     wind2_heading_adjust: int | None = None
+    wind_dir: int | None = None
+    wind_var: int | None = None
+    wind2_dir: int | None = None
+    wind2_var: int | None = None
     dragging_weather_compass: bool = False
 
     def reset(self, message: str) -> None:
@@ -127,6 +134,10 @@ class TrackPreviewViewState:
         self.weather_compass_source = "wind"
         self.wind_heading_adjust = None
         self.wind2_heading_adjust = None
+        self.wind_dir = None
+        self.wind_var = None
+        self.wind2_dir = None
+        self.wind2_var = None
         self.dragging_weather_compass = False
 
     def invalidate_cache(self) -> None:
@@ -252,7 +263,23 @@ class TrackPreviewViewState:
     def weather_compass_radius(self, size: QtCore.QSize) -> float:
         return min(40.0, max(24.0, min(size.width(), size.height()) * 0.08))
 
+    def weather_compass_handle_radius(self, size: QtCore.QSize) -> float:
+        return max(4.0, self.weather_compass_radius(size) * 0.12)
+
+    def weather_compass_direction(self) -> int | None:
+        if self.weather_compass_source == "wind2":
+            return self.wind2_dir
+        return self.wind_dir
+
+    def weather_compass_variation(self) -> int | None:
+        if self.weather_compass_source == "wind2":
+            return self.wind2_var
+        return self.wind_var
+
     def weather_compass_turns(self) -> float:
+        direction = self.weather_compass_direction()
+        if direction is not None:
+            return degrees_to_turns(direction)
         if self.weather_compass_source == "wind2":
             adjust = self.wind2_heading_adjust
         else:
@@ -272,4 +299,26 @@ class TrackPreviewViewState:
         if self.wind_heading_adjust == value:
             return False
         self.wind_heading_adjust = value
+        return True
+
+    def set_weather_wind_direction(self, source: str, value: int | None) -> bool:
+        if source == "wind2":
+            if self.wind2_dir == value:
+                return False
+            self.wind2_dir = value
+            return True
+        if self.wind_dir == value:
+            return False
+        self.wind_dir = value
+        return True
+
+    def set_weather_wind_variation(self, source: str, value: int | None) -> bool:
+        if source == "wind2":
+            if self.wind2_var == value:
+                return False
+            self.wind2_var = value
+            return True
+        if self.wind_var == value:
+            return False
+        self.wind_var = value
         return True

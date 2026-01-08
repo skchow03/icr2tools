@@ -354,30 +354,44 @@ class TrackPreviewRenderer:
         turns = self._state.weather_compass_turns()
         dx, dy = turns_to_unit_vector(turns)
         tip = QtCore.QPointF(center.x() + dx * radius, center.y() + dy * radius)
+        handle_radius = self._state.weather_compass_handle_radius(size)
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        pen = QtGui.QPen(QtGui.QColor("#4caf50"))
-        pen.setWidth(2)
-        painter.setPen(pen)
+        outline_pen = QtGui.QPen(QtGui.QColor("#7f8c8d"))
+        outline_pen.setWidth(1)
+        line_color = QtGui.QColor("#7fe7f2")
+        line_pen = QtGui.QPen(line_color)
+        line_pen.setWidth(2)
+        painter.setPen(line_pen)
+        painter.drawLine(center, tip)
+        painter.setBrush(line_color)
+        painter.drawEllipse(tip, handle_radius, handle_radius)
+        painter.setPen(outline_pen)
         painter.setBrush(QtCore.Qt.NoBrush)
         painter.drawEllipse(center, radius, radius)
-        painter.drawLine(center, tip)
-        arrow_size = radius * 0.22
-        left = QtCore.QPointF(
-            tip.x() - dy * arrow_size, tip.y() + dx * arrow_size
-        )
-        right = QtCore.QPointF(
-            tip.x() + dy * arrow_size, tip.y() - dx * arrow_size
-        )
-        painter.setBrush(QtGui.QColor("#4caf50"))
-        painter.drawPolygon(QtGui.QPolygonF([tip, left, right]))
+        variation = self._state.weather_compass_variation()
+        if variation:
+            delta_turns = variation / 360.0
+            dashed_pen = QtGui.QPen(line_color)
+            dashed_pen.setWidth(1)
+            dashed_pen.setStyle(QtCore.Qt.DashLine)
+            painter.setPen(dashed_pen)
+            for offset in (-delta_turns, delta_turns):
+                offset_turns = (turns + offset) % 1.0
+                vx, vy = turns_to_unit_vector(offset_turns)
+                offset_tip = QtCore.QPointF(
+                    center.x() + vx * radius, center.y() + vy * radius
+                )
+                painter.drawLine(center, offset_tip)
+        painter.setPen(line_color)
         metrics = painter.fontMetrics()
         label = "N"
         label_width = metrics.horizontalAdvance(label)
-        label_offset = arrow_size + metrics.height() * 0.4
+        label_offset = handle_radius + metrics.height() * 0.6
+        nx, ny = turns_to_unit_vector(0.0)
         label_center = QtCore.QPointF(
-            center.x() + dx * (radius + label_offset),
-            center.y() + dy * (radius + label_offset),
+            center.x() + nx * (radius + label_offset),
+            center.y() + ny * (radius + label_offset),
         )
         ascent = metrics.ascent()
         descent = metrics.descent()
