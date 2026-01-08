@@ -10,6 +10,45 @@ from track_viewer.rendering.primitives.mapping import Point2D, Transform, map_po
 MPH_TO_FEET_PER_SECOND = 5280 / 3600
 # One DLONG corresponds to 1/500 inch, or 1/6000 feet.
 DLONG_TO_FEET = 1 / 6000
+DEFAULT_DECIMATION_PIXELS = 6.0
+
+
+def _decimation_distance(transform: Transform) -> float:
+    scale, _ = transform
+    return max(1.0, DEFAULT_DECIMATION_PIXELS / max(scale, 0.01))
+
+
+def _decimate_mapped_points(
+    points: Sequence[QtCore.QPointF], min_distance: float
+) -> tuple[list[QtCore.QPointF], list[int]]:
+    if len(points) < 2:
+        return list(points), list(range(len(points)))
+    min_distance_sq = min_distance * min_distance
+    decimated = [points[0]]
+    indices = [0]
+    last = points[0]
+    for index, point in enumerate(points[1:], start=1):
+        dx = point.x() - last.x()
+        dy = point.y() - last.y()
+        if dx * dx + dy * dy >= min_distance_sq:
+            decimated.append(point)
+            indices.append(index)
+            last = point
+    if indices[-1] != len(points) - 1:
+        decimated.append(points[-1])
+        indices.append(len(points) - 1)
+    return decimated, indices
+
+
+def _segment_visible(
+    start: QtCore.QPointF, end: QtCore.QPointF, viewport: QtCore.QRectF
+) -> bool:
+    min_x = min(start.x(), end.x())
+    max_x = max(start.x(), end.x())
+    min_y = min(start.y(), end.y())
+    max_y = max(start.y(), end.y())
+    segment_rect = QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+    return segment_rect.intersects(viewport)
 
 
 def compute_segment_acceleration(
@@ -67,11 +106,16 @@ def draw_ai_lines(
     painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     window_size = max(1, acceleration_window)
     pen_width = max(1, line_width)
+    viewport = QtCore.QRectF(painter.viewport())
+    decimation_distance = _decimation_distance(transform)
     for name in sorted(set(visible_lp_files)):
         points = get_points(name)
         if not points:
             continue
         mapped = [map_point(px, py, transform, viewport_height) for px, py in points]
+        mapped, kept_indices = _decimate_mapped_points(mapped, decimation_distance)
+        if len(mapped) < 2:
+            continue
 
         if gradient != "none" and get_records is not None:
             records = get_records(name)
@@ -84,6 +128,10 @@ def draw_ai_lines(
                     min_speed = max_speed = None
 
                 if gradient == "speed":
+                    segment_speeds = [
+                        speeds[index] if index < len(speeds) else None
+                        for index in kept_indices[:-1]
+                    ]
 
                     def _speed_to_color(speed_value: float | None) -> QtGui.QColor:
                         if (
@@ -100,8 +148,10 @@ def draw_ai_lines(
                         return QtGui.QColor(red, green, 0)
 
                     for start, end, speed in zip(
-                        mapped[:-1], mapped[1:], speeds[:-1]
+                        mapped[:-1], mapped[1:], segment_speeds
                     ):
+                        if not _segment_visible(start, end, viewport):
+                            continue
                         pen = QtGui.QPen(_speed_to_color(speed), pen_width)
                         painter.setPen(pen)
                         painter.drawLine(QtCore.QLineF(start, end))
@@ -113,10 +163,16 @@ def draw_ai_lines(
                         raw_accelerations.append(
                             compute_segment_acceleration(record_a, record_b)
                         )
+                    segment_accelerations = [
+                        raw_accelerations[index]
+                        if index < len(raw_accelerations)
+                        else None
+                        for index in kept_indices[:-1]
+                    ]
 
                     accelerations: list[float | None] = []
                     recent: list[float] = []
-                    for accel in raw_accelerations:
+                    for accel in segment_accelerations:
                         if accel is not None:
                             recent.append(accel)
                         if len(recent) > window_size:
@@ -151,6 +207,8 @@ def draw_ai_lines(
                         return QtGui.QColor(255, green, 0)
 
                     for start, end, accel in zip(mapped[:-1], mapped[1:], accelerations):
+                        if not _segment_visible(start, end, viewport):
+                            continue
                         pen = QtGui.QPen(_accel_to_color(accel), pen_width)
                         painter.setPen(pen)
                         painter.drawLine(QtCore.QLineF(start, end))
@@ -158,7 +216,10 @@ def draw_ai_lines(
 
         color = QtGui.QColor(lp_color(name))
         painter.setPen(QtGui.QPen(color, pen_width))
-        painter.drawPolyline(QtGui.QPolygonF(mapped))
+        for start, end in zip(mapped[:-1], mapped[1:]):
+            if not _segment_visible(start, end, viewport):
+                continue
+            painter.drawLine(QtCore.QLineF(start, end))
 
 
 def draw_lp_segment(
