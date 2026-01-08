@@ -9,7 +9,10 @@ from PyQt5 import QtCore, QtGui
 from icr2_core.lp.lpcalc import get_trk_sect_radius
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer import rendering
-from track_viewer.common.weather_compass import turns_to_unit_vector
+from track_viewer.common.weather_compass import (
+    heading_adjust_to_turns,
+    turns_to_unit_vector,
+)
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.model.pit_models import PIT_DLONG_LINE_COLORS
 from track_viewer.model.track_preview_model import TrackPreviewModel
@@ -352,6 +355,16 @@ class TrackPreviewRenderer:
         center = self._state.weather_compass_center(size)
         radius = self._state.weather_compass_radius(size)
         turns = self._state.weather_compass_turns()
+        heading_adjust = (
+            self._state.wind2_heading_adjust
+            if self._state.weather_compass_source == "wind2"
+            else self._state.wind_heading_adjust
+        )
+        heading_turns = (
+            heading_adjust_to_turns(heading_adjust)
+            if heading_adjust is not None
+            else None
+        )
         dx, dy = turns_to_unit_vector(turns)
         tip = QtCore.QPointF(center.x() + dx * radius, center.y() + dy * radius)
         handle_radius = self._state.weather_compass_handle_radius(size)
@@ -369,6 +382,19 @@ class TrackPreviewRenderer:
         painter.setPen(outline_pen)
         painter.setBrush(QtCore.Qt.NoBrush)
         painter.drawEllipse(center, radius, radius)
+        if heading_turns is not None:
+            heading_dx, heading_dy = turns_to_unit_vector(heading_turns)
+            heading_tip = QtCore.QPointF(
+                center.x() + heading_dx * radius,
+                center.y() + heading_dy * radius,
+            )
+            heading_color = QtGui.QColor("#44d468")
+            heading_pen = QtGui.QPen(heading_color)
+            heading_pen.setWidth(2)
+            painter.setPen(heading_pen)
+            painter.drawLine(center, heading_tip)
+            painter.setBrush(heading_color)
+            painter.drawEllipse(heading_tip, handle_radius * 0.85, handle_radius * 0.85)
         variation = self._state.weather_compass_variation()
         if variation:
             delta_turns = variation / 360.0

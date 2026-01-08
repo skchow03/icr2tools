@@ -9,8 +9,8 @@ from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
 from track_viewer.common.weather_compass import (
     turns_from_vector,
-    turns_to_degrees,
     turns_to_heading_adjust,
+    turns_to_wind_direction,
     turns_to_unit_vector,
 )
 from track_viewer.geometry import project_point_to_centerline
@@ -208,7 +208,7 @@ class TrackPreviewMouseController:
         dx = point.x() - center.x()
         dy = point.y() - center.y()
         turns = turns_from_vector(dx, dy)
-        direction = turns_to_degrees(turns)
+        direction = turns_to_wind_direction(turns)
         if self._state.set_weather_wind_direction(
             self._state.weather_compass_source, direction
         ):
