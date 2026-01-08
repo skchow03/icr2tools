@@ -62,7 +62,11 @@ class TrackPreviewRenderer:
 
         if transform and self._state.show_boundaries:
             rendering.draw_track_boundaries(
-                painter, self._model.boundary_edges, transform, height
+                painter,
+                self._model.boundary_edges,
+                transform,
+                height,
+                antialias=not self._state.low_quality_rendering,
             )
 
         if transform and self._state.show_center_line and self._model.sampled_centerline:
@@ -92,6 +96,8 @@ class TrackPreviewRenderer:
 
         if transform and self._state.nearest_projection_point:
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            if self._state.low_quality_rendering:
+                painter.setRenderHint(QtGui.QPainter.HighQualityAntialiasing, True)
             highlight = rendering.map_point(
                 self._state.nearest_projection_point[0],
                 self._state.nearest_projection_point[1],
@@ -124,6 +130,7 @@ class TrackPreviewRenderer:
                 get_records=self._model.ai_line_records,
                 line_width=self._state.ai_line_width,
                 acceleration_window=self._state.ai_acceleration_window,
+                antialias=not self._state.low_quality_rendering,
             )
             self._draw_selected_lp_segment(painter, transform, height)
             rendering.draw_flags(
@@ -141,6 +148,7 @@ class TrackPreviewRenderer:
                     transform,
                     height,
                     width=1,
+                    antialias=not self._state.low_quality_rendering,
                 )
             if self._state.show_pit_wall_dlat:
                 rendering.draw_pit_stall_range(
@@ -150,6 +158,7 @@ class TrackPreviewRenderer:
                     height,
                     color="#ffeb3b",
                     width=2,
+                    antialias=not self._state.low_quality_rendering,
                 )
             if self._state.show_pit_stall_center_dlat:
                 rendering.draw_pit_stall_range(
@@ -157,6 +166,7 @@ class TrackPreviewRenderer:
                     self._pit_stall_range_points(),
                     transform,
                     height,
+                    antialias=not self._state.low_quality_rendering,
                 )
             if self._state.show_pit_stall_cars:
                 rendering.draw_pit_stall_cars(
@@ -164,12 +174,14 @@ class TrackPreviewRenderer:
                     self._pit_stall_car_polygons(),
                     transform,
                     height,
+                    antialias=not self._state.low_quality_rendering,
                 )
             rendering.draw_pit_dlong_lines(
                 painter,
                 self._pit_dlong_segments(),
                 transform,
                 height,
+                antialias=not self._state.low_quality_rendering,
             )
             if self._state.show_zoom_points:
                 rendering.draw_zoom_points(

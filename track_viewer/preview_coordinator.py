@@ -202,6 +202,14 @@ class PreviewCoordinator:
             self._state.show_section_dividers = show
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def low_quality_rendering(self) -> bool:
+        return self._state.low_quality_rendering
+
+    def set_low_quality_rendering(self, enabled: bool) -> None:
+        if self._state.low_quality_rendering != enabled:
+            self._state.low_quality_rendering = enabled
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
     def center_line_visible(self) -> bool:
         return self._state.show_center_line
 

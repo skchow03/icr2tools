@@ -34,6 +34,12 @@ class TrackPreviewApi:
     def set_show_section_dividers(self, show: bool) -> None:
         self._coordinator.set_show_section_dividers(show)
 
+    def low_quality_rendering(self) -> bool:
+        return self._coordinator.low_quality_rendering()
+
+    def set_low_quality_rendering(self, enabled: bool) -> None:
+        self._coordinator.set_low_quality_rendering(enabled)
+
     def set_show_weather_compass(self, show: bool) -> None:
         self._coordinator.set_show_weather_compass(show)
 

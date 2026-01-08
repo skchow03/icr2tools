@@ -48,12 +48,13 @@ def draw_track_boundaries(
     *,
     color: QtGui.QColor | str = "lightgray",
     width: int = 2,
+    antialias: bool = True,
 ) -> None:
     if not edges:
         return
 
     painter.save()
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, antialias)
     painter.setPen(QtGui.QPen(QtGui.QColor(color), width))
     for start, end in edges:
         painter.drawLine(
