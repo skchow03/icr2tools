@@ -414,7 +414,8 @@ class TrackPreviewRenderer:
         label = "N"
         label_width = metrics.horizontalAdvance(label)
         label_offset = handle_radius + metrics.height() * 0.6
-        nx, ny = turns_to_unit_vector(0.0)
+        label_turns = heading_turns if heading_turns is not None else 0.0
+        nx, ny = turns_to_unit_vector(label_turns)
         label_center = QtCore.QPointF(
             center.x() + nx * (radius + label_offset),
             center.y() + ny * (radius + label_offset),
