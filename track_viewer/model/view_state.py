@@ -80,7 +80,7 @@ class TrackPreviewViewState:
     wind_var: int | None = None
     wind2_dir: int | None = None
     wind2_var: int | None = None
-    dragging_weather_compass: bool = False
+    dragging_weather_compass: str | None = None
 
     def reset(self, message: str) -> None:
         self.status_message = message
@@ -138,7 +138,7 @@ class TrackPreviewViewState:
         self.wind_var = None
         self.wind2_dir = None
         self.wind2_var = None
-        self.dragging_weather_compass = False
+        self.dragging_weather_compass = None
 
     def invalidate_cache(self) -> None:
         self.cached_surface_pixmap = None
