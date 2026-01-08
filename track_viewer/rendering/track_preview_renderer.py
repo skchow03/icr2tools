@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui
 from icr2_core.lp.lpcalc import get_trk_sect_radius
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer import rendering
+from track_viewer.common.weather_compass import turns_to_unit_vector
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.model.pit_models import PIT_DLONG_LINE_COLORS
 from track_viewer.model.track_preview_model import TrackPreviewModel
@@ -38,6 +39,7 @@ class TrackPreviewRenderer:
             painter.drawText(
                 painter.viewport(), QtCore.Qt.AlignCenter, self._state.status_message
             )
+            self._draw_weather_compass(painter, size)
             return
 
         transform = self._state.current_transform(self._model.bounds, size)
@@ -177,6 +179,7 @@ class TrackPreviewRenderer:
         self._draw_lp_shortcut_overlay(painter, size)
         self._draw_status_overlay(painter)
         self._draw_cursor_position(painter, size)
+        self._draw_weather_compass(painter, size)
 
     def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
         return [(p.x, p.y) for p in self._model.ai_line_records(lp_name)]
@@ -340,6 +343,44 @@ class TrackPreviewRenderer:
         for line in lines:
             painter.drawText(start_x, start_y, line)
             start_y += line_height
+
+    def _draw_weather_compass(
+        self, painter: QtGui.QPainter, size: QtCore.QSize
+    ) -> None:
+        if not self._state.show_weather_compass:
+            return
+        center = self._state.weather_compass_center(size)
+        radius = self._state.weather_compass_radius(size)
+        turns = self._state.weather_compass_turns()
+        dx, dy = turns_to_unit_vector(turns)
+        tip = QtCore.QPointF(center.x() + dx * radius, center.y() + dy * radius)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("#4caf50"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawEllipse(center, radius, radius)
+        painter.drawLine(center, tip)
+        arrow_size = radius * 0.22
+        left = QtCore.QPointF(
+            tip.x() - dy * arrow_size, tip.y() + dx * arrow_size
+        )
+        right = QtCore.QPointF(
+            tip.x() + dy * arrow_size, tip.y() - dx * arrow_size
+        )
+        painter.setBrush(QtGui.QColor("#4caf50"))
+        painter.drawPolygon(QtGui.QPolygonF([tip, left, right]))
+        metrics = painter.fontMetrics()
+        label = "N"
+        label_width = metrics.horizontalAdvance(label)
+        label_height = metrics.height()
+        label_pos = QtCore.QPointF(
+            tip.x() - label_width / 2,
+            tip.y() - arrow_size - label_height * 0.1,
+        )
+        painter.drawText(label_pos, label)
+        painter.restore()
 
     def _centerline_section_info(self, dlong: float) -> list[str]:
         if self._model.trk is None:

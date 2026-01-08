@@ -19,6 +19,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     aiLineLoaded = QtCore.pyqtSignal(str)
     lpRecordSelected = QtCore.pyqtSignal(str, int)
     diagramClicked = QtCore.pyqtSignal()
+    weatherCompassHeadingAdjustChanged = QtCore.pyqtSignal(str, int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -40,6 +41,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
             ai_line_loaded=self.aiLineLoaded.emit,
             lp_record_selected=self.lpRecordSelected.emit,
             diagram_clicked=self.diagramClicked.emit,
+            weather_heading_adjust_changed=self.weatherCompassHeadingAdjustChanged.emit,
         )
         self.api = TrackPreviewApi(self._coordinator)
         self._input_router = PreviewInputRouter(self._coordinator)
