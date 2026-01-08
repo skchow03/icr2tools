@@ -374,10 +374,16 @@ class TrackPreviewRenderer:
         metrics = painter.fontMetrics()
         label = "N"
         label_width = metrics.horizontalAdvance(label)
-        label_height = metrics.height()
+        label_offset = arrow_size + metrics.height() * 0.4
+        label_center = QtCore.QPointF(
+            center.x() + dx * (radius + label_offset),
+            center.y() + dy * (radius + label_offset),
+        )
+        ascent = metrics.ascent()
+        descent = metrics.descent()
         label_pos = QtCore.QPointF(
-            tip.x() - label_width / 2,
-            tip.y() - arrow_size - label_height * 0.1,
+            label_center.x() - label_width / 2,
+            label_center.y() + (ascent - descent) / 2,
         )
         painter.drawText(label_pos, label)
         painter.restore()

@@ -246,7 +246,7 @@ class TrackPreviewViewState:
 
     def weather_compass_center(self, size: QtCore.QSize) -> QtCore.QPointF:
         radius = self.weather_compass_radius(size)
-        margin = 16
+        margin = 16 + radius * 0.35
         return QtCore.QPointF(margin + radius, size.height() - margin - radius)
 
     def weather_compass_radius(self, size: QtCore.QSize) -> float:
