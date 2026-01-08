@@ -3,21 +3,30 @@ from __future__ import annotations
 
 import math
 
-TURN_SCALE = 2_147_483_648.0
+TURN_SCALE = 4_294_967_296.0
+TURN_SCALE_INT = 4_294_967_296
+HALF_TURN_SCALE = TURN_SCALE_INT // 2
+TURN_OFFSET = 0.25
 INT32_MIN = -2_147_483_648
-INT32_MAX = 2_147_483_647
 
 
 def heading_adjust_to_turns(adjust: int) -> float:
     """Convert heading adjust value to turns where 0 points up."""
-    turns = (-adjust / TURN_SCALE) % 1.0
+    turns = (TURN_OFFSET - adjust / TURN_SCALE) % 1.0
     return turns
 
 
 def turns_to_heading_adjust(turns: float) -> int:
     """Convert turns (0 = up) into a heading adjust value."""
-    value = int(round(-turns * TURN_SCALE))
-    return max(INT32_MIN, min(INT32_MAX, value))
+    normalized_turns = turns % 1.0
+    value = int(round((TURN_OFFSET - normalized_turns) * TURN_SCALE))
+    if value <= -HALF_TURN_SCALE:
+        value += TURN_SCALE_INT
+    elif value > HALF_TURN_SCALE:
+        value -= TURN_SCALE_INT
+    if value == INT32_MIN:
+        return HALF_TURN_SCALE
+    return value
 
 
 def turns_to_unit_vector(turns: float) -> tuple[float, float]:
