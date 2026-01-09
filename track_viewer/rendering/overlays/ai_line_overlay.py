@@ -149,7 +149,7 @@ def build_ai_line_cache(
     if not records:
         return None
     polygon = QtGui.QPolygonF(
-        [QtCore.QPointF(getattr(record, "x"), getattr(record, "y")) for record in records]
+        [QtCore.QPointF(record.x, record.y) for record in records]
     )
     base_color = QtGui.QColor(color)
     segment_colors = _build_gradient_segment_colors(
