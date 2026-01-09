@@ -84,6 +84,7 @@ class TrackPreviewModel(QtCore.QObject):
         if valid == self.visible_lp_files:
             return False
         self.visible_lp_files = valid
+        self._ai_line_cache_generation += 1
         for name in sorted(valid):
             self._queue_ai_line_load(name)
         return True
