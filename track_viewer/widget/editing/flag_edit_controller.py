@@ -43,6 +43,8 @@ class FlagEditController:
         index = self._state.dragging_flag_index
         if index < 0 or index >= len(self._state.flags):
             return
+        if coords == self._state.flags[index]:
+            return
         self._state.flags[index] = coords
         self._callbacks.selected_flag_changed(coords)
         self._callbacks.state_changed(PreviewIntent.FLAG_CHANGED)

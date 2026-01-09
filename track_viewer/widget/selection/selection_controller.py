@@ -43,6 +43,10 @@ class SelectionController:
         self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
     def set_selected_flag(self, index: int | None) -> None:
+        if index is not None and (index < 0 or index >= len(self._state.flags)):
+            index = None
+        if index == self._state.selected_flag:
+            return
         self._state.selected_flag = index
         coords = None
         if index is not None and 0 <= index < len(self._state.flags):
@@ -51,6 +55,8 @@ class SelectionController:
         self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
     def select_lp_record(self, name: str, index: int) -> None:
+        if self._state.selected_lp_line == name and self._state.selected_lp_index == index:
+            return
         self._state.selected_lp_line = name
         self._state.selected_lp_index = index
         self._callbacks.lp_record_selected(name, index)
