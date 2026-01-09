@@ -2057,8 +2057,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         qcolor = QtGui.QColor(color)
         if not qcolor.isValid():
             return
-        label.setStyleSheet(f"color: {qcolor.name()};")
+        label.setStyleSheet(self._lp_color_style(qcolor))
         container.setStyleSheet("")
+
+    @staticmethod
+    def _lp_color_style(color: QtGui.QColor) -> str:
+        luminance = (
+            0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue()
+        ) / 255.0
+        if luminance > 0.6:
+            return (
+                f"color: {color.name()}; background-color: #424242;"
+                " padding: 1px 4px; border-radius: 2px;"
+            )
+        return f"color: {color.name()};"
 
     def _apply_saved_lp_colors(self) -> None:
         colors = self.app_state.load_lp_colors()
