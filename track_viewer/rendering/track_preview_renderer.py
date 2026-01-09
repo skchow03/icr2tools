@@ -294,10 +294,13 @@ class TrackPreviewRenderer:
                 points = cache.polygon
                 for index, color in enumerate(cache.segment_colors):
                     pen = QtGui.QPen(color, pen_width)
+                    pen.setCosmetic(True)
                     painter.setPen(pen)
                     painter.drawLine(QtCore.QLineF(points[index], points[index + 1]))
                 continue
-            painter.setPen(QtGui.QPen(cache.base_color, pen_width))
+            pen = QtGui.QPen(cache.base_color, pen_width)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
             painter.drawPolyline(cache.polygon)
         painter.restore()
 
