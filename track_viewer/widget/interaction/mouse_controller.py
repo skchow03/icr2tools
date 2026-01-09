@@ -44,6 +44,13 @@ class TrackPreviewMouseController:
         self._camera_edit = camera_edit
         self._flag_edit = flag_edit
         self._lp_edit = lp_edit
+        self._lp_hover_timer = QtCore.QTimer()
+        self._lp_hover_timer.setInterval(24)
+        self._lp_hover_timer.setTimerType(QtCore.Qt.PreciseTimer)
+        self._lp_hover_timer.timeout.connect(self._process_lp_hover)
+        self._pending_lp_hover_point: QtCore.QPointF | None = None
+        self._pending_lp_hover_size: QtCore.QSize | None = None
+        self._lp_hover_dirty = False
 
     def handle_wheel(self, event: QtGui.QWheelEvent, size: QtCore.QSize) -> bool:
         if self._state.current_scale is None:
@@ -131,6 +138,7 @@ class TrackPreviewMouseController:
                     self._callbacks.state_changed(PreviewIntent.VIEW_TRANSFORM_CHANGED)
             handled = True
         self._update_cursor_position(event.pos(), size)
+        self._queue_lp_hover_update(event.pos(), size)
         return handled
 
     def handle_mouse_release(
@@ -160,7 +168,64 @@ class TrackPreviewMouseController:
             return True
         return False
 
+    def _queue_lp_hover_update(
+        self, point: QtCore.QPointF, size: QtCore.QSize
+    ) -> None:
+        if not self._should_update_lp_hover():
+            self._clear_lp_hover_update()
+            return
+        self._pending_lp_hover_point = QtCore.QPointF(point)
+        self._pending_lp_hover_size = QtCore.QSize(size)
+        self._lp_hover_dirty = True
+        if not self._lp_hover_timer.isActive():
+            self._lp_hover_timer.start()
+
+    def _clear_lp_hover_update(self) -> None:
+        self._lp_hover_dirty = False
+        self._pending_lp_hover_point = None
+        self._pending_lp_hover_size = None
+        if self._lp_hover_timer.isActive():
+            self._lp_hover_timer.stop()
+
+    def _should_update_lp_hover(self) -> bool:
+        if (
+            self._state.is_panning
+            or self._state.dragging_weather_compass is not None
+            or self._state.dragging_camera_index is not None
+            or self._state.dragging_flag_index is not None
+        ):
+            return False
+        active_line = self._state.active_lp_line or "center-line"
+        if active_line == "center-line":
+            return False
+        if active_line not in self._model.visible_lp_files:
+            return False
+        return True
+
+    def _process_lp_hover(self) -> None:
+        if not self._lp_hover_dirty:
+            self._lp_hover_timer.stop()
+            return
+        self._lp_hover_dirty = False
+        if not self._should_update_lp_hover():
+            return
+        point = self._pending_lp_hover_point
+        size = self._pending_lp_hover_size
+        if point is None or size is None:
+            return
+        active_line = self._state.active_lp_line or "center-line"
+        lp_index = self._selection.lp_record_at_point(point, active_line, size)
+        if lp_index is None:
+            return
+        if (
+            self._state.selected_lp_line == active_line
+            and self._state.selected_lp_index == lp_index
+        ):
+            return
+        self._selection.select_lp_record(active_line, lp_index)
+
     def handle_leave(self) -> None:
+        self._clear_lp_hover_update()
         self._callbacks.cursor_position_changed(None)
         self._state.dragging_weather_compass = None
         if self._state.cursor_position is not None:
