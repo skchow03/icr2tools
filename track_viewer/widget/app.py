@@ -39,6 +39,12 @@ class TrackViewerApp(QtWidgets.QApplication):
         self.tracks: List[str] = []
         self.window: Optional["TrackViewerWindow"] = None
 
+    def load_lp_colors(self) -> dict[str, str]:
+        return viewer_config.load_lp_colors(self._main_script_path)
+
+    def save_lp_colors(self, lp_colors: dict[str, str]) -> None:
+        viewer_config.save_lp_colors(lp_colors, self._main_script_path)
+
     def set_installation_path(self, path: Optional[Path]) -> None:
         self.installation_path = path
         if path is None:
@@ -334,6 +340,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.preview_api = self.visualization_widget.api
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
+        self._apply_saved_lp_colors()
         self._lp_shortcut_active = False
         self._sidebar_vm = CoordinateSidebarViewModel()
         self._sidebar = CoordinateSidebar(self._sidebar_vm)
@@ -2055,6 +2062,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         hex_color = color.name()
         self.preview_api.set_lp_color(name, hex_color)
         self._update_lp_name_color(name, hex_color)
+        self.app_state.save_lp_colors(self.preview_api.lp_color_overrides())
 
     def _update_lp_name_color(self, name: str, color: str) -> None:
         label = self._lp_name_labels.get(name)
@@ -2065,12 +2073,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         qcolor = QtGui.QColor(color)
         if not qcolor.isValid():
             return
-        label.setStyleSheet(f"color: {qcolor.name()};")
-        background = qcolor.darker(170).name()
-        container.setStyleSheet(f"background-color: {background};")
+        label.setStyleSheet("")
+        container.setStyleSheet("")
         button.setStyleSheet(
             f"QToolButton {{ background-color: {qcolor.name()}; border: 1px solid #555; }}"
         )
+
+    def _apply_saved_lp_colors(self) -> None:
+        colors = self.app_state.load_lp_colors()
+        for name, color in colors.items():
+            self.preview_api.set_lp_color(name, color)
 
     def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
         name = button.property("lp-name")
