@@ -132,8 +132,10 @@ class PreviewCoordinator:
     # Public API - state orchestration
     # ------------------------------------------------------------------
     def clear(self, message: str = "Select a track to preview.") -> None:
+        lp_colors = dict(self._state.lp_colors)
         self._model.clear()
         self._state.reset(message)
+        self._state.lp_colors = lp_colors
         self._camera_service.reset()
         self._emit_cursor_position_changed(None)
         self._emit_selected_flag_changed(None)
@@ -339,6 +341,9 @@ class PreviewCoordinator:
         else:
             self._state.lp_colors.pop(name, None)
         self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
+    def lp_color_overrides(self) -> dict[str, str]:
+        return dict(self._state.lp_colors)
 
     def set_show_zoom_points(self, show: bool) -> None:
         if self._state.show_zoom_points != show:

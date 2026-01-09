@@ -118,6 +118,9 @@ class TrackPreviewApi:
     def set_lp_color(self, name: str, color: str | None) -> None:
         self._coordinator.set_lp_color(name, color)
 
+    def lp_color_overrides(self) -> dict[str, str]:
+        return self._coordinator.lp_color_overrides()
+
     def set_show_zoom_points(self, show: bool) -> None:
         self._coordinator.set_show_zoom_points(show)
 
