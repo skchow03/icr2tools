@@ -100,8 +100,14 @@ def save_installation_path(
 ) -> None:
     config = ConfigParser()
     config.optionxform = str
-    config[_SECTION] = {_KEY: str(installation_path)}
     ini_path = config_path(main_script_path)
+    if ini_path.exists():
+        try:
+            with ini_path.open("r", encoding="utf-8") as handle:
+                config.read_file(handle)
+        except (OSError, Error):
+            return
+    config[_SECTION] = {_KEY: str(installation_path)}
     try:
         with ini_path.open("w", encoding="utf-8") as handle:
             config.write(handle)
