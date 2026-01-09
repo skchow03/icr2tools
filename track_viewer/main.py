@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 import sys
 
 # ensure repo root on path for local runs
@@ -32,7 +33,7 @@ def main() -> None:
     configure_logging()
     logger.info("Starting ICR2 Track Viewer")
 
-    app = TrackViewerApp(sys.argv)
+    app = TrackViewerApp(sys.argv, main_script_path=Path(__file__).resolve())
 
     window = TrackViewerWindow(app)
     window.show()

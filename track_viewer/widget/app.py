@@ -19,41 +19,31 @@ from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.widget.track_preview_widget import TrackPreviewWidget
 from track_viewer.common.version import __version__
 from track_viewer.controllers.window_controller import WindowController
+from track_viewer import config as viewer_config
 
 
 class TrackViewerApp(QtWidgets.QApplication):
     """Thin wrapper that stores shared state for the viewer."""
 
-    _INSTALLATION_PATH_KEY = "installation_path"
-
-    def __init__(self, argv: List[str]):
+    def __init__(self, argv: List[str], main_script_path: Optional[Path] = None):
         surface_format = QtGui.QSurfaceFormat()
         surface_format.setSamples(4)
         QtGui.QSurfaceFormat.setDefaultFormat(surface_format)
         super().__init__(argv)
         self.setQuitOnLastWindowClosed(True)
 
-        QtCore.QCoreApplication.setOrganizationName("icr2tools")
-        QtCore.QCoreApplication.setApplicationName("ICR2 Track Viewer")
-        self.settings = QtCore.QSettings()
-
-        self.installation_path = self._load_installation_path()
+        self._main_script_path = main_script_path
+        self.installation_path = viewer_config.load_installation_path(
+            self._main_script_path
+        )
         self.tracks: List[str] = []
         self.window: Optional["TrackViewerWindow"] = None
-
-    def _load_installation_path(self) -> Optional[Path]:
-        stored_path = self.settings.value(self._INSTALLATION_PATH_KEY, type=str)
-        if not stored_path:
-            return None
-        path = Path(stored_path)
-        return path if path.exists() else None
 
     def set_installation_path(self, path: Optional[Path]) -> None:
         self.installation_path = path
         if path is None:
-            self.settings.remove(self._INSTALLATION_PATH_KEY)
-        else:
-            self.settings.setValue(self._INSTALLATION_PATH_KEY, str(path))
+            return
+        viewer_config.save_installation_path(path, self._main_script_path)
 
     def update_tracks(self, tracks: List[str]) -> None:
         self.tracks = tracks
