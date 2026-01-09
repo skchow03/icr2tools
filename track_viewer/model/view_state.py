@@ -1,4 +1,9 @@
-"""Shared view state for the track preview widget."""
+"""View-state container for the track preview UI.
+
+This module sits in the model layer as a transient state holder that drives
+rendering and interaction. It does not load data, perform rendering, or
+persist anything; it simply stores mutable UI state for the coordinator.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -15,6 +20,12 @@ from track_viewer.model.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
 
 @dataclass
 class TrackPreviewViewState:
+    """Mutable UI view state for the preview.
+
+    The state is owned by the preview coordinator and mutated in response to
+    user input. It is transient (not persisted) and contains no rendering or
+    IO logic—only the fields and small helpers needed to interpret them.
+    """
     status_message: str = "Select a track to preview."
     show_center_line: bool = True
     show_boundaries: bool = True
@@ -81,6 +92,7 @@ class TrackPreviewViewState:
     dragging_weather_compass: str | None = None
 
     def reset(self, message: str) -> None:
+        """Restore the view state to initial defaults."""
         self.status_message = message
         self.show_center_line = True
         self.show_boundaries = True
@@ -139,6 +151,7 @@ class TrackPreviewViewState:
     def default_center(
         self, bounds: tuple[float, float, float, float] | None
     ) -> Tuple[float, float] | None:
+        """Return the world-space center of the given bounds."""
         if bounds:
             min_x, max_x, min_y, max_y = bounds
             return ((min_x + max_x) / 2, (min_y + max_y) / 2)
@@ -147,6 +160,7 @@ class TrackPreviewViewState:
     def calculate_fit_scale(
         self, bounds: tuple[float, float, float, float] | None, size: QtCore.QSize
     ) -> float | None:
+        """Compute a screen-space scale that fits the bounds in the viewport."""
         if not bounds:
             return None
         min_x, max_x, min_y, max_y = bounds
@@ -164,6 +178,7 @@ class TrackPreviewViewState:
     def update_fit_scale(
         self, bounds: tuple[float, float, float, float] | None, size: QtCore.QSize
     ) -> None:
+        """Update fit scale and recenters if the user has not transformed."""
         fit = self.calculate_fit_scale(bounds, size)
         self.fit_scale = fit
         if fit is not None and not self.user_transform_active:
@@ -174,6 +189,7 @@ class TrackPreviewViewState:
     def current_transform(
         self, bounds: tuple[float, float, float, float] | None, size: QtCore.QSize
     ) -> Tuple[float, Tuple[float, float]] | None:
+        """Return the current world-to-screen transform for rendering."""
         if self.current_scale is None:
             self.update_fit_scale(bounds, size)
         if self.current_scale is None:
@@ -193,6 +209,7 @@ class TrackPreviewViewState:
         bounds: tuple[float, float, float, float] | None,
         size: QtCore.QSize,
     ) -> Tuple[float, float] | None:
+        """Convert a screen point to world coordinates using current transform."""
         transform = self.current_transform(bounds, size)
         if not transform:
             return None
@@ -203,6 +220,7 @@ class TrackPreviewViewState:
         return x, y
 
     def clamp_scale(self, scale: float) -> float:
+        """Clamp zoom scale relative to the current fit scale."""
         base = self.fit_scale or self.current_scale or 1.0
         min_scale = base * 0.1
         max_scale = base * 25.0
@@ -218,6 +236,7 @@ class TrackPreviewViewState:
         acceleration: float | None,
         line_name: str | None,
     ) -> bool:
+        """Update nearest projection info, returning True if it changed."""
         if (
             point == self.nearest_projection_point
             and dlong == self.nearest_projection_dlong
@@ -238,12 +257,14 @@ class TrackPreviewViewState:
         return True
 
     def set_cursor_position(self, coords: Tuple[float, float] | None) -> bool:
+        """Update cursor world coordinates, returning True on change."""
         if coords == self.cursor_position:
             return False
         self.cursor_position = coords
         return True
 
     def set_status_message(self, message: str) -> bool:
+        """Update status message, returning True on change."""
         if self.status_message == message:
             return False
         self.status_message = message
@@ -271,6 +292,7 @@ class TrackPreviewViewState:
         return self.wind_var
 
     def weather_compass_turns(self) -> float:
+        """Return wind direction in turns (0..1), factoring heading adjust."""
         direction = self.weather_compass_direction()
         if self.weather_compass_source == "wind2":
             adjust = self.wind2_heading_adjust

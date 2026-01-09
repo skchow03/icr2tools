@@ -1,4 +1,9 @@
-"""AI line overlays for track preview."""
+"""AI line overlay rendering helpers.
+
+This module is part of the rendering layer. It builds in-memory draw caches
+and issues QPainter draw calls without mutating model state or performing IO.
+Inputs are world-space coordinates that are mapped into screen space.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +20,7 @@ DLONG_TO_FEET = 1 / 6000
 
 @dataclass(frozen=True)
 class AiLineCache:
+    """Cached polyline and per-segment colors for an AI line."""
     polygon: QtGui.QPolygonF
     segment_colors: list[QtGui.QColor] | None
     base_color: QtGui.QColor
@@ -65,6 +71,7 @@ def _build_gradient_segment_colors(
     gradient: str,
     acceleration_window: int,
 ) -> list[QtGui.QColor] | None:
+    """Return per-segment colors based on speed or acceleration gradients."""
     if gradient == "none" or len(records) < 2:
         return None
 
@@ -146,6 +153,7 @@ def build_ai_line_cache(
     gradient: str = "none",
     acceleration_window: int = 3,
 ) -> AiLineCache | None:
+    """Create a cached polyline and optional per-segment colors."""
     if not records:
         return None
     polygon = QtGui.QPolygonF(
@@ -178,6 +186,7 @@ def draw_ai_lines(
     line_width: int = 2,
     acceleration_window: int = 3,
 ) -> None:
+    """Draw AI lines in world space, mapped into screen coordinates."""
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     window_size = max(1, acceleration_window)
     pen_width = max(1, line_width)
@@ -216,6 +225,7 @@ def draw_lp_segment(
     color: QtGui.QColor | str = "#ffeb3b",
     width: int = 4,
 ) -> None:
+    """Draw a highlighted LP segment between two world points."""
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     pen = QtGui.QPen(QtGui.QColor(color), width)

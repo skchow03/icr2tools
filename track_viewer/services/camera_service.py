@@ -1,4 +1,9 @@
-"""Service wrapper for camera loading, saving, and mutations."""
+"""Camera service for loading, saving, and coordinating camera edits.
+
+This module belongs to the service layer. It owns in-memory camera lists and
+their provenance, delegates persistence to the IO service, and invokes the
+controller for pure mutations. It does not render or manage UI state.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +16,12 @@ from track_viewer.services.io_service import CameraLoadResult, TrackIOService
 
 
 class CameraService:
-    """Coordinate camera persistence and mutations for the preview widget."""
+    """Stateful camera service with persistence responsibilities.
+
+    The service owns mutable camera data loaded for the current track and
+    is the only layer that persists those changes. It is transient across
+    application sessions but manages the provenance of loaded data.
+    """
 
     def __init__(
         self,
