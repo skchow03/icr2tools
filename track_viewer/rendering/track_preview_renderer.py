@@ -71,7 +71,9 @@ class TrackPreviewRenderer:
             if not self._boundary_path_cache.isEmpty():
                 painter.save()
                 painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-                painter.setPen(QtGui.QPen(QtGui.QColor("lightgray"), 2))
+                pen = QtGui.QPen(QtGui.QColor("lightgray"), 2)
+                pen.setCosmetic(True)
+                painter.setPen(pen)
                 painter.setBrush(QtCore.Qt.NoBrush)
                 painter.setTransform(self._surface_transform(transform, height))
                 painter.drawPath(self._boundary_path_cache)
@@ -82,7 +84,9 @@ class TrackPreviewRenderer:
             if not self._centerline_path_cache.isEmpty():
                 painter.save()
                 painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-                painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
+                pen = QtGui.QPen(QtGui.QColor("white"), 2)
+                pen.setCosmetic(True)
+                painter.setPen(pen)
                 painter.setBrush(QtCore.Qt.NoBrush)
                 painter.setTransform(self._surface_transform(transform, height))
                 painter.drawPath(self._centerline_path_cache)
