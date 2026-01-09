@@ -1,6 +1,7 @@
 """Surface and boundary overlays for track preview."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Sequence
 
 from PyQt5 import QtCore, QtGui
@@ -10,34 +11,28 @@ from icr2_core.trk.trk_utils import color_from_ground_type
 from track_viewer.rendering.primitives.mapping import Point2D, Transform, map_point
 
 
-def render_surface_to_image(
+@dataclass(frozen=True)
+class SurfacePolygon:
+    polygon: QtGui.QPolygonF
+    fill: QtGui.QColor
+    outline: QtGui.QColor
+
+
+def build_surface_cache(
     surface_mesh: Sequence[GroundSurfaceStrip],
-    transform: Transform | None,
-    size: QtCore.QSize,
-) -> QtGui.QImage:
-    """Render the ground surface mesh into an image for reuse."""
+) -> list[SurfacePolygon]:
+    """Build track-space surface geometry for reuse."""
 
-    image = QtGui.QImage(size, QtGui.QImage.Format_ARGB32_Premultiplied)
-    image.fill(QtCore.Qt.transparent)
-    if not transform:
-        return image
-
-    painter = QtGui.QPainter(image)
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+    cache: list[SurfacePolygon] = []
     for strip in surface_mesh:
         base_color = QtGui.QColor(color_from_ground_type(strip.ground_type))
         fill = QtGui.QColor(base_color)
         fill.setAlpha(200)
         outline = base_color.darker(125)
-        points = [
-            map_point(x, y, transform, size.height()) for x, y in strip.points
-        ]
+        points = [QtCore.QPointF(x, y) for x, y in strip.points]
         poly = QtGui.QPolygonF(points)
-        painter.setBrush(QtGui.QBrush(fill))
-        painter.setPen(QtGui.QPen(outline, 1))
-        painter.drawPolygon(poly)
-    painter.end()
-    return image
+        cache.append(SurfacePolygon(poly, fill, outline))
+    return cache
 
 
 def draw_track_boundaries(

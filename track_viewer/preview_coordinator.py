@@ -116,17 +116,12 @@ class PreviewCoordinator:
 
     def handle_resize(self, size: QtCore.QSize) -> None:
         self._last_size = size
-        self._state.pixmap_size = None
-        self._state.cached_surface_image = None
         self._state.update_fit_scale(self._model.bounds, size)
         self._handle_intent(PreviewIntent.VIEW_TRANSFORM_CHANGED)
 
     def _handle_intent(self, intent: PreviewIntent) -> None:
-        if intent in {
-            PreviewIntent.VIEW_TRANSFORM_CHANGED,
-            PreviewIntent.SURFACE_DATA_CHANGED,
-        }:
-            self._state.invalidate_cache()
+        if intent == PreviewIntent.SURFACE_DATA_CHANGED:
+            self._renderer.invalidate_surface_cache()
         self._request_repaint()
 
     def _handle_model_ai_line_loaded(self, lp_name: str) -> None:
@@ -463,8 +458,6 @@ class PreviewCoordinator:
         if self._state.active_lp_line not in {"center-line", *self._model.available_lp_files}:
             self._state.active_lp_line = "center-line"
         self._state.set_projection_data(None, None, None, None, None, None, None)
-        self._state.cached_surface_image = None
-        self._state.pixmap_size = None
         self._state.status_message = f"Loaded {track_folder.name}" if track_folder else ""
         self._state.view_center = self._state.default_center(self._model.bounds)
         self._state.user_transform_active = False

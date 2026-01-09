@@ -16,9 +16,10 @@ from track_viewer.rendering.overlays.pit_overlay import (
     draw_pit_stall_range,
 )
 from track_viewer.rendering.overlays.surface_overlay import (
+    SurfacePolygon,
+    build_surface_cache,
     draw_centerline,
     draw_track_boundaries,
-    render_surface_to_image,
 )
 from track_viewer.rendering.overlays.zoom_overlay import draw_zoom_points
 from track_viewer.rendering.primitives.bars import (
@@ -39,6 +40,7 @@ __all__ = [
     "Transform",
     "centerline_screen_bounds",
     "compute_segment_acceleration",
+    "build_surface_cache",
     "draw_ai_lines",
     "draw_camera_positions",
     "draw_camera_range_markers",
@@ -52,5 +54,5 @@ __all__ = [
     "draw_track_boundaries",
     "draw_zoom_points",
     "map_point",
-    "render_surface_to_image",
+    "SurfacePolygon",
 ]
