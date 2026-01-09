@@ -2105,27 +2105,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         for index, default_color in default_dlong.items():
             stored = stored_dlong.get(index)
-            if stored and QtGui.QColor(stored).isValid():
-                merged_dlong[index] = stored
+            normalized = self._normalize_pit_color(stored)
+            if normalized:
+                merged_dlong[index] = normalized
             else:
                 merged_dlong[index] = default_color
                 missing_defaults = True
 
         for index, default_color in default_dlat.items():
             stored = stored_dlat.get(index)
-            if stored and QtGui.QColor(stored).isValid():
-                merged_dlat[index] = stored
+            normalized = self._normalize_pit_color(stored)
+            if normalized:
+                merged_dlat[index] = normalized
             else:
                 merged_dlat[index] = default_color
                 missing_defaults = True
 
         for index, color in stored_dlong.items():
-            if index not in merged_dlong and QtGui.QColor(color).isValid():
-                merged_dlong[index] = color
+            if index in merged_dlong:
+                continue
+            normalized = self._normalize_pit_color(color)
+            if normalized:
+                merged_dlong[index] = normalized
 
         for index, color in stored_dlat.items():
-            if index not in merged_dlat and QtGui.QColor(color).isValid():
-                merged_dlat[index] = color
+            if index in merged_dlat:
+                continue
+            normalized = self._normalize_pit_color(color)
+            if normalized:
+                merged_dlat[index] = normalized
 
         PIT_DLONG_LINE_COLORS.clear()
         PIT_DLONG_LINE_COLORS.update(merged_dlong)
@@ -2134,6 +2142,25 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         if missing_defaults:
             self.app_state.save_pit_colors(merged_dlong, merged_dlat)
+
+    @staticmethod
+    def _normalize_pit_color(color: str | None) -> str | None:
+        if not color:
+            return None
+        candidate = color.strip()
+        if not candidate:
+            return None
+        if QtGui.QColor(candidate).isValid():
+            return candidate
+        hex_value = candidate[1:] if candidate.startswith("#") else candidate
+        if len(hex_value) != 8 or any(
+            ch not in "0123456789abcdefABCDEF" for ch in hex_value
+        ):
+            return None
+        argb = f"#{hex_value[6:8]}{hex_value[:6]}"
+        if QtGui.QColor(argb).isValid():
+            return argb
+        return None
 
     def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
         name = button.property("lp-name")
