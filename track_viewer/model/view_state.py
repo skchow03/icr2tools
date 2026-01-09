@@ -16,7 +16,7 @@ from track_viewer.model.pit_models import PIT_DLONG_LINE_INDICES, PitParameters
 @dataclass
 class TrackPreviewViewState:
     status_message: str = "Select a track to preview."
-    cached_surface_pixmap: QtGui.QPixmap | None = None
+    cached_surface_image: QtGui.QImage | None = None
     pixmap_size: QtCore.QSize | None = None
     show_center_line: bool = True
     show_boundaries: bool = True
@@ -84,7 +84,7 @@ class TrackPreviewViewState:
 
     def reset(self, message: str) -> None:
         self.status_message = message
-        self.cached_surface_pixmap = None
+        self.cached_surface_image = None
         self.pixmap_size = None
         self.show_center_line = True
         self.show_boundaries = True
@@ -141,7 +141,7 @@ class TrackPreviewViewState:
         self.dragging_weather_compass = None
 
     def invalidate_cache(self) -> None:
-        self.cached_surface_pixmap = None
+        self.cached_surface_image = None
         self.pixmap_size = None
 
     def default_center(

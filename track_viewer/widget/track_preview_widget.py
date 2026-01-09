@@ -8,7 +8,7 @@ from track_viewer.preview_coordinator import PreviewCoordinator
 from track_viewer.preview_input_router import PreviewInputRouter
 
 
-class TrackPreviewWidget(QtWidgets.QFrame):
+class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
     """Renders the TRK ground surface similar to the timing overlay."""
 
     cursorPositionChanged = QtCore.pyqtSignal(object)
@@ -25,7 +25,7 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setMinimumSize(320, 240)
-        self.setAutoFillBackground(True)
+        self.setAutoFillBackground(False)
         self.setMouseTracking(True)
 
         palette = self.palette()
@@ -52,10 +52,11 @@ class TrackPreviewWidget(QtWidgets.QFrame):
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
-    def paintEvent(self, event) -> None:  # noqa: D401 - Qt signature
+    def paintGL(self) -> None:  # noqa: D401 - Qt signature
         painter = QtGui.QPainter(self)
         painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.Window))
         self._coordinator.paint(painter, self.size())
+        painter.end()
 
     def resizeEvent(self, event) -> None:  # noqa: D401 - Qt signature
         self._input_router.handle_resize(self.size())

@@ -48,15 +48,15 @@ class TrackPreviewRenderer:
 
         transform = self._state.current_transform(self._model.bounds, size)
         if (
-            self._state.cached_surface_pixmap is None
+            self._state.cached_surface_image is None
             or self._state.pixmap_size != size
         ):
-            self._state.cached_surface_pixmap = rendering.render_surface_to_pixmap(
+            self._state.cached_surface_image = rendering.render_surface_to_image(
                 self._model.surface_mesh, transform, size
             )
             self._state.pixmap_size = size
 
-        painter.drawPixmap(0, 0, self._state.cached_surface_pixmap)
+        painter.drawImage(0, 0, self._state.cached_surface_image)
 
         height = size.height()
 
