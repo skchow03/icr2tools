@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from icr2_core.cam.helpers import CameraPosition, Type6CameraParameters, Type7CameraParameters
 from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
@@ -22,12 +22,19 @@ class CameraUpdateResult:
 class CameraController:
     """Encapsulate camera CRUD and TV-mode coordination."""
 
-    def add_type6_camera(
+    def _add_tv_camera(
         self,
         cameras: List[CameraPosition],
         camera_views: List[CameraViewListing],
         selected_camera: int | None,
         track_length: float | None,
+        camera_type: int,
+        build_camera_params: Callable[
+            [CameraPosition, Optional[int], Optional[int]],
+            Type6CameraParameters | Type7CameraParameters,
+        ],
+        raw_values_length: int,
+        success_message: str,
     ) -> CameraUpdateResult:
         if not cameras:
             return CameraUpdateResult(False, "No cameras are loaded.", cameras, camera_views)
@@ -61,34 +68,33 @@ class CameraController:
             previous_entry.start_dlong, next_entry.start_dlong, track_length
         )
         end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong, track_length)
-        middle_point = self._interpolated_dlong(start_dlong, end_dlong, track_length) or 0
 
         if start_dlong is not None:
             previous_entry.end_dlong = start_dlong
         if end_dlong is not None:
             next_entry.start_dlong = end_dlong
 
-        base_type6 = base_camera.type6
-        start_zoom = base_type6.start_zoom if base_type6 else 0
-        middle_zoom = base_type6.middle_point_zoom if base_type6 else 0
-        end_zoom = base_type6.end_zoom if base_type6 else 0
-
-        new_camera = CameraPosition(
-            camera_type=6,
-            index=0,
-            x=base_camera.x + 60000,
-            y=base_camera.y + 60000,
-            z=base_camera.z,
-            type6=Type6CameraParameters(
-                middle_point=middle_point,
-                start_point=start_dlong or 0,
-                start_zoom=start_zoom,
-                middle_point_zoom=middle_zoom,
-                end_point=end_dlong or (start_dlong or 0),
-                end_zoom=end_zoom,
-            ),
-            raw_values=tuple([0] * 9),
-        )
+        new_camera_params = build_camera_params(base_camera, start_dlong, end_dlong)
+        if camera_type == 6:
+            new_camera = CameraPosition(
+                camera_type=camera_type,
+                index=0,
+                x=base_camera.x + 60000,
+                y=base_camera.y + 60000,
+                z=base_camera.z,
+                type6=new_camera_params,
+                raw_values=tuple([0] * raw_values_length),
+            )
+        else:
+            new_camera = CameraPosition(
+                camera_type=camera_type,
+                index=0,
+                x=base_camera.x + 60000,
+                y=base_camera.y + 60000,
+                z=base_camera.z,
+                type7=new_camera_params,
+                raw_values=tuple([0] * raw_values_length),
+            )
 
         insert_index = self._insert_camera_at_index(cameras, camera_views, insert_index, new_camera)
         view.entries.insert(
@@ -96,20 +102,55 @@ class CameraController:
             CameraViewEntry(
                 camera_index=insert_index,
                 type_index=new_camera.index,
-                camera_type=6,
+                camera_type=camera_type,
                 start_dlong=start_dlong,
                 end_dlong=end_dlong,
-                mark=6,
+                mark=camera_type,
             ),
         )
         self._renumber_camera_type_indices(cameras, camera_views)
 
         return CameraUpdateResult(
             True,
-            "Type 6 camera added.",
+            success_message,
             cameras,
             camera_views,
             selected_camera=insert_index,
+        )
+
+    def add_type6_camera(
+        self,
+        cameras: List[CameraPosition],
+        camera_views: List[CameraViewListing],
+        selected_camera: int | None,
+        track_length: float | None,
+    ) -> CameraUpdateResult:
+        def build_camera_params(
+            base_camera: CameraPosition, start_dlong: Optional[int], end_dlong: Optional[int]
+        ) -> Type6CameraParameters:
+            middle_point = self._interpolated_dlong(start_dlong, end_dlong, track_length) or 0
+            base_type6 = base_camera.type6
+            start_zoom = base_type6.start_zoom if base_type6 else 0
+            middle_zoom = base_type6.middle_point_zoom if base_type6 else 0
+            end_zoom = base_type6.end_zoom if base_type6 else 0
+            return Type6CameraParameters(
+                middle_point=middle_point,
+                start_point=start_dlong or 0,
+                start_zoom=start_zoom,
+                middle_point_zoom=middle_zoom,
+                end_point=end_dlong or (start_dlong or 0),
+                end_zoom=end_zoom,
+            )
+
+        return self._add_tv_camera(
+            cameras,
+            camera_views,
+            selected_camera,
+            track_length,
+            camera_type=6,
+            build_camera_params=build_camera_params,
+            raw_values_length=9,
+            success_message="Type 6 camera added.",
         )
 
     def add_type7_camera(
@@ -119,86 +160,30 @@ class CameraController:
         selected_camera: int | None,
         track_length: float | None,
     ) -> CameraUpdateResult:
-        if not cameras:
-            return CameraUpdateResult(False, "No cameras are loaded.", cameras, camera_views)
-        if selected_camera is None:
-            return CameraUpdateResult(
-                False, "Select a camera before adding a new one.", cameras, camera_views
+        def build_camera_params(
+            base_camera: CameraPosition, start_dlong: Optional[int], end_dlong: Optional[int]
+        ) -> Type7CameraParameters:
+            base_type7 = base_camera.type7
+            return Type7CameraParameters(
+                z_axis_rotation=base_type7.z_axis_rotation if base_type7 else 0,
+                vertical_rotation=base_type7.vertical_rotation if base_type7 else 0,
+                tilt=base_type7.tilt if base_type7 else 0,
+                zoom=base_type7.zoom if base_type7 else 0,
+                unknown1=base_type7.unknown1 if base_type7 else 0,
+                unknown2=base_type7.unknown2 if base_type7 else 0,
+                unknown3=base_type7.unknown3 if base_type7 else 0,
+                unknown4=base_type7.unknown4 if base_type7 else 0,
             )
 
-        view_entry = self._find_camera_entry(camera_views, selected_camera)
-        if view_entry is None:
-            return CameraUpdateResult(
-                False,
-                "The selected camera is not part of any TV camera mode.",
-                cameras,
-                camera_views,
-            )
-
-        view_index, entry_index = view_entry
-        view = camera_views[view_index]
-        if not view.entries:
-            return CameraUpdateResult(
-                False, "No TV camera entries are available to place the new camera.", cameras, camera_views
-            )
-
-        base_camera = cameras[selected_camera]
-        insert_index = selected_camera + 1
-        next_index = (entry_index + 1) % len(view.entries)
-        previous_entry = view.entries[entry_index]
-        next_entry = view.entries[next_index]
-        start_dlong = self._interpolated_dlong(
-            previous_entry.start_dlong, next_entry.start_dlong, track_length
-        )
-        end_dlong = self._interpolated_dlong(previous_entry.end_dlong, next_entry.end_dlong, track_length)
-
-        if start_dlong is not None:
-            previous_entry.end_dlong = start_dlong
-        if end_dlong is not None:
-            next_entry.start_dlong = end_dlong
-
-        base_type7 = base_camera.type7
-        new_type7 = Type7CameraParameters(
-            z_axis_rotation=base_type7.z_axis_rotation if base_type7 else 0,
-            vertical_rotation=base_type7.vertical_rotation if base_type7 else 0,
-            tilt=base_type7.tilt if base_type7 else 0,
-            zoom=base_type7.zoom if base_type7 else 0,
-            unknown1=base_type7.unknown1 if base_type7 else 0,
-            unknown2=base_type7.unknown2 if base_type7 else 0,
-            unknown3=base_type7.unknown3 if base_type7 else 0,
-            unknown4=base_type7.unknown4 if base_type7 else 0,
-        )
-
-        new_camera = CameraPosition(
-            camera_type=7,
-            index=0,
-            x=base_camera.x + 60000,
-            y=base_camera.y + 60000,
-            z=base_camera.z,
-            type7=new_type7,
-            raw_values=tuple([0] * 12),
-        )
-
-        insert_index = self._insert_camera_at_index(cameras, camera_views, insert_index, new_camera)
-        view.entries.insert(
-            next_index,
-            CameraViewEntry(
-                camera_index=insert_index,
-                type_index=new_camera.index,
-                camera_type=7,
-                start_dlong=start_dlong,
-                end_dlong=end_dlong,
-                mark=7,
-            ),
-        )
-        self._renumber_camera_type_indices(cameras, camera_views)
-
-        return CameraUpdateResult(
-            True,
-            "Type 7 camera added.",
+        return self._add_tv_camera(
             cameras,
             camera_views,
-            selected_camera=insert_index,
+            selected_camera,
+            track_length,
+            camera_type=7,
+            build_camera_params=build_camera_params,
+            raw_values_length=12,
+            success_message="Type 7 camera added.",
         )
 
     def renumber(
