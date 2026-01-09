@@ -36,6 +36,8 @@ class TrackPreviewRenderer:
         self._model = model
         self._camera_service = camera_service
         self._state = state
+        self._surface_cache: list[rendering.SurfacePolygon] = []
+        self._surface_cache_key: tuple[object | None, int] | None = None
 
     def paint(self, painter: QtGui.QPainter, size: QtCore.QSize) -> None:
         if not self._model.surface_mesh or not self._model.bounds:
@@ -47,16 +49,16 @@ class TrackPreviewRenderer:
             return
 
         transform = self._state.current_transform(self._model.bounds, size)
-        if (
-            self._state.cached_surface_image is None
-            or self._state.pixmap_size != size
-        ):
-            self._state.cached_surface_image = rendering.render_surface_to_image(
-                self._model.surface_mesh, transform, size
-            )
-            self._state.pixmap_size = size
-
-        painter.drawImage(0, 0, self._state.cached_surface_image)
+        self._ensure_surface_cache()
+        if transform:
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+            painter.setTransform(self._surface_transform(transform, size.height()))
+            for surface in self._surface_cache:
+                painter.setBrush(QtGui.QBrush(surface.fill))
+                painter.setPen(QtGui.QPen(surface.outline, 1))
+                painter.drawPolygon(surface.polygon)
+            painter.restore()
 
         height = size.height()
 
@@ -184,6 +186,31 @@ class TrackPreviewRenderer:
         self._draw_status_overlay(painter)
         self._draw_cursor_position(painter, size)
         self._draw_weather_compass(painter, size)
+
+    def invalidate_surface_cache(self) -> None:
+        self._surface_cache = []
+        self._surface_cache_key = None
+
+    def _ensure_surface_cache(self) -> None:
+        key = (self._model.track_path, id(self._model.surface_mesh))
+        if key == self._surface_cache_key and self._surface_cache:
+            return
+        self._surface_cache = rendering.build_surface_cache(self._model.surface_mesh)
+        self._surface_cache_key = key
+
+    @staticmethod
+    def _surface_transform(
+        transform: tuple[float, tuple[float, float]], viewport_height: int
+    ) -> QtGui.QTransform:
+        scale, offsets = transform
+        return QtGui.QTransform(
+            scale,
+            0.0,
+            0.0,
+            -scale,
+            offsets[0],
+            viewport_height - offsets[1],
+        )
 
     def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
         return [(p.x, p.y) for p in self._model.ai_line_records(lp_name)]
