@@ -44,7 +44,7 @@ class TrackPreviewRenderer:
         self._centerline_cache_key: tuple[object | None, int] | None = None
 
     def paint(self, painter: QtGui.QPainter, size: QtCore.QSize) -> None:
-        if not self._model.surface_mesh or not self._model.bounds:
+        if not self._model.bounds:
             painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
             painter.drawText(
                 painter.viewport(), QtCore.Qt.AlignCenter, self._state.status_message
@@ -53,8 +53,8 @@ class TrackPreviewRenderer:
             return
 
         transform = self._state.current_transform(self._model.bounds, size)
-        self._ensure_surface_cache()
-        if transform:
+        if transform and self._model.surface_mesh:
+            self._ensure_surface_cache()
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
             painter.setTransform(self._surface_transform(transform, size.height()))
