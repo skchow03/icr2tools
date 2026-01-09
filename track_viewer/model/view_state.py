@@ -35,6 +35,7 @@ class TrackPreviewViewState:
     ai_color_mode: str = "none"
     ai_acceleration_window: int = 3
     ai_line_width: int = 2
+    lp_colors: dict[str, str] = field(default_factory=dict)
     flag_radius: float = 0.0
     show_radius_raw: bool = False
     active_lp_line: str = "center-line"
@@ -102,6 +103,7 @@ class TrackPreviewViewState:
         self.ai_color_mode = "none"
         self.ai_acceleration_window = 3
         self.ai_line_width = 2
+        self.lp_colors = {}
         self.flag_radius = 0.0
         self.show_radius_raw = False
         self.active_lp_line = "center-line"

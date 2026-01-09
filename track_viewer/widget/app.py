@@ -243,12 +243,25 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_list = QtWidgets.QComboBox()
         self._track_list.currentIndexChanged.connect(self._on_track_selected)
 
-        self._lp_list = QtWidgets.QListWidget()
+        self._lp_list = QtWidgets.QTableWidget(0, 3)
+        self._lp_list.setHorizontalHeaderLabels(["LP name", "Select", "Visible"])
         self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self._lp_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._lp_list.setAlternatingRowColors(True)
+        self._lp_list.setShowGrid(False)
+        self._lp_list.verticalHeader().setVisible(False)
+        self._lp_list.verticalHeader().setDefaultSectionSize(28)
+        header = self._lp_list.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
         self._lp_button_group = QtWidgets.QButtonGroup(self)
         self._lp_button_group.setExclusive(True)
         self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
+        self._lp_color_buttons: dict[str, QtWidgets.QToolButton] = {}
+        self._lp_name_cells: dict[str, QtWidgets.QWidget] = {}
+        self._lp_name_labels: dict[str, QtWidgets.QLabel] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
         self._lp_speed_unit_button = QtWidgets.QPushButton(
@@ -579,7 +592,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
         lp_list_header = QtWidgets.QLabel(
-            "Radio selects the active LP. Checkbox toggles visibility."
+            "Radio selects the active LP. Checkbox toggles visibility. "
+            "Color swatch picks the LP color."
         )
         lp_list_header.setWordWrap(True)
         left_layout.addWidget(lp_list_header)
@@ -1826,7 +1840,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self._lp_button_group.removeButton(button)
                 button.deleteLater()
             self._lp_checkboxes = {}
-            self._lp_list.clear()
+            self._lp_color_buttons = {}
+            self._lp_name_cells = {}
+            self._lp_name_labels = {}
+            self._lp_list.setRowCount(0)
+            self._lp_list.clearContents()
 
             active_line = self.preview_api.active_lp_line()
             if active_line not in {"center-line", *available_files}:
@@ -1866,10 +1884,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         selected: bool,
         enabled: bool,
     ) -> None:
-        item = QtWidgets.QListWidgetItem()
-        item.setData(QtCore.Qt.UserRole, name)
-        item.setFlags(QtCore.Qt.ItemIsEnabled)
-
         radio = QtWidgets.QRadioButton()
         radio.setProperty("lp-name", name)
         with QtCore.QSignalBlocker(radio):
@@ -1877,11 +1891,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         radio.setEnabled(enabled)
         self._lp_button_group.addButton(radio)
 
-        checkbox = QtWidgets.QCheckBox(label)
-        if color:
-            palette = checkbox.palette()
-            palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(color))
-            checkbox.setPalette(palette)
+        checkbox = QtWidgets.QCheckBox()
         with QtCore.QSignalBlocker(checkbox):
             checkbox.setChecked(visible)
         checkbox.setEnabled(enabled)
@@ -1889,20 +1899,56 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             lambda state, line=name: self._handle_lp_visibility_changed(line, state)
         )
 
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(6, 0, 6, 0)
-        layout.setSpacing(8)
-        layout.addWidget(radio)
-        layout.addWidget(checkbox)
-        layout.addStretch(1)
+        row = self._lp_list.rowCount()
+        self._lp_list.insertRow(row)
 
-        container = QtWidgets.QWidget()
-        container.setLayout(layout)
-        item.setSizeHint(container.sizeHint())
+        name_container = QtWidgets.QWidget()
+        name_layout = QtWidgets.QHBoxLayout()
+        name_layout.setContentsMargins(6, 2, 6, 2)
+        name_layout.setSpacing(6)
+        name_label = QtWidgets.QLabel(label)
+        name_layout.addWidget(name_label)
+        name_layout.addStretch(1)
+        color_button = QtWidgets.QToolButton()
+        color_button.setToolTip("Select LP color")
+        color_button.setFixedSize(18, 18)
+        allow_color = name != "center-line"
+        color_button.setEnabled(enabled and allow_color)
+        if allow_color:
+            color_button.clicked.connect(
+                lambda _checked=False, line=name: self._handle_lp_color_clicked(line)
+            )
+        else:
+            color_button.setVisible(False)
+        name_layout.addWidget(color_button)
+        name_container.setLayout(name_layout)
+        self._lp_list.setCellWidget(row, 0, name_container)
 
-        self._lp_list.addItem(item)
-        self._lp_list.setItemWidget(item, container)
+        select_container = QtWidgets.QWidget()
+        select_layout = QtWidgets.QHBoxLayout()
+        select_layout.setContentsMargins(0, 0, 0, 0)
+        select_layout.addStretch(1)
+        select_layout.addWidget(radio)
+        select_layout.addStretch(1)
+        select_container.setLayout(select_layout)
+        self._lp_list.setCellWidget(row, 1, select_container)
+
+        visible_container = QtWidgets.QWidget()
+        visible_layout = QtWidgets.QHBoxLayout()
+        visible_layout.setContentsMargins(0, 0, 0, 0)
+        visible_layout.addStretch(1)
+        visible_layout.addWidget(checkbox)
+        visible_layout.addStretch(1)
+        visible_container.setLayout(visible_layout)
+        self._lp_list.setCellWidget(row, 2, visible_container)
+
+        self._lp_list.setRowHeight(row, name_container.sizeHint().height())
         self._lp_checkboxes[name] = checkbox
+        self._lp_color_buttons[name] = color_button
+        self._lp_name_cells[name] = name_container
+        self._lp_name_labels[name] = name_label
+        if color:
+            self._update_lp_name_color(name, color)
 
     def _toggle_boundaries(self, enabled: bool) -> None:
         text = "Hide Boundaries" if enabled else "Show Boundaries"
@@ -1997,6 +2043,34 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             selected.discard(name)
         self.controller.set_visible_lp_files(sorted(selected))
+
+    def _handle_lp_color_clicked(self, name: str) -> None:
+        current = self.preview_api.lp_color(name)
+        initial = QtGui.QColor(current)
+        color = QtWidgets.QColorDialog.getColor(
+            initial, self, f"Select {name} color"
+        )
+        if not color.isValid():
+            return
+        hex_color = color.name()
+        self.preview_api.set_lp_color(name, hex_color)
+        self._update_lp_name_color(name, hex_color)
+
+    def _update_lp_name_color(self, name: str, color: str) -> None:
+        label = self._lp_name_labels.get(name)
+        container = self._lp_name_cells.get(name)
+        button = self._lp_color_buttons.get(name)
+        if label is None or container is None or button is None:
+            return
+        qcolor = QtGui.QColor(color)
+        if not qcolor.isValid():
+            return
+        label.setStyleSheet(f"color: {qcolor.name()};")
+        background = qcolor.darker(170).name()
+        container.setStyleSheet(f"background-color: {background};")
+        button.setStyleSheet(
+            f"QToolButton {{ background-color: {qcolor.name()}; border: 1px solid #555; }}"
+        )
 
     def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
         name = button.property("lp-name")

@@ -319,11 +319,26 @@ class PreviewCoordinator:
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
     def lp_color(self, name: str) -> str:
+        override = self._state.lp_colors.get(name)
+        if override:
+            return override
         try:
             index = LP_FILE_NAMES.index(name)
         except ValueError:
             return "#e53935"
         return LP_COLORS[index % len(LP_COLORS)]
+
+    def set_lp_color(self, name: str, color: str | None) -> None:
+        if name == "center-line":
+            return
+        if color:
+            candidate = QtGui.QColor(color)
+            if not candidate.isValid():
+                return
+            self._state.lp_colors[name] = candidate.name()
+        else:
+            self._state.lp_colors.pop(name, None)
+        self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
     def set_show_zoom_points(self, show: bool) -> None:
         if self._state.show_zoom_points != show:
