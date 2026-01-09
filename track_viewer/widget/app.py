@@ -14,7 +14,11 @@ from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
 from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
 from track_viewer.services.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
 from track_viewer.sidebar.pit_editor import PitParametersEditor
-from track_viewer.model.pit_models import PitParameters
+from track_viewer.model.pit_models import (
+    PIT_DLAT_LINE_COLORS,
+    PIT_DLONG_LINE_COLORS,
+    PitParameters,
+)
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.widget.track_preview_widget import TrackPreviewWidget
 from track_viewer.common.version import __version__
@@ -45,6 +49,14 @@ class TrackViewerApp(QtWidgets.QApplication):
 
     def save_lp_colors(self, lp_colors: dict[str, str]) -> None:
         viewer_config.save_lp_colors(lp_colors, self._main_script_path)
+
+    def load_pit_colors(self) -> tuple[dict[int, str], dict[int, str]]:
+        return viewer_config.load_pit_colors(self._main_script_path)
+
+    def save_pit_colors(
+        self, dlong_colors: dict[int, str], dlat_colors: dict[int, str]
+    ) -> None:
+        viewer_config.save_pit_colors(dlong_colors, dlat_colors, self._main_script_path)
 
     def set_installation_path(self, path: Optional[Path]) -> None:
         self.installation_path = path
@@ -341,6 +353,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api = self.visualization_widget.api
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._apply_saved_lp_colors()
+        self._apply_saved_pit_colors()
         self._lp_shortcut_active = False
         self._sidebar_vm = CoordinateSidebarViewModel()
         self._sidebar = CoordinateSidebar(self._sidebar_vm)
@@ -2069,6 +2082,46 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.app_state.save_lp_colors(merged)
         for name, color in merged.items():
             self.preview_api.set_lp_color(name, color)
+
+    def _apply_saved_pit_colors(self) -> None:
+        stored_dlong, stored_dlat = self.app_state.load_pit_colors()
+        default_dlong = dict(PIT_DLONG_LINE_COLORS)
+        default_dlat = dict(PIT_DLAT_LINE_COLORS)
+        merged_dlong: dict[int, str] = {}
+        merged_dlat: dict[int, str] = {}
+        missing_defaults = False
+
+        for index, default_color in default_dlong.items():
+            stored = stored_dlong.get(index)
+            if stored and QtGui.QColor(stored).isValid():
+                merged_dlong[index] = stored
+            else:
+                merged_dlong[index] = default_color
+                missing_defaults = True
+
+        for index, default_color in default_dlat.items():
+            stored = stored_dlat.get(index)
+            if stored and QtGui.QColor(stored).isValid():
+                merged_dlat[index] = stored
+            else:
+                merged_dlat[index] = default_color
+                missing_defaults = True
+
+        for index, color in stored_dlong.items():
+            if index not in merged_dlong and QtGui.QColor(color).isValid():
+                merged_dlong[index] = color
+
+        for index, color in stored_dlat.items():
+            if index not in merged_dlat and QtGui.QColor(color).isValid():
+                merged_dlat[index] = color
+
+        PIT_DLONG_LINE_COLORS.clear()
+        PIT_DLONG_LINE_COLORS.update(merged_dlong)
+        PIT_DLAT_LINE_COLORS.clear()
+        PIT_DLAT_LINE_COLORS.update(merged_dlat)
+
+        if missing_defaults:
+            self.app_state.save_pit_colors(merged_dlong, merged_dlat)
 
     def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
         name = button.property("lp-name")

@@ -20,7 +20,7 @@ from track_viewer.common.weather_compass import (
     wind_variation_to_turns,
 )
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
-from track_viewer.model.pit_models import PIT_DLONG_LINE_COLORS
+from track_viewer.model.pit_models import PIT_DLAT_LINE_COLORS, PIT_DLONG_LINE_COLORS
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
 from track_viewer.services.camera_service import CameraService
@@ -175,7 +175,7 @@ class TrackPreviewRenderer:
                     self._pit_wall_range_points(),
                     transform,
                     height,
-                    color="#ffeb3b",
+                    color=PIT_DLAT_LINE_COLORS.get(0, "#ffeb3b"),
                     width=2,
                 )
             if self._state.show_pit_stall_center_dlat:
@@ -184,6 +184,7 @@ class TrackPreviewRenderer:
                     self._pit_stall_range_points(),
                     transform,
                     height,
+                    color=PIT_DLAT_LINE_COLORS.get(5, "#00ff00"),
                 )
             if self._state.show_pit_stall_cars:
                 rendering.draw_pit_stall_cars(
