@@ -139,12 +139,15 @@ class TrackPreviewMouseController:
         if event.button() == QtCore.Qt.LeftButton:
             if self._state.dragging_weather_compass is not None:
                 self._state.dragging_weather_compass = None
+                self._update_cursor_position(event.pos(), size)
                 return True
             if self._state.dragging_camera_index is not None:
                 self._camera_edit.end_camera_drag()
+                self._update_cursor_position(event.pos(), size)
                 return True
             if self._state.dragging_flag_index is not None:
                 self._flag_edit.end_flag_drag()
+                self._update_cursor_position(event.pos(), size)
                 return True
             click_without_drag = not self._state.dragged_during_press
             self._state.is_panning = False
@@ -153,6 +156,7 @@ class TrackPreviewMouseController:
             self._state.dragged_during_press = False
             if click_without_drag and self._model.surface_mesh:
                 self._handle_primary_click(event.pos(), size)
+            self._update_cursor_position(event.pos(), size)
             return True
         return False
 
@@ -166,6 +170,13 @@ class TrackPreviewMouseController:
             self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
 
     def _update_cursor_position(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
+        if (
+            self._state.is_panning
+            or self._state.dragging_weather_compass is not None
+            or self._state.dragging_camera_index is not None
+            or self._state.dragging_flag_index is not None
+        ):
+            return
         if not self._model.surface_mesh or not self._model.bounds:
             self._callbacks.cursor_position_changed(None)
             if self._state.cursor_position is not None:
