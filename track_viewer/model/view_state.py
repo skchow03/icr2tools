@@ -243,8 +243,11 @@ class TrackPreviewViewState:
         self.cursor_position = coords
         return True
 
-    def set_status_message(self, message: str) -> None:
+    def set_status_message(self, message: str) -> bool:
+        if self.status_message == message:
+            return False
         self.status_message = message
+        return True
 
     def weather_compass_center(self, size: QtCore.QSize) -> QtCore.QPointF:
         radius = self.weather_compass_radius(size)

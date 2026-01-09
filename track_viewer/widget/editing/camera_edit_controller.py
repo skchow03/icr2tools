@@ -36,7 +36,6 @@ class CameraEditController:
         self._state.dragged_during_press = False
         if camera_index == self._state.selected_camera:
             self._selection.emit_selected_camera()
-            self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
         else:
             self._selection.set_selected_camera(camera_index)
         return True
@@ -51,8 +50,12 @@ class CameraEditController:
         if index < 0 or index >= len(self._camera_service.cameras):
             return
         cam = self._camera_service.cameras[index]
-        cam.x = int(round(coords[0]))
-        cam.y = int(round(coords[1]))
+        new_x = int(round(coords[0]))
+        new_y = int(round(coords[1]))
+        if new_x == cam.x and new_y == cam.y:
+            return
+        cam.x = new_x
+        cam.y = new_y
         self._state.camera_dragged = True
         self._selection.emit_selected_camera()
         self._callbacks.state_changed(PreviewIntent.CAMERA_CHANGED)

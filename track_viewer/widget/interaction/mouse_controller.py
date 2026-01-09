@@ -226,12 +226,14 @@ class TrackPreviewMouseController:
 
     def handle_leave(self) -> None:
         self._clear_lp_hover_update()
-        self._callbacks.cursor_position_changed(None)
         self._state.dragging_weather_compass = None
-        if self._state.cursor_position is not None:
-            self._state.cursor_position = None
-            self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-        if self._state.set_projection_data(None, None, None, None, None, None, None):
+        cursor_changed = self._state.set_cursor_position(None)
+        if cursor_changed:
+            self._callbacks.cursor_position_changed(None)
+        projection_changed = self._state.set_projection_data(
+            None, None, None, None, None, None, None
+        )
+        if cursor_changed or projection_changed:
             self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
 
     def _update_cursor_position(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
@@ -243,18 +245,22 @@ class TrackPreviewMouseController:
         ):
             return
         if not self._model.surface_mesh or not self._model.bounds:
-            self._callbacks.cursor_position_changed(None)
-            if self._state.cursor_position is not None:
-                self._state.cursor_position = None
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
+            cursor_changed = self._state.set_cursor_position(None)
+            if cursor_changed:
+                self._callbacks.cursor_position_changed(None)
+            projection_changed = self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
+            if cursor_changed or projection_changed:
                 self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
             return
         coords = self._state.map_to_track(point, self._model.bounds, size)
-        if self._state.set_cursor_position(coords):
+        cursor_changed = self._state.set_cursor_position(coords)
+        if cursor_changed:
+            self._callbacks.cursor_position_changed(coords)
+        projection_changed = self._update_active_line_projection(point, size)
+        if cursor_changed or projection_changed:
             self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-        self._callbacks.cursor_position_changed(coords)
-        self._update_active_line_projection(point, size)
 
     def _handle_weather_compass_press(
         self, point: QtCore.QPointF, size: QtCore.QSize
@@ -342,27 +348,26 @@ class TrackPreviewMouseController:
 
     def _update_active_line_projection(
         self, point: QtCore.QPointF | None, size: QtCore.QSize
-    ) -> None:
+    ) -> bool:
         active = self._state.active_lp_line if self._state.active_lp_line else "center-line"
         if active != "center-line" and active not in self._model.available_lp_files:
             active = "center-line"
         if active == "center-line":
-            self._update_centerline_projection(point, size)
-            return
-        self._update_ai_line_projection(point, active, size)
+            return self._update_centerline_projection(point, size)
+        return self._update_ai_line_projection(point, active, size)
 
     def _update_centerline_projection(
         self, point: QtCore.QPointF | None, size: QtCore.QSize
-    ) -> None:
+    ) -> bool:
         if (
             point is None
             or not self._model.sampled_centerline
             or not self._model.sampled_dlongs
             or not self._state.show_center_line
         ):
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         if (
             self._state.projection_cached_point is not None
@@ -379,7 +384,7 @@ class TrackPreviewMouseController:
                 cached_acceleration,
                 cached_line,
             ) = self._state.projection_cached_result
-            if self._state.set_projection_data(
+            return self._state.set_projection_data(
                 cached_point,
                 cached_dlong,
                 cached_dlat,
@@ -387,15 +392,13 @@ class TrackPreviewMouseController:
                 cached_elevation,
                 cached_acceleration,
                 cached_line,
-            ):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            )
 
         transform = self._state.current_transform(self._model.bounds, size)
         if not transform or not self._model.trk:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         screen_bounds = rendering.centerline_screen_bounds(
             self._model.sampled_bounds, transform, size.height()
@@ -422,22 +425,20 @@ class TrackPreviewMouseController:
                     None,
                     None,
                 )
-                if self._state.set_projection_data(
+                return self._state.set_projection_data(
                     None, None, None, None, None, None, None
-                ):
-                    self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-                return
+                )
 
         cursor_track = self._state.map_to_track(point, self._model.bounds, size)
         if cursor_track is None:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         if self._model.centerline_index is None:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         cursor_x, cursor_y = cursor_track
         track_length = float(self._model.trk.trklength)
@@ -449,9 +450,9 @@ class TrackPreviewMouseController:
         )
 
         if best_point is None:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
         mapped_point = rendering.map_point(
             best_point[0], best_point[1], transform, size.height()
         )
@@ -467,9 +468,9 @@ class TrackPreviewMouseController:
                 None,
                 None,
             )
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
         elevation = None
         if best_dlong is not None and self._model.centerline:
             _, _, elevation = getxyz(
@@ -485,24 +486,23 @@ class TrackPreviewMouseController:
             None,
             "center-line",
         )
-        if self._state.set_projection_data(
+        return self._state.set_projection_data(
             best_point, best_dlong, 0.0, None, elevation, None, "center-line"
-        ):
-            self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
+        )
 
     def _update_ai_line_projection(
         self, point: QtCore.QPointF | None, lp_name: str, size: QtCore.QSize
-    ) -> None:
+    ) -> bool:
         if point is None or lp_name not in self._model.visible_lp_files:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         records = self._model.ai_line_records(lp_name)
         if not records:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         if (
             self._state.projection_cached_point is not None
@@ -519,7 +519,7 @@ class TrackPreviewMouseController:
                 cached_acceleration,
                 cached_line,
             ) = self._state.projection_cached_result
-            if self._state.set_projection_data(
+            return self._state.set_projection_data(
                 cached_point,
                 cached_dlong,
                 cached_dlat,
@@ -527,21 +527,19 @@ class TrackPreviewMouseController:
                 cached_elevation,
                 cached_acceleration,
                 cached_line,
-            ):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            )
 
         transform = self._state.current_transform(self._model.bounds, size)
         if not transform or not self._model.trk:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         cursor_track = self._state.map_to_track(point, self._model.bounds, size)
         if cursor_track is None:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         cursor_x, cursor_y = cursor_track
         best_point: tuple[float, float] | None = None
@@ -582,9 +580,9 @@ class TrackPreviewMouseController:
                 )
 
         if best_point is None:
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         mapped_point = rendering.map_point(
             best_point[0], best_point[1], transform, size.height()
@@ -601,9 +599,9 @@ class TrackPreviewMouseController:
                 None,
                 None,
             )
-            if self._state.set_projection_data(None, None, None, None, None, None, None):
-                self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
-            return
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
 
         self._state.projection_cached_point = point
         self._state.projection_cached_result = (
@@ -615,7 +613,7 @@ class TrackPreviewMouseController:
             best_accel,
             lp_name,
         )
-        if self._state.set_projection_data(
+        return self._state.set_projection_data(
             best_point,
             best_dlong,
             best_dlat,
@@ -623,8 +621,7 @@ class TrackPreviewMouseController:
             None,
             best_accel,
             lp_name,
-        ):
-            self._callbacks.state_changed(PreviewIntent.PROJECTION_CHANGED)
+        )
 
     def _handle_primary_click(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
         transform = self._state.current_transform(self._model.bounds, size)
@@ -634,7 +631,6 @@ class TrackPreviewMouseController:
         if camera_index is not None:
             if camera_index == self._state.selected_camera:
                 self._selection.emit_selected_camera()
-                self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
             else:
                 self._selection.set_selected_camera(camera_index)
             return
