@@ -1,4 +1,9 @@
-"""Model for track preview data and AI line caching."""
+"""Model-layer state for the track preview and AI line caching.
+
+This module owns in-memory track geometry, boundaries, and AI line records.
+It belongs to the model layer and is intentionally free of rendering logic
+and UI concerns; persistence is delegated to services.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +24,12 @@ from track_viewer.services.io_service import TrackIOService
 
 
 class TrackPreviewModel(QtCore.QObject):
-    """Track preview state and data loading."""
+    """Mutable, in-memory track preview state.
+
+    The model owns the loaded track geometry, cached AI lines, and derived
+    indices used by renderers. It is mutable and transient, updated by
+    coordinators/controllers, and persisted only via the IO service.
+    """
 
     aiLineLoaded = QtCore.pyqtSignal(str)
 
@@ -49,6 +59,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_cache_generation = 0
 
     def load_track(self, track_folder: Path) -> None:
+        """Load track data and rebuild derived geometry caches."""
         track_data = self._io_service.load_track(track_folder)
         self.trk = track_data.trk
         self.track_length = track_data.track_length
@@ -102,6 +113,7 @@ class TrackPreviewModel(QtCore.QObject):
         return self._get_ai_line_records(name)
 
     def update_lp_record(self, lp_name: str, index: int) -> bool:
+        """Recompute a single LP record's world position from DLONG/DLAT."""
         if lp_name not in self.available_lp_files:
             return False
         records = self._get_ai_line_records(lp_name)
@@ -122,6 +134,7 @@ class TrackPreviewModel(QtCore.QObject):
         return True
 
     def save_lp_line(self, lp_name: str) -> tuple[bool, str]:
+        """Persist the selected AI line back to its LP file."""
         if self.track_path is None:
             return False, "No track loaded to save LP data."
         if not lp_name or lp_name == "center-line":
@@ -138,6 +151,7 @@ class TrackPreviewModel(QtCore.QObject):
         return True, message
 
     def export_lp_csv(self, lp_name: str, output_path: Path) -> tuple[bool, str]:
+        """Export the selected AI line to CSV via the IO service."""
         if not lp_name or lp_name == "center-line":
             return False, "Select a valid LP line to export."
         if lp_name not in self.available_lp_files:
@@ -154,6 +168,7 @@ class TrackPreviewModel(QtCore.QObject):
         return True, message
 
     def _queue_ai_line_load(self, lp_name: str) -> None:
+        """Schedule a background load of LP records for the given line."""
         if (
             self.track_path is None
             or lp_name in self._pending_ai_line_loads
@@ -186,6 +201,7 @@ class TrackPreviewModel(QtCore.QObject):
         lp_name: str,
         records: list[LpPoint],
     ) -> None:
+        """Accept loaded LP records if they match the current generation."""
         self._ai_line_tasks.discard(task)
         self._pending_ai_line_loads.discard(lp_name)
         if generation != self._ai_line_generation:
@@ -223,6 +239,7 @@ class TrackPreviewModel(QtCore.QObject):
         surface_bounds: Tuple[float, float, float, float] | None,
         sampled_bounds: Tuple[float, float, float, float] | None,
     ) -> Tuple[float, float, float, float] | None:
+        """Combine surface and centerline bounds into a single envelope."""
         if surface_bounds is None:
             return sampled_bounds
         if sampled_bounds is None:
@@ -237,6 +254,7 @@ class TrackPreviewModel(QtCore.QObject):
     def _build_boundary_edges(
         trk: TRKFile | None, cline: list[tuple[float, float]]
     ) -> List[tuple[Tuple[float, float], Tuple[float, float]]]:
+        """Sample TRK boundary DLATs into world-space line segments."""
         if trk is None or not cline:
             return []
         edges: list[tuple[tuple[float, float], tuple[float, float]]] = []

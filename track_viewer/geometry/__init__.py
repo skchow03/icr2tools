@@ -1,4 +1,9 @@
-"""Shared geometry helpers for the track viewer widget."""
+"""Geometry utilities for the track preview and related tooling.
+
+This module sits in the model/geometry layer. It builds derived geometry
+such as sampled centerlines, spatial indices, and LP-derived points, without
+performing rendering. The only file IO here is optional LP loading.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,6 +19,12 @@ Point = Tuple[float, float]
 
 @dataclass
 class CenterlineIndex:
+    """Spatial index for centerline segments.
+
+    The index is immutable after construction and contains precomputed
+    segment bounds for fast nearest-segment queries. It is transient and
+    rebuilt when the track changes.
+    """
     segments: List[Tuple[Point, Point]]
     grid: Dict[tuple[int, int], List[int]]
     origin: Tuple[float, float] | None
@@ -26,6 +37,7 @@ def sample_centerline(
     cline: List[Tuple[float, float]],
     step: int = 10000,
 ) -> Tuple[List[Point], List[float], Tuple[float, float, float, float] | None]:
+    """Sample centerline points every DLONG step and compute bounds."""
     if not trk or not cline:
         return [], [], None
 
@@ -59,6 +71,7 @@ def build_centerline_index(
     sampled_centerline: List[Point],
     sampled_bounds: Tuple[float, float, float, float] | None,
 ) -> CenterlineIndex:
+    """Build a grid index for quick centerline segment lookup."""
     grid: dict[tuple[int, int], list[int]] = {}
     origin: tuple[float, float] | None = None
     cell_size: float | None = None
@@ -93,6 +106,7 @@ def build_centerline_index(
 
 
 def query_centerline_segments(index: CenterlineIndex, x: float, y: float) -> list[int]:
+    """Return candidate segment indices near a world-space point."""
     if not index.grid or index.origin is None or index.cell_size is None:
         return list(range(len(index.segments)))
 
@@ -120,6 +134,7 @@ def project_point_to_centerline(
     sampled_dlongs: List[float],
     track_length: float,
 ) -> tuple[Point | None, float | None, float]:
+    """Project a world point onto the nearest centerline segment."""
     if not index.segments or not sampled_dlongs or track_length <= 0:
         return None, None, float("inf")
 
@@ -168,6 +183,7 @@ def load_ai_line(
     *,
     track_length: float | None = None,
 ) -> List[Point]:
+    """Load an LP file and return world-space points along the centerline."""
     if trk is None or not cline:
         return []
 

@@ -1,4 +1,9 @@
-"""Drawing helpers for the track preview widget."""
+"""Rendering helpers for the track preview widget.
+
+This module belongs to the rendering layer. It converts model/view-state data
+into draw calls on a QPainter without mutating the model or performing IO.
+All geometry is in world coordinates until mapped to screen space.
+"""
 from __future__ import annotations
 
 import math
@@ -22,7 +27,12 @@ from track_viewer.services.camera_service import CameraService
 
 
 class TrackPreviewRenderer:
-    """Render track preview geometry using the shared view state."""
+    """Render track preview geometry using model data and view state.
+
+    The renderer caches derived draw primitives but does not own the model
+    or perform persistence. It is mutable only for caching and is otherwise
+    side-effect free beyond issuing draw calls to the provided QPainter.
+    """
 
     PIT_CAR_LENGTH_DLONG = 99208.0
     PIT_CAR_WIDTH_DLAT = 40000.0
@@ -48,6 +58,7 @@ class TrackPreviewRenderer:
         ] | None = None
 
     def paint(self, painter: QtGui.QPainter, size: QtCore.QSize) -> None:
+        """Draw the preview in painter order (surface → overlays → UI)."""
         if not self._model.bounds:
             painter.setPen(QtGui.QPen(QtGui.QColor("lightgray")))
             painter.drawText(
@@ -202,6 +213,7 @@ class TrackPreviewRenderer:
         self._draw_weather_compass(painter, size)
 
     def invalidate_surface_cache(self) -> None:
+        """Drop cached geometry derived from the current track."""
         self._surface_cache = []
         self._surface_cache_key = None
         self._boundary_path_cache = QtGui.QPainterPath()
@@ -263,6 +275,7 @@ class TrackPreviewRenderer:
     def _surface_transform(
         transform: tuple[float, tuple[float, float]], viewport_height: int
     ) -> QtGui.QTransform:
+        """Convert a world-space transform into Qt screen-space coordinates."""
         scale, offsets = transform
         return QtGui.QTransform(
             scale,
@@ -279,6 +292,7 @@ class TrackPreviewRenderer:
         transform: Tuple[float, Tuple[float, float]],
         height: int,
     ) -> None:
+        """Draw AI lines in world space, mapped into screen coordinates."""
         if not self._model.visible_lp_files:
             return
         self._ensure_ai_line_cache()
@@ -318,6 +332,7 @@ class TrackPreviewRenderer:
         transform: Tuple[float, Tuple[float, float]],
         height: int,
     ) -> None:
+        """Highlight the selected LP record and its adjacent segment."""
         if (
             not self._state.selected_lp_line
             or self._state.selected_lp_index is None
@@ -384,6 +399,7 @@ class TrackPreviewRenderer:
             start_y += line_height
 
     def _draw_status_overlay(self, painter: QtGui.QPainter) -> None:
+        """Render textual overlays in screen coordinates (no transforms)."""
         painter.setPen(QtGui.QPen(QtGui.QColor("white")))
         y = 20
         if self._model.track_length is not None:
@@ -547,6 +563,7 @@ class TrackPreviewRenderer:
         painter.restore()
 
     def _centerline_section_info(self, dlong: float) -> list[str]:
+        """Return human-readable section info for the given DLONG."""
         if self._model.trk is None:
             return []
         sect_info = dlong2sect(self._model.trk, dlong)
@@ -581,6 +598,7 @@ class TrackPreviewRenderer:
     def _centerline_point_and_normal(
         self, dlong: float
     ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Estimate a centerline point and normal vector at the DLONG."""
         if not self._model.trk or not self._model.centerline:
             return None
         track_length = float(self._model.trk.trklength)
@@ -612,6 +630,7 @@ class TrackPreviewRenderer:
         return (cx, cy), normal
 
     def _centerline_point(self, dlong: float) -> tuple[float, float] | None:
+        """Return the world-space centerline point at a DLONG."""
         if not self._model.trk or not self._model.centerline:
             return None
         track_length = float(self._model.trk.trklength)
@@ -670,6 +689,7 @@ class TrackPreviewRenderer:
     def _pit_range_points(
         self, start_dlong: float, end_dlong: float, dlat: float
     ) -> list[tuple[float, float]]:
+        """Sample a pit range into world-space points along the centerline."""
         if (
             self._model.trk is None
             or not self._model.centerline
@@ -719,6 +739,7 @@ class TrackPreviewRenderer:
         )
 
     def _pit_stall_car_polygons(self) -> list[list[tuple[float, float]]]:
+        """Build world-space rectangles for each pit stall car."""
         if (
             self._state.pit_params is None
             or self._model.trk is None
