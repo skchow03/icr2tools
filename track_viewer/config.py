@@ -34,7 +34,8 @@ def _pit_color_key_to_index(
     key: str, allowed_indices: set[int]
 ) -> Optional[int]:
     try:
-        return int(key)
+        index = int(key)
+        return index if index in allowed_indices else None
     except ValueError:
         index = _PIT_NAME_TO_INDEX.get(key)
         if index is None or index not in allowed_indices:
