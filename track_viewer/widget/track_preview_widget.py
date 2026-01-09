@@ -1,4 +1,10 @@
-"""Embedded surface preview widget for the standalone track viewer."""
+"""Qt widget that hosts the track preview surface and input wiring.
+
+This module lives in the UI layer. It owns the preview widget instance,
+creates the coordinator, and forwards Qt events into the input router.
+It does not load track data, mutate model state directly, or perform any
+rendering beyond handing a QPainter to the coordinator.
+"""
 from __future__ import annotations
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -9,7 +15,12 @@ from track_viewer.preview_input_router import PreviewInputRouter
 
 
 class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
-    """Renders the TRK ground surface similar to the timing overlay."""
+    """UI widget that wires preview paint and input events.
+
+    The widget owns transient UI collaborators (coordinator, API, input router)
+    and remains mutable for the lifetime of the window. It does not persist
+    data; state changes flow through the coordinator and models.
+    """
 
     cursorPositionChanged = QtCore.pyqtSignal(object)
     selectedFlagChanged = QtCore.pyqtSignal(object)

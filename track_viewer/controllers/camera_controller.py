@@ -1,4 +1,9 @@
-"""Camera orchestration helpers for the track preview widget."""
+"""Controller-layer helpers for camera mutations in the track preview.
+
+This module performs pure mutation logic on camera collections. It does not
+own state, perform IO, or render; callers supply lists to mutate and handle
+persistence elsewhere.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,7 +25,11 @@ class CameraUpdateResult:
 
 
 class CameraController:
-    """Encapsulate camera CRUD and TV-mode coordination."""
+    """Pure mutation logic for camera CRUD and TV-mode coordination.
+
+    The controller is stateless and only mutates the camera lists passed in.
+    It has no persistence responsibilities and should be called by services.
+    """
 
     def _add_tv_camera(
         self,
@@ -36,6 +45,7 @@ class CameraController:
         raw_values_length: int,
         success_message: str,
     ) -> CameraUpdateResult:
+        """Insert a new TV camera and update adjacent view ranges."""
         if not cameras:
             return CameraUpdateResult(False, "No cameras are loaded.", cameras, camera_views)
         if selected_camera is None:
@@ -125,6 +135,7 @@ class CameraController:
         selected_camera: int | None,
         track_length: float | None,
     ) -> CameraUpdateResult:
+        """Create a type 6 camera using interpolated start/end ranges."""
         def build_camera_params(
             base_camera: CameraPosition, start_dlong: Optional[int], end_dlong: Optional[int]
         ) -> Type6CameraParameters:
@@ -160,6 +171,7 @@ class CameraController:
         selected_camera: int | None,
         track_length: float | None,
     ) -> CameraUpdateResult:
+        """Create a type 7 camera copying the selected camera parameters."""
         def build_camera_params(
             base_camera: CameraPosition, start_dlong: Optional[int], end_dlong: Optional[int]
         ) -> Type7CameraParameters:
@@ -198,6 +210,7 @@ class CameraController:
         archived_camera_views: List[CameraViewListing],
         count: int,
     ) -> Tuple[List[CameraViewListing], List[CameraViewListing], int]:
+        """Clamp TV modes to 1–2, archiving or cloning entries as needed."""
         if not camera_views:
             return camera_views, archived_camera_views, len(camera_views)
 
@@ -244,6 +257,7 @@ class CameraController:
         index: int,
         camera: CameraPosition,
     ) -> int:
+        """Insert a camera and shift view entries to match new indices."""
         insert_index = max(0, min(index, len(cameras)))
         cameras.insert(insert_index, camera)
         for view in camera_views:
@@ -255,6 +269,7 @@ class CameraController:
     def _renumber_camera_type_indices(
         self, cameras: List[CameraPosition], camera_views: List[CameraViewListing]
     ) -> None:
+        """Normalize type indices to match the current camera ordering."""
         type_counts: dict[int, int] = {}
         for camera in cameras:
             count = type_counts.get(camera.camera_type, 0)
@@ -273,6 +288,7 @@ class CameraController:
     def _find_camera_entry(
         self, camera_views: List[CameraViewListing], camera_index: int
     ) -> tuple[int, int] | None:
+        """Locate the view and entry containing the given camera index."""
         for view_index, view in enumerate(camera_views):
             for entry_index, entry in enumerate(view.entries):
                 if entry.camera_index == camera_index:
@@ -282,6 +298,7 @@ class CameraController:
     def _interpolated_dlong(
         self, first: Optional[int], second: Optional[int], track_length: float | None
     ) -> Optional[int]:
+        """Return a midpoint DLONG, wrapping around the track length."""
         if first is None and second is None:
             return None
         if first is None:
