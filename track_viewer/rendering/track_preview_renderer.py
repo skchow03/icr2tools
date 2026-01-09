@@ -38,6 +38,10 @@ class TrackPreviewRenderer:
         self._state = state
         self._surface_cache: list[rendering.SurfacePolygon] = []
         self._surface_cache_key: tuple[object | None, int] | None = None
+        self._boundary_path_cache = QtGui.QPainterPath()
+        self._boundary_cache_key: tuple[object | None, int] | None = None
+        self._centerline_path_cache = QtGui.QPainterPath()
+        self._centerline_cache_key: tuple[object | None, int] | None = None
 
     def paint(self, painter: QtGui.QPainter, size: QtCore.QSize) -> None:
         if not self._model.surface_mesh or not self._model.bounds:
@@ -63,17 +67,26 @@ class TrackPreviewRenderer:
         height = size.height()
 
         if transform and self._state.show_boundaries:
-            rendering.draw_track_boundaries(
-                painter, self._model.boundary_edges, transform, height
-            )
+            self._ensure_boundary_cache()
+            if not self._boundary_path_cache.isEmpty():
+                painter.save()
+                painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+                painter.setPen(QtGui.QPen(QtGui.QColor("lightgray"), 2))
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.setTransform(self._surface_transform(transform, height))
+                painter.drawPath(self._boundary_path_cache)
+                painter.restore()
 
         if transform and self._state.show_center_line and self._model.sampled_centerline:
-            rendering.draw_centerline(
-                painter,
-                self._model.sampled_centerline,
-                transform,
-                height,
-            )
+            self._ensure_centerline_cache()
+            if not self._centerline_path_cache.isEmpty():
+                painter.save()
+                painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+                painter.setPen(QtGui.QPen(QtGui.QColor("white"), 2))
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.setTransform(self._surface_transform(transform, height))
+                painter.drawPath(self._centerline_path_cache)
+                painter.restore()
 
         if transform and self._state.show_center_line:
             rendering.draw_start_finish_line(
@@ -190,6 +203,10 @@ class TrackPreviewRenderer:
     def invalidate_surface_cache(self) -> None:
         self._surface_cache = []
         self._surface_cache_key = None
+        self._boundary_path_cache = QtGui.QPainterPath()
+        self._boundary_cache_key = None
+        self._centerline_path_cache = QtGui.QPainterPath()
+        self._centerline_cache_key = None
 
     def _ensure_surface_cache(self) -> None:
         key = (self._model.track_path, id(self._model.surface_mesh))
@@ -197,6 +214,24 @@ class TrackPreviewRenderer:
             return
         self._surface_cache = rendering.build_surface_cache(self._model.surface_mesh)
         self._surface_cache_key = key
+
+    def _ensure_boundary_cache(self) -> None:
+        key = (self._model.track_path, id(self._model.boundary_edges))
+        if key == self._boundary_cache_key:
+            return
+        self._boundary_path_cache = rendering.build_boundary_path(
+            self._model.boundary_edges
+        )
+        self._boundary_cache_key = key
+
+    def _ensure_centerline_cache(self) -> None:
+        key = (self._model.track_path, id(self._model.sampled_centerline))
+        if key == self._centerline_cache_key:
+            return
+        self._centerline_path_cache = rendering.build_centerline_path(
+            self._model.sampled_centerline
+        )
+        self._centerline_cache_key = key
 
     @staticmethod
     def _surface_transform(

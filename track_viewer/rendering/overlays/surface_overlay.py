@@ -35,6 +35,31 @@ def build_surface_cache(
     return cache
 
 
+def build_boundary_path(
+    edges: Sequence[tuple[Point2D, Point2D]],
+) -> QtGui.QPainterPath:
+    """Build a track-space painter path for boundary edges."""
+
+    path = QtGui.QPainterPath()
+    for start, end in edges:
+        path.moveTo(QtCore.QPointF(start[0], start[1]))
+        path.lineTo(QtCore.QPointF(end[0], end[1]))
+    return path
+
+
+def build_centerline_path(sampled_centerline: Sequence[Point2D]) -> QtGui.QPainterPath:
+    """Build a track-space painter path for the sampled centerline."""
+
+    path = QtGui.QPainterPath()
+    if not sampled_centerline:
+        return path
+    start = sampled_centerline[0]
+    path.moveTo(QtCore.QPointF(start[0], start[1]))
+    for point in sampled_centerline[1:]:
+        path.lineTo(QtCore.QPointF(point[0], point[1]))
+    return path
+
+
 def draw_track_boundaries(
     painter: QtGui.QPainter,
     edges: Sequence[tuple[Point2D, Point2D]],

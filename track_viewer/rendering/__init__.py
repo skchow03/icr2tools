@@ -17,6 +17,8 @@ from track_viewer.rendering.overlays.pit_overlay import (
 )
 from track_viewer.rendering.overlays.surface_overlay import (
     SurfacePolygon,
+    build_boundary_path,
+    build_centerline_path,
     build_surface_cache,
     draw_centerline,
     draw_track_boundaries,
@@ -40,6 +42,8 @@ __all__ = [
     "Transform",
     "centerline_screen_bounds",
     "compute_segment_acceleration",
+    "build_boundary_path",
+    "build_centerline_path",
     "build_surface_cache",
     "draw_ai_lines",
     "draw_camera_positions",
