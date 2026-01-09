@@ -18,7 +18,7 @@ from track_viewer.rendering.overlays.pit_overlay import (
 from track_viewer.rendering.overlays.surface_overlay import (
     draw_centerline,
     draw_track_boundaries,
-    render_surface_to_pixmap,
+    render_surface_to_image,
 )
 from track_viewer.rendering.overlays.zoom_overlay import draw_zoom_points
 from track_viewer.rendering.primitives.bars import (
@@ -52,5 +52,5 @@ __all__ = [
     "draw_track_boundaries",
     "draw_zoom_points",
     "map_point",
-    "render_surface_to_pixmap",
+    "render_surface_to_image",
 ]

@@ -27,6 +27,9 @@ class TrackViewerApp(QtWidgets.QApplication):
     _INSTALLATION_PATH_KEY = "installation_path"
 
     def __init__(self, argv: List[str]):
+        surface_format = QtGui.QSurfaceFormat()
+        surface_format.setSamples(4)
+        QtGui.QSurfaceFormat.setDefaultFormat(surface_format)
         super().__init__(argv)
         self.setQuitOnLastWindowClosed(True)
 
