@@ -255,6 +255,7 @@ class TrackPreviewRenderer:
             self._state.ai_color_mode,
             self._state.ai_acceleration_window,
             self._state.ai_line_width,
+            tuple(sorted(self._state.lp_colors.items())),
         )
         if key == self._ai_line_cache_key:
             return
@@ -318,8 +319,10 @@ class TrackPreviewRenderer:
             painter.drawPolyline(cache.polygon)
         painter.restore()
 
-    @staticmethod
-    def _lp_color(name: str) -> str:
+    def _lp_color(self, name: str) -> str:
+        override = self._state.lp_colors.get(name)
+        if override:
+            return override
         try:
             index = LP_FILE_NAMES.index(name)
         except ValueError:
