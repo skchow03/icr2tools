@@ -46,6 +46,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._pending_ai_line_loads: set[str] = set()
         self._ai_line_tasks: set[AiLineLoadTask] = set()
         self._ai_line_generation = 0
+        self._ai_line_cache_generation = 0
 
     def load_track(self, track_folder: Path) -> None:
         track_data = self._io_service.load_track(track_folder)
@@ -76,6 +77,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._pending_ai_line_loads.clear()
         self._ai_line_tasks.clear()
         self._ai_line_generation += 1
+        self._ai_line_cache_generation += 1
 
     def set_visible_lp_files(self, names: list[str] | set[str]) -> bool:
         valid = {name for name in names if name in self.available_lp_files}
@@ -88,6 +90,10 @@ class TrackPreviewModel(QtCore.QObject):
 
     def ai_line_available(self) -> bool:
         return bool(self.available_lp_files)
+
+    @property
+    def ai_line_cache_generation(self) -> int:
+        return self._ai_line_cache_generation
 
     def ai_line_records(self, name: str) -> list[LpPoint]:
         if name == "center-line" or name not in self.available_lp_files:
@@ -111,6 +117,7 @@ class TrackPreviewModel(QtCore.QObject):
                 y = record.y
             record.x = x
             record.y = y
+        self._ai_line_cache_generation += 1
         return True
 
     def save_lp_line(self, lp_name: str) -> tuple[bool, str]:
@@ -185,6 +192,7 @@ class TrackPreviewModel(QtCore.QObject):
         if self._ai_lines is None:
             self._ai_lines = {}
         self._ai_lines[lp_name] = records
+        self._ai_line_cache_generation += 1
         self.aiLineLoaded.emit(lp_name)
 
     def _get_ai_line_records(self, lp_name: str) -> List[LpPoint]:
