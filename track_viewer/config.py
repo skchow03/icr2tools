@@ -7,12 +7,39 @@ from pathlib import Path
 import sys
 from typing import Optional
 
+from track_viewer.model.pit_models import (
+    PIT_DLAT_LINE_INDICES,
+    PIT_DLONG_LINE_INDICES,
+    PIT_PARAMETER_DEFINITIONS,
+)
+
 CONFIG_FILENAME = "track_viewer.ini"
 _SECTION = "paths"
 _KEY = "installation_path"
 _LP_SECTION = "lp_colors"
 _PIT_DLONG_SECTION = "pit_dlong_colors"
 _PIT_DLAT_SECTION = "pit_dlat_colors"
+_PIT_INDEX_TO_NAME = {
+    index: field
+    for index, (field, _label, _tooltip, _is_integer) in enumerate(
+        PIT_PARAMETER_DEFINITIONS
+    )
+}
+_PIT_NAME_TO_INDEX = {name: index for index, name in _PIT_INDEX_TO_NAME.items()}
+_PIT_DLONG_INDICES = set(PIT_DLONG_LINE_INDICES)
+_PIT_DLAT_INDICES = set(PIT_DLAT_LINE_INDICES)
+
+
+def _pit_color_key_to_index(
+    key: str, allowed_indices: set[int]
+) -> Optional[int]:
+    try:
+        return int(key)
+    except ValueError:
+        index = _PIT_NAME_TO_INDEX.get(key)
+        if index is None or index not in allowed_indices:
+            return None
+        return index
 
 
 def _config_dir(main_script_path: Optional[Path]) -> Path:
@@ -80,16 +107,14 @@ def load_pit_colors(
     dlat_colors: dict[int, str] = {}
     if parser.has_section(_PIT_DLONG_SECTION):
         for key, value in parser.items(_PIT_DLONG_SECTION):
-            try:
-                index = int(key)
-            except ValueError:
+            index = _pit_color_key_to_index(key, _PIT_DLONG_INDICES)
+            if index is None:
                 continue
             dlong_colors[index] = value
     if parser.has_section(_PIT_DLAT_SECTION):
         for key, value in parser.items(_PIT_DLAT_SECTION):
-            try:
-                index = int(key)
-            except ValueError:
+            index = _pit_color_key_to_index(key, _PIT_DLAT_INDICES)
+            if index is None:
                 continue
             dlat_colors[index] = value
     return dlong_colors, dlat_colors
@@ -156,13 +181,15 @@ def save_pit_colors(
             return
     if dlong_colors:
         config[_PIT_DLONG_SECTION] = {
-            str(key): str(value) for key, value in dlong_colors.items()
+            _PIT_INDEX_TO_NAME.get(key, str(key)): str(value)
+            for key, value in dlong_colors.items()
         }
     elif config.has_section(_PIT_DLONG_SECTION):
         config.remove_section(_PIT_DLONG_SECTION)
     if dlat_colors:
         config[_PIT_DLAT_SECTION] = {
-            str(key): str(value) for key, value in dlat_colors.items()
+            _PIT_INDEX_TO_NAME.get(key, str(key)): str(value)
+            for key, value in dlat_colors.items()
         }
     elif config.has_section(_PIT_DLAT_SECTION):
         config.remove_section(_PIT_DLAT_SECTION)
