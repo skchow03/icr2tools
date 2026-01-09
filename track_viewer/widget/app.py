@@ -327,7 +327,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_records_model.recordEdited.connect(self._handle_lp_record_edited)
 
         self.visualization_widget = TrackPreviewWidget()
-        self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        if hasattr(self.visualization_widget, "setFrameShape"):
+            self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.preview_api = self.visualization_widget.api
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._lp_shortcut_active = False
