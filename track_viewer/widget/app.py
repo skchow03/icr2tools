@@ -20,6 +20,7 @@ from track_viewer.widget.track_preview_widget import TrackPreviewWidget
 from track_viewer.common.version import __version__
 from track_viewer.controllers.window_controller import WindowController
 from track_viewer import config as viewer_config
+from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 
 
 class TrackViewerApp(QtWidgets.QApplication):
@@ -265,7 +266,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_button_group.setExclusive(True)
         self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
-        self._lp_color_buttons: dict[str, QtWidgets.QToolButton] = {}
         self._lp_name_cells: dict[str, QtWidgets.QWidget] = {}
         self._lp_name_labels: dict[str, QtWidgets.QLabel] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
@@ -599,8 +599,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
         lp_list_header = QtWidgets.QLabel(
-            "Radio selects the active LP. Checkbox toggles visibility. "
-            "Color swatch picks the LP color."
+            "Radio selects the active LP. Checkbox toggles visibility."
         )
         lp_list_header.setWordWrap(True)
         left_layout.addWidget(lp_list_header)
@@ -1847,7 +1846,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self._lp_button_group.removeButton(button)
                 button.deleteLater()
             self._lp_checkboxes = {}
-            self._lp_color_buttons = {}
             self._lp_name_cells = {}
             self._lp_name_labels = {}
             self._lp_list.setRowCount(0)
@@ -1916,18 +1914,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         name_label = QtWidgets.QLabel(label)
         name_layout.addWidget(name_label)
         name_layout.addStretch(1)
-        color_button = QtWidgets.QToolButton()
-        color_button.setToolTip("Select LP color")
-        color_button.setFixedSize(18, 18)
-        allow_color = name != "center-line"
-        color_button.setEnabled(enabled and allow_color)
-        if allow_color:
-            color_button.clicked.connect(
-                lambda _checked=False, line=name: self._handle_lp_color_clicked(line)
-            )
-        else:
-            color_button.setVisible(False)
-        name_layout.addWidget(color_button)
         name_container.setLayout(name_layout)
         self._lp_list.setCellWidget(row, 0, name_container)
 
@@ -1951,7 +1937,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self._lp_list.setRowHeight(row, name_container.sizeHint().height())
         self._lp_checkboxes[name] = checkbox
-        self._lp_color_buttons[name] = color_button
         self._lp_name_cells[name] = name_container
         self._lp_name_labels[name] = name_label
         if color:
@@ -2051,37 +2036,38 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             selected.discard(name)
         self.controller.set_visible_lp_files(sorted(selected))
 
-    def _handle_lp_color_clicked(self, name: str) -> None:
-        current = self.preview_api.lp_color(name)
-        initial = QtGui.QColor(current)
-        color = QtWidgets.QColorDialog.getColor(
-            initial, self, f"Select {name} color"
-        )
-        if not color.isValid():
-            return
-        hex_color = color.name()
-        self.preview_api.set_lp_color(name, hex_color)
-        self._update_lp_name_color(name, hex_color)
-        self.app_state.save_lp_colors(self.preview_api.lp_color_overrides())
-
     def _update_lp_name_color(self, name: str, color: str) -> None:
         label = self._lp_name_labels.get(name)
         container = self._lp_name_cells.get(name)
-        button = self._lp_color_buttons.get(name)
-        if label is None or container is None or button is None:
+        if label is None or container is None:
             return
         qcolor = QtGui.QColor(color)
         if not qcolor.isValid():
             return
-        label.setStyleSheet("")
+        label.setStyleSheet(f"color: {qcolor.name()};")
         container.setStyleSheet("")
-        button.setStyleSheet(
-            f"QToolButton {{ background-color: {qcolor.name()}; border: 1px solid #555; }}"
-        )
 
     def _apply_saved_lp_colors(self) -> None:
         colors = self.app_state.load_lp_colors()
+        defaults = {
+            name: LP_COLORS[index % len(LP_COLORS)]
+            for index, name in enumerate(LP_FILE_NAMES)
+        }
+        merged = {}
+        missing_defaults = False
+        for name, default_color in defaults.items():
+            stored = colors.get(name)
+            if stored:
+                merged[name] = stored
+            else:
+                merged[name] = default_color
+                missing_defaults = True
         for name, color in colors.items():
+            if name not in merged:
+                merged[name] = color
+        if missing_defaults:
+            self.app_state.save_lp_colors(merged)
+        for name, color in merged.items():
             self.preview_api.set_lp_color(name, color)
 
     def _handle_lp_radio_clicked(self, button: QtWidgets.QAbstractButton) -> None:
