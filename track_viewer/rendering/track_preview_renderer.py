@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from typing import List, Tuple
+from typing import Tuple
 
 from PyQt5 import QtCore, QtGui
 
@@ -42,6 +42,10 @@ class TrackPreviewRenderer:
         self._boundary_cache_key: tuple[object | None, int] | None = None
         self._centerline_path_cache = QtGui.QPainterPath()
         self._centerline_cache_key: tuple[object | None, int] | None = None
+        self._ai_line_cache: dict[str, rendering.AiLineCache] = {}
+        self._ai_line_cache_key: tuple[
+            object | None, int, str, int, int
+        ] | None = None
 
     def paint(self, painter: QtGui.QPainter, size: QtCore.QSize) -> None:
         if not self._model.bounds:
@@ -132,17 +136,10 @@ class TrackPreviewRenderer:
                     transform,
                     height,
                 )
-            rendering.draw_ai_lines(
+            self._draw_ai_lines(
                 painter,
-                self._model.visible_lp_files,
-                self._get_ai_line_points,
                 transform,
                 height,
-                self._lp_color,
-                gradient=self._state.ai_color_mode,
-                get_records=self._model.ai_line_records,
-                line_width=self._state.ai_line_width,
-                acceleration_window=self._state.ai_acceleration_window,
             )
             self._draw_selected_lp_segment(painter, transform, height)
             rendering.draw_flags(
@@ -211,6 +208,8 @@ class TrackPreviewRenderer:
         self._boundary_cache_key = None
         self._centerline_path_cache = QtGui.QPainterPath()
         self._centerline_cache_key = None
+        self._ai_line_cache = {}
+        self._ai_line_cache_key = None
 
     def _ensure_surface_cache(self) -> None:
         key = (self._model.track_path, id(self._model.surface_mesh))
@@ -237,6 +236,29 @@ class TrackPreviewRenderer:
         )
         self._centerline_cache_key = key
 
+    def _ensure_ai_line_cache(self) -> None:
+        key = (
+            self._model.track_path,
+            self._model.ai_line_cache_generation,
+            self._state.ai_color_mode,
+            self._state.ai_acceleration_window,
+            self._state.ai_line_width,
+        )
+        if key == self._ai_line_cache_key:
+            return
+        self._ai_line_cache = {}
+        for lp_name in sorted(set(self._model.visible_lp_files)):
+            records = self._model.ai_line_records(lp_name)
+            cache = rendering.build_ai_line_cache(
+                records,
+                color=self._lp_color(lp_name),
+                gradient=self._state.ai_color_mode,
+                acceleration_window=self._state.ai_acceleration_window,
+            )
+            if cache is not None:
+                self._ai_line_cache[lp_name] = cache
+        self._ai_line_cache_key = key
+
     @staticmethod
     def _surface_transform(
         transform: tuple[float, tuple[float, float]], viewport_height: int
@@ -251,8 +273,33 @@ class TrackPreviewRenderer:
             viewport_height - offsets[1],
         )
 
-    def _get_ai_line_points(self, lp_name: str) -> List[Tuple[float, float]]:
-        return [(p.x, p.y) for p in self._model.ai_line_records(lp_name)]
+    def _draw_ai_lines(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+        height: int,
+    ) -> None:
+        if not self._model.visible_lp_files:
+            return
+        self._ensure_ai_line_cache()
+        pen_width = max(1, self._state.ai_line_width)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setTransform(self._surface_transform(transform, height))
+        for name in sorted(set(self._model.visible_lp_files)):
+            cache = self._ai_line_cache.get(name)
+            if cache is None or cache.polygon.isEmpty():
+                continue
+            if cache.segment_colors:
+                points = cache.polygon
+                for index, color in enumerate(cache.segment_colors):
+                    pen = QtGui.QPen(color, pen_width)
+                    painter.setPen(pen)
+                    painter.drawLine(QtCore.QLineF(points[index], points[index + 1]))
+                continue
+            painter.setPen(QtGui.QPen(cache.base_color, pen_width))
+            painter.drawPolyline(cache.polygon)
+        painter.restore()
 
     @staticmethod
     def _lp_color(name: str) -> str:

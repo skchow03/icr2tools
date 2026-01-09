@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from track_viewer.rendering.overlays.ai_line_overlay import (
+    AiLineCache,
     DLONG_TO_FEET,
     MPH_TO_FEET_PER_SECOND,
+    build_ai_line_cache,
     compute_segment_acceleration,
     draw_ai_lines,
     draw_lp_segment,
@@ -38,8 +40,10 @@ from track_viewer.rendering.primitives.mapping import (
 __all__ = [
     "DLONG_TO_FEET",
     "MPH_TO_FEET_PER_SECOND",
+    "AiLineCache",
     "Point2D",
     "Transform",
+    "build_ai_line_cache",
     "centerline_screen_bounds",
     "compute_segment_acceleration",
     "build_boundary_path",
