@@ -382,6 +382,14 @@ class PreviewCoordinator:
             self._state.show_cameras = show
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def camera_selection_enabled(self) -> bool:
+        return self._state.camera_selection_enabled
+
+    def set_camera_selection_enabled(self, enabled: bool) -> None:
+        if self._state.camera_selection_enabled == enabled:
+            return
+        self._state.camera_selection_enabled = enabled
+
     def set_pit_parameters(self, params: PitParameters | None) -> None:
         if params == self._state.pit_params:
             return

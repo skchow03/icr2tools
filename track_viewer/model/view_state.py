@@ -36,6 +36,7 @@ class TrackPreviewViewState:
     ai_acceleration_window: int = 3
     ai_line_width: int = 2
     lp_colors: dict[str, str] = field(default_factory=dict)
+    camera_selection_enabled: bool = False
     flag_radius: float = 0.0
     flag_drawing_enabled: bool = False
     show_radius_raw: bool = False
@@ -105,6 +106,7 @@ class TrackPreviewViewState:
         self.ai_acceleration_window = 3
         self.ai_line_width = 2
         self.lp_colors = {}
+        self.camera_selection_enabled = False
         self.flag_radius = 0.0
         self.flag_drawing_enabled = False
         self.show_radius_raw = False

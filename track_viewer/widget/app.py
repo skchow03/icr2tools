@@ -569,6 +569,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._show_cameras_button.setCheckable(True)
         self._show_cameras_button.setChecked(True)
         self._show_cameras_button.toggled.connect(self._toggle_show_cameras)
+        self._camera_select_button = QtWidgets.QPushButton(
+            "Select camera on track map"
+        )
+        self._camera_select_button.setCheckable(True)
+        self._camera_select_button.setToolTip(
+            "Enable to select cameras directly from the track map."
+        )
+        self._camera_select_button.toggled.connect(self._toggle_camera_selection)
         self._flag_draw_button = QtWidgets.QPushButton("Draw Flag")
         self._flag_draw_button.setCheckable(True)
         self._flag_draw_button.setChecked(self.preview_api.flag_drawing_enabled())
@@ -772,6 +780,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         view_settings_layout.setSpacing(4)
         view_settings_layout.addWidget(view_settings_title)
         view_settings_layout.addWidget(self._show_cameras_button)
+        view_settings_layout.addWidget(self._camera_select_button)
         view_settings_layout.addWidget(self._zoom_points_button)
         view_settings_widget = QtWidgets.QWidget()
         view_settings_widget.setLayout(view_settings_layout)
@@ -1983,6 +1992,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Cameras" if enabled else "Show Cameras"
         self._show_cameras_button.setText(text)
         self.preview_api.set_show_cameras(enabled)
+
+    def _toggle_camera_selection(self, enabled: bool) -> None:
+        if enabled and self._flag_draw_button.isChecked():
+            self._flag_draw_button.setChecked(False)
+        self.preview_api.set_camera_selection_enabled(enabled)
 
     def _toggle_flag_drawing(self, enabled: bool) -> None:
         text = "Stop Drawing Flags" if enabled else "Draw Flag"
