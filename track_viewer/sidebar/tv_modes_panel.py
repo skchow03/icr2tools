@@ -124,7 +124,7 @@ class TvModesPanel(QtWidgets.QWidget):
     @staticmethod
     def _camera_identifier(camera_type: Optional[int], type_index: Optional[int]) -> str:
         if camera_type == 6:
-            type_label = "Panning"
+            type_label = "Pan"
         elif camera_type == 7:
             type_label = "Fixed"
         else:

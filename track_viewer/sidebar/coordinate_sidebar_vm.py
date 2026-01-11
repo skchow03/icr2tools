@@ -149,7 +149,7 @@ class CoordinateSidebarViewModel:
     @staticmethod
     def _format_camera_type(camera_type: int) -> str:
         if camera_type == 6:
-            return "Panning"
+            return "Pan"
         if camera_type == 7:
             return "Fixed"
         return f"type {camera_type}"
