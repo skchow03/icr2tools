@@ -569,10 +569,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._show_cameras_button.setCheckable(True)
         self._show_cameras_button.setChecked(True)
         self._show_cameras_button.toggled.connect(self._toggle_show_cameras)
+        self._flag_draw_button = QtWidgets.QPushButton("Draw Flag")
+        self._flag_draw_button.setCheckable(True)
+        self._flag_draw_button.setChecked(self.preview_api.flag_drawing_enabled())
+        self._flag_draw_button.setToolTip(
+            "Toggle to enable placing flags by clicking the track diagram."
+        )
+        self._flag_draw_button.toggled.connect(self._toggle_flag_drawing)
+        self._toggle_flag_drawing(self._flag_draw_button.isChecked())
         self._flag_radius_input = QtWidgets.QDoubleSpinBox()
         self._flag_radius_input.setRange(0.0, 2147483647.0)
         self._flag_radius_input.setDecimals(2)
-        self._flag_radius_input.setSingleStep(1.0)
+        self._flag_radius_input.setSingleStep(100000.0)
         self._flag_radius_input.setValue(self.preview_api.flag_radius())
         self._flag_radius_input.setFixedWidth(110)
         self._flag_radius_input.setToolTip(
@@ -602,7 +610,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         selected_flag_widget = QtWidgets.QWidget()
         selected_flag_widget.setLayout(selected_flag_layout)
         selected_flag_widget.setToolTip(
-            "Left click to drop/select flags.\nRight click a flag to remove it."
+            "Enable Draw Flag to drop flags.\nLeft click to select flags.\nRight click a flag to remove it."
         )
         lp_sidebar = QtWidgets.QFrame()
         lp_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -743,6 +751,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(track_label)
         controls.addWidget(self._track_list)
         controls.addWidget(selected_flag_widget)
+        controls.addWidget(self._flag_draw_button)
         controls.addWidget(QtWidgets.QLabel("Flag radius"))
         controls.addWidget(self._flag_radius_input)
         controls.addWidget(self._radius_unit_button)
@@ -1974,6 +1983,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Cameras" if enabled else "Show Cameras"
         self._show_cameras_button.setText(text)
         self.preview_api.set_show_cameras(enabled)
+
+    def _toggle_flag_drawing(self, enabled: bool) -> None:
+        text = "Stop Drawing Flags" if enabled else "Draw Flag"
+        self._flag_draw_button.setText(text)
+        self.preview_api.set_flag_drawing_enabled(enabled)
 
     def _toggle_ai_gradient(self, enabled: bool) -> None:
         mode = (

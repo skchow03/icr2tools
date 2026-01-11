@@ -76,6 +76,12 @@ class TrackPreviewApi:
     def set_flag_radius(self, radius: float) -> None:
         self._coordinator.set_flag_radius(radius)
 
+    def flag_drawing_enabled(self) -> bool:
+        return self._coordinator.flag_drawing_enabled()
+
+    def set_flag_drawing_enabled(self, enabled: bool) -> None:
+        self._coordinator.set_flag_drawing_enabled(enabled)
+
     def set_radius_raw_visible(self, enabled: bool) -> None:
         self._coordinator.set_radius_raw_visible(enabled)
 

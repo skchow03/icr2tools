@@ -37,6 +37,7 @@ class TrackPreviewViewState:
     ai_line_width: int = 2
     lp_colors: dict[str, str] = field(default_factory=dict)
     flag_radius: float = 0.0
+    flag_drawing_enabled: bool = False
     show_radius_raw: bool = False
     active_lp_line: str = "center-line"
     selected_lp_line: str | None = None
@@ -105,6 +106,7 @@ class TrackPreviewViewState:
         self.ai_line_width = 2
         self.lp_colors = {}
         self.flag_radius = 0.0
+        self.flag_drawing_enabled = False
         self.show_radius_raw = False
         self.active_lp_line = "center-line"
         self.selected_lp_line = None

@@ -649,4 +649,6 @@ class TrackPreviewMouseController:
         coords = self._state.map_to_track(point, self._model.bounds, size)
         if coords is None:
             return
+        if not self._state.flag_drawing_enabled:
+            return
         self._flag_edit.add_flag(coords)
