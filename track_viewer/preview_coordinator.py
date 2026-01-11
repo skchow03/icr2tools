@@ -235,6 +235,13 @@ class PreviewCoordinator:
             self._state.flag_radius = clamped
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def flag_drawing_enabled(self) -> bool:
+        return self._state.flag_drawing_enabled
+
+    def set_flag_drawing_enabled(self, enabled: bool) -> None:
+        if self._state.flag_drawing_enabled != enabled:
+            self._state.flag_drawing_enabled = enabled
+
     def set_radius_raw_visible(self, enabled: bool) -> None:
         if self._state.show_radius_raw == enabled:
             return
