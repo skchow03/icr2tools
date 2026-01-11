@@ -8,6 +8,7 @@ from PyQt5 import QtCore, QtGui
 
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_utils import color_from_ground_type
+from track_viewer.rendering.geometry_stats import GeometryStats
 from track_viewer.rendering.primitives.mapping import Point2D, Transform, map_point
 
 
@@ -20,6 +21,7 @@ class SurfacePolygon:
 
 def build_surface_cache(
     surface_mesh: Sequence[GroundSurfaceStrip],
+    stats: GeometryStats | None = None,
 ) -> list[SurfacePolygon]:
     """Build track-space surface geometry for reuse."""
 
@@ -32,11 +34,15 @@ def build_surface_cache(
         points = [QtCore.QPointF(x, y) for x, y in strip.points]
         poly = QtGui.QPolygonF(points)
         cache.append(SurfacePolygon(poly, fill, outline))
+    if stats is not None:
+        stats.surface_polygons += len(cache)
+        stats.surface_triangles += len(cache) * 2
     return cache
 
 
 def build_boundary_path(
     edges: Sequence[tuple[Point2D, Point2D]],
+    stats: GeometryStats | None = None,
 ) -> QtGui.QPainterPath:
     """Build a track-space painter path for boundary edges."""
 
@@ -44,10 +50,15 @@ def build_boundary_path(
     for start, end in edges:
         path.moveTo(QtCore.QPointF(start[0], start[1]))
         path.lineTo(QtCore.QPointF(end[0], end[1]))
+    if stats is not None:
+        stats.boundary_segments += len(edges)
     return path
 
 
-def build_centerline_path(sampled_centerline: Sequence[Point2D]) -> QtGui.QPainterPath:
+def build_centerline_path(
+    sampled_centerline: Sequence[Point2D],
+    stats: GeometryStats | None = None,
+) -> QtGui.QPainterPath:
     """Build a track-space painter path for the sampled centerline."""
 
     path = QtGui.QPainterPath()
@@ -57,6 +68,8 @@ def build_centerline_path(sampled_centerline: Sequence[Point2D]) -> QtGui.QPaint
     path.moveTo(QtCore.QPointF(start[0], start[1]))
     for point in sampled_centerline[1:]:
         path.lineTo(QtCore.QPointF(point[0], point[1]))
+    if stats is not None:
+        stats.centerline_segments += max(0, len(sampled_centerline) - 1)
     return path
 
 

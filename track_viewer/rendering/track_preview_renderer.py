@@ -6,6 +6,7 @@ All geometry is in world coordinates until mapped to screen space.
 """
 from __future__ import annotations
 
+import logging
 import math
 from typing import Tuple
 
@@ -23,7 +24,10 @@ from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.model.pit_models import PIT_DLAT_LINE_COLORS, PIT_DLONG_LINE_COLORS
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
+from track_viewer.rendering.geometry_stats import GeometryStats
 from track_viewer.services.camera_service import CameraService
+
+logger = logging.getLogger(__name__)
 
 
 class TrackPreviewRenderer:
@@ -68,6 +72,28 @@ class TrackPreviewRenderer:
             return
 
         transform = self._state.current_transform(self._model.bounds, size)
+        if (
+            transform
+            and logger.isEnabledFor(logging.INFO)
+            and not self._model.geometry_stats_logged
+        ):
+            stats = GeometryStats()
+            self._ensure_surface_cache(stats)
+            self._ensure_boundary_cache(stats)
+            self._ensure_centerline_cache(stats)
+            self._ensure_ai_line_cache(stats)
+            logger.info(
+                "Geometry | surface_polygons=%d surface_triangles=%d "
+                "boundary_segments=%d centerline_segments=%d "
+                "ai_segments=%s total_segments=%d",
+                stats.surface_polygons,
+                stats.surface_triangles,
+                stats.boundary_segments,
+                stats.centerline_segments,
+                stats.ai_line_segments,
+                stats.total_segments(),
+            )
+            self._model.geometry_stats_logged = True
         if transform and self._model.surface_mesh:
             self._ensure_surface_cache()
             painter.save()
@@ -225,31 +251,38 @@ class TrackPreviewRenderer:
         self._ai_line_cache_key = None
 
     def _ensure_surface_cache(self) -> None:
+        self, stats: GeometryStats | None = None
+    ) -> None:
         key = (self._model.track_path, id(self._model.surface_mesh))
         if key == self._surface_cache_key and self._surface_cache:
             return
-        self._surface_cache = rendering.build_surface_cache(self._model.surface_mesh)
+        self._surface_cache = rendering.build_surface_cache(
+            self._model.surface_mesh,
+            stats,
+        )
         self._surface_cache_key = key
 
-    def _ensure_boundary_cache(self) -> None:
+    def _ensure_boundary_cache(self, stats: GeometryStats | None = None) -> None:
         key = (self._model.track_path, id(self._model.boundary_edges))
         if key == self._boundary_cache_key:
             return
         self._boundary_path_cache = rendering.build_boundary_path(
-            self._model.boundary_edges
+            self._model.boundary_edges,
+            stats,
         )
         self._boundary_cache_key = key
 
-    def _ensure_centerline_cache(self) -> None:
+    def _ensure_centerline_cache(self, stats: GeometryStats | None = None) -> None:
         key = (self._model.track_path, id(self._model.sampled_centerline))
         if key == self._centerline_cache_key:
             return
         self._centerline_path_cache = rendering.build_centerline_path(
-            self._model.sampled_centerline
+            self._model.sampled_centerline,
+            stats,
         )
         self._centerline_cache_key = key
 
-    def _ensure_ai_line_cache(self) -> None:
+    def _ensure_ai_line_cache(self, stats: GeometryStats | None = None) -> None:
         key = (
             self._model.track_path,
             self._model.ai_line_cache_generation,
@@ -265,9 +298,11 @@ class TrackPreviewRenderer:
             records = self._model.ai_line_records(lp_name)
             cache = rendering.build_ai_line_cache(
                 records,
+                lp_name,
                 color=self._lp_color(lp_name),
                 gradient=self._state.ai_color_mode,
                 acceleration_window=self._state.ai_acceleration_window,
+                stats=stats,
             )
             if cache is not None:
                 self._ai_line_cache[lp_name] = cache

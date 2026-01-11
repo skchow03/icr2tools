@@ -11,6 +11,7 @@ from typing import Callable, Iterable, Sequence
 
 from PyQt5 import QtCore, QtGui
 
+from track_viewer.rendering.geometry_stats import GeometryStats
 from track_viewer.rendering.primitives.mapping import Point2D, Transform, map_point
 
 MPH_TO_FEET_PER_SECOND = 5280 / 3600
@@ -148,10 +149,12 @@ def _build_gradient_segment_colors(
 
 def build_ai_line_cache(
     records: Sequence[object],
+    lp_name: str,
     *,
     color: str,
     gradient: str = "none",
     acceleration_window: int = 3,
+    stats: GeometryStats | None = None,
 ) -> AiLineCache | None:
     """Create a cached polyline and optional per-segment colors."""
     if not records:
@@ -159,6 +162,8 @@ def build_ai_line_cache(
     polygon = QtGui.QPolygonF(
         [QtCore.QPointF(record.x, record.y) for record in records]
     )
+    if stats is not None:
+        stats.ai_line_segments[lp_name] = max(0, polygon.count() - 1)
     base_color = QtGui.QColor(color)
     segment_colors = _build_gradient_segment_colors(
         records,

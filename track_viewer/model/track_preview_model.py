@@ -57,6 +57,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_tasks: set[AiLineLoadTask] = set()
         self._ai_line_generation = 0
         self._ai_line_cache_generation = 0
+        self.geometry_stats_logged = False
 
     def load_track(self, track_folder: Path) -> None:
         """Load track data and rebuild derived geometry caches."""
@@ -76,6 +77,7 @@ class TrackPreviewModel(QtCore.QObject):
         self.bounds = self._merge_bounds(track_data.surface_bounds, sampled_bounds)
         self.available_lp_files = track_data.available_lp_files
         self.track_path = track_folder
+        self.geometry_stats_logged = False
         self._reset_ai_lines()
         self.visible_lp_files = {
             name for name in self.visible_lp_files if name in self.available_lp_files
