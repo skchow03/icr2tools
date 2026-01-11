@@ -1,4 +1,4 @@
-"""Type 6 parameter editor widget."""
+"""Panning parameter editor widget."""
 from __future__ import annotations
 
 from typing import Callable, Optional, Tuple
@@ -9,12 +9,12 @@ from icr2_core.cam.helpers import CameraPosition, Type6CameraParameters
 
 
 class Type6Editor(QtWidgets.QGroupBox):
-    """Displays and edits Type 6 camera parameters."""
+    """Displays and edits panning camera parameters."""
 
     parametersChanged = QtCore.pyqtSignal()
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        super().__init__("Type 6 parameters", parent)
+        super().__init__("Panning parameters", parent)
         self._track_length: Optional[int] = None
         self._camera_index: Optional[int] = None
         self._camera: Optional[CameraPosition] = None
@@ -199,7 +199,7 @@ class Type6Editor(QtWidgets.QGroupBox):
 
 
 class _Type6ItemDelegate(QtWidgets.QStyledItemDelegate):
-    """Limits editing within the Type 6 parameter table."""
+    """Limits editing within the panning parameter table."""
 
     def __init__(self, editor: Type6Editor) -> None:
         super().__init__(editor)

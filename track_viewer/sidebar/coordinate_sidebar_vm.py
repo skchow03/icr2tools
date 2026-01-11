@@ -63,7 +63,10 @@ class CoordinateSidebarViewModel:
                 status_text="This track does not define any camera positions.",
                 selected_index=None,
             )
-        labels = [f"#{cam.index} (type {cam.camera_type})" for cam in self._cameras]
+        labels = [
+            f"#{cam.index} ({self._format_camera_type(cam.camera_type)})"
+            for cam in self._cameras
+        ]
         return CameraListState(
             labels=labels,
             enabled=True,
@@ -95,17 +98,20 @@ class CoordinateSidebarViewModel:
                 type7_camera=None,
             )
         self._selected_camera_index = index
-        details = [f"Index: {camera.index}", f"Type: {camera.camera_type}"]
+        details = [
+            f"Index: {camera.index}",
+            f"Type: {self._format_camera_type(camera.camera_type)}",
+        ]
         type6_camera = None
         type7_camera = None
 
         if camera.camera_type == 6 and camera.type6 is not None:
-            details.append("Type 6 parameters can be edited below.")
+            details.append("Panning parameters can be edited below.")
             type6_camera = camera
 
         if camera.camera_type == 7 and camera.type7 is not None:
             params = camera.type7
-            details.append("Type 7 parameters:")
+            details.append("Fixed parameters:")
             details.append(
                 "Z-axis rotation: {0}, vertical rotation: {1}, tilt: {2}, zoom: {3}".format(
                     params.z_axis_rotation,
@@ -139,3 +145,11 @@ class CoordinateSidebarViewModel:
         ):
             return self._cameras[index]
         return None
+
+    @staticmethod
+    def _format_camera_type(camera_type: int) -> str:
+        if camera_type == 6:
+            return "Panning"
+        if camera_type == 7:
+            return "Fixed"
+        return f"type {camera_type}"

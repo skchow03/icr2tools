@@ -161,7 +161,7 @@ class CameraController:
             camera_type=6,
             build_camera_params=build_camera_params,
             raw_values_length=9,
-            success_message="Type 6 camera added.",
+            success_message="Panning camera added.",
         )
 
     def add_type7_camera(
@@ -195,7 +195,7 @@ class CameraController:
             camera_type=7,
             build_camera_params=build_camera_params,
             raw_values_length=12,
-            success_message="Type 7 camera added.",
+            success_message="Fixed camera added.",
         )
 
     def renumber(

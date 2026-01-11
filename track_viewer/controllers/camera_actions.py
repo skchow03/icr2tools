@@ -17,10 +17,14 @@ class CameraActions(QtCore.QObject):
         self._preview_api = preview_api
 
     def add_type6_camera(self) -> None:
-        self._emit_result(*self._preview_api.add_type6_camera(), title="Add Type 6 Camera")
+        self._emit_result(
+            *self._preview_api.add_type6_camera(), title="Add Panning Camera"
+        )
 
     def add_type7_camera(self) -> None:
-        self._emit_result(*self._preview_api.add_type7_camera(), title="Add Type 7 Camera")
+        self._emit_result(
+            *self._preview_api.add_type7_camera(), title="Add Fixed Camera"
+        )
 
     def save_cameras(self) -> None:
         self._emit_result(*self._preview_api.save_cameras(), title="Save Cameras")

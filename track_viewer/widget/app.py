@@ -468,8 +468,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_weather_save_button.clicked.connect(
             self._handle_save_track_txt
         )
-        self._add_type6_camera_button = QtWidgets.QPushButton("Add Type 6 Camera")
-        self._add_type7_camera_button = QtWidgets.QPushButton("Add Type 7 Camera")
+        self._add_type6_camera_button = QtWidgets.QPushButton("Add Panning Camera")
+        self._add_type7_camera_button = QtWidgets.QPushButton("Add Fixed Camera")
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
         self._boundary_button.setCheckable(True)
         self._boundary_button.setChecked(True)
@@ -565,10 +565,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
         self._trk_gaps_button.setEnabled(False)
 
-        self._show_cameras_button = QtWidgets.QPushButton("Hide Cameras")
-        self._show_cameras_button.setCheckable(True)
-        self._show_cameras_button.setChecked(True)
-        self._show_cameras_button.toggled.connect(self._toggle_show_cameras)
         self._camera_select_button = QtWidgets.QPushButton(
             "Select camera on track map"
         )
@@ -779,7 +775,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         view_settings_layout.setContentsMargins(0, 0, 0, 0)
         view_settings_layout.setSpacing(4)
         view_settings_layout.addWidget(view_settings_title)
-        view_settings_layout.addWidget(self._show_cameras_button)
         view_settings_layout.addWidget(self._camera_select_button)
         view_settings_layout.addWidget(self._zoom_points_button)
         view_settings_widget = QtWidgets.QWidget()
@@ -1072,6 +1067,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogInfoView),
             "LP",
         )
+        self._camera_tab = camera_sidebar
         tabs.addTab(
             camera_sidebar,
             self.style().standardIcon(QtWidgets.QStyle.SP_DesktopIcon),
@@ -1468,6 +1464,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_tab_changed(self, index: int) -> None:
         widget = self._tabs.widget(index)
         self.preview_api.set_show_weather_compass(widget is self._weather_tab)
+        self.preview_api.set_show_cameras(widget is self._camera_tab)
 
     def _handle_qual_mode_changed(self, index: int) -> None:
         mode = self._qual_mode_field.itemData(index) if index >= 0 else None
@@ -1987,11 +1984,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text = "Hide Zoom Points" if enabled else "Show Zoom Points"
         self._zoom_points_button.setText(text)
         self.preview_api.set_show_zoom_points(enabled)
-
-    def _toggle_show_cameras(self, enabled: bool) -> None:
-        text = "Hide Cameras" if enabled else "Show Cameras"
-        self._show_cameras_button.setText(text)
-        self.preview_api.set_show_cameras(enabled)
 
     def _toggle_camera_selection(self, enabled: bool) -> None:
         if enabled and self._flag_draw_button.isChecked():
