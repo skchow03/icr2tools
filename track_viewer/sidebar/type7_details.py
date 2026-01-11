@@ -1,4 +1,4 @@
-"""Type 7 parameter display and editing widget."""
+"""Fixed parameter display and editing widget."""
 from __future__ import annotations
 
 from typing import Optional
@@ -9,12 +9,12 @@ from icr2_core.cam.helpers import CameraPosition
 
 
 class Type7Details(QtWidgets.QGroupBox):
-    """Displays Type 7 parameters and allows editing of extra fields."""
+    """Displays fixed camera parameters and allows editing of extra fields."""
 
     parametersChanged = QtCore.pyqtSignal()
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        super().__init__("Type 7 parameters", parent)
+        super().__init__("Fixed parameters", parent)
         self._camera: Optional[CameraPosition] = None
         self._controls: dict[str, tuple[QtWidgets.QLineEdit, QtWidgets.QSlider]] = {}
 
