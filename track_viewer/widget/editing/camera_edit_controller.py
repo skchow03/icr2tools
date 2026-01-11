@@ -42,6 +42,18 @@ class CameraEditController:
             self._selection.set_selected_camera(camera_index)
         return True
 
+    def select_camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
+        if not self._state.camera_selection_enabled:
+            return False
+        camera_index = self._selection.camera_at_point(point, size)
+        if camera_index is None:
+            return False
+        if camera_index == self._state.selected_camera:
+            self._selection.emit_selected_camera()
+        else:
+            self._selection.set_selected_camera(camera_index)
+        return True
+
     def update_camera_position(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
         if self._state.dragging_camera_index is None:
             return

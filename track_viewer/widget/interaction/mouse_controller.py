@@ -79,6 +79,8 @@ class TrackPreviewMouseController:
 
     def handle_mouse_press(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
         if event.button() == QtCore.Qt.RightButton and self._model.surface_mesh:
+            if self._camera_edit.handle_camera_press(event.pos(), size):
+                return True
             if self._flag_edit.remove_flag_at_point(event.pos(), size):
                 return True
 
@@ -86,7 +88,7 @@ class TrackPreviewMouseController:
             if self._handle_weather_compass_press(event.pos(), size):
                 return True
             self._callbacks.diagram_clicked()
-            if self._model.surface_mesh and self._camera_edit.handle_camera_press(
+            if self._model.surface_mesh and self._camera_edit.select_camera_at_point(
                 event.pos(), size
             ):
                 return True
@@ -166,6 +168,11 @@ class TrackPreviewMouseController:
                 self._handle_primary_click(event.pos(), size)
             self._update_cursor_position(event.pos(), size)
             return True
+        if event.button() == QtCore.Qt.RightButton:
+            if self._state.dragging_camera_index is not None:
+                self._camera_edit.end_camera_drag()
+                self._update_cursor_position(event.pos(), size)
+                return True
         return False
 
     def _queue_lp_hover_update(
