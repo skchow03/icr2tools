@@ -35,6 +35,33 @@ class CameraEditController:
         if camera_index != self._state.selected_camera:
             self._selection.set_selected_camera(camera_index)
             return True
+        return self._begin_camera_drag(camera_index, point, size)
+
+    def handle_camera_drag_press(
+        self, point: QtCore.QPointF, size: QtCore.QSize
+    ) -> bool:
+        if not self._state.camera_selection_enabled:
+            return False
+        camera_index = self._selection.camera_at_point(point, size)
+        if camera_index is None or camera_index != self._state.selected_camera:
+            return False
+        return self._begin_camera_drag(camera_index, point, size)
+
+    def select_camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
+        if not self._state.camera_selection_enabled:
+            return False
+        camera_index = self._selection.camera_at_point(point, size)
+        if camera_index is None:
+            return False
+        if camera_index == self._state.selected_camera:
+            self._selection.emit_selected_camera()
+        else:
+            self._selection.set_selected_camera(camera_index)
+        return True
+
+    def _begin_camera_drag(
+        self, camera_index: int, point: QtCore.QPointF, size: QtCore.QSize
+    ) -> bool:
         coords = self._state.map_to_track(point, self._model.bounds, size)
         if coords is None:
             return False
@@ -47,18 +74,6 @@ class CameraEditController:
         self._state.is_panning = False
         self._state.dragged_during_press = False
         self._selection.emit_selected_camera()
-        return True
-
-    def select_camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
-        if not self._state.camera_selection_enabled:
-            return False
-        camera_index = self._selection.camera_at_point(point, size)
-        if camera_index is None:
-            return False
-        if camera_index == self._state.selected_camera:
-            self._selection.emit_selected_camera()
-        else:
-            self._selection.set_selected_camera(camera_index)
         return True
 
     def update_camera_position(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:

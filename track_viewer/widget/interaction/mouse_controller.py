@@ -79,7 +79,7 @@ class TrackPreviewMouseController:
 
     def handle_mouse_press(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
         if event.button() == QtCore.Qt.RightButton and self._model.surface_mesh:
-            if self._camera_edit.handle_camera_press(event.pos(), size):
+            if self._camera_edit.handle_camera_drag_press(event.pos(), size):
                 return True
             if self._flag_edit.remove_flag_at_point(event.pos(), size):
                 return True
