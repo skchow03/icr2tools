@@ -627,13 +627,14 @@ class TrackPreviewMouseController:
         transform = self._state.current_transform(self._model.bounds, size)
         if not transform:
             return
-        camera_index = self._selection.camera_at_point(point, size)
-        if camera_index is not None:
-            if camera_index == self._state.selected_camera:
-                self._selection.emit_selected_camera()
-            else:
-                self._selection.set_selected_camera(camera_index)
-            return
+        if self._state.camera_selection_enabled:
+            camera_index = self._selection.camera_at_point(point, size)
+            if camera_index is not None:
+                if camera_index == self._state.selected_camera:
+                    self._selection.emit_selected_camera()
+                else:
+                    self._selection.set_selected_camera(camera_index)
+                return
         flag_index = self._selection.flag_at_point(point, size)
         if flag_index is not None:
             self._selection.set_selected_flag(flag_index)

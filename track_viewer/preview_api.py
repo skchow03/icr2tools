@@ -149,6 +149,12 @@ class TrackPreviewApi:
     def set_show_cameras(self, show: bool) -> None:
         self._coordinator.set_show_cameras(show)
 
+    def camera_selection_enabled(self) -> bool:
+        return self._coordinator.camera_selection_enabled()
+
+    def set_camera_selection_enabled(self, enabled: bool) -> None:
+        self._coordinator.set_camera_selection_enabled(enabled)
+
     def set_pit_parameters(self, params: PitParameters | None) -> None:
         self._coordinator.set_pit_parameters(params)
 

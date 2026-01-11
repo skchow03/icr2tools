@@ -66,9 +66,16 @@ class SelectionController:
         transform = self._state.current_transform(self._model.bounds, size)
         if not transform:
             return None
+        hit_radius = 16.0
         for index, cam in enumerate(self._camera_service.cameras):
             camera_point = rendering.map_point(cam.x, cam.y, transform, size.height())
-            if (camera_point - point).manhattanLength() <= 10:
+            if (
+                math.hypot(
+                    camera_point.x() - point.x(),
+                    camera_point.y() - point.y(),
+                )
+                <= hit_radius
+            ):
                 return index
         return None
 

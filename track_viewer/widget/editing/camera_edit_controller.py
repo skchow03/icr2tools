@@ -27,6 +27,8 @@ class CameraEditController:
         self._callbacks = callbacks
 
     def handle_camera_press(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
+        if not self._state.camera_selection_enabled:
+            return False
         camera_index = self._selection.camera_at_point(point, size)
         if camera_index is None:
             return False
