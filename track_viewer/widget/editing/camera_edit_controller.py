@@ -32,14 +32,21 @@ class CameraEditController:
         camera_index = self._selection.camera_at_point(point, size)
         if camera_index is None:
             return False
+        if camera_index != self._state.selected_camera:
+            self._selection.set_selected_camera(camera_index)
+            return True
+        coords = self._state.map_to_track(point, self._model.bounds, size)
+        if coords is None:
+            return False
+        if camera_index < 0 or camera_index >= len(self._camera_service.cameras):
+            return False
+        cam = self._camera_service.cameras[camera_index]
         self._state.dragging_camera_index = camera_index
         self._state.camera_dragged = False
+        self._state.camera_drag_offset = (cam.x - coords[0], cam.y - coords[1])
         self._state.is_panning = False
         self._state.dragged_during_press = False
-        if camera_index == self._state.selected_camera:
-            self._selection.emit_selected_camera()
-        else:
-            self._selection.set_selected_camera(camera_index)
+        self._selection.emit_selected_camera()
         return True
 
     def select_camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
@@ -64,8 +71,9 @@ class CameraEditController:
         if index < 0 or index >= len(self._camera_service.cameras):
             return
         cam = self._camera_service.cameras[index]
-        new_x = int(round(coords[0]))
-        new_y = int(round(coords[1]))
+        offset = self._state.camera_drag_offset or (0.0, 0.0)
+        new_x = int(round(coords[0] + offset[0]))
+        new_y = int(round(coords[1] + offset[1]))
         if new_x == cam.x and new_y == cam.y:
             return
         cam.x = new_x
@@ -77,6 +85,7 @@ class CameraEditController:
     def end_camera_drag(self) -> None:
         self._state.dragging_camera_index = None
         self._state.camera_dragged = False
+        self._state.camera_drag_offset = None
 
     def add_type6_camera(self) -> tuple[bool, str, int | None]:
         return self._camera_service.add_type6_camera(

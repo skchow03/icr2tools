@@ -62,6 +62,7 @@ class TrackPreviewViewState:
     dragged_during_press: bool = False
     dragging_camera_index: int | None = None
     camera_dragged: bool = False
+    camera_drag_offset: Tuple[float, float] | None = None
     dragging_flag_index: int | None = None
     flags: List[Tuple[float, float]] = field(default_factory=list)
     selected_flag: int | None = None
@@ -130,6 +131,7 @@ class TrackPreviewViewState:
         self.dragged_during_press = False
         self.dragging_camera_index = None
         self.camera_dragged = False
+        self.camera_drag_offset = None
         self.dragging_flag_index = None
         self.flags = []
         self.selected_flag = None
