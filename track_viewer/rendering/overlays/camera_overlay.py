@@ -54,9 +54,9 @@ def _draw_camera_symbol(
     painter.save()
     painter.translate(center)
 
-    pen_color = base_color if not selected else QtGui.QColor("#ff4081")
+    pen_color = QtGui.QColor("#ffeb3b") if selected else base_color
     pen = QtGui.QPen(pen_color)
-    pen.setWidth(2 if selected else 1)
+    pen.setWidth(3 if selected else 1)
     pen.setJoinStyle(QtCore.Qt.RoundJoin)
     painter.setPen(pen)
     painter.setBrush(QtGui.QBrush(base_color))
@@ -88,8 +88,8 @@ def draw_camera_positions(
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     type_colors = {
         2: QtGui.QColor("#ffeb3b"),
-        6: QtGui.QColor("#ff9800"),
-        7: QtGui.QColor("#4dd0e1"),
+        6: QtGui.QColor("#f44336"),
+        7: QtGui.QColor("#2196f3"),
     }
     for index, cam in enumerate(cameras):
         point = map_point(cam.x, cam.y, transform, viewport_height)
