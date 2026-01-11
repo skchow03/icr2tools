@@ -1464,7 +1464,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_tab_changed(self, index: int) -> None:
         widget = self._tabs.widget(index)
         self.preview_api.set_show_weather_compass(widget is self._weather_tab)
-        self.preview_api.set_show_cameras(widget is self._camera_tab)
+        show_cameras = widget is self._camera_tab
+        self.preview_api.set_show_cameras(show_cameras)
+        self.preview_api.set_camera_selection_enabled(show_cameras)
 
     def _handle_qual_mode_changed(self, index: int) -> None:
         mode = self._qual_mode_field.itemData(index) if index >= 0 else None
