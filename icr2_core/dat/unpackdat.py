@@ -130,19 +130,27 @@ def _read_dat_entries(f, dat_file_path: str | None = None):
         file_length = struct.unpack("<L", f.read(4))[0]
         f.read(4)
 
-        raw_name_bytes = b"".join(struct.unpack("c", f.read(1))[0] for _ in range(13))
+        raw_name_bytes = f.read(13)
+        name_prefix = raw_name_bytes.split(b"\x00", 1)[0]
+        if any(byte > 0x7F for byte in raw_name_bytes):
+            logger.warning(
+                "Non-ASCII bytes in DAT entry name: dat=%s entry=%s offset=0x%X raw=%s",
+                dat_file_path or "<stream>",
+                entry_index,
+                f.tell() - 13,
+                raw_name_bytes.hex(),
+            )
         try:
-            name_text = raw_name_bytes.decode("ascii")
-        except UnicodeDecodeError as exc:
-            logger.exception(
+            file_name = name_prefix.decode("ascii")
+        except UnicodeDecodeError:
+            logger.warning(
                 "Failed to decode DAT entry name as ASCII: dat=%s entry=%s offset=0x%X raw=%s",
                 dat_file_path or "<stream>",
                 entry_index,
                 f.tell() - 13,
                 raw_name_bytes.hex(),
             )
-            raise
-        file_name = "".join(ch for ch in name_text if ch != "\x00")
+            file_name = name_prefix.decode("ascii", errors="ignore")
 
         file_offset = struct.unpack("<L", f.read(4))[0]
         file_entries.append((file_name, file_offset, file_length))
