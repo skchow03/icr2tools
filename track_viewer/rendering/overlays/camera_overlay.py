@@ -112,6 +112,7 @@ def draw_camera_positions(
     painter: QtGui.QPainter,
     cameras: Sequence[CameraPosition],
     selected_camera: int | None,
+    allowed_indices: set[int] | None,
     transform: Transform,
     viewport_height: int,
 ) -> None:
@@ -124,6 +125,8 @@ def draw_camera_positions(
         7: QtGui.QColor("#2196f3"),
     }
     for index, cam in enumerate(cameras):
+        if allowed_indices is not None and index not in allowed_indices:
+            continue
         point = map_point(cam.x, cam.y, transform, viewport_height)
         color = type_colors.get(cam.camera_type, QtGui.QColor("#ffffff"))
         if cam.camera_type == 7 and cam.type7 is not None:

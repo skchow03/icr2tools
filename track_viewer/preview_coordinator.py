@@ -382,6 +382,17 @@ class PreviewCoordinator:
             self._state.show_cameras = show
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def set_show_cameras_current_tv_only(self, show: bool) -> None:
+        if self._state.show_cameras_current_tv_only != show:
+            self._state.show_cameras_current_tv_only = show
+            self._handle_intent(PreviewIntent.CAMERA_CHANGED)
+
+    def set_current_tv_mode_index(self, index: int) -> None:
+        clamped = max(0, int(index))
+        if self._state.current_tv_mode_index != clamped:
+            self._state.current_tv_mode_index = clamped
+            self._handle_intent(PreviewIntent.CAMERA_CHANGED)
+
     def camera_selection_enabled(self) -> bool:
         return self._state.camera_selection_enabled
 

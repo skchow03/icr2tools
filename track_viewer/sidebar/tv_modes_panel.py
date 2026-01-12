@@ -16,6 +16,7 @@ class TvModesPanel(QtWidgets.QWidget):
     cameraSelected = QtCore.pyqtSignal(object)
     dlongsUpdated = QtCore.pyqtSignal(int, object, object)
     modeCountChanged = QtCore.pyqtSignal(int)
+    viewChanged = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -30,6 +31,7 @@ class TvModesPanel(QtWidgets.QWidget):
         self._tv_tabs = QtWidgets.QTabWidget()
         self._tv_tabs.setTabBarAutoHide(True)
         self._tv_tabs.setVisible(False)
+        self._tv_tabs.currentChanged.connect(self._handle_view_changed)
         self._tv_trees: List[QtWidgets.QTreeWidget] = []
         self._tv_tree_views: Dict[QtWidgets.QTreeWidget, int] = {}
         self._tv_tree_items: Dict[QtWidgets.QTreeWidget, List[QtWidgets.QTreeWidgetItem]] = {}
@@ -113,6 +115,9 @@ class TvModesPanel(QtWidgets.QWidget):
             self._tv_tree_items[tree] = items
             tree.itemChanged.connect(self._handle_tv_item_changed)
         self._tv_tabs.setCurrentIndex(0)
+
+    def _handle_view_changed(self, index: int) -> None:
+        self.viewChanged.emit(index)
 
     def _camera_from_index(self, camera_index: Optional[int]) -> Optional[CameraPosition]:
         if camera_index is None:

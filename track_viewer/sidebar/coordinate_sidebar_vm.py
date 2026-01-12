@@ -32,6 +32,9 @@ class CoordinateSidebarViewModel:
         self._camera_views: list[CameraViewListing] = []
         self._selected_camera_index: int | None = None
         self._track_length: int | None = None
+        self._show_current_tv_only = False
+        self._current_tv_mode_index = 0
+        self._visible_camera_indices: list[int] = []
 
     @property
     def cameras(self) -> list[CameraPosition]:
@@ -56,28 +59,23 @@ class CoordinateSidebarViewModel:
         self._cameras = list(cameras)
         self._camera_views = list(views)
         self._selected_camera_index = None
-        if not self._cameras:
-            return CameraListState(
-                labels=["(No cameras found)"],
-                enabled=False,
-                status_text="This track does not define any camera positions.",
-                selected_index=None,
-            )
-        labels = [
-            f"#{cam.index} ({self._format_camera_type(cam.camera_type)})"
-            for cam in self._cameras
-        ]
-        return CameraListState(
-            labels=labels,
-            enabled=True,
-            status_text="Select a camera to inspect.",
-            selected_index=None,
-        )
+        return self._build_camera_list_state()
+
+    def set_camera_filter(
+        self, show_current_tv_only: bool | None = None, tv_mode_index: int | None = None
+    ) -> CameraListState:
+        if show_current_tv_only is not None:
+            self._show_current_tv_only = bool(show_current_tv_only)
+        if tv_mode_index is not None:
+            self._current_tv_mode_index = max(0, int(tv_mode_index))
+        return self._build_camera_list_state()
 
     def resolve_camera_selection(self, index: int) -> int | None:
-        if not self._cameras or index < 0 or index >= len(self._cameras):
+        if not self._visible_camera_indices:
             return None
-        return index
+        if index < 0 or index >= len(self._visible_camera_indices):
+            return None
+        return self._visible_camera_indices[index]
 
     def camera_for_index(self, index: int | None) -> CameraPosition | None:
         if index is None:
@@ -145,6 +143,55 @@ class CoordinateSidebarViewModel:
         ):
             return self._cameras[index]
         return None
+
+    def list_index_for_camera(self, camera_index: int | None) -> int | None:
+        if camera_index is None:
+            return None
+        try:
+            return self._visible_camera_indices.index(camera_index)
+        except ValueError:
+            return None
+
+    def _build_camera_list_state(self) -> CameraListState:
+        if not self._cameras:
+            self._visible_camera_indices = []
+            return CameraListState(
+                labels=["(No cameras found)"],
+                enabled=False,
+                status_text="This track does not define any camera positions.",
+                selected_index=None,
+            )
+        self._visible_camera_indices = self._filtered_camera_indices()
+        if not self._visible_camera_indices:
+            return CameraListState(
+                labels=["(No cameras in current TV mode)"],
+                enabled=False,
+                status_text="No cameras are assigned to the selected TV mode.",
+                selected_index=None,
+            )
+        labels = [
+            f"#{self._cameras[index].index} ({self._format_camera_type(self._cameras[index].camera_type)})"
+            for index in self._visible_camera_indices
+        ]
+        selected_index = self.list_index_for_camera(self._selected_camera_index)
+        return CameraListState(
+            labels=labels,
+            enabled=True,
+            status_text="Select a camera to inspect.",
+            selected_index=selected_index,
+        )
+
+    def _filtered_camera_indices(self) -> list[int]:
+        if not self._show_current_tv_only:
+            return list(range(len(self._cameras)))
+        if (
+            self._current_tv_mode_index < 0
+            or self._current_tv_mode_index >= len(self._camera_views)
+        ):
+            return []
+        view = self._camera_views[self._current_tv_mode_index]
+        visible = {entry.camera_index for entry in view.entries}
+        return [index for index in range(len(self._cameras)) if index in visible]
 
     @staticmethod
     def _format_camera_type(camera_type: int) -> str:

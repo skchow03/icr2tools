@@ -67,7 +67,14 @@ class SelectionController:
         if not transform:
             return None
         hit_radius = 16.0
+        allowed_indices = None
+        if self._state.show_cameras_current_tv_only:
+            allowed_indices = self._camera_service.camera_indices_for_view(
+                self._state.current_tv_mode_index
+            )
         for index, cam in enumerate(self._camera_service.cameras):
+            if allowed_indices is not None and index not in allowed_indices:
+                continue
             camera_point = rendering.map_point(cam.x, cam.y, transform, size.height())
             if (
                 math.hypot(

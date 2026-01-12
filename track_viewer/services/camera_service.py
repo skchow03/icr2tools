@@ -51,6 +51,14 @@ class CameraService:
     def archived_camera_views(self) -> list[CameraViewListing]:
         return self._archived_camera_views
 
+    def camera_indices_for_view(self, view_index: int | None) -> set[int]:
+        if view_index is None:
+            return set()
+        if view_index < 0 or view_index >= len(self._camera_views):
+            return set()
+        view = self._camera_views[view_index]
+        return {entry.camera_index for entry in view.entries}
+
     @property
     def tv_mode_count(self) -> int:
         return self._tv_mode_count

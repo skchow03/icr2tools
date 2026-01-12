@@ -22,6 +22,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
     cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
     type6ParametersChanged = QtCore.pyqtSignal()
     tvModeCountChanged = QtCore.pyqtSignal(int)
+    tvModeViewChanged = QtCore.pyqtSignal(int)
+    showCurrentTvOnlyChanged = QtCore.pyqtSignal(bool)
 
     def __init__(self, view_model: CoordinateSidebarViewModel | None = None) -> None:
         super().__init__()
@@ -34,6 +36,12 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._camera_list = QtWidgets.QComboBox()
         self._camera_list.setMinimumWidth(160)
         self._camera_list.currentIndexChanged.connect(self._on_camera_selected)
+        self._current_tv_only_checkbox = QtWidgets.QCheckBox(
+            "Show cameras for current TV mode only"
+        )
+        self._current_tv_only_checkbox.stateChanged.connect(
+            self._handle_show_current_tv_only_changed
+        )
         self._tv_panel = TvModesPanel()
         self._camera_table = CameraCoordinateTable()
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
@@ -47,6 +55,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._tv_panel.cameraSelected.connect(self.cameraSelectionChanged)
         self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
         self._tv_panel.modeCountChanged.connect(self.tvModeCountChanged)
+        self._tv_panel.viewChanged.connect(self._handle_tv_mode_view_changed)
         self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
         self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
         self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
@@ -58,6 +67,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         camera_title.setStyleSheet("font-weight: bold")
         layout.addWidget(camera_title)
         layout.addWidget(self._camera_list)
+        layout.addWidget(self._current_tv_only_checkbox)
 
         layout.addWidget(self._tv_panel)
 
@@ -101,21 +111,12 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._type6_editor.set_camera(None, None)
         self._type7_details.set_camera(None, None)
         self._tv_panel.set_views(views, cameras)
-        self._camera_list.blockSignals(True)
-        self._camera_list.clear()
-        for label in list_state.labels:
-            self._camera_list.addItem(label)
-        self._camera_list.setEnabled(list_state.enabled)
-        self._camera_details.setText(list_state.status_text)
-        self._camera_list.setCurrentIndex(-1)
-        self._camera_list.blockSignals(False)
+        self._apply_camera_list_state(list_state)
 
     def select_camera(self, index: int | None) -> None:
         self._camera_list.blockSignals(True)
-        if index is None:
-            self._camera_list.setCurrentIndex(-1)
-        else:
-            self._camera_list.setCurrentIndex(index)
+        list_index = self._view_model.list_index_for_camera(index)
+        self._camera_list.setCurrentIndex(list_index if list_index is not None else -1)
         self._camera_list.blockSignals(False)
         self._tv_panel.select_camera(index)
         if index is None:
@@ -138,7 +139,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._camera_table.set_camera(state.selected_index, camera)
         self._type6_editor.set_camera(state.selected_index, state.type6_camera)
         self._type7_details.set_camera(state.selected_index, state.type7_camera)
-        if index is not None and self._camera_list.currentIndex() != index:
+        list_index = self._view_model.list_index_for_camera(index)
+        if self._camera_list.currentIndex() != (list_index if list_index is not None else -1):
             self.select_camera(index)
 
     def _handle_camera_position_updated(
@@ -158,6 +160,30 @@ class CoordinateSidebar(QtWidgets.QFrame):
             self.cameraSelectionChanged.emit(None)
             return
         self.cameraSelectionChanged.emit(resolved)
+
+    def _handle_tv_mode_view_changed(self, index: int) -> None:
+        list_state = self._view_model.set_camera_filter(tv_mode_index=index)
+        self._apply_camera_list_state(list_state)
+        self.tvModeViewChanged.emit(index)
+
+    def _handle_show_current_tv_only_changed(self, state: int) -> None:
+        enabled = state == QtCore.Qt.Checked
+        list_state = self._view_model.set_camera_filter(show_current_tv_only=enabled)
+        self._apply_camera_list_state(list_state)
+        self.showCurrentTvOnlyChanged.emit(enabled)
+
+    def _apply_camera_list_state(self, list_state) -> None:
+        self._camera_list.blockSignals(True)
+        self._camera_list.clear()
+        for label in list_state.labels:
+            self._camera_list.addItem(label)
+        self._camera_list.setEnabled(list_state.enabled)
+        self._camera_details.setText(list_state.status_text)
+        if list_state.selected_index is None:
+            self._camera_list.setCurrentIndex(-1)
+        else:
+            self._camera_list.setCurrentIndex(list_state.selected_index)
+        self._camera_list.blockSignals(False)
 
     def _create_readonly_field(self, placeholder: str) -> QtWidgets.QLineEdit:
         field = QtWidgets.QLineEdit()
