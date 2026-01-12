@@ -107,6 +107,11 @@ class CameraEditController:
             self._state.selected_camera, self._model.track_length
         )
 
+    def add_type2_camera(self) -> tuple[bool, str, int | None]:
+        return self._camera_service.add_type2_camera(
+            self._state.selected_camera, self._model.track_length
+        )
+
     def add_type7_camera(self) -> tuple[bool, str, int | None]:
         return self._camera_service.add_type7_camera(
             self._state.selected_camera, self._model.track_length

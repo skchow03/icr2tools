@@ -483,6 +483,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._handle_save_track_txt
         )
         self._add_type6_camera_button = QtWidgets.QPushButton("Add Panning Camera")
+        self._add_type2_camera_button = QtWidgets.QPushButton(
+            "Add Alternate Panning Camera"
+        )
         self._add_type7_camera_button = QtWidgets.QPushButton("Add Fixed Camera")
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
         self._boundary_button.setCheckable(True)
@@ -739,6 +742,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._add_type6_camera_button.clicked.connect(
             self.camera_actions.add_type6_camera
         )
+        self._add_type2_camera_button.clicked.connect(
+            self.camera_actions.add_type2_camera
+        )
         self._add_type7_camera_button.clicked.connect(
             self.camera_actions.add_type7_camera
         )
@@ -790,6 +796,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addWidget(self._sidebar.type6_editor)
         type_button_layout = QtWidgets.QHBoxLayout()
         type_button_layout.addWidget(self._add_type6_camera_button)
+        type_button_layout.addWidget(self._add_type2_camera_button)
         type_button_layout.addWidget(self._add_type7_camera_button)
         right_sidebar_layout.addLayout(type_button_layout)
         right_sidebar_layout.addWidget(self._save_cameras_button)

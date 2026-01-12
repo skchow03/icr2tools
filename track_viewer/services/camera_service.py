@@ -128,6 +128,16 @@ class CameraService:
         )
         return result.success, result.message, result.selected_camera
 
+    def add_type2_camera(
+        self, selected_camera: int | None, track_length: float | None
+    ) -> tuple[bool, str, int | None]:
+        """Create a new type 2 camera relative to the selection."""
+
+        result = self._camera_controller.add_type2_camera(
+            self._cameras, self._camera_views, selected_camera, track_length
+        )
+        return result.success, result.message, result.selected_camera
+
     def add_type7_camera(
         self, selected_camera: int | None, track_length: float | None
     ) -> tuple[bool, str, int | None]:

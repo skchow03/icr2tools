@@ -85,7 +85,7 @@ class CameraController:
             next_entry.start_dlong = end_dlong
 
         new_camera_params = build_camera_params(base_camera, start_dlong, end_dlong)
-        if camera_type == 6:
+        if camera_type in {2, 6}:
             new_camera = CameraPosition(
                 camera_type=camera_type,
                 index=0,
@@ -162,6 +162,43 @@ class CameraController:
             build_camera_params=build_camera_params,
             raw_values_length=9,
             success_message="Panning camera added.",
+        )
+
+    def add_type2_camera(
+        self,
+        cameras: List[CameraPosition],
+        camera_views: List[CameraViewListing],
+        selected_camera: int | None,
+        track_length: float | None,
+    ) -> CameraUpdateResult:
+        """Create a type 2 camera using interpolated start/end ranges."""
+
+        def build_camera_params(
+            base_camera: CameraPosition, start_dlong: Optional[int], end_dlong: Optional[int]
+        ) -> Type6CameraParameters:
+            middle_point = self._interpolated_dlong(start_dlong, end_dlong, track_length) or 0
+            base_type6 = base_camera.type6
+            start_zoom = base_type6.start_zoom if base_type6 else 0
+            middle_zoom = base_type6.middle_point_zoom if base_type6 else 0
+            end_zoom = base_type6.end_zoom if base_type6 else 0
+            return Type6CameraParameters(
+                middle_point=middle_point,
+                start_point=start_dlong or 0,
+                start_zoom=start_zoom,
+                middle_point_zoom=middle_zoom,
+                end_point=end_dlong or (start_dlong or 0),
+                end_zoom=end_zoom,
+            )
+
+        return self._add_tv_camera(
+            cameras,
+            camera_views,
+            selected_camera,
+            track_length,
+            camera_type=2,
+            build_camera_params=build_camera_params,
+            raw_values_length=9,
+            success_message="Alternate panning camera added.",
         )
 
     def add_type7_camera(
