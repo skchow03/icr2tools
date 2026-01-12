@@ -6,11 +6,13 @@ and UI concerns; persistence is delegated to services.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import List, Tuple
 
 from PyQt5 import QtCore
 
+from icr2_core.lp.loader import LP_RESOLUTION
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import getxyz
@@ -57,6 +59,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_tasks: set[AiLineLoadTask] = set()
         self._ai_line_generation = 0
         self._ai_line_cache_generation = 0
+        self._manual_lp_overrides: set[str] = set()
 
     def load_track(self, track_folder: Path) -> None:
         """Load track data and rebuild derived geometry caches."""
@@ -89,6 +92,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_tasks.clear()
         self._ai_line_generation += 1
         self._ai_line_cache_generation += 1
+        self._manual_lp_overrides.clear()
 
     def set_visible_lp_files(self, names: list[str] | set[str]) -> bool:
         valid = {name for name in names if name in self.available_lp_files}
@@ -132,6 +136,47 @@ class TrackPreviewModel(QtCore.QObject):
             record.y = y
         self._ai_line_cache_generation += 1
         return True
+
+    def generate_lp_line(
+        self, lp_name: str, speed_mph: float, dlat: float
+    ) -> tuple[bool, str]:
+        """Generate a new LP line at the specified DLAT and speed."""
+        if self.trk is None or not self.centerline or self.track_length is None:
+            return False, "No track loaded to generate LP data."
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to replace."
+        if lp_name not in self.available_lp_files:
+            return False, f"{lp_name} is not available for editing."
+        track_length = float(self.track_length)
+        if track_length <= 0:
+            return False, "Track length is not available."
+        record_count = max(2, math.ceil(track_length / LP_RESOLUTION) + 1)
+        speed_raw = int(round(speed_mph * 5280 / 9))
+        records: list[LpPoint] = []
+        for index in range(record_count):
+            dlong = track_length if index == record_count - 1 else index * LP_RESOLUTION
+            try:
+                x, y, _ = getxyz(self.trk, float(dlong), float(dlat), self.centerline)
+            except Exception as exc:
+                return False, f"Failed to build LP record at DLONG {dlong:.0f}: {exc}"
+            records.append(
+                LpPoint(
+                    x=x,
+                    y=y,
+                    dlong=float(dlong),
+                    dlat=float(dlat),
+                    speed_raw=speed_raw,
+                    speed_mph=float(speed_mph),
+                    lateral_speed=0.0,
+                )
+            )
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._pending_ai_line_loads.discard(lp_name)
+        self._ai_line_cache_generation += 1
+        return True, f"Generated {lp_name} LP line with {record_count} records."
 
     def save_lp_line(self, lp_name: str) -> tuple[bool, str]:
         """Persist the selected AI line back to its LP file."""
@@ -204,6 +249,8 @@ class TrackPreviewModel(QtCore.QObject):
         """Accept loaded LP records if they match the current generation."""
         self._ai_line_tasks.discard(task)
         self._pending_ai_line_loads.discard(lp_name)
+        if lp_name in self._manual_lp_overrides:
+            return
         if generation != self._ai_line_generation:
             return
         if self._ai_lines is None:
