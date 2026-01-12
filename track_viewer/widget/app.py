@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
+from icr2_core.trk.trk_utils import ground_type_name
 from track_viewer.controllers.camera_actions import CameraActions
 from track_viewer.model.camera_models import CameraViewListing
 from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
@@ -319,7 +320,9 @@ class TrkSectionsModel(QtCore.QAbstractTableModel):
                 return str(section.ground_dlat_start[surface_index])
             if offset == 1:
                 return str(section.ground_dlat_end[surface_index])
-            return str(section.ground_type[surface_index])
+            ground_type = section.ground_type[surface_index]
+            name = ground_type_name(ground_type)
+            return name or str(ground_type)
         return None
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
