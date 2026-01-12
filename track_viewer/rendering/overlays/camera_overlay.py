@@ -78,6 +78,8 @@ def _draw_camera_symbol(
 
 
 def _camera_label(camera: CameraPosition) -> str | None:
+    if camera.camera_type == 2:
+        return f"A{camera.index}"
     if camera.camera_type == 7:
         return f"F{camera.index}"
     if camera.camera_type == 6:
@@ -117,7 +119,7 @@ def draw_camera_positions(
         return
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     type_colors = {
-        2: QtGui.QColor("#ffeb3b"),
+        2: QtGui.QColor("#e91e63"),
         6: QtGui.QColor("#f44336"),
         7: QtGui.QColor("#2196f3"),
     }
