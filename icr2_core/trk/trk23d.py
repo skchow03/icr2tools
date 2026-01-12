@@ -139,14 +139,19 @@ def getgrounddlat(trk,sect,subsect,ground):
     return dlat_start + dlat_change
 
 def color_from_ground_type(ground):
-    if ground_type == 46: color = 'lightgray'
-    elif ground_type == 38: color = 'lightgray'
-    elif ground_type == 14: color = 'tan'
-    elif ground_type == 30: color = 'tan'
-    elif ground_type == 54: color = 'white'
-    elif ground_type == 6: color = 'green'
-    elif ground_type == 22: color = 'tan'
-    return color
+    mapping = {
+        (0, 2, 4, 6): "#2e7d32",  # Grass
+        (8, 10, 12, 14): "#d8c091",  # Dry grass
+        (16, 18, 20, 22): "#8d6e63",  # Dirt
+        (24, 26, 28, 30): "#c9a26b",  # Sand
+        (32, 34, 36, 38): "#b0b0b0",  # Concrete
+        (40, 42, 44, 46): "#9e9e9e",  # Asphalt
+        (48, 50, 52, 54): "#ffffff",  # Paint / curbing
+    }
+    for values, color in mapping.items():
+        if ground in values:
+            return color
+    return "#808080"
 
 
 def get_alt(trk, sect, subsect, dlat):

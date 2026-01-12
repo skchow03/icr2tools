@@ -140,15 +140,18 @@ def color_from_ground_type(ground):
     """Return a display colour name for a TRK ground type."""
 
     mapping = {
-        46: "#9e9e9e",  # Asphalt
-        38: "#b0b0b0",  # Concrete
-        14: "#d8c091",  # Dry grass
-        30: "#c9a26b",  # Sand
-        54: "#f4f4f4",  # Paint / curbing
-        6: "#2e7d32",   # Grass
-        22: "#8d6e63",  # Dirt
+        (0, 2, 4, 6): "#2e7d32",  # Grass
+        (8, 10, 12, 14): "#d8c091",  # Dry grass
+        (16, 18, 20, 22): "#8d6e63",  # Dirt
+        (24, 26, 28, 30): "#c9a26b",  # Sand
+        (32, 34, 36, 38): "#b0b0b0",  # Concrete
+        (40, 42, 44, 46): "#9e9e9e",  # Asphalt
+        (48, 50, 52, 54): "#ffffff",  # Paint / curbing
     }
-    return mapping.get(ground, "#808080")
+    for values, color in mapping.items():
+        if ground in values:
+            return color
+    return "#808080"
 
 
 def get_alt(trk, sect, subsect, dlat):
