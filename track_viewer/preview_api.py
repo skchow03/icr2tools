@@ -149,6 +149,12 @@ class TrackPreviewApi:
     def set_show_cameras(self, show: bool) -> None:
         self._coordinator.set_show_cameras(show)
 
+    def set_show_cameras_current_tv_only(self, show: bool) -> None:
+        self._coordinator.set_show_cameras_current_tv_only(show)
+
+    def set_current_tv_mode_index(self, index: int) -> None:
+        self._coordinator.set_current_tv_mode_index(index)
+
     def camera_selection_enabled(self) -> bool:
         return self._coordinator.camera_selection_enabled()
 

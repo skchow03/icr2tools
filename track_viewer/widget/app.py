@@ -716,6 +716,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.tvModeCountChanged.connect(
             self._handle_tv_mode_selection_changed
         )
+        self._sidebar.tvModeViewChanged.connect(
+            self._handle_tv_mode_view_changed
+        )
+        self._sidebar.showCurrentTvOnlyChanged.connect(
+            self._handle_show_current_tv_only_changed
+        )
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
 
@@ -2484,6 +2490,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
         self.preview_api.set_tv_mode_count(mode_count)
+
+    def _handle_tv_mode_view_changed(self, index: int) -> None:
+        self.preview_api.set_current_tv_mode_index(index)
+
+    def _handle_show_current_tv_only_changed(self, enabled: bool) -> None:
+        self.preview_api.set_show_cameras_current_tv_only(enabled)
 
     def _handle_recalculate_lateral_speed(self) -> None:
         lp_name = self.preview_api.active_lp_line()

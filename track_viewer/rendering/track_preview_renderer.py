@@ -140,10 +140,16 @@ class TrackPreviewRenderer:
 
         if transform:
             if self._state.show_cameras:
+                allowed_indices = None
+                if self._state.show_cameras_current_tv_only:
+                    allowed_indices = self._camera_service.camera_indices_for_view(
+                        self._state.current_tv_mode_index
+                    )
                 rendering.draw_camera_positions(
                     painter,
                     self._camera_service.cameras,
                     self._state.selected_camera,
+                    allowed_indices,
                     transform,
                     height,
                 )
@@ -894,7 +900,14 @@ class TrackPreviewRenderer:
         if camera_index < 0 or camera_index >= len(self._camera_service.cameras):
             return []
         ranges: list[tuple[float, float]] = []
-        for view in self._camera_service.camera_views:
+        if self._state.show_cameras_current_tv_only:
+            view_index = self._state.current_tv_mode_index
+            if view_index < 0 or view_index >= len(self._camera_service.camera_views):
+                return []
+            views = [self._camera_service.camera_views[view_index]]
+        else:
+            views = self._camera_service.camera_views
+        for view in views:
             for entry in view.entries:
                 if entry.camera_index != camera_index:
                     continue

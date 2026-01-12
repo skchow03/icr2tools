@@ -30,6 +30,7 @@ class TrackPreviewViewState:
     show_center_line: bool = True
     show_boundaries: bool = True
     show_cameras: bool = True
+    show_cameras_current_tv_only: bool = False
     show_zoom_points: bool = False
     show_section_dividers: bool = False
     ai_color_mode: str = "none"
@@ -67,6 +68,7 @@ class TrackPreviewViewState:
     flags: List[Tuple[float, float]] = field(default_factory=list)
     selected_flag: int | None = None
     selected_camera: int | None = None
+    current_tv_mode_index: int = 0
     nearest_projection_point: Tuple[float, float] | None = None
     nearest_projection_dlong: float | None = None
     nearest_projection_dlat: float | None = None
@@ -101,6 +103,7 @@ class TrackPreviewViewState:
         self.show_center_line = True
         self.show_boundaries = True
         self.show_cameras = True
+        self.show_cameras_current_tv_only = False
         self.show_zoom_points = False
         self.show_section_dividers = False
         self.ai_color_mode = "none"
@@ -136,6 +139,7 @@ class TrackPreviewViewState:
         self.flags = []
         self.selected_flag = None
         self.selected_camera = None
+        self.current_tv_mode_index = 0
         self.nearest_projection_point = None
         self.nearest_projection_dlong = None
         self.nearest_projection_dlat = None
