@@ -68,6 +68,7 @@ class TrackTxtResult:
 
     lines: list[TrackTxtLine]
     pit: PitParameters | None
+    pit2: PitParameters | None
     metadata: "TrackTxtMetadata"
     txt_path: Path
     exists: bool
@@ -209,9 +210,12 @@ class TrackIOService:
         track_name = track_folder.name
         txt_path = track_folder / f"{track_name}.txt"
         if not txt_path.exists():
-            return TrackTxtResult([], None, TrackTxtMetadata(), txt_path, False)
+            return TrackTxtResult(
+                [], None, None, TrackTxtMetadata(), txt_path, False
+            )
         lines: list[TrackTxtLine] = []
         pit: PitParameters | None = None
+        pit2: PitParameters | None = None
         metadata = TrackTxtMetadata()
         for raw_line in txt_path.read_text(encoding="utf-8", errors="ignore").splitlines():
             stripped = raw_line.strip()
@@ -228,6 +232,10 @@ class TrackIOService:
                 parsed = self._parse_pit_values(values)
                 if parsed is not None:
                     pit = parsed
+            elif keyword_upper == "PIT2" and pit2 is None:
+                parsed = self._parse_pit_values(values)
+                if parsed is not None:
+                    pit2 = parsed
             elif keyword_upper == "TNAME" and metadata.tname is None and values:
                 metadata.tname = " ".join(values)
             elif keyword_upper == "SNAME" and metadata.sname is None and values:
@@ -348,7 +356,7 @@ class TrackIOService:
                 parsed = self._parse_n_values(values, 3)
                 if parsed is not None:
                     metadata.sctns = parsed
-        return TrackTxtResult(lines, pit, metadata, txt_path, True)
+        return TrackTxtResult(lines, pit, pit2, metadata, txt_path, True)
 
     def save_cameras(
         self,
@@ -382,14 +390,26 @@ class TrackIOService:
         self,
         track_folder: Path,
         pit_params: PitParameters | None,
+        pit2_params: PitParameters | None,
         metadata: TrackTxtMetadata | None,
         lines: Sequence[TrackTxtLine],
     ) -> str:
         track_name = track_folder.name
         txt_path = track_folder / f"{track_name}.txt"
         self._backup_file(txt_path)
-        pit_line = self._format_pit_line(pit_params) if pit_params is not None else None
-        replacements = self._build_track_txt_replacements(pit_line, metadata)
+        pit_line = (
+            self._format_pit_line("PIT", pit_params)
+            if pit_params is not None
+            else None
+        )
+        pit2_line = (
+            self._format_pit_line("PIT2", pit2_params)
+            if pit2_params is not None
+            else None
+        )
+        replacements = self._build_track_txt_replacements(
+            pit_line, pit2_line, metadata
+        )
         output_lines: list[str] = []
         written = set()
         for line in lines:
@@ -624,20 +644,24 @@ class TrackIOService:
         padded = keyword.ljust(5)
         return f"{padded} {value}"
 
-    def _format_pit_line(self, pit_params: PitParameters) -> str:
+    def _format_pit_line(
+        self, keyword: str, pit_params: PitParameters
+    ) -> str:
         formatted_values = [
             self._format_track_txt_value(value) for value in pit_params.values()
         ]
-        return self._format_track_txt_line("PIT", " ".join(formatted_values))
+        return self._format_track_txt_line(keyword, " ".join(formatted_values))
 
     def _build_track_txt_replacements(
         self,
         pit_line: str | None,
+        pit2_line: str | None,
         metadata: TrackTxtMetadata | None,
     ) -> dict[str, str | None]:
         replacements: dict[str, str | None] = {}
         if pit_line is not None:
             replacements["PIT"] = pit_line
+        replacements["PIT2"] = pit2_line
         if metadata is None:
             return replacements
         replacements["TNAME"] = (

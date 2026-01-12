@@ -1,6 +1,7 @@
 """Simple Qt application shell for the standalone track viewer."""
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -357,7 +358,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_shortcut_active = False
         self._sidebar_vm = CoordinateSidebarViewModel()
         self._sidebar = CoordinateSidebar(self._sidebar_vm)
-        self._pit_editor = PitParametersEditor()
+        self._pit_lane_count_combo = QtWidgets.QComboBox()
+        self._pit_lane_count_combo.addItem("1 pit lane", 1)
+        self._pit_lane_count_combo.addItem("2 pit lanes", 2)
+        self._pit_lane_count_combo.setCurrentIndex(0)
+        self._pit_lane_count_combo.currentIndexChanged.connect(
+            self._handle_pit_lane_count_changed
+        )
+        self._pit_tabs = QtWidgets.QTabWidget()
+        self._pit_editors = [PitParametersEditor(), PitParametersEditor()]
+        self._pit_tabs.addTab(self._pit_editors[0], "PIT")
+        self._pit_tabs.currentChanged.connect(self._handle_pit_tab_changed)
         self._pit_status_label = QtWidgets.QLabel(
             "Select a track to edit pit parameters."
         )
@@ -435,19 +446,22 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._pacea_right_dlat_field = self._create_int_field("–")
         self._pacea_left_dlat_field = self._create_int_field("–")
         self._pacea_unknown_field = self._create_int_field("–")
-        self._pit_editor.parametersChanged.connect(self._handle_pit_params_changed)
-        self._pit_editor.pitVisibilityChanged.connect(
-            self._handle_pit_visibility_changed
-        )
-        self._pit_editor.pitStallCenterVisibilityChanged.connect(
-            self._handle_pit_stall_center_visibility_changed
-        )
-        self._pit_editor.pitWallVisibilityChanged.connect(
-            self._handle_pit_wall_visibility_changed
-        )
-        self._pit_editor.pitStallCarsVisibilityChanged.connect(
-            self._handle_pit_stall_cars_visibility_changed
-        )
+        for index, editor in enumerate(self._pit_editors):
+            editor.parametersChanged.connect(
+                partial(self._handle_pit_params_changed, index)
+            )
+            editor.pitVisibilityChanged.connect(
+                partial(self._handle_pit_visibility_changed, index)
+            )
+            editor.pitStallCenterVisibilityChanged.connect(
+                partial(self._handle_pit_stall_center_visibility_changed, index)
+            )
+            editor.pitWallVisibilityChanged.connect(
+                partial(self._handle_pit_wall_visibility_changed, index)
+            )
+            editor.pitStallCarsVisibilityChanged.connect(
+                partial(self._handle_pit_stall_cars_visibility_changed, index)
+            )
         self._pit_save_button = QtWidgets.QPushButton("Save PIT")
         self._pit_save_button.setEnabled(False)
         self._pit_save_button.clicked.connect(self._handle_save_pit_params)
@@ -790,7 +804,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         pit_title.setStyleSheet("font-weight: bold")
         pit_layout.addWidget(pit_title)
         pit_layout.addWidget(self._pit_status_label)
-        pit_layout.addWidget(self._pit_editor)
+        pit_lane_layout = QtWidgets.QHBoxLayout()
+        pit_lane_layout.addWidget(QtWidgets.QLabel("Pit lanes"))
+        pit_lane_layout.addWidget(self._pit_lane_count_combo)
+        pit_lane_layout.addStretch(1)
+        pit_layout.addLayout(pit_lane_layout)
+        pit_layout.addWidget(self._pit_tabs)
         pit_layout.addStretch(1)
         pit_layout.addWidget(self._pit_save_button)
         pit_sidebar.setLayout(pit_layout)
@@ -1527,11 +1546,45 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.controller.set_selected_track(folder)
         self._load_track_txt_data(folder)
 
+    def _pit_lane_count(self) -> int:
+        count = self._pit_lane_count_combo.currentData()
+        return int(count) if count is not None else 1
+
+    def _set_pit_lane_count(self, count: int) -> None:
+        index = self._pit_lane_count_combo.findData(count)
+        if index >= 0:
+            with QtCore.QSignalBlocker(self._pit_lane_count_combo):
+                self._pit_lane_count_combo.setCurrentIndex(index)
+        self._update_pit_tabs(count)
+
+    def _active_pit_lane_index(self) -> int:
+        return max(0, self._pit_tabs.currentIndex())
+
+    def _update_pit_tabs(self, count: int) -> None:
+        pit2_index = self._pit_tabs.indexOf(self._pit_editors[1])
+        if count == 2 and pit2_index == -1:
+            self._pit_tabs.addTab(self._pit_editors[1], "PIT2")
+        elif count == 1 and pit2_index != -1:
+            self._pit_tabs.removeTab(pit2_index)
+            self._pit_tabs.setCurrentIndex(0)
+
+    def _apply_active_pit_editor_to_preview(self) -> None:
+        editor = self._pit_editors[self._active_pit_lane_index()]
+        self.preview_api.set_pit_parameters(editor.parameters())
+        self.preview_api.set_visible_pit_indices(editor.pit_visible_indices())
+        self.preview_api.set_show_pit_stall_center_dlat(
+            editor.pit_stall_center_visible()
+        )
+        self.preview_api.set_show_pit_wall_dlat(editor.pit_wall_visible())
+        self.preview_api.set_show_pit_stall_cars(editor.pit_stall_cars_visible())
+
     def _load_track_txt_data(self, folder: Path | None) -> None:
         self._current_track_folder = folder if isinstance(folder, Path) else None
         if self._current_track_folder is None:
             self._track_txt_result = None
-            self._pit_editor.set_parameters(None)
+            for editor in self._pit_editors:
+                editor.set_parameters(None)
+            self._set_pit_lane_count(1)
             self._pit_status_label.setText("Select a track to edit pit parameters.")
             status_text = "Select a track to edit track.txt parameters."
             self._track_txt_status_label.setText(status_text)
@@ -1548,39 +1601,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         result = self._io_service.load_track_txt(self._current_track_folder)
         self._track_txt_result = result
         self._update_track_txt_fields(result)
-        if result.pit is None:
-            self._pit_editor.set_parameters(PitParameters.empty())
-            if result.exists:
-                self._pit_status_label.setText(
-                    (
-                        f"No PIT line found in {result.txt_path.name}. "
-                        "Saving will append one."
-                    )
+        lane_count = 2 if result.pit2 is not None else 1
+        self._set_pit_lane_count(lane_count)
+        self._pit_editors[0].set_parameters(result.pit or PitParameters.empty())
+        self._pit_editors[1].set_parameters(result.pit2 or PitParameters.empty())
+        if not result.exists:
+            self._pit_status_label.setText(
+                f"No {result.txt_path.name} found. Saving will create it."
+            )
+        elif result.pit is None:
+            self._pit_status_label.setText(
+                (
+                    f"No PIT line found in {result.txt_path.name}. "
+                    "Saving will append one."
                 )
-            else:
-                self._pit_status_label.setText(
-                    f"No {result.txt_path.name} found. Saving will create it."
+            )
+        elif lane_count == 2 and result.pit2 is None:
+            self._pit_status_label.setText(
+                (
+                    f"No PIT2 line found in {result.txt_path.name}. "
+                    "Saving will append one."
                 )
+            )
         else:
-            self._pit_editor.set_parameters(result.pit)
             self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
         self._pit_save_button.setEnabled(True)
         self._track_txt_save_button.setEnabled(True)
         self._track_txt_tire_save_button.setEnabled(True)
         self._track_txt_weather_save_button.setEnabled(True)
-        self.preview_api.set_pit_parameters(self._pit_editor.parameters())
-        self.preview_api.set_visible_pit_indices(
-            self._pit_editor.pit_visible_indices()
-        )
-        self.preview_api.set_show_pit_stall_center_dlat(
-            self._pit_editor.pit_stall_center_visible()
-        )
-        self.preview_api.set_show_pit_wall_dlat(
-            self._pit_editor.pit_wall_visible()
-        )
-        self.preview_api.set_show_pit_stall_cars(
-            self._pit_editor.pit_stall_cars_visible()
-        )
+        self._apply_active_pit_editor_to_preview()
 
     def _handle_save_pit_params(self) -> None:
         if self._current_track_folder is None:
@@ -1588,15 +1637,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self, "Save PIT", "No track is currently loaded."
             )
             return
-        pit_params = self._pit_editor.parameters()
+        pit_params = self._pit_editors[0].parameters()
         if pit_params is None:
             QtWidgets.QMessageBox.warning(
                 self, "Save PIT", "No PIT parameters are available to save."
             )
             return
+        pit2_params = None
+        if self._pit_lane_count() == 2:
+            pit2_params = self._pit_editors[1].parameters()
+            if pit2_params is None:
+                QtWidgets.QMessageBox.warning(
+                    self, "Save PIT", "No PIT2 parameters are available to save."
+                )
+                return
         lines = self._track_txt_result.lines if self._track_txt_result else []
         message = self._io_service.save_track_txt(
-            self._current_track_folder, pit_params, None, lines
+            self._current_track_folder, pit_params, pit2_params, None, lines
         )
         self.statusBar().showMessage(message, 5000)
         self._load_track_txt_data(self._current_track_folder)
@@ -1608,10 +1665,19 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             )
             return
         metadata = self._collect_track_txt_metadata()
-        pit_params = self._pit_editor.parameters()
+        pit_params = self._pit_editors[0].parameters()
+        pit2_params = (
+            self._pit_editors[1].parameters()
+            if self._pit_lane_count() == 2
+            else None
+        )
         lines = self._track_txt_result.lines if self._track_txt_result else []
         message = self._io_service.save_track_txt(
-            self._current_track_folder, pit_params, metadata, lines
+            self._current_track_folder,
+            pit_params,
+            pit2_params,
+            metadata,
+            lines,
         )
         self.statusBar().showMessage(message, 5000)
         self._load_track_txt_data(self._current_track_folder)
@@ -1728,19 +1794,49 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return None
         return [value for value in parsed_values if value is not None]
 
-    def _handle_pit_params_changed(self) -> None:
-        self.preview_api.set_pit_parameters(self._pit_editor.parameters())
+    def _handle_pit_lane_count_changed(self, _index: int) -> None:
+        count = self._pit_lane_count()
+        self._update_pit_tabs(count)
+        if count == 1:
+            self._pit_tabs.setCurrentIndex(0)
+        self._apply_active_pit_editor_to_preview()
 
-    def _handle_pit_visibility_changed(self, indices: set[int]) -> None:
+    def _handle_pit_tab_changed(self, _index: int) -> None:
+        self._apply_active_pit_editor_to_preview()
+
+    def _handle_pit_params_changed(self, lane_index: int) -> None:
+        if lane_index != self._active_pit_lane_index():
+            return
+        self.preview_api.set_pit_parameters(
+            self._pit_editors[lane_index].parameters()
+        )
+
+    def _handle_pit_visibility_changed(
+        self, lane_index: int, indices: set[int]
+    ) -> None:
+        if lane_index != self._active_pit_lane_index():
+            return
         self.preview_api.set_visible_pit_indices(indices)
 
-    def _handle_pit_stall_center_visibility_changed(self, visible: bool) -> None:
+    def _handle_pit_stall_center_visibility_changed(
+        self, lane_index: int, visible: bool
+    ) -> None:
+        if lane_index != self._active_pit_lane_index():
+            return
         self.preview_api.set_show_pit_stall_center_dlat(visible)
 
-    def _handle_pit_stall_cars_visibility_changed(self, visible: bool) -> None:
+    def _handle_pit_stall_cars_visibility_changed(
+        self, lane_index: int, visible: bool
+    ) -> None:
+        if lane_index != self._active_pit_lane_index():
+            return
         self.preview_api.set_show_pit_stall_cars(visible)
 
-    def _handle_pit_wall_visibility_changed(self, visible: bool) -> None:
+    def _handle_pit_wall_visibility_changed(
+        self, lane_index: int, visible: bool
+    ) -> None:
+        if lane_index != self._active_pit_lane_index():
+            return
         self.preview_api.set_show_pit_wall_dlat(visible)
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802
