@@ -2079,6 +2079,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.Key_Down,
             QtCore.Qt.Key_Left,
             QtCore.Qt.Key_Right,
+            QtCore.Qt.Key_PageUp,
+            QtCore.Qt.Key_PageDown,
         }:
             return False
         if not self._can_handle_lp_shortcut(ignore_focus=ignore_focus):
@@ -2091,6 +2093,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return self._adjust_lp_record_dlat(self._lp_dlat_step.value())
         if key == QtCore.Qt.Key_Right:
             return self._adjust_lp_record_dlat(-self._lp_dlat_step.value())
+        if key == QtCore.Qt.Key_PageUp:
+            return self._copy_lp_record_fields(1)
+        if key == QtCore.Qt.Key_PageDown:
+            return self._copy_lp_record_fields(-1)
         return False
 
     def _can_handle_lp_shortcut(self, *, ignore_focus: bool = False) -> bool:
@@ -2171,6 +2177,30 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         except (TypeError, ValueError):
             return False
         return self._lp_records_model.setData(index, next_value, QtCore.Qt.EditRole)
+
+    def _copy_lp_record_fields(self, delta: int) -> bool:
+        current = self._current_lp_selection()
+        if current is None:
+            return False
+        _, row = current
+        total_rows = self._lp_records_model.rowCount()
+        if total_rows <= 0:
+            return False
+        target = max(0, min(total_rows - 1, row + delta))
+        if target == row:
+            return True
+        for column in (2, 3, 4):
+            source_index = self._lp_records_model.index(row, column)
+            target_index = self._lp_records_model.index(target, column)
+            if not source_index.isValid() or not target_index.isValid():
+                return False
+            value = self._lp_records_model.data(source_index, QtCore.Qt.EditRole)
+            if not self._lp_records_model.setData(
+                target_index, value, QtCore.Qt.EditRole
+            ):
+                return False
+        self._select_lp_record_row(target)
+        return True
 
     def _apply_ai_line_state(
         self, available_files: list[str], visible_files: set[str], enabled: bool
