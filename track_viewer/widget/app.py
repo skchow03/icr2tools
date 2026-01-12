@@ -246,6 +246,123 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         return True
 
 
+class TrkSectionsModel(QtCore.QAbstractTableModel):
+    """Table model for TRK section geometry."""
+
+    _BASE_HEADERS = [
+        "Section",
+        "Type",
+        "Start DLONG",
+        "Length",
+    ]
+
+    def __init__(self, parent: QtCore.QObject | None = None) -> None:
+        super().__init__(parent)
+        self._sections: list[object] = []
+        self._headers: list[str] = list(self._BASE_HEADERS)
+        self._max_bounds = 0
+        self._max_surfaces = 0
+
+    def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self._sections)
+
+    def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self._headers)
+
+    def data(
+        self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole
+    ) -> object | None:
+        if not index.isValid():
+            return None
+        row = index.row()
+        if row < 0 or row >= len(self._sections):
+            return None
+        section = self._sections[row]
+        column = index.column()
+        if role == QtCore.Qt.TextAlignmentRole:
+            if column == 1:
+                return QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
+            return QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        if role != QtCore.Qt.DisplayRole:
+            return None
+        if column == 0:
+            return str(row)
+        if column == 1:
+            if section.type == 1:
+                return "Straight"
+            if section.type == 2:
+                return "Curve"
+            return f"Type {section.type}"
+        if column == 2:
+            return str(section.start_dlong)
+        if column == 3:
+            return str(section.length)
+        boundary_base = len(self._BASE_HEADERS)
+        surface_base = boundary_base + self._max_bounds * 2
+        if boundary_base <= column < surface_base:
+            bound_index = (column - boundary_base) // 2
+            if bound_index >= len(section.bound_dlat_start):
+                return ""
+            if (column - boundary_base) % 2 == 0:
+                return str(section.bound_dlat_start[bound_index])
+            return str(section.bound_dlat_end[bound_index])
+        if column >= surface_base:
+            surface_index = (column - surface_base) // 3
+            if surface_index >= len(section.ground_dlat_start):
+                return ""
+            offset = (column - surface_base) % 3
+            if offset == 0:
+                return str(section.ground_dlat_start[surface_index])
+            if offset == 1:
+                return str(section.ground_dlat_end[surface_index])
+            return str(section.ground_type[surface_index])
+        return None
+
+    def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
+        if not index.isValid():
+            return QtCore.Qt.NoItemFlags
+        return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+
+    def headerData(
+        self,
+        section: int,
+        orientation: QtCore.Qt.Orientation,
+        role: int = QtCore.Qt.DisplayRole,
+    ) -> object | None:
+        if role != QtCore.Qt.DisplayRole:
+            return None
+        if orientation == QtCore.Qt.Horizontal:
+            if 0 <= section < len(self._headers):
+                return self._headers[section]
+            return None
+        return str(section)
+
+    def set_sections(self, sections: list[object]) -> None:
+        self.beginResetModel()
+        self._sections = list(sections)
+        self._max_bounds = max(
+            (len(sect.bound_dlat_start) for sect in sections), default=0
+        )
+        self._max_surfaces = max(
+            (len(sect.ground_dlat_start) for sect in sections), default=0
+        )
+        self._headers = list(self._BASE_HEADERS)
+        for bound_index in range(self._max_bounds):
+            label = bound_index + 1
+            self._headers.append(f"Boundary {label} Start DLAT")
+            self._headers.append(f"Boundary {label} End DLAT")
+        for surface_index in range(self._max_surfaces):
+            label = surface_index + 1
+            self._headers.append(f"Surface {label} Start DLAT")
+            self._headers.append(f"Surface {label} End DLAT")
+            self._headers.append(f"Surface {label} Type")
+        self.endResetModel()
+
+
 class TrackViewerWindow(QtWidgets.QMainWindow):
     """Minimal placeholder UI that demonstrates shared state wiring."""
 
@@ -347,6 +464,26 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 lambda *_: self._handle_lp_record_selected()
             )
         self._lp_records_model.recordEdited.connect(self._handle_lp_record_edited)
+        self._trk_sections_model = TrkSectionsModel(self)
+        self._trk_sections_table = QtWidgets.QTableView()
+        self._trk_sections_table.setModel(self._trk_sections_model)
+        self._trk_sections_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self._trk_sections_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._trk_sections_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self._trk_sections_table.setAlternatingRowColors(True)
+        trk_header = self._trk_sections_table.horizontalHeader()
+        trk_header.setTextElideMode(QtCore.Qt.ElideNone)
+        trk_header.setDefaultAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
+        trk_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        trk_header.setMinimumHeight(56)
+        self._trk_sections_table.setWordWrap(True)
+        self._trk_sections_table.verticalHeader().setVisible(False)
 
         self.visualization_widget = TrackPreviewWidget()
         if hasattr(self.visualization_widget, "setFrameShape"):
@@ -385,6 +522,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "Select a track to edit track.txt parameters."
         )
         self._track_txt_weather_status_label.setWordWrap(True)
+        self._trk_status_label = QtWidgets.QLabel(
+            "Select a track to view TRK sections."
+        )
+        self._trk_status_label.setWordWrap(True)
         self._track_name_field = self._create_text_field("–")
         self._track_short_name_field = self._create_text_field("–")
         self._track_city_field = self._create_text_field("–")
@@ -949,6 +1090,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         track_txt_scroll.setWidgetResizable(True)
         track_txt_scroll.setWidget(track_txt_sidebar)
 
+        trk_sidebar = QtWidgets.QFrame()
+        trk_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        trk_layout = QtWidgets.QVBoxLayout()
+        trk_layout.setSpacing(8)
+        trk_title = QtWidgets.QLabel("TRK section geometry")
+        trk_title.setStyleSheet("font-weight: bold")
+        trk_layout.addWidget(trk_title)
+        trk_layout.addWidget(self._trk_status_label)
+        trk_layout.addWidget(self._trk_sections_table, 1)
+        trk_sidebar.setLayout(trk_layout)
+        trk_scroll = QtWidgets.QScrollArea()
+        trk_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        trk_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        trk_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        trk_scroll.setWidgetResizable(True)
+        trk_scroll.setWidget(trk_sidebar)
+
         tire_txt_sidebar = QtWidgets.QFrame()
         tire_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
         tire_txt_layout = QtWidgets.QVBoxLayout()
@@ -1110,6 +1268,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             track_txt_scroll,
             self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon),
             "Track",
+        )
+        tabs.addTab(
+            trk_scroll,
+            self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon),
+            "TRK",
         )
         self._weather_tab = weather_txt_scroll
         tabs.addTab(
@@ -1564,6 +1727,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         folder = self._track_list.itemData(index) if index >= 0 else None
         self.controller.set_selected_track(folder)
         self._load_track_txt_data(folder)
+        self._load_trk_data()
 
     def _pit_lane_count(self) -> int:
         count = self._pit_lane_count_combo.currentData()
@@ -1670,6 +1834,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_tire_save_button.setEnabled(True)
         self._track_txt_weather_save_button.setEnabled(True)
         self._apply_active_pit_editor_to_preview()
+
+    def _load_trk_data(self) -> None:
+        trk = self.preview_api.trk
+        if trk is None:
+            self._trk_status_label.setText("Select a track to view TRK sections.")
+            self._trk_sections_model.set_sections([])
+            return
+        sections = trk.sects or []
+        self._trk_status_label.setText(f"Loaded {len(sections)} sections.")
+        self._trk_sections_model.set_sections(sections)
 
     def _handle_save_pit_params(self) -> None:
         if self._current_track_folder is None:
