@@ -39,6 +39,10 @@ class TvModesPanel(QtWidgets.QWidget):
             int, List[Tuple[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]]
         ] = {}
 
+        self._delete_button = QtWidgets.QPushButton("Remove from TV mode")
+        self._delete_button.setEnabled(False)
+        self._delete_button.clicked.connect(self._handle_delete_camera)
+
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -51,6 +55,10 @@ class TvModesPanel(QtWidgets.QWidget):
         mode_layout.addStretch(1)
         mode_layout.addWidget(self._mode_selector)
         layout.addLayout(mode_layout)
+        delete_layout = QtWidgets.QHBoxLayout()
+        delete_layout.addStretch(1)
+        delete_layout.addWidget(self._delete_button)
+        layout.addLayout(delete_layout)
         layout.addWidget(self._tv_tabs)
         self.setLayout(layout)
 
@@ -115,9 +123,11 @@ class TvModesPanel(QtWidgets.QWidget):
             self._tv_tree_items[tree] = items
             tree.itemChanged.connect(self._handle_tv_item_changed)
         self._tv_tabs.setCurrentIndex(0)
+        self._update_delete_state()
 
     def _handle_view_changed(self, index: int) -> None:
         self.viewChanged.emit(index)
+        self._update_delete_state()
 
     def _camera_from_index(self, camera_index: Optional[int]) -> Optional[CameraPosition]:
         if camera_index is None:
@@ -342,17 +352,21 @@ class TvModesPanel(QtWidgets.QWidget):
             return
         if current is None:
             self.cameraSelected.emit(None)
+            self._update_delete_state()
             return
         data = current.data(0, QtCore.Qt.UserRole)
         if data is None:
             self.cameraSelected.emit(None)
+            self._update_delete_state()
             return
         try:
             camera_index = int(data)
         except (TypeError, ValueError):
             self.cameraSelected.emit(None)
+            self._update_delete_state()
             return
         self.cameraSelected.emit(camera_index)
+        self._update_delete_state()
 
     def _handle_tv_item_changed(
         self, item: QtWidgets.QTreeWidgetItem, column: int
@@ -473,6 +487,106 @@ class TvModesPanel(QtWidgets.QWidget):
     ) -> None:
         with QtCore.QSignalBlocker(tree):
             item.setText(column, self._format_dlong(value))
+
+    def _handle_delete_camera(self) -> None:
+        tree = self._current_tree()
+        if tree is None:
+            return
+        item = tree.currentItem()
+        if item is None:
+            return
+        view_index = self._tv_tree_views.get(tree)
+        if view_index is None or view_index < 0 or view_index >= len(self._views):
+            return
+        entry_index_data = item.data(0, QtCore.Qt.UserRole + 2)
+        if entry_index_data is None:
+            return
+        try:
+            entry_index = int(entry_index_data)
+        except (TypeError, ValueError):
+            return
+        view = self._views[view_index]
+        if entry_index < 0 or entry_index >= len(view.entries):
+            return
+        deleted_entry = view.entries.pop(entry_index)
+        deleted_start = deleted_entry.start_dlong
+        if view.entries:
+            next_index = entry_index if entry_index < len(view.entries) else 0
+            next_entry = view.entries[next_index]
+            next_entry.start_dlong = deleted_start
+            previous_index = (next_index - 1) % len(view.entries)
+            previous_entry = view.entries[previous_index]
+            previous_entry.end_dlong = deleted_start
+            self.dlongsUpdated.emit(next_entry.camera_index, next_entry.start_dlong, None)
+            self.dlongsUpdated.emit(previous_entry.camera_index, None, previous_entry.end_dlong)
+        self._refresh_tv_tree(view_index)
+        if view.entries:
+            tree = self._tv_trees[view_index]
+            items = self._tv_tree_items.get(tree, [])
+            next_index = entry_index if entry_index < len(items) else 0
+            if 0 <= next_index < len(items):
+                with QtCore.QSignalBlocker(tree):
+                    tree.setCurrentItem(items[next_index])
+        self._update_delete_state()
+
+    def _current_tree(self) -> Optional[QtWidgets.QTreeWidget]:
+        tab_index = self._tv_tabs.currentIndex()
+        if tab_index < 0 or tab_index >= len(self._tv_trees):
+            return None
+        return self._tv_trees[tab_index]
+
+    def _refresh_tv_tree(self, view_index: int) -> None:
+        if view_index < 0 or view_index >= len(self._tv_trees):
+            return
+        tree = self._tv_trees[view_index]
+        self._remove_tree_camera_items(tree)
+        view = self._views[view_index]
+        items: List[QtWidgets.QTreeWidgetItem] = []
+        with QtCore.QSignalBlocker(tree):
+            tree.clear()
+            for entry_index, entry in enumerate(view.entries):
+                values = [
+                    self._camera_label(entry),
+                    self._format_dlong(entry.start_dlong),
+                    self._format_dlong(entry.end_dlong),
+                ]
+                item = QtWidgets.QTreeWidgetItem(values)
+                item.setData(0, QtCore.Qt.UserRole, entry.camera_index)
+                item.setData(0, QtCore.Qt.UserRole + 1, view_index)
+                item.setData(0, QtCore.Qt.UserRole + 2, entry_index)
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+                tree.addTopLevelItem(item)
+                self._tv_camera_items.setdefault(entry.camera_index, []).append(
+                    (tree, item)
+                )
+                items.append(item)
+        self._tv_tree_items[tree] = items
+
+    def _remove_tree_camera_items(self, tree: QtWidgets.QTreeWidget) -> None:
+        items = self._tv_tree_items.get(tree, [])
+        for item in items:
+            camera_index_data = item.data(0, QtCore.Qt.UserRole)
+            if camera_index_data is None:
+                continue
+            try:
+                camera_index = int(camera_index_data)
+            except (TypeError, ValueError):
+                continue
+            camera_items = self._tv_camera_items.get(camera_index, [])
+            self._tv_camera_items[camera_index] = [
+                pair for pair in camera_items if pair != (tree, item)
+            ]
+            if not self._tv_camera_items[camera_index]:
+                del self._tv_camera_items[camera_index]
+        if tree in self._tv_tree_items:
+            del self._tv_tree_items[tree]
+
+    def _update_delete_state(self) -> None:
+        tree = self._current_tree()
+        if tree is None:
+            self._delete_button.setEnabled(False)
+            return
+        self._delete_button.setEnabled(tree.currentItem() is not None)
 
     def _show_dlong_bounds_error(self) -> None:
         if self._track_length is None:
