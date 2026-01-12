@@ -105,7 +105,7 @@ class CoordinateSidebarViewModel:
         type6_camera = None
         type7_camera = None
 
-        if camera.camera_type == 6 and camera.type6 is not None:
+        if camera.camera_type in {2, 6} and camera.type6 is not None:
             details.append("Panning parameters can be edited below.")
             type6_camera = camera
 
@@ -150,6 +150,8 @@ class CoordinateSidebarViewModel:
     def _format_camera_type(camera_type: int) -> str:
         if camera_type == 6:
             return "Pan"
+        if camera_type == 2:
+            return "Alt pan"
         if camera_type == 7:
             return "Fixed"
         return f"type {camera_type}"

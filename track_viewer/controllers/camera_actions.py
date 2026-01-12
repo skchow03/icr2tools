@@ -21,6 +21,12 @@ class CameraActions(QtCore.QObject):
             *self._preview_api.add_type6_camera(), title="Add Panning Camera"
         )
 
+    def add_type2_camera(self) -> None:
+        self._emit_result(
+            *self._preview_api.add_type2_camera(),
+            title="Add Alternate Panning Camera",
+        )
+
     def add_type7_camera(self) -> None:
         self._emit_result(
             *self._preview_api.add_type7_camera(), title="Add Fixed Camera"

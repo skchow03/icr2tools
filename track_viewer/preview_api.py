@@ -189,6 +189,9 @@ class TrackPreviewApi:
     def add_type6_camera(self) -> tuple[bool, str]:
         return self._coordinator.add_type6_camera()
 
+    def add_type2_camera(self) -> tuple[bool, str]:
+        return self._coordinator.add_type2_camera()
+
     def add_type7_camera(self) -> tuple[bool, str]:
         return self._coordinator.add_type7_camera()
 

@@ -97,7 +97,7 @@ def _parse_cam_positions(values: Sequence[int]) -> List[CameraPosition]:
                 continue
             type6_params = None
             type7_params = None
-            if camera_type == 6 and len(row) >= 9:
+            if camera_type in {6, 2} and len(row) >= 9:
                 type6_params = Type6CameraParameters(
                     middle_point=row[0],
                     start_point=row[4],
@@ -212,7 +212,7 @@ def _serialize_cam_rows(cameras: Sequence[CameraPosition]) -> List[int]:
             if len(row) < width:
                 row.extend([0] * (width - len(row)))
             row[1:4] = [camera.x, camera.y, camera.z]
-            if camera_type == 6 and camera.type6 is not None:
+            if camera_type in {6, 2} and camera.type6 is not None:
                 row[0] = camera.type6.middle_point
                 row[4] = camera.type6.start_point
                 row[5] = camera.type6.start_zoom
