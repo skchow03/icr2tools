@@ -830,6 +830,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         pit_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         pit_scroll.setWidgetResizable(True)
         pit_scroll.setWidget(pit_sidebar)
+        self._pit_tab = pit_scroll
 
         track_txt_sidebar = QtWidgets.QFrame()
         track_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -1490,6 +1491,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         show_cameras = widget is self._camera_tab
         self.preview_api.set_show_cameras(show_cameras)
         self.preview_api.set_camera_selection_enabled(show_cameras)
+        self._sync_pit_preview_for_tab()
 
     def _handle_qual_mode_changed(self, index: int) -> None:
         mode = self._qual_mode_field.itemData(index) if index >= 0 else None
@@ -1581,7 +1583,28 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pit_tabs.removeTab(pit2_index)
             self._pit_tabs.setCurrentIndex(0)
 
+    def _is_pit_tab_active(self) -> bool:
+        if not hasattr(self, "_tabs") or not hasattr(self, "_pit_tab"):
+            return False
+        return self._tabs.widget(self._tabs.currentIndex()) is self._pit_tab
+
+    def _clear_pit_preview(self) -> None:
+        self.preview_api.set_pit_parameters(None)
+        self.preview_api.set_visible_pit_indices(set())
+        self.preview_api.set_show_pit_stall_center_dlat(False)
+        self.preview_api.set_show_pit_wall_dlat(False)
+        self.preview_api.set_show_pit_stall_cars(False)
+
+    def _sync_pit_preview_for_tab(self) -> None:
+        if self._is_pit_tab_active():
+            self._apply_active_pit_editor_to_preview()
+        else:
+            self._clear_pit_preview()
+
     def _apply_active_pit_editor_to_preview(self) -> None:
+        if not self._is_pit_tab_active():
+            self._clear_pit_preview()
+            return
         editor = self._pit_editors[self._active_pit_lane_index()]
         self.preview_api.set_pit_parameters(editor.parameters())
         self.preview_api.set_visible_pit_indices(editor.pit_visible_indices())
