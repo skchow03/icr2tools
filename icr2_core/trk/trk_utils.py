@@ -154,6 +154,24 @@ def color_from_ground_type(ground):
     return "#808080"
 
 
+def ground_type_name(ground: int) -> str | None:
+    """Return the descriptive name for a TRK ground type."""
+
+    mapping = {
+        (0, 2, 4, 6): "Grass",
+        (8, 10, 12, 14): "Dry grass",
+        (16, 18, 20, 22): "Dirt",
+        (24, 26, 28, 30): "Sand",
+        (32, 34, 36, 38): "Concrete",
+        (40, 42, 44, 46): "Asphalt",
+        (48, 50, 52, 54): "Paint / curbing",
+    }
+    for values, name in mapping.items():
+        if ground in values:
+            return name
+    return None
+
+
 def get_alt(trk, sect, subsect, dlat):
     # determine which two xsects the dlat is between
     # or if dlat is outside the range of xsects then go with
