@@ -109,6 +109,11 @@ class TrackPreviewApi:
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._coordinator.export_active_lp_csv(output_path)
 
+    def generate_lp_line(
+        self, lp_name: str, speed_mph: float, dlat: float
+    ) -> tuple[bool, str]:
+        return self._coordinator.generate_lp_line(lp_name, speed_mph, dlat)
+
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         self._coordinator.set_selected_lp_record(name, index)
 

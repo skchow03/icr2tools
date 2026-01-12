@@ -578,6 +578,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_lp_button.setEnabled(False)
         self._export_lp_csv_button = QtWidgets.QPushButton("Export LP CSV")
         self._export_lp_csv_button.setEnabled(False)
+        self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
+        self._generate_lp_button.setEnabled(False)
 
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
         self._trk_gaps_button.setEnabled(False)
@@ -650,6 +652,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addLayout(dlat_step_layout)
         left_layout.addWidget(self._lp_speed_unit_button)
         left_layout.addWidget(self._recalculate_lateral_speed_button)
+        left_layout.addWidget(self._generate_lp_button)
         left_layout.addWidget(self._save_lp_button)
         left_layout.addWidget(self._export_lp_csv_button)
         ai_speed_layout = QtWidgets.QHBoxLayout()
@@ -757,6 +760,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_cameras_button.clicked.connect(self.camera_actions.save_cameras)
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
+        self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
         self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
         self.controller.sync_ai_lines()
 
@@ -2031,6 +2035,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_list.setEnabled(enabled)
         self._update_lp_records_table(active_line)
         self._update_save_lp_button_state(active_line)
+        self._update_generate_lp_button_state(active_line)
 
     def _add_lp_list_item(
         self,
@@ -2323,6 +2328,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_export_lp_csv_button_state(lp_name)
         self._update_recalculate_lateral_speed_button_state(lp_name)
         self._update_lp_speed_unit_button_state(lp_name)
+        self._update_generate_lp_button_state(lp_name)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
             selection_model.clearSelection()
@@ -2346,6 +2352,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_lp_speed_unit_button_state(
             self.preview_api.active_lp_line()
         )
+        self._update_generate_lp_button_state(self.preview_api.active_lp_line())
 
     def _handle_lp_record_selected(self) -> None:
         selection = self._lp_records_table.selectionModel()
@@ -2467,6 +2474,74 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _handle_generate_lp_line(self) -> None:
+        lp_name = self.preview_api.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            QtWidgets.QMessageBox.warning(
+                self, "Generate LP Line", "Select a valid LP line to replace."
+            )
+            return
+        if self.preview_api.trk is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Generate LP Line", "Load a track before generating an LP line."
+            )
+            return
+        records = self.preview_api.ai_line_records(lp_name)
+        default_speed = 100.0
+        default_dlat = 0
+        current = self._current_lp_selection()
+        if current and current[0] == lp_name:
+            record = records[current[1]]
+            default_speed = record.speed_mph
+            default_dlat = int(round(record.dlat))
+        elif records:
+            default_speed = records[0].speed_mph
+            default_dlat = int(round(records[0].dlat))
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Generate LP Line")
+        form_layout = QtWidgets.QFormLayout()
+        speed_input = QtWidgets.QDoubleSpinBox(dialog)
+        speed_input.setRange(0.0, 1000.0)
+        speed_input.setDecimals(2)
+        speed_input.setSingleStep(1.0)
+        speed_input.setValue(default_speed)
+        speed_input.setSuffix(" mph")
+        dlat_input = QtWidgets.QSpinBox(dialog)
+        dlat_input.setRange(-2_147_483_647, 2_147_483_647)
+        dlat_input.setSingleStep(500)
+        dlat_input.setValue(default_dlat)
+        form_layout.addRow("Speed", speed_input)
+        form_layout.addRow("DLAT", dlat_input)
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(form_layout)
+        layout.addWidget(button_box)
+        dialog.setLayout(layout)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        success, message = self.preview_api.generate_lp_line(
+            lp_name, speed_input.value(), dlat_input.value()
+        )
+        title = "Generate LP Line"
+        if success:
+            checkbox = self._lp_checkboxes.get(lp_name)
+            if checkbox is not None and not checkbox.isChecked():
+                with QtCore.QSignalBlocker(checkbox):
+                    checkbox.setChecked(True)
+                selected = set(self.preview_api.visible_lp_files())
+                selected.add(lp_name)
+                self.controller.set_visible_lp_files(sorted(selected))
+            self._update_lp_records_table(lp_name)
+            self.visualization_widget.update()
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
     def _update_save_lp_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.preview_api.active_lp_line()
         enabled = (
@@ -2505,6 +2580,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             and bool(self.preview_api.ai_line_records(name))
         )
         self._lp_speed_unit_button.setEnabled(enabled)
+
+    def _update_generate_lp_button_state(self, lp_name: str | None = None) -> None:
+        name = lp_name or self.preview_api.active_lp_line()
+        enabled = (
+            bool(name)
+            and name != "center-line"
+            and self.preview_api.trk is not None
+        )
+        self._generate_lp_button.setEnabled(enabled)
 
     def _handle_lp_speed_unit_toggled(self, enabled: bool) -> None:
         self._lp_records_model.set_speed_raw_visible(enabled)

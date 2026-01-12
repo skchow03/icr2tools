@@ -294,6 +294,14 @@ class PreviewCoordinator:
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._model.export_lp_csv(self._state.active_lp_line, output_path)
 
+    def generate_lp_line(
+        self, lp_name: str, speed_mph: float, dlat: float
+    ) -> tuple[bool, str]:
+        success, message = self._model.generate_lp_line(lp_name, speed_mph, dlat)
+        if success:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        return success, message
+
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         if name is None or index is None:
             if self._state.selected_lp_line is None and self._state.selected_lp_index is None:
