@@ -9,6 +9,10 @@ from PyQt5 import QtCore, QtGui
 from icr2_core.cam.helpers import CameraPosition
 from track_viewer.rendering.primitives.mapping import Transform, map_point
 
+CAMERA_TRIANGLE_HEIGHT = 12
+CAMERA_TRIANGLE_HALF_WIDTH = 7
+CAMERA_LABEL_PADDING = 4
+
 
 def _draw_camera_orientation(
     painter: QtGui.QPainter,
@@ -61,18 +65,44 @@ def _draw_camera_symbol(
     painter.setPen(pen)
     painter.setBrush(QtGui.QBrush(base_color))
 
-    triangle_height = 12
-    half_width = 7
-
     triangle = QtGui.QPolygonF(
         [
             QtCore.QPointF(0, 0),  # tip at the camera position
-            QtCore.QPointF(-half_width, -triangle_height),
-            QtCore.QPointF(half_width, -triangle_height),
+            QtCore.QPointF(-CAMERA_TRIANGLE_HALF_WIDTH, -CAMERA_TRIANGLE_HEIGHT),
+            QtCore.QPointF(CAMERA_TRIANGLE_HALF_WIDTH, -CAMERA_TRIANGLE_HEIGHT),
         ]
     )
     painter.drawPolygon(triangle)
 
+    painter.restore()
+
+
+def _camera_label(camera: CameraPosition) -> str | None:
+    if camera.camera_type == 7:
+        return f"F{camera.index}"
+    if camera.camera_type == 6:
+        return f"P{camera.index}"
+    return None
+
+
+def _draw_camera_label(
+    painter: QtGui.QPainter, center: QtCore.QPointF, label: str
+) -> None:
+    painter.save()
+    font = QtGui.QFont(painter.font())
+    font.setPointSize(max(8, font.pointSize() - 1))
+    painter.setFont(font)
+    painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff")))
+    metrics = QtGui.QFontMetrics(font)
+    text_width = metrics.horizontalAdvance(label)
+    text_height = metrics.height()
+    rect = QtCore.QRectF(
+        center.x() - text_width / 2,
+        center.y() - CAMERA_TRIANGLE_HEIGHT - CAMERA_LABEL_PADDING - text_height,
+        text_width,
+        text_height,
+    )
+    painter.drawText(rect, QtCore.Qt.AlignCenter, label)
     painter.restore()
 
 
@@ -99,3 +129,6 @@ def draw_camera_positions(
                 painter, cam, point, transform, color, viewport_height
             )
         _draw_camera_symbol(painter, point, color, index == selected_camera)
+        label = _camera_label(cam)
+        if label:
+            _draw_camera_label(painter, point, label)
