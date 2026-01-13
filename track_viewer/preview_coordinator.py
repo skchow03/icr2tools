@@ -292,6 +292,9 @@ class PreviewCoordinator:
     def save_active_lp_line(self) -> tuple[bool, str]:
         return self._model.save_lp_line(self._state.active_lp_line)
 
+    def save_all_lp_lines(self) -> tuple[bool, str]:
+        return self._model.save_all_lp_lines()
+
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._model.export_lp_csv(self._state.active_lp_line, output_path)
 

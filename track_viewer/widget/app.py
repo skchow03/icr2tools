@@ -718,8 +718,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_ai_color_mode("none")
 
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
-        self._save_lp_button = QtWidgets.QPushButton("Save LP")
+        self._save_lp_button = QtWidgets.QPushButton("Save Selected LP")
         self._save_lp_button.setEnabled(False)
+        self._save_all_lp_button = QtWidgets.QPushButton("Save All LPs")
+        self._save_all_lp_button.setEnabled(False)
         self._export_lp_csv_button = QtWidgets.QPushButton("Export LP CSV")
         self._export_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
@@ -800,6 +802,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(self._recalculate_lateral_speed_button)
         left_layout.addWidget(self._generate_lp_button)
         left_layout.addWidget(self._save_lp_button)
+        left_layout.addWidget(self._save_all_lp_button)
         left_layout.addWidget(self._export_lp_csv_button)
         ai_speed_layout = QtWidgets.QHBoxLayout()
         ai_speed_layout.addWidget(self._ai_gradient_button)
@@ -908,6 +911,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._save_cameras_button.clicked.connect(self.camera_actions.save_cameras)
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
+        self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
         self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
@@ -2665,8 +2669,38 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.update_lp_record(lp_name, row)
 
     def _handle_save_lp_line(self) -> None:
+        if (
+            QtWidgets.QMessageBox.question(
+                self,
+                "Save Selected LP",
+                "Save the selected LP line to disk?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.Cancel,
+            )
+            != QtWidgets.QMessageBox.Yes
+        ):
+            return
         success, message = self.preview_api.save_active_lp_line()
-        title = "Save LP"
+        title = "Save Selected LP"
+        if success:
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
+    def _handle_save_all_lp_lines(self) -> None:
+        if (
+            QtWidgets.QMessageBox.question(
+                self,
+                "Save All LPs",
+                "Save all LP lines to disk?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.Cancel,
+            )
+            != QtWidgets.QMessageBox.Yes
+        ):
+            return
+        success, message = self.preview_api.save_all_lp_lines()
+        title = "Save All LPs"
         if success:
             QtWidgets.QMessageBox.information(self, title, message)
         else:
@@ -2767,6 +2801,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             and bool(self.preview_api.ai_line_records(name))
         )
         self._save_lp_button.setEnabled(enabled)
+        self._save_all_lp_button.setEnabled(
+            self.preview_api.trk is not None
+            and bool(self.preview_api.available_lp_files())
+        )
 
     def _update_export_lp_csv_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.preview_api.active_lp_line()

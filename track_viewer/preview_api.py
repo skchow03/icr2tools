@@ -106,6 +106,9 @@ class TrackPreviewApi:
     def save_active_lp_line(self) -> tuple[bool, str]:
         return self._coordinator.save_active_lp_line()
 
+    def save_all_lp_lines(self) -> tuple[bool, str]:
+        return self._coordinator.save_all_lp_lines()
+
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._coordinator.export_active_lp_csv(output_path)
 

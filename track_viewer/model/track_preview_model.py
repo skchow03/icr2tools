@@ -195,6 +195,33 @@ class TrackPreviewModel(QtCore.QObject):
             return False, f"Failed to save {lp_name}.LP: {exc}"
         return True, message
 
+    def save_all_lp_lines(self) -> tuple[bool, str]:
+        """Persist all available AI lines back to their LP files."""
+        if self.track_path is None:
+            return False, "No track loaded to save LP data."
+        if not self.available_lp_files:
+            return False, "No LP files are available for saving."
+        saved: list[str] = []
+        failures: list[str] = []
+        for lp_name in sorted(self.available_lp_files):
+            records = self.get_ai_line_records_immediate(lp_name)
+            if not records:
+                failures.append(f"{lp_name} (no records loaded)")
+                continue
+            try:
+                self._io_service.save_lp_line(self.track_path, lp_name, records)
+            except Exception as exc:
+                failures.append(f"{lp_name} ({exc})")
+                continue
+            saved.append(lp_name)
+        if failures:
+            prefix = f"Saved {len(saved)} LP file(s)." if saved else "No LP files saved."
+            message = "\n".join(
+                [prefix, "Failed to save:", *[f"- {item}" for item in failures]]
+            )
+            return False, message
+        return True, f"Saved {len(saved)} LP file(s)."
+
     def export_lp_csv(self, lp_name: str, output_path: Path) -> tuple[bool, str]:
         """Export the selected AI line to CSV via the IO service."""
         if not lp_name or lp_name == "center-line":
