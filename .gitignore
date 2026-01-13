@@ -21,6 +21,8 @@ timing_log.txt
 *.xlsx
 *.png
 *.txt
+*.trk
+*.sg
 repo_dump.py
 
 # Virtual environments
