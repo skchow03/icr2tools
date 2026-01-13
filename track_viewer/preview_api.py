@@ -55,6 +55,9 @@ class TrackPreviewApi:
     def ai_line_available(self) -> bool:
         return self._coordinator.ai_line_available()
 
+    def weather_compass_heading_turns(self) -> float:
+        return self._coordinator.weather_compass_heading_turns()
+
     def available_lp_files(self) -> list[str]:
         return self._coordinator.available_lp_files()
 

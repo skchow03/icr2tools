@@ -27,6 +27,7 @@ from track_viewer.common.version import __version__
 from track_viewer.controllers.window_controller import WindowController
 from track_viewer import config as viewer_config
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
+from track_viewer.common.weather_compass import turns_to_unit_vector
 
 
 class TrackViewerApp(QtWidgets.QApplication):
@@ -2111,8 +2112,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         height: int,
         margin: int,
     ) -> None:
-        font = QtGui.QFont()
-        font.setPixelSize(8)
+        font = QtGui.QFont(painter.font())
+        font.setPointSizeF(8.0)
         painter.setFont(font)
         metrics = QtGui.QFontMetrics(font)
         text = "N"
@@ -2123,14 +2124,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         gap = 2
         total_width = arrow_width
         total_height = arrow_height + gap + text_height
+        total_size = max(total_width, total_height)
 
         candidates = []
         cols = 5
         rows = 3
         for row in range(rows):
             for col in range(cols):
-                x = margin + col * (width - 2 * margin - total_width) / max(cols - 1, 1)
-                y = margin + row * (height - 2 * margin - total_height) / max(
+                x = margin + col * (width - 2 * margin - total_size) / max(cols - 1, 1)
+                y = margin + row * (height - 2 * margin - total_size) / max(
                     rows - 1, 1
                 )
                 candidates.append(QtCore.QPointF(x, y))
@@ -2142,7 +2144,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         best_score = -1.0
         for candidate in candidates:
             center = QtCore.QPointF(
-                candidate.x() + total_width / 2, candidate.y() + total_height / 2
+                candidate.x() + total_size / 2, candidate.y() + total_size / 2
             )
             min_distance = None
             for track_point in mapped:
@@ -2154,18 +2156,40 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 best_score = min_distance
                 best = candidate
 
-        arrow_tip = QtCore.QPointF(best.x() + total_width / 2, best.y())
-        base_y = best.y() + arrow_height
-        arrow_left = QtCore.QPointF(arrow_tip.x() - arrow_width / 2, base_y)
-        arrow_right = QtCore.QPointF(arrow_tip.x() + arrow_width / 2, base_y)
+        center = QtCore.QPointF(best.x() + total_size / 2, best.y() + total_size / 2)
+        heading_turns = self.preview_api.weather_compass_heading_turns()
+        dx, dy = turns_to_unit_vector(heading_turns)
+        direction = QtCore.QPointF(dx, dy)
+        perpendicular = QtCore.QPointF(-direction.y(), direction.x())
+        group_length = arrow_height + gap + text_height
+        arrow_tip = QtCore.QPointF(
+            center.x() + direction.x() * (group_length / 2),
+            center.y() + direction.y() * (group_length / 2),
+        )
+        base_center = QtCore.QPointF(
+            arrow_tip.x() - direction.x() * arrow_height,
+            arrow_tip.y() - direction.y() * arrow_height,
+        )
+        arrow_left = QtCore.QPointF(
+            base_center.x() + perpendicular.x() * (arrow_width / 2),
+            base_center.y() + perpendicular.y() * (arrow_width / 2),
+        )
+        arrow_right = QtCore.QPointF(
+            base_center.x() - perpendicular.x() * (arrow_width / 2),
+            base_center.y() - perpendicular.y() * (arrow_width / 2),
+        )
         arrow = QtGui.QPolygonF([arrow_tip, arrow_left, arrow_right])
         painter.setBrush(QtCore.Qt.white)
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawPolygon(arrow)
 
         painter.setPen(QtCore.Qt.white)
-        text_x = best.x() + (total_width - text_width) / 2
-        text_y = base_y + gap + metrics.ascent()
+        text_center = QtCore.QPointF(
+            arrow_tip.x() - direction.x() * (arrow_height + gap + text_height / 2),
+            arrow_tip.y() - direction.y() * (arrow_height + gap + text_height / 2),
+        )
+        text_x = text_center.x() - text_width / 2
+        text_y = text_center.y() + (metrics.ascent() - metrics.descent()) / 2
         painter.drawText(QtCore.QPointF(text_x, text_y), text)
 
     def _show_trk_map_preview(

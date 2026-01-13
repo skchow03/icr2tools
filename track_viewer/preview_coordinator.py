@@ -206,6 +206,9 @@ class PreviewCoordinator:
     def ai_line_available(self) -> bool:
         return self._model.ai_line_available()
 
+    def weather_compass_heading_turns(self) -> float:
+        return self._state.weather_compass_heading_turns()
+
     def available_lp_files(self) -> list[str]:
         return list(self._model.available_lp_files)
 
