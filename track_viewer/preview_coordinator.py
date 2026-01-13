@@ -8,6 +8,7 @@ from typing import Callable, List, Optional
 from PyQt5 import QtCore, QtGui
 
 from icr2_core.cam.helpers import CameraPosition
+from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
@@ -385,6 +386,9 @@ class PreviewCoordinator:
     def trk(self) -> object | None:
         return self._model.trk
 
+    def track_path(self) -> Path | None:
+        return self._model.track_path
+
     def set_show_cameras(self, show: bool) -> None:
         if self._state.show_cameras != show:
             self._state.show_cameras = show
@@ -586,3 +590,17 @@ class PreviewCoordinator:
             return False, f"Failed to compute TRK gaps: {exc}"
 
         return True, "\n".join(lines)
+
+    def convert_trk_to_sg(self, output_path: Path) -> tuple[bool, str]:
+        if self._model.trk is None or self._model.track_path is None:
+            return False, "No track is currently loaded."
+
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            sg = trk_to_sg(self._model.trk)
+            sg.rebuild_dlongs(start_index=0, start_dlong=0)
+            sg.output_sg(str(output_path))
+        except Exception as exc:  # pragma: no cover - interactive feedback
+            return False, f"Failed to convert TRK to SG: {exc}"
+
+        return True, f"Saved SG file to {output_path}."

@@ -21,9 +21,9 @@ import argparse
 import math
 from typing import List, Tuple
 
-from trk_classes import TRKFile
-from sg_classes import SGFile
-from trk_utils import get_cline_pos, sect2xy, heading2rad
+from icr2_core.trk.sg_classes import SGFile
+from icr2_core.trk.trk_classes import TRKFile
+from icr2_core.trk.trk_utils import get_cline_pos, heading2rad, sect2xy
 
 FP_SCALE = 32768.0
 SENTINEL = -858993460
