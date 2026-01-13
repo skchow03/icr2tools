@@ -66,6 +66,30 @@ def draw_start_finish_line(
     )
 
 
+def draw_start_finish_segment(
+    painter: QtGui.QPainter,
+    transform: Transform,
+    viewport_height: int,
+    start: Point2D,
+    end: Point2D,
+    *,
+    color: QtGui.QColor | str = "white",
+    width: float = 4.0,
+) -> None:
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor(color), width)
+    pen.setCosmetic(True)
+    painter.setPen(pen)
+    painter.drawLine(
+        QtCore.QLineF(
+            map_point(start[0], start[1], transform, viewport_height),
+            map_point(end[0], end[1], transform, viewport_height),
+        )
+    )
+    painter.restore()
+
+
 def draw_camera_range_markers(
     painter: QtGui.QPainter,
     ranges: Iterable[tuple[float, float]],

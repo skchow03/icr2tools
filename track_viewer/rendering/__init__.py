@@ -29,6 +29,7 @@ from track_viewer.rendering.overlays.zoom_overlay import draw_zoom_points
 from track_viewer.rendering.primitives.bars import (
     draw_camera_range_markers,
     draw_start_finish_line,
+    draw_start_finish_segment,
 )
 from track_viewer.rendering.primitives.mapping import (
     Point2D,
@@ -59,6 +60,7 @@ __all__ = [
     "draw_pit_stall_cars",
     "draw_pit_stall_range",
     "draw_start_finish_line",
+    "draw_start_finish_segment",
     "draw_track_boundaries",
     "draw_zoom_points",
     "map_point",

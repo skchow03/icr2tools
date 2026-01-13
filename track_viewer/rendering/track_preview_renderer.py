@@ -107,13 +107,16 @@ class TrackPreviewRenderer:
                 painter.drawPath(self._centerline_path_cache)
                 painter.restore()
 
-        if transform and self._state.show_center_line:
-            rendering.draw_start_finish_line(
-                painter,
-                transform,
-                height,
-                self._centerline_point_and_normal,
-            )
+        if transform:
+            start_finish_segment = self._start_finish_segment()
+            if start_finish_segment is not None:
+                rendering.draw_start_finish_segment(
+                    painter,
+                    transform,
+                    height,
+                    start_finish_segment[0],
+                    start_finish_segment[1],
+                )
 
         if transform and self._state.show_center_line:
             rendering.draw_camera_range_markers(
@@ -677,6 +680,38 @@ class TrackPreviewRenderer:
         wrapped = dlong % track_length
         cx, cy, _ = getxyz(self._model.trk, wrapped, 0, self._model.centerline)
         return cx, cy
+
+    def _start_finish_segment(
+        self,
+    ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Return the boundary-to-boundary start/finish segment at DLONG 0."""
+        if not self._model.trk or not self._model.centerline:
+            return None
+        track_length = float(self._model.trk.trklength or 0.0)
+        if track_length <= 0:
+            return None
+        dlong = 0.0 % track_length
+        sect_info = dlong2sect(self._model.trk, dlong)
+        if not sect_info:
+            return None
+        sect_index, subsect = sect_info
+        if sect_index is None or subsect is None:
+            return None
+        section = self._model.trk.sects[sect_index]
+        dlats: list[float] = []
+        for bound_index in range(section.num_bounds):
+            dlats.append(getbounddlat(self._model.trk, sect_index, subsect, bound_index))
+        if not dlats:
+            return None
+        min_dlat = min(dlats)
+        max_dlat = max(dlats)
+        start_x, start_y, _ = getxyz(
+            self._model.trk, dlong, min_dlat, self._model.centerline
+        )
+        end_x, end_y, _ = getxyz(
+            self._model.trk, dlong, max_dlat, self._model.centerline
+        )
+        return (start_x, start_y), (end_x, end_y)
 
     def _pit_dlong_segments(
         self,
