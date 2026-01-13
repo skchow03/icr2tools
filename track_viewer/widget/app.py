@@ -1883,22 +1883,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self, "Track Map Preview", "No centerline data is available."
             )
             return
-        from track_viewer.rendering.track_map_renderer import build_trk_map_image
+        from track_viewer.widget.track_map_preview import TrackMapPreviewDialog
 
-        image = build_trk_map_image(centerline)
-        self._show_trk_map_preview(image)
-
-    def _show_trk_map_preview(self, image: QtGui.QImage) -> None:
-        pixmap = QtGui.QPixmap.fromImage(image)
-        window = QtWidgets.QDialog(self)
-        window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-        window.setWindowTitle("Track Map Preview")
-        layout = QtWidgets.QVBoxLayout()
-        label = QtWidgets.QLabel()
-        label.setPixmap(pixmap)
-        layout.addWidget(label)
-        window.setLayout(layout)
-        window.setFixedSize(pixmap.size())
+        window = TrackMapPreviewDialog(centerline, self)
         window.show()
         self._trk_map_preview_window = window
 
