@@ -318,6 +318,14 @@ class TrackPreviewViewState:
             return 0.0
         return heading_turns
 
+    def weather_compass_heading_turns(self) -> float:
+        """Return heading adjust turns (0..1) for the active compass source."""
+        if self.weather_compass_source == "wind2":
+            adjust = self.wind2_heading_adjust
+        else:
+            adjust = self.wind_heading_adjust
+        return heading_adjust_to_turns(adjust) if adjust is not None else 0.0
+
     def set_weather_heading_adjust(
         self, source: str, value: int | None
     ) -> bool:
