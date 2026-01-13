@@ -107,8 +107,10 @@ def trk_to_sg(trk: TRKFile) -> SGFile:
     # TRK stores 10 dlats in-file; only first num_xsects are active.
     xsect_dlats = list(map(int, trk.xsect_dlats[:num_xsects]))
 
-    # SG header: only [4],[5] are required by your current pipelines. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
-    header = [0, 0, 0, 0, int(num_sects), int(num_xsects)]
+    # SG header: enforce magic and version bytes (first 16 bytes):
+    # 00 00 47 53 01 00 00 00 01 00 00 00 00 00 00 00
+    # which corresponds to int32 values [0x53470000, 1, 1, 0]. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+    header = [0x53470000, 1, 1, 0, int(num_sects), int(num_xsects)]
 
     cline = get_cline_pos(trk)  # provides (x,y) for straights, and (radius, sentinel) for curves. :contentReference[oaicite:8]{index=8}
 
