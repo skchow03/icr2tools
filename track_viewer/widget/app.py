@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -371,11 +371,18 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
 
     _ZOOM_LEVELS = [50, 75, 100, 125, 150, 200, 250, 300]
 
-    def __init__(self, parent: QtWidgets.QWidget, pixmap: QtGui.QPixmap) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget,
+        pixmap: QtGui.QPixmap,
+        rebuild_pixmap: Callable[[bool], QtGui.QPixmap] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         self.setWindowTitle("Track Map Preview")
         self._pixmap = pixmap
+        self._rebuild_pixmap = rebuild_pixmap
+        self._flip_marker = False
 
         self._fit_checkbox = QtWidgets.QCheckBox("Fit to window")
         self._fit_checkbox.setChecked(True)
@@ -389,11 +396,16 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         self._zoom_combo.currentIndexChanged.connect(self._handle_zoom_changed)
         self._zoom_combo.setEnabled(False)
 
+        self._flip_button = QtWidgets.QPushButton("Flip Start/Finish")
+        self._flip_button.clicked.connect(self._handle_flip_clicked)
+
         controls_layout = QtWidgets.QHBoxLayout()
         controls_layout.addWidget(self._fit_checkbox)
         controls_layout.addSpacing(12)
         controls_layout.addWidget(zoom_label)
         controls_layout.addWidget(self._zoom_combo)
+        controls_layout.addSpacing(12)
+        controls_layout.addWidget(self._flip_button)
         controls_layout.addStretch()
 
         self._label = QtWidgets.QLabel()
@@ -412,6 +424,10 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
 
         self._set_initial_size()
         self._update_pixmap()
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._update_pixmap)
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -444,6 +460,13 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         if not self._fit_checkbox.isChecked():
             self._update_pixmap()
 
+    def _handle_flip_clicked(self) -> None:
+        self._flip_marker = not self._flip_marker
+        if self._rebuild_pixmap is None:
+            return
+        self._pixmap = self._rebuild_pixmap(self._flip_marker)
+        self._update_pixmap()
+
     def _update_pixmap(self) -> None:
         if self._pixmap.isNull():
             return
@@ -452,7 +475,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
             if size.width() <= 0 or size.height() <= 0:
                 return
             scaled = self._pixmap.scaled(
-                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+                size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.FastTransformation
             )
         else:
             zoom = self._current_zoom_factor()
@@ -463,7 +486,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
             scaled = self._pixmap.scaled(
                 scaled_size,
                 QtCore.Qt.KeepAspectRatio,
-                QtCore.Qt.SmoothTransformation,
+                QtCore.Qt.FastTransformation,
             )
         self._label.setPixmap(scaled)
         self._label.resize(scaled.size())
@@ -1986,17 +2009,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self, "Track Map Preview", "No centerline data is available."
             )
             return
-        image = self._build_trk_map_image(centerline)
-        self._show_trk_map_preview(image)
+        self._show_trk_map_preview(centerline)
 
     def _build_trk_map_image(
-        self, centerline: list[tuple[float, float]]
+        self, centerline: list[tuple[float, float]], flip_marker: bool
     ) -> QtGui.QImage:
         width = 183
         height = 86
         margin = 6
-        image = QtGui.QImage(width, height, QtGui.QImage.Format_ARGB32)
-        image.fill(QtCore.Qt.black)
+        image = QtGui.QImage(width, height, QtGui.QImage.Format_Mono)
+        image.setColorTable([QtGui.qRgb(0, 0, 0), QtGui.qRgb(255, 255, 255)])
+        image.fill(0)
 
         xs = [point[0] for point in centerline]
         ys = [point[1] for point in centerline]
@@ -2016,7 +2039,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         mapped = [map_point(point) for point in centerline]
         painter = QtGui.QPainter(image)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.setRenderHint(QtGui.QPainter.TextAntialiasing, False)
+        painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, False)
         track_pen = QtGui.QPen(QtCore.Qt.white, 3)
         track_pen.setCapStyle(QtCore.Qt.RoundCap)
         track_pen.setJoinStyle(QtCore.Qt.RoundJoin)
@@ -2029,14 +2054,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             path.lineTo(point)
         painter.drawPath(path)
 
-        self._draw_start_finish_marker(painter, mapped)
+        self._draw_start_finish_marker(painter, mapped, flip_marker)
         self._draw_north_marker(painter, mapped, width, height, margin)
 
         painter.end()
         return image
 
     def _draw_start_finish_marker(
-        self, painter: QtGui.QPainter, mapped: list[QtCore.QPointF]
+        self,
+        painter: QtGui.QPainter,
+        mapped: list[QtCore.QPointF],
+        flip_marker: bool,
     ) -> None:
         if len(mapped) < 2:
             return
@@ -2048,6 +2076,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         direction /= length
         perpendicular = QtCore.QPointF(-direction.y(), direction.x())
+        if flip_marker:
+            perpendicular = -perpendicular
 
         perpendicular_length = 8.0
         along_length = 10.0
@@ -2138,9 +2168,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         text_y = base_y + gap + metrics.ascent()
         painter.drawText(QtCore.QPointF(text_x, text_y), text)
 
-    def _show_trk_map_preview(self, image: QtGui.QImage) -> None:
-        pixmap = QtGui.QPixmap.fromImage(image)
-        window = TrackMapPreviewDialog(self, pixmap)
+    def _show_trk_map_preview(
+        self, centerline: list[tuple[float, float]]
+    ) -> None:
+        def build_pixmap(flip_marker: bool) -> QtGui.QPixmap:
+            image = self._build_trk_map_image(centerline, flip_marker)
+            return QtGui.QPixmap.fromImage(image)
+
+        pixmap = build_pixmap(False)
+        window = TrackMapPreviewDialog(self, pixmap, rebuild_pixmap=build_pixmap)
         window.show()
         self._trk_map_preview_window = window
 
