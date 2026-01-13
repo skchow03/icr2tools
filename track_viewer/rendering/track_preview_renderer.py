@@ -584,12 +584,47 @@ class TrackPreviewRenderer:
                 )
                 painter.drawLine(center, offset_tip)
         painter.setPen(line_color)
-        metrics = painter.fontMetrics()
-        label = "N"
-        label_width = metrics.horizontalAdvance(label)
-        label_offset = handle_radius + metrics.height() * 0.6
         label_turns = heading_turns if heading_turns is not None else 0.0
         nx, ny = turns_to_unit_vector(label_turns)
+        tangent = QtCore.QPointF(-ny, nx)
+        arrow_length = max(6.0, handle_radius * 1.2)
+        arrow_width = arrow_length * 0.6
+        tip_distance = radius + handle_radius * 0.4
+        tip = QtCore.QPointF(
+            center.x() + nx * tip_distance,
+            center.y() + ny * tip_distance,
+        )
+        base_distance = tip_distance - arrow_length
+        base_center = QtCore.QPointF(
+            center.x() + nx * base_distance,
+            center.y() + ny * base_distance,
+        )
+        arrow = QtGui.QPolygonF(
+            [
+                tip,
+                QtCore.QPointF(
+                    base_center.x() + tangent.x() * (arrow_width / 2.0),
+                    base_center.y() + tangent.y() * (arrow_width / 2.0),
+                ),
+                QtCore.QPointF(
+                    base_center.x() - tangent.x() * (arrow_width / 2.0),
+                    base_center.y() - tangent.y() * (arrow_width / 2.0),
+                ),
+            ]
+        )
+        painter.setBrush(line_color)
+        painter.drawPolygon(arrow)
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        label_font = QtGui.QFont(painter.font())
+        label_font.setPixelSize(8)
+        label_font.setBold(True)
+        painter.setFont(label_font)
+        painter.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
+        metrics = QtGui.QFontMetrics(label_font)
+        label = "N"
+        label_width = metrics.horizontalAdvance(label)
+        label_offset = handle_radius + metrics.height()
         label_center = QtCore.QPointF(
             center.x() + nx * (radius + label_offset),
             center.y() + ny * (radius + label_offset),
@@ -597,8 +632,8 @@ class TrackPreviewRenderer:
         ascent = metrics.ascent()
         descent = metrics.descent()
         label_pos = QtCore.QPointF(
-            label_center.x() - label_width / 2,
-            label_center.y() + (ascent - descent) / 2,
+            round(label_center.x() - label_width / 2),
+            round(label_center.y() + (ascent - descent) / 2),
         )
         painter.drawText(label_pos, label)
         painter.restore()
