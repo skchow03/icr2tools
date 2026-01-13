@@ -1,6 +1,7 @@
 """Simple Qt application shell for the standalone track viewer."""
 from __future__ import annotations
 
+import math
 from functools import partial
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
@@ -376,7 +377,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         self,
         parent: QtWidgets.QWidget,
         pixmap: QtGui.QPixmap,
-        rebuild_pixmap: Callable[[bool], QtGui.QPixmap] | None = None,
+        rebuild_pixmap: Callable[[bool, int], QtGui.QPixmap] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
@@ -384,6 +385,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         self._pixmap = pixmap
         self._rebuild_pixmap = rebuild_pixmap
         self._flip_marker = False
+        self._rotation_steps = 0
 
         self._fit_checkbox = QtWidgets.QCheckBox("Fit to window")
         self._fit_checkbox.setChecked(True)
@@ -400,6 +402,9 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         self._flip_button = QtWidgets.QPushButton("Flip Start/Finish")
         self._flip_button.clicked.connect(self._handle_flip_clicked)
 
+        self._rotate_button = QtWidgets.QPushButton("Rotate Clockwise")
+        self._rotate_button.clicked.connect(self._handle_rotate_clicked)
+
         controls_layout = QtWidgets.QHBoxLayout()
         controls_layout.addWidget(self._fit_checkbox)
         controls_layout.addSpacing(12)
@@ -407,6 +412,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         controls_layout.addWidget(self._zoom_combo)
         controls_layout.addSpacing(12)
         controls_layout.addWidget(self._flip_button)
+        controls_layout.addWidget(self._rotate_button)
         controls_layout.addStretch()
 
         self._label = QtWidgets.QLabel()
@@ -465,7 +471,14 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         self._flip_marker = not self._flip_marker
         if self._rebuild_pixmap is None:
             return
-        self._pixmap = self._rebuild_pixmap(self._flip_marker)
+        self._pixmap = self._rebuild_pixmap(self._flip_marker, self._rotation_steps)
+        self._update_pixmap()
+
+    def _handle_rotate_clicked(self) -> None:
+        self._rotation_steps = (self._rotation_steps + 1) % 4
+        if self._rebuild_pixmap is None:
+            return
+        self._pixmap = self._rebuild_pixmap(self._flip_marker, self._rotation_steps)
         self._update_pixmap()
 
     def _update_pixmap(self) -> None:
@@ -2013,7 +2026,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._show_trk_map_preview(centerline)
 
     def _build_trk_map_image(
-        self, centerline: list[tuple[float, float]], flip_marker: bool
+        self,
+        centerline: list[tuple[float, float]],
+        flip_marker: bool,
+        rotation_steps: int,
     ) -> QtGui.QImage:
         width = 183
         height = 86
@@ -2022,23 +2038,48 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         image.setColorTable([QtGui.qRgb(0, 0, 0), QtGui.qRgb(255, 255, 255)])
         image.fill(0)
 
-        xs = [point[0] for point in centerline]
-        ys = [point[1] for point in centerline]
+        rotation_steps = rotation_steps % 4
+        if rotation_steps:
+            angle = -rotation_steps * (math.pi / 2)
+            cos_angle = math.cos(angle)
+            sin_angle = math.sin(angle)
+            xs = [point[0] for point in centerline]
+            ys = [point[1] for point in centerline]
+            center_x = (min(xs) + max(xs)) / 2
+            center_y = (min(ys) + max(ys)) / 2
+
+            def rotate_point(point: tuple[float, float]) -> tuple[float, float]:
+                dx = point[0] - center_x
+                dy = point[1] - center_y
+                return (
+                    center_x + dx * cos_angle - dy * sin_angle,
+                    center_y + dx * sin_angle + dy * cos_angle,
+                )
+
+            rotated = [rotate_point(point) for point in centerline]
+        else:
+            rotated = list(centerline)
+
+        xs = [point[0] for point in rotated]
+        ys = [point[1] for point in rotated]
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
         span_x = max(max_x - min_x, 1e-6)
         span_y = max(max_y - min_y, 1e-6)
-        scale = min(
-            (width - 2 * margin) / span_x,
-            (height - 2 * margin) / span_y,
-        )
+        available_width = width - 2 * margin
+        available_height = height - 2 * margin
+        scale = min(available_width / span_x, available_height / span_y)
+        draw_width = span_x * scale
+        draw_height = span_y * scale
+        offset_x = margin + (available_width - draw_width) / 2
+        offset_y = margin + (available_height - draw_height) / 2
 
         def map_point(point: tuple[float, float]) -> QtCore.QPointF:
-            x = margin + (point[0] - min_x) * scale
-            y = margin + (max_y - point[1]) * scale
+            x = offset_x + (point[0] - min_x) * scale
+            y = offset_y + (max_y - point[1]) * scale
             return QtCore.QPointF(x, y)
 
-        mapped = [map_point(point) for point in centerline]
+        mapped = [map_point(point) for point in rotated]
         painter = QtGui.QPainter(image)
         painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
         painter.setRenderHint(QtGui.QPainter.TextAntialiasing, False)
@@ -2056,7 +2097,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         painter.drawPath(path)
 
         self._draw_start_finish_marker(painter, mapped, flip_marker)
-        self._draw_north_marker(painter, mapped, width, height, margin)
+        self._draw_north_marker(
+            painter, mapped, width, height, margin, rotation_steps
+        )
 
         painter.end()
         return image
@@ -2111,6 +2154,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         width: int,
         height: int,
         margin: int,
+        rotation_steps: int,
     ) -> None:
         font = QtGui.QFont(painter.font())
         font.setPointSizeF(8.0)
@@ -2158,6 +2202,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         center = QtCore.QPointF(best.x() + total_size / 2, best.y() + total_size / 2)
         heading_turns = self.preview_api.weather_compass_heading_turns()
+        heading_turns = (heading_turns + rotation_steps * 0.25) % 1.0
         dx, dy = turns_to_unit_vector(heading_turns)
         direction = QtCore.QPointF(dx, dy)
         perpendicular = QtCore.QPointF(-direction.y(), direction.x())
@@ -2195,11 +2240,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _show_trk_map_preview(
         self, centerline: list[tuple[float, float]]
     ) -> None:
-        def build_pixmap(flip_marker: bool) -> QtGui.QPixmap:
-            image = self._build_trk_map_image(centerline, flip_marker)
+        def build_pixmap(flip_marker: bool, rotation_steps: int) -> QtGui.QPixmap:
+            image = self._build_trk_map_image(
+                centerline, flip_marker, rotation_steps
+            )
             return QtGui.QPixmap.fromImage(image)
 
-        pixmap = build_pixmap(False)
+        pixmap = build_pixmap(False, 0)
         window = TrackMapPreviewDialog(self, pixmap, rebuild_pixmap=build_pixmap)
         window.show()
         self._trk_map_preview_window = window
