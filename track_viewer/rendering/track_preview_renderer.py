@@ -383,6 +383,7 @@ class TrackPreviewRenderer:
     ) -> None:
         if not self._state.lp_shortcut_active:
             return
+        self._draw_lp_editing_banner(painter, size)
         metrics = painter.fontMetrics()
         line_height = metrics.height()
         margin = 12
@@ -409,6 +410,31 @@ class TrackPreviewRenderer:
         for line in lines:
             painter.drawText(start_x, start_y, line)
             start_y += line_height
+
+    def _draw_lp_editing_banner(
+        self, painter: QtGui.QPainter, size: QtCore.QSize
+    ) -> None:
+        if not self._state.lp_editing_tab_active:
+            return
+        lp_name = self._state.active_lp_line
+        if not lp_name or lp_name == "center-line":
+            return
+        painter.save()
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(max(font.pointSize() + 4, 14))
+        painter.setFont(font)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#ffeb3b")))
+        metrics = painter.fontMetrics()
+        height = metrics.height()
+        margin = 10
+        banner_rect = QtCore.QRect(0, margin, size.width(), height + 4)
+        painter.drawText(
+            banner_rect,
+            QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop,
+            f"LP editing mode - {lp_name}",
+        )
+        painter.restore()
 
     def _draw_status_overlay(self, painter: QtGui.QPainter) -> None:
         """Render textual overlays in screen coordinates (no transforms)."""
