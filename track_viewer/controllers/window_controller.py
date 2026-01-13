@@ -1,6 +1,7 @@
 """Controller layer that keeps window wiring minimal."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
@@ -54,32 +55,37 @@ class WindowController(QtCore.QObject):
         self.load_tracks()
 
     def load_tracks(self) -> None:
-        track_root = self._tracks_root()
-        self.preview_api.clear()
-        self.trackLengthChanged.emit(None)
-        self.trkGapsAvailabilityChanged.emit(False)
-        self.app_state.update_tracks([])
+        with self._busy_cursor():
+            track_root = self._tracks_root()
+            self.preview_api.clear()
+            self.trackLengthChanged.emit(None)
+            self.trkGapsAvailabilityChanged.emit(False)
+            self.app_state.update_tracks([])
 
-        if not track_root:
-            self.trackListUpdated.emit([("(TRACKS folder not found)", None)], False, -1)
+            if not track_root:
+                self.trackListUpdated.emit(
+                    [("(TRACKS folder not found)", None)], False, -1
+                )
+                self.aiLinesUpdated.emit([], set(), False)
+                return
+
+            folders = [
+                path
+                for path in sorted(track_root.iterdir(), key=lambda p: p.name.lower())
+                if path.is_dir()
+            ]
+            self.app_state.update_tracks([folder.name for folder in folders])
+
+            if not folders:
+                self.trackListUpdated.emit(
+                    [("(No track folders found)", None)], False, -1
+                )
+                self.aiLinesUpdated.emit([], set(), False)
+                return
+
+            entries = [(folder.name, folder) for folder in folders]
+            self.trackListUpdated.emit(entries, True, 0)
             self.aiLinesUpdated.emit([], set(), False)
-            return
-
-        folders = [
-            path
-            for path in sorted(track_root.iterdir(), key=lambda p: p.name.lower())
-            if path.is_dir()
-        ]
-        self.app_state.update_tracks([folder.name for folder in folders])
-
-        if not folders:
-            self.trackListUpdated.emit([("(No track folders found)", None)], False, -1)
-            self.aiLinesUpdated.emit([], set(), False)
-            return
-
-        entries = [(folder.name, folder) for folder in folders]
-        self.trackListUpdated.emit(entries, True, 0)
-        self.aiLinesUpdated.emit([], set(), False)
 
     def set_selected_track(self, folder: Optional[Path]) -> None:
         if not folder:
@@ -96,10 +102,11 @@ class WindowController(QtCore.QObject):
             self.sync_ai_lines()
             return
 
-        self.preview_api.load_track(folder)
-        self.trackLengthChanged.emit(self.preview_api.track_length())
-        self.trkGapsAvailabilityChanged.emit(self.preview_api.trk is not None)
-        self.sync_ai_lines()
+        with self._busy_cursor():
+            self.preview_api.load_track(folder)
+            self.trackLengthChanged.emit(self.preview_api.track_length())
+            self.trkGapsAvailabilityChanged.emit(self.preview_api.trk is not None)
+            self.sync_ai_lines()
 
     # ------------------------------------------------------------------
     # AI line helpers
@@ -117,7 +124,8 @@ class WindowController(QtCore.QObject):
     # TRK gaps
     # ------------------------------------------------------------------
     def run_trk_gaps(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
-        success, message = self.preview_api.run_trk_gaps()
+        with self._busy_cursor():
+            success, message = self.preview_api.run_trk_gaps()
         title = "TRK Gaps"
         if not success:
             QtWidgets.QMessageBox.warning(parent or self.parent(), title, message)
@@ -143,7 +151,8 @@ class WindowController(QtCore.QObject):
         if not output_path:
             return
 
-        success, message = self.preview_api.convert_trk_to_sg(Path(output_path))
+        with self._busy_cursor():
+            success, message = self.preview_api.convert_trk_to_sg(Path(output_path))
         if success:
             QtWidgets.QMessageBox.information(
                 parent or self.parent(), "TRK to SG", message
@@ -189,3 +198,15 @@ class WindowController(QtCore.QObject):
             if candidate.exists() and candidate.is_dir():
                 return candidate
         return None
+
+    @contextmanager
+    def _busy_cursor(self):
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            yield
+            return
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            yield
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
