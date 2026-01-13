@@ -119,7 +119,6 @@ class TrackPreviewViewState:
         self.selected_lp_line = None
         self.selected_lp_index = None
         self.lp_shortcut_active = False
-        self.lp_dlat_step = 0
         self.lp_editing_tab_active = False
         self.pit_params = None
         self.visible_pit_indices = set(PIT_DLONG_LINE_INDICES)
