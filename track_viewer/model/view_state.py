@@ -46,6 +46,7 @@ class TrackPreviewViewState:
     selected_lp_index: int | None = None
     lp_shortcut_active: bool = False
     lp_dlat_step: int = 0
+    lp_editing_tab_active: bool = False
     pit_params: PitParameters | None = None
     visible_pit_indices: set[int] = field(
         default_factory=lambda: set(PIT_DLONG_LINE_INDICES)
@@ -119,6 +120,7 @@ class TrackPreviewViewState:
         self.selected_lp_index = None
         self.lp_shortcut_active = False
         self.lp_dlat_step = 0
+        self.lp_editing_tab_active = False
         self.pit_params = None
         self.visible_pit_indices = set(PIT_DLONG_LINE_INDICES)
         self.show_pit_stall_center_dlat = True

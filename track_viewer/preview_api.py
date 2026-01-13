@@ -123,6 +123,9 @@ class TrackPreviewApi:
     def set_lp_shortcut_active(self, active: bool) -> None:
         self._coordinator.set_lp_shortcut_active(active)
 
+    def set_lp_editing_tab_active(self, active: bool) -> None:
+        self._coordinator.set_lp_editing_tab_active(active)
+
     def set_lp_dlat_step(self, step: int) -> None:
         self._coordinator.set_lp_dlat_step(step)
 

@@ -1264,6 +1264,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         tabs = QtWidgets.QTabWidget()
         self._tabs = tabs
+        self._lp_tab = lp_sidebar
         tabs.addTab(
             lp_sidebar,
             self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogInfoView),
@@ -1674,7 +1675,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         show_cameras = widget is self._camera_tab
         self.preview_api.set_show_cameras(show_cameras)
         self.preview_api.set_camera_selection_enabled(show_cameras)
+        lp_tab_active = widget is self._lp_tab
+        self.preview_api.set_lp_editing_tab_active(lp_tab_active)
+        if not lp_tab_active:
+            self._set_lp_shortcut_active(False)
         self._sync_pit_preview_for_tab()
+
+    def _lp_tab_active(self) -> bool:
+        return self._tabs.currentWidget() is self._lp_tab
 
     def _handle_qual_mode_changed(self, index: int) -> None:
         mode = self._qual_mode_field.itemData(index) if index >= 0 else None
@@ -2113,6 +2121,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         return False
 
     def _can_handle_lp_shortcut(self, *, ignore_focus: bool = False) -> bool:
+        if not self._lp_tab_active():
+            return False
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return False
@@ -2599,12 +2609,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_selected_lp_index_label(row)
 
     def _handle_lp_shortcut_activation(self) -> None:
+        if not self._lp_tab_active():
+            self._set_lp_shortcut_active(False)
+            return
         if self._current_lp_selection() is None:
             self._set_lp_shortcut_active(False)
             return
         self._set_lp_shortcut_active(True)
 
     def _handle_lp_shortcut_toggled(self, active: bool) -> None:
+        if not self._lp_tab_active():
+            self._set_lp_shortcut_active(False)
+            return
         if active and self._current_lp_selection() is None:
             self._set_lp_shortcut_active(False)
             return

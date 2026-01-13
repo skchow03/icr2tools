@@ -331,6 +331,12 @@ class PreviewCoordinator:
         self._state.lp_shortcut_active = active
         self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def set_lp_editing_tab_active(self, active: bool) -> None:
+        if self._state.lp_editing_tab_active == active:
+            return
+        self._state.lp_editing_tab_active = active
+        self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
     def set_lp_dlat_step(self, step: int) -> None:
         clamped = max(0, int(step))
         if self._state.lp_dlat_step == clamped:
