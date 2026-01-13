@@ -376,6 +376,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._io_service = TrackIOService()
         self._track_txt_result: TrackTxtResult | None = None
         self._current_track_folder: Path | None = None
+        self._trk_map_preview_window: QtWidgets.QWidget | None = None
 
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
@@ -731,6 +732,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_gaps_button.setEnabled(False)
         self._trk_to_sg_button = QtWidgets.QPushButton("Convert TRK to SG")
         self._trk_to_sg_button.setEnabled(False)
+        self._trk_map_preview_button = QtWidgets.QPushButton("Preview Track Map")
+        self._trk_map_preview_button.setEnabled(False)
 
         self._flag_draw_button = QtWidgets.QPushButton("Draw Flag")
         self._flag_draw_button.setCheckable(True)
@@ -918,6 +921,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_to_sg_button.clicked.connect(
             lambda: self.controller.convert_trk_to_sg(self)
         )
+        self._trk_map_preview_button.clicked.connect(self._handle_trk_map_preview)
         self.controller.sync_ai_lines()
 
         self._create_menus()
@@ -1114,6 +1118,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         trk_title.setStyleSheet("font-weight: bold")
         trk_layout.addWidget(trk_title)
         trk_layout.addWidget(self._trk_status_label)
+        trk_layout.addWidget(self._trk_map_preview_button)
         trk_layout.addWidget(self._trk_sections_table, 1)
         trk_sidebar.setLayout(trk_layout)
         trk_scroll = QtWidgets.QScrollArea()
@@ -1864,10 +1869,185 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if trk is None:
             self._trk_status_label.setText("Select a track to view TRK sections.")
             self._trk_sections_model.set_sections([])
+            self._trk_map_preview_button.setEnabled(False)
             return
         sections = trk.sects or []
         self._trk_status_label.setText(f"Loaded {len(sections)} sections.")
         self._trk_sections_model.set_sections(sections)
+        self._trk_map_preview_button.setEnabled(True)
+
+    def _handle_trk_map_preview(self) -> None:
+        centerline = self.preview_api.sampled_centerline()
+        if not centerline:
+            QtWidgets.QMessageBox.warning(
+                self, "Track Map Preview", "No centerline data is available."
+            )
+            return
+        image = self._build_trk_map_image(centerline)
+        self._show_trk_map_preview(image)
+
+    def _build_trk_map_image(
+        self, centerline: list[tuple[float, float]]
+    ) -> QtGui.QImage:
+        width = 183
+        height = 86
+        margin = 6
+        image = QtGui.QImage(width, height, QtGui.QImage.Format_ARGB32)
+        image.fill(QtCore.Qt.black)
+
+        xs = [point[0] for point in centerline]
+        ys = [point[1] for point in centerline]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max(max_x - min_x, 1e-6)
+        span_y = max(max_y - min_y, 1e-6)
+        scale = min(
+            (width - 2 * margin) / span_x,
+            (height - 2 * margin) / span_y,
+        )
+
+        def map_point(point: tuple[float, float]) -> QtCore.QPointF:
+            x = margin + (point[0] - min_x) * scale
+            y = margin + (max_y - point[1]) * scale
+            return QtCore.QPointF(x, y)
+
+        mapped = [map_point(point) for point in centerline]
+        painter = QtGui.QPainter(image)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        track_pen = QtGui.QPen(QtCore.Qt.white, 3)
+        track_pen.setCapStyle(QtCore.Qt.RoundCap)
+        track_pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        painter.setPen(track_pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        path = QtGui.QPainterPath()
+        path.moveTo(mapped[0])
+        for point in mapped[1:]:
+            path.lineTo(point)
+        painter.drawPath(path)
+
+        self._draw_start_finish_marker(painter, mapped)
+        self._draw_north_marker(painter, mapped, width, height, margin)
+
+        painter.end()
+        return image
+
+    def _draw_start_finish_marker(
+        self, painter: QtGui.QPainter, mapped: list[QtCore.QPointF]
+    ) -> None:
+        if len(mapped) < 2:
+            return
+        start = mapped[0]
+        next_point = mapped[1]
+        direction = next_point - start
+        length = (direction.x() ** 2 + direction.y() ** 2) ** 0.5
+        if length <= 0:
+            return
+        direction /= length
+        perpendicular = QtCore.QPointF(-direction.y(), direction.x())
+
+        perpendicular_length = 8.0
+        along_length = 10.0
+        arrow_length = 7.0
+        arrow_width = 6.0
+
+        kink = start + perpendicular * perpendicular_length
+        arrow_tip = kink + direction * along_length
+
+        marker_pen = QtGui.QPen(QtCore.Qt.white, 2)
+        marker_pen.setCapStyle(QtCore.Qt.RoundCap)
+        marker_pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        painter.setPen(marker_pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawLine(start, kink)
+        painter.drawLine(kink, arrow_tip)
+
+        base_center = arrow_tip - direction * arrow_length
+        left = base_center + perpendicular * (arrow_width / 2)
+        right = base_center - perpendicular * (arrow_width / 2)
+        arrow = QtGui.QPolygonF([arrow_tip, left, right])
+        painter.setBrush(QtCore.Qt.white)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawPolygon(arrow)
+
+    def _draw_north_marker(
+        self,
+        painter: QtGui.QPainter,
+        mapped: list[QtCore.QPointF],
+        width: int,
+        height: int,
+        margin: int,
+    ) -> None:
+        font = QtGui.QFont()
+        font.setPixelSize(8)
+        painter.setFont(font)
+        metrics = QtGui.QFontMetrics(font)
+        text = "N"
+        text_width = metrics.horizontalAdvance(text)
+        text_height = metrics.height()
+        arrow_height = 11
+        arrow_width = max(8, text_width)
+        gap = 2
+        total_width = arrow_width
+        total_height = arrow_height + gap + text_height
+
+        candidates = []
+        cols = 5
+        rows = 3
+        for row in range(rows):
+            for col in range(cols):
+                x = margin + col * (width - 2 * margin - total_width) / max(cols - 1, 1)
+                y = margin + row * (height - 2 * margin - total_height) / max(
+                    rows - 1, 1
+                )
+                candidates.append(QtCore.QPointF(x, y))
+
+        def distance_squared(point: QtCore.QPointF) -> float:
+            return point.x() ** 2 + point.y() ** 2
+
+        best = QtCore.QPointF(margin, margin)
+        best_score = -1.0
+        for candidate in candidates:
+            center = QtCore.QPointF(
+                candidate.x() + total_width / 2, candidate.y() + total_height / 2
+            )
+            min_distance = None
+            for track_point in mapped:
+                delta = track_point - center
+                score = distance_squared(delta)
+                if min_distance is None or score < min_distance:
+                    min_distance = score
+            if min_distance is not None and min_distance > best_score:
+                best_score = min_distance
+                best = candidate
+
+        arrow_tip = QtCore.QPointF(best.x() + total_width / 2, best.y())
+        base_y = best.y() + arrow_height
+        arrow_left = QtCore.QPointF(arrow_tip.x() - arrow_width / 2, base_y)
+        arrow_right = QtCore.QPointF(arrow_tip.x() + arrow_width / 2, base_y)
+        arrow = QtGui.QPolygonF([arrow_tip, arrow_left, arrow_right])
+        painter.setBrush(QtCore.Qt.white)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawPolygon(arrow)
+
+        painter.setPen(QtCore.Qt.white)
+        text_x = best.x() + (total_width - text_width) / 2
+        text_y = base_y + gap + metrics.ascent()
+        painter.drawText(QtCore.QPointF(text_x, text_y), text)
+
+    def _show_trk_map_preview(self, image: QtGui.QImage) -> None:
+        pixmap = QtGui.QPixmap.fromImage(image)
+        window = QtWidgets.QDialog(self)
+        window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        window.setWindowTitle("Track Map Preview")
+        layout = QtWidgets.QVBoxLayout()
+        label = QtWidgets.QLabel()
+        label.setPixmap(pixmap)
+        layout.addWidget(label)
+        window.setLayout(layout)
+        window.setFixedSize(pixmap.size())
+        window.show()
+        self._trk_map_preview_window = window
 
     def _handle_save_pit_params(self) -> None:
         if self._current_track_folder is None:

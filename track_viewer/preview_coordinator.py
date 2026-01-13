@@ -391,6 +391,9 @@ class PreviewCoordinator:
     def track_length(self) -> Optional[int]:
         return int(self._model.track_length) if self._model.track_length is not None else None
 
+    def sampled_centerline(self) -> list[tuple[float, float]]:
+        return list(self._model.sampled_centerline)
+
     @property
     def trk(self) -> object | None:
         return self._model.trk

@@ -153,6 +153,9 @@ class TrackPreviewApi:
     def track_length(self) -> Optional[int]:
         return self._coordinator.track_length()
 
+    def sampled_centerline(self) -> list[tuple[float, float]]:
+        return self._coordinator.sampled_centerline()
+
     @property
     def trk(self) -> object | None:
         return self._coordinator.trk
