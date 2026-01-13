@@ -24,7 +24,9 @@ def build_trk_map_image(
     margin: int = 6,
 ) -> QtGui.QImage:
     """Build the 2-color track map preview image."""
-    layout = _best_fit_layout(centerline, width, height, margin)
+    track_pen_width = 3
+    layout_margin = margin + math.ceil(track_pen_width / 2)
+    layout = _best_fit_layout(centerline, width, height, layout_margin)
 
     image = QtGui.QImage(width, height, QtGui.QImage.Format_ARGB32)
     image.fill(QtCore.Qt.black)
@@ -35,7 +37,7 @@ def build_trk_map_image(
     painter = QtGui.QPainter(image)
     painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
     painter.setRenderHint(QtGui.QPainter.TextAntialiasing, False)
-    track_pen = QtGui.QPen(QtCore.Qt.white, 3)
+    track_pen = QtGui.QPen(QtCore.Qt.white, track_pen_width)
     track_pen.setCapStyle(QtCore.Qt.SquareCap)
     track_pen.setJoinStyle(QtCore.Qt.MiterJoin)
     painter.setPen(track_pen)
@@ -54,7 +56,7 @@ def build_trk_map_image(
         start_finish,
         width,
         height,
-        margin,
+        layout_margin,
     )
 
     painter.end()
