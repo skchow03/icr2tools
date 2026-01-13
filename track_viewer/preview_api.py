@@ -151,6 +151,9 @@ class TrackPreviewApi:
     def trk(self) -> object | None:
         return self._coordinator.trk
 
+    def track_path(self) -> Optional[Path]:
+        return self._coordinator.track_path()
+
     def set_show_cameras(self, show: bool) -> None:
         self._coordinator.set_show_cameras(show)
 
@@ -214,3 +217,6 @@ class TrackPreviewApi:
 
     def run_trk_gaps(self) -> tuple[bool, str]:
         return self._coordinator.run_trk_gaps()
+
+    def convert_trk_to_sg(self, output_path: Path) -> tuple[bool, str]:
+        return self._coordinator.convert_trk_to_sg(output_path)

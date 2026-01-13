@@ -125,6 +125,33 @@ class WindowController(QtCore.QObject):
 
         self._show_gap_results_window(parent or self.parent(), title, message)
 
+    def convert_trk_to_sg(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        track_path = self.preview_api.track_path()
+        if track_path is None:
+            QtWidgets.QMessageBox.warning(
+                parent or self.parent(), "TRK to SG", "No track is currently loaded."
+            )
+            return
+
+        default_output = track_path / f"{track_path.name}.sg"
+        output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            parent or self.parent(),
+            "Save SG file",
+            str(default_output),
+            "SG Files (*.sg)",
+        )
+        if not output_path:
+            return
+
+        success, message = self.preview_api.convert_trk_to_sg(Path(output_path))
+        if success:
+            QtWidgets.QMessageBox.information(
+                parent or self.parent(), "TRK to SG", message
+            )
+            return
+
+        QtWidgets.QMessageBox.warning(parent or self.parent(), "TRK to SG", message)
+
     def _show_gap_results_window(
         self, parent: Optional[QtWidgets.QWidget], title: str, text: str
     ) -> None:

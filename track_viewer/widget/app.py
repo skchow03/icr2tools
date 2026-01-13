@@ -727,6 +727,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
         self._trk_gaps_button.setEnabled(False)
+        self._trk_to_sg_button = QtWidgets.QPushButton("Convert TRK to SG")
+        self._trk_to_sg_button.setEnabled(False)
 
         self._flag_draw_button = QtWidgets.QPushButton("Draw Flag")
         self._flag_draw_button.setCheckable(True)
@@ -879,6 +881,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.controller.trackListUpdated.connect(self._apply_track_list_items)
         self.controller.trackLengthChanged.connect(self._sidebar.set_track_length)
         self.controller.trkGapsAvailabilityChanged.connect(self._trk_gaps_button.setEnabled)
+        self.controller.trkGapsAvailabilityChanged.connect(
+            self._trk_to_sg_button.setEnabled
+        )
         self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
 
         self.camera_actions = CameraActions(self.preview_api)
@@ -906,6 +911,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
         self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
+        self._trk_to_sg_button.clicked.connect(
+            lambda: self.controller.convert_trk_to_sg(self)
+        )
         self.controller.sync_ai_lines()
 
         self._create_menus()
@@ -927,6 +935,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._radius_unit_button)
         controls.addStretch(1)
         controls.addWidget(self._trk_gaps_button)
+        controls.addWidget(self._trk_to_sg_button)
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._section_divider_button)
         layout.addLayout(controls)
