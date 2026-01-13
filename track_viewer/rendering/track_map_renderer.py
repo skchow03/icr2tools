@@ -10,7 +10,6 @@ from PyQt5 import QtCore, QtGui
 
 @dataclass(frozen=True)
 class TrackMapLayout:
-    angle_deg: float
     mapped: list[QtCore.QPointF]
     scale: float
     min_x: float
@@ -22,11 +21,19 @@ def build_trk_map_image(
     width: int = 183,
     height: int = 86,
     margin: int = 6,
+    scale: float | None = None,
+    angle_deg: float = 0.0,
 ) -> QtGui.QImage:
     """Build the 2-color track map preview image."""
     track_pen_width = 3
     layout_margin = margin + math.ceil(track_pen_width / 2)
-    layout = _best_fit_layout(centerline, width, height, layout_margin)
+    if scale is None:
+        scale = compute_fit_scale(
+            centerline, width, height, layout_margin, angle_deg
+        )
+    layout = _layout_with_transform(
+        centerline, width, height, layout_margin, scale, angle_deg
+    )
 
     image = QtGui.QImage(width, height, QtGui.QImage.Format_ARGB32)
     image.fill(QtCore.Qt.black)
@@ -57,73 +64,52 @@ def build_trk_map_image(
         width,
         height,
         layout_margin,
+        angle_deg,
     )
 
     painter.end()
     return image
 
 
-def _best_fit_layout(
+def compute_fit_scale(
     centerline: list[tuple[float, float]],
     width: int,
     height: int,
     margin: int,
+    angle_deg: float = 0.0,
+) -> float:
+    points = [QtCore.QPointF(x, y) for x, y in centerline]
+    if not points:
+        return 1.0
+
+    center = _centroid(points)
+    rotated = _rotate_points(points, center, math.radians(angle_deg))
+    min_x, max_x, min_y, max_y = _bounds(rotated)
+    span_x = max(max_x - min_x, 1e-6)
+    span_y = max(max_y - min_y, 1e-6)
+    return min(
+        (width - 2 * margin) / span_x,
+        (height - 2 * margin) / span_y,
+    )
+
+
+def _layout_with_transform(
+    centerline: list[tuple[float, float]],
+    width: int,
+    height: int,
+    margin: int,
+    scale: float,
+    angle_deg: float,
 ) -> TrackMapLayout:
     points = [QtCore.QPointF(x, y) for x, y in centerline]
     if not points:
-        return TrackMapLayout(0.0, [], 1.0, 0.0, 0.0)
+        return TrackMapLayout([], scale, 0.0, 0.0)
 
     center = _centroid(points)
-    best_layout = None
-    best_score: tuple[float, float] | None = None
-    best_angle = 0
-    coarse_step = 5
-
-    def score_angle(angle: int) -> tuple[float, float, TrackMapLayout]:
-        rotated = _rotate_points(points, center, math.radians(angle))
-        min_x, max_x, min_y, max_y = _bounds(rotated)
-        span_x = max(max_x - min_x, 1e-6)
-        span_y = max(max_y - min_y, 1e-6)
-        scale = min(
-            (width - 2 * margin) / span_x,
-            (height - 2 * margin) / span_y,
-        )
-        mapped = _map_points(rotated, min_x, max_y, scale, margin)
-
-        arrow_clearance = _estimate_arrow_clearance(mapped)
-        north_clearance = _estimate_north_clearance(
-            mapped, width, height, margin
-        )
-        clearance = min(arrow_clearance, north_clearance)
-        return (scale, clearance, TrackMapLayout(angle, mapped, scale, min_x, max_y))
-
-    for angle in range(0, 180, coarse_step):
-        scale, clearance, layout = score_angle(angle)
-        score = (scale, clearance)
-        if best_score is None or score > best_score:
-            best_score = score
-            best_layout = layout
-            best_angle = angle
-
-    start = max(0, best_angle - (coarse_step - 1))
-    end = min(179, best_angle + (coarse_step - 1))
-    for angle in range(start, end + 1):
-        scale, clearance, layout = score_angle(angle)
-        score = (scale, clearance)
-        if best_score is None or score > best_score:
-            best_score = score
-            best_layout = layout
-
-    if best_layout is None:
-        return TrackMapLayout(
-            0.0,
-            _map_points(points, 0.0, 0.0, 1.0, margin),
-            1.0,
-            0.0,
-            0.0,
-        )
-
-    return best_layout
+    rotated = _rotate_points(points, center, math.radians(angle_deg))
+    min_x, max_x, min_y, max_y = _bounds(rotated)
+    mapped = _map_points(rotated, min_x, max_y, scale, margin)
+    return TrackMapLayout(mapped, scale, min_x, max_y)
 
 
 def _centroid(points: list[QtCore.QPointF]) -> QtCore.QPointF:
@@ -228,6 +214,7 @@ def _draw_north_marker(
     width: int,
     height: int,
     margin: int,
+    angle_deg: float,
 ) -> None:
     font = QtGui.QFont()
     font.setPixelSize(8)
@@ -273,6 +260,18 @@ def _draw_north_marker(
     arrow_left = QtCore.QPointF(arrow_tip.x() - arrow_width / 2, base_y)
     arrow_right = QtCore.QPointF(arrow_tip.x() + arrow_width / 2, base_y)
     arrow = QtGui.QPolygonF([arrow_tip, arrow_left, arrow_right])
+
+    transform = None
+    if angle_deg % 360:
+        center = QtCore.QPointF(
+            best.x() + total_width / 2, best.y() + total_height / 2
+        )
+        transform = QtGui.QTransform()
+        transform.translate(center.x(), center.y())
+        transform.rotate(angle_deg)
+        transform.translate(-center.x(), -center.y())
+        arrow = transform.map(arrow)
+        arrow_tip = transform.map(arrow_tip)
     painter.setBrush(QtCore.Qt.white)
     painter.setPen(QtCore.Qt.NoPen)
     painter.drawPolygon(arrow)
@@ -281,66 +280,6 @@ def _draw_north_marker(
     text_x = best.x() + (total_width - text_width) / 2
     text_y = base_y + gap + metrics.ascent()
     painter.drawText(QtCore.QPointF(text_x, text_y), text)
-
-
-def _estimate_arrow_clearance(mapped: list[QtCore.QPointF]) -> float:
-    if len(mapped) < 2:
-        return 0.0
-    start = mapped[0]
-    next_point = mapped[1]
-    direction = next_point - start
-    length = math.hypot(direction.x(), direction.y())
-    if length <= 0:
-        return 0.0
-    direction /= length
-    perpendicular = QtCore.QPointF(-direction.y(), direction.x())
-    arrow_length = 7.0
-    arrow_width = 6.0
-    perpendicular_length = 8.0
-    along_length = 10.0
-
-    best = 0.0
-    for sign in (1.0, -1.0):
-        perp = perpendicular * sign
-        kink = start + perp * perpendicular_length
-        arrow_tip = kink + direction * along_length
-        base_center = arrow_tip - direction * arrow_length
-        left = base_center + perp * (arrow_width / 2)
-        right = base_center - perp * (arrow_width / 2)
-        arrow = QtGui.QPolygonF([arrow_tip, left, right])
-        clearance = _polygon_clearance(arrow, mapped)
-        best = max(best, clearance)
-    return best
-
-
-def _estimate_north_clearance(
-    mapped: list[QtCore.QPointF],
-    width: int,
-    height: int,
-    margin: int,
-) -> float:
-    font = QtGui.QFont()
-    font.setPixelSize(8)
-    metrics = QtGui.QFontMetrics(font)
-    text_width = metrics.horizontalAdvance("N")
-    text_height = metrics.height()
-    arrow_height = 11
-    arrow_width = max(8, text_width)
-    gap = 2
-    total_width = arrow_width
-    total_height = arrow_height + gap + text_height
-    cols = 5
-    rows = 3
-    best = 0.0
-    for row in range(rows):
-        for col in range(cols):
-            x = margin + col * (width - 2 * margin - total_width) / max(cols - 1, 1)
-            y = margin + row * (height - 2 * margin - total_height) / max(
-                rows - 1, 1
-            )
-            center = QtCore.QPointF(x + total_width / 2, y + total_height / 2)
-            best = max(best, _min_distance(center, mapped))
-    return best
 
 
 def _polygon_clearance(
