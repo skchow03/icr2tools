@@ -26,10 +26,11 @@ def build_trk_map_image(
     """Build the 2-color track map preview image."""
     layout = _best_fit_layout(centerline, width, height, margin)
 
-    image = QtGui.QImage(width, height, QtGui.QImage.Format_Mono)
-    image.setColor(0, QtGui.qRgb(0, 0, 0))
-    image.setColor(1, QtGui.qRgb(255, 255, 255))
+    image = QtGui.QImage(width, height, QtGui.QImage.Format_ARGB32)
     image.fill(QtCore.Qt.black)
+
+    if not layout.mapped:
+        return image
 
     painter = QtGui.QPainter(image)
     painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
@@ -73,7 +74,10 @@ def _best_fit_layout(
     center = _centroid(points)
     best_layout = None
     best_score: tuple[float, float] | None = None
-    for angle in range(0, 180):
+    best_angle = 0
+    coarse_step = 5
+
+    def score_angle(angle: int) -> tuple[float, float, TrackMapLayout]:
         rotated = _rotate_points(points, center, math.radians(angle))
         min_x, max_x, min_y, max_y = _bounds(rotated)
         span_x = max(max_x - min_x, 1e-6)
@@ -89,13 +93,33 @@ def _best_fit_layout(
             mapped, width, height, margin
         )
         clearance = min(arrow_clearance, north_clearance)
+        return (scale, clearance, TrackMapLayout(angle, mapped, scale, min_x, max_y))
+
+    for angle in range(0, 180, coarse_step):
+        scale, clearance, layout = score_angle(angle)
         score = (scale, clearance)
         if best_score is None or score > best_score:
             best_score = score
-            best_layout = TrackMapLayout(angle, mapped, scale, min_x, max_y)
+            best_layout = layout
+            best_angle = angle
+
+    start = max(0, best_angle - (coarse_step - 1))
+    end = min(179, best_angle + (coarse_step - 1))
+    for angle in range(start, end + 1):
+        scale, clearance, layout = score_angle(angle)
+        score = (scale, clearance)
+        if best_score is None or score > best_score:
+            best_score = score
+            best_layout = layout
 
     if best_layout is None:
-        return TrackMapLayout(0.0, _map_points(points, 0.0, 0.0, 1.0, margin), 1.0, 0.0, 0.0)
+        return TrackMapLayout(
+            0.0,
+            _map_points(points, 0.0, 0.0, 1.0, margin),
+            1.0,
+            0.0,
+            0.0,
+        )
 
     return best_layout
 
