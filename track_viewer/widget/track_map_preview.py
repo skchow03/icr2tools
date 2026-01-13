@@ -87,6 +87,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
             self._margin,
             angle_deg=0.0,
         )
+        self._ensure_scale_range(fit_scale)
         self._scale_spin.setValue(max(fit_scale, 0.05))
         self._scale_slider.setValue(int(self._scale_spin.value() * 100))
 
@@ -99,6 +100,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
             self._margin,
             angle_deg=angle,
         )
+        self._ensure_scale_range(fit_scale)
         self._scale_spin.setValue(max(fit_scale, 0.05))
 
     def _handle_scale_slider(self, value: int) -> None:
@@ -112,6 +114,14 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         if self._scale_slider.value() != slider_value:
             self._scale_slider.setValue(slider_value)
         self._refresh_image()
+
+    def _ensure_scale_range(self, target_scale: float) -> None:
+        max_scale = max(self._scale_spin.maximum(), target_scale * 1.25, 10.0)
+        slider_max = max(5, int(max_scale * 100))
+        if self._scale_spin.maximum() != max_scale:
+            self._scale_spin.setMaximum(max_scale)
+        if self._scale_slider.maximum() != slider_max:
+            self._scale_slider.setMaximum(slider_max)
 
     def _refresh_image(self) -> None:
         scale = float(self._scale_spin.value())
