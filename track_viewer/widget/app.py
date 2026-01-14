@@ -510,7 +510,7 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
 class TrackViewerWindow(QtWidgets.QMainWindow):
     """Minimal placeholder UI that demonstrates shared state wiring."""
 
-    _RPY_FPS = 60.0
+    _RPY_FPS = 15.0
 
     def __init__(self, app_state: TrackViewerApp):
         super().__init__()
@@ -2140,8 +2140,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._current_replay_path = replay_path
         with QtCore.QSignalBlocker(self._replay_car_combo):
             self._replay_car_combo.clear()
-            for car_id in rpy.car_index:
-                self._replay_car_combo.addItem(f"Car {car_id}", car_id)
+            for display_index, car_id in enumerate(rpy.car_index):
+                self._replay_car_combo.addItem(
+                    f"Car {display_index}",
+                    car_id,
+                )
             self._replay_car_combo.setEnabled(True)
             if self._replay_car_combo.count() > 0:
                 self._replay_car_combo.setCurrentIndex(0)
