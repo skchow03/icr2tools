@@ -1794,6 +1794,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         show_cameras = widget is self._camera_tab
         self.preview_api.set_show_cameras(show_cameras)
         self.preview_api.set_camera_selection_enabled(show_cameras)
+        self.preview_api.set_show_camera_guidance(show_cameras)
         lp_tab_active = widget is self._lp_tab
         self.preview_api.set_lp_editing_tab_active(lp_tab_active)
         if not lp_tab_active:

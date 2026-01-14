@@ -31,6 +31,7 @@ class TrackPreviewViewState:
     show_boundaries: bool = True
     show_cameras: bool = True
     show_cameras_current_tv_only: bool = False
+    show_camera_guidance: bool = False
     show_zoom_points: bool = False
     show_section_dividers: bool = False
     ai_color_mode: str = "none"
@@ -105,6 +106,7 @@ class TrackPreviewViewState:
         self.show_boundaries = True
         self.show_cameras = True
         self.show_cameras_current_tv_only = False
+        self.show_camera_guidance = False
         self.show_zoom_points = False
         self.show_section_dividers = False
         self.ai_color_mode = "none"
