@@ -235,3 +235,6 @@ class TrackPreviewApi:
 
     def convert_trk_to_sg(self, output_path: Path) -> tuple[bool, str]:
         return self._coordinator.convert_trk_to_sg(output_path)
+
+    def convert_trk_to_csv(self, output_path: Path) -> tuple[bool, str]:
+        return self._coordinator.convert_trk_to_csv(output_path)

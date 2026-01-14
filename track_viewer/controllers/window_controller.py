@@ -152,6 +152,31 @@ class WindowController(QtCore.QObject):
 
         QtWidgets.QMessageBox.warning(parent or self.parent(), "TRK to SG", message)
 
+    def convert_trk_to_csv(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        track_path = self.preview_api.track_path()
+        if track_path is None:
+            QtWidgets.QMessageBox.warning(
+                parent or self.parent(), "TRK to CSV", "No track is currently loaded."
+            )
+            return
+
+        output_path = QtWidgets.QFileDialog.getExistingDirectory(
+            parent or self.parent(),
+            "Select folder to export CSV files",
+            str(track_path),
+        )
+        if not output_path:
+            return
+
+        success, message = self.preview_api.convert_trk_to_csv(Path(output_path))
+        if success:
+            QtWidgets.QMessageBox.information(
+                parent or self.parent(), "TRK to CSV", message
+            )
+            return
+
+        QtWidgets.QMessageBox.warning(parent or self.parent(), "TRK to CSV", message)
+
     def _show_gap_results_window(
         self, parent: Optional[QtWidgets.QWidget], title: str, text: str
     ) -> None:
