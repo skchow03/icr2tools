@@ -10,6 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
+from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.trk_utils import ground_type_name
 from track_viewer.controllers.camera_actions import CameraActions
 from track_viewer.model.camera_models import CameraViewListing
@@ -509,6 +510,8 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
 class TrackViewerWindow(QtWidgets.QMainWindow):
     """Minimal placeholder UI that demonstrates shared state wiring."""
 
+    _RPY_FPS = 60.0
+
     def __init__(self, app_state: TrackViewerApp):
         super().__init__()
         self.app_state = app_state
@@ -628,6 +631,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         trk_header.setMinimumHeight(56)
         self._trk_sections_table.setWordWrap(True)
         self._trk_sections_table.verticalHeader().setVisible(False)
+
+        self._replay_list = QtWidgets.QListWidget()
+        self._replay_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._replay_list.setAlternatingRowColors(True)
+        self._replay_list.currentRowChanged.connect(
+            self._handle_replay_selected
+        )
+        self._replay_laps_table = QtWidgets.QTableWidget(0, 4)
+        self._replay_laps_table.setHorizontalHeaderLabels(
+            ["Lap", "Status", "Frames", "Time"]
+        )
+        self._replay_laps_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self._replay_laps_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._replay_laps_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self._replay_laps_table.setAlternatingRowColors(True)
+        self._replay_laps_table.verticalHeader().setVisible(False)
+        replay_header = self._replay_laps_table.horizontalHeader()
+        replay_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        replay_header.setStretchLastSection(True)
+        self._replay_status_label = QtWidgets.QLabel(
+            "Select a track to view replay laps."
+        )
+        self._replay_status_label.setWordWrap(True)
 
         self.visualization_widget = TrackPreviewWidget()
         if hasattr(self.visualization_widget, "setFrameShape"):
@@ -1398,6 +1430,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         weather_txt_scroll.setWidgetResizable(True)
         weather_txt_scroll.setWidget(weather_txt_sidebar)
 
+        replay_sidebar = QtWidgets.QFrame()
+        replay_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        replay_layout = QtWidgets.QVBoxLayout()
+        replay_layout.setSpacing(8)
+        replay_title = QtWidgets.QLabel("Replays")
+        replay_title.setStyleSheet("font-weight: bold")
+        replay_layout.addWidget(replay_title)
+        replay_layout.addWidget(self._replay_status_label)
+        replay_layout.addWidget(QtWidgets.QLabel("Replay files"))
+        replay_layout.addWidget(self._replay_list, stretch=1)
+        replay_layout.addWidget(QtWidgets.QLabel("Lap list"))
+        replay_layout.addWidget(self._replay_laps_table, stretch=2)
+        replay_sidebar.setLayout(replay_layout)
+
         tabs = QtWidgets.QTabWidget()
         self._tabs = tabs
         self._lp_tab = lp_sidebar
@@ -1432,6 +1478,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             tire_txt_scroll,
             self.style().standardIcon(QtWidgets.QStyle.SP_DriveHDIcon),
             "Tires",
+        )
+        tabs.addTab(
+            replay_sidebar,
+            self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay),
+            "Replays",
         )
 
         body = QtWidgets.QSplitter()
@@ -1968,6 +2019,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._current_track_folder = folder if isinstance(folder, Path) else None
         if self._current_track_folder is None:
             self._track_txt_result = None
+            self._load_replay_list(None)
             for editor in self._pit_editors:
                 editor.set_parameters(None)
             self._set_pit_lane_count(1)
@@ -1986,6 +2038,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         result = self._io_service.load_track_txt(self._current_track_folder)
         self._track_txt_result = result
+        self._load_replay_list(self._current_track_folder)
         self._update_track_txt_fields(result)
         lane_count = 2 if result.pit2 is not None else 1
         self._set_pit_lane_count(lane_count)
@@ -2016,6 +2069,127 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_tire_save_button.setEnabled(True)
         self._track_txt_weather_save_button.setEnabled(True)
         self._apply_active_pit_editor_to_preview()
+
+    def _load_replay_list(self, folder: Path | None) -> None:
+        self._replay_list.clear()
+        self._replay_laps_table.setRowCount(0)
+        if folder is None:
+            self._replay_status_label.setText("Select a track to view replay laps.")
+            return
+        replay_files = sorted(
+            [
+                path
+                for path in folder.iterdir()
+                if path.is_file() and path.suffix.lower() == ".rpy"
+            ],
+            key=lambda path: path.name.lower(),
+        )
+        if not replay_files:
+            self._replay_status_label.setText(
+                f"No .RPY files found in {folder.name}."
+            )
+            return
+        for replay in replay_files:
+            item = QtWidgets.QListWidgetItem(replay.name)
+            item.setData(QtCore.Qt.UserRole, replay)
+            self._replay_list.addItem(item)
+        self._replay_status_label.setText(
+            f"Loaded {len(replay_files)} replay file(s)."
+        )
+
+    def _handle_replay_selected(self, row: int) -> None:
+        item = self._replay_list.item(row) if row >= 0 else None
+        self._replay_laps_table.setRowCount(0)
+        if item is None:
+            return
+        replay_path = item.data(QtCore.Qt.UserRole)
+        if not isinstance(replay_path, Path):
+            return
+        try:
+            rpy = Rpy(str(replay_path))
+        except (OSError, ValueError) as exc:
+            self._replay_status_label.setText(
+                f"Unable to load {replay_path.name}: {exc}"
+            )
+            return
+        laps = self._calculate_rpy_laps(rpy)
+        if not laps:
+            self._replay_status_label.setText(
+                f"No lap data found in {replay_path.name}."
+            )
+            return
+        self._replay_status_label.setText(
+            f"Loaded {len(laps)} lap(s) from {replay_path.name}."
+        )
+        self._replay_laps_table.setRowCount(len(laps))
+        for row_index, lap in enumerate(laps):
+            lap_number, status, frames, time_text = lap
+            self._set_replay_cell(row_index, 0, str(lap_number), QtCore.Qt.AlignRight)
+            self._set_replay_cell(row_index, 1, status, QtCore.Qt.AlignLeft)
+            self._set_replay_cell(row_index, 2, str(frames), QtCore.Qt.AlignRight)
+            self._set_replay_cell(row_index, 3, time_text, QtCore.Qt.AlignRight)
+
+    def _calculate_rpy_laps(
+        self, rpy: Rpy
+    ) -> list[tuple[int, str, int, str]]:
+        if not rpy.cars:
+            return []
+        car_index = 0
+        if 1 in rpy.car_index:
+            car_index = rpy.car_index.index(1)
+        dlong = rpy.cars[car_index].dlong
+        if not dlong:
+            return []
+        lap_frames: list[int] = []
+        for i in range(1, len(dlong)):
+            if dlong[i] < dlong[i - 1] - 1_000_000:
+                lap_frames.append(i)
+        laps: list[tuple[int, str, int, str]] = []
+        start_frame = 0
+        lap_number = 1
+        for boundary in lap_frames:
+            frames = boundary - start_frame
+            if frames <= 0:
+                start_frame = boundary
+                continue
+            status = "Complete"
+            if start_frame == 0 and abs(dlong[0]) > 100_000:
+                status = "Incomplete"
+            laps.append(
+                (
+                    lap_number,
+                    status,
+                    frames,
+                    self._format_lap_time(frames),
+                )
+            )
+            lap_number += 1
+            start_frame = boundary
+        if start_frame < len(dlong):
+            frames = len(dlong) - start_frame
+            if frames > 0:
+                laps.append(
+                    (
+                        lap_number,
+                        "Incomplete",
+                        frames,
+                        self._format_lap_time(frames),
+                    )
+                )
+        return laps
+
+    def _format_lap_time(self, frames: int) -> str:
+        total_seconds = frames / self._RPY_FPS
+        minutes = int(total_seconds // 60)
+        seconds = total_seconds - minutes * 60
+        return f"{minutes}:{seconds:06.3f}"
+
+    def _set_replay_cell(
+        self, row: int, column: int, text: str, alignment: QtCore.Qt.Alignment
+    ) -> None:
+        item = QtWidgets.QTableWidgetItem(text)
+        item.setTextAlignment(alignment | QtCore.Qt.AlignVCenter)
+        self._replay_laps_table.setItem(row, column, item)
 
     def _load_trk_data(self) -> None:
         trk = self.preview_api.trk
