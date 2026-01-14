@@ -767,16 +767,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_weather_save_button.clicked.connect(
             self._handle_save_track_txt
         )
-        self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
-        self._boundary_button.setCheckable(True)
-        self._boundary_button.setChecked(True)
-        self._boundary_button.toggled.connect(self._toggle_boundaries)
-        self._toggle_boundaries(self._boundary_button.isChecked())
-        self._section_divider_button = QtWidgets.QPushButton("Show Section Dividers")
-        self._section_divider_button.setCheckable(True)
-        self._section_divider_button.toggled.connect(self._toggle_section_dividers)
-        self._toggle_section_dividers(self._section_divider_button.isChecked())
-
         self._weather_compass_group = QtWidgets.QButtonGroup(self)
         self._weather_compass_wind_button = QtWidgets.QRadioButton("WIND")
         self._weather_compass_wind2_button = QtWidgets.QRadioButton("WIND2")
@@ -865,6 +855,24 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_to_sg_action.setEnabled(False)
         self._trk_map_preview_action = QtWidgets.QAction("Preview Track Map", self)
         self._trk_map_preview_action.setEnabled(False)
+        self._view_trk_data_action = QtWidgets.QAction("View TRK data", self)
+        self._view_trk_data_action.triggered.connect(self._show_trk_data_window)
+        self._show_boundaries_action = QtWidgets.QAction("Show Boundaries", self)
+        self._show_boundaries_action.setCheckable(True)
+        self._show_boundaries_action.setChecked(True)
+        self._show_boundaries_action.toggled.connect(self._toggle_boundaries)
+        self._show_section_dividers_action = QtWidgets.QAction(
+            "Show Section Dividers", self
+        )
+        self._show_section_dividers_action.setCheckable(True)
+        self._show_section_dividers_action.toggled.connect(
+            self._toggle_section_dividers
+        )
+        self._trk_data_window: QtWidgets.QDialog | None = None
+        self._toggle_boundaries(self._show_boundaries_action.isChecked())
+        self._toggle_section_dividers(
+            self._show_section_dividers_action.isChecked()
+        )
 
         self._flag_draw_button = QtWidgets.QPushButton("Draw Flag")
         self._flag_draw_button.setCheckable(True)
@@ -1074,8 +1082,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._flag_radius_input)
         controls.addWidget(self._radius_unit_button)
         controls.addStretch(1)
-        controls.addWidget(self._boundary_button)
-        controls.addWidget(self._section_divider_button)
         layout.addLayout(controls)
 
         camera_sidebar = QtWidgets.QFrame()
@@ -1241,6 +1247,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         trk_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         trk_scroll.setWidgetResizable(True)
         trk_scroll.setWidget(trk_sidebar)
+        self._trk_scroll = trk_scroll
 
         tire_txt_sidebar = QtWidgets.QFrame()
         tire_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -1404,11 +1411,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             track_txt_scroll,
             self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon),
             "Track",
-        )
-        tabs.addTab(
-            trk_scroll,
-            self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon),
-            "TRK",
         )
         self._weather_tab = weather_txt_scroll
         tabs.addTab(
@@ -1839,6 +1841,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         quit_action.triggered.connect(QtWidgets.qApp.quit)
         file_menu.addAction(quit_action)
 
+        view_menu = self.menuBar().addMenu("View")
+        view_menu.addAction(self._view_trk_data_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self._show_boundaries_action)
+        view_menu.addAction(self._show_section_dividers_action)
+
         tools_menu = self.menuBar().addMenu("Tools")
         tools_menu.addAction(self._trk_gaps_action)
         tools_menu.addAction(self._trk_to_sg_action)
@@ -1848,6 +1856,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         about_action = QtWidgets.QAction("About", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
+
+    def _show_trk_data_window(self) -> None:
+        if self._trk_data_window is None:
+            window = QtWidgets.QDialog(self)
+            window.setWindowTitle("TRK Data")
+            layout = QtWidgets.QVBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(self._trk_scroll)
+            window.setLayout(layout)
+            window.resize(420, 640)
+            self._trk_data_window = window
+        self._trk_data_window.show()
+        self._trk_data_window.raise_()
+        self._trk_data_window.activateWindow()
 
     def _handle_installation_path(self, path: Path) -> None:
         self.statusBar().showMessage(str(path))
@@ -2693,13 +2715,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._update_lp_name_color(name, color)
 
     def _toggle_boundaries(self, enabled: bool) -> None:
-        text = "Hide Boundaries" if enabled else "Show Boundaries"
-        self._boundary_button.setText(text)
         self.preview_api.set_show_boundaries(enabled)
 
     def _toggle_section_dividers(self, enabled: bool) -> None:
-        text = "Hide Section Dividers" if enabled else "Show Section Dividers"
-        self._section_divider_button.setText(text)
         self.preview_api.set_show_section_dividers(enabled)
 
     def _toggle_zoom_points(self, enabled: bool) -> None:
