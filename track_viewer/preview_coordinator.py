@@ -8,6 +8,7 @@ from typing import Callable, List, Optional
 from PyQt5 import QtCore, QtGui
 
 from icr2_core.cam.helpers import CameraPosition
+from icr2_core.lp.loader import papy_speed_to_mph
 from icr2_core.trk.trk2csv import convert_trk_to_csv
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
@@ -500,12 +501,12 @@ class PreviewCoordinator:
                 self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
             return
         segment_speeds: list[float] = []
-        mph_factor = fps * 3600 / 5280
+        fps_factor = fps / 15 if fps > 0 else 0.0
         for idx in range(len(raw_points) - 1):
-            x0, y0, _, _ = raw_points[idx]
-            x1, y1, _, _ = raw_points[idx + 1]
-            distance = math.hypot(x1 - x0, y1 - y0)
-            segment_speeds.append(distance * mph_factor)
+            _, _, dlong0, dlat0 = raw_points[idx]
+            _, _, dlong1, dlat1 = raw_points[idx + 1]
+            distance_raw = math.hypot(dlong1 - dlong0, dlat1 - dlat0)
+            segment_speeds.append(papy_speed_to_mph(distance_raw) * fps_factor)
         points: list[LpPoint] = []
         for idx, (x, y, dlong, dlat) in enumerate(raw_points):
             if segment_speeds:
