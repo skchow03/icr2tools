@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
+from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.trk2csv import convert_trk_to_csv
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
@@ -307,6 +308,21 @@ class PreviewCoordinator:
         self, lp_name: str, speed_mph: float, dlat: float
     ) -> tuple[bool, str]:
         success, message = self._model.generate_lp_line(lp_name, speed_mph, dlat)
+        if success:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        return success, message
+
+    def generate_lp_line_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        success, message = self._model.generate_lp_line_from_replay(
+            lp_name, rpy, car_id, start_frame, end_frame
+        )
         if success:
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
         return success, message

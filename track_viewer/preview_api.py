@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from icr2_core.cam.helpers import CameraPosition
+from icr2_core.lp.rpy import Rpy
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.model.pit_models import PitParameters
 from track_viewer.preview_coordinator import PreviewCoordinator
@@ -119,6 +120,18 @@ class TrackPreviewApi:
         self, lp_name: str, speed_mph: float, dlat: float
     ) -> tuple[bool, str]:
         return self._coordinator.generate_lp_line(lp_name, speed_mph, dlat)
+
+    def generate_lp_line_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        return self._coordinator.generate_lp_line_from_replay(
+            lp_name, rpy, car_id, start_frame, end_frame
+        )
 
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         self._coordinator.set_selected_lp_record(name, index)
