@@ -80,8 +80,8 @@ class Rpy:
 
         # Generate list of unique car IDs and make list of car records
         car_set = set(car_id)
-        self.car_index = list(car_set)
-        self.cars = [self.Car() for i in range(0, self.num_cars)]
+        self.car_index = sorted(car_set)
+        self.cars = [self.Car() for i in range(0, len(self.car_index))]
 
         for i in range(0, len(car_id)):
             cur_car_id = car_id[i]
@@ -90,4 +90,3 @@ class Rpy:
             self.cars[cur_car_index].dlat.append(dlat[i] * 256)
             self.cars[cur_car_index].orient.append(orient[i])
             self.cars[cur_car_index].wheel_orient.append(wheel_orient[i])
-
