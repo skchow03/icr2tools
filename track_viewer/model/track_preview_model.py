@@ -60,6 +60,29 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_generation = 0
         self._ai_line_cache_generation = 0
         self._manual_lp_overrides: set[str] = set()
+        self.replay_lap_points: list[LpPoint] = []
+        self.replay_lap_label: str | None = None
+        self._replay_line_generation = 0
+
+    @property
+    def replay_line_generation(self) -> int:
+        return self._replay_line_generation
+
+    def set_replay_lap(self, points: list[LpPoint], label: str | None) -> bool:
+        if points == self.replay_lap_points and label == self.replay_lap_label:
+            return False
+        self.replay_lap_points = list(points)
+        self.replay_lap_label = label
+        self._replay_line_generation += 1
+        return True
+
+    def clear_replay_lap(self) -> bool:
+        if not self.replay_lap_points and self.replay_lap_label is None:
+            return False
+        self.replay_lap_points = []
+        self.replay_lap_label = None
+        self._replay_line_generation += 1
+        return True
 
     def load_track(self, track_folder: Path) -> None:
         """Load track data and rebuild derived geometry caches."""

@@ -161,6 +161,7 @@ class TrackPreviewRenderer:
                 transform,
                 height,
             )
+            self._draw_replay_line(painter, transform, height)
             self._draw_selected_lp_segment(painter, transform, height)
             rendering.draw_flags(
                 painter,
@@ -330,6 +331,29 @@ class TrackPreviewRenderer:
             painter.drawPolyline(cache.polygon)
         painter.restore()
 
+    def _draw_replay_line(
+        self,
+        painter: QtGui.QPainter,
+        transform: Tuple[float, Tuple[float, float]],
+        height: int,
+    ) -> None:
+        if not self._state.show_replay_line or not self._model.replay_lap_points:
+            return
+        polygon = QtGui.QPolygonF(
+            [QtCore.QPointF(point.x, point.y) for point in self._model.replay_lap_points]
+        )
+        if polygon.isEmpty():
+            return
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("#4fc3f7"), 2)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.setTransform(self._surface_transform(transform, height))
+        painter.drawPolyline(polygon)
+        painter.restore()
+
     def _lp_color(self, name: str) -> str:
         override = self._state.lp_colors.get(name)
         if override:
@@ -453,11 +477,15 @@ class TrackPreviewRenderer:
         painter.drawText(12, y, self._state.status_message)
         y += 16
         if self._state.nearest_projection_line:
-            line_label = (
-                "Center line"
-                if self._state.nearest_projection_line == "center-line"
-                else f"{self._state.nearest_projection_line} line"
-            )
+            if self._state.nearest_projection_line == "center-line":
+                line_label = "Center line"
+            elif self._state.nearest_projection_line == "replay-lap":
+                if self._model.replay_lap_label:
+                    line_label = f"Replay lap ({self._model.replay_lap_label})"
+                else:
+                    line_label = "Replay lap"
+            else:
+                line_label = f"{self._state.nearest_projection_line} line"
             painter.drawText(12, y, line_label)
             y += 16
         if self._state.nearest_projection_dlong is not None:

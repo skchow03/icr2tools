@@ -199,6 +199,15 @@ class TrackPreviewApi:
     def set_show_pit_stall_cars(self, show: bool) -> None:
         self._coordinator.set_show_pit_stall_cars(show)
 
+    def set_replay_lap_samples(
+        self,
+        samples: list[tuple[float, float]] | None,
+        *,
+        label: str | None = None,
+        fps: float = 15.0,
+    ) -> None:
+        self._coordinator.set_replay_lap_samples(samples, label=label, fps=fps)
+
     def cameras(self) -> List[CameraPosition]:
         return self._coordinator.cameras()
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
@@ -71,6 +72,16 @@ class TrackViewerApp(QtWidgets.QApplication):
 
     def update_tracks(self, tracks: List[str]) -> None:
         self.tracks = tracks
+
+
+@dataclass(frozen=True)
+class ReplayLapInfo:
+    lap_number: int
+    status: str
+    frames: int
+    time_text: str
+    start_frame: int
+    end_frame: int
 
 
 class LpRecordsModel(QtCore.QAbstractTableModel):
@@ -657,6 +668,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.SingleSelection
         )
         self._replay_laps_table.setAlternatingRowColors(True)
+        self._replay_laps_table.currentCellChanged.connect(
+            self._handle_replay_lap_selected
+        )
         self._replay_laps_table.verticalHeader().setVisible(False)
         replay_header = self._replay_laps_table.horizontalHeader()
         replay_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
@@ -2087,6 +2101,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._replay_car_combo.setEnabled(False)
         self._current_replay = None
         self._current_replay_path = None
+        self.preview_api.set_replay_lap_samples(None)
         if folder is None:
             self._replay_status_label.setText("Select a track to view replay laps.")
             return
@@ -2119,6 +2134,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._replay_car_combo.setEnabled(False)
         self._current_replay = None
         self._current_replay_path = None
+        self.preview_api.set_replay_lap_samples(None)
         if item is None:
             return
         replay_path = item.data(QtCore.Qt.UserRole)
@@ -2153,7 +2169,40 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_replay_car_selected(self, index: int) -> None:
         if index < 0:
             return
+        self.preview_api.set_replay_lap_samples(None)
         self._update_replay_laps()
+
+    def _handle_replay_lap_selected(
+        self, row: int, column: int, previous_row: int, previous_column: int
+    ) -> None:
+        if row < 0 or self._current_replay is None:
+            self.preview_api.set_replay_lap_samples(None)
+            return
+        item = self._replay_laps_table.item(row, 0)
+        lap_info = item.data(QtCore.Qt.UserRole) if item else None
+        if not isinstance(lap_info, ReplayLapInfo):
+            self.preview_api.set_replay_lap_samples(None)
+            return
+        car_id = self._replay_car_combo.currentData()
+        if car_id is None or car_id not in self._current_replay.car_index:
+            self.preview_api.set_replay_lap_samples(None)
+            return
+        car_index = self._current_replay.car_index.index(car_id)
+        dlong = self._current_replay.cars[car_index].dlong
+        dlat = self._current_replay.cars[car_index].dlat
+        start = max(0, lap_info.start_frame)
+        end = min(len(dlong), lap_info.end_frame)
+        if end <= start:
+            self.preview_api.set_replay_lap_samples(None)
+            return
+        samples = [
+            (float(dlong[index]), float(dlat[index]))
+            for index in range(start, end)
+        ]
+        label = f"Lap {lap_info.lap_number} - {lap_info.status}"
+        self.preview_api.set_replay_lap_samples(
+            samples, label=label, fps=self._RPY_FPS
+        )
 
     def _update_replay_laps(self) -> None:
         self._replay_laps_table.setRowCount(0)
@@ -2167,21 +2216,30 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._replay_status_label.setText(
                 f"No lap data found in {self._current_replay_path.name} for car {car_id}."
             )
+            self.preview_api.set_replay_lap_samples(None)
             return
         self._replay_status_label.setText(
             f"Loaded {len(laps)} lap(s) from {self._current_replay_path.name} for car {car_id}."
         )
         self._replay_laps_table.setRowCount(len(laps))
         for row_index, lap in enumerate(laps):
-            lap_number, status, frames, time_text = lap
-            self._set_replay_cell(row_index, 0, str(lap_number), QtCore.Qt.AlignRight)
+            lap_number = lap.lap_number
+            status = lap.status
+            frames = lap.frames
+            time_text = lap.time_text
+            first_item = self._set_replay_cell(
+                row_index, 0, str(lap_number), QtCore.Qt.AlignRight
+            )
+            first_item.setData(QtCore.Qt.UserRole, lap)
             self._set_replay_cell(row_index, 1, status, QtCore.Qt.AlignLeft)
             self._set_replay_cell(row_index, 2, str(frames), QtCore.Qt.AlignRight)
             self._set_replay_cell(row_index, 3, time_text, QtCore.Qt.AlignRight)
+        if laps:
+            self._replay_laps_table.setCurrentCell(0, 0)
 
     def _calculate_rpy_laps(
         self, rpy: Rpy, car_id: int
-    ) -> list[tuple[int, str, int, str]]:
+    ) -> list[ReplayLapInfo]:
         if not rpy.cars:
             return []
         if car_id not in rpy.car_index:
@@ -2200,7 +2258,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         for i in range(1, len(dlong)):
             if dlong[i] < dlong[i - 1] - drop_threshold:
                 lap_frames.append(i)
-        laps: list[tuple[int, str, int, str]] = []
+        laps: list[ReplayLapInfo] = []
         start_frame = 0
         lap_number = 1
         for boundary in lap_frames:
@@ -2212,11 +2270,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             if start_frame == 0 and abs(dlong[0]) > drop_threshold:
                 status = "Incomplete"
             laps.append(
-                (
-                    lap_number,
-                    status,
-                    frames,
-                    self._format_lap_time(frames),
+                ReplayLapInfo(
+                    lap_number=lap_number,
+                    status=status,
+                    frames=frames,
+                    time_text=self._format_lap_time(frames),
+                    start_frame=start_frame,
+                    end_frame=boundary,
                 )
             )
             lap_number += 1
@@ -2225,11 +2285,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             frames = len(dlong) - start_frame
             if frames > 0:
                 laps.append(
-                    (
-                        lap_number,
-                        "Incomplete",
-                        frames,
-                        self._format_lap_time(frames),
+                    ReplayLapInfo(
+                        lap_number=lap_number,
+                        status="Incomplete",
+                        frames=frames,
+                        time_text=self._format_lap_time(frames),
+                        start_frame=start_frame,
+                        end_frame=len(dlong),
                     )
                 )
         return laps
@@ -2242,10 +2304,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _set_replay_cell(
         self, row: int, column: int, text: str, alignment: QtCore.Qt.Alignment
-    ) -> None:
+    ) -> QtWidgets.QTableWidgetItem:
         item = QtWidgets.QTableWidgetItem(text)
         item.setTextAlignment(alignment | QtCore.Qt.AlignVCenter)
         self._replay_laps_table.setItem(row, column, item)
+        return item
 
     def _load_trk_data(self) -> None:
         trk = self.preview_api.trk
