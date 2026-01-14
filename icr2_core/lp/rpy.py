@@ -3,10 +3,10 @@ from icr2_core.lp.binary import *
 class Rpy:
 
     class Frame:
-        def __init__(self, cars, g_objs, s_objs):
-            self.cars = cars
-            self.g_objs = g_objs
-            self.s_objs = s_objs
+        def __init__(self, cars=None, g_objs=None, s_objs=None):
+            self.cars = [] if cars is None else cars
+            self.g_objs = [] if g_objs is None else g_objs
+            self.s_objs = [] if s_objs is None else s_objs
 
     class Car:
         def __init__(self):
@@ -90,5 +90,4 @@ class Rpy:
             self.cars[cur_car_index].dlat.append(dlat[i] * 256)
             self.cars[cur_car_index].orient.append(orient[i])
             self.cars[cur_car_index].wheel_orient.append(wheel_orient[i])
-
 
