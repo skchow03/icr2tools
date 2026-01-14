@@ -2140,9 +2140,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         dlong = rpy.cars[car_index].dlong
         if not dlong:
             return []
+        min_dlong = min(dlong)
+        max_dlong = max(dlong)
+        dlong_range = max_dlong - min_dlong
+        if dlong_range <= 0:
+            return []
+        drop_threshold = max(10_000, int(dlong_range * 0.5))
         lap_frames: list[int] = []
         for i in range(1, len(dlong)):
-            if dlong[i] < dlong[i - 1] - 1_000_000:
+            if dlong[i] < dlong[i - 1] - drop_threshold:
                 lap_frames.append(i)
         laps: list[tuple[int, str, int, str]] = []
         start_frame = 0
@@ -2153,7 +2159,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 start_frame = boundary
                 continue
             status = "Complete"
-            if start_frame == 0 and abs(dlong[0]) > 100_000:
+            if start_frame == 0 and abs(dlong[0]) > drop_threshold:
                 status = "Incomplete"
             laps.append(
                 (
