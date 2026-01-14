@@ -1517,6 +1517,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.style().standardIcon(QtWidgets.QStyle.SP_DriveHDIcon),
             "Tires",
         )
+        self._replay_tab = replay_sidebar
         tabs.addTab(
             replay_sidebar,
             self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay),
@@ -1898,6 +1899,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.set_show_camera_guidance(show_cameras)
         lp_tab_active = widget is self._lp_tab
         self.preview_api.set_lp_editing_tab_active(lp_tab_active)
+        self.preview_api.set_replay_tab_active(widget is self._replay_tab)
         if not lp_tab_active:
             self._set_lp_shortcut_active(False)
         self._sync_pit_preview_for_tab()
@@ -2287,6 +2289,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 "Generate LP from Replay",
                 "Select a replay car before generating an LP line.",
             )
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Generate LP from Replay",
+            f"This will overwrite the currently loaded {lp_name} LP.",
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
+            QtWidgets.QMessageBox.Cancel,
+        )
+        if confirm != QtWidgets.QMessageBox.Ok:
             return
         success, message = self.preview_api.generate_lp_line_from_replay(
             lp_name,
