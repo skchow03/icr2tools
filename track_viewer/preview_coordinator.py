@@ -461,6 +461,80 @@ class PreviewCoordinator:
             self._state.show_pit_stall_cars = show
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def set_replay_lap_samples(
+        self,
+        samples: list[tuple[float, float]] | None,
+        *,
+        label: str | None = None,
+        fps: float = 15.0,
+    ) -> None:
+        if (
+            not samples
+            or self._model.trk is None
+            or not self._model.centerline
+            or fps <= 0
+        ):
+            changed = self._model.clear_replay_lap()
+            self._state.show_replay_line = False
+            if self._state.nearest_projection_line == "replay-lap":
+                if self._state.set_projection_data(
+                    None, None, None, None, None, None, None
+                ):
+                    self._handle_intent(PreviewIntent.PROJECTION_CHANGED)
+            if changed:
+                self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+            return
+        raw_points: list[tuple[float, float, float, float]] = []
+        for dlong, dlat in samples:
+            try:
+                x, y, _ = getxyz(
+                    self._model.trk, float(dlong), dlat, self._model.centerline
+                )
+            except Exception:
+                continue
+            raw_points.append((x, y, float(dlong), float(dlat)))
+        if len(raw_points) < 2:
+            changed = self._model.clear_replay_lap()
+            self._state.show_replay_line = False
+            if changed:
+                self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+            return
+        segment_speeds: list[float] = []
+        mph_factor = fps * 3600 / 5280
+        for idx in range(len(raw_points) - 1):
+            x0, y0, _, _ = raw_points[idx]
+            x1, y1, _, _ = raw_points[idx + 1]
+            distance = math.hypot(x1 - x0, y1 - y0)
+            segment_speeds.append(distance * mph_factor)
+        points: list[LpPoint] = []
+        for idx, (x, y, dlong, dlat) in enumerate(raw_points):
+            if segment_speeds:
+                prev_speed = segment_speeds[idx - 1] if idx > 0 else segment_speeds[0]
+                next_speed = (
+                    segment_speeds[idx]
+                    if idx < len(segment_speeds)
+                    else segment_speeds[-1]
+                )
+                speed_mph = (prev_speed + next_speed) / 2
+            else:
+                speed_mph = 0.0
+            speed_raw = int(round(speed_mph * 5280 / 9))
+            points.append(
+                LpPoint(
+                    x=x,
+                    y=y,
+                    dlong=dlong,
+                    dlat=dlat,
+                    speed_raw=speed_raw,
+                    speed_mph=speed_mph,
+                    lateral_speed=0.0,
+                )
+            )
+        changed = self._model.set_replay_lap(points, label)
+        self._state.show_replay_line = True
+        if changed:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
     def cameras(self) -> List[CameraPosition]:
         return list(self._camera_service.cameras)
 

@@ -360,6 +360,8 @@ class TrackPreviewMouseController:
         if active != "center-line" and active not in self._model.available_lp_files:
             active = "center-line"
         if active == "center-line":
+            if self._state.show_replay_line and self._model.replay_lap_points:
+                return self._update_replay_line_projection(point, size)
             return self._update_centerline_projection(point, size)
         return self._update_ai_line_projection(point, active, size)
 
@@ -628,6 +630,123 @@ class TrackPreviewMouseController:
             None,
             best_accel,
             lp_name,
+        )
+
+    def _update_replay_line_projection(
+        self, point: QtCore.QPointF | None, size: QtCore.QSize
+    ) -> bool:
+        if point is None or not self._model.replay_lap_points:
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
+
+        if (
+            self._state.projection_cached_point is not None
+            and self._state.projection_cached_result is not None
+            and (point - self._state.projection_cached_point).manhattanLength() <= 3
+            and self._state.projection_cached_result[-1] == "replay-lap"
+        ):
+            (
+                cached_point,
+                cached_dlong,
+                cached_dlat,
+                cached_speed,
+                cached_elevation,
+                cached_acceleration,
+                cached_line,
+            ) = self._state.projection_cached_result
+            return self._state.set_projection_data(
+                cached_point,
+                cached_dlong,
+                cached_dlat,
+                cached_speed,
+                cached_elevation,
+                cached_acceleration,
+                cached_line,
+            )
+
+        transform = self._state.current_transform(self._model.bounds, size)
+        if not transform or not self._model.trk:
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
+
+        cursor_track = self._state.map_to_track(point, self._model.bounds, size)
+        if cursor_track is None:
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
+
+        cursor_x, cursor_y = cursor_track
+        best_point: tuple[float, float] | None = None
+        best_distance_sq = math.inf
+        best_dlong = None
+        best_dlat = None
+        best_speed = None
+
+        points = self._model.replay_lap_points
+        for idx in range(len(points) - 1):
+            p0 = points[idx]
+            p1 = points[idx + 1]
+            seg_dx = p1.x - p0.x
+            seg_dy = p1.y - p0.y
+            seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
+            if seg_len_sq == 0:
+                continue
+            t = ((cursor_x - p0.x) * seg_dx + (cursor_y - p0.y) * seg_dy) / seg_len_sq
+            t = max(0.0, min(1.0, t))
+            proj_x = p0.x + seg_dx * t
+            proj_y = p0.y + seg_dy * t
+            dist_sq = (cursor_x - proj_x) ** 2 + (cursor_y - proj_y) ** 2
+            if dist_sq < best_distance_sq:
+                best_distance_sq = dist_sq
+                best_point = (proj_x, proj_y)
+                best_dlong = p0.dlong + (p1.dlong - p0.dlong) * t
+                best_dlat = p0.dlat + (p1.dlat - p0.dlat) * t
+                best_speed = p0.speed_mph + (p1.speed_mph - p0.speed_mph) * t
+
+        if best_point is None:
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
+
+        mapped_point = rendering.map_point(
+            best_point[0], best_point[1], transform, size.height()
+        )
+        pixel_distance = (mapped_point - point).manhattanLength()
+        if pixel_distance > 16:
+            self._state.projection_cached_point = point
+            self._state.projection_cached_result = (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            return self._state.set_projection_data(
+                None, None, None, None, None, None, None
+            )
+
+        self._state.projection_cached_point = point
+        self._state.projection_cached_result = (
+            best_point,
+            best_dlong,
+            best_dlat,
+            best_speed,
+            None,
+            None,
+            "replay-lap",
+        )
+        return self._state.set_projection_data(
+            best_point,
+            best_dlong,
+            best_dlat,
+            best_speed,
+            None,
+            None,
+            "replay-lap",
         )
 
     def _handle_primary_click(self, point: QtCore.QPointF, size: QtCore.QSize) -> None:
