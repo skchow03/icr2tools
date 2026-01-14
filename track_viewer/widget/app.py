@@ -868,12 +868,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
 
-        self._trk_gaps_button = QtWidgets.QPushButton("Run TRK Gaps")
-        self._trk_gaps_button.setEnabled(False)
-        self._trk_to_sg_button = QtWidgets.QPushButton("Convert TRK to SG")
-        self._trk_to_sg_button.setEnabled(False)
-        self._trk_map_preview_button = QtWidgets.QPushButton("Preview Track Map")
-        self._trk_map_preview_button.setEnabled(False)
+        self._trk_gaps_action = QtWidgets.QAction("Run TRK Gaps", self)
+        self._trk_gaps_action.setEnabled(False)
+        self._trk_to_sg_action = QtWidgets.QAction("Convert TRK to SG", self)
+        self._trk_to_sg_action.setEnabled(False)
+        self._trk_map_preview_action = QtWidgets.QAction("Preview Track Map", self)
+        self._trk_map_preview_action.setEnabled(False)
 
         self._flag_draw_button = QtWidgets.QPushButton("Draw Flag")
         self._flag_draw_button.setCheckable(True)
@@ -1026,9 +1026,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.controller.installationPathChanged.connect(self._handle_installation_path)
         self.controller.trackListUpdated.connect(self._apply_track_list_items)
         self.controller.trackLengthChanged.connect(self._sidebar.set_track_length)
-        self.controller.trkGapsAvailabilityChanged.connect(self._trk_gaps_button.setEnabled)
         self.controller.trkGapsAvailabilityChanged.connect(
-            self._trk_to_sg_button.setEnabled
+            self._trk_gaps_action.setEnabled
+        )
+        self.controller.trkGapsAvailabilityChanged.connect(
+            self._trk_to_sg_action.setEnabled
         )
         self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
 
@@ -1057,11 +1059,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
-        self._trk_gaps_button.clicked.connect(lambda: self.controller.run_trk_gaps(self))
-        self._trk_to_sg_button.clicked.connect(
+        self._trk_gaps_action.triggered.connect(
+            lambda: self.controller.run_trk_gaps(self)
+        )
+        self._trk_to_sg_action.triggered.connect(
             lambda: self.controller.convert_trk_to_sg(self)
         )
-        self._trk_map_preview_button.clicked.connect(self._handle_trk_map_preview)
+        self._trk_map_preview_action.triggered.connect(
+            self._handle_trk_map_preview
+        )
         self.controller.sync_ai_lines()
 
         self._create_menus()
@@ -1082,8 +1088,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._flag_radius_input)
         controls.addWidget(self._radius_unit_button)
         controls.addStretch(1)
-        controls.addWidget(self._trk_gaps_button)
-        controls.addWidget(self._trk_to_sg_button)
         controls.addWidget(self._boundary_button)
         controls.addWidget(self._section_divider_button)
         layout.addLayout(controls)
@@ -1258,7 +1262,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         trk_title.setStyleSheet("font-weight: bold")
         trk_layout.addWidget(trk_title)
         trk_layout.addWidget(self._trk_status_label)
-        trk_layout.addWidget(self._trk_map_preview_button)
         trk_layout.addWidget(self._trk_sections_table, 1)
         trk_sidebar.setLayout(trk_layout)
         trk_scroll = QtWidgets.QScrollArea()
@@ -1864,6 +1867,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         quit_action.triggered.connect(QtWidgets.qApp.quit)
         file_menu.addAction(quit_action)
 
+        tools_menu = self.menuBar().addMenu("Tools")
+        tools_menu.addAction(self._trk_gaps_action)
+        tools_menu.addAction(self._trk_to_sg_action)
+        tools_menu.addAction(self._trk_map_preview_action)
+
         help_menu = self.menuBar().addMenu("Help")
         about_action = QtWidgets.QAction("About", self)
         about_action.triggered.connect(self._show_about_dialog)
@@ -2009,12 +2017,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if trk is None:
             self._trk_status_label.setText("Select a track to view TRK sections.")
             self._trk_sections_model.set_sections([])
-            self._trk_map_preview_button.setEnabled(False)
+            self._trk_map_preview_action.setEnabled(False)
             return
         sections = trk.sects or []
         self._trk_status_label.setText(f"Loaded {len(sections)} sections.")
         self._trk_sections_model.set_sections(sections)
-        self._trk_map_preview_button.setEnabled(True)
+        self._trk_map_preview_action.setEnabled(True)
 
     def _handle_trk_map_preview(self) -> None:
         centerline = self.preview_api.sampled_centerline()
