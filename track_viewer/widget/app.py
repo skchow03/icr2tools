@@ -638,6 +638,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._replay_list.currentRowChanged.connect(
             self._handle_replay_selected
         )
+        self._replay_car_combo = QtWidgets.QComboBox()
+        self._replay_car_combo.setEnabled(False)
+        self._replay_car_combo.currentIndexChanged.connect(
+            self._handle_replay_car_selected
+        )
         self._replay_laps_table = QtWidgets.QTableWidget(0, 4)
         self._replay_laps_table.setHorizontalHeaderLabels(
             ["Lap", "Status", "Frames", "Time"]
@@ -660,6 +665,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "Select a track to view replay laps."
         )
         self._replay_status_label.setWordWrap(True)
+        self._current_replay: Rpy | None = None
+        self._current_replay_path: Path | None = None
 
         self.visualization_widget = TrackPreviewWidget()
         if hasattr(self.visualization_widget, "setFrameShape"):
@@ -1440,6 +1447,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         replay_layout.addWidget(self._replay_status_label)
         replay_layout.addWidget(QtWidgets.QLabel("Replay files"))
         replay_layout.addWidget(self._replay_list, stretch=1)
+        replay_layout.addWidget(QtWidgets.QLabel("Car"))
+        replay_layout.addWidget(self._replay_car_combo)
         replay_layout.addWidget(QtWidgets.QLabel("Lap list"))
         replay_layout.addWidget(self._replay_laps_table, stretch=2)
         replay_sidebar.setLayout(replay_layout)
@@ -2073,6 +2082,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _load_replay_list(self, folder: Path | None) -> None:
         self._replay_list.clear()
         self._replay_laps_table.setRowCount(0)
+        with QtCore.QSignalBlocker(self._replay_car_combo):
+            self._replay_car_combo.clear()
+        self._replay_car_combo.setEnabled(False)
+        self._current_replay = None
+        self._current_replay_path = None
         if folder is None:
             self._replay_status_label.setText("Select a track to view replay laps.")
             return
@@ -2100,6 +2114,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_replay_selected(self, row: int) -> None:
         item = self._replay_list.item(row) if row >= 0 else None
         self._replay_laps_table.setRowCount(0)
+        with QtCore.QSignalBlocker(self._replay_car_combo):
+            self._replay_car_combo.clear()
+        self._replay_car_combo.setEnabled(False)
+        self._current_replay = None
+        self._current_replay_path = None
         if item is None:
             return
         replay_path = item.data(QtCore.Qt.UserRole)
@@ -2112,14 +2131,42 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 f"Unable to load {replay_path.name}: {exc}"
             )
             return
-        laps = self._calculate_rpy_laps(rpy)
+        if not rpy.cars or not rpy.car_index:
+            self._replay_status_label.setText(
+                f"No car data found in {replay_path.name}."
+            )
+            return
+        self._current_replay = rpy
+        self._current_replay_path = replay_path
+        with QtCore.QSignalBlocker(self._replay_car_combo):
+            self._replay_car_combo.clear()
+            for car_id in rpy.car_index:
+                self._replay_car_combo.addItem(f"Car {car_id}", car_id)
+            self._replay_car_combo.setEnabled(True)
+            if self._replay_car_combo.count() > 0:
+                self._replay_car_combo.setCurrentIndex(0)
+        self._update_replay_laps()
+
+    def _handle_replay_car_selected(self, index: int) -> None:
+        if index < 0:
+            return
+        self._update_replay_laps()
+
+    def _update_replay_laps(self) -> None:
+        self._replay_laps_table.setRowCount(0)
+        if self._current_replay is None or self._current_replay_path is None:
+            return
+        car_id = self._replay_car_combo.currentData()
+        if car_id is None:
+            return
+        laps = self._calculate_rpy_laps(self._current_replay, car_id)
         if not laps:
             self._replay_status_label.setText(
-                f"No lap data found in {replay_path.name}."
+                f"No lap data found in {self._current_replay_path.name} for car {car_id}."
             )
             return
         self._replay_status_label.setText(
-            f"Loaded {len(laps)} lap(s) from {replay_path.name}."
+            f"Loaded {len(laps)} lap(s) from {self._current_replay_path.name} for car {car_id}."
         )
         self._replay_laps_table.setRowCount(len(laps))
         for row_index, lap in enumerate(laps):
@@ -2130,13 +2177,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._set_replay_cell(row_index, 3, time_text, QtCore.Qt.AlignRight)
 
     def _calculate_rpy_laps(
-        self, rpy: Rpy
+        self, rpy: Rpy, car_id: int
     ) -> list[tuple[int, str, int, str]]:
         if not rpy.cars:
             return []
-        car_index = 0
-        if 1 in rpy.car_index:
-            car_index = rpy.car_index.index(1)
+        if car_id not in rpy.car_index:
+            return []
+        car_index = rpy.car_index.index(car_id)
         dlong = rpy.cars[car_index].dlong
         if not dlong:
             return []
