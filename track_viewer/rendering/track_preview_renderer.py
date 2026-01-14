@@ -346,7 +346,7 @@ class TrackPreviewRenderer:
             return
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        pen = QtGui.QPen(QtGui.QColor("#e53935"), 2)
+        pen = QtGui.QPen(QtGui.QColor("#00ffff"), 2)
         pen.setCosmetic(True)
         painter.setPen(pen)
         painter.setBrush(QtCore.Qt.NoBrush)

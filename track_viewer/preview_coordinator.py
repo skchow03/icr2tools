@@ -106,6 +106,7 @@ class PreviewCoordinator:
             self._lp_edit_controller,
         )
         self._keyboard_controller = TrackPreviewKeyboardController()
+        self._replay_tab_active = False
 
     @property
     def mouse_controller(self) -> TrackPreviewMouseController:
@@ -548,8 +549,24 @@ class PreviewCoordinator:
                 )
             )
         changed = self._model.set_replay_lap(points, label)
-        self._state.show_replay_line = True
-        if changed:
+        show_replay_line = self._replay_tab_active
+        show_changed = self._state.show_replay_line != show_replay_line
+        self._state.show_replay_line = show_replay_line
+        if changed or show_changed:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
+    def set_replay_tab_active(self, active: bool) -> None:
+        active = bool(active)
+        if self._replay_tab_active == active:
+            return
+        self._replay_tab_active = active
+        show_replay_line = active and bool(self._model.replay_lap_points)
+        show_changed = self._state.show_replay_line != show_replay_line
+        self._state.show_replay_line = show_replay_line
+        if not show_replay_line and self._state.nearest_projection_line == "replay-lap":
+            if self._state.set_projection_data(None, None, None, None, None, None, None):
+                self._handle_intent(PreviewIntent.PROJECTION_CHANGED)
+        if show_changed:
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
     def cameras(self) -> List[CameraPosition]:
