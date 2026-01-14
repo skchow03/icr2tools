@@ -654,9 +654,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._replay_car_combo.currentIndexChanged.connect(
             self._handle_replay_car_selected
         )
-        self._replay_laps_table = QtWidgets.QTableWidget(0, 4)
+        self._replay_laps_table = QtWidgets.QTableWidget(0, 5)
         self._replay_laps_table.setHorizontalHeaderLabels(
-            ["Lap", "Status", "Frames", "Time"]
+            ["Use", "Lap", "Status", "Frames", "Time"]
         )
         self._replay_laps_table.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers
@@ -675,6 +675,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         replay_header = self._replay_laps_table.horizontalHeader()
         replay_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         replay_header.setStretchLastSection(True)
+        self._replay_lap_button_group = QtWidgets.QButtonGroup(self)
+        self._replay_lap_button_group.setExclusive(True)
+        self._replay_lap_button_group.buttonToggled.connect(
+            self._handle_replay_lap_radio_toggled
+        )
+        self._replay_selected_lap_for_generation: ReplayLapInfo | None = None
         self._replay_lp_combo = QtWidgets.QComboBox()
         self._replay_lp_combo.setEnabled(False)
         self._replay_lp_combo.currentIndexChanged.connect(
@@ -2199,7 +2205,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if row < 0 or self._current_replay is None:
             self.preview_api.set_replay_lap_samples(None)
             return
-        item = self._replay_laps_table.item(row, 0)
+        item = self._replay_laps_table.item(row, 1)
         lap_info = item.data(QtCore.Qt.UserRole) if item else None
         if not isinstance(lap_info, ReplayLapInfo):
             self.preview_api.set_replay_lap_samples(None)
@@ -2229,14 +2235,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _handle_replay_lp_target_changed(self, _index: int) -> None:
         self._update_replay_lp_controls()
 
+    def _handle_replay_lap_radio_toggled(
+        self, button: QtWidgets.QAbstractButton, checked: bool
+    ) -> None:
+        if not checked:
+            if self._replay_selected_lap_for_generation == button.property("lap_info"):
+                self._replay_selected_lap_for_generation = None
+                self._update_replay_lp_controls()
+            return
+        lap_info = button.property("lap_info")
+        if isinstance(lap_info, ReplayLapInfo):
+            self._replay_selected_lap_for_generation = lap_info
+            row = button.property("row")
+            if isinstance(row, int):
+                self._replay_laps_table.setCurrentCell(row, 1)
+        self._update_replay_lp_controls()
+
     def _selected_replay_lap_info(self) -> ReplayLapInfo | None:
         row = self._replay_laps_table.currentRow()
         if row < 0:
             return None
-        item = self._replay_laps_table.item(row, 0)
+        item = self._replay_laps_table.item(row, 1)
         lap_info = item.data(QtCore.Qt.UserRole) if item else None
         if isinstance(lap_info, ReplayLapInfo):
             return lap_info
+        return None
+
+    def _selected_replay_generation_lap_info(self) -> ReplayLapInfo | None:
+        if isinstance(self._replay_selected_lap_for_generation, ReplayLapInfo):
+            return self._replay_selected_lap_for_generation
         return None
 
     def _current_replay_lp_target(self) -> str | None:
@@ -2248,7 +2275,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _update_replay_lp_controls(self) -> None:
         has_track = self.preview_api.trk is not None
         has_replay = self._current_replay is not None
-        has_lap = self._selected_replay_lap_info() is not None
+        has_lap = self._selected_replay_generation_lap_info() is not None
         has_lp_target = self._current_replay_lp_target() is not None
         self._replay_generate_lp_button.setEnabled(
             has_track and has_replay and has_lap and has_lp_target
@@ -2275,12 +2302,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 "Select a replay file before generating an LP line.",
             )
             return
-        lap_info = self._selected_replay_lap_info()
+        lap_info = self._selected_replay_generation_lap_info()
         if lap_info is None:
             QtWidgets.QMessageBox.warning(
                 self,
                 "Generate LP from Replay",
-                "Select a replay lap to generate an LP line.",
+                "Select a complete replay lap to generate an LP line.",
             )
             return
         car_id = self._replay_car_combo.currentData()
@@ -2325,6 +2352,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _update_replay_laps(self) -> None:
         self._replay_laps_table.setRowCount(0)
+        for button in self._replay_lap_button_group.buttons():
+            self._replay_lap_button_group.removeButton(button)
+            button.deleteLater()
+        self._replay_selected_lap_for_generation = None
         if self._current_replay is None or self._current_replay_path is None:
             return
         car_id = self._replay_car_combo.currentData()
@@ -2346,15 +2377,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             status = lap.status
             frames = lap.frames
             time_text = lap.time_text
+            if status == "Complete":
+                radio_button = QtWidgets.QRadioButton()
+                radio_button.setProperty("lap_info", lap)
+                radio_button.setProperty("row", row_index)
+                self._replay_lap_button_group.addButton(radio_button)
+                self._replay_laps_table.setCellWidget(
+                    row_index, 0, radio_button
+                )
             first_item = self._set_replay_cell(
-                row_index, 0, str(lap_number), QtCore.Qt.AlignRight
+                row_index, 1, str(lap_number), QtCore.Qt.AlignRight
             )
             first_item.setData(QtCore.Qt.UserRole, lap)
-            self._set_replay_cell(row_index, 1, status, QtCore.Qt.AlignLeft)
-            self._set_replay_cell(row_index, 2, str(frames), QtCore.Qt.AlignRight)
-            self._set_replay_cell(row_index, 3, time_text, QtCore.Qt.AlignRight)
+            self._set_replay_cell(row_index, 2, status, QtCore.Qt.AlignLeft)
+            self._set_replay_cell(row_index, 3, str(frames), QtCore.Qt.AlignRight)
+            self._set_replay_cell(row_index, 4, time_text, QtCore.Qt.AlignRight)
         if laps:
-            self._replay_laps_table.setCurrentCell(0, 0)
+            self._replay_laps_table.setCurrentCell(0, 1)
 
     def _calculate_rpy_laps(
         self, rpy: Rpy, car_id: int
