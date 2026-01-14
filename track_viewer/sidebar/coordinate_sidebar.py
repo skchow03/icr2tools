@@ -24,6 +24,10 @@ class CoordinateSidebar(QtWidgets.QFrame):
     tvModeCountChanged = QtCore.pyqtSignal(int)
     tvModeViewChanged = QtCore.pyqtSignal(int)
     showCurrentTvOnlyChanged = QtCore.pyqtSignal(bool)
+    zoomPointsToggled = QtCore.pyqtSignal(bool)
+    addType6Requested = QtCore.pyqtSignal()
+    addType2Requested = QtCore.pyqtSignal()
+    addType7Requested = QtCore.pyqtSignal()
 
     def __init__(self, view_model: CoordinateSidebarViewModel | None = None) -> None:
         super().__init__()
@@ -42,6 +46,10 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._current_tv_only_checkbox.stateChanged.connect(
             self._handle_show_current_tv_only_changed
         )
+        self._zoom_points_checkbox = QtWidgets.QCheckBox("Show Zoom Points")
+        self._zoom_points_checkbox.stateChanged.connect(
+            self._handle_zoom_points_changed
+        )
         self._tv_panel = TvModesPanel()
         self._camera_table = CameraCoordinateTable()
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
@@ -56,6 +64,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
         self._tv_panel.modeCountChanged.connect(self.tvModeCountChanged)
         self._tv_panel.viewChanged.connect(self._handle_tv_mode_view_changed)
+        self._tv_panel.addType6Requested.connect(self.addType6Requested)
+        self._tv_panel.addType2Requested.connect(self.addType2Requested)
+        self._tv_panel.addType7Requested.connect(self.addType7Requested)
         self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
         self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
         self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
@@ -67,7 +78,12 @@ class CoordinateSidebar(QtWidgets.QFrame):
         camera_title.setStyleSheet("font-weight: bold")
         layout.addWidget(camera_title)
         layout.addWidget(self._camera_list)
-        layout.addWidget(self._current_tv_only_checkbox)
+        camera_filter_layout = QtWidgets.QHBoxLayout()
+        camera_filter_layout.setContentsMargins(0, 0, 0, 0)
+        camera_filter_layout.addWidget(self._current_tv_only_checkbox)
+        camera_filter_layout.addWidget(self._zoom_points_checkbox)
+        camera_filter_layout.addStretch(1)
+        layout.addLayout(camera_filter_layout)
 
         layout.addWidget(self._tv_panel)
 
@@ -171,6 +187,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
         list_state = self._view_model.set_camera_filter(show_current_tv_only=enabled)
         self._apply_camera_list_state(list_state)
         self.showCurrentTvOnlyChanged.emit(enabled)
+
+    def _handle_zoom_points_changed(self, state: int) -> None:
+        self.zoomPointsToggled.emit(state == QtCore.Qt.Checked)
 
     def _apply_camera_list_state(self, list_state) -> None:
         self._camera_list.blockSignals(True)

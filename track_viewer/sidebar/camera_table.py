@@ -23,6 +23,8 @@ class CameraCoordinateTable(QtWidgets.QTableWidget):
         self.setAlternatingRowColors(True)
         self.horizontalHeader().setStretchLastSection(True)
         self.verticalHeader().setVisible(False)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.SelectedClicked
@@ -36,6 +38,7 @@ class CameraCoordinateTable(QtWidgets.QTableWidget):
             item = QtWidgets.QTableWidgetItem()
             item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
             self.setItem(0, column, item)
+        QtCore.QTimer.singleShot(0, self._set_compact_height)
 
     def set_camera(self, index: Optional[int], camera: Optional[CameraPosition]) -> None:
         self._camera_index = index
@@ -85,6 +88,12 @@ class CameraCoordinateTable(QtWidgets.QTableWidget):
             return
         with QtCore.QSignalBlocker(self):
             self.item(0, column).setText(str(value))
+
+    def _set_compact_height(self) -> None:
+        header_height = self.horizontalHeader().height()
+        row_height = self.rowHeight(0) if self.rowCount() else 0
+        frame = self.frameWidth() * 2
+        self.setFixedHeight(header_height + row_height + frame + 2)
 
 
 class _CameraCoordinateDelegate(QtWidgets.QStyledItemDelegate):
