@@ -8,6 +8,7 @@ from typing import Callable, List, Optional
 from PyQt5 import QtCore, QtGui
 
 from icr2_core.cam.helpers import CameraPosition
+from icr2_core.trk.trk2csv import convert_trk_to_csv
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
 from track_viewer.ai.ai_line_service import LpPoint
@@ -624,3 +625,19 @@ class PreviewCoordinator:
             return False, f"Failed to convert TRK to SG: {exc}"
 
         return True, f"Saved SG file to {output_path}."
+
+    def convert_trk_to_csv(self, output_path: Path) -> tuple[bool, str]:
+        if self._model.trk is None or self._model.track_path is None:
+            return False, "No track is currently loaded."
+
+        track_name = self._model.track_path.name
+        trk_path = self._model.track_path / f"{track_name}.trk"
+        if not trk_path.exists():
+            return False, f"TRK file not found at {trk_path}."
+
+        try:
+            convert_trk_to_csv(trk_path, output_path)
+        except Exception as exc:  # pragma: no cover - interactive feedback
+            return False, f"Failed to convert TRK to CSV: {exc}"
+
+        return True, f"Saved CSV files to {output_path}."

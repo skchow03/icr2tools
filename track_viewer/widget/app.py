@@ -853,6 +853,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_gaps_action.setEnabled(False)
         self._trk_to_sg_action = QtWidgets.QAction("Convert TRK to SG", self)
         self._trk_to_sg_action.setEnabled(False)
+        self._trk_to_csv_action = QtWidgets.QAction(
+            "Convert TRK to CSV files", self
+        )
+        self._trk_to_csv_action.setEnabled(False)
         self._trk_map_preview_action = QtWidgets.QAction("Preview Track Map", self)
         self._trk_map_preview_action.setEnabled(False)
         self._view_trk_data_action = QtWidgets.QAction("View TRK data", self)
@@ -1032,6 +1036,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.controller.trkGapsAvailabilityChanged.connect(
             self._trk_to_sg_action.setEnabled
         )
+        self.controller.trkGapsAvailabilityChanged.connect(
+            self._trk_to_csv_action.setEnabled
+        )
         self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
 
         self.camera_actions = CameraActions(self.preview_api)
@@ -1058,6 +1065,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._trk_to_sg_action.triggered.connect(
             lambda: self.controller.convert_trk_to_sg(self)
+        )
+        self._trk_to_csv_action.triggered.connect(
+            lambda: self.controller.convert_trk_to_csv(self)
         )
         self._trk_map_preview_action.triggered.connect(
             self._handle_trk_map_preview
@@ -1850,6 +1860,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         tools_menu = self.menuBar().addMenu("Tools")
         tools_menu.addAction(self._trk_gaps_action)
         tools_menu.addAction(self._trk_to_sg_action)
+        tools_menu.addAction(self._trk_to_csv_action)
         tools_menu.addAction(self._trk_map_preview_action)
 
         help_menu = self.menuBar().addMenu("Help")
