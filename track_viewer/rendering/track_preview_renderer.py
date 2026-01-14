@@ -219,6 +219,7 @@ class TrackPreviewRenderer:
 
         self._draw_lp_shortcut_overlay(painter, size)
         self._draw_status_overlay(painter)
+        self._draw_camera_guidance(painter, size)
         self._draw_cursor_position(painter, size)
         self._draw_weather_compass(painter, size)
 
@@ -491,6 +492,28 @@ class TrackPreviewRenderer:
                 f"Elevation: {self._state.nearest_projection_elevation:.2f} (DLAT = 0)"
             )
             painter.drawText(12, y, elevation_text)
+
+    def _draw_camera_guidance(
+        self, painter: QtGui.QPainter, size: QtCore.QSize
+    ) -> None:
+        if not self._state.show_camera_guidance:
+            return
+
+        lines = [
+            "LEFT-CLICK to select camera",
+            "RIGHT-CLICK and drag to move selected camera",
+        ]
+        metrics = painter.fontMetrics()
+        line_height = metrics.height()
+        margin = 12
+        max_width = max(metrics.horizontalAdvance(line) for line in lines)
+        start_x = size.width() - margin - max_width
+        start_y = margin + metrics.ascent()
+
+        painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+        for line in lines:
+            painter.drawText(start_x, start_y, line)
+            start_y += line_height
 
     def _draw_cursor_position(
         self, painter: QtGui.QPainter, size: QtCore.QSize
