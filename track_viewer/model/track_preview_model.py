@@ -12,7 +12,9 @@ from typing import List, Tuple
 
 from PyQt5 import QtCore
 
-from icr2_core.lp.loader import LP_RESOLUTION
+from icr2_core.lp.loader import LP_RESOLUTION, papy_speed_to_mph
+from icr2_core.lp.lpcalc import get_fake_radius1, get_fake_radius2, get_fake_radius3
+from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import getxyz
@@ -201,6 +203,350 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_cache_generation += 1
         return True, f"Generated {lp_name} LP line with {record_count} records."
 
+    def generate_lp_line_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        if self.trk is None or not self.centerline or self.track_length is None:
+            return False, "No track loaded to generate LP data."
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to replace."
+        if lp_name not in self.available_lp_files:
+            return False, f"{lp_name} is not available for editing."
+        if car_id not in rpy.car_index:
+            return False, "Selected replay car is unavailable."
+        car_index = rpy.car_index.index(car_id)
+        dlongs = rpy.cars[car_index].dlong
+        dlats = rpy.cars[car_index].dlat
+        if not dlongs or not dlats:
+            return False, "Replay lap data is empty."
+        start = max(0, start_frame - 2)
+        end = min(len(dlongs), end_frame + 2)
+        if end <= start:
+            return False, "Replay lap range is invalid."
+        frames = end - start
+        if frames < 5:
+            return False, "Replay lap is too short to generate LP data."
+        track_length = int(self.track_length or self.trk.trklength or 0)
+        if track_length <= 0:
+            return False, "Track length is not available."
+
+        t1_dlong: list[int] = []
+        t1_dlat: list[int] = []
+        t1_radius: list[float] = []
+        t1_prev_rw_len: list[float] = [0.0]
+        t1_next_rw_len: list[float] = []
+        t1_rw_speed: list[float] = [0.0]
+        t1_sect: list[int] = []
+        t1_sect_type: list[int] = []
+
+        for i in range(start, end):
+            t1_dlong.append(int(dlongs[i]))
+            t1_dlat.append(int(dlats[i]))
+            cur_sect = self._trk_sect_id(self.trk, dlongs[i])
+            t1_sect.append(cur_sect)
+            t1_sect_type.append(self.trk.sects[cur_sect].type)
+
+        t1_dlong[0] = t1_dlong[0] - track_length
+        t1_dlong[1] = t1_dlong[1] - track_length
+        t1_dlong[-1] = t1_dlong[-1] + track_length
+        t1_dlong[-2] = t1_dlong[-2] + track_length
+
+        for i in range(0, frames):
+            cur_frame = i
+            next_frame = 4 if i == frames - 1 else i + 1
+            if t1_sect_type[cur_frame] == 1 and t1_sect_type[next_frame] == 1:
+                t1_radius.append(0.0)
+            elif t1_sect_type[cur_frame] == 2 and t1_sect_type[next_frame] == 2:
+                if t1_sect[cur_frame] == t1_sect[next_frame]:
+                    t1_radius.append(
+                        self._trk_sect_radius(self.trk, t1_sect[cur_frame])
+                    )
+                else:
+                    dlongc = self.trk.sects[t1_sect[next_frame]].start_dlong
+                    dlong0 = t1_dlong[cur_frame]
+                    r0 = self._trk_sect_radius(self.trk, t1_sect[cur_frame])
+                    dlong1 = t1_dlong[next_frame]
+                    r1 = self._trk_sect_radius(self.trk, t1_sect[next_frame])
+                    t1_radius.append(get_fake_radius3(dlongc, dlong0, r0, dlong1, r1))
+            elif t1_sect_type[cur_frame] == 1 and t1_sect_type[next_frame] == 2:
+                t1_radius.append(
+                    get_fake_radius1(
+                        self._trk_sect_radius(self.trk, t1_sect[next_frame]),
+                        t1_dlong[next_frame],
+                        self.trk.sects[t1_sect[next_frame]].start_dlong,
+                        t1_dlong[cur_frame],
+                    )
+                )
+                t1_sect_type[cur_frame] = 2
+            elif t1_sect_type[cur_frame] == 2 and t1_sect_type[next_frame] == 1:
+                t1_radius.append(
+                    get_fake_radius2(
+                        self._trk_sect_radius(self.trk, t1_sect[cur_frame - 1]),
+                        self.trk.sects[t1_sect[next_frame]].start_dlong,
+                        t1_dlong[cur_frame],
+                        t1_dlong[next_frame],
+                    )
+                )
+            else:
+                return False, f"Unable to calculate replay radius at frame {i}."
+
+        for i in range(1, frames):
+            cur = i
+            prev = i - 1
+            next_frame = 4 if i == frames - 1 else i + 1
+            if t1_sect_type[prev] == 1:
+                a = (t1_dlong[cur] - t1_dlong[prev]) ** 2
+                b = (t1_dlat[cur] - t1_dlat[prev]) ** 2
+                t1_prev_rw_len.append(math.sqrt(a + b))
+            else:
+                denom = 2 * float(t1_radius[prev])
+                if denom == 0:
+                    return False, "Replay radius calculation produced zero values."
+                a = (
+                    (2 * t1_radius[prev] - t1_dlat[cur] - t1_dlat[prev])
+                    * (t1_dlong[cur] - t1_dlong[prev])
+                    / denom
+                )
+                b = t1_dlat[cur] - t1_dlat[prev]
+                t1_prev_rw_len.append(math.sqrt(a**2 + b**2))
+            if next_frame >= frames:
+                return False, "Replay lap data is too short for interpolation."
+
+        for i in range(0, frames):
+            next_frame = 4 if i == frames - 1 else i + 1
+            t1_next_rw_len.append(t1_prev_rw_len[next_frame])
+
+        for i in range(1, frames):
+            t1_rw_speed.append(
+                (t1_prev_rw_len[i] + t1_next_rw_len[i]) / 2 * 54000 / 31680000
+            )
+
+        num_lp_recs = (track_length // 65536) + 2
+        lp_dlong: list[float] = []
+        lp_dlat: list[float] = []
+        lp_rw_speed: list[float] = []
+
+        for i in range(0, num_lp_recs):
+            cur_dlong = track_length if i == num_lp_recs - 1 else i * 65536
+            lp_dlong.append(cur_dlong)
+            ref_index = None
+            for j in range(0, len(t1_dlong) - 1):
+                if t1_dlong[j] <= cur_dlong < t1_dlong[j + 1]:
+                    ref_index = j
+                    break
+            if ref_index is None:
+                if cur_dlong < t1_dlong[0]:
+                    ref_index = 0
+                else:
+                    ref_index = len(t1_dlong) - 2
+            denom = t1_dlong[ref_index + 1] - t1_dlong[ref_index]
+            if denom == 0:
+                return False, "Replay lap data has duplicate DLONG entries."
+            cur_dlat = (
+                (cur_dlong - t1_dlong[ref_index]) * t1_dlat[ref_index + 1]
+                + (t1_dlong[ref_index + 1] - cur_dlong) * t1_dlat[ref_index]
+            ) / denom
+            lp_dlat.append(cur_dlat)
+            cur_rw_speed = (
+                (cur_dlong - t1_dlong[ref_index]) * t1_rw_speed[ref_index + 1]
+                + (t1_dlong[ref_index + 1] - cur_dlong) * t1_rw_speed[ref_index]
+            ) / denom
+            lp_rw_speed.append(cur_rw_speed)
+
+        lp_dlong = (
+            [track_length - 65536 * 2, track_length - 65536]
+            + lp_dlong
+            + [
+                track_length - lp_dlong[-2],
+                (track_length - lp_dlong[-2]) * 2,
+            ]
+        )
+
+        dlat_start_change = lp_dlat[1] - lp_dlat[0]
+        dlat_end_change = lp_dlat[-1] - lp_dlat[-2]
+        lp_dlat = (
+            [lp_dlat[0] - dlat_start_change * 2, lp_dlat[0] - dlat_start_change]
+            + lp_dlat
+            + [lp_dlat[-1] + dlat_end_change, lp_dlat[-1] + dlat_end_change * 2]
+        )
+
+        speed_start_change = lp_rw_speed[1] - lp_rw_speed[0]
+        speed_end_change = lp_rw_speed[-1] - lp_rw_speed[-2]
+        lp_rw_speed = (
+            [
+                lp_rw_speed[0] - speed_start_change * 2,
+                lp_rw_speed[0] - speed_start_change,
+            ]
+            + lp_rw_speed
+            + [
+                lp_rw_speed[-1] + speed_end_change,
+                lp_rw_speed[-1] + speed_end_change * 2,
+            ]
+        )
+
+        num_lp_recs2 = num_lp_recs + 4
+        t3_next_rw_len: list[float] = []
+        t3_prev_rw_len: list[float] = []
+        t3_next_lp_len: list[float] = []
+        t3_prev_lp_len: list[float] = [0.0]
+        t3_radius: list[float] = []
+        t3_sect: list[int] = []
+        t3_sect_type: list[int] = []
+        lp_speed: list[float] = [0.0]
+        coriolis1: list[float] = [0.0]
+
+        for i in range(0, num_lp_recs2):
+            t3_sect_type.append(self._trk_sect_type(self.trk, lp_dlong[i]))
+            t3_sect.append(self._trk_sect_id(self.trk, lp_dlong[i]))
+
+        lp_dlong[0] = lp_dlong[0] - track_length
+        lp_dlong[1] = lp_dlong[1] - track_length
+        lp_dlong[-1] = lp_dlong[-1] + track_length
+        lp_dlong[-2] = lp_dlong[-2] + track_length
+
+        for i in range(0, num_lp_recs2):
+            cur = i
+            prev = num_lp_recs + 2 if i == 0 else i - 1
+            next_record = 0 if i == num_lp_recs + 3 else i + 1
+
+            if t3_sect_type[cur] == 1 and t3_sect_type[next_record] == 1:
+                t3_radius.append(0.0)
+            elif t3_sect_type[cur] == 2 and t3_sect_type[next_record] == 2:
+                if t3_sect[cur] == t3_sect[next_record]:
+                    t3_radius.append(self._trk_sect_radius(self.trk, t3_sect[cur]))
+                else:
+                    dlongc = self.trk.sects[t3_sect[next_record]].start_dlong
+                    dlong0 = lp_dlong[cur]
+                    r0 = self._trk_sect_radius(self.trk, t3_sect[cur])
+                    dlong1 = lp_dlong[next_record]
+                    r1 = self._trk_sect_radius(self.trk, t3_sect[next_record])
+                    t3_radius.append(get_fake_radius3(dlongc, dlong0, r0, dlong1, r1))
+            elif t3_sect_type[cur] == 1 and t3_sect_type[next_record] == 2:
+                t3_radius.append(
+                    get_fake_radius1(
+                        self._trk_sect_radius(self.trk, t3_sect[next_record]),
+                        lp_dlong[next_record],
+                        self.trk.sects[t3_sect[next_record]].start_dlong,
+                        lp_dlong[cur],
+                    )
+                )
+                t3_sect_type[cur] = 2
+            elif t3_sect_type[cur] == 2 and t3_sect_type[next_record] == 1:
+                t3_radius.append(
+                    get_fake_radius2(
+                        self._trk_sect_radius(self.trk, t3_sect[prev]),
+                        self.trk.sects[t3_sect[next_record]].start_dlong,
+                        lp_dlong[cur],
+                        lp_dlong[next_record],
+                    )
+                )
+            else:
+                return False, f"Unable to calculate LP radius at record {i}."
+
+        for i in range(0, num_lp_recs2):
+            cur = i
+            if i == 0:
+                prev = num_lp_recs - 2
+                prev_dlong = -65536
+            else:
+                prev = i - 1
+                prev_dlong = int(lp_dlong[prev])
+            if i == num_lp_recs - 1:
+                next_record = 0
+            else:
+                next_record = i + 1
+
+            if t3_sect_type[prev] == 1:
+                a = (lp_dlong[cur] - prev_dlong) ** 2
+                b = (lp_dlat[cur] - lp_dlat[prev]) ** 2
+                t3_prev_rw_len.append(math.sqrt(a + b))
+            else:
+                denom = 2 * float(t3_radius[prev])
+                if denom == 0:
+                    return False, "LP radius calculation produced zero values."
+                a = (
+                    (2 * t3_radius[prev] - lp_dlat[cur] - lp_dlat[prev])
+                    * (lp_dlong[cur] - lp_dlong[prev])
+                    / denom
+                )
+                b = lp_dlat[cur] - lp_dlat[prev]
+                t3_prev_rw_len.append(math.sqrt(a**2 + b**2))
+
+        for i in range(0, num_lp_recs2):
+            next_record = 0 if i == num_lp_recs2 - 1 else i + 1
+            t3_next_rw_len.append(t3_prev_rw_len[next_record])
+
+        for i in range(0, num_lp_recs2 - 1):
+            if t3_radius[i] == 0:
+                t3_next_lp_len.append(lp_dlong[i + 1] - lp_dlong[i])
+            else:
+                t3_next_lp_len.append(
+                    (lp_dlong[i + 1] - lp_dlong[i])
+                    * (t3_radius[i] - lp_dlat[i])
+                    / t3_radius[i]
+                )
+
+        for i in range(1, num_lp_recs2 - 1):
+            t3_prev_lp_len.append(t3_next_lp_len[i - 1])
+
+        for i in range(1, num_lp_recs2 - 1):
+            denom = t3_next_rw_len[i] + t3_prev_rw_len[i]
+            if denom == 0:
+                lp_speed.append(0.0)
+            else:
+                lp_speed.append(
+                    lp_rw_speed[i] * (t3_prev_lp_len[i] + t3_next_lp_len[i]) / denom
+                )
+
+        for i in range(1, num_lp_recs2 - 1):
+            denom = lp_dlong[i + 1] - lp_dlong[i - 1]
+            if denom == 0:
+                coriolis1.append(0.0)
+            else:
+                coriolis1.append(
+                    ((lp_dlat[i + 1] - lp_dlat[i - 1]) / denom)
+                    * (lp_speed[i] * 31680000 / 54000)
+                )
+
+        records: list[LpPoint] = []
+        for i in range(2, num_lp_recs2 - 2):
+            speed_raw = int(
+                round(lp_speed[i] * (1 / 15) * (1 / 3600) * 6000 * 5280)
+            )
+            coriolis = float(round(coriolis1[i]))
+            dlat = float(round(lp_dlat[i]))
+            dlong = float(lp_dlong[i])
+            try:
+                x, y, _ = getxyz(self.trk, dlong, dlat, self.centerline)
+            except Exception as exc:
+                return False, f"Failed to project LP record at DLONG {dlong:.0f}: {exc}"
+            records.append(
+                LpPoint(
+                    x=x,
+                    y=y,
+                    dlong=dlong,
+                    dlat=dlat,
+                    speed_raw=speed_raw,
+                    speed_mph=papy_speed_to_mph(speed_raw),
+                    lateral_speed=coriolis,
+                )
+            )
+
+        if not records:
+            return False, "No LP records were generated from the replay lap."
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._pending_ai_line_loads.discard(lp_name)
+        self._ai_line_cache_generation += 1
+        return True, f"Generated {lp_name} LP line from replay lap."
+
     def save_lp_line(self, lp_name: str) -> tuple[bool, str]:
         """Persist the selected AI line back to its LP file."""
         if self.track_path is None:
@@ -346,6 +692,31 @@ class TrackPreviewModel(QtCore.QObject):
         min_y = min(surface_bounds[2], sampled_bounds[2])
         max_y = max(surface_bounds[3], sampled_bounds[3])
         return (min_x, max_x, min_y, max_y)
+
+    @staticmethod
+    def _trk_sect_id(trk: TRKFile, dlong: float) -> int:
+        for i in range(0, trk.num_sects - 1):
+            if trk.sects[i].start_dlong <= dlong < trk.sects[i + 1].start_dlong:
+                return i
+        return trk.num_sects - 1
+
+    @staticmethod
+    def _trk_sect_type(trk: TRKFile, dlong: float) -> int:
+        return trk.sects[TrackPreviewModel._trk_sect_id(trk, dlong)].type
+
+    @staticmethod
+    def _trk_sect_radius(trk: TRKFile, sect_id: int) -> float:
+        next_id = (sect_id + 1) % trk.num_sects
+        a0 = int(trk.sects[sect_id].heading)
+        a1 = int(trk.sects[next_id].heading)
+        x = (a1 - a0) / 2147483648
+        if x > 1:
+            x -= 2
+        elif x < -1:
+            x += 2
+        if x == 0:
+            return 0.0
+        return trk.sects[sect_id].length / (x * math.pi)
 
     @staticmethod
     def _build_boundary_edges(

@@ -675,6 +675,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         replay_header = self._replay_laps_table.horizontalHeader()
         replay_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         replay_header.setStretchLastSection(True)
+        self._replay_lp_combo = QtWidgets.QComboBox()
+        self._replay_lp_combo.setEnabled(False)
+        self._replay_lp_combo.currentIndexChanged.connect(
+            self._handle_replay_lp_target_changed
+        )
+        self._replay_generate_lp_button = QtWidgets.QPushButton(
+            "Generate LP from Replay"
+        )
+        self._replay_generate_lp_button.setEnabled(False)
+        self._replay_generate_lp_button.clicked.connect(
+            self._handle_generate_replay_lp
+        )
         self._replay_status_label = QtWidgets.QLabel(
             "Select a track to view replay laps."
         )
@@ -1465,6 +1477,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         replay_layout.addWidget(self._replay_car_combo)
         replay_layout.addWidget(QtWidgets.QLabel("Lap list"))
         replay_layout.addWidget(self._replay_laps_table, stretch=2)
+        replay_layout.addWidget(QtWidgets.QLabel("LP target"))
+        replay_layout.addWidget(self._replay_lp_combo)
+        replay_layout.addWidget(self._replay_generate_lp_button)
         replay_sidebar.setLayout(replay_layout)
 
         tabs = QtWidgets.QTabWidget()
@@ -2135,6 +2150,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._current_replay = None
         self._current_replay_path = None
         self.preview_api.set_replay_lap_samples(None)
+        self._update_replay_lp_controls()
         if item is None:
             return
         replay_path = item.data(QtCore.Qt.UserRole)
@@ -2165,12 +2181,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             if self._replay_car_combo.count() > 0:
                 self._replay_car_combo.setCurrentIndex(0)
         self._update_replay_laps()
+        self._update_replay_lp_controls()
 
     def _handle_replay_car_selected(self, index: int) -> None:
         if index < 0:
             return
         self.preview_api.set_replay_lap_samples(None)
         self._update_replay_laps()
+        self._update_replay_lp_controls()
 
     def _handle_replay_lap_selected(
         self, row: int, column: int, previous_row: int, previous_column: int
@@ -2203,6 +2221,95 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.set_replay_lap_samples(
             samples, label=label, fps=self._RPY_FPS
         )
+        self._update_replay_lp_controls()
+
+    def _handle_replay_lp_target_changed(self, _index: int) -> None:
+        self._update_replay_lp_controls()
+
+    def _selected_replay_lap_info(self) -> ReplayLapInfo | None:
+        row = self._replay_laps_table.currentRow()
+        if row < 0:
+            return None
+        item = self._replay_laps_table.item(row, 0)
+        lap_info = item.data(QtCore.Qt.UserRole) if item else None
+        if isinstance(lap_info, ReplayLapInfo):
+            return lap_info
+        return None
+
+    def _current_replay_lp_target(self) -> str | None:
+        name = self._replay_lp_combo.currentData()
+        if isinstance(name, str) and name:
+            return name
+        return None
+
+    def _update_replay_lp_controls(self) -> None:
+        has_track = self.preview_api.trk is not None
+        has_replay = self._current_replay is not None
+        has_lap = self._selected_replay_lap_info() is not None
+        has_lp_target = self._current_replay_lp_target() is not None
+        self._replay_generate_lp_button.setEnabled(
+            has_track and has_replay and has_lap and has_lp_target
+        )
+
+    def _handle_generate_replay_lp(self) -> None:
+        lp_name = self._current_replay_lp_target()
+        if not lp_name or lp_name == "center-line":
+            QtWidgets.QMessageBox.warning(
+                self, "Generate LP from Replay", "Select a valid LP line to replace."
+            )
+            return
+        if self.preview_api.trk is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Generate LP from Replay",
+                "Load a track before generating an LP line.",
+            )
+            return
+        if self._current_replay is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Generate LP from Replay",
+                "Select a replay file before generating an LP line.",
+            )
+            return
+        lap_info = self._selected_replay_lap_info()
+        if lap_info is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Generate LP from Replay",
+                "Select a replay lap to generate an LP line.",
+            )
+            return
+        car_id = self._replay_car_combo.currentData()
+        if car_id is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Generate LP from Replay",
+                "Select a replay car before generating an LP line.",
+            )
+            return
+        success, message = self.preview_api.generate_lp_line_from_replay(
+            lp_name,
+            self._current_replay,
+            int(car_id),
+            lap_info.start_frame,
+            lap_info.end_frame,
+        )
+        title = "Generate LP from Replay"
+        if success:
+            checkbox = self._lp_checkboxes.get(lp_name)
+            if checkbox is not None and not checkbox.isChecked():
+                with QtCore.QSignalBlocker(checkbox):
+                    checkbox.setChecked(True)
+                selected = set(self.preview_api.visible_lp_files())
+                selected.add(lp_name)
+                self.controller.set_visible_lp_files(sorted(selected))
+            self._set_active_lp_line_in_ui(lp_name)
+            self._update_lp_records_table(lp_name)
+            self.visualization_widget.update()
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
 
     def _update_replay_laps(self) -> None:
         self._replay_laps_table.setRowCount(0)
@@ -2954,6 +3061,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_lp_records_table(active_line)
         self._update_save_lp_button_state(active_line)
         self._update_generate_lp_button_state(active_line)
+        self._sync_replay_lp_targets(available_files, enabled)
 
     def _add_lp_list_item(
         self,
@@ -3017,6 +3125,26 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_name_labels[name] = name_label
         if color:
             self._update_lp_name_color(name, color)
+
+    def _sync_replay_lp_targets(
+        self, available_files: list[str], enabled: bool
+    ) -> None:
+        current = self._current_replay_lp_target()
+        active_line = self.preview_api.active_lp_line()
+        with QtCore.QSignalBlocker(self._replay_lp_combo):
+            self._replay_lp_combo.clear()
+            self._replay_lp_combo.addItem("Select LP line", None)
+            for name in available_files:
+                self._replay_lp_combo.addItem(name, name)
+            target = current if current in available_files else active_line
+            if target in available_files:
+                index = self._replay_lp_combo.findData(target)
+                if index >= 0:
+                    self._replay_lp_combo.setCurrentIndex(index)
+            else:
+                self._replay_lp_combo.setCurrentIndex(0)
+        self._replay_lp_combo.setEnabled(enabled and bool(available_files))
+        self._update_replay_lp_controls()
 
     def _toggle_boundaries(self, enabled: bool) -> None:
         self.preview_api.set_show_boundaries(enabled)
@@ -3227,6 +3355,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 if checkbox is not None and not checkbox.isChecked():
                     checkbox.setChecked(True)
             self.preview_api.set_active_lp_line(name)
+
+    def _set_active_lp_line_in_ui(self, name: str) -> None:
+        self.preview_api.set_active_lp_line(name)
+        for button in self._lp_button_group.buttons():
+            if button.property("lp-name") == name:
+                with QtCore.QSignalBlocker(button):
+                    button.setChecked(True)
+                break
 
     def _update_lp_records_table(self, name: str | None = None) -> None:
         lp_name = name or self.preview_api.active_lp_line()
