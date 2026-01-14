@@ -767,11 +767,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_weather_save_button.clicked.connect(
             self._handle_save_track_txt
         )
-        self._add_type6_camera_button = QtWidgets.QPushButton("Add Panning Camera")
-        self._add_type2_camera_button = QtWidgets.QPushButton(
-            "Add Alternate Panning Camera"
-        )
-        self._add_type7_camera_button = QtWidgets.QPushButton("Add Fixed Camera")
         self._boundary_button = QtWidgets.QPushButton("Hide Boundaries")
         self._boundary_button.setCheckable(True)
         self._boundary_button.setChecked(True)
@@ -816,10 +811,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._wind2_var_field.textChanged.connect(
             lambda text: self._handle_weather_variation_changed("wind2", text)
         )
-
-        self._zoom_points_button = QtWidgets.QPushButton("Show Zoom Points")
-        self._zoom_points_button.setCheckable(True)
-        self._zoom_points_button.toggled.connect(self._toggle_zoom_points)
 
         self._ai_gradient_button = QtWidgets.QPushButton("Show AI Speed Gradient")
         self._ai_gradient_button.setCheckable(True)
@@ -1017,6 +1008,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._sidebar.showCurrentTvOnlyChanged.connect(
             self._handle_show_current_tv_only_changed
         )
+        self._sidebar.zoomPointsToggled.connect(self._toggle_zoom_points)
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
 
@@ -1045,15 +1037,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self, title, message
             )
         )
-        self._add_type6_camera_button.clicked.connect(
-            self.camera_actions.add_type6_camera
-        )
-        self._add_type2_camera_button.clicked.connect(
-            self.camera_actions.add_type2_camera
-        )
-        self._add_type7_camera_button.clicked.connect(
-            self.camera_actions.add_type7_camera
-        )
+        self._sidebar.addType6Requested.connect(self.camera_actions.add_type6_camera)
+        self._sidebar.addType2Requested.connect(self.camera_actions.add_type2_camera)
+        self._sidebar.addType7Requested.connect(self.camera_actions.add_type7_camera)
         self._save_cameras_button.clicked.connect(self.camera_actions.save_cameras)
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
         self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)
@@ -1096,24 +1082,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout = QtWidgets.QVBoxLayout()
         right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         right_sidebar_layout.setSpacing(8)
-        view_settings_title = QtWidgets.QLabel("View camera settings")
-        view_settings_title.setStyleSheet("font-weight: bold")
-        view_settings_layout = QtWidgets.QVBoxLayout()
-        view_settings_layout.setContentsMargins(0, 0, 0, 0)
-        view_settings_layout.setSpacing(4)
-        view_settings_layout.addWidget(view_settings_title)
-        view_settings_layout.addWidget(self._zoom_points_button)
-        view_settings_widget = QtWidgets.QWidget()
-        view_settings_widget.setLayout(view_settings_layout)
-        right_sidebar_layout.addWidget(view_settings_widget)
         right_sidebar_layout.addWidget(self._sidebar)
         right_sidebar_layout.addWidget(self._sidebar.type7_details)
         right_sidebar_layout.addWidget(self._sidebar.type6_editor)
-        type_button_layout = QtWidgets.QHBoxLayout()
-        type_button_layout.addWidget(self._add_type6_camera_button)
-        type_button_layout.addWidget(self._add_type2_camera_button)
-        type_button_layout.addWidget(self._add_type7_camera_button)
-        right_sidebar_layout.addLayout(type_button_layout)
         right_sidebar_layout.addWidget(self._save_cameras_button)
         right_sidebar_layout.addStretch(1)
         camera_sidebar.setLayout(right_sidebar_layout)
@@ -2731,8 +2702,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.set_show_section_dividers(enabled)
 
     def _toggle_zoom_points(self, enabled: bool) -> None:
-        text = "Hide Zoom Points" if enabled else "Show Zoom Points"
-        self._zoom_points_button.setText(text)
         self.preview_api.set_show_zoom_points(enabled)
 
     def _toggle_flag_drawing(self, enabled: bool) -> None:
