@@ -2181,7 +2181,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 )
             self._replay_car_combo.setEnabled(True)
             if self._replay_car_combo.count() > 0:
-                self._replay_car_combo.setCurrentIndex(0)
+                default_index = self._first_replay_car_with_laps(rpy)
+                self._replay_car_combo.setCurrentIndex(default_index)
         self._update_replay_laps()
         self._update_replay_lp_controls()
 
@@ -2413,6 +2414,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                     )
                 )
         return laps
+
+    def _first_replay_car_with_laps(self, rpy: Rpy) -> int:
+        for display_index, car_id in enumerate(rpy.car_index):
+            if self._calculate_rpy_laps(rpy, car_id):
+                return display_index
+        return 0
 
     def _format_lap_time(self, frames: int) -> str:
         total_seconds = frames / self._RPY_FPS
