@@ -116,6 +116,9 @@ class TrackPreviewApi:
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._coordinator.export_active_lp_csv(output_path)
 
+    def import_active_lp_csv(self, csv_path: Path) -> tuple[bool, str]:
+        return self._coordinator.import_active_lp_csv(csv_path)
+
     def generate_lp_line(
         self, lp_name: str, speed_mph: float, dlat: float
     ) -> tuple[bool, str]:

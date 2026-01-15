@@ -917,6 +917,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_all_lp_button.setEnabled(False)
         self._export_lp_csv_button = QtWidgets.QPushButton("Export LP CSV")
         self._export_lp_csv_button.setEnabled(False)
+        self._import_lp_csv_button = QtWidgets.QPushButton("Import LP CSV")
+        self._import_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
 
@@ -1021,6 +1023,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         left_layout.addWidget(self._save_lp_button)
         left_layout.addWidget(self._save_all_lp_button)
         left_layout.addWidget(self._export_lp_csv_button)
+        left_layout.addWidget(self._import_lp_csv_button)
         ai_speed_layout = QtWidgets.QHBoxLayout()
         ai_speed_layout.addWidget(self._ai_gradient_button)
         ai_speed_layout.addStretch(1)
@@ -1130,6 +1133,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
         self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
+        self._import_lp_csv_button.clicked.connect(self._handle_import_lp_csv)
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
         self._trk_gaps_action.triggered.connect(
             lambda: self.controller.run_trk_gaps(self)
@@ -3430,6 +3434,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_records_label.setText(label)
         self._lp_records_model.set_records(records)
         self._update_save_lp_button_state(lp_name)
+        self._update_import_lp_csv_button_state(lp_name)
         self._update_export_lp_csv_button_state(lp_name)
         self._update_recalculate_lateral_speed_button_state(lp_name)
         self._update_lp_speed_unit_button_state(lp_name)
@@ -3448,6 +3453,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if name == self.preview_api.active_lp_line():
             self._update_lp_records_table(name)
         self._update_save_lp_button_state(self.preview_api.active_lp_line())
+        self._update_import_lp_csv_button_state(self.preview_api.active_lp_line())
         self._update_export_lp_csv_button_state(
             self.preview_api.active_lp_line()
         )
@@ -3615,6 +3621,31 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _handle_import_lp_csv(self) -> None:
+        lp_name = self.preview_api.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            QtWidgets.QMessageBox.warning(
+                self, "Import LP CSV", "Select a valid LP line to replace."
+            )
+            return
+        suggested = f"{lp_name}.csv"
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Import LP CSV",
+            suggested,
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not path:
+            return
+        success, message = self.preview_api.import_active_lp_csv(Path(path))
+        title = "Import LP CSV"
+        if success:
+            self._update_lp_records_table(lp_name)
+            self.visualization_widget.update()
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
     def _handle_generate_lp_line(self) -> None:
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
@@ -3696,6 +3727,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.preview_api.trk is not None
             and bool(self.preview_api.available_lp_files())
         )
+
+    def _update_import_lp_csv_button_state(self, lp_name: str | None = None) -> None:
+        name = lp_name or self.preview_api.active_lp_line()
+        enabled = (
+            bool(name)
+            and name != "center-line"
+            and self.preview_api.trk is not None
+        )
+        self._import_lp_csv_button.setEnabled(enabled)
 
     def _update_export_lp_csv_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.preview_api.active_lp_line()

@@ -305,6 +305,14 @@ class PreviewCoordinator:
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._model.export_lp_csv(self._state.active_lp_line, output_path)
 
+    def import_active_lp_csv(self, csv_path: Path) -> tuple[bool, str]:
+        success, message = self._model.import_lp_csv(
+            self._state.active_lp_line, csv_path
+        )
+        if success:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        return success, message
+
     def generate_lp_line(
         self, lp_name: str, speed_mph: float, dlat: float
     ) -> tuple[bool, str]:

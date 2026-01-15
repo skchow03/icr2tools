@@ -12,6 +12,7 @@ from typing import List, Tuple
 
 from PyQt5 import QtCore
 
+from icr2_core.lp.csv2lp import load_csv as load_lp_csv
 from icr2_core.lp.loader import LP_RESOLUTION, papy_speed_to_mph
 from icr2_core.lp.lpcalc import get_fake_radius1, get_fake_radius2, get_fake_radius3
 from icr2_core.lp.rpy import Rpy
@@ -607,6 +608,53 @@ class TrackPreviewModel(QtCore.QObject):
         except Exception as exc:
             return False, f"Failed to export {lp_name} CSV: {exc}"
         return True, message
+
+    def import_lp_csv(self, lp_name: str, csv_path: Path) -> tuple[bool, str]:
+        """Import a CSV file and load it into the selected AI line."""
+        if self.trk is None or not self.centerline or self.track_length is None:
+            return False, "No track loaded to import LP data."
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to replace."
+        if lp_name not in self.available_lp_files:
+            return False, f"{lp_name} is not available for editing."
+        track_length = float(self.track_length or self.trk.trklength or 0)
+        if track_length <= 0:
+            return False, "Track length is not available."
+        try:
+            num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong = load_lp_csv(
+                str(csv_path), track_length
+            )
+        except Exception as exc:
+            return False, f"Failed to import CSV: {exc}"
+        if num_lp_recs < 2:
+            return False, "CSV does not contain enough LP records."
+        records: list[LpPoint] = []
+        for speed_raw, dlat, dlong in zip(lp_rw_speed, lp_dlat, lp_dlong):
+            try:
+                x, y, _ = getxyz(
+                    self.trk, float(dlong), float(dlat), self.centerline
+                )
+            except Exception as exc:
+                return False, f"Failed to project LP record at DLONG {dlong:.0f}: {exc}"
+            speed_raw_int = int(round(speed_raw))
+            records.append(
+                LpPoint(
+                    x=x,
+                    y=y,
+                    dlong=float(dlong),
+                    dlat=float(dlat),
+                    speed_raw=speed_raw_int,
+                    speed_mph=papy_speed_to_mph(speed_raw_int),
+                    lateral_speed=0.0,
+                )
+            )
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._pending_ai_line_loads.discard(lp_name)
+        self._ai_line_cache_generation += 1
+        return True, f"Loaded {lp_name} from CSV."
 
     def _queue_ai_line_load(self, lp_name: str) -> None:
         """Schedule a background load of LP records for the given line."""
