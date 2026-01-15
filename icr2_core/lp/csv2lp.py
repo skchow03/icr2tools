@@ -8,7 +8,7 @@ from icr2_core.lp.rpy import Rpy
 from icr2_core.lp.lpcalc import *
 from icr2_core.trk.trk_classes import TRKFile
 
-def load_csv(csv_file, track_length):
+def load_csv(csv_file, track_length, include_lateral_speed=False):
     print("Loading csv file {}".format(csv_file))
     with open(csv_file, "r", newline="") as f:
         reader = csv.reader(f)
@@ -17,6 +17,7 @@ def load_csv(csv_file, track_length):
         speed_idx = None
         speed_is_mph = False
         dlat_idx = None
+        lateral_speed_idx = None
         for idx, value in enumerate(header_lower):
             if value in {"lp speed", "speed[mph]"}:
                 speed_idx = idx
@@ -25,6 +26,8 @@ def load_csv(csv_file, track_length):
                 speed_idx = idx
             elif value == "dlat":
                 dlat_idx = idx
+            elif value in {"lateral speed", "coriolis"}:
+                lateral_speed_idx = idx
         if speed_idx is None or dlat_idx is None:
             if len(header_lower) >= 4:
                 speed_idx = 2
@@ -33,16 +36,25 @@ def load_csv(csv_file, track_length):
                 raise ValueError("CSV header does not contain LP speed/DLAT columns.")
         lp_rw_speed = []
         lp_dlat = []
+        lp_lateral_speed = []
         for row in reader:
             if not row or all(not value.strip() for value in row):
                 continue
-            if len(row) <= max(speed_idx, dlat_idx):
+            required_indices = [speed_idx, dlat_idx]
+            if lateral_speed_idx is not None:
+                required_indices.append(lateral_speed_idx)
+            if len(row) <= max(required_indices):
                 raise ValueError("CSV row does not match expected LP format.")
             speed_value = float(row[speed_idx])
             if speed_is_mph:
                 speed_value = speed_value * 5280 / 9
             lp_rw_speed.append(speed_value)
             lp_dlat.append(float(row[dlat_idx]))
+            if include_lateral_speed:
+                if lateral_speed_idx is None:
+                    lp_lateral_speed.append(0.0)
+                else:
+                    lp_lateral_speed.append(float(row[lateral_speed_idx]))
         num_lp_recs = len(lp_rw_speed)
         print("Reading {} - {} records".format(csv_file, num_lp_recs))
         lp_dlong = []
@@ -51,6 +63,8 @@ def load_csv(csv_file, track_length):
             if i == num_lp_recs - 1:
                 cur_dlong = track_length
             lp_dlong.append(cur_dlong)
+    if include_lateral_speed:
+        return num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong, lp_lateral_speed
     return num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong
 
 def load_trafo(txt_file, track_length):
