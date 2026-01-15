@@ -717,6 +717,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_speed_graph_zoom_x_out = QtWidgets.QPushButton("Zoom X-")
         self._lp_speed_graph_zoom_y_in = QtWidgets.QPushButton("Zoom Y+")
         self._lp_speed_graph_zoom_y_out = QtWidgets.QPushButton("Zoom Y-")
+        self._lp_speed_graph_follow_selection = QtWidgets.QPushButton(
+            "Center on selection"
+        )
+        self._lp_speed_graph_follow_selection.setCheckable(True)
         self._lp_speed_graph_zoom_x_in.clicked.connect(
             lambda: self._lp_speed_graph.zoom_x(1.2)
         )
@@ -728,6 +732,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._lp_speed_graph_zoom_y_out.clicked.connect(
             lambda: self._lp_speed_graph.zoom_y(1 / 1.2)
+        )
+        self._lp_speed_graph_follow_selection.toggled.connect(
+            self._lp_speed_graph.set_follow_selection
         )
         self._lp_speed_graph_container = QtWidgets.QFrame()
         self._lp_speed_graph_container.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -745,6 +752,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_speed_zoom_layout.addWidget(self._lp_speed_graph_zoom_y_in)
         lp_speed_zoom_layout.addWidget(self._lp_speed_graph_zoom_y_out)
         lp_speed_zoom_layout.addStretch(1)
+        lp_speed_zoom_layout.addWidget(self._lp_speed_graph_follow_selection)
         lp_speed_graph_layout.addLayout(lp_speed_zoom_layout)
         self._lp_speed_graph_container.setLayout(lp_speed_graph_layout)
         self._sidebar_vm = CoordinateSidebarViewModel()
@@ -3621,6 +3629,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._set_lp_shortcut_active(False)
         self._update_lp_shortcut_button_state()
         self._update_selected_lp_index_label(None)
+        self._lp_speed_graph.set_selected_index(None)
         if lp_name and lp_name != "center-line" and records:
             self._select_lp_record_row(0)
 
@@ -3642,6 +3651,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         selection = self._lp_records_table.selectionModel()
         if selection is None:
             self._update_selected_lp_index_label(None)
+            self._lp_speed_graph.set_selected_index(None)
             return
         rows = selection.selectedRows()
         if not rows:
@@ -3649,6 +3659,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._set_lp_shortcut_active(False)
             self._update_lp_shortcut_button_state()
             self._update_selected_lp_index_label(None)
+            self._lp_speed_graph.set_selected_index(None)
             return
         row = rows[0].row()
         lp_name = self.preview_api.active_lp_line()
@@ -3657,10 +3668,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._set_lp_shortcut_active(False)
             self._update_lp_shortcut_button_state()
             self._update_selected_lp_index_label(None)
+            self._lp_speed_graph.set_selected_index(None)
             return
         self.preview_api.set_selected_lp_record(lp_name, row)
         self._update_lp_shortcut_button_state()
         self._update_selected_lp_index_label(row)
+        self._lp_speed_graph.set_selected_index(row)
 
     def _handle_lp_shortcut_activation(self) -> None:
         if not self._lp_tab_active():
@@ -3732,6 +3745,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _update_selected_lp_index_label(self, row: int | None) -> None:
         self.visualization_widget.update()
 
+    def _sync_lp_speed_graph_selection(self) -> None:
+        current = self._current_lp_selection()
+        if current is None:
+            self._lp_speed_graph.set_selected_index(None)
+            return
+        _, row = current
+        self._lp_speed_graph.set_selected_index(row)
+
     def _handle_lp_record_edited(self, row: int) -> None:
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
@@ -3740,6 +3761,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_lp_dirty_indicator(lp_name)
         records = self.preview_api.ai_line_records(lp_name)
         self._update_lp_speed_graph(lp_name, records)
+        self._sync_lp_speed_graph_selection()
 
     def _handle_save_lp_line(self) -> None:
         if (
