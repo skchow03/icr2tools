@@ -540,7 +540,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self._lp_list = QtWidgets.QTableWidget(0, 4)
         self._lp_list.setHorizontalHeaderLabels(
-            ["LP name", "Select", "Visible", "Unsaved changes"]
+            ["LP name", "Edit", "Visible", "Unsaved changes"]
         )
         self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self._lp_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -1007,7 +1007,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(lp_label)
         lp_list_header = QtWidgets.QLabel(
-            "Radio selects the active LP. Checkbox toggles visibility."
+            "Radio selects the active LP (center line is view-only). "
+            "Checkbox toggles visibility."
         )
         lp_list_header.setWordWrap(True)
         left_layout.addWidget(lp_list_header)
@@ -3199,6 +3200,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 visible=self.preview_api.center_line_visible(),
                 selected=active_line == "center-line",
                 enabled=enabled,
+                show_select=False,
             )
 
             for name in available_files:
@@ -3209,6 +3211,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                     visible=name in visible_files,
                     selected=active_line == name,
                     enabled=enabled,
+                    show_select=True,
                 )
 
             self.preview_api.set_active_lp_line(active_line)
@@ -3228,13 +3231,16 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         visible: bool,
         selected: bool,
         enabled: bool,
+        show_select: bool,
     ) -> None:
-        radio = QtWidgets.QRadioButton()
-        radio.setProperty("lp-name", name)
-        with QtCore.QSignalBlocker(radio):
-            radio.setChecked(selected)
-        radio.setEnabled(enabled)
-        self._lp_button_group.addButton(radio)
+        radio = None
+        if show_select:
+            radio = QtWidgets.QRadioButton()
+            radio.setProperty("lp-name", name)
+            with QtCore.QSignalBlocker(radio):
+                radio.setChecked(selected)
+            radio.setEnabled(enabled)
+            self._lp_button_group.addButton(radio)
 
         checkbox = QtWidgets.QCheckBox()
         with QtCore.QSignalBlocker(checkbox):
@@ -3261,7 +3267,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         select_layout = QtWidgets.QHBoxLayout()
         select_layout.setContentsMargins(0, 0, 0, 0)
         select_layout.addStretch(1)
-        select_layout.addWidget(radio)
+        if radio is not None:
+            select_layout.addWidget(radio)
         select_layout.addStretch(1)
         select_container.setLayout(select_layout)
         self._lp_list.setCellWidget(row, 1, select_container)
@@ -3356,16 +3363,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         with QtCore.QSignalBlocker(self._ai_acceleration_button):
             self._ai_acceleration_button.setChecked(mode == "acceleration")
 
-        speed_text = (
-            "Use Solid AI Colors" if mode == "speed" else "Show AI Speed Gradient"
-        )
-        accel_text = (
-            "Use Solid AI Colors"
-            if mode == "acceleration"
-            else "Show AI Acceleration Gradient"
-        )
-        self._ai_gradient_button.setText(speed_text)
-        self._ai_acceleration_button.setText(accel_text)
+        self._ai_gradient_button.setText("Show AI Speed Gradient")
+        self._ai_acceleration_button.setText("Show AI Acceleration Gradient")
         self.preview_api.set_ai_color_mode(mode)
 
     def _update_accel_window_label(self, segments: int) -> None:
