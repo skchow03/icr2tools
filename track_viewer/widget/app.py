@@ -25,6 +25,7 @@ from track_viewer.model.pit_models import (
     PitParameters,
 )
 from track_viewer.ai.ai_line_service import LpPoint
+from track_viewer.widget.lp_speed_graph import LpSpeedGraphWidget
 from track_viewer.widget.track_preview_widget import TrackPreviewWidget
 from track_viewer.common.version import __version__
 from track_viewer.controllers.window_controller import WindowController
@@ -711,6 +712,41 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._apply_saved_lp_colors()
         self._apply_saved_pit_colors()
         self._lp_shortcut_active = False
+        self._lp_speed_graph = LpSpeedGraphWidget()
+        self._lp_speed_graph_zoom_x_in = QtWidgets.QPushButton("Zoom X+")
+        self._lp_speed_graph_zoom_x_out = QtWidgets.QPushButton("Zoom X-")
+        self._lp_speed_graph_zoom_y_in = QtWidgets.QPushButton("Zoom Y+")
+        self._lp_speed_graph_zoom_y_out = QtWidgets.QPushButton("Zoom Y-")
+        self._lp_speed_graph_zoom_x_in.clicked.connect(
+            lambda: self._lp_speed_graph.zoom_x(1.2)
+        )
+        self._lp_speed_graph_zoom_x_out.clicked.connect(
+            lambda: self._lp_speed_graph.zoom_x(1 / 1.2)
+        )
+        self._lp_speed_graph_zoom_y_in.clicked.connect(
+            lambda: self._lp_speed_graph.zoom_y(1.2)
+        )
+        self._lp_speed_graph_zoom_y_out.clicked.connect(
+            lambda: self._lp_speed_graph.zoom_y(1 / 1.2)
+        )
+        self._lp_speed_graph_container = QtWidgets.QFrame()
+        self._lp_speed_graph_container.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        lp_speed_graph_layout = QtWidgets.QVBoxLayout()
+        lp_speed_graph_layout.setContentsMargins(8, 6, 8, 6)
+        lp_speed_graph_layout.setSpacing(6)
+        lp_speed_graph_label = QtWidgets.QLabel("LP speed vs DLONG")
+        lp_speed_graph_label.setStyleSheet("font-weight: bold")
+        lp_speed_graph_layout.addWidget(lp_speed_graph_label)
+        lp_speed_graph_layout.addWidget(self._lp_speed_graph)
+        lp_speed_zoom_layout = QtWidgets.QHBoxLayout()
+        lp_speed_zoom_layout.addWidget(self._lp_speed_graph_zoom_x_in)
+        lp_speed_zoom_layout.addWidget(self._lp_speed_graph_zoom_x_out)
+        lp_speed_zoom_layout.addSpacing(8)
+        lp_speed_zoom_layout.addWidget(self._lp_speed_graph_zoom_y_in)
+        lp_speed_zoom_layout.addWidget(self._lp_speed_graph_zoom_y_out)
+        lp_speed_zoom_layout.addStretch(1)
+        lp_speed_graph_layout.addLayout(lp_speed_zoom_layout)
+        self._lp_speed_graph_container.setLayout(lp_speed_graph_layout)
         self._sidebar_vm = CoordinateSidebarViewModel()
         self._sidebar = CoordinateSidebar(self._sidebar_vm)
         self._pit_lane_count_combo = QtWidgets.QComboBox()
@@ -1563,7 +1599,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         body.setOrientation(QtCore.Qt.Horizontal)
         tabs.currentChanged.connect(self._handle_tab_changed)
         body.addWidget(tabs)
-        body.addWidget(self.visualization_widget)
+        right_panel = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+        right_layout.addWidget(self.visualization_widget, stretch=1)
+        right_layout.addWidget(self._lp_speed_graph_container)
+        right_panel.setLayout(right_layout)
+        body.addWidget(right_panel)
         body.setSizes([260, 640])
         layout.addWidget(body, stretch=1)
 
@@ -1935,8 +1978,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_tab_active = widget is self._lp_tab
         self.preview_api.set_lp_editing_tab_active(lp_tab_active)
         self.preview_api.set_replay_tab_active(widget is self._replay_tab)
+        self._lp_speed_graph_container.setVisible(lp_tab_active)
         if not lp_tab_active:
             self._set_lp_shortcut_active(False)
+        else:
+            lp_name = self.preview_api.active_lp_line()
+            records = self.preview_api.ai_line_records(lp_name)
+            self._update_lp_speed_graph(lp_name, records)
         self._sync_pit_preview_for_tab()
 
     def _lp_tab_active(self) -> bool:
@@ -3543,6 +3591,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                     button.setChecked(True)
                 break
 
+    def _update_lp_speed_graph(
+        self, lp_name: str | None, records: list[LpPoint]
+    ) -> None:
+        if not lp_name or lp_name == "center-line":
+            self._lp_speed_graph.set_records([])
+            return
+        self._lp_speed_graph.set_records(records)
+
     def _update_lp_records_table(self, name: str | None = None) -> None:
         lp_name = name or self.preview_api.active_lp_line()
         records = self.preview_api.ai_line_records(lp_name)
@@ -3551,6 +3607,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             label = f"LP records: {lp_name}"
         self._lp_records_label.setText(label)
         self._lp_records_model.set_records(records)
+        self._update_lp_speed_graph(lp_name, records)
         self._update_save_lp_button_state(lp_name)
         self._update_import_lp_csv_button_state(lp_name)
         self._update_export_lp_csv_button_state(lp_name)
@@ -3681,6 +3738,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         self.preview_api.update_lp_record(lp_name, row)
         self._update_lp_dirty_indicator(lp_name)
+        records = self.preview_api.ai_line_records(lp_name)
+        self._update_lp_speed_graph(lp_name, records)
 
     def _handle_save_lp_line(self) -> None:
         if (
