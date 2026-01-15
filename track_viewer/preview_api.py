@@ -104,6 +104,12 @@ class TrackPreviewApi:
     def ai_line_records(self, name: str) -> list[LpPoint]:
         return self._coordinator.ai_line_records(name)
 
+    def lp_line_dirty(self, name: str) -> bool:
+        return self._coordinator.lp_line_dirty(name)
+
+    def mark_lp_line_dirty(self, name: str) -> None:
+        self._coordinator.mark_lp_line_dirty(name)
+
     def update_lp_record(self, lp_name: str, index: int) -> None:
         self._coordinator.update_lp_record(lp_name, index)
 

@@ -538,8 +538,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_list = QtWidgets.QComboBox()
         self._track_list.currentIndexChanged.connect(self._on_track_selected)
 
-        self._lp_list = QtWidgets.QTableWidget(0, 3)
-        self._lp_list.setHorizontalHeaderLabels(["LP name", "Select", "Visible"])
+        self._lp_list = QtWidgets.QTableWidget(0, 4)
+        self._lp_list.setHorizontalHeaderLabels(
+            ["LP name", "Select", "Visible", "Unsaved changes"]
+        )
         self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self._lp_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self._lp_list.setAlternatingRowColors(True)
@@ -550,12 +552,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
         self._lp_button_group = QtWidgets.QButtonGroup(self)
         self._lp_button_group.setExclusive(True)
         self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
         self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
         self._lp_name_cells: dict[str, QtWidgets.QWidget] = {}
         self._lp_name_labels: dict[str, QtWidgets.QLabel] = {}
+        self._lp_dirty_labels: dict[str, QtWidgets.QLabel] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
         self._lp_speed_unit_button = QtWidgets.QPushButton(
@@ -2350,6 +2354,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._set_active_lp_line_in_ui(lp_name)
             self._update_lp_records_table(lp_name)
             self.visualization_widget.update()
+            self._update_lp_dirty_indicator(lp_name)
             QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
@@ -3091,6 +3096,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._lp_checkboxes = {}
             self._lp_name_cells = {}
             self._lp_name_labels = {}
+            self._lp_dirty_labels = {}
             self._lp_list.setRowCount(0)
             self._lp_list.clearContents()
 
@@ -3180,12 +3186,25 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         visible_container.setLayout(visible_layout)
         self._lp_list.setCellWidget(row, 2, visible_container)
 
+        dirty_label = QtWidgets.QLabel()
+        dirty_label.setAlignment(QtCore.Qt.AlignCenter)
+        dirty_container = QtWidgets.QWidget()
+        dirty_layout = QtWidgets.QHBoxLayout()
+        dirty_layout.setContentsMargins(6, 0, 6, 0)
+        dirty_layout.addStretch(1)
+        dirty_layout.addWidget(dirty_label)
+        dirty_layout.addStretch(1)
+        dirty_container.setLayout(dirty_layout)
+        self._lp_list.setCellWidget(row, 3, dirty_container)
+
         self._lp_list.setRowHeight(row, name_container.sizeHint().height())
         self._lp_checkboxes[name] = checkbox
         self._lp_name_cells[name] = name_container
         self._lp_name_labels[name] = name_label
+        self._lp_dirty_labels[name] = dirty_label
         if color:
             self._update_lp_name_color(name, color)
+        self._update_lp_dirty_indicator(name)
 
     def _sync_replay_lp_targets(
         self, available_files: list[str], enabled: bool
@@ -3305,6 +3324,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         label.setStyleSheet(self._lp_color_style(qcolor))
         container.setStyleSheet("")
+
+    def _update_lp_dirty_indicator(self, name: str) -> None:
+        label = self._lp_dirty_labels.get(name)
+        if label is None:
+            return
+        dirty = self.preview_api.lp_line_dirty(name)
+        label.setText("Unsaved changes" if dirty else "")
+
+    def _update_all_lp_dirty_indicators(self) -> None:
+        for name in self._lp_dirty_labels:
+            self._update_lp_dirty_indicator(name)
 
     @staticmethod
     def _lp_color_style(color: QtGui.QColor) -> str:
@@ -3564,6 +3594,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if not lp_name or lp_name == "center-line":
             return
         self.preview_api.update_lp_record(lp_name, row)
+        self._update_lp_dirty_indicator(lp_name)
 
     def _handle_save_lp_line(self) -> None:
         if (
@@ -3583,6 +3614,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
+        self._update_lp_dirty_indicator(self.preview_api.active_lp_line())
 
     def _handle_save_all_lp_lines(self) -> None:
         if (
@@ -3602,6 +3634,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
+        self._update_all_lp_dirty_indicators()
 
     def _handle_export_lp_csv(self) -> None:
         lp_name = self.preview_api.active_lp_line()
@@ -3642,6 +3675,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if success:
             self._update_lp_records_table(lp_name)
             self.visualization_widget.update()
+            self._update_lp_dirty_indicator(lp_name)
             QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
@@ -3710,6 +3744,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 self.controller.set_visible_lp_files(sorted(selected))
             self._update_lp_records_table(lp_name)
             self.visualization_widget.update()
+            self._update_lp_dirty_indicator(lp_name)
             QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
@@ -3794,6 +3829,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if not lp_name or lp_name == "center-line":
             return
         if self._lp_records_model.recalculate_lateral_speeds():
+            self.preview_api.mark_lp_line_dirty(lp_name)
+            self._update_lp_dirty_indicator(lp_name)
             self.visualization_widget.update()
 
     def _sync_tv_mode_selector(
