@@ -449,31 +449,17 @@ class TrackIOService:
     def export_lp_csv(
         self, output_path: Path, lp_name: str, records: Sequence[object]
     ) -> str:
-        fields = [
-            "dlong",
-            "dlat",
-            "speed_raw",
-            "speed_mph",
-            "lateral_speed",
-            "angle_deg",
-            "x",
-            "y",
-        ]
         with output_path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fields)
-            writer.writeheader()
+            writer = csv.writer(handle)
+            writer.writerow(["DLONG", "LP speed", "Coriolis", "DLAT"])
             for record in records:
                 writer.writerow(
-                    {
-                        "dlong": getattr(record, "dlong", None),
-                        "dlat": getattr(record, "dlat", None),
-                        "speed_raw": getattr(record, "speed_raw", None),
-                        "speed_mph": getattr(record, "speed_mph", None),
-                        "lateral_speed": getattr(record, "lateral_speed", None),
-                        "angle_deg": getattr(record, "angle_deg", None),
-                        "x": getattr(record, "x", None),
-                        "y": getattr(record, "y", None),
-                    }
+                    [
+                        getattr(record, "dlong", None),
+                        getattr(record, "speed_mph", None),
+                        getattr(record, "lateral_speed", None),
+                        getattr(record, "dlat", None),
+                    ]
                 )
         return f"Exported {lp_name} to {output_path}"
 

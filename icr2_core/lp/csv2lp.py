@@ -1,24 +1,50 @@
+import argparse
+import csv
+import math
+
 import numpy as np
+
 from icr2_core.lp.rpy import Rpy
 from icr2_core.lp.lpcalc import *
 from icr2_core.trk.trk_classes import TRKFile
-import math
-import argparse
 
 def load_csv(csv_file, track_length):
-    print ('Loading csv file {}'.format(csv_file))
-    with open(csv_file,'r') as f:
-        data = f.readlines()
-        data = data[1:]
-        num_lp_recs = len(data)
-        print ('Reading {} - {} records'.format(csv_file, num_lp_recs))
+    print("Loading csv file {}".format(csv_file))
+    with open(csv_file, "r", newline="") as f:
+        reader = csv.reader(f)
+        header = next(reader, [])
+        header_lower = [value.strip().lower() for value in header]
+        speed_idx = None
+        speed_is_mph = False
+        dlat_idx = None
+        for idx, value in enumerate(header_lower):
+            if value in {"lp speed", "speed[mph]"}:
+                speed_idx = idx
+                speed_is_mph = True
+            elif value in {"rw speed", "rw speed (lp)"} and speed_idx is None:
+                speed_idx = idx
+            elif value == "dlat":
+                dlat_idx = idx
+        if speed_idx is None or dlat_idx is None:
+            if len(header_lower) >= 4:
+                speed_idx = 2
+                dlat_idx = 3
+            else:
+                raise ValueError("CSV header does not contain LP speed/DLAT columns.")
         lp_rw_speed = []
         lp_dlat = []
-        for i in range(0, num_lp_recs):
-            data[i] = data[i].strip().split(',')
-            lp_rw_speed.append(float(data[i][2]))
-            lp_dlat.append(float(data[i][3]))
-
+        for row in reader:
+            if not row or all(not value.strip() for value in row):
+                continue
+            if len(row) <= max(speed_idx, dlat_idx):
+                raise ValueError("CSV row does not match expected LP format.")
+            speed_value = float(row[speed_idx])
+            if speed_is_mph:
+                speed_value = speed_value * 5280 / 9
+            lp_rw_speed.append(speed_value)
+            lp_dlat.append(float(row[dlat_idx]))
+        num_lp_recs = len(lp_rw_speed)
+        print("Reading {} - {} records".format(csv_file, num_lp_recs))
         lp_dlong = []
         for i in range(0, num_lp_recs):
             cur_dlong = i * 65536
