@@ -342,6 +342,21 @@ class PreviewCoordinator:
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
         return success, message
 
+    def copy_lp_speeds_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        success, message = self._model.copy_lp_speeds_from_replay(
+            lp_name, rpy, car_id, start_frame, end_frame
+        )
+        if success:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        return success, message
+
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         if name is None or index is None:
             if self._state.selected_lp_line is None and self._state.selected_lp_index is None:

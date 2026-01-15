@@ -142,6 +142,18 @@ class TrackPreviewApi:
             lp_name, rpy, car_id, start_frame, end_frame
         )
 
+    def copy_lp_speeds_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        return self._coordinator.copy_lp_speeds_from_replay(
+            lp_name, rpy, car_id, start_frame, end_frame
+        )
+
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
         self._coordinator.set_selected_lp_record(name, index)
 
