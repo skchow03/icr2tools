@@ -697,6 +697,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._replay_generate_lp_button.clicked.connect(
             self._handle_generate_replay_lp
         )
+        self._replay_copy_speeds_button = QtWidgets.QPushButton(
+            "Copy Only Speeds to Selected LP"
+        )
+        self._replay_copy_speeds_button.setEnabled(False)
+        self._replay_copy_speeds_button.clicked.connect(
+            self._handle_copy_replay_speeds
+        )
         self._replay_status_label = QtWidgets.QLabel(
             "Select a track to view replay laps."
         )
@@ -1494,6 +1501,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         replay_layout.addWidget(QtWidgets.QLabel("LP target"))
         replay_layout.addWidget(self._replay_lp_combo)
         replay_layout.addWidget(self._replay_generate_lp_button)
+        replay_layout.addWidget(self._replay_copy_speeds_button)
         replay_sidebar.setLayout(replay_layout)
 
         tabs = QtWidgets.QTabWidget()
@@ -2288,6 +2296,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._replay_generate_lp_button.setEnabled(
             has_track and has_replay and has_lap and has_lp_target
         )
+        self._replay_copy_speeds_button.setEnabled(
+            has_track and has_replay and has_lap and has_lp_target
+        )
 
     def _handle_generate_replay_lp(self) -> None:
         lp_name = self._current_replay_lp_target()
@@ -2351,6 +2362,71 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
                 selected = set(self.preview_api.visible_lp_files())
                 selected.add(lp_name)
                 self.controller.set_visible_lp_files(sorted(selected))
+            self._set_active_lp_line_in_ui(lp_name)
+            self._update_lp_records_table(lp_name)
+            self.visualization_widget.update()
+            self._update_lp_dirty_indicator(lp_name)
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
+    def _handle_copy_replay_speeds(self) -> None:
+        lp_name = self._current_replay_lp_target()
+        if not lp_name or lp_name == "center-line":
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Copy Replay Speeds",
+                "Select a valid LP line to update speeds.",
+            )
+            return
+        if self.preview_api.trk is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Copy Replay Speeds",
+                "Load a track before copying replay speeds.",
+            )
+            return
+        if self._current_replay is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Copy Replay Speeds",
+                "Select a replay file before copying speeds.",
+            )
+            return
+        lap_info = self._selected_replay_generation_lap_info()
+        if lap_info is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Copy Replay Speeds",
+                "Select a complete replay lap to copy speeds.",
+            )
+            return
+        car_id = self._replay_car_combo.currentData()
+        if car_id is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Copy Replay Speeds",
+                "Select a replay car before copying speeds.",
+            )
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Copy Replay Speeds",
+            f"This will update only the speeds in the {lp_name} LP.",
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel,
+            QtWidgets.QMessageBox.Cancel,
+        )
+        if confirm != QtWidgets.QMessageBox.Ok:
+            return
+        success, message = self.preview_api.copy_lp_speeds_from_replay(
+            lp_name,
+            self._current_replay,
+            int(car_id),
+            lap_info.start_frame,
+            lap_info.end_frame,
+        )
+        title = "Copy Replay Speeds"
+        if success:
             self._set_active_lp_line_in_ui(lp_name)
             self._update_lp_records_table(lp_name)
             self.visualization_widget.update()

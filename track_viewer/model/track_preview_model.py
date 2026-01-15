@@ -219,37 +219,32 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line with {record_count} records."
 
-    def generate_lp_line_from_replay(
+    def _create_lp_records_from_replay(
         self,
-        lp_name: str,
         rpy: Rpy,
         car_id: int,
         start_frame: int,
         end_frame: int,
-    ) -> tuple[bool, str]:
+    ) -> tuple[list[LpPoint] | None, str]:
         if self.trk is None or not self.centerline or self.track_length is None:
-            return False, "No track loaded to generate LP data."
-        if not lp_name or lp_name == "center-line":
-            return False, "Select a valid LP line to replace."
-        if lp_name not in self.available_lp_files:
-            return False, f"{lp_name} is not available for editing."
+            return None, "No track loaded to generate LP data."
         if car_id not in rpy.car_index:
-            return False, "Selected replay car is unavailable."
+            return None, "Selected replay car is unavailable."
         car_index = rpy.car_index.index(car_id)
         dlongs = rpy.cars[car_index].dlong
         dlats = rpy.cars[car_index].dlat
         if not dlongs or not dlats:
-            return False, "Replay lap data is empty."
+            return None, "Replay lap data is empty."
         start = max(0, start_frame - 2)
         end = min(len(dlongs), end_frame + 2)
         if end <= start:
-            return False, "Replay lap range is invalid."
+            return None, "Replay lap range is invalid."
         frames = end - start
         if frames < 5:
-            return False, "Replay lap is too short to generate LP data."
+            return None, "Replay lap is too short to generate LP data."
         track_length = int(self.track_length or self.trk.trklength or 0)
         if track_length <= 0:
-            return False, "Track length is not available."
+            return None, "Track length is not available."
 
         t1_dlong: list[int] = []
         t1_dlat: list[int] = []
@@ -309,7 +304,7 @@ class TrackPreviewModel(QtCore.QObject):
                     )
                 )
             else:
-                return False, f"Unable to calculate replay radius at frame {i}."
+                return None, f"Unable to calculate replay radius at frame {i}."
 
         for i in range(1, frames):
             cur = i
@@ -322,7 +317,7 @@ class TrackPreviewModel(QtCore.QObject):
             else:
                 denom = 2 * float(t1_radius[prev])
                 if denom == 0:
-                    return False, "Replay radius calculation produced zero values."
+                    return None, "Replay radius calculation produced zero values."
                 a = (
                     (2 * t1_radius[prev] - t1_dlat[cur] - t1_dlat[prev])
                     * (t1_dlong[cur] - t1_dlong[prev])
@@ -331,7 +326,7 @@ class TrackPreviewModel(QtCore.QObject):
                 b = t1_dlat[cur] - t1_dlat[prev]
                 t1_prev_rw_len.append(math.sqrt(a**2 + b**2))
             if next_frame >= frames:
-                return False, "Replay lap data is too short for interpolation."
+                return None, "Replay lap data is too short for interpolation."
 
         for i in range(0, frames):
             next_frame = 4 if i == frames - 1 else i + 1
@@ -362,7 +357,7 @@ class TrackPreviewModel(QtCore.QObject):
                     ref_index = len(t1_dlong) - 2
             denom = t1_dlong[ref_index + 1] - t1_dlong[ref_index]
             if denom == 0:
-                return False, "Replay lap data has duplicate DLONG entries."
+                return None, "Replay lap data has duplicate DLONG entries."
             cur_dlat = (
                 (cur_dlong - t1_dlong[ref_index]) * t1_dlat[ref_index + 1]
                 + (t1_dlong[ref_index + 1] - cur_dlong) * t1_dlat[ref_index]
@@ -462,7 +457,7 @@ class TrackPreviewModel(QtCore.QObject):
                     )
                 )
             else:
-                return False, f"Unable to calculate LP radius at record {i}."
+                return None, f"Unable to calculate LP radius at record {i}."
 
         for i in range(0, num_lp_recs2):
             cur = i
@@ -484,7 +479,7 @@ class TrackPreviewModel(QtCore.QObject):
             else:
                 denom = 2 * float(t3_radius[prev])
                 if denom == 0:
-                    return False, "LP radius calculation produced zero values."
+                    return None, "LP radius calculation produced zero values."
                 a = (
                     (2 * t3_radius[prev] - lp_dlat[cur] - lp_dlat[prev])
                     * (lp_dlong[cur] - lp_dlong[prev])
@@ -540,7 +535,7 @@ class TrackPreviewModel(QtCore.QObject):
             try:
                 x, y, _ = getxyz(self.trk, dlong, dlat, self.centerline)
             except Exception as exc:
-                return False, f"Failed to project LP record at DLONG {dlong:.0f}: {exc}"
+                return None, f"Failed to project LP record at DLONG {dlong:.0f}: {exc}"
             records.append(
                 LpPoint(
                     x=x,
@@ -554,7 +549,26 @@ class TrackPreviewModel(QtCore.QObject):
             )
 
         if not records:
-            return False, "No LP records were generated from the replay lap."
+            return None, "No LP records were generated from the replay lap."
+        return records, "Generated LP records from replay lap."
+
+    def generate_lp_line_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to replace."
+        if lp_name not in self.available_lp_files:
+            return False, f"{lp_name} is not available for editing."
+        records, message = self._create_lp_records_from_replay(
+            rpy, car_id, start_frame, end_frame
+        )
+        if records is None:
+            return False, message
         if self._ai_lines is None:
             self._ai_lines = {}
         self._ai_lines[lp_name] = records
@@ -563,6 +577,51 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_cache_generation += 1
         self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line from replay lap."
+
+    def copy_lp_speeds_from_replay(
+        self,
+        lp_name: str,
+        rpy: Rpy,
+        car_id: int,
+        start_frame: int,
+        end_frame: int,
+    ) -> tuple[bool, str]:
+        if not lp_name or lp_name == "center-line":
+            return False, "Select a valid LP line to update."
+        if lp_name not in self.available_lp_files:
+            return False, f"{lp_name} is not available for editing."
+        existing_records = self._get_ai_line_records(lp_name)
+        if not existing_records:
+            return False, f"No {lp_name} LP records are loaded."
+        replay_records, message = self._create_lp_records_from_replay(
+            rpy, car_id, start_frame, end_frame
+        )
+        if replay_records is None:
+            return False, message
+        if len(existing_records) != len(replay_records):
+            return False, "Replay lap speed data does not match the LP record count."
+        updated_records: list[LpPoint] = []
+        for record, replay_record in zip(existing_records, replay_records):
+            updated_records.append(
+                LpPoint(
+                    x=record.x,
+                    y=record.y,
+                    dlong=record.dlong,
+                    dlat=record.dlat,
+                    speed_raw=replay_record.speed_raw,
+                    speed_mph=replay_record.speed_mph,
+                    lateral_speed=record.lateral_speed,
+                    angle_deg=record.angle_deg,
+                )
+            )
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        self._ai_lines[lp_name] = updated_records
+        self._manual_lp_overrides.add(lp_name)
+        self._pending_ai_line_loads.discard(lp_name)
+        self._ai_line_cache_generation += 1
+        self._dirty_lp_files.add(lp_name)
+        return True, f"Updated {lp_name} LP speeds from replay lap."
 
     def save_lp_line(self, lp_name: str) -> tuple[bool, str]:
         """Persist the selected AI line back to its LP file."""
