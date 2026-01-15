@@ -122,6 +122,9 @@ class TrackPreviewApi:
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._coordinator.export_active_lp_csv(output_path)
 
+    def export_all_lp_csvs(self, output_dir: Path) -> tuple[bool, str]:
+        return self._coordinator.export_all_lp_csvs(output_dir)
+
     def import_active_lp_csv(self, csv_path: Path) -> tuple[bool, str]:
         return self._coordinator.import_active_lp_csv(csv_path)
 
