@@ -451,7 +451,7 @@ class TrackIOService:
     ) -> str:
         with output_path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["DLONG", "LP speed", "Coriolis", "DLAT"])
+            writer.writerow(["DLONG", "LP speed", "Lateral Speed", "DLAT"])
             for record in records:
                 writer.writerow(
                     [

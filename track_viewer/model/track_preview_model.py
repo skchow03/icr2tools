@@ -621,15 +621,21 @@ class TrackPreviewModel(QtCore.QObject):
         if track_length <= 0:
             return False, "Track length is not available."
         try:
-            num_lp_recs, lp_rw_speed, lp_dlat, lp_dlong = load_lp_csv(
-                str(csv_path), track_length
-            )
+            (
+                num_lp_recs,
+                lp_rw_speed,
+                lp_dlat,
+                lp_dlong,
+                lp_lateral_speed,
+            ) = load_lp_csv(str(csv_path), track_length, include_lateral_speed=True)
         except Exception as exc:
             return False, f"Failed to import CSV: {exc}"
         if num_lp_recs < 2:
             return False, "CSV does not contain enough LP records."
         records: list[LpPoint] = []
-        for speed_raw, dlat, dlong in zip(lp_rw_speed, lp_dlat, lp_dlong):
+        for speed_raw, dlat, dlong, lateral_speed in zip(
+            lp_rw_speed, lp_dlat, lp_dlong, lp_lateral_speed
+        ):
             try:
                 x, y, _ = getxyz(
                     self.trk, float(dlong), float(dlat), self.centerline
@@ -645,7 +651,7 @@ class TrackPreviewModel(QtCore.QObject):
                     dlat=float(dlat),
                     speed_raw=speed_raw_int,
                     speed_mph=papy_speed_to_mph(speed_raw_int),
-                    lateral_speed=0.0,
+                    lateral_speed=float(lateral_speed),
                 )
             )
         if self._ai_lines is None:
