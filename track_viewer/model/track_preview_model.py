@@ -63,6 +63,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_generation = 0
         self._ai_line_cache_generation = 0
         self._manual_lp_overrides: set[str] = set()
+        self._dirty_lp_files: set[str] = set()
         self.replay_lap_points: list[LpPoint] = []
         self.replay_lap_label: str | None = None
         self._replay_line_generation = 0
@@ -106,6 +107,7 @@ class TrackPreviewModel(QtCore.QObject):
         self.available_lp_files = track_data.available_lp_files
         self.track_path = track_folder
         self._reset_ai_lines()
+        self._dirty_lp_files.clear()
         self.visible_lp_files = {
             name for name in self.visible_lp_files if name in self.available_lp_files
         }
@@ -119,6 +121,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_generation += 1
         self._ai_line_cache_generation += 1
         self._manual_lp_overrides.clear()
+        self._dirty_lp_files.clear()
 
     def set_visible_lp_files(self, names: list[str] | set[str]) -> bool:
         valid = {name for name in names if name in self.available_lp_files}
@@ -142,6 +145,16 @@ class TrackPreviewModel(QtCore.QObject):
             return []
         return self._get_ai_line_records(name)
 
+    def lp_line_dirty(self, name: str) -> bool:
+        if name == "center-line":
+            return False
+        return name in self._dirty_lp_files
+
+    def mark_lp_line_dirty(self, name: str) -> None:
+        if name == "center-line" or name not in self.available_lp_files:
+            return
+        self._dirty_lp_files.add(name)
+
     def update_lp_record(self, lp_name: str, index: int) -> bool:
         """Recompute a single LP record's world position from DLONG/DLAT."""
         if lp_name not in self.available_lp_files:
@@ -161,6 +174,7 @@ class TrackPreviewModel(QtCore.QObject):
             record.x = x
             record.y = y
         self._ai_line_cache_generation += 1
+        self._dirty_lp_files.add(lp_name)
         return True
 
     def generate_lp_line(
@@ -202,6 +216,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._manual_lp_overrides.add(lp_name)
         self._pending_ai_line_loads.discard(lp_name)
         self._ai_line_cache_generation += 1
+        self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line with {record_count} records."
 
     def generate_lp_line_from_replay(
@@ -546,6 +561,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._manual_lp_overrides.add(lp_name)
         self._pending_ai_line_loads.discard(lp_name)
         self._ai_line_cache_generation += 1
+        self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line from replay lap."
 
     def save_lp_line(self, lp_name: str) -> tuple[bool, str]:
@@ -563,6 +579,7 @@ class TrackPreviewModel(QtCore.QObject):
             message = self._io_service.save_lp_line(self.track_path, lp_name, records)
         except Exception as exc:
             return False, f"Failed to save {lp_name}.LP: {exc}"
+        self._dirty_lp_files.discard(lp_name)
         return True, message
 
     def save_all_lp_lines(self) -> tuple[bool, str]:
@@ -584,6 +601,7 @@ class TrackPreviewModel(QtCore.QObject):
                 failures.append(f"{lp_name} ({exc})")
                 continue
             saved.append(lp_name)
+            self._dirty_lp_files.discard(lp_name)
         if failures:
             prefix = f"Saved {len(saved)} LP file(s)." if saved else "No LP files saved."
             message = "\n".join(
@@ -660,6 +678,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._manual_lp_overrides.add(lp_name)
         self._pending_ai_line_loads.discard(lp_name)
         self._ai_line_cache_generation += 1
+        self._dirty_lp_files.add(lp_name)
         return True, f"Loaded {lp_name} from CSV."
 
     def _queue_ai_line_load(self, lp_name: str) -> None:
