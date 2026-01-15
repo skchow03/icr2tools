@@ -562,14 +562,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_dirty_labels: dict[str, QtWidgets.QLabel] = {}
         self._lp_records_label = QtWidgets.QLabel("LP records")
         self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._lp_speed_unit_button = QtWidgets.QPushButton(
-            "Show Speed 500ths per frame"
-        )
-        self._lp_speed_unit_button.setCheckable(True)
-        self._lp_speed_unit_button.setEnabled(False)
-        self._lp_speed_unit_button.toggled.connect(
-            self._handle_lp_speed_unit_toggled
-        )
         self._recalculate_lateral_speed_button = QtWidgets.QPushButton(
             "Recalculate Lateral Speed"
         )
@@ -884,14 +876,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             lambda text: self._handle_weather_variation_changed("wind2", text)
         )
 
-        self._ai_gradient_button = QtWidgets.QPushButton("Show AI Speed Gradient")
-        self._ai_gradient_button.setCheckable(True)
+        self._ai_gradient_button = QtWidgets.QCheckBox("Show AI Speed Gradient")
         self._ai_gradient_button.toggled.connect(self._toggle_ai_gradient)
 
-        self._ai_acceleration_button = QtWidgets.QPushButton(
+        self._ai_acceleration_button = QtWidgets.QCheckBox(
             "Show AI Acceleration Gradient"
         )
-        self._ai_acceleration_button.setCheckable(True)
         self._ai_acceleration_button.toggled.connect(
             self._toggle_ai_acceleration_gradient
         )
@@ -930,6 +920,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._export_lp_csv_button.setEnabled(False)
         self._import_lp_csv_button = QtWidgets.QPushButton("Import LP CSV")
         self._import_lp_csv_button.setEnabled(False)
+        self._export_all_lp_csv_button = QtWidgets.QPushButton(
+            "Export All LPs to CSV"
+        )
+        self._export_all_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
 
@@ -1018,23 +1012,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         lp_list_header.setWordWrap(True)
         left_layout.addWidget(lp_list_header)
         left_layout.addWidget(self._lp_list)
-        lp_records_header = QtWidgets.QHBoxLayout()
-        lp_records_header.addWidget(self._lp_records_label)
-        lp_records_header.addStretch(1)
-        left_layout.addLayout(lp_records_header)
-        dlat_step_layout = QtWidgets.QHBoxLayout()
-        dlat_step_layout.addWidget(self._lp_shortcut_button)
-        dlat_step_layout.addStretch(1)
-        dlat_step_layout.addWidget(QtWidgets.QLabel("DLAT step"))
-        dlat_step_layout.addWidget(self._lp_dlat_step)
-        left_layout.addLayout(dlat_step_layout)
-        left_layout.addWidget(self._lp_speed_unit_button)
-        left_layout.addWidget(self._recalculate_lateral_speed_button)
-        left_layout.addWidget(self._generate_lp_button)
-        left_layout.addWidget(self._save_lp_button)
-        left_layout.addWidget(self._save_all_lp_button)
-        left_layout.addWidget(self._export_lp_csv_button)
-        left_layout.addWidget(self._import_lp_csv_button)
+        view_options_label = QtWidgets.QLabel("View Options")
+        view_options_label.setStyleSheet("font-weight: bold")
+        left_layout.addWidget(view_options_label)
         ai_speed_layout = QtWidgets.QHBoxLayout()
         ai_speed_layout.addWidget(self._ai_gradient_button)
         ai_speed_layout.addStretch(1)
@@ -1047,6 +1027,35 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         accel_layout.addWidget(self._accel_window_label)
         accel_layout.addWidget(self._accel_window_slider)
         left_layout.addLayout(accel_layout)
+        lp_records_header = QtWidgets.QHBoxLayout()
+        lp_records_header.addWidget(self._lp_records_label)
+        lp_records_header.addStretch(1)
+        left_layout.addLayout(lp_records_header)
+        dlat_step_layout = QtWidgets.QHBoxLayout()
+        dlat_step_layout.addWidget(self._lp_shortcut_button)
+        dlat_step_layout.addStretch(1)
+        dlat_step_layout.addWidget(QtWidgets.QLabel("DLAT step"))
+        dlat_step_layout.addWidget(self._lp_dlat_step)
+        left_layout.addLayout(dlat_step_layout)
+        generation_tools_label = QtWidgets.QLabel("Generation Tools")
+        generation_tools_label.setStyleSheet("font-weight: bold")
+        left_layout.addWidget(generation_tools_label)
+        generation_tools_layout = QtWidgets.QHBoxLayout()
+        generation_tools_layout.addWidget(self._generate_lp_button)
+        generation_tools_layout.addWidget(self._recalculate_lateral_speed_button)
+        left_layout.addLayout(generation_tools_layout)
+        io_label = QtWidgets.QLabel("Input/Output")
+        io_label.setStyleSheet("font-weight: bold")
+        left_layout.addWidget(io_label)
+        io_save_layout = QtWidgets.QHBoxLayout()
+        io_save_layout.addWidget(self._save_lp_button)
+        io_save_layout.addWidget(self._save_all_lp_button)
+        left_layout.addLayout(io_save_layout)
+        io_csv_layout = QtWidgets.QHBoxLayout()
+        io_csv_layout.addWidget(self._export_lp_csv_button)
+        io_csv_layout.addWidget(self._import_lp_csv_button)
+        left_layout.addLayout(io_csv_layout)
+        left_layout.addWidget(self._export_all_lp_csv_button)
         self._lp_records_table.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -1145,6 +1154,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
         self._import_lp_csv_button.clicked.connect(self._handle_import_lp_csv)
+        self._export_all_lp_csv_button.clicked.connect(
+            self._handle_export_all_lp_csv
+        )
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
         self._trk_gaps_action.triggered.connect(
             lambda: self.controller.run_trk_gaps(self)
@@ -3201,6 +3213,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
             self.preview_api.set_active_lp_line(active_line)
         self._lp_list.setEnabled(enabled)
+        self._update_export_all_lp_csv_button_state()
         self._update_lp_records_table(active_line)
         self._update_save_lp_button_state(active_line)
         self._update_generate_lp_button_state(active_line)
@@ -3542,8 +3555,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_save_lp_button_state(lp_name)
         self._update_import_lp_csv_button_state(lp_name)
         self._update_export_lp_csv_button_state(lp_name)
+        self._update_export_all_lp_csv_button_state()
         self._update_recalculate_lateral_speed_button_state(lp_name)
-        self._update_lp_speed_unit_button_state(lp_name)
         self._update_generate_lp_button_state(lp_name)
         selection_model = self._lp_records_table.selectionModel()
         if selection_model is not None:
@@ -3563,10 +3576,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._update_export_lp_csv_button_state(
             self.preview_api.active_lp_line()
         )
+        self._update_export_all_lp_csv_button_state()
         self._update_recalculate_lateral_speed_button_state(
-            self.preview_api.active_lp_line()
-        )
-        self._update_lp_speed_unit_button_state(
             self.preview_api.active_lp_line()
         )
         self._update_generate_lp_button_state(self.preview_api.active_lp_line())
@@ -3730,6 +3741,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _handle_export_all_lp_csv(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Export All LPs to CSV",
+        )
+        if not path:
+            return
+        success, message = self.preview_api.export_all_lp_csvs(Path(path))
+        title = "Export All LPs to CSV"
+        if success:
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
     def _handle_import_lp_csv(self) -> None:
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
@@ -3857,6 +3882,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._export_lp_csv_button.setEnabled(enabled)
 
+    def _update_export_all_lp_csv_button_state(self) -> None:
+        enabled = bool(self.preview_api.available_lp_files()) and bool(
+            self.preview_api.trk
+        )
+        self._export_all_lp_csv_button.setEnabled(enabled)
+
     def _update_recalculate_lateral_speed_button_state(
         self, lp_name: str | None = None
     ) -> None:
@@ -3868,15 +3899,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._recalculate_lateral_speed_button.setEnabled(enabled)
 
-    def _update_lp_speed_unit_button_state(self, lp_name: str | None = None) -> None:
-        name = lp_name or self.preview_api.active_lp_line()
-        enabled = (
-            bool(name)
-            and name != "center-line"
-            and bool(self.preview_api.ai_line_records(name))
-        )
-        self._lp_speed_unit_button.setEnabled(enabled)
-
     def _update_generate_lp_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.preview_api.active_lp_line()
         enabled = (
@@ -3885,11 +3907,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             and self.preview_api.trk is not None
         )
         self._generate_lp_button.setEnabled(enabled)
-
-    def _handle_lp_speed_unit_toggled(self, enabled: bool) -> None:
-        self._lp_records_model.set_speed_raw_visible(enabled)
-        text = "Show Speed MPH" if enabled else "Show Speed 500ths per frame"
-        self._lp_speed_unit_button.setText(text)
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
         self.preview_api.set_tv_mode_count(mode_count)

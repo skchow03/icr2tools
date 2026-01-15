@@ -311,6 +311,9 @@ class PreviewCoordinator:
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
         return self._model.export_lp_csv(self._state.active_lp_line, output_path)
 
+    def export_all_lp_csvs(self, output_dir: Path) -> tuple[bool, str]:
+        return self._model.export_all_lp_csvs(output_dir)
+
     def import_active_lp_csv(self, csv_path: Path) -> tuple[bool, str]:
         success, message = self._model.import_lp_csv(
             self._state.active_lp_line, csv_path

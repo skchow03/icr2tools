@@ -686,6 +686,40 @@ class TrackPreviewModel(QtCore.QObject):
             return False, f"Failed to export {lp_name} CSV: {exc}"
         return True, message
 
+    def export_all_lp_csvs(self, output_dir: Path) -> tuple[bool, str]:
+        """Export all available AI lines to CSV files."""
+        if not self.available_lp_files:
+            return False, "No LP files are available for export."
+        if not output_dir.exists():
+            return False, "Selected export folder does not exist."
+        if not output_dir.is_dir():
+            return False, "Selected export path is not a folder."
+        exported: list[str] = []
+        failures: list[str] = []
+        for lp_name in sorted(self.available_lp_files):
+            records = self.get_ai_line_records_immediate(lp_name)
+            if not records:
+                failures.append(f"{lp_name} (no records loaded)")
+                continue
+            try:
+                output_path = output_dir / f"{lp_name}.csv"
+                self._io_service.export_lp_csv(output_path, lp_name, records)
+            except Exception as exc:
+                failures.append(f"{lp_name} ({exc})")
+                continue
+            exported.append(lp_name)
+        if failures:
+            prefix = (
+                f"Exported {len(exported)} LP file(s)."
+                if exported
+                else "No LP files exported."
+            )
+            message = "\n".join(
+                [prefix, "Failed to export:", *[f"- {item}" for item in failures]]
+            )
+            return False, message
+        return True, f"Exported {len(exported)} LP file(s)."
+
     def import_lp_csv(self, lp_name: str, csv_path: Path) -> tuple[bool, str]:
         """Import a CSV file and load it into the selected AI line."""
         if self.trk is None or not self.centerline or self.track_length is None:
