@@ -78,7 +78,7 @@ class WindowController(QtCore.QObject):
             return
 
         entries = [(folder.name, folder) for folder in folders]
-        self.trackListUpdated.emit(entries, True, 0)
+        self.trackListUpdated.emit(entries, True, -1)
         self.aiLinesUpdated.emit([], set(), False)
 
     def set_selected_track(self, folder: Optional[Path]) -> None:
