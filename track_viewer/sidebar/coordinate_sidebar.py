@@ -20,6 +20,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
     cameraSelectionChanged = QtCore.pyqtSignal(object)
     cameraDlongsUpdated = QtCore.pyqtSignal(int, object, object)
     cameraPositionUpdated = QtCore.pyqtSignal(int, object, object, object)
+    cameraAssignmentChanged = QtCore.pyqtSignal()
     type6ParametersChanged = QtCore.pyqtSignal()
     tvModeCountChanged = QtCore.pyqtSignal(int)
     tvModeViewChanged = QtCore.pyqtSignal(int)
@@ -62,6 +63,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
 
         self._tv_panel.cameraSelected.connect(self.cameraSelectionChanged)
         self._tv_panel.dlongsUpdated.connect(self.cameraDlongsUpdated)
+        self._tv_panel.cameraAssignmentChanged.connect(self.cameraAssignmentChanged)
         self._tv_panel.modeCountChanged.connect(self.tvModeCountChanged)
         self._tv_panel.viewChanged.connect(self._handle_tv_mode_view_changed)
         self._tv_panel.addType6Requested.connect(self.addType6Requested)

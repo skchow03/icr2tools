@@ -15,6 +15,7 @@ class TvModesPanel(QtWidgets.QWidget):
 
     cameraSelected = QtCore.pyqtSignal(object)
     dlongsUpdated = QtCore.pyqtSignal(int, object, object)
+    cameraAssignmentChanged = QtCore.pyqtSignal()
     modeCountChanged = QtCore.pyqtSignal(int)
     viewChanged = QtCore.pyqtSignal(int)
     addType6Requested = QtCore.pyqtSignal()
@@ -277,6 +278,7 @@ class TvModesPanel(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, camera_index)
             item.setText(0, self._camera_label(entry))
         self._update_camera_item_reference(previous_camera_index, camera_index, tree, item)
+        self.cameraAssignmentChanged.emit()
 
     def _update_camera_item_reference(
         self,
@@ -545,6 +547,7 @@ class TvModesPanel(QtWidgets.QWidget):
                 with QtCore.QSignalBlocker(tree):
                     tree.setCurrentItem(items[next_index])
         self._update_delete_state()
+        self.cameraAssignmentChanged.emit()
 
     def _current_tree(self) -> Optional[QtWidgets.QTreeWidget]:
         tab_index = self._tv_tabs.currentIndex()

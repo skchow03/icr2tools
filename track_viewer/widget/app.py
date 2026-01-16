@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence
@@ -13,7 +13,6 @@ from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.loader import papy_speed_to_mph
 from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.trk_utils import ground_type_name
-from track_viewer.controllers.camera_actions import CameraActions
 from track_viewer.model.camera_models import CameraViewListing
 from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
 from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
@@ -546,6 +545,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_result: TrackTxtResult | None = None
         self._current_track_folder: Path | None = None
         self._trk_map_preview_window: QtWidgets.QWidget | None = None
+        self._camera_dirty = False
+        self._tab_titles: dict[int, str] = {}
 
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
@@ -933,6 +934,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._wind2_var_field.textChanged.connect(
             lambda text: self._handle_weather_variation_changed("wind2", text)
         )
+        self._connect_track_txt_dirty_signals()
 
         self._ai_gradient_button = QtWidgets.QCheckBox("Show AI Speed Gradient")
         self._ai_gradient_button.toggled.connect(self._toggle_ai_gradient)
@@ -1150,7 +1152,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._handle_weather_compass_wind_direction_changed
         )
         self._sidebar.type7_details.parametersChanged.connect(
-            self.visualization_widget.update
+            self._handle_type7_parameters_changed
         )
         self._sidebar.cameraSelectionChanged.connect(
             self._handle_camera_selection_changed
@@ -1160,6 +1162,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self._sidebar.cameraPositionUpdated.connect(
             self._handle_camera_position_updated
+        )
+        self._sidebar.cameraAssignmentChanged.connect(
+            self._handle_camera_assignment_changed
         )
         self._sidebar.type6ParametersChanged.connect(
             self._handle_type6_parameters_changed
@@ -1194,21 +1199,23 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
         self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
 
-        self.camera_actions = CameraActions(self.preview_api)
-        self.camera_actions.infoMessage.connect(
-            lambda title, message: QtWidgets.QMessageBox.information(
-                self, title, message
+        self._sidebar.addType6Requested.connect(
+            lambda: self._handle_add_camera(
+                self.preview_api.add_type6_camera, "Add Panning Camera"
             )
         )
-        self.camera_actions.warningMessage.connect(
-            lambda title, message: QtWidgets.QMessageBox.warning(
-                self, title, message
+        self._sidebar.addType2Requested.connect(
+            lambda: self._handle_add_camera(
+                self.preview_api.add_type2_camera,
+                "Add Alternate Panning Camera",
             )
         )
-        self._sidebar.addType6Requested.connect(self.camera_actions.add_type6_camera)
-        self._sidebar.addType2Requested.connect(self.camera_actions.add_type2_camera)
-        self._sidebar.addType7Requested.connect(self.camera_actions.add_type7_camera)
-        self._save_cameras_button.clicked.connect(self.camera_actions.save_cameras)
+        self._sidebar.addType7Requested.connect(
+            lambda: self._handle_add_camera(
+                self.preview_api.add_type7_camera, "Add Fixed Camera"
+            )
+        )
+        self._save_cameras_button.clicked.connect(self._handle_save_cameras)
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
         self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)
         self._export_lp_csv_button.clicked.connect(self._handle_export_lp_csv)
@@ -1594,6 +1601,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton),
             "Pit",
         )
+        self._track_tab = track_txt_scroll
         tabs.addTab(
             track_txt_scroll,
             self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon),
@@ -1605,6 +1613,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload),
             "Weather",
         )
+        self._tire_tab = tire_txt_scroll
         tabs.addTab(
             tire_txt_scroll,
             self.style().standardIcon(QtWidgets.QStyle.SP_DriveHDIcon),
@@ -1637,7 +1646,15 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(wrapper)
 
         self._handle_tab_changed(self._tabs.currentIndex())
+        self._cache_tab_titles()
+        self._update_dirty_tab_labels()
         QtWidgets.QApplication.instance().installEventFilter(self)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
+        if not self._confirm_discard_unsaved("close the app"):
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     # ------------------------------------------------------------------
     # UI helpers
@@ -1720,19 +1737,21 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _set_track_txt_field(
         self, field: QtWidgets.QLineEdit, value: str | None
     ) -> None:
-        if value is not None:
-            field.setText(value)
-        else:
-            field.clear()
+        with QtCore.QSignalBlocker(field):
+            if value is not None:
+                field.setText(value)
+            else:
+                field.clear()
 
     def _set_track_txt_sequence(
         self, fields: Sequence[QtWidgets.QLineEdit], values: Sequence[int] | None
     ) -> None:
         for index, field in enumerate(fields):
-            if values is not None and index < len(values):
-                field.setText(str(values[index]))
-            else:
-                field.clear()
+            with QtCore.QSignalBlocker(field):
+                if values is not None and index < len(values):
+                    field.setText(str(values[index]))
+                else:
+                    field.clear()
 
     def _set_qual_mode(self, mode: int | None) -> None:
         with QtCore.QSignalBlocker(self._qual_mode_field):
@@ -1790,7 +1809,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._pacea_left_dlat_field,
             self._pacea_unknown_field,
         ):
-            field.clear()
+            with QtCore.QSignalBlocker(field):
+                field.clear()
         for field in (
             *self._theat_fields,
             *self._tcff_fields,
@@ -1799,7 +1819,8 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             *self._tire2_fields,
             *self._sctns_fields,
         ):
-            field.clear()
+            with QtCore.QSignalBlocker(field):
+                field.clear()
         self._set_qual_mode(None)
         self._set_track_type(None)
         self._sync_weather_compass_from_fields()
@@ -2012,6 +2033,255 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
     def _lp_tab_active(self) -> bool:
         return self._tabs.currentWidget() is self._lp_tab
 
+    def _cache_tab_titles(self) -> None:
+        self._tab_titles = {}
+        if not hasattr(self, "_tabs"):
+            return
+        for index in range(self._tabs.count()):
+            title = self._tabs.tabText(index)
+            if title.endswith(" *"):
+                title = title[:-2]
+            self._tab_titles[index] = title
+
+    def _tab_base_title(self, index: int) -> str:
+        title = self._tab_titles.get(index)
+        if title is None:
+            title = self._tabs.tabText(index)
+            if title.endswith(" *"):
+                title = title[:-2]
+            self._tab_titles[index] = title
+        return title
+
+    def _set_tab_dirty(self, widget: QtWidgets.QWidget, dirty: bool) -> None:
+        if not hasattr(self, "_tabs"):
+            return
+        index = self._tabs.indexOf(widget)
+        if index < 0:
+            return
+        base_title = self._tab_base_title(index)
+        title = f"{base_title} *" if dirty else base_title
+        if self._tabs.tabText(index) != title:
+            self._tabs.setTabText(index, title)
+
+    def _update_dirty_tab_labels(self) -> None:
+        self._set_tab_dirty(self._lp_tab, self._lp_tab_dirty())
+        self._set_tab_dirty(self._camera_tab, self._camera_dirty)
+        self._set_tab_dirty(self._pit_tab, self._pit_tab_dirty())
+        self._set_tab_dirty(self._track_tab, self._track_tab_dirty())
+        self._set_tab_dirty(self._weather_tab, self._weather_tab_dirty())
+        self._set_tab_dirty(self._tire_tab, self._tire_tab_dirty())
+
+    def _lp_tab_dirty(self) -> bool:
+        if self.preview_api.trk is None:
+            return False
+        return any(
+            self.preview_api.lp_line_dirty(name)
+            for name in self.preview_api.available_lp_files()
+        )
+
+    def _track_txt_fields_dirty(self, fields: Sequence[str]) -> bool:
+        if self._track_txt_result is None:
+            return False
+        current = self._collect_track_txt_metadata()
+        baseline = self._track_txt_result.metadata
+        for field in fields:
+            if getattr(current, field) != getattr(baseline, field):
+                return True
+        return False
+
+    def _track_tab_dirty(self) -> bool:
+        return self._track_txt_fields_dirty(
+            (
+                "tname",
+                "sname",
+                "cityn",
+                "count",
+                "spdwy_start",
+                "spdwy_end",
+                "lengt",
+                "laps",
+                "fname",
+                "cars_min",
+                "cars_max",
+                "blap",
+                "rels",
+                "sctns",
+                "qual_session_mode",
+                "qual_session_value",
+                "blimp_x",
+                "blimp_y",
+                "gflag",
+                "ttype",
+                "pacea_cars_abreast",
+                "pacea_start_dlong",
+                "pacea_right_dlat",
+                "pacea_left_dlat",
+                "pacea_unknown",
+            )
+        )
+
+    def _weather_tab_dirty(self) -> bool:
+        return self._track_txt_fields_dirty(
+            (
+                "temp_avg",
+                "temp_dev",
+                "temp2_avg",
+                "temp2_dev",
+                "wind_dir",
+                "wind_var",
+                "wind_speed",
+                "wind_speed_var",
+                "wind_heading_adjust",
+                "wind2_dir",
+                "wind2_var",
+                "wind2_speed",
+                "wind2_speed_var",
+                "wind2_heading_adjust",
+                "rain_level",
+                "rain_variation",
+            )
+        )
+
+    def _tire_tab_dirty(self) -> bool:
+        return self._track_txt_fields_dirty(
+            (
+                "theat",
+                "tcff",
+                "tcfr",
+                "tires",
+                "tire2",
+            )
+        )
+
+    def _pit_tab_dirty(self) -> bool:
+        if self._track_txt_result is None:
+            return False
+        baseline_count = 2 if self._track_txt_result.pit2 is not None else 1
+        if self._pit_lane_count() != baseline_count:
+            return True
+        pit_params = self._pit_editors[0].parameters()
+        if pit_params != self._track_txt_result.pit:
+            return True
+        pit2_params = (
+            self._pit_editors[1].parameters()
+            if self._pit_lane_count() == 2
+            else None
+        )
+        if pit2_params != self._track_txt_result.pit2:
+            return True
+        return False
+
+    def _has_unsaved_changes(self) -> bool:
+        return any(
+            (
+                self._lp_tab_dirty(),
+                self._camera_dirty,
+                self._pit_tab_dirty(),
+                self._track_tab_dirty(),
+                self._weather_tab_dirty(),
+                self._tire_tab_dirty(),
+            )
+        )
+
+    def _confirm_discard_unsaved(self, action: str) -> bool:
+        if not self._has_unsaved_changes():
+            return True
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Unsaved Changes",
+            f"There are unsaved changes. Are you sure you want to {action}?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
+    def _set_camera_dirty(self, dirty: bool) -> None:
+        if self._camera_dirty == dirty:
+            return
+        self._camera_dirty = dirty
+        self._update_dirty_tab_labels()
+
+    def _mark_camera_dirty(self) -> None:
+        self._set_camera_dirty(True)
+
+    def _handle_track_txt_fields_changed(self) -> None:
+        self._update_dirty_tab_labels()
+
+    def _connect_track_txt_dirty_signals(self) -> None:
+        fields = [
+            self._track_name_field,
+            self._track_short_name_field,
+            self._track_city_field,
+            self._track_country_field,
+            self._track_pit_window_start_field,
+            self._track_pit_window_end_field,
+            self._track_length_field,
+            self._track_laps_field,
+            self._track_full_name_field,
+            self._cars_min_field,
+            self._cars_max_field,
+            self._temp_avg_field,
+            self._temp_dev_field,
+            self._temp2_avg_field,
+            self._temp2_dev_field,
+            self._wind_dir_field,
+            self._wind_var_field,
+            self._wind_speed_field,
+            self._wind_speed_var_field,
+            self._wind_heading_adjust_field,
+            self._wind2_dir_field,
+            self._wind2_var_field,
+            self._wind2_speed_field,
+            self._wind2_speed_var_field,
+            self._wind2_heading_adjust_field,
+            self._rain_level_field,
+            self._rain_variation_field,
+            self._blap_field,
+            self._rels_field,
+            self._qual_value_field,
+            self._blimp_x_field,
+            self._blimp_y_field,
+            self._gflag_field,
+            self._pacea_cars_abreast_field,
+            self._pacea_start_dlong_field,
+            self._pacea_right_dlat_field,
+            self._pacea_left_dlat_field,
+            self._pacea_unknown_field,
+        ]
+        fields.extend(self._theat_fields)
+        fields.extend(self._tcff_fields)
+        fields.extend(self._tcfr_fields)
+        fields.extend(self._tires_fields)
+        fields.extend(self._tire2_fields)
+        fields.extend(self._sctns_fields)
+        for field in fields:
+            field.textChanged.connect(self._handle_track_txt_fields_changed)
+        self._qual_mode_field.currentIndexChanged.connect(
+            self._handle_track_txt_fields_changed
+        )
+        self._ttype_field.currentIndexChanged.connect(
+            self._handle_track_txt_fields_changed
+        )
+
+    def _handle_add_camera(
+        self, action: Callable[[], tuple[bool, str]], title: str
+    ) -> None:
+        success, message = action()
+        if success:
+            self._mark_camera_dirty()
+            QtWidgets.QMessageBox.information(self, title, message)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
+    def _handle_save_cameras(self) -> None:
+        success, message = self.preview_api.save_cameras()
+        title = "Save Cameras"
+        if success:
+            QtWidgets.QMessageBox.information(self, title, message)
+            self._set_camera_dirty(False)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
     def _handle_qual_mode_changed(self, index: int) -> None:
         mode = self._qual_mode_field.itemData(index) if index >= 0 else None
         self._update_qual_value_label(mode)
@@ -2103,8 +2373,17 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _on_track_selected(self, index: int) -> None:
         folder = self._track_list.itemData(index) if index >= 0 else None
+        if folder == self._current_track_folder:
+            return
+        if not self._confirm_discard_unsaved("switch tracks"):
+            with QtCore.QSignalBlocker(self._track_list):
+                current_index = self._track_list.findData(self._current_track_folder)
+                self._track_list.setCurrentIndex(current_index)
+            return
         self.controller.set_selected_track(folder)
         self._load_track_txt_data(folder)
+        self._set_camera_dirty(False)
+        self._update_dirty_tab_labels()
         self._load_trk_data()
 
     def _pit_lane_count(self) -> int:
@@ -2179,6 +2458,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self._track_txt_tire_save_button.setEnabled(False)
             self._track_txt_weather_save_button.setEnabled(False)
             self.preview_api.set_pit_parameters(None)
+            self._update_dirty_tab_labels()
             return
 
         result = self._io_service.load_track_txt(self._current_track_folder)
@@ -2214,6 +2494,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._track_txt_tire_save_button.setEnabled(True)
         self._track_txt_weather_save_button.setEnabled(True)
         self._apply_active_pit_editor_to_preview()
+        self._update_dirty_tab_labels()
 
     def _load_replay_list(self, folder: Path | None) -> None:
         self._replay_list.clear()
@@ -2941,11 +3222,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._load_track_txt_data(self._current_track_folder)
 
     def _collect_track_txt_metadata(self) -> TrackTxtMetadata:
-        metadata = (
+        base = (
             self._track_txt_result.metadata
             if self._track_txt_result is not None
             else TrackTxtMetadata()
         )
+        metadata = replace(base)
         metadata.tname = self._track_name_field.text().strip() or None
         metadata.sname = self._track_short_name_field.text().strip() or None
         metadata.cityn = self._track_city_field.text().strip() or None
@@ -3058,6 +3340,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if count == 1:
             self._pit_tabs.setCurrentIndex(0)
         self._apply_active_pit_editor_to_preview()
+        self._update_dirty_tab_labels()
 
     def _handle_pit_tab_changed(self, _index: int) -> None:
         self._apply_active_pit_editor_to_preview()
@@ -3068,6 +3351,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.set_pit_parameters(
             self._pit_editors[lane_index].parameters()
         )
+        self._update_dirty_tab_labels()
 
     def _handle_pit_visibility_changed(
         self, lane_index: int, indices: set[int]
@@ -3508,6 +3792,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return
         dirty = self.preview_api.lp_line_dirty(name)
         label.setText("Unsaved changes" if dirty else "")
+        self._update_dirty_tab_labels()
 
     def _update_all_lp_dirty_indicators(self) -> None:
         for name in self._lp_dirty_labels:
@@ -4023,6 +4308,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
         self.preview_api.set_tv_mode_count(mode_count)
+        self._mark_camera_dirty()
 
     def _handle_tv_mode_view_changed(self, index: int) -> None:
         self.preview_api.set_current_tv_mode_index(index)
@@ -4056,11 +4342,21 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self, camera_index: int, start: Optional[int], end: Optional[int]
     ) -> None:
         self.preview_api.update_camera_dlongs(camera_index, start, end)
+        self._mark_camera_dirty()
 
     def _handle_camera_position_updated(
         self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
     ) -> None:
         self.preview_api.update_camera_position(index, x, y, z)
+        self._mark_camera_dirty()
 
     def _handle_type6_parameters_changed(self) -> None:
         self.visualization_widget.update()
+        self._mark_camera_dirty()
+
+    def _handle_type7_parameters_changed(self) -> None:
+        self.visualization_widget.update()
+        self._mark_camera_dirty()
+
+    def _handle_camera_assignment_changed(self) -> None:
+        self._mark_camera_dirty()

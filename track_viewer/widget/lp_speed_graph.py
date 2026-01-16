@@ -172,7 +172,7 @@ class LpSpeedGraphWidget(QtWidgets.QWidget):
                 )
                 painter.setBrush(QtGui.QBrush(QtGui.QColor("#e53935")))
                 painter.drawEllipse(QtCore.QPointF(selected_x, selected_y), 4, 4)
-                mph_label = f"{round(selected_record.speed_mph):.0f} mph"
+                mph_label = f"{round(selected_record.speed_mph):.0f}"
                 metrics = painter.fontMetrics()
                 text_width = metrics.horizontalAdvance(mph_label)
                 text_height = metrics.height()
