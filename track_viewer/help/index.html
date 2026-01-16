@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Track Viewer — User Manual</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    :root {
+      --bg: #f9f9f9;
+      --fg: #222;
+      --muted: #666;
+      --border: #ddd;
+      --accent: #2b6cb0;
+      --code-bg: #f1f1f1;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.6rem;
+      font-weight: 600;
+    }
+
+    header p {
+      margin: 0.5rem 0 0;
+      color: var(--muted);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: calc(100vh - 88px);
+    }
+
+    nav {
+      border-right: 1px solid var(--border);
+      background: #fff;
+      padding: 1.5rem;
+    }
+
+    nav h2 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-top: 0;
+    }
+
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0 0;
+    }
+
+    nav li {
+      margin: 0.5rem 0;
+    }
+
+    nav a {
+      text-decoration: none;
+      color: var(--fg);
+    }
+
+    nav a:hover {
+      text-decoration: underline;
+      color: var(--accent);
+    }
+
+    section {
+      padding: 2rem;
+      max-width: 900px;
+    }
+
+    section h2 {
+      margin-top: 0;
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+
+    section h3 {
+      margin-top: 1.5rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .note {
+      border-left: 4px solid var(--accent);
+      background: #eef4fb;
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+    }
+
+    code {
+      background: var(--code-bg);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1rem 2rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      background: #fff;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      nav {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Track Viewer — User Manual</h1>
+    <p>Offline documentation for the ICR2 Track Viewer</p>
+  </header>
+
+  <main>
+    <nav>
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#getting-started">Getting Started</a></li>
+        <li><a href="preview_window.html">The Preview Window</a></li>
+        <li><a href="selection.html">Selection & Interaction</a></li>
+        <li><a href="cameras.html">Camera Editing</a></li>
+        <li><a href="ai_lines.html">AI Line (LP) Inspection</a></li>
+        <li><a href="track_txt.html">Track.txt & PIT Editing</a></li>
+        <li><a href="saving.html">Saving & Backups</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+        <li><a href="limitations.html">Limitations</a></li>
+      </ul>
+    </nav>
+
+    <section>
+      <h2 id="overview">Overview</h2>
+
+      <p>
+        Track Viewer is a desktop tool for inspecting and editing
+        <strong>IndyCar Racing II (ICR2)</strong> track data.
+        It is designed for track builders and modders who want
+        precise, visual control over cameras, AI lines, and related metadata.
+      </p>
+
+      <h3>What Track Viewer does</h3>
+      <ul>
+        <li>Displays TRK geometry, centerlines, and surface bounds</li>
+        <li>Visualizes AI driving lines (LP files)</li>
+        <li>Allows interactive and numeric camera editing</li>
+        <li>Parses and edits selected track.txt parameters</li>
+        <li>Safely saves changes with automatic backups</li>
+      </ul>
+
+      <h3>What Track Viewer does not do</h3>
+      <ul>
+        <li>It does not simulate physics or AI behavior</li>
+        <li>It does not modify files unless you explicitly save</li>
+        <li>It does not replace in-game testing</li>
+      </ul>
+
+      <div class="note">
+        This manual is bundled with the application and matches the exact
+        version you are running. No internet connection is required.
+      </div>
+
+      <h2 id="getting-started">Getting Started</h2>
+
+      <p>
+        To begin, select a valid ICR2 track folder.
+        Track Viewer will automatically detect available files and
+        load what it can safely interpret.
+      </p>
+
+      <h3>Minimum required files</h3>
+      <ul>
+        <li><code>.TRK</code> file</li>
+        <li>Centerline data (if present)</li>
+      </ul>
+
+      <h3>Optional but supported</h3>
+      <ul>
+        <li><code>.LP</code> AI line files</li>
+        <li><code>.CAM</code> / <code>.SCR</code> camera files</li>
+        <li><code>track.txt</code> (PIT and metadata)</li>
+        <li>DAT-embedded camera data (fallback)</li>
+      </ul>
+
+      <p>
+        If a file is missing or unreadable, the viewer will continue loading
+        with reduced functionality. Errors are reported in the status area
+        and logs.
+      </p>
+
+      <div class="note">
+        Start by familiarizing yourself with the <a href="preview_window.html">Preview Window</a>.
+        Most workflows begin there.
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Track Viewer — Offline Help • Generated documentation • No network access required
+  </footer>
+</body>
+</html>
