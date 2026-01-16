@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from functools import partial
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -12,12 +11,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.rpy import Rpy
 from track_viewer.model.camera_models import CameraViewListing
-from track_viewer.model.lp_records_model import LpRecordsModel
 from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
 from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
 from track_viewer.model.replay_models import ReplayLapInfo
 from track_viewer.services.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
-from track_viewer.sidebar.pit_editor import PitParametersEditor
 from track_viewer.model.pit_models import (
     PIT_DLAT_LINE_COLORS,
     PIT_DLONG_LINE_COLORS,
@@ -32,6 +29,12 @@ from track_viewer.controllers.window_controller import WindowController
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.common.weather_compass import turns_to_unit_vector
 from track_viewer.widget.track_viewer_app import TrackViewerApp
+from track_viewer.widget.tabs.lp_tab import LpTabBuilder
+from track_viewer.widget.tabs.pit_tab import PitTabBuilder
+from track_viewer.widget.tabs.replay_tab import ReplayTabBuilder
+from track_viewer.widget.tabs.track_txt_tab import TrackTxtTabBuilder
+from track_viewer.widget.tabs.tire_txt_tab import TireTxtTabBuilder
+from track_viewer.widget.tabs.weather_tab import WeatherTabBuilder
 
 
 
@@ -64,87 +67,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
         self._track_list = QtWidgets.QComboBox()
         self._track_list.currentIndexChanged.connect(self._on_track_selected)
-
-        self._lp_list = QtWidgets.QTableWidget(0, 4)
-        self._lp_list.setHorizontalHeaderLabels(
-            ["LP name", "Edit", "Visible", "Unsaved changes"]
-        )
-        self._lp_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
-        self._lp_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self._lp_list.setAlternatingRowColors(True)
-        self._lp_list.setShowGrid(False)
-        self._lp_list.verticalHeader().setVisible(False)
-        self._lp_list.verticalHeader().setDefaultSectionSize(28)
-        header = self._lp_list.horizontalHeader()
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
-        self._lp_button_group = QtWidgets.QButtonGroup(self)
-        self._lp_button_group.setExclusive(True)
-        self._lp_button_group.buttonClicked.connect(self._handle_lp_radio_clicked)
-        self._lp_checkboxes: dict[str, QtWidgets.QCheckBox] = {}
-        self._lp_name_cells: dict[str, QtWidgets.QWidget] = {}
-        self._lp_name_labels: dict[str, QtWidgets.QLabel] = {}
-        self._lp_dirty_labels: dict[str, QtWidgets.QLabel] = {}
-        self._lp_records_label = QtWidgets.QLabel("LP records")
-        self._lp_records_label.setStyleSheet("font-weight: bold")
-        self._recalculate_lateral_speed_button = QtWidgets.QPushButton(
-            "Recalculate Lateral Speed"
-        )
-        self._recalculate_lateral_speed_button.setEnabled(False)
-        self._recalculate_lateral_speed_button.clicked.connect(
-            self._handle_recalculate_lateral_speed
-        )
-        self._lp_dlat_step = QtWidgets.QSpinBox()
-        self._lp_dlat_step.setRange(1, 1_000_000)
-        self._lp_dlat_step.setSingleStep(500)
-        self._lp_dlat_step.setValue(6000)
-        self._lp_dlat_step.setSuffix(" DLAT")
-        self._lp_dlat_step.setToolTip(
-            "Arrow key step size for adjusting selected LP DLAT values."
-        )
-        self._lp_dlat_step.valueChanged.connect(self._handle_lp_dlat_step_changed)
-        self._lp_shortcut_button = QtWidgets.QPushButton("Enable LP arrow-key editing")
-        self._lp_shortcut_button.setCheckable(True)
-        self._lp_shortcut_button.setEnabled(False)
-        self._lp_shortcut_button.toggled.connect(self._handle_lp_shortcut_toggled)
-        self._lp_records_model = LpRecordsModel(self)
-        self._lp_records_table = QtWidgets.QTableView()
-        self._lp_records_table.setModel(self._lp_records_model)
-        self._lp_records_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditKeyPressed
-        )
-        self._lp_records_table.setSelectionBehavior(
-            QtWidgets.QAbstractItemView.SelectRows
-        )
-        self._lp_records_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.SingleSelection
-        )
-        self._lp_records_table.setAlternatingRowColors(True)
-        if hasattr(self._lp_records_table, "setUniformRowHeights"):
-            self._lp_records_table.setUniformRowHeights(True)
-        header = self._lp_records_table.horizontalHeader()
-
-        # Allow multi-line headers
-        header.setTextElideMode(QtCore.Qt.ElideNone)
-        header.setDefaultAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
-        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-
-        # Force header to be tall enough for wrapping
-        header.setMinimumHeight(56)
-
-        # This is REQUIRED even though it looks unrelated
-        self._lp_records_table.setWordWrap(True)
-
-        self._lp_records_table.verticalHeader().setVisible(False)
-        selection_model = self._lp_records_table.selectionModel()
-        if selection_model is not None:
-            selection_model.selectionChanged.connect(
-                lambda *_: self._handle_lp_record_selected()
-            )
-        self._lp_records_model.recordEdited.connect(self._handle_lp_record_edited)
         self._trk_sections_model = TrkSectionsModel(self)
         self._trk_sections_table = QtWidgets.QTableView()
         self._trk_sections_table.setModel(self._trk_sections_model)
@@ -166,75 +88,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_sections_table.setWordWrap(True)
         self._trk_sections_table.verticalHeader().setVisible(False)
 
-        self._replay_list = QtWidgets.QListWidget()
-        self._replay_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self._replay_list.setAlternatingRowColors(True)
-        self._replay_list.currentRowChanged.connect(
-            self._handle_replay_selected
-        )
-        self._replay_car_combo = QtWidgets.QComboBox()
-        self._replay_car_combo.setEnabled(False)
-        self._replay_car_combo.currentIndexChanged.connect(
-            self._handle_replay_car_selected
-        )
-        self._replay_laps_table = QtWidgets.QTableWidget(0, 5)
-        self._replay_laps_table.setHorizontalHeaderLabels(
-            ["Use", "Lap", "Status", "Frames", "Time"]
-        )
-        self._replay_laps_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.NoEditTriggers
-        )
-        self._replay_laps_table.setSelectionBehavior(
-            QtWidgets.QAbstractItemView.SelectRows
-        )
-        self._replay_laps_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.SingleSelection
-        )
-        self._replay_laps_table.setAlternatingRowColors(True)
-        self._replay_laps_table.currentCellChanged.connect(
-            self._handle_replay_lap_selected
-        )
-        self._replay_laps_table.verticalHeader().setVisible(False)
-        replay_header = self._replay_laps_table.horizontalHeader()
-        replay_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-        replay_header.setStretchLastSection(True)
-        self._replay_lap_button_group = QtWidgets.QButtonGroup(self)
-        self._replay_lap_button_group.setExclusive(True)
-        self._replay_lap_button_group.buttonToggled.connect(
-            self._handle_replay_lap_radio_toggled
-        )
-        self._replay_selected_lap_for_generation: ReplayLapInfo | None = None
-        self._replay_lp_combo = QtWidgets.QComboBox()
-        self._replay_lp_combo.setEnabled(False)
-        self._replay_lp_combo.currentIndexChanged.connect(
-            self._handle_replay_lp_target_changed
-        )
-        self._replay_generate_lp_button = QtWidgets.QPushButton(
-            "Generate LP from Replay"
-        )
-        self._replay_generate_lp_button.setEnabled(False)
-        self._replay_generate_lp_button.clicked.connect(
-            self._handle_generate_replay_lp
-        )
-        self._replay_copy_speeds_button = QtWidgets.QPushButton(
-            "Copy Only Speeds to Selected LP"
-        )
-        self._replay_copy_speeds_button.setEnabled(False)
-        self._replay_copy_speeds_button.clicked.connect(
-            self._handle_copy_replay_speeds
-        )
-        self._replay_status_label = QtWidgets.QLabel(
-            "Select a track to view replay laps."
-        )
-        self._replay_status_label.setWordWrap(True)
-        self._current_replay: Rpy | None = None
-        self._current_replay_path: Path | None = None
-
         self.visualization_widget = TrackPreviewWidget()
         if hasattr(self.visualization_widget, "setFrameShape"):
             self.visualization_widget.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.preview_api = self.visualization_widget.api
-        self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._apply_saved_lp_colors()
         self._apply_saved_pit_colors()
         self._lp_shortcut_active = False
@@ -283,204 +140,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_speed_graph_container.setLayout(lp_speed_graph_layout)
         self._sidebar_vm = CoordinateSidebarViewModel()
         self._sidebar = CoordinateSidebar(self._sidebar_vm)
-        self._pit_lane_count_combo = QtWidgets.QComboBox()
-        self._pit_lane_count_combo.addItem("1 pit lane", 1)
-        self._pit_lane_count_combo.addItem("2 pit lanes", 2)
-        self._pit_lane_count_combo.setCurrentIndex(0)
-        self._pit_lane_count_combo.currentIndexChanged.connect(
-            self._handle_pit_lane_count_changed
-        )
-        self._pit_tabs = QtWidgets.QTabWidget()
-        self._pit_editors = [PitParametersEditor(), PitParametersEditor()]
-        self._pit_tabs.addTab(self._pit_editors[0], "PIT")
-        self._pit_tabs.currentChanged.connect(self._handle_pit_tab_changed)
-        self._pit_status_label = QtWidgets.QLabel(
-            "Select a track to edit pit parameters."
-        )
-        self._pit_status_label.setWordWrap(True)
-        self._track_txt_status_label = QtWidgets.QLabel(
-            "Select a track to edit track.txt parameters."
-        )
-        self._track_txt_status_label.setWordWrap(True)
-        self._track_txt_tire_status_label = QtWidgets.QLabel(
-            "Select a track to edit track.txt parameters."
-        )
-        self._track_txt_tire_status_label.setWordWrap(True)
-        self._track_txt_weather_status_label = QtWidgets.QLabel(
-            "Select a track to edit track.txt parameters."
-        )
-        self._track_txt_weather_status_label.setWordWrap(True)
         self._trk_status_label = QtWidgets.QLabel(
             "Select a track to view TRK sections."
         )
         self._trk_status_label.setWordWrap(True)
-        self._track_name_field = self._create_text_field("–")
-        self._track_short_name_field = self._create_text_field("–")
-        self._track_city_field = self._create_text_field("–")
-        self._track_country_field = self._create_text_field("–")
-        self._track_pit_window_start_field = self._create_int_field("–")
-        self._track_pit_window_end_field = self._create_int_field("–")
-        self._track_length_field = self._create_int_field("–")
-        self._track_laps_field = self._create_int_field("–")
-        self._track_full_name_field = self._create_text_field("–")
-        self._cars_min_field = self._create_int_field("–")
-        self._cars_max_field = self._create_int_field("–")
-        self._temp_avg_field = self._create_int_field("–")
-        self._temp_dev_field = self._create_int_field("–")
-        self._temp2_avg_field = self._create_int_field("–")
-        self._temp2_dev_field = self._create_int_field("–")
-        self._wind_dir_field = self._create_int_field("–")
-        self._wind_var_field = self._create_int_field("–")
-        self._wind_speed_field = self._create_int_field("–")
-        self._wind_speed_var_field = self._create_int_field("–")
-        self._wind_heading_adjust_field = self._create_int_field("–")
-        self._wind2_dir_field = self._create_int_field("–")
-        self._wind2_var_field = self._create_int_field("–")
-        self._wind2_speed_field = self._create_int_field("–")
-        self._wind2_speed_var_field = self._create_int_field("–")
-        self._wind2_heading_adjust_field = self._create_int_field("–")
-        self._rain_level_field = self._create_int_field("–")
-        self._rain_variation_field = self._create_int_field("–")
-        self._blap_field = self._create_int_field("–")
-        self._rels_field = self._create_int_field("–")
-        self._theat_fields = [self._create_int_field("–") for _ in range(8)]
-        self._tcff_fields = [self._create_int_field("–") for _ in range(8)]
-        self._tcfr_fields = [self._create_int_field("–") for _ in range(8)]
-        self._tires_fields = [self._create_int_field("–") for _ in range(7)]
-        self._tire2_fields = [self._create_int_field("–") for _ in range(7)]
-        self._sctns_fields = [self._create_int_field("–") for _ in range(3)]
-        self._qual_mode_field = QtWidgets.QComboBox()
-        self._qual_mode_field.addItem("0 - timed session", 0)
-        self._qual_mode_field.addItem("1 - multi-lap average", 1)
-        self._qual_mode_field.addItem("2 - best single lap", 2)
-        self._qual_mode_field.setCurrentIndex(-1)
-        self._qual_mode_field.currentIndexChanged.connect(
-            self._handle_qual_mode_changed
-        )
-        self._qual_value_field = self._create_int_field("–")
-        self._qual_value_label = QtWidgets.QLabel("Value")
-        self._blimp_x_field = self._create_int_field("–")
-        self._blimp_y_field = self._create_int_field("–")
-        self._gflag_field = self._create_int_field("–")
-        self._ttype_field = QtWidgets.QComboBox()
-        self._ttype_field.addItem("0 - short oval", 0)
-        self._ttype_field.addItem("1 - mid oval", 1)
-        self._ttype_field.addItem("2 - large oval", 2)
-        self._ttype_field.addItem("3 - superspeedway", 3)
-        self._ttype_field.addItem("4 - road course", 4)
-        self._ttype_field.addItem("5 - unknown", 5)
-        self._ttype_field.setCurrentIndex(-1)
-        self._pacea_cars_abreast_field = self._create_int_field("–")
-        self._pacea_start_dlong_field = self._create_int_field("–")
-        self._pacea_right_dlat_field = self._create_int_field("–")
-        self._pacea_left_dlat_field = self._create_int_field("–")
-        self._pacea_unknown_field = self._create_int_field("–")
-        for index, editor in enumerate(self._pit_editors):
-            editor.parametersChanged.connect(
-                partial(self._handle_pit_params_changed, index)
-            )
-            editor.pitVisibilityChanged.connect(
-                partial(self._handle_pit_visibility_changed, index)
-            )
-            editor.pitStallCenterVisibilityChanged.connect(
-                partial(self._handle_pit_stall_center_visibility_changed, index)
-            )
-            editor.pitWallVisibilityChanged.connect(
-                partial(self._handle_pit_wall_visibility_changed, index)
-            )
-            editor.pitStallCarsVisibilityChanged.connect(
-                partial(self._handle_pit_stall_cars_visibility_changed, index)
-            )
-        self._pit_save_button = QtWidgets.QPushButton("Save PIT")
-        self._pit_save_button.setEnabled(False)
-        self._pit_save_button.clicked.connect(self._handle_save_pit_params)
-        self._track_txt_save_button = QtWidgets.QPushButton("Save Track TXT")
-        self._track_txt_save_button.setEnabled(False)
-        self._track_txt_save_button.clicked.connect(self._handle_save_track_txt)
-        self._track_txt_tire_save_button = QtWidgets.QPushButton(
-            "Save Track TXT"
-        )
-        self._track_txt_tire_save_button.setEnabled(False)
-        self._track_txt_tire_save_button.clicked.connect(
-            self._handle_save_track_txt
-        )
-        self._track_txt_weather_save_button = QtWidgets.QPushButton(
-            "Save Track TXT"
-        )
-        self._track_txt_weather_save_button.setEnabled(False)
-        self._track_txt_weather_save_button.clicked.connect(
-            self._handle_save_track_txt
-        )
-        self._weather_compass_group = QtWidgets.QButtonGroup(self)
-        self._weather_compass_wind_button = QtWidgets.QRadioButton("WIND")
-        self._weather_compass_wind2_button = QtWidgets.QRadioButton("WIND2")
-        self._weather_compass_group.addButton(self._weather_compass_wind_button)
-        self._weather_compass_group.addButton(self._weather_compass_wind2_button)
-        self._weather_compass_wind_button.setChecked(True)
-        self._weather_compass_wind_button.toggled.connect(
-            lambda checked: self._handle_weather_compass_source_changed(
-                "wind", checked
-            )
-        )
-        self._weather_compass_wind2_button.toggled.connect(
-            lambda checked: self._handle_weather_compass_source_changed(
-                "wind2", checked
-            )
-        )
-        self._wind_heading_adjust_field.textChanged.connect(
-            lambda text: self._handle_weather_heading_adjust_changed("wind", text)
-        )
-        self._wind2_heading_adjust_field.textChanged.connect(
-            lambda text: self._handle_weather_heading_adjust_changed("wind2", text)
-        )
-        self._wind_dir_field.textChanged.connect(
-            lambda text: self._handle_weather_direction_changed("wind", text)
-        )
-        self._wind_var_field.textChanged.connect(
-            lambda text: self._handle_weather_variation_changed("wind", text)
-        )
-        self._wind2_dir_field.textChanged.connect(
-            lambda text: self._handle_weather_direction_changed("wind2", text)
-        )
-        self._wind2_var_field.textChanged.connect(
-            lambda text: self._handle_weather_variation_changed("wind2", text)
-        )
-        self._connect_track_txt_dirty_signals()
-
-        self._ai_gradient_button = QtWidgets.QCheckBox("Show AI Speed Gradient")
-        self._ai_gradient_button.toggled.connect(self._toggle_ai_gradient)
-
-        self._ai_acceleration_button = QtWidgets.QCheckBox(
-            "Show AI Acceleration Gradient"
-        )
-        self._ai_acceleration_button.toggled.connect(
-            self._toggle_ai_acceleration_gradient
-        )
-
-        self._accel_window_label = QtWidgets.QLabel()
-        self._accel_window_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._accel_window_slider.setRange(1, 12)
-        self._accel_window_slider.setSingleStep(1)
-        self._accel_window_slider.setPageStep(1)
-        self._accel_window_slider.setValue(self.preview_api.ai_acceleration_window())
-        self._accel_window_slider.setFixedWidth(120)
-        self._accel_window_slider.valueChanged.connect(
-            self._handle_accel_window_changed
-        )
-        self._update_accel_window_label(self._accel_window_slider.value())
-
-        self._ai_width_label = QtWidgets.QLabel()
-        self._ai_width_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._ai_width_slider.setRange(1, 8)
-        self._ai_width_slider.setSingleStep(1)
-        self._ai_width_slider.setPageStep(1)
-        self._ai_width_slider.setValue(self.preview_api.ai_line_width())
-        self._ai_width_slider.setFixedWidth(120)
-        self._ai_width_slider.valueChanged.connect(self._handle_ai_line_width_changed)
-        self._update_ai_line_width_label(self._ai_width_slider.value())
-
-        self._ai_color_mode = "none"
-        self._update_ai_color_mode("none")
 
         self._save_cameras_button = QtWidgets.QPushButton("Save Cameras")
         self._save_lp_button = QtWidgets.QPushButton("Save Selected LP")
@@ -497,6 +160,14 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._export_all_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
+        self._lp_tab = LpTabBuilder(self).build()
+        self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
+        self._pit_tab = PitTabBuilder(self).build()
+        self._track_tab = TrackTxtTabBuilder(self).build()
+        self._tire_tab = TireTxtTabBuilder(self).build()
+        self._weather_tab = WeatherTabBuilder(self).build()
+        self._replay_tab = ReplayTabBuilder(self).build()
+        self._connect_track_txt_dirty_signals()
 
         self._trk_gaps_action = QtWidgets.QAction("Run TRK Gaps", self)
         self._trk_gaps_action.setEnabled(False)
@@ -570,69 +241,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         selected_flag_widget.setToolTip(
             "Enable Draw Flag to drop flags.\nLeft click to select flags.\nRight click a flag to remove it."
         )
-        lp_sidebar = QtWidgets.QFrame()
-        lp_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        left_layout = QtWidgets.QVBoxLayout()
-        left_layout.setSpacing(8)
-        lp_label = QtWidgets.QLabel("AI and center lines")
-        lp_label.setStyleSheet("font-weight: bold")
-        left_layout.addWidget(lp_label)
-        lp_list_header = QtWidgets.QLabel(
-            "Radio selects the active LP (center line is view-only). "
-            "Checkbox toggles visibility."
-        )
-        lp_list_header.setWordWrap(True)
-        left_layout.addWidget(lp_list_header)
-        left_layout.addWidget(self._lp_list)
-        view_options_label = QtWidgets.QLabel("View Options")
-        view_options_label.setStyleSheet("font-weight: bold")
-        left_layout.addWidget(view_options_label)
-        ai_speed_layout = QtWidgets.QHBoxLayout()
-        ai_speed_layout.addWidget(self._ai_gradient_button)
-        ai_speed_layout.addStretch(1)
-        ai_speed_layout.addWidget(self._ai_width_label)
-        ai_speed_layout.addWidget(self._ai_width_slider)
-        left_layout.addLayout(ai_speed_layout)
-        accel_layout = QtWidgets.QHBoxLayout()
-        accel_layout.addWidget(self._ai_acceleration_button)
-        accel_layout.addStretch(1)
-        accel_layout.addWidget(self._accel_window_label)
-        accel_layout.addWidget(self._accel_window_slider)
-        left_layout.addLayout(accel_layout)
-        lp_records_header = QtWidgets.QHBoxLayout()
-        lp_records_header.addWidget(self._lp_records_label)
-        lp_records_header.addStretch(1)
-        left_layout.addLayout(lp_records_header)
-        dlat_step_layout = QtWidgets.QHBoxLayout()
-        dlat_step_layout.addWidget(self._lp_shortcut_button)
-        dlat_step_layout.addStretch(1)
-        dlat_step_layout.addWidget(QtWidgets.QLabel("DLAT step"))
-        dlat_step_layout.addWidget(self._lp_dlat_step)
-        left_layout.addLayout(dlat_step_layout)
-        generation_tools_label = QtWidgets.QLabel("Generation Tools")
-        generation_tools_label.setStyleSheet("font-weight: bold")
-        left_layout.addWidget(generation_tools_label)
-        generation_tools_layout = QtWidgets.QHBoxLayout()
-        generation_tools_layout.addWidget(self._generate_lp_button)
-        generation_tools_layout.addWidget(self._recalculate_lateral_speed_button)
-        left_layout.addLayout(generation_tools_layout)
-        io_label = QtWidgets.QLabel("Input/Output")
-        io_label.setStyleSheet("font-weight: bold")
-        left_layout.addWidget(io_label)
-        io_save_layout = QtWidgets.QHBoxLayout()
-        io_save_layout.addWidget(self._save_lp_button)
-        io_save_layout.addWidget(self._save_all_lp_button)
-        left_layout.addLayout(io_save_layout)
-        io_csv_layout = QtWidgets.QHBoxLayout()
-        io_csv_layout.addWidget(self._export_lp_csv_button)
-        io_csv_layout.addWidget(self._import_lp_csv_button)
-        left_layout.addLayout(io_csv_layout)
-        left_layout.addWidget(self._export_all_lp_csv_button)
-        self._lp_records_table.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-        )
-        left_layout.addWidget(self._lp_records_table, 1)
-        lp_sidebar.setLayout(left_layout)
         self.visualization_widget.cursorPositionChanged.connect(
             self._sidebar.update_cursor_position
         )
@@ -783,141 +391,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addStretch(1)
         camera_sidebar.setLayout(right_sidebar_layout)
 
-        pit_sidebar = QtWidgets.QFrame()
-        pit_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        pit_layout = QtWidgets.QVBoxLayout()
-        pit_layout.setSpacing(8)
-        pit_title = QtWidgets.QLabel("PIT parameters")
-        pit_title.setStyleSheet("font-weight: bold")
-        pit_layout.addWidget(pit_title)
-        pit_layout.addWidget(self._pit_status_label)
-        pit_lane_layout = QtWidgets.QHBoxLayout()
-        pit_lane_layout.addWidget(QtWidgets.QLabel("Pit lanes"))
-        pit_lane_layout.addWidget(self._pit_lane_count_combo)
-        pit_lane_layout.addStretch(1)
-        pit_layout.addLayout(pit_lane_layout)
-        pit_layout.addWidget(self._pit_tabs)
-        pit_layout.addStretch(1)
-        pit_layout.addWidget(self._pit_save_button)
-        pit_sidebar.setLayout(pit_layout)
-        pit_scroll = QtWidgets.QScrollArea()
-        pit_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        pit_scroll.setWidgetResizable(True)
-        pit_scroll.setWidget(pit_sidebar)
-        self._pit_tab = pit_scroll
-
-        track_txt_sidebar = QtWidgets.QFrame()
-        track_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        track_txt_layout = QtWidgets.QVBoxLayout()
-        track_txt_layout.setSpacing(8)
-        track_txt_title = QtWidgets.QLabel("Track TXT parameters")
-        track_txt_title.setStyleSheet("font-weight: bold")
-        track_txt_layout.addWidget(track_txt_title)
-        track_txt_layout.addWidget(self._track_txt_status_label)
-        track_txt_form = QtWidgets.QFormLayout()
-        track_txt_form.setLabelAlignment(QtCore.Qt.AlignLeft)
-        track_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
-        track_name_layout = QtWidgets.QHBoxLayout()
-        track_name_layout.setContentsMargins(0, 0, 0, 0)
-        track_name_layout.addWidget(QtWidgets.QLabel("Track name (TNAME)"))
-        track_name_layout.addWidget(self._track_name_field)
-        track_name_layout.addWidget(QtWidgets.QLabel("Short name (SNAME)"))
-        track_name_layout.addWidget(self._track_short_name_field)
-        track_name_widget = QtWidgets.QWidget()
-        track_name_widget.setLayout(track_name_layout)
-        track_txt_form.addRow(track_name_widget)
-        track_location_layout = QtWidgets.QHBoxLayout()
-        track_location_layout.setContentsMargins(0, 0, 0, 0)
-        track_location_layout.addWidget(QtWidgets.QLabel("City (CITYN)"))
-        track_location_layout.addWidget(self._track_city_field)
-        track_location_layout.addWidget(QtWidgets.QLabel("Country (COUNT)"))
-        track_location_layout.addWidget(self._track_country_field)
-        track_location_widget = QtWidgets.QWidget()
-        track_location_widget.setLayout(track_location_layout)
-        track_txt_form.addRow(track_location_widget)
-        spdwy_layout = QtWidgets.QHBoxLayout()
-        spdwy_layout.setContentsMargins(0, 0, 0, 0)
-        spdwy_layout.addWidget(QtWidgets.QLabel("Start"))
-        spdwy_layout.addWidget(self._track_pit_window_start_field)
-        spdwy_layout.addWidget(QtWidgets.QLabel("End"))
-        spdwy_layout.addWidget(self._track_pit_window_end_field)
-        spdwy_widget = QtWidgets.QWidget()
-        spdwy_widget.setLayout(spdwy_layout)
-        track_txt_form.addRow("Pit window (SPDWY)", spdwy_widget)
-        track_length_layout = QtWidgets.QHBoxLayout()
-        track_length_layout.setContentsMargins(0, 0, 0, 0)
-        track_length_layout.addWidget(QtWidgets.QLabel("Length (LENGT)"))
-        track_length_layout.addWidget(self._track_length_field)
-        track_length_layout.addWidget(QtWidgets.QLabel("Laps (LAPS)"))
-        track_length_layout.addWidget(self._track_laps_field)
-        track_length_widget = QtWidgets.QWidget()
-        track_length_widget.setLayout(track_length_layout)
-        track_txt_form.addRow(track_length_widget)
-        track_txt_form.addRow("Full name (FNAME)", self._track_full_name_field)
-        cars_layout = QtWidgets.QHBoxLayout()
-        cars_layout.setContentsMargins(0, 0, 0, 0)
-        cars_layout.addWidget(QtWidgets.QLabel("Unknown"))
-        cars_layout.addWidget(self._cars_min_field)
-        cars_layout.addWidget(QtWidgets.QLabel("Cars"))
-        cars_layout.addWidget(self._cars_max_field)
-        cars_widget = QtWidgets.QWidget()
-        cars_widget.setLayout(cars_layout)
-        track_txt_form.addRow("Cars (CARS)", cars_widget)
-        track_txt_form.addRow("Pole lap (BLAP)", self._blap_field)
-        track_txt_form.addRow("Relative strength (RELS)", self._rels_field)
-        track_txt_form.addRow(
-            "Sections (SCTNS)", self._build_number_row(self._sctns_fields)
-        )
-        qual_layout = QtWidgets.QHBoxLayout()
-        qual_layout.setContentsMargins(0, 0, 0, 0)
-        qual_layout.addWidget(QtWidgets.QLabel("Mode"))
-        qual_layout.addWidget(self._qual_mode_field)
-        qual_layout.addWidget(self._qual_value_label)
-        qual_layout.addWidget(self._qual_value_field)
-        qual_widget = QtWidgets.QWidget()
-        qual_widget.setLayout(qual_layout)
-        track_txt_form.addRow("Qualifying (QUAL)", qual_widget)
-        blimp_layout = QtWidgets.QHBoxLayout()
-        blimp_layout.setContentsMargins(0, 0, 0, 0)
-        blimp_layout.addWidget(QtWidgets.QLabel("X"))
-        blimp_layout.addWidget(self._blimp_x_field)
-        blimp_layout.addWidget(QtWidgets.QLabel("Y"))
-        blimp_layout.addWidget(self._blimp_y_field)
-        blimp_widget = QtWidgets.QWidget()
-        blimp_widget.setLayout(blimp_layout)
-        track_txt_form.addRow("Blimp position (BLIMP)", blimp_widget)
-        track_txt_form.addRow("Green flag DLONG (GFLAG)", self._gflag_field)
-        track_txt_form.addRow("Track type (TTYPE)", self._ttype_field)
-        pacea_layout = QtWidgets.QGridLayout()
-        pacea_layout.setContentsMargins(0, 0, 0, 0)
-        pacea_layout.setHorizontalSpacing(6)
-        pacea_layout.addWidget(QtWidgets.QLabel("Cars"), 0, 0)
-        pacea_layout.addWidget(self._pacea_cars_abreast_field, 0, 1)
-        pacea_layout.addWidget(QtWidgets.QLabel("Start DLONG"), 0, 2)
-        pacea_layout.addWidget(self._pacea_start_dlong_field, 0, 3)
-        pacea_layout.addWidget(QtWidgets.QLabel("Right DLAT"), 1, 0)
-        pacea_layout.addWidget(self._pacea_right_dlat_field, 1, 1)
-        pacea_layout.addWidget(QtWidgets.QLabel("Left DLAT"), 1, 2)
-        pacea_layout.addWidget(self._pacea_left_dlat_field, 1, 3)
-        pacea_layout.addWidget(QtWidgets.QLabel("Unknown"), 2, 0)
-        pacea_layout.addWidget(self._pacea_unknown_field, 2, 1)
-        pacea_widget = QtWidgets.QWidget()
-        pacea_widget.setLayout(pacea_layout)
-        track_txt_form.addRow("Pace lap (PACEA)", pacea_widget)
-        track_txt_layout.addLayout(track_txt_form)
-        track_txt_layout.addStretch(1)
-        track_txt_layout.addWidget(self._track_txt_save_button)
-        track_txt_sidebar.setLayout(track_txt_layout)
-        track_txt_scroll = QtWidgets.QScrollArea()
-        track_txt_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        track_txt_scroll.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAlwaysOff
-        )
-        track_txt_scroll.setVerticalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAsNeeded
-        )
-        track_txt_scroll.setWidgetResizable(True)
-        track_txt_scroll.setWidget(track_txt_sidebar)
 
         trk_sidebar = QtWidgets.QFrame()
         trk_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -937,170 +410,11 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         trk_scroll.setWidget(trk_sidebar)
         self._trk_scroll = trk_scroll
 
-        tire_txt_sidebar = QtWidgets.QFrame()
-        tire_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        tire_txt_layout = QtWidgets.QVBoxLayout()
-        tire_txt_layout.setSpacing(8)
-        tire_txt_title = QtWidgets.QLabel("Tire TXT parameters")
-        tire_txt_title.setStyleSheet("font-weight: bold")
-        tire_txt_layout.addWidget(tire_txt_title)
-        tire_txt_layout.addWidget(self._track_txt_tire_status_label)
-        tire_txt_form = QtWidgets.QFormLayout()
-        tire_txt_form.setLabelAlignment(QtCore.Qt.AlignLeft)
-        tire_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
-        tire_txt_form.addRow(QtWidgets.QLabel("Tire heat (THEAT)"))
-        tire_txt_form.addRow(self._build_compound_grid(self._theat_fields))
-        tire_txt_form.addRow(
-            QtWidgets.QLabel("Tire compound friction front (TCFF)")
-        )
-        tire_txt_form.addRow(self._build_compound_grid(self._tcff_fields))
-        tire_txt_form.addRow(
-            QtWidgets.QLabel("Tire compound friction rear (TCFR)")
-        )
-        tire_txt_form.addRow(self._build_compound_grid(self._tcfr_fields))
-        tire_txt_form.addRow(QtWidgets.QLabel("Goodyear tires (TIRES)"))
-        tire_txt_form.addRow(
-            self._build_number_row(self._tires_fields, show_labels=False)
-        )
-        tire_txt_form.addRow(QtWidgets.QLabel("Firestone tires (TIRE2)"))
-        tire_txt_form.addRow(
-            self._build_number_row(self._tire2_fields, show_labels=False)
-        )
-        tire_txt_layout.addLayout(tire_txt_form)
-        tire_txt_layout.addStretch(1)
-        tire_txt_layout.addWidget(self._track_txt_tire_save_button)
-        tire_txt_sidebar.setLayout(tire_txt_layout)
-        tire_txt_scroll = QtWidgets.QScrollArea()
-        tire_txt_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        tire_txt_scroll.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAlwaysOff
-        )
-        tire_txt_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        tire_txt_scroll.setWidgetResizable(True)
-        tire_txt_scroll.setWidget(tire_txt_sidebar)
-
-        weather_txt_sidebar = QtWidgets.QFrame()
-        weather_txt_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        weather_txt_layout = QtWidgets.QVBoxLayout()
-        weather_txt_layout.setSpacing(8)
-        weather_txt_title = QtWidgets.QLabel("Weather TXT parameters")
-        weather_txt_title.setStyleSheet("font-weight: bold")
-        weather_txt_layout.addWidget(weather_txt_title)
-        weather_txt_layout.addWidget(self._track_txt_weather_status_label)
-        compass_source_layout = QtWidgets.QHBoxLayout()
-        compass_source_layout.setContentsMargins(0, 0, 0, 0)
-        compass_source_layout.addWidget(QtWidgets.QLabel("Compass source"))
-        compass_source_layout.addWidget(self._weather_compass_wind_button)
-        compass_source_layout.addWidget(self._weather_compass_wind2_button)
-        compass_source_layout.addStretch(1)
-        compass_source_widget = QtWidgets.QWidget()
-        compass_source_widget.setLayout(compass_source_layout)
-        weather_txt_layout.addWidget(compass_source_widget)
-        weather_txt_form = QtWidgets.QFormLayout()
-        weather_txt_form.setLabelAlignment(QtCore.Qt.AlignLeft)
-        weather_txt_form.setFormAlignment(QtCore.Qt.AlignTop)
-        temp_layout = QtWidgets.QHBoxLayout()
-        temp_layout.setContentsMargins(0, 0, 0, 0)
-        temp_layout.addWidget(QtWidgets.QLabel("Average"))
-        temp_layout.addWidget(self._temp_avg_field)
-        temp_layout.addWidget(QtWidgets.QLabel("Deviation"))
-        temp_layout.addWidget(self._temp_dev_field)
-        temp_widget = QtWidgets.QWidget()
-        temp_widget.setLayout(temp_layout)
-        weather_txt_form.addRow("Temperature (TEMP)", temp_widget)
-        temp2_layout = QtWidgets.QHBoxLayout()
-        temp2_layout.setContentsMargins(0, 0, 0, 0)
-        temp2_layout.addWidget(QtWidgets.QLabel("Average"))
-        temp2_layout.addWidget(self._temp2_avg_field)
-        temp2_layout.addWidget(QtWidgets.QLabel("Deviation"))
-        temp2_layout.addWidget(self._temp2_dev_field)
-        temp2_widget = QtWidgets.QWidget()
-        temp2_widget.setLayout(temp2_layout)
-        weather_txt_form.addRow("Temperature 2 (TEMP2)", temp2_widget)
-        wind_layout = QtWidgets.QGridLayout()
-        wind_layout.setContentsMargins(0, 0, 0, 0)
-        wind_layout.setHorizontalSpacing(6)
-        wind_layout.addWidget(QtWidgets.QLabel("Direction"), 0, 0)
-        wind_layout.addWidget(self._wind_dir_field, 0, 1)
-        wind_layout.addWidget(QtWidgets.QLabel("Variation"), 0, 2)
-        wind_layout.addWidget(self._wind_var_field, 0, 3)
-        wind_layout.addWidget(QtWidgets.QLabel("Speed (0.1 mph)"), 1, 0)
-        wind_layout.addWidget(self._wind_speed_field, 1, 1)
-        wind_layout.addWidget(QtWidgets.QLabel("Speed variation"), 1, 2)
-        wind_layout.addWidget(self._wind_speed_var_field, 1, 3)
-        wind_layout.addWidget(QtWidgets.QLabel("Heading adjust"), 2, 0)
-        wind_layout.addWidget(self._wind_heading_adjust_field, 2, 1)
-        wind_widget = QtWidgets.QWidget()
-        wind_widget.setLayout(wind_layout)
-        weather_txt_form.addRow(QtWidgets.QLabel("Wind (WIND)"))
-        weather_txt_form.addRow(wind_widget)
-        wind2_layout = QtWidgets.QGridLayout()
-        wind2_layout.setContentsMargins(0, 0, 0, 0)
-        wind2_layout.setHorizontalSpacing(6)
-        wind2_layout.addWidget(QtWidgets.QLabel("Direction"), 0, 0)
-        wind2_layout.addWidget(self._wind2_dir_field, 0, 1)
-        wind2_layout.addWidget(QtWidgets.QLabel("Variation"), 0, 2)
-        wind2_layout.addWidget(self._wind2_var_field, 0, 3)
-        wind2_layout.addWidget(QtWidgets.QLabel("Speed (0.1 mph)"), 1, 0)
-        wind2_layout.addWidget(self._wind2_speed_field, 1, 1)
-        wind2_layout.addWidget(QtWidgets.QLabel("Speed variation"), 1, 2)
-        wind2_layout.addWidget(self._wind2_speed_var_field, 1, 3)
-        wind2_layout.addWidget(QtWidgets.QLabel("Heading adjust"), 2, 0)
-        wind2_layout.addWidget(self._wind2_heading_adjust_field, 2, 1)
-        wind2_widget = QtWidgets.QWidget()
-        wind2_widget.setLayout(wind2_layout)
-        weather_txt_form.addRow(QtWidgets.QLabel("Wind 2 (WIND2)"))
-        weather_txt_form.addRow(wind2_widget)
-        rain_layout = QtWidgets.QHBoxLayout()
-        rain_layout.setContentsMargins(0, 0, 0, 0)
-        rain_layout.addWidget(QtWidgets.QLabel("Parameter 1"))
-        rain_layout.addWidget(self._rain_level_field)
-        rain_layout.addWidget(QtWidgets.QLabel("Parameter 2"))
-        rain_layout.addWidget(self._rain_variation_field)
-        rain_widget = QtWidgets.QWidget()
-        rain_widget.setLayout(rain_layout)
-        weather_txt_form.addRow(QtWidgets.QLabel("Rain (RAIN)"))
-        weather_txt_form.addRow(rain_widget)
-        weather_txt_layout.addLayout(weather_txt_form)
-        weather_txt_layout.addStretch(1)
-        weather_txt_layout.addWidget(self._track_txt_weather_save_button)
-        weather_txt_sidebar.setLayout(weather_txt_layout)
-        weather_txt_scroll = QtWidgets.QScrollArea()
-        weather_txt_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        weather_txt_scroll.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAlwaysOff
-        )
-        weather_txt_scroll.setVerticalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAsNeeded
-        )
-        weather_txt_scroll.setWidgetResizable(True)
-        weather_txt_scroll.setWidget(weather_txt_sidebar)
-
-        replay_sidebar = QtWidgets.QFrame()
-        replay_sidebar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        replay_layout = QtWidgets.QVBoxLayout()
-        replay_layout.setSpacing(8)
-        replay_title = QtWidgets.QLabel("Replays")
-        replay_title.setStyleSheet("font-weight: bold")
-        replay_layout.addWidget(replay_title)
-        replay_layout.addWidget(self._replay_status_label)
-        replay_layout.addWidget(QtWidgets.QLabel("Replay files"))
-        replay_layout.addWidget(self._replay_list, stretch=1)
-        replay_layout.addWidget(QtWidgets.QLabel("Car"))
-        replay_layout.addWidget(self._replay_car_combo)
-        replay_layout.addWidget(QtWidgets.QLabel("Lap list"))
-        replay_layout.addWidget(self._replay_laps_table, stretch=2)
-        replay_layout.addWidget(QtWidgets.QLabel("LP target"))
-        replay_layout.addWidget(self._replay_lp_combo)
-        replay_layout.addWidget(self._replay_generate_lp_button)
-        replay_layout.addWidget(self._replay_copy_speeds_button)
-        replay_sidebar.setLayout(replay_layout)
 
         tabs = QtWidgets.QTabWidget()
         self._tabs = tabs
-        self._lp_tab = lp_sidebar
         tabs.addTab(
-            lp_sidebar,
+            self._lp_tab,
             self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogInfoView),
             "LP",
         )
@@ -1111,31 +425,27 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             "Cameras",
         )
         tabs.addTab(
-            pit_scroll,
+            self._pit_tab,
             self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton),
             "Pit",
         )
-        self._track_tab = track_txt_scroll
         tabs.addTab(
-            track_txt_scroll,
+            self._track_tab,
             self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon),
             "Track",
         )
-        self._weather_tab = weather_txt_scroll
         tabs.addTab(
-            weather_txt_scroll,
+            self._weather_tab,
             self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload),
             "Weather",
         )
-        self._tire_tab = tire_txt_scroll
         tabs.addTab(
-            tire_txt_scroll,
+            self._tire_tab,
             self.style().standardIcon(QtWidgets.QStyle.SP_DriveHDIcon),
             "Tires",
         )
-        self._replay_tab = replay_sidebar
         tabs.addTab(
-            replay_sidebar,
+            self._replay_tab,
             self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay),
             "Replays",
         )
