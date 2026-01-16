@@ -209,7 +209,7 @@
         Track Viewer is a desktop tool for inspecting and editing
         <strong>IndyCar Racing II (ICR2)</strong> track data. It is designed
         for track builders and modders who want precise, visual control over
-        cameras, AI lines, and metadata without overwriting the original files
+        cameras, AI lines, and other track parameters without overwriting the original files
         until they explicitly save.
       </p>
 
@@ -220,14 +220,14 @@
             <li>Display TRK geometry, centerlines, and track boundaries.</li>
             <li>Visualize and compare AI driving lines (LP files).</li>
             <li>Edit camera positions, angles, and roll values.</li>
-            <li>Inspect and update track.txt parameters (PIT + metadata).</li>
+            <li>Inspect and update track.txt parameters.</li>
             <li>Export supporting data via tool dialogs.</li>
           </ul>
         </div>
         <div class="card">
           <h3>What It Does Not Do</h3>
           <ul>
-            <li>It does not simulate physics or AI behavior.</li>
+            <li>It does not alter track geometry.</li>
             <li>It does not auto-save; you must save changes manually.</li>
             <li>It does not replace in-game testing or validation.</li>
           </ul>
@@ -241,16 +241,16 @@
 
       <h2 id="requirements">Requirements</h2>
       <ul>
-        <li>A valid ICR2 track folder with at least a <code>.TRK</code> file.</li>
-        <li>Optional: <code>.LP</code> AI lines, <code>.CAM</code>/<code>.SCR</code> cameras,
-          and <code>track.txt</code> for PIT + metadata editing.</li>
+        <li>A valid ICR2 installation with a TRACKS subfolder containing individual track folders with at least a <code>.TRK</code> file.</li>
+        <li>Expected: <code>.LP</code> AI lines, <code>.CAM</code>/<code>.SCR</code> cameras,
+          and <code>track.txt</code> for track parameter editing. .CAM and .SCR files may exist within a .DAT file or as loose files in the track folder.</li>
       </ul>
 
       <h2 id="getting-started">Getting Started</h2>
       <ol>
         <li>Launch Track Viewer.</li>
-        <li>Choose <strong>File → Open ICR2 folder</strong>.</li>
-        <li>Select the track folder containing the ICR2 files.</li>
+        <li>(First time running the app) Choose <strong>File → Open ICR2 folder</strong>.</li>
+        <li>The app will attempt to locate the TRACK subfolder containing the track files.</li>
         <li>Use the track list drop-down to switch between available tracks.</li>
       </ol>
 
@@ -288,22 +288,21 @@
 
       <h3>Navigation</h3>
       <ul>
-        <li><strong>Pan:</strong> click and drag with the middle mouse button.</li>
+        <li><strong>Pan:</strong> click and drag with the left mouse button.</li>
         <li><strong>Zoom:</strong> mouse wheel to zoom in/out.</li>
-        <li><strong>Reset view:</strong> use the View menu or toolbar action to return to a full-track view.</li>
       </ul>
 
       <h3>Overlays</h3>
       <ul>
-        <li><strong>Track bounds:</strong> shows the surface outline and boundaries.</li>
-        <li><strong>Section dividers:</strong> visualize TRK segment breaks.</li>
-        <li><strong>AI line colors:</strong> multiple LP files are colored for comparison.</li>
-        <li><strong>Camera markers:</strong> show camera positions and aiming direction.</li>
+        <li><strong>View > Show Boundaries:</strong> shows the boundaries (walls).</li>
+        <li><strong>View > Show Section dividers:</strong> visualize TRK section breaks.</li>
+        <li><strong>AI line colors (editable in .ini file):</strong> multiple LP files are colored for comparison.</li>
+        <li><strong>Camera markers (when in Camera mode):</strong> show camera positions and aiming direction for fixed cameras.</li>
       </ul>
 
       <h2 id="selection">Selection & Interaction</h2>
       <p>
-        Click to select items (AI line points, cameras, or track sections depending on
+        Click to select items (AI line records or cameras depending on
         the active tab). The sidebar and tab fields update to show the selected element’s
         details. When available, the coordinate sidebar displays exact X/Y positions.
       </p>
@@ -324,7 +323,8 @@
 
       <h3>Editing Workflow</h3>
       <ol>
-        <li>Select a camera from the list.</li>
+        <li>If there is more than one TV mode (i.e. TV1, TV2), you may choose to only show cameras used in that mode.</li>
+        <li>Select a camera from the list or by clicking on the icon in the preview window.</li>
         <li>Adjust position, yaw, pitch, or roll values using the fields.</li>
         <li>Use the preview window to visually confirm changes.</li>
         <li>Click <strong>Save Cameras</strong> to write changes to disk.</li>
@@ -338,7 +338,7 @@
       <h2 id="ai-lines">AI Line (LP) Inspection</h2>
       <p>
         The LP tab displays AI line data (typically <code>LP1</code> through <code>LP4</code>)
-        with color-coded overlays. You can inspect speed, banking, and height values using
+        with color-coded overlays. You can inspect speed values at each DLONG point using
         the LP Speed Graph.
       </p>
 
