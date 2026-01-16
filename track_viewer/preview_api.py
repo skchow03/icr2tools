@@ -7,6 +7,7 @@ from typing import List, Optional
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.rpy import Rpy
 from track_viewer.ai.ai_line_service import LpPoint
+from track_viewer.model.lp_editing_session import LPChange, LPEditingSession
 from track_viewer.model.pit_models import PitParameters
 from track_viewer.preview_coordinator import PreviewCoordinator
 
@@ -104,14 +105,59 @@ class TrackPreviewApi:
     def ai_line_records(self, name: str) -> list[LpPoint]:
         return self._coordinator.ai_line_records(name)
 
+    def lp_session(self) -> LPEditingSession:
+        return self._coordinator.lp_session
+
+    def apply_lp_changes(self, changes: set[LPChange]) -> None:
+        self._coordinator.apply_lp_changes(changes)
+
     def lp_line_dirty(self, name: str) -> bool:
         return self._coordinator.lp_line_dirty(name)
 
     def mark_lp_line_dirty(self, name: str) -> None:
         self._coordinator.mark_lp_line_dirty(name)
 
-    def update_lp_record(self, lp_name: str, index: int) -> None:
-        self._coordinator.update_lp_record(lp_name, index)
+    def selected_lp_record(self) -> tuple[str, int] | None:
+        return self._coordinator.selected_lp_record()
+
+    def lp_shortcut_active(self) -> bool:
+        return self._coordinator.lp_shortcut_active()
+
+    def lp_dlat_step(self) -> int:
+        return self._coordinator.lp_dlat_step()
+
+    def lp_editing_tab_active(self) -> bool:
+        return self._coordinator.lp_editing_tab_active()
+
+    def step_lp_selection(self, delta: int) -> None:
+        self._coordinator.step_lp_selection(delta)
+
+    def adjust_selected_lp_dlat(self, delta: int) -> None:
+        self._coordinator.adjust_selected_lp_dlat(delta)
+
+    def adjust_selected_lp_speed(self, delta_mph: float) -> None:
+        self._coordinator.adjust_selected_lp_speed(delta_mph)
+
+    def copy_selected_lp_fields(self, delta: int) -> None:
+        self._coordinator.copy_selected_lp_fields(delta)
+
+    def update_lp_record_dlat(self, lp_name: str, index: int, value: float) -> None:
+        self._coordinator.update_lp_record_dlat(lp_name, index, value)
+
+    def update_lp_record_speed(
+        self, lp_name: str, index: int, value: float, *, raw_mode: bool
+    ) -> None:
+        self._coordinator.update_lp_record_speed(
+            lp_name, index, value, raw_mode=raw_mode
+        )
+
+    def update_lp_record_lateral_speed(
+        self, lp_name: str, index: int, value: float
+    ) -> None:
+        self._coordinator.update_lp_record_lateral_speed(lp_name, index, value)
+
+    def recalculate_lateral_speeds(self, lp_name: str) -> None:
+        self._coordinator.recalculate_lateral_speeds(lp_name)
 
     def save_active_lp_line(self) -> tuple[bool, str]:
         return self._coordinator.save_active_lp_line()

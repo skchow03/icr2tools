@@ -1,11 +1,8 @@
 """Selection and hit-testing logic for the track preview widget."""
 from __future__ import annotations
 
-import math
-
 from PyQt5 import QtCore
 
-from track_viewer import rendering
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
 from track_viewer.widget.interaction import InteractionCallbacks, PreviewIntent
@@ -54,13 +51,6 @@ class SelectionController:
         self._callbacks.selected_flag_changed(coords)
         self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
-    def select_lp_record(self, name: str, index: int) -> None:
-        if self._state.selected_lp_line == name and self._state.selected_lp_index == index:
-            return
-        self._state.selected_lp_line = name
-        self._state.selected_lp_index = index
-        self._callbacks.lp_record_selected(name, index)
-        self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
 
     def camera_at_point(self, point: QtCore.QPointF, size: QtCore.QSize) -> int | None:
         transform = self._state.current_transform(self._model.bounds, size)
@@ -95,56 +85,3 @@ class SelectionController:
             if (flag_point - point).manhattanLength() <= 8:
                 return index
         return None
-
-    def lp_record_at_point(
-        self, point: QtCore.QPointF, lp_name: str, size: QtCore.QSize
-    ) -> int | None:
-        records = self._model.ai_line_records(lp_name)
-        if not records:
-            return None
-        transform = self._state.current_transform(self._model.bounds, size)
-        if not transform:
-            return None
-        cursor_track = self._state.map_to_track(point, self._model.bounds, size)
-        if cursor_track is None:
-            return None
-
-        cursor_x, cursor_y = cursor_track
-        best_point = None
-        best_distance_sq = math.inf
-        best_start_index = None
-        best_end_index = None
-
-        for idx in range(len(records)):
-            p0 = records[idx]
-            p1 = records[(idx + 1) % len(records)]
-            seg_dx = p1.x - p0.x
-            seg_dy = p1.y - p0.y
-            seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
-            if seg_len_sq == 0:
-                continue
-            t = ((cursor_x - p0.x) * seg_dx + (cursor_y - p0.y) * seg_dy) / seg_len_sq
-            t = max(0.0, min(1.0, t))
-            proj_x = p0.x + seg_dx * t
-            proj_y = p0.y + seg_dy * t
-            dist_sq = (cursor_x - proj_x) ** 2 + (cursor_y - proj_y) ** 2
-            if dist_sq < best_distance_sq:
-                best_distance_sq = dist_sq
-                best_point = (proj_x, proj_y)
-                best_start_index = idx
-                best_end_index = (idx + 1) % len(records)
-
-        if best_point is None or best_start_index is None or best_end_index is None:
-            return None
-
-        mapped_point = rendering.map_point(
-            best_point[0], best_point[1], transform, size.height()
-        )
-        if (mapped_point - point).manhattanLength() > 16:
-            return None
-
-        start_record = records[best_start_index]
-        end_record = records[best_end_index]
-        dist_start = (cursor_x - start_record.x) ** 2 + (cursor_y - start_record.y) ** 2
-        dist_end = (cursor_x - end_record.x) ** 2 + (cursor_y - end_record.y) ** 2
-        return best_start_index if dist_start <= dist_end else best_end_index

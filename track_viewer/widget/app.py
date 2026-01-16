@@ -91,7 +91,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self.preview_api = self.visualization_widget.api
         self._apply_saved_lp_colors()
         self._apply_saved_pit_colors()
-        self._lp_shortcut_active = False
         self._lp_speed_graph = LpSpeedGraphWidget()
         self._lp_speed_graph_zoom_x_in = QtWidgets.QPushButton("Zoom X+")
         self._lp_speed_graph_zoom_x_out = QtWidgets.QPushButton("Zoom X-")
@@ -1675,7 +1674,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             and isinstance(obj, QtWidgets.QWidget)
             and obj.window() is self
         ):
-            if self._lp_shortcut_active:
+            if self.preview_api.lp_shortcut_active():
                 if self._handle_lp_shortcut(event, ignore_focus=True):
                     return True
                 self._set_lp_shortcut_active(False)
@@ -1711,9 +1710,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         if key == QtCore.Qt.Key_A:
             return self._move_lp_record_selection(-1)
         if key == QtCore.Qt.Key_Left:
-            return self._adjust_lp_record_dlat(self._lp_dlat_step.value())
+            return self._adjust_lp_record_dlat(self.preview_api.lp_dlat_step())
         if key == QtCore.Qt.Key_Right:
-            return self._adjust_lp_record_dlat(-self._lp_dlat_step.value())
+            return self._adjust_lp_record_dlat(-self.preview_api.lp_dlat_step())
         if key == QtCore.Qt.Key_W:
             return self._adjust_lp_record_speed(1)
         if key == QtCore.Qt.Key_S:
@@ -1730,7 +1729,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return False
-        if not ignore_focus and not self._lp_shortcut_active:
+        if not ignore_focus and not self.preview_api.lp_shortcut_active():
             return False
         if not ignore_focus:
             if (
@@ -1755,85 +1754,52 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         return self._lp_records_table.isAncestorOf(focus)
 
     def _current_lp_selection(self) -> tuple[str, int] | None:
-        lp_name = self.preview_api.active_lp_line()
-        if not lp_name or lp_name == "center-line":
-            return None
-        selection = self._lp_records_table.selectionModel()
+        selection = self.preview_api.selected_lp_record()
         if selection is None:
             return None
-        rows = selection.selectedRows()
-        if not rows:
+        lp_name, row = selection
+        if lp_name != self.preview_api.active_lp_line():
             return None
-        row = rows[0].row()
         if row < 0 or row >= self._lp_records_model.rowCount():
             return None
         return lp_name, row
 
     def _move_lp_record_selection(self, delta: int) -> bool:
-        current = self._current_lp_selection()
-        if current is None:
+        if self._current_lp_selection() is None:
             return False
-        _, row = current
-        total_rows = self._lp_records_model.rowCount()
-        if total_rows <= 0:
-            return False
-        target = max(0, min(total_rows - 1, row + delta))
-        if target == row:
-            return True
-        with QtCore.QSignalBlocker(self._lp_records_table):
-            self._lp_records_table.selectRow(target)
-        self._handle_lp_record_selected()
-        index = self._lp_records_model.index(target, 0)
-        if index.isValid():
-            self._lp_records_table.scrollTo(
-                index, QtWidgets.QAbstractItemView.PositionAtCenter
-            )
+        self.preview_api.step_lp_selection(delta)
+        self._sync_lp_table_selection()
         return True
 
     def _adjust_lp_record_dlat(self, delta: int) -> bool:
         current = self._current_lp_selection()
         if current is None:
             return False
-        _, row = current
-        index = self._lp_records_model.index(row, 2)
-        if not index.isValid():
-            return False
-        current_value = self._lp_records_model.data(index, QtCore.Qt.EditRole)
-        try:
-            next_value = float(current_value) + float(delta)
-        except (TypeError, ValueError):
-            return False
-        return self._lp_records_model.setData(index, next_value, QtCore.Qt.EditRole)
+        self.preview_api.adjust_selected_lp_dlat(delta)
+        self._refresh_lp_record_row(current[1])
+        self._handle_lp_data_changed(current[0])
+        return True
 
     def _adjust_lp_record_speed(self, delta: float) -> bool:
         current = self._current_lp_selection()
         if current is None:
             return False
-        _, row = current
-        return self._lp_records_model.adjust_speed_mph(row, delta)
+        self.preview_api.adjust_selected_lp_speed(delta)
+        self._refresh_lp_record_row(current[1])
+        self._handle_lp_data_changed(current[0])
+        return True
 
     def _copy_lp_record_fields(self, delta: int) -> bool:
         current = self._current_lp_selection()
         if current is None:
             return False
-        _, row = current
-        total_rows = self._lp_records_model.rowCount()
-        if total_rows <= 0:
+        self.preview_api.copy_selected_lp_fields(delta)
+        self._sync_lp_table_selection()
+        selection = self._current_lp_selection()
+        if selection is None:
             return False
-        target = max(0, min(total_rows - 1, row + delta))
-        if target == row:
-            return True
-        for column in (2, 3, 4):
-            source_index = self._lp_records_model.index(row, column)
-            target_index = self._lp_records_model.index(target, column)
-            if not source_index.isValid() or not target_index.isValid():
-                return False
-            value = self._lp_records_model.data(source_index, QtCore.Qt.EditRole)
-            if not self._lp_records_model.setData(
-                target_index, value, QtCore.Qt.EditRole
-            ):
-                return False
-        self._select_lp_record_row(target)
+        self._refresh_lp_record_row(selection[1])
+        self._handle_lp_data_changed(selection[0])
         return True
 
     def _apply_ai_line_state(
@@ -2220,7 +2186,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         if lp_name and lp_name != "center-line":
             label = f"LP records: {lp_name}"
         self._lp_records_label.setText(label)
-        self._lp_records_model.set_records(records)
+        self._lp_records_model.set_records(records, lp_name)
         self._update_lp_speed_graph(lp_name, records)
         self._update_save_lp_button_state(lp_name)
         self._update_import_lp_csv_button_state(lp_name)
@@ -2300,9 +2266,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._set_lp_shortcut_active(active)
 
     def _set_lp_shortcut_active(self, active: bool) -> None:
-        if self._lp_shortcut_active == active:
+        if self.preview_api.lp_shortcut_active() == active:
             return
-        self._lp_shortcut_active = active
         self.preview_api.set_lp_shortcut_active(active)
         text = (
             "Disable LP arrow-key editing"
@@ -2348,6 +2313,34 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 index, QtWidgets.QAbstractItemView.PositionAtCenter
             )
 
+    def _sync_lp_table_selection(self) -> None:
+        selection = self.preview_api.selected_lp_record()
+        if selection is None:
+            self._lp_records_table.clearSelection()
+            self._update_selected_lp_index_label(None)
+            self._lp_speed_graph.set_selected_index(None)
+            return
+        lp_name, row = selection
+        if lp_name != self.preview_api.active_lp_line():
+            return
+        self._select_lp_record_row(row)
+
+    def _refresh_lp_record_row(self, row: int) -> None:
+        if row < 0 or row >= self._lp_records_model.rowCount():
+            return
+        self._lp_records_model.refresh_row(row)
+        start = self._lp_records_model.index(row, 0)
+        end = self._lp_records_model.index(row, self._lp_records_model.columnCount() - 1)
+        self._lp_records_model.dataChanged.emit(
+            start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
+
+    def _handle_lp_data_changed(self, lp_name: str) -> None:
+        self._update_lp_dirty_indicator(lp_name)
+        records = self.preview_api.ai_line_records(lp_name)
+        self._update_lp_speed_graph(lp_name, records)
+        self._sync_lp_speed_graph_selection()
+
     def _update_selected_lp_index_label(self, row: int | None) -> None:
         self.visualization_widget.update()
 
@@ -2363,11 +2356,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             return
-        self.preview_api.update_lp_record(lp_name, row)
-        self._update_lp_dirty_indicator(lp_name)
-        records = self.preview_api.ai_line_records(lp_name)
-        self._update_lp_speed_graph(lp_name, records)
-        self._sync_lp_speed_graph_selection()
+        self._handle_lp_data_changed(lp_name)
 
     def _handle_save_lp_line(self) -> None:
         if (
@@ -2609,8 +2598,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         if not lp_name or lp_name == "center-line":
             return
         if self._lp_records_model.recalculate_lateral_speeds():
-            self.preview_api.mark_lp_line_dirty(lp_name)
-            self._update_lp_dirty_indicator(lp_name)
+            self._handle_lp_data_changed(lp_name)
             self.visualization_widget.update()
 
     def _sync_tv_mode_selector(
