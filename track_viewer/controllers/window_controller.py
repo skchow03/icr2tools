@@ -27,6 +27,7 @@ class WindowController(QtCore.QObject):
     trackLengthChanged = QtCore.pyqtSignal(object)
     trkGapsAvailabilityChanged = QtCore.pyqtSignal(bool)
     aiLinesUpdated = QtCore.pyqtSignal(list, set, bool)
+    trkSourceChanged = QtCore.pyqtSignal(bool)
 
     def __init__(
         self,
@@ -68,6 +69,7 @@ class WindowController(QtCore.QObject):
         self.preview_api.clear()
         self.trackLengthChanged.emit(None)
         self.trkGapsAvailabilityChanged.emit(False)
+        self.trkSourceChanged.emit(False)
         self.app_state.update_tracks([])
 
         if not track_root:
@@ -97,6 +99,7 @@ class WindowController(QtCore.QObject):
             self.preview_api.clear()
             self.trackLengthChanged.emit(None)
             self.trkGapsAvailabilityChanged.emit(False)
+            self.trkSourceChanged.emit(False)
             self.sync_ai_lines()
             return
 
@@ -104,13 +107,24 @@ class WindowController(QtCore.QObject):
             self.preview_api.clear("Select a valid track folder.")
             self.trackLengthChanged.emit(None)
             self.trkGapsAvailabilityChanged.emit(False)
+            self.trkSourceChanged.emit(False)
             self.sync_ai_lines()
             return
 
         self.preview_api.load_track(folder)
         self.trackLengthChanged.emit(self.preview_api.track_length())
         self.trkGapsAvailabilityChanged.emit(self.preview_api.trk is not None)
+        self.trkSourceChanged.emit(False)
         self.sync_ai_lines()
+
+    def load_trk_wip(self, trk_path: Path) -> None:
+        self._current_track_folder = None
+        self._track_txt_result = None
+        self.preview_api.load_trk_file(trk_path)
+        self.trackLengthChanged.emit(self.preview_api.track_length())
+        self.trkGapsAvailabilityChanged.emit(self.preview_api.trk is not None)
+        self.trkSourceChanged.emit(True)
+        self.aiLinesUpdated.emit([], set(), False)
 
     # ------------------------------------------------------------------
     # Track TXT and replay loading
@@ -209,13 +223,17 @@ class WindowController(QtCore.QObject):
 
     def convert_trk_to_sg(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         track_path = self.preview_api.track_path()
-        if track_path is None:
+        trk_file_path = self.preview_api.trk_file_path()
+        if track_path is None and trk_file_path is None:
             QtWidgets.QMessageBox.warning(
                 parent or self.parent(), "TRK to SG", "No track is currently loaded."
             )
             return
 
-        default_output = track_path / f"{track_path.name}.sg"
+        if track_path is not None:
+            default_output = track_path / f"{track_path.name}.sg"
+        else:
+            default_output = trk_file_path.with_suffix(".sg")
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             parent or self.parent(),
             "Save SG file",
@@ -236,16 +254,20 @@ class WindowController(QtCore.QObject):
 
     def convert_trk_to_csv(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         track_path = self.preview_api.track_path()
-        if track_path is None:
+        trk_file_path = self.preview_api.trk_file_path()
+        if track_path is None and trk_file_path is None:
             QtWidgets.QMessageBox.warning(
                 parent or self.parent(), "TRK to CSV", "No track is currently loaded."
             )
             return
 
+        start_dir = (
+            str(track_path) if track_path is not None else str(trk_file_path.parent)
+        )
         output_path = QtWidgets.QFileDialog.getExistingDirectory(
             parent or self.parent(),
             "Select folder to export CSV files",
-            str(track_path),
+            start_dir,
         )
         if not output_path:
             return

@@ -23,6 +23,7 @@ from icr2_core.cam.helpers import (
 from icr2_core.dat import packdat, unpackdat
 from icr2_core.dat.unpackdat import extract_file_bytes
 from icr2_core.trk.track_loader import load_trk_from_folder
+from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip, build_ground_surface_mesh, compute_mesh_bounds
 from icr2_core.trk.trk_utils import get_cline_pos
 from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
@@ -155,6 +156,21 @@ class TrackIOService:
             surface_mesh=surface_mesh,
             surface_bounds=surface_bounds,
             available_lp_files=available_lp_files,
+            track_length=track_length,
+        )
+
+    def load_trk_file(self, trk_path: Path) -> TrackLoadResult:
+        trk = TRKFile.from_trk(str(trk_path))
+        centerline = get_cline_pos(trk)
+        surface_mesh = build_ground_surface_mesh(trk, centerline)
+        surface_bounds = compute_mesh_bounds(surface_mesh)
+        track_length = float(trk.trklength)
+        return TrackLoadResult(
+            trk=trk,
+            centerline=centerline,
+            surface_mesh=surface_mesh,
+            surface_bounds=surface_bounds,
+            available_lp_files=[],
             track_length=track_length,
         )
 

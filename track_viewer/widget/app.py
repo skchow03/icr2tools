@@ -316,6 +316,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self.controller.trkGapsAvailabilityChanged.connect(
             self._trk_to_csv_action.setEnabled
         )
+        self.controller.trkSourceChanged.connect(self._handle_trk_source_changed)
         self.controller.aiLinesUpdated.connect(self._apply_ai_line_state)
 
         self._sidebar.addType6Requested.connect(
@@ -740,6 +741,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         file_menu.addAction(open_action)
 
+        open_trk_action = QtWidgets.QAction("Open TRK WIP", self)
+        open_trk_action.triggered.connect(self._handle_open_trk_wip)
+        file_menu.addAction(open_trk_action)
+
         quit_action = QtWidgets.QAction("Quit", self)
         quit_action.triggered.connect(QtWidgets.qApp.quit)
         file_menu.addAction(quit_action)
@@ -789,6 +794,35 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._trk_data_window.show()
         self._trk_data_window.raise_()
         self._trk_data_window.activateWindow()
+
+    def _handle_open_trk_wip(self) -> None:
+        if not self._confirm_discard_unsaved("open a TRK file"):
+            return
+        start_dir = str(self.app_state.installation_path or Path.home())
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open TRK file",
+            start_dir,
+            "TRK Files (*.trk);;All Files (*)",
+        )
+        if not path:
+            return
+        self.controller.load_trk_wip(Path(path))
+        with QtCore.QSignalBlocker(self._track_list):
+            self._track_list.setCurrentIndex(-1)
+        self._load_track_txt_data(None)
+        self._set_camera_dirty(False)
+        self._update_dirty_tab_labels()
+        self._load_trk_data()
+
+    def _handle_trk_source_changed(self, is_wip: bool) -> None:
+        self._set_tabs_enabled(not is_wip)
+
+    def _set_tabs_enabled(self, enabled: bool) -> None:
+        if not hasattr(self, "_tabs"):
+            return
+        for index in range(self._tabs.count()):
+            self._tabs.setTabEnabled(index, enabled)
 
     def _handle_installation_path(self, path: Path) -> None:
         self.statusBar().showMessage(str(path))

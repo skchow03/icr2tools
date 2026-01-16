@@ -55,6 +55,7 @@ class TrackPreviewModel(QtCore.QObject):
         self.boundary_edges: List[tuple[Tuple[float, float], Tuple[float, float]]] = []
         self.track_length: float | None = None
         self.track_path: Path | None = None
+        self.trk_file_path: Path | None = None
         self.available_lp_files: List[str] = []
         self.visible_lp_files: set[str] = set()
         self._ai_lines: dict[str, List[LpPoint]] | None = None
@@ -106,6 +107,7 @@ class TrackPreviewModel(QtCore.QObject):
         self.bounds = self._merge_bounds(track_data.surface_bounds, sampled_bounds)
         self.available_lp_files = track_data.available_lp_files
         self.track_path = track_folder
+        self.trk_file_path = None
         self._reset_ai_lines()
         self._dirty_lp_files.clear()
         self.visible_lp_files = {
@@ -113,6 +115,29 @@ class TrackPreviewModel(QtCore.QObject):
         }
         for name in sorted(self.visible_lp_files):
             self._queue_ai_line_load(name)
+
+    def load_trk_file(self, trk_path: Path) -> None:
+        """Load a standalone TRK file and rebuild derived geometry caches."""
+        track_data = self._io_service.load_trk_file(trk_path)
+        self.trk = track_data.trk
+        self.track_length = track_data.track_length
+        self.centerline = track_data.centerline
+        self.surface_mesh = track_data.surface_mesh
+        self.boundary_edges = self._build_boundary_edges(self.trk, self.centerline)
+        sampled, sampled_dlongs, sampled_bounds = sample_centerline(
+            self.trk, self.centerline
+        )
+        self.sampled_centerline = sampled
+        self.sampled_dlongs = sampled_dlongs
+        self.sampled_bounds = sampled_bounds
+        self.centerline_index = build_centerline_index(sampled, sampled_bounds)
+        self.bounds = self._merge_bounds(track_data.surface_bounds, sampled_bounds)
+        self.available_lp_files = []
+        self.track_path = None
+        self.trk_file_path = trk_path
+        self._reset_ai_lines()
+        self._dirty_lp_files.clear()
+        self.visible_lp_files = set()
 
     def _reset_ai_lines(self) -> None:
         self._ai_lines = None
