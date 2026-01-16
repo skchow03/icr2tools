@@ -9,7 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from track_viewer.preview_api import TrackPreviewApi
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for type checking
-    from track_viewer.widget.app import TrackViewerApp
+    from track_viewer.widget.track_viewer_app import TrackViewerApp
 
 
 class WindowController(QtCore.QObject):
