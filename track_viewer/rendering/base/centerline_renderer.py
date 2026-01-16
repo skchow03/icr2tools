@@ -9,11 +9,9 @@ from icr2_core.lp.lpcalc import get_trk_sect_radius
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
-from track_viewer.rendering import (
-    DLONG_TO_FEET,
-    build_centerline_path,
-    draw_start_finish_segment,
-)
+from track_viewer.rendering.overlays.ai_line_overlay import DLONG_TO_FEET
+from track_viewer.rendering.overlays.surface_overlay import build_centerline_path
+from track_viewer.rendering.primitives.bars import draw_start_finish_segment
 from track_viewer.rendering.base.transform import surface_transform
 
 
