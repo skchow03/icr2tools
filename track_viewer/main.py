@@ -9,7 +9,8 @@ import sys
 # ensure repo root on path for local runs
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from track_viewer.widget.app import TrackViewerApp, TrackViewerWindow  # noqa: E402
+from track_viewer.widget.app import TrackViewerWindow  # noqa: E402
+from track_viewer.widget.track_viewer_app import TrackViewerApp  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
