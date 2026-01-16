@@ -547,6 +547,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_map_preview_window: QtWidgets.QWidget | None = None
         self._camera_dirty = False
         self._tab_titles: dict[int, str] = {}
+        self._lp_tab: QtWidgets.QWidget | None = None
+        self._camera_tab: QtWidgets.QWidget | None = None
+        self._pit_tab: QtWidgets.QWidget | None = None
+        self._track_tab: QtWidgets.QWidget | None = None
+        self._weather_tab: QtWidgets.QWidget | None = None
+        self._tire_tab: QtWidgets.QWidget | None = None
+        self._replay_tab: QtWidgets.QWidget | None = None
 
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
