@@ -28,7 +28,7 @@ class LpSpeedGraphWidget(QtWidgets.QWidget):
         self._y_min: float | None = None
         self._y_max: float | None = None
         self._selected_index: int | None = None
-        self._follow_selection = False
+        self._follow_selection = True
         self.setMinimumHeight(160)
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
@@ -172,6 +172,23 @@ class LpSpeedGraphWidget(QtWidgets.QWidget):
                 )
                 painter.setBrush(QtGui.QBrush(QtGui.QColor("#e53935")))
                 painter.drawEllipse(QtCore.QPointF(selected_x, selected_y), 4, 4)
+                mph_label = f"{round(selected_record.speed_mph):.0f} mph"
+                metrics = painter.fontMetrics()
+                text_width = metrics.horizontalAdvance(mph_label)
+                text_height = metrics.height()
+                text_x = selected_x - (text_width / 2)
+                text_y = selected_y - 6 - text_height
+                text_x = max(
+                    plot_rect.left() + 2,
+                    min(text_x, plot_rect.right() - text_width - 2),
+                )
+                text_y = max(plot_rect.top() + 2, text_y)
+                painter.setPen(QtGui.QColor("#e53935"))
+                painter.drawText(
+                    QtCore.QRectF(text_x, text_y, text_width, text_height),
+                    QtCore.Qt.AlignCenter,
+                    mph_label,
+                )
 
         painter.restore()
 
