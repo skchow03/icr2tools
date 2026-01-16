@@ -26,6 +26,7 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
     selectedFlagChanged = QtCore.pyqtSignal(object)
     camerasChanged = QtCore.pyqtSignal(list, list)
     selectedCameraChanged = QtCore.pyqtSignal(object, object)
+    cameraPositionChanged = QtCore.pyqtSignal(int)
     activeLpLineChanged = QtCore.pyqtSignal(str)
     aiLineLoaded = QtCore.pyqtSignal(str)
     lpRecordSelected = QtCore.pyqtSignal(str, int)
@@ -49,6 +50,7 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
             selected_flag_changed=self.selectedFlagChanged.emit,
             cameras_changed=self.camerasChanged.emit,
             selected_camera_changed=self.selectedCameraChanged.emit,
+            camera_position_changed=self.cameraPositionChanged.emit,
             active_lp_line_changed=self.activeLpLineChanged.emit,
             ai_line_loaded=self.aiLineLoaded.emit,
             lp_record_selected=self.lpRecordSelected.emit,

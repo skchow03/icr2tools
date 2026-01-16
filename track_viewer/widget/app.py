@@ -1139,6 +1139,9 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.visualization_widget.selectedCameraChanged.connect(
             self._sidebar.update_selected_camera_details
         )
+        self.visualization_widget.cameraPositionChanged.connect(
+            lambda _index: self._mark_camera_dirty()
+        )
         self.visualization_widget.camerasChanged.connect(
             self._sync_tv_mode_selector
         )

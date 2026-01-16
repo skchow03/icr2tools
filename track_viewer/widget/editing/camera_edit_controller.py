@@ -95,6 +95,7 @@ class CameraEditController:
         cam.y = new_y
         self._state.camera_dragged = True
         self._selection.emit_selected_camera()
+        self._callbacks.camera_position_changed(index)
         self._callbacks.state_changed(PreviewIntent.CAMERA_CHANGED)
 
     def end_camera_drag(self) -> None:
