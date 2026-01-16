@@ -9,8 +9,9 @@ from PyQt5 import QtCore, QtGui
 from icr2_core.cam.helpers import CameraPosition
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
-from track_viewer.rendering import draw_camera_range_markers, draw_zoom_points
 from track_viewer.rendering.base.centerline_renderer import CenterlineRenderer
+from track_viewer.rendering.overlays.zoom_overlay import draw_zoom_points
+from track_viewer.rendering.primitives.bars import draw_camera_range_markers
 from track_viewer.rendering.primitives.mapping import Transform, map_point
 from track_viewer.services.camera_service import CameraService
 
