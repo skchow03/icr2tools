@@ -14,7 +14,7 @@ from track_viewer.model.camera_models import CameraViewListing
 from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
 from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
 from track_viewer.model.replay_models import ReplayLapInfo
-from track_viewer.services.io_service import TrackIOService, TrackTxtMetadata, TrackTxtResult
+from track_viewer.services.io_service import TrackTxtMetadata, TrackTxtResult
 from track_viewer.model.pit_models import (
     PIT_DLAT_LINE_COLORS,
     PIT_DLONG_LINE_COLORS,
@@ -48,9 +48,6 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.app_state = app_state
         self.app_state.window = self
-        self._io_service = TrackIOService()
-        self._track_txt_result: TrackTxtResult | None = None
-        self._current_track_folder: Path | None = None
         self._trk_map_preview_window: QtWidgets.QWidget | None = None
         self._camera_dirty = False
         self._tab_titles: dict[int, str] = {}
@@ -904,10 +901,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _track_txt_fields_dirty(self, fields: Sequence[str]) -> bool:
-        if self._track_txt_result is None:
+        if self.controller.track_txt_result is None:
             return False
         current = self._collect_track_txt_metadata()
-        baseline = self._track_txt_result.metadata
+        baseline = self.controller.track_txt_result.metadata
         for field in fields:
             if getattr(current, field) != getattr(baseline, field):
                 return True
@@ -978,20 +975,20 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _pit_tab_dirty(self) -> bool:
-        if self._track_txt_result is None:
+        if self.controller.track_txt_result is None:
             return False
-        baseline_count = 2 if self._track_txt_result.pit2 is not None else 1
+        baseline_count = 2 if self.controller.track_txt_result.pit2 is not None else 1
         if self._pit_lane_count() != baseline_count:
             return True
         pit_params = self._pit_editors[0].parameters()
-        if pit_params != self._track_txt_result.pit:
+        if pit_params != self.controller.track_txt_result.pit:
             return True
         pit2_params = (
             self._pit_editors[1].parameters()
             if self._pit_lane_count() == 2
             else None
         )
-        if pit2_params != self._track_txt_result.pit2:
+        if pit2_params != self.controller.track_txt_result.pit2:
             return True
         return False
 
@@ -1197,11 +1194,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
 
     def _on_track_selected(self, index: int) -> None:
         folder = self._track_list.itemData(index) if index >= 0 else None
-        if folder == self._current_track_folder:
+        if folder == self.controller.current_track_folder:
             return
         if not self._confirm_discard_unsaved("switch tracks"):
             with QtCore.QSignalBlocker(self._track_list):
-                current_index = self._track_list.findData(self._current_track_folder)
+                current_index = self._track_list.findData(
+                    self.controller.current_track_folder
+                )
                 self._track_list.setCurrentIndex(current_index)
             return
         self.controller.set_selected_track(folder)
@@ -1263,10 +1262,12 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self.preview_api.set_show_pit_wall_dlat(editor.pit_wall_visible())
         self.preview_api.set_show_pit_stall_cars(editor.pit_stall_cars_visible())
 
-    def _load_track_txt_data(self, folder: Path | None) -> None:
-        self._current_track_folder = folder if isinstance(folder, Path) else None
-        if self._current_track_folder is None:
-            self._track_txt_result = None
+    def _load_track_txt_data(
+        self, folder: Path | None, result: TrackTxtResult | None = None
+    ) -> None:
+        if result is None:
+            result = self.controller.load_track_txt(folder)
+        if result is None:
             self._load_replay_list(None)
             for editor in self._pit_editors:
                 editor.set_parameters(None)
@@ -1284,10 +1285,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             self.preview_api.set_pit_parameters(None)
             self._update_dirty_tab_labels()
             return
-
-        result = self._io_service.load_track_txt(self._current_track_folder)
-        self._track_txt_result = result
-        self._load_replay_list(self._current_track_folder)
+        self._load_replay_list(self.controller.current_track_folder)
         self._update_track_txt_fields(result)
         lane_count = 2 if result.pit2 is not None else 1
         self._set_pit_lane_count(lane_count)
@@ -1332,14 +1330,7 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         if folder is None:
             self._replay_status_label.setText("Select a track to view replay laps.")
             return
-        replay_files = sorted(
-            [
-                path
-                for path in folder.iterdir()
-                if path.is_file() and path.suffix.lower() == ".rpy"
-            ],
-            key=lambda path: path.name.lower(),
-        )
+        replay_files = self.controller.load_replay_paths(folder)
         if not replay_files:
             self._replay_status_label.setText(
                 f"No .RPY files found in {folder.name}."
@@ -1995,38 +1986,28 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._trk_map_preview_window = window
 
     def _handle_save_pit_params(self) -> None:
-        if self._current_track_folder is None:
-            QtWidgets.QMessageBox.warning(
-                self, "Save PIT", "No track is currently loaded."
-            )
-            return
         pit_params = self._pit_editors[0].parameters()
-        if pit_params is None:
-            QtWidgets.QMessageBox.warning(
-                self, "Save PIT", "No PIT parameters are available to save."
-            )
-            return
         pit2_params = None
         if self._pit_lane_count() == 2:
             pit2_params = self._pit_editors[1].parameters()
-            if pit2_params is None:
-                QtWidgets.QMessageBox.warning(
-                    self, "Save PIT", "No PIT2 parameters are available to save."
-                )
-                return
-        lines = self._track_txt_result.lines if self._track_txt_result else []
-        message = self._io_service.save_track_txt(
-            self._current_track_folder, pit_params, pit2_params, None, lines
+        lines = (
+            self.controller.track_txt_result.lines
+            if self.controller.track_txt_result
+            else []
         )
+        success, message, result = self.controller.save_pit_params(
+            pit_params,
+            pit2_params,
+            lines,
+            require_pit2=self._pit_lane_count() == 2,
+        )
+        if not success:
+            QtWidgets.QMessageBox.warning(self, "Save PIT", message)
+            return
         self.statusBar().showMessage(message, 5000)
-        self._load_track_txt_data(self._current_track_folder)
+        self._load_track_txt_data(self.controller.current_track_folder, result)
 
     def _handle_save_track_txt(self) -> None:
-        if self._current_track_folder is None:
-            QtWidgets.QMessageBox.warning(
-                self, "Save Track TXT", "No track is currently loaded."
-            )
-            return
         metadata = self._collect_track_txt_metadata()
         pit_params = self._pit_editors[0].parameters()
         pit2_params = (
@@ -2034,21 +2015,27 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             if self._pit_lane_count() == 2
             else None
         )
-        lines = self._track_txt_result.lines if self._track_txt_result else []
-        message = self._io_service.save_track_txt(
-            self._current_track_folder,
+        lines = (
+            self.controller.track_txt_result.lines
+            if self.controller.track_txt_result
+            else []
+        )
+        success, message, result = self.controller.save_track_txt(
             pit_params,
             pit2_params,
             metadata,
             lines,
         )
+        if not success:
+            QtWidgets.QMessageBox.warning(self, "Save Track TXT", message)
+            return
         self.statusBar().showMessage(message, 5000)
-        self._load_track_txt_data(self._current_track_folder)
+        self._load_track_txt_data(self.controller.current_track_folder, result)
 
     def _collect_track_txt_metadata(self) -> TrackTxtMetadata:
         base = (
-            self._track_txt_result.metadata
-            if self._track_txt_result is not None
+            self.controller.track_txt_result.metadata
+            if self.controller.track_txt_result is not None
             else TrackTxtMetadata()
         )
         metadata = replace(base)
