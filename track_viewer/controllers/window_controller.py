@@ -7,6 +7,13 @@ from typing import Optional, TYPE_CHECKING
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from track_viewer.preview_api import TrackPreviewApi
+from track_viewer.model.pit_models import PitParameters
+from track_viewer.services.io_service import (
+    TrackIOService,
+    TrackTxtLine,
+    TrackTxtMetadata,
+    TrackTxtResult,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for type checking
     from track_viewer.widget.track_viewer_app import TrackViewerApp
@@ -32,6 +39,9 @@ class WindowController(QtCore.QObject):
         self.preview_api = preview_api
         self._gap_results_window: QtWidgets.QDialog | None = None
         self._gap_results_text: QtWidgets.QPlainTextEdit | None = None
+        self._io_service = TrackIOService()
+        self._current_track_folder: Path | None = None
+        self._track_txt_result: TrackTxtResult | None = None
 
     # ------------------------------------------------------------------
     # Installation / track loading
@@ -82,6 +92,7 @@ class WindowController(QtCore.QObject):
         self.aiLinesUpdated.emit([], set(), False)
 
     def set_selected_track(self, folder: Optional[Path]) -> None:
+        self._current_track_folder = folder if isinstance(folder, Path) else None
         if not folder:
             self.preview_api.clear()
             self.trackLengthChanged.emit(None)
@@ -100,6 +111,77 @@ class WindowController(QtCore.QObject):
         self.trackLengthChanged.emit(self.preview_api.track_length())
         self.trkGapsAvailabilityChanged.emit(self.preview_api.trk is not None)
         self.sync_ai_lines()
+
+    # ------------------------------------------------------------------
+    # Track TXT and replay loading
+    # ------------------------------------------------------------------
+    @property
+    def current_track_folder(self) -> Path | None:
+        return self._current_track_folder
+
+    @property
+    def track_txt_result(self) -> TrackTxtResult | None:
+        return self._track_txt_result
+
+    def load_track_txt(self, folder: Path | None) -> TrackTxtResult | None:
+        self._current_track_folder = folder if isinstance(folder, Path) else None
+        if self._current_track_folder is None:
+            self._track_txt_result = None
+            return None
+        self._track_txt_result = self._io_service.load_track_txt(
+            self._current_track_folder
+        )
+        return self._track_txt_result
+
+    def load_replay_paths(self, folder: Path | None) -> list[Path]:
+        if folder is None:
+            return []
+        return sorted(
+            [
+                path
+                for path in folder.iterdir()
+                if path.is_file() and path.suffix.lower() == ".rpy"
+            ],
+            key=lambda path: path.name.lower(),
+        )
+
+    def save_pit_params(
+        self,
+        pit_params: PitParameters | None,
+        pit2_params: PitParameters | None,
+        lines: list[TrackTxtLine],
+        require_pit2: bool,
+    ) -> tuple[bool, str, TrackTxtResult | None]:
+        if self._current_track_folder is None:
+            return False, "No track is currently loaded.", None
+        if pit_params is None:
+            return False, "No PIT parameters are available to save.", None
+        if require_pit2 and pit2_params is None:
+            return False, "No PIT2 parameters are available to save.", None
+        message = self._io_service.save_track_txt(
+            self._current_track_folder, pit_params, pit2_params, None, lines
+        )
+        refreshed = self.load_track_txt(self._current_track_folder)
+        return True, message, refreshed
+
+    def save_track_txt(
+        self,
+        pit_params: PitParameters | None,
+        pit2_params: PitParameters | None,
+        metadata: TrackTxtMetadata,
+        lines: list[TrackTxtLine],
+    ) -> tuple[bool, str, TrackTxtResult | None]:
+        if self._current_track_folder is None:
+            return False, "No track is currently loaded.", None
+        message = self._io_service.save_track_txt(
+            self._current_track_folder,
+            pit_params,
+            pit2_params,
+            metadata,
+            lines,
+        )
+        refreshed = self.load_track_txt(self._current_track_folder)
+        return True, message, refreshed
 
     # ------------------------------------------------------------------
     # AI line helpers
