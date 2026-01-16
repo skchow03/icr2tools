@@ -13,6 +13,7 @@
       --border: #ddd;
       --accent: #2b6cb0;
       --code-bg: #f1f1f1;
+      --callout-bg: #eef4fb;
     }
 
     body {
@@ -20,7 +21,7 @@
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--fg);
-      line-height: 1.5;
+      line-height: 1.6;
     }
 
     header {
@@ -31,7 +32,7 @@
 
     header h1 {
       margin: 0;
-      font-size: 1.6rem;
+      font-size: 1.7rem;
       font-weight: 600;
     }
 
@@ -43,13 +44,18 @@
     main {
       display: grid;
       grid-template-columns: 280px 1fr;
-      min-height: calc(100vh - 88px);
+      min-height: calc(100vh - 96px);
     }
 
     nav {
       border-right: 1px solid var(--border);
       background: #fff;
       padding: 1.5rem;
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow-y: auto;
     }
 
     nav h2 {
@@ -83,26 +89,40 @@
 
     section {
       padding: 2rem;
-      max-width: 900px;
+      max-width: 980px;
     }
 
     section h2 {
       margin-top: 0;
-      font-size: 1.4rem;
+      font-size: 1.5rem;
       font-weight: 600;
     }
 
     section h3 {
-      margin-top: 1.5rem;
-      font-size: 1.1rem;
+      margin-top: 1.8rem;
+      font-size: 1.15rem;
       font-weight: 600;
     }
 
-    .note {
+    .callout {
       border-left: 4px solid var(--accent);
-      background: #eef4fb;
-      padding: 0.75rem 1rem;
+      background: var(--callout-bg);
+      padding: 0.9rem 1.1rem;
+      margin: 1.2rem 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
       margin: 1rem 0;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.9rem;
     }
 
     code {
@@ -113,9 +133,28 @@
       font-size: 0.9em;
     }
 
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      background: #fff;
+    }
+
+    th,
+    td {
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f5f5f5;
+    }
+
     footer {
       border-top: 1px solid var(--border);
-      padding: 1rem 2rem;
+      padding: 1rem 2rem 2rem;
       color: var(--muted);
       font-size: 0.85rem;
       background: #fff;
@@ -127,6 +166,8 @@
       }
 
       nav {
+        position: relative;
+        height: auto;
         border-right: none;
         border-bottom: 1px solid var(--border);
       }
@@ -145,81 +186,295 @@
       <h2>Contents</h2>
       <ul>
         <li><a href="#overview">Overview</a></li>
+        <li><a href="#requirements">Requirements</a></li>
         <li><a href="#getting-started">Getting Started</a></li>
-        <li><a href="preview_window.html">The Preview Window</a></li>
-        <li><a href="selection.html">Selection & Interaction</a></li>
-        <li><a href="cameras.html">Camera Editing</a></li>
-        <li><a href="ai_lines.html">AI Line (LP) Inspection</a></li>
-        <li><a href="track_txt.html">Track.txt & PIT Editing</a></li>
-        <li><a href="saving.html">Saving & Backups</a></li>
-        <li><a href="troubleshooting.html">Troubleshooting</a></li>
-        <li><a href="limitations.html">Limitations</a></li>
+        <li><a href="#ui-tour">Interface Tour</a></li>
+        <li><a href="#preview-window">Preview Window</a></li>
+        <li><a href="#selection">Selection & Interaction</a></li>
+        <li><a href="#cameras">Camera Editing</a></li>
+        <li><a href="#ai-lines">AI Line (LP) Inspection</a></li>
+        <li><a href="#track-txt">Track.txt & PIT Editing</a></li>
+        <li><a href="#replay-tools">Replay & Weather Tools</a></li>
+        <li><a href="#tools-menu">Tools Menu</a></li>
+        <li><a href="#saving">Saving & Backups</a></li>
+        <li><a href="#shortcuts">Shortcuts & Tips</a></li>
+        <li><a href="#troubleshooting">Troubleshooting</a></li>
+        <li><a href="#limitations">Limitations</a></li>
       </ul>
     </nav>
 
     <section>
       <h2 id="overview">Overview</h2>
-
       <p>
         Track Viewer is a desktop tool for inspecting and editing
-        <strong>IndyCar Racing II (ICR2)</strong> track data.
-        It is designed for track builders and modders who want
-        precise, visual control over cameras, AI lines, and related metadata.
+        <strong>IndyCar Racing II (ICR2)</strong> track data. It is designed
+        for track builders and modders who want precise, visual control over
+        cameras, AI lines, and metadata without overwriting the original files
+        until they explicitly save.
       </p>
 
-      <h3>What Track Viewer does</h3>
-      <ul>
-        <li>Displays TRK geometry, centerlines, and surface bounds</li>
-        <li>Visualizes AI driving lines (LP files)</li>
-        <li>Allows interactive and numeric camera editing</li>
-        <li>Parses and edits selected track.txt parameters</li>
-        <li>Safely saves changes with automatic backups</li>
-      </ul>
-
-      <h3>What Track Viewer does not do</h3>
-      <ul>
-        <li>It does not simulate physics or AI behavior</li>
-        <li>It does not modify files unless you explicitly save</li>
-        <li>It does not replace in-game testing</li>
-      </ul>
-
-      <div class="note">
-        This manual is bundled with the application and matches the exact
-        version you are running. No internet connection is required.
+      <div class="grid">
+        <div class="card">
+          <h3>Core Capabilities</h3>
+          <ul>
+            <li>Display TRK geometry, centerlines, and track boundaries.</li>
+            <li>Visualize and compare AI driving lines (LP files).</li>
+            <li>Edit camera positions, angles, and roll values.</li>
+            <li>Inspect and update track.txt parameters (PIT + metadata).</li>
+            <li>Export supporting data via tool dialogs.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>What It Does Not Do</h3>
+          <ul>
+            <li>It does not simulate physics or AI behavior.</li>
+            <li>It does not auto-save; you must save changes manually.</li>
+            <li>It does not replace in-game testing or validation.</li>
+          </ul>
+        </div>
       </div>
+
+      <div class="callout">
+        This manual ships with the application and matches the exact version you are running.
+        No internet connection is required.
+      </div>
+
+      <h2 id="requirements">Requirements</h2>
+      <ul>
+        <li>A valid ICR2 track folder with at least a <code>.TRK</code> file.</li>
+        <li>Optional: <code>.LP</code> AI lines, <code>.CAM</code>/<code>.SCR</code> cameras,
+          and <code>track.txt</code> for PIT + metadata editing.</li>
+      </ul>
 
       <h2 id="getting-started">Getting Started</h2>
+      <ol>
+        <li>Launch Track Viewer.</li>
+        <li>Choose <strong>File → Open ICR2 folder</strong>.</li>
+        <li>Select the track folder containing the ICR2 files.</li>
+        <li>Use the track list drop-down to switch between available tracks.</li>
+      </ol>
 
       <p>
-        To begin, select a valid ICR2 track folder.
-        Track Viewer will automatically detect available files and
-        load what it can safely interpret.
+        If a file is missing or unreadable, the viewer continues loading with reduced
+        functionality. Errors appear in the status bar and logs.
       </p>
 
-      <h3>Minimum required files</h3>
-      <ul>
-        <li><code>.TRK</code> file</li>
-        <li>Centerline data (if present)</li>
-      </ul>
-
-      <h3>Optional but supported</h3>
-      <ul>
-        <li><code>.LP</code> AI line files</li>
-        <li><code>.CAM</code> / <code>.SCR</code> camera files</li>
-        <li><code>track.txt</code> (PIT and metadata)</li>
-        <li>DAT-embedded camera data (fallback)</li>
-      </ul>
-
-      <p>
-        If a file is missing or unreadable, the viewer will continue loading
-        with reduced functionality. Errors are reported in the status area
-        and logs.
-      </p>
-
-      <div class="note">
-        Start by familiarizing yourself with the <a href="preview_window.html">Preview Window</a>.
-        Most workflows begin there.
+      <h2 id="ui-tour">Interface Tour</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Main Toolbar Area</h3>
+          <p>Contains track selection, view toggles, and quick actions.</p>
+        </div>
+        <div class="card">
+          <h3>Preview Window</h3>
+          <p>Interactive view of the track, AI lines, and overlays.</p>
+        </div>
+        <div class="card">
+          <h3>Tabs Panel</h3>
+          <p>Editing tabs for AI lines, cameras, track.txt, weather, and replay data.</p>
+        </div>
+        <div class="card">
+          <h3>Status Bar</h3>
+          <p>Shows load status, coordinates, warnings, and feedback.</p>
+        </div>
       </div>
+
+      <h2 id="preview-window">Preview Window</h2>
+      <p>
+        The preview window is the primary visualization surface. It renders the track
+        geometry, AI lines, camera helpers, and selection markers. Use the view toggles
+        in the toolbar and View menu to control what is displayed.
+      </p>
+
+      <h3>Navigation</h3>
+      <ul>
+        <li><strong>Pan:</strong> click and drag with the middle mouse button.</li>
+        <li><strong>Zoom:</strong> mouse wheel to zoom in/out.</li>
+        <li><strong>Reset view:</strong> use the View menu or toolbar action to return to a full-track view.</li>
+      </ul>
+
+      <h3>Overlays</h3>
+      <ul>
+        <li><strong>Track bounds:</strong> shows the surface outline and boundaries.</li>
+        <li><strong>Section dividers:</strong> visualize TRK segment breaks.</li>
+        <li><strong>AI line colors:</strong> multiple LP files are colored for comparison.</li>
+        <li><strong>Camera markers:</strong> show camera positions and aiming direction.</li>
+      </ul>
+
+      <h2 id="selection">Selection & Interaction</h2>
+      <p>
+        Click to select items (AI line points, cameras, or track sections depending on
+        the active tab). The sidebar and tab fields update to show the selected element’s
+        details. When available, the coordinate sidebar displays exact X/Y positions.
+      </p>
+
+      <h3>Selection Tips</h3>
+      <ul>
+        <li>Use the <strong>Center on selection</strong> toggle in the LP Speed Graph to stay focused.</li>
+        <li>Section tables allow row-based selection and will highlight the relevant area.</li>
+        <li>Some selections are read-only; editable selections are highlighted in the tab fields.</li>
+      </ul>
+
+      <h2 id="cameras">Camera Editing</h2>
+      <p>
+        Camera editing is available in the Cameras tab. Track Viewer can load camera data
+        from <code>.CAM</code>, <code>.SCR</code>, or embedded DAT files and will save back to
+        the file type you loaded.
+      </p>
+
+      <h3>Editing Workflow</h3>
+      <ol>
+        <li>Select a camera from the list.</li>
+        <li>Adjust position, yaw, pitch, or roll values using the fields.</li>
+        <li>Use the preview window to visually confirm changes.</li>
+        <li>Click <strong>Save Cameras</strong> to write changes to disk.</li>
+      </ol>
+
+      <div class="callout">
+        Camera edits are not saved automatically. The Cameras tab title updates when there
+        are unsaved changes.
+      </div>
+
+      <h2 id="ai-lines">AI Line (LP) Inspection</h2>
+      <p>
+        The LP tab displays AI line data (typically <code>LP1</code> through <code>LP4</code>)
+        with color-coded overlays. You can inspect speed, banking, and height values using
+        the LP Speed Graph.
+      </p>
+
+      <h3>LP Speed Graph</h3>
+      <ul>
+        <li>Use zoom controls (X+/X-/Y+/Y-) for detailed inspection.</li>
+        <li>Enable <strong>Center on selection</strong> to keep the selected point in view.</li>
+        <li>Graph selection syncs with the preview window selection.</li>
+      </ul>
+
+      <h2 id="track-txt">Track.txt &amp; PIT Editing</h2>
+      <p>
+        Track Viewer supports editing key fields in <code>track.txt</code>, including PIT
+        and metadata values. The Track.txt tab shows editable fields with clear labels
+        and validation.
+      </p>
+
+      <h3>PIT Parameters</h3>
+      <ul>
+        <li>Adjust pit lane counts, entry/exit positions, and speed limits.</li>
+        <li>Use the preview markers to confirm physical placement.</li>
+        <li>Changes are staged until you click <strong>Save Track.txt</strong>.</li>
+      </ul>
+
+      <h2 id="replay-tools">Replay &amp; Weather Tools</h2>
+      <p>
+        The Replay tab exposes lap parameters for replay timing. The Weather tab provides
+        wind and weather adjustments that influence visualization, such as wind heading
+        and compass offsets.
+      </p>
+
+      <h2 id="tools-menu">Tools Menu</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>TRK Gaps</td>
+            <td>Analyze potential geometry gaps in the TRK data.</td>
+          </tr>
+          <tr>
+            <td>TRK → SG</td>
+            <td>Convert TRK geometry to a Sketchpad-friendly format.</td>
+          </tr>
+          <tr>
+            <td>TRK → CSV</td>
+            <td>Export TRK geometry points to CSV for external analysis.</td>
+          </tr>
+          <tr>
+            <td>Track Map Preview</td>
+            <td>Open a separate preview of the track map rendering.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="saving">Saving &amp; Backups</h2>
+      <p>
+        Saving is explicit. Track Viewer will not overwrite files until you use the
+        save actions in each tab. When saving, the tool writes backups to allow rollback.
+      </p>
+
+      <h3>Save Buttons by Tab</h3>
+      <ul>
+        <li><strong>Cameras:</strong> Save Cameras</li>
+        <li><strong>Track.txt:</strong> Save Track.txt</li>
+        <li><strong>Weather:</strong> Save Weather</li>
+      </ul>
+
+      <div class="callout">
+        If you switch tracks or close the app with unsaved changes, you will be prompted
+        to confirm. This protects you from accidental data loss.
+      </div>
+
+      <h2 id="shortcuts">Shortcuts &amp; Tips</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Shortcut / Gesture</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Pan</td>
+            <td>Middle mouse drag</td>
+          </tr>
+          <tr>
+            <td>Zoom</td>
+            <td>Mouse wheel</td>
+          </tr>
+          <tr>
+            <td>Close dialog</td>
+            <td>Escape key</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Workflow Tips</h3>
+      <ul>
+        <li>Load a track, inspect geometry, then validate AI lines before editing cameras.</li>
+        <li>Keep backups of your original track folder before large edits.</li>
+        <li>Use the Track Map Preview tool to confirm layout at a glance.</li>
+      </ul>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <h3>Track fails to load</h3>
+      <ul>
+        <li>Confirm the folder contains a valid <code>.TRK</code> file.</li>
+        <li>Ensure file names use standard ICR2 naming conventions.</li>
+        <li>Check the status bar for error messages.</li>
+      </ul>
+
+      <h3>AI line does not appear</h3>
+      <ul>
+        <li>Verify the <code>.LP</code> files exist in the track folder.</li>
+        <li>Use the View menu to ensure AI line overlays are enabled.</li>
+        <li>Try reloading the track after making changes.</li>
+      </ul>
+
+      <h3>Camera edits not saving</h3>
+      <ul>
+        <li>Confirm you clicked <strong>Save Cameras</strong> in the Cameras tab.</li>
+        <li>Ensure the track folder is writable.</li>
+        <li>Look for backup files with the same extension.</li>
+      </ul>
+
+      <h2 id="limitations">Limitations</h2>
+      <ul>
+        <li>Only fields exposed in the UI are editable.</li>
+        <li>Some legacy or proprietary formats may load as read-only.</li>
+        <li>Manual changes to files outside Track Viewer are not auto-reloaded.</li>
+      </ul>
     </section>
   </main>
 
