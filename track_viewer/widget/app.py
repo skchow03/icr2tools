@@ -731,10 +731,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         self._lp_speed_graph_zoom_x_out = QtWidgets.QPushButton("Zoom X-")
         self._lp_speed_graph_zoom_y_in = QtWidgets.QPushButton("Zoom Y+")
         self._lp_speed_graph_zoom_y_out = QtWidgets.QPushButton("Zoom Y-")
-        self._lp_speed_graph_follow_selection = QtWidgets.QPushButton(
+        self._lp_speed_graph_follow_selection = QtWidgets.QCheckBox(
             "Center on selection"
         )
-        self._lp_speed_graph_follow_selection.setCheckable(True)
+        self._lp_speed_graph_follow_selection.setChecked(True)
         self._lp_speed_graph_zoom_x_in.clicked.connect(
             lambda: self._lp_speed_graph.zoom_x(1.2)
         )
