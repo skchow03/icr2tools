@@ -104,6 +104,10 @@ class LpSpeedGraphWidget(QtWidgets.QWidget):
             painter.end()
             return
 
+        clip_rect = plot_rect.adjusted(1, 1, -1, -1)
+        painter.save()
+        painter.setClipRect(clip_rect)
+
         path = QtGui.QPainterPath()
         for index, record in enumerate(self._records):
             x = self._map_value(
@@ -168,6 +172,8 @@ class LpSpeedGraphWidget(QtWidgets.QWidget):
                 )
                 painter.setBrush(QtGui.QBrush(QtGui.QColor("#e53935")))
                 painter.drawEllipse(QtCore.QPointF(selected_x, selected_y), 4, 4)
+
+        painter.restore()
 
         painter.setPen(QtGui.QColor(90, 90, 90))
         painter.drawText(
