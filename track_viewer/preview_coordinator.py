@@ -496,6 +496,9 @@ class PreviewCoordinator:
     def track_path(self) -> Path | None:
         return self._model.track_path
 
+    def trk_file_path(self) -> Path | None:
+        return self._model.trk_file_path
+
     def set_show_cameras(self, show: bool) -> None:
         if self._state.show_cameras != show:
             self._state.show_cameras = show
@@ -745,6 +748,42 @@ class PreviewCoordinator:
         self.set_selected_camera(None)
         self._handle_intent(PreviewIntent.SURFACE_DATA_CHANGED)
 
+    def load_trk_file(self, trk_path: Path) -> None:
+        if not trk_path:
+            self.clear()
+            return
+
+        if self._model.trk_file_path == trk_path:
+            return
+
+        self._state.status_message = f"Loading {trk_path.name}…"
+        self._handle_intent(PreviewIntent.SURFACE_DATA_CHANGED)
+
+        try:
+            self._model.load_trk_file(trk_path)
+        except Exception as exc:  # pragma: no cover - interactive feedback
+            self.clear(f"Failed to load TRK file: {exc}")
+            return
+
+        self._state.projection_cached_point = None
+        self._state.projection_cached_result = None
+        before_line = self._lp_session.active_lp_line
+        changes = self._lp_session.sync_available_lines()
+        if before_line != self._lp_session.active_lp_line:
+            self._emit_active_lp_line_changed(self._lp_session.active_lp_line)
+        self._apply_lp_changes(changes)
+        self._state.set_projection_data(None, None, None, None, None, None, None)
+        self._state.status_message = f"Loaded {trk_path.stem}"
+        self._state.view_center = self._state.default_center(self._model.bounds)
+        self._state.user_transform_active = False
+        self._state.update_fit_scale(self._model.bounds, self._last_size)
+        self._state.flags = []
+        self._selection_controller.set_selected_flag(None)
+        self._camera_service.reset()
+        self._emit_cameras_changed([], [])
+        self.set_selected_camera(None)
+        self._handle_intent(PreviewIntent.SURFACE_DATA_CHANGED)
+
     def save_cameras(self) -> tuple[bool, str]:
         if self._model.track_path is None:
             return False, "No track is currently loaded."
@@ -758,12 +797,21 @@ class PreviewCoordinator:
         return True, "Camera files saved successfully."
 
     def run_trk_gaps(self) -> tuple[bool, str]:
-        if self._model.trk is None or self._model.track_path is None:
+        if self._model.trk is None:
             return False, "No track is currently loaded."
 
-        track_name = self._model.track_path.name
-        trk_path = self._model.track_path / f"{track_name}.trk"
-        header_label = str(trk_path if trk_path.exists() else trk_path.name)
+        trk_path = None
+        if self._model.track_path is not None:
+            track_name = self._model.track_path.name
+            trk_path = self._model.track_path / f"{track_name}.trk"
+        elif self._model.trk_file_path is not None:
+            trk_path = self._model.trk_file_path
+        if trk_path is None:
+            header_label = "TRK"
+        else:
+            header_label = (
+                str(trk_path) if trk_path.exists() else trk_path.name
+            )
 
         try:
             cline = get_cline_pos(self._model.trk)
@@ -797,7 +845,7 @@ class PreviewCoordinator:
         return True, "\n".join(lines)
 
     def convert_trk_to_sg(self, output_path: Path) -> tuple[bool, str]:
-        if self._model.trk is None or self._model.track_path is None:
+        if self._model.trk is None:
             return False, "No track is currently loaded."
 
         try:
@@ -811,11 +859,17 @@ class PreviewCoordinator:
         return True, f"Saved SG file to {output_path}."
 
     def convert_trk_to_csv(self, output_path: Path) -> tuple[bool, str]:
-        if self._model.trk is None or self._model.track_path is None:
+        if self._model.trk is None:
             return False, "No track is currently loaded."
 
-        track_name = self._model.track_path.name
-        trk_path = self._model.track_path / f"{track_name}.trk"
+        trk_path = None
+        if self._model.track_path is not None:
+            track_name = self._model.track_path.name
+            trk_path = self._model.track_path / f"{track_name}.trk"
+        elif self._model.trk_file_path is not None:
+            trk_path = self._model.trk_file_path
+        if trk_path is None:
+            return False, "TRK file path is not available."
         if not trk_path.exists():
             return False, f"TRK file not found at {trk_path}."
 
