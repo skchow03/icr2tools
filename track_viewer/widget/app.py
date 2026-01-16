@@ -660,14 +660,26 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
     def _confirm_discard_unsaved(self, action: str) -> bool:
         if not self._has_unsaved_changes():
             return True
-        response = QtWidgets.QMessageBox.question(
-            self,
-            "Unsaved Changes",
-            f"There are unsaved changes. Are you sure you want to {action}?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
+        message_box = QtWidgets.QMessageBox(self)
+        message_box.setIcon(QtWidgets.QMessageBox.Question)
+        message_box.setWindowTitle("Unsaved Changes")
+        message_box.setText(
+            f"There are unsaved changes. Are you sure you want to {action}?"
         )
-        return response == QtWidgets.QMessageBox.Yes
+        discard_text = (
+            "Close without saving"
+            if action == "close the app"
+            else "Leave track without saving"
+        )
+        discard_button = message_box.addButton(
+            discard_text, QtWidgets.QMessageBox.DestructiveRole
+        )
+        cancel_button = message_box.addButton(
+            "Cancel", QtWidgets.QMessageBox.RejectRole
+        )
+        message_box.setDefaultButton(cancel_button)
+        message_box.exec()
+        return message_box.clickedButton() == discard_button
 
     def _set_camera_dirty(self, dirty: bool) -> None:
         if self._camera_dirty == dirty:
