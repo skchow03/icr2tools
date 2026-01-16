@@ -1,10 +1,12 @@
 """Table model for LP record editing."""
 from __future__ import annotations
 
+from typing import Callable
+
 from PyQt5 import QtCore
 
-from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.ai.ai_line_service import LpPoint
+from track_viewer.model.lp_editing_session import LPChange, LPEditingSession
 
 
 class LpRecordsModel(QtCore.QAbstractTableModel):
@@ -18,13 +20,19 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         "Lateral Speed",
     ]
     recordEdited = QtCore.pyqtSignal(int)
-    _LATERAL_SPEED_FACTOR = 31680000 / 54000
-    _SPEED_RAW_FACTOR = 5280 / 9
 
-    def __init__(self, parent: QtCore.QObject | None = None) -> None:
+    def __init__(
+        self,
+        session: LPEditingSession,
+        on_changes: Callable[[set[LPChange]], None] | None = None,
+        parent: QtCore.QObject | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._session = session
+        self._on_changes = on_changes or (lambda _changes: None)
         self._records: list[LpPoint] = []
         self._show_speed_raw = False
+        self._lp_name: str | None = None
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         if parent.isValid():
@@ -103,21 +111,30 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             parsed = float(value)
         except (TypeError, ValueError):
             return False
-        record = self._records[row]
         if column == 2:
-            record.dlat = parsed
+            if self._lp_name is None:
+                return False
+            changed = self._session.update_record_dlat(
+                self._lp_name, row, parsed
+            )
         elif column == 3:
-            if self._show_speed_raw:
-                speed_raw = int(round(parsed))
-                record.speed_raw = speed_raw
-                record.speed_mph = papy_speed_to_mph(speed_raw)
-            else:
-                record.speed_mph = parsed
-                record.speed_raw = int(round(parsed * self._SPEED_RAW_FACTOR))
+            if self._lp_name is None:
+                return False
+            changed = self._session.update_record_speed(
+                self._lp_name, row, parsed, raw_mode=self._show_speed_raw
+            )
         elif column == 4:
-            record.lateral_speed = parsed
+            if self._lp_name is None:
+                return False
+            changed = self._session.update_record_lateral_speed(
+                self._lp_name, row, parsed
+            )
         else:
             return False
+        if not changed:
+            return False
+        self._on_changes(changed)
+        self.refresh_row(row)
         self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
         self.recordEdited.emit(row)
         return True
@@ -142,9 +159,10 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             return None
         return str(section)
 
-    def set_records(self, records: list[LpPoint]) -> None:
+    def set_records(self, records: list[LpPoint], lp_name: str | None = None) -> None:
         self.beginResetModel()
         self._records = list(records)
+        self._lp_name = lp_name
         self.endResetModel()
 
     def set_speed_raw_visible(self, enabled: bool) -> None:
@@ -158,11 +176,19 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
     def adjust_speed_mph(self, row: int, delta: float) -> bool:
+        if self._lp_name is None:
+            return False
         if row < 0 or row >= len(self._records):
             return False
         record = self._records[row]
-        record.speed_mph = record.speed_mph + delta
-        record.speed_raw = int(round(record.speed_mph * self._SPEED_RAW_FACTOR))
+        target_speed = record.speed_mph + delta
+        changes = self._session.update_record_speed(
+            self._lp_name, row, target_speed, raw_mode=False
+        )
+        if not changes:
+            return False
+        self._on_changes(changes)
+        self.refresh_row(row)
         index = self.index(row, 3)
         if index.isValid():
             self.dataChanged.emit(
@@ -172,27 +198,23 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
         return True
 
     def recalculate_lateral_speeds(self) -> bool:
-        if len(self._records) < 3:
+        if self._lp_name is None:
             return False
+        changes = self._session.recalculate_lateral_speeds(self._lp_name)
+        if not changes:
+            return False
+        self._on_changes(changes)
+        self._records = self._session.records(self._lp_name)
         total_records = len(self._records)
-        recalculated = [0.0] * total_records
-        for index in range(total_records):
-            prev_record = self._records[(index - 1) % total_records]
-            next_record = self._records[(index + 1) % total_records]
-            record = self._records[index]
-            dlong_delta = next_record.dlong - prev_record.dlong
-            if dlong_delta == 0:
-                lateral_speed = 0.0
-            else:
-                lateral_speed = (
-                    (next_record.dlat - prev_record.dlat)
-                    / dlong_delta
-                    * (record.speed_mph * self._LATERAL_SPEED_FACTOR)
-                )
-            recalculated[(index - 2) % total_records] = lateral_speed
-        for index, lateral_speed in enumerate(recalculated):
-            self._records[index].lateral_speed = lateral_speed
         start = self.index(0, 4)
         end = self.index(total_records - 1, 4)
         self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
         return True
+
+    def refresh_row(self, row: int) -> None:
+        if self._lp_name is None:
+            return
+        snapshot = self._session.record_snapshot(self._lp_name, row)
+        if snapshot is None:
+            return
+        self._records[row] = snapshot

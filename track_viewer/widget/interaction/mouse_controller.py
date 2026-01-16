@@ -15,6 +15,7 @@ from track_viewer.common.weather_compass import (
     turns_to_unit_vector,
 )
 from track_viewer.geometry import project_point_to_centerline
+from track_viewer.model.lp_editing_session import LPEditingSession
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
 from track_viewer.widget.editing.camera_edit_controller import CameraEditController
@@ -31,6 +32,7 @@ class TrackPreviewMouseController:
         self,
         model: TrackPreviewModel,
         state: TrackPreviewViewState,
+        lp_session: LPEditingSession,
         callbacks: InteractionCallbacks,
         selection: SelectionController,
         camera_edit: CameraEditController,
@@ -39,6 +41,7 @@ class TrackPreviewMouseController:
     ) -> None:
         self._model = model
         self._state = state
+        self._lp_session = lp_session
         self._callbacks = callbacks
         self._selection = selection
         self._camera_edit = camera_edit
@@ -202,12 +205,7 @@ class TrackPreviewMouseController:
             or self._state.dragging_flag_index is not None
         ):
             return False
-        active_line = self._state.active_lp_line or "center-line"
-        if active_line == "center-line":
-            return False
-        if active_line not in self._model.visible_lp_files:
-            return False
-        return True
+        return self._lp_session.should_track_hover()
 
     def _process_lp_hover(self) -> None:
         if not self._lp_hover_dirty:
@@ -220,16 +218,8 @@ class TrackPreviewMouseController:
         size = self._pending_lp_hover_size
         if point is None or size is None:
             return
-        active_line = self._state.active_lp_line or "center-line"
-        lp_index = self._selection.lp_record_at_point(point, active_line, size)
-        if lp_index is None:
+        if self._lp_edit.select_lp_record_at_point(point, size):
             return
-        if (
-            self._state.selected_lp_line == active_line
-            and self._state.selected_lp_index == lp_index
-        ):
-            return
-        self._selection.select_lp_record(active_line, lp_index)
 
     def handle_leave(self) -> None:
         self._clear_lp_hover_update()
@@ -356,7 +346,7 @@ class TrackPreviewMouseController:
     def _update_active_line_projection(
         self, point: QtCore.QPointF | None, size: QtCore.QSize
     ) -> bool:
-        active = self._state.active_lp_line if self._state.active_lp_line else "center-line"
+        active = self._lp_session.active_lp_line or "center-line"
         if active != "center-line" and active not in self._model.available_lp_files:
             active = "center-line"
         if active == "center-line":
@@ -765,13 +755,8 @@ class TrackPreviewMouseController:
         if flag_index is not None:
             self._selection.set_selected_flag(flag_index)
             return
-        active_line = self._state.active_lp_line or "center-line"
-        if (
-            active_line != "center-line"
-            and active_line in self._model.visible_lp_files
-            and self._model.surface_mesh
-        ):
-            if self._lp_edit.select_lp_record_at_point(point, active_line, size):
+        if self._model.surface_mesh and self._lp_session.should_track_hover():
+            if self._lp_edit.select_lp_record_at_point(point, size):
                 return
         coords = self._state.map_to_track(point, self._model.bounds, size)
         if coords is None:

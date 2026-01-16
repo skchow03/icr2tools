@@ -77,7 +77,11 @@ class LpTabBuilder:
         window._lp_shortcut_button.toggled.connect(
             window._handle_lp_shortcut_toggled
         )
-        window._lp_records_model = LpRecordsModel(window)
+        window._lp_records_model = LpRecordsModel(
+            window.preview_api.lp_session(),
+            window.preview_api.apply_lp_changes,
+            window,
+        )
         window._lp_records_table = QtWidgets.QTableView()
         window._lp_records_table.setModel(window._lp_records_model)
         window._lp_records_table.setEditTriggers(

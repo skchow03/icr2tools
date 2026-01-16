@@ -20,6 +20,7 @@ from track_viewer.common.weather_compass import (
     wind_variation_to_turns,
 )
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
+from track_viewer.model.lp_editing_session import LPEditingSession
 from track_viewer.model.pit_models import PIT_DLAT_LINE_COLORS, PIT_DLONG_LINE_COLORS
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
@@ -42,10 +43,12 @@ class TrackPreviewRenderer:
         model: TrackPreviewModel,
         camera_service: CameraService,
         state: TrackPreviewViewState,
+        lp_session: LPEditingSession,
     ) -> None:
         self._model = model
         self._camera_service = camera_service
         self._state = state
+        self._lp_session = lp_session
         self._surface_cache: list[rendering.SurfacePolygon] = []
         self._surface_cache_key: tuple[object | None, int] | None = None
         self._boundary_path_cache = QtGui.QPainterPath()
@@ -371,16 +374,18 @@ class TrackPreviewRenderer:
         height: int,
     ) -> None:
         """Highlight the selected LP record and its adjacent segment."""
+        selected_line = self._lp_session.selected_lp_line
+        selected_index = self._lp_session.selected_lp_index
         if (
-            not self._state.selected_lp_line
-            or self._state.selected_lp_index is None
-            or self._state.selected_lp_line not in self._model.visible_lp_files
+            not selected_line
+            or selected_index is None
+            or selected_line not in self._model.visible_lp_files
         ):
             return
-        records = self._model.ai_line_records(self._state.selected_lp_line)
+        records = self._model.ai_line_records(selected_line)
         if len(records) < 2:
             return
-        index = self._state.selected_lp_index
+        index = selected_index
         if 0 <= index < len(records):
             record = records[index]
             painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -409,17 +414,17 @@ class TrackPreviewRenderer:
     def _draw_lp_shortcut_overlay(
         self, painter: QtGui.QPainter, size: QtCore.QSize
     ) -> None:
-        if not self._state.lp_shortcut_active:
+        if not self._lp_session.lp_shortcut_active:
             return
         self._draw_lp_editing_banner(painter, size)
         metrics = painter.fontMetrics()
         line_height = metrics.height()
         margin = 12
-        step_value = self._state.lp_dlat_step
+        step_value = self._lp_session.lp_dlat_step
         lp_index_text = (
             "LP index: —"
-            if self._state.selected_lp_index is None
-            else f"LP index: {self._state.selected_lp_index}"
+            if self._lp_session.selected_lp_index is None
+            else f"LP index: {self._lp_session.selected_lp_index}"
         )
         lines = [
             "LP arrow-key editing active:",
@@ -446,9 +451,9 @@ class TrackPreviewRenderer:
     def _draw_lp_editing_banner(
         self, painter: QtGui.QPainter, size: QtCore.QSize
     ) -> None:
-        if not self._state.lp_editing_tab_active:
+        if not self._lp_session.lp_editing_tab_active:
             return
-        lp_name = self._state.active_lp_line
+        lp_name = self._lp_session.active_lp_line
         if not lp_name or lp_name == "center-line":
             return
         painter.save()

@@ -16,6 +16,7 @@ from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.controllers.camera_controller import CameraController
+from track_viewer.model.lp_editing_session import LPChange, LPEditingSession
 from track_viewer.model.pit_models import PitParameters
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
@@ -69,8 +70,11 @@ class PreviewCoordinator:
         self._io_service = TrackIOService()
         self._model = TrackPreviewModel(self._io_service)
         self._model.aiLineLoaded.connect(self._handle_model_ai_line_loaded)
+        self._lp_session = LPEditingSession(self._model)
         self._camera_service = CameraService(self._io_service, CameraController())
-        self._renderer = TrackPreviewRenderer(self._model, self._camera_service, self._state)
+        self._renderer = TrackPreviewRenderer(
+            self._model, self._camera_service, self._state, self._lp_session
+        )
         self._interaction_callbacks = InteractionCallbacks(
             state_changed=self._handle_intent,
             cursor_position_changed=self._emit_cursor_position_changed,
@@ -98,10 +102,13 @@ class PreviewCoordinator:
             self._selection_controller,
             self._interaction_callbacks,
         )
-        self._lp_edit_controller = LpEditController(self._selection_controller)
+        self._lp_edit_controller = LpEditController(
+            self._model, self._state, self._lp_session, self._interaction_callbacks
+        )
         self._mouse_controller = TrackPreviewMouseController(
             self._model,
             self._state,
+            self._lp_session,
             self._interaction_callbacks,
             self._selection_controller,
             self._camera_edit_controller,
@@ -118,6 +125,10 @@ class PreviewCoordinator:
     @property
     def keyboard_controller(self) -> TrackPreviewKeyboardController:
         return self._keyboard_controller
+
+    @property
+    def lp_session(self) -> LPEditingSession:
+        return self._lp_session
 
     def paint(self, painter: QtGui.QPainter, size: QtCore.QSize) -> None:
         self._renderer.paint(painter, size)
@@ -136,6 +147,19 @@ class PreviewCoordinator:
         self._emit_ai_line_loaded(lp_name)
         self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
+    def _apply_lp_changes(self, changes: set[LPChange]) -> None:
+        if LPChange.DATA in changes:
+            self._state.projection_cached_point = None
+            self._state.projection_cached_result = None
+            self._handle_intent(PreviewIntent.PROJECTION_CHANGED)
+        if LPChange.SELECTION in changes:
+            self._handle_intent(PreviewIntent.SELECTION_CHANGED)
+        if changes & {LPChange.DATA, LPChange.VISIBILITY}:
+            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+
+    def apply_lp_changes(self, changes: set[LPChange]) -> None:
+        self._apply_lp_changes(changes)
+
     # ------------------------------------------------------------------
     # Public API - state orchestration
     # ------------------------------------------------------------------
@@ -144,6 +168,7 @@ class PreviewCoordinator:
         self._model.clear()
         self._state.reset(message)
         self._state.lp_colors = lp_colors
+        self._lp_session.reset()
         self._camera_service.reset()
         self._emit_cursor_position_changed(None)
         self._emit_selected_flag_changed(None)
@@ -166,7 +191,7 @@ class PreviewCoordinator:
     def set_show_center_line(self, show: bool) -> None:
         if self._state.show_center_line != show:
             self._state.show_center_line = show
-            if not show and self._state.active_lp_line == "center-line":
+            if not show and self._lp_session.active_lp_line == "center-line":
                 if self._state.set_projection_data(
                     None, None, None, None, None, None, None
                 ):
@@ -268,58 +293,45 @@ class PreviewCoordinator:
         self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
 
     def active_lp_line(self) -> str:
-        return self._state.active_lp_line
+        return self._lp_session.active_lp_line
 
     def set_active_lp_line(self, name: str) -> None:
-        target = "center-line"
-        if name in self._model.available_lp_files:
-            target = name
-        elif name == "center-line":
-            target = name
-        if target == self._state.active_lp_line:
+        before = self._lp_session.active_lp_line
+        changes = self._lp_session.set_active_lp_line(name)
+        if not changes and before == self._lp_session.active_lp_line:
             return
-        self._state.active_lp_line = target
-        self._state.selected_lp_line = None
-        self._state.selected_lp_index = None
         self._state.projection_cached_point = None
         self._state.projection_cached_result = None
         self._state.set_projection_data(None, None, None, None, None, None, None)
-        self._emit_active_lp_line_changed(target)
-        if target != "center-line":
-            self._model.ai_line_records(target)
+        if before != self._lp_session.active_lp_line:
+            self._emit_active_lp_line_changed(self._lp_session.active_lp_line)
         self._handle_intent(PreviewIntent.PROJECTION_CHANGED)
+        self._apply_lp_changes(changes)
 
     def ai_line_records(self, name: str) -> list[LpPoint]:
-        return self._model.ai_line_records(name)
+        return self._lp_session.records(name)
 
     def lp_line_dirty(self, name: str) -> bool:
-        return self._model.lp_line_dirty(name)
+        return self._lp_session.is_dirty(name)
 
     def mark_lp_line_dirty(self, name: str) -> None:
-        self._model.mark_lp_line_dirty(name)
-
-    def update_lp_record(self, lp_name: str, index: int) -> None:
-        if not self._model.update_lp_record(lp_name, index):
-            return
-        self._state.projection_cached_point = None
-        self._state.projection_cached_result = None
-        self._handle_intent(PreviewIntent.PROJECTION_CHANGED)
+        self._apply_lp_changes(self._lp_session.mark_dirty(name))
 
     def save_active_lp_line(self) -> tuple[bool, str]:
-        return self._model.save_lp_line(self._state.active_lp_line)
+        return self._model.save_lp_line(self._lp_session.active_lp_line)
 
     def save_all_lp_lines(self) -> tuple[bool, str]:
         return self._model.save_all_lp_lines()
 
     def export_active_lp_csv(self, output_path: Path) -> tuple[bool, str]:
-        return self._model.export_lp_csv(self._state.active_lp_line, output_path)
+        return self._model.export_lp_csv(self._lp_session.active_lp_line, output_path)
 
     def export_all_lp_csvs(self, output_dir: Path) -> tuple[bool, str]:
         return self._model.export_all_lp_csvs(output_dir)
 
     def import_active_lp_csv(self, csv_path: Path) -> tuple[bool, str]:
         success, message = self._model.import_lp_csv(
-            self._state.active_lp_line, csv_path
+            self._lp_session.active_lp_line, csv_path
         )
         if success:
             self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
@@ -328,9 +340,10 @@ class PreviewCoordinator:
     def generate_lp_line(
         self, lp_name: str, speed_mph: float, dlat: float
     ) -> tuple[bool, str]:
-        success, message = self._model.generate_lp_line(lp_name, speed_mph, dlat)
-        if success:
-            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        success, message, changes = self._lp_session.generate_lp_line(
+            lp_name, speed_mph, dlat
+        )
+        self._apply_lp_changes(changes)
         return success, message
 
     def generate_lp_line_from_replay(
@@ -341,11 +354,10 @@ class PreviewCoordinator:
         start_frame: int,
         end_frame: int,
     ) -> tuple[bool, str]:
-        success, message = self._model.generate_lp_line_from_replay(
+        success, message, changes = self._lp_session.generate_lp_line_from_replay(
             lp_name, rpy, car_id, start_frame, end_frame
         )
-        if success:
-            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        self._apply_lp_changes(changes)
         return success, message
 
     def copy_lp_speeds_from_replay(
@@ -356,51 +368,77 @@ class PreviewCoordinator:
         start_frame: int,
         end_frame: int,
     ) -> tuple[bool, str]:
-        success, message = self._model.copy_lp_speeds_from_replay(
+        success, message, changes = self._lp_session.copy_lp_speeds_from_replay(
             lp_name, rpy, car_id, start_frame, end_frame
         )
-        if success:
-            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        self._apply_lp_changes(changes)
         return success, message
 
     def set_selected_lp_record(self, name: str | None, index: int | None) -> None:
-        if name is None or index is None:
-            if self._state.selected_lp_line is None and self._state.selected_lp_index is None:
-                return
-            self._state.selected_lp_line = None
-            self._state.selected_lp_index = None
-            self._handle_intent(PreviewIntent.SELECTION_CHANGED)
-            return
-        if name not in self._model.available_lp_files:
-            return
-        records = self._model.ai_line_records(name)
-        if index < 0 or index >= len(records):
-            return
-        if self._state.selected_lp_line == name and self._state.selected_lp_index == index:
-            return
-        self._state.selected_lp_line = name
-        self._state.selected_lp_index = index
-        self._handle_intent(PreviewIntent.SELECTION_CHANGED)
+        changes = self._lp_session.set_selected_lp_record(name, index)
+        self._apply_lp_changes(changes)
 
     def set_lp_shortcut_active(self, active: bool) -> None:
-        if self._state.lp_shortcut_active == active:
-            return
-        self._state.lp_shortcut_active = active
-        self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        changes = self._lp_session.set_lp_shortcut_active(active)
+        self._apply_lp_changes(changes)
 
     def set_lp_editing_tab_active(self, active: bool) -> None:
-        if self._state.lp_editing_tab_active == active:
-            return
-        self._state.lp_editing_tab_active = active
-        self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        changes = self._lp_session.set_lp_editing_tab_active(active)
+        self._apply_lp_changes(changes)
 
     def set_lp_dlat_step(self, step: int) -> None:
-        clamped = max(0, int(step))
-        if self._state.lp_dlat_step == clamped:
-            return
-        self._state.lp_dlat_step = clamped
-        if self._state.lp_shortcut_active:
-            self._handle_intent(PreviewIntent.OVERLAY_CHANGED)
+        changes = self._lp_session.set_lp_dlat_step(step)
+        self._apply_lp_changes(changes)
+
+    def selected_lp_record(self) -> tuple[str, int] | None:
+        return self._lp_session.selected_lp_record()
+
+    def lp_shortcut_active(self) -> bool:
+        return self._lp_session.lp_shortcut_active
+
+    def lp_dlat_step(self) -> int:
+        return self._lp_session.lp_dlat_step
+
+    def lp_editing_tab_active(self) -> bool:
+        return self._lp_session.lp_editing_tab_active
+
+    def step_lp_selection(self, delta: int) -> None:
+        changes = self._lp_session.step_selection(delta)
+        self._apply_lp_changes(changes)
+
+    def adjust_selected_lp_dlat(self, delta: int) -> None:
+        changes = self._lp_session.adjust_selected_dlat(delta)
+        self._apply_lp_changes(changes)
+
+    def adjust_selected_lp_speed(self, delta_mph: float) -> None:
+        changes = self._lp_session.adjust_selected_speed(delta_mph)
+        self._apply_lp_changes(changes)
+
+    def copy_selected_lp_fields(self, delta: int) -> None:
+        changes = self._lp_session.copy_selected_fields(delta)
+        self._apply_lp_changes(changes)
+
+    def update_lp_record_dlat(self, lp_name: str, index: int, value: float) -> None:
+        changes = self._lp_session.update_record_dlat(lp_name, index, value)
+        self._apply_lp_changes(changes)
+
+    def update_lp_record_speed(
+        self, lp_name: str, index: int, value: float, *, raw_mode: bool
+    ) -> None:
+        changes = self._lp_session.update_record_speed(
+            lp_name, index, value, raw_mode=raw_mode
+        )
+        self._apply_lp_changes(changes)
+
+    def update_lp_record_lateral_speed(
+        self, lp_name: str, index: int, value: float
+    ) -> None:
+        changes = self._lp_session.update_record_lateral_speed(lp_name, index, value)
+        self._apply_lp_changes(changes)
+
+    def recalculate_lateral_speeds(self, lp_name: str) -> None:
+        changes = self._lp_session.recalculate_lateral_speeds(lp_name)
+        self._apply_lp_changes(changes)
 
     def lp_color(self, name: str) -> str:
         override = self._state.lp_colors.get(name)
@@ -688,8 +726,11 @@ class PreviewCoordinator:
 
         self._state.projection_cached_point = None
         self._state.projection_cached_result = None
-        if self._state.active_lp_line not in {"center-line", *self._model.available_lp_files}:
-            self._state.active_lp_line = "center-line"
+        before_line = self._lp_session.active_lp_line
+        changes = self._lp_session.sync_available_lines()
+        if before_line != self._lp_session.active_lp_line:
+            self._emit_active_lp_line_changed(self._lp_session.active_lp_line)
+        self._apply_lp_changes(changes)
         self._state.set_projection_data(None, None, None, None, None, None, None)
         self._state.status_message = f"Loaded {track_folder.name}" if track_folder else ""
         self._state.view_center = self._state.default_center(self._model.bounds)
