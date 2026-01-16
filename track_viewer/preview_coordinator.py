@@ -20,7 +20,7 @@ from track_viewer.model.lp_editing_session import LPChange, LPEditingSession
 from track_viewer.model.pit_models import PitParameters
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
-from track_viewer.rendering.track_preview_renderer import TrackPreviewRenderer
+from track_viewer.rendering.renderer import TrackPreviewRenderer
 from track_viewer.services.camera_service import CameraService
 from track_viewer.services.io_service import TrackIOService
 from track_viewer.widget.editing.camera_edit_controller import CameraEditController
