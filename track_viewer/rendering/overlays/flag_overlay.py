@@ -5,6 +5,8 @@ from typing import Sequence
 
 from PyQt5 import QtCore, QtGui
 
+from track_viewer.model.track_preview_model import TrackPreviewModel
+from track_viewer.model.view_state import TrackPreviewViewState
 from track_viewer.rendering.primitives.mapping import Point2D, Transform, map_point
 
 
@@ -52,3 +54,24 @@ def draw_flags(
         painter.setPen(QtGui.QPen(QtGui.QColor("black")))
         painter.setBrush(QtGui.QBrush(color))
         painter.drawEllipse(point, dot_radius, dot_radius)
+
+
+class FlagOverlay:
+    """Render track flag markers."""
+
+    def draw(
+        self,
+        painter: QtGui.QPainter,
+        model: TrackPreviewModel,
+        state: TrackPreviewViewState,
+        transform: Transform,
+        viewport_height: int,
+    ) -> None:
+        draw_flags(
+            painter,
+            state.flags,
+            state.selected_flag,
+            transform,
+            viewport_height,
+            state.flag_radius,
+        )

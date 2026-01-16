@@ -11,6 +11,10 @@ from typing import Callable, Iterable, Sequence
 
 from PyQt5 import QtCore, QtGui
 
+from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
+from track_viewer.model.track_preview_model import TrackPreviewModel
+from track_viewer.model.view_state import TrackPreviewViewState
+from track_viewer.rendering.base.transform import surface_transform
 from track_viewer.rendering.primitives.mapping import Point2D, Transform, map_point
 
 MPH_TO_FEET_PER_SECOND = 5280 / 3600
@@ -238,3 +242,134 @@ def draw_lp_segment(
         )
     )
     painter.restore()
+
+
+class AiLineOverlay:
+    """Render AI line overlays with cached polylines."""
+
+    def __init__(self) -> None:
+        self._ai_line_cache: dict[str, AiLineCache] = {}
+        self._ai_line_cache_key: tuple[
+            object | None, int, str, int, int, tuple[tuple[str, str], ...]
+        ] | None = None
+        self._replay_line_cache = QtGui.QPolygonF()
+        self._replay_cache_key: tuple[object | None, int] | None = None
+
+    def invalidate_cache(self) -> None:
+        self._ai_line_cache = {}
+        self._ai_line_cache_key = None
+        self._replay_line_cache = QtGui.QPolygonF()
+        self._replay_cache_key = None
+
+    def draw(
+        self,
+        painter: QtGui.QPainter,
+        model: TrackPreviewModel,
+        state: TrackPreviewViewState,
+        transform: Transform,
+        viewport_height: int,
+    ) -> None:
+        self._draw_ai_lines(painter, model, state, transform, viewport_height)
+        self._draw_replay_line(painter, model, state, transform, viewport_height)
+
+    def _draw_ai_lines(
+        self,
+        painter: QtGui.QPainter,
+        model: TrackPreviewModel,
+        state: TrackPreviewViewState,
+        transform: Transform,
+        viewport_height: int,
+    ) -> None:
+        if not model.visible_lp_files:
+            return
+        self._ensure_ai_line_cache(model, state)
+        pen_width = max(1, state.ai_line_width)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setTransform(surface_transform(transform, viewport_height))
+        for name in sorted(set(model.visible_lp_files)):
+            cache = self._ai_line_cache.get(name)
+            if cache is None or cache.polygon.isEmpty():
+                continue
+            if cache.segment_colors:
+                points = cache.polygon
+                for index, color in enumerate(cache.segment_colors):
+                    pen = QtGui.QPen(color, pen_width)
+                    pen.setCosmetic(True)
+                    painter.setPen(pen)
+                    painter.drawLine(QtCore.QLineF(points[index], points[index + 1]))
+                continue
+            pen = QtGui.QPen(cache.base_color, pen_width)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.drawPolyline(cache.polygon)
+        painter.restore()
+
+    def _draw_replay_line(
+        self,
+        painter: QtGui.QPainter,
+        model: TrackPreviewModel,
+        state: TrackPreviewViewState,
+        transform: Transform,
+        viewport_height: int,
+    ) -> None:
+        if not state.show_replay_line or not model.replay_lap_points:
+            return
+        self._ensure_replay_cache(model)
+        if self._replay_line_cache.isEmpty():
+            return
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("#00ffff"), 2)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.setTransform(surface_transform(transform, viewport_height))
+        painter.drawPolyline(self._replay_line_cache)
+        painter.restore()
+
+    def _ensure_ai_line_cache(
+        self, model: TrackPreviewModel, state: TrackPreviewViewState
+    ) -> None:
+        key = (
+            model.track_path,
+            model.ai_line_cache_generation,
+            state.ai_color_mode,
+            state.ai_acceleration_window,
+            state.ai_line_width,
+            tuple(sorted(state.lp_colors.items())),
+        )
+        if key == self._ai_line_cache_key:
+            return
+        self._ai_line_cache = {}
+        for lp_name in sorted(set(model.visible_lp_files)):
+            records = model.ai_line_records(lp_name)
+            cache = build_ai_line_cache(
+                records,
+                color=self._lp_color(state, lp_name),
+                gradient=state.ai_color_mode,
+                acceleration_window=state.ai_acceleration_window,
+            )
+            if cache is not None:
+                self._ai_line_cache[lp_name] = cache
+        self._ai_line_cache_key = key
+
+    def _ensure_replay_cache(self, model: TrackPreviewModel) -> None:
+        key = (model.track_path, model.replay_line_generation)
+        if key == self._replay_cache_key:
+            return
+        self._replay_line_cache = QtGui.QPolygonF(
+            [QtCore.QPointF(point.x, point.y) for point in model.replay_lap_points]
+        )
+        self._replay_cache_key = key
+
+    @staticmethod
+    def _lp_color(state: TrackPreviewViewState, name: str) -> str:
+        override = state.lp_colors.get(name)
+        if override:
+            return override
+        try:
+            index = LP_FILE_NAMES.index(name)
+        except ValueError:
+            return "#e53935"
+        return LP_COLORS[index % len(LP_COLORS)]
