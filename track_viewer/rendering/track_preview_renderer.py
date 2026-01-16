@@ -425,10 +425,14 @@ class TrackPreviewRenderer:
             "LP arrow-key editing active:",
             "UP - next LP record",
             "DOWN - previous LP record",
+            "D - next LP record",
+            "A - previous LP record",
             "PGUP - copy to next LP record",
             "PGDN - copy to previous LP record",
             f"LEFT - increase DLAT by {step_value}",
             f"RIGHT - decrease DLAT by {step_value}",
+            "W - increase speed by 1 mph",
+            "S - decrease speed by 1 mph",
             lp_index_text,
         ]
         max_width = max(metrics.horizontalAdvance(line) for line in lines)

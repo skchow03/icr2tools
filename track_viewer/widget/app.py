@@ -235,6 +235,20 @@ class LpRecordsModel(QtCore.QAbstractTableModel):
             end = self.index(len(self._records) - 1, 3)
             self.dataChanged.emit(start, end, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
+    def adjust_speed_mph(self, row: int, delta: float) -> bool:
+        if row < 0 or row >= len(self._records):
+            return False
+        record = self._records[row]
+        record.speed_mph = record.speed_mph + delta
+        record.speed_raw = int(round(record.speed_mph * self._SPEED_RAW_FACTOR))
+        index = self.index(row, 3)
+        if index.isValid():
+            self.dataChanged.emit(
+                index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+            )
+        self.recordEdited.emit(row)
+        return True
+
     def recalculate_lateral_speeds(self) -> bool:
         if len(self._records) < 3:
             return False
@@ -3108,6 +3122,10 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.Key_Right,
             QtCore.Qt.Key_PageUp,
             QtCore.Qt.Key_PageDown,
+            QtCore.Qt.Key_A,
+            QtCore.Qt.Key_D,
+            QtCore.Qt.Key_W,
+            QtCore.Qt.Key_S,
         }:
             return False
         if not self._can_handle_lp_shortcut(ignore_focus=ignore_focus):
@@ -3116,10 +3134,18 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
             return self._move_lp_record_selection(1)
         if key == QtCore.Qt.Key_Down:
             return self._move_lp_record_selection(-1)
+        if key == QtCore.Qt.Key_D:
+            return self._move_lp_record_selection(1)
+        if key == QtCore.Qt.Key_A:
+            return self._move_lp_record_selection(-1)
         if key == QtCore.Qt.Key_Left:
             return self._adjust_lp_record_dlat(self._lp_dlat_step.value())
         if key == QtCore.Qt.Key_Right:
             return self._adjust_lp_record_dlat(-self._lp_dlat_step.value())
+        if key == QtCore.Qt.Key_W:
+            return self._adjust_lp_record_speed(1)
+        if key == QtCore.Qt.Key_S:
+            return self._adjust_lp_record_speed(-1)
         if key == QtCore.Qt.Key_PageUp:
             return self._copy_lp_record_fields(1)
         if key == QtCore.Qt.Key_PageDown:
@@ -3206,6 +3232,13 @@ class TrackViewerWindow(QtWidgets.QMainWindow):
         except (TypeError, ValueError):
             return False
         return self._lp_records_model.setData(index, next_value, QtCore.Qt.EditRole)
+
+    def _adjust_lp_record_speed(self, delta: float) -> bool:
+        current = self._current_lp_selection()
+        if current is None:
+            return False
+        _, row = current
+        return self._lp_records_model.adjust_speed_mph(row, delta)
 
     def _copy_lp_record_fields(self, delta: int) -> bool:
         current = self._current_lp_selection()
