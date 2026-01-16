@@ -58,6 +58,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._weather_tab: QtWidgets.QWidget | None = None
         self._tire_tab: QtWidgets.QWidget | None = None
         self._replay_tab: QtWidgets.QWidget | None = None
+        self._closing = False
 
         self.setWindowTitle("ICR2 Track Viewer")
         self.resize(720, 480)
@@ -471,9 +472,13 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         QtWidgets.QApplication.instance().installEventFilter(self)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
+        if self._closing:
+            event.accept()
+            return
         if not self._confirm_discard_unsaved("close the app"):
             event.ignore()
             return
+        self._closing = True
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
