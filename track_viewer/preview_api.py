@@ -252,6 +252,9 @@ class TrackPreviewApi:
     def track_path(self) -> Optional[Path]:
         return self._coordinator.track_path()
 
+    def trk_file_path(self) -> Optional[Path]:
+        return self._coordinator.trk_file_path()
+
     def set_show_cameras(self, show: bool) -> None:
         self._coordinator.set_show_cameras(show)
 
@@ -321,6 +324,9 @@ class TrackPreviewApi:
 
     def load_track(self, track_folder: Path) -> None:
         self._coordinator.load_track(track_folder)
+
+    def load_trk_file(self, trk_path: Path) -> None:
+        self._coordinator.load_trk_file(trk_path)
 
     def save_cameras(self) -> tuple[bool, str]:
         return self._coordinator.save_cameras()
