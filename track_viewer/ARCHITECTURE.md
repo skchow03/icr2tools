@@ -6,7 +6,7 @@ This package is a standalone Qt-based viewer/editor for IndyCar Racing II (ICR2)
 - Editing camera positions (including TV modes / type 6 & 7 cameras), flag placement, and selected track.txt PIT parameters
 - Saving camera edits back to `.cam/.scr` and (when applicable) repacking to DAT
 
-Current package version: `0.1.1`. :contentReference[oaicite:1]{index=1}
+Current package version: `0.3.0`. :contentReference[oaicite:1]{index=1}
 
 ---
 
