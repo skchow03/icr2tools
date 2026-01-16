@@ -757,9 +757,24 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         tools_menu.addAction(self._trk_map_preview_action)
 
         help_menu = self.menuBar().addMenu("Help")
+        manual_action = QtWidgets.QAction("User Manual", self)
+        manual_action.triggered.connect(self._open_user_manual)
+        help_menu.addAction(manual_action)
+        help_menu.addSeparator()
         about_action = QtWidgets.QAction("About", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
+
+    def _open_user_manual(self) -> None:
+        manual_path = Path(__file__).resolve().parents[1] / "help" / "index.html"
+        if not manual_path.exists():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "User Manual Missing",
+                "Unable to locate the offline user manual.",
+            )
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(manual_path)))
 
     def _show_trk_data_window(self) -> None:
         if self._trk_data_window is None:
