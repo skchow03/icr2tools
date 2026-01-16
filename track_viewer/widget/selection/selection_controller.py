@@ -1,8 +1,11 @@
 """Selection and hit-testing logic for the track preview widget."""
 from __future__ import annotations
 
+import math
+
 from PyQt5 import QtCore
 
+from track_viewer import rendering
 from track_viewer.model.track_preview_model import TrackPreviewModel
 from track_viewer.model.view_state import TrackPreviewViewState
 from track_viewer.widget.interaction import InteractionCallbacks, PreviewIntent
