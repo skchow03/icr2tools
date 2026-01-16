@@ -43,6 +43,7 @@ class PreviewCoordinator:
         selected_flag_changed: Callable[[tuple[float, float] | None], None],
         cameras_changed: Callable[[list, list], None],
         selected_camera_changed: Callable[[int | None, CameraPosition | None], None],
+        camera_position_changed: Callable[[int], None],
         active_lp_line_changed: Callable[[str], None],
         ai_line_loaded: Callable[[str], None],
         lp_record_selected: Callable[[str, int], None],
@@ -55,6 +56,7 @@ class PreviewCoordinator:
         self._emit_selected_flag_changed = selected_flag_changed
         self._emit_cameras_changed = cameras_changed
         self._emit_selected_camera_changed = selected_camera_changed
+        self._emit_camera_position_changed = camera_position_changed
         self._emit_active_lp_line_changed = active_lp_line_changed
         self._emit_ai_line_loaded = ai_line_loaded
         self._emit_lp_record_selected = lp_record_selected
@@ -74,6 +76,7 @@ class PreviewCoordinator:
             cursor_position_changed=self._emit_cursor_position_changed,
             selected_flag_changed=self._emit_selected_flag_changed,
             selected_camera_changed=self._emit_selected_camera_changed,
+            camera_position_changed=self._emit_camera_position_changed,
             lp_record_selected=self._emit_lp_record_selected,
             diagram_clicked=self._emit_diagram_clicked,
             weather_heading_adjust_changed=self._emit_weather_heading_adjust_changed,

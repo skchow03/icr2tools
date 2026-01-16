@@ -26,6 +26,7 @@ class InteractionCallbacks:
     cursor_position_changed: Callable[[tuple[float, float] | None], None]
     selected_flag_changed: Callable[[tuple[float, float] | None], None]
     selected_camera_changed: Callable[[int | None, CameraPosition | None], None]
+    camera_position_changed: Callable[[int], None]
     lp_record_selected: Callable[[str, int], None]
     diagram_clicked: Callable[[], None]
     weather_heading_adjust_changed: Callable[[str, int], None]
