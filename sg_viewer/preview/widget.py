@@ -1114,6 +1114,21 @@ class SGPreviewWidget(QtWidgets.QWidget):
         track_length = float(self._track_length) if self._track_length is not None else None
         return list(self._section_manager.sections), track_length
 
+    def get_surface_preview_data(
+        self,
+    ) -> tuple[
+        TRKFile | None,
+        list[Point] | None,
+        list[Point],
+        tuple[float, float, float, float] | None,
+    ]:
+        return (
+            self._trk,
+            list(self._cline) if self._cline is not None else None,
+            list(self._sampled_centerline),
+            self._sampled_bounds,
+        )
+
     def track_length_message(self) -> str:
         sections = self._section_manager.sections
         if not sections or not is_closed_loop(sections):

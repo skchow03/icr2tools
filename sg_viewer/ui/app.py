@@ -6,6 +6,7 @@ from PyQt5 import QtWidgets
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
+from sg_viewer.ui.features_preview_widget import FeaturesPreviewWidget
 from sg_viewer.ui.preview_widget import SGPreviewWidget
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
@@ -46,6 +47,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview: PreviewContext = SGPreviewWidget(
             show_status=self.show_status_message
         )
+        self._features_preview = FeaturesPreviewWidget()
         self._sidebar = QtWidgets.QWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
@@ -159,18 +161,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
         preview_column.setLayout(preview_column_layout)
 
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(preview_column, stretch=1)
-        layout.addWidget(self._sidebar)
-        container.setLayout(layout)
-        self.setCentralWidget(container)
+        geometry_container = QtWidgets.QWidget()
+        geometry_layout = QtWidgets.QHBoxLayout()
+        geometry_layout.addWidget(preview_column, stretch=1)
+        geometry_layout.addWidget(self._sidebar)
+        geometry_container.setLayout(geometry_layout)
+
+        features_container = QtWidgets.QWidget()
+        features_layout = QtWidgets.QVBoxLayout()
+        features_layout.addWidget(self._features_preview)
+        features_container.setLayout(features_layout)
+
+        tabs = QtWidgets.QTabWidget()
+        tabs.addTab(geometry_container, "Geometry")
+        tabs.addTab(features_container, "Features")
+        self.setCentralWidget(tabs)
 
         self.controller = SGViewerController(self)
+        self.refresh_features_preview()
 
     @property
     def preview(self) -> PreviewContext:
         return self._preview
+
+    @property
+    def features_preview(self) -> FeaturesPreviewWidget:
+        return self._features_preview
 
     @property
     def prev_button(self) -> QtWidgets.QPushButton:
@@ -227,6 +243,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
+
+    def refresh_features_preview(self) -> None:
+        trk, cline, sampled_centerline, sampled_bounds = (
+            self._preview.get_surface_preview_data()
+        )
+        self._features_preview.set_surface_data(
+            trk, cline, sampled_centerline, sampled_bounds
+        )
 
     def show_status_message(self, message: str) -> None:
         self._preview.set_status_text(message)
