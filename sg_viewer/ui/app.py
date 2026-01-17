@@ -126,7 +126,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_next_button = QtWidgets.QPushButton("Next")
         self._features_fsect_table = QtWidgets.QTableWidget(10, 4)
         self._features_fsect_table.setHorizontalHeaderLabels(
-            ["Type", "Description", "Start DLAT", "End DLAT"]
+            ["Type", "Subtype", "Start DLAT", "End DLAT"]
         )
         self._features_fsect_table.verticalHeader().setVisible(True)
         self._features_fsect_table.setEditTriggers(
@@ -141,10 +141,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.SelectItems
         )
         self._features_fsect_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.Stretch
+            QtWidgets.QHeaderView.ResizeToContents
         )
         self._features_fsect_table.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAlwaysOff
+            QtCore.Qt.ScrollBarAsNeeded
         )
         self._features_fsect_table.itemChanged.connect(
             self._on_features_fsect_item_changed
@@ -153,6 +153,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_prev_button.setEnabled(False)
         self._features_next_button.setEnabled(False)
         self._is_updating_fsect_table = False
+        self._surface_subtype_options = [
+            (0, "Grass"),
+            (1, "Dry grass"),
+            (2, "Dirt"),
+            (3, "Sand"),
+            (4, "Concrete"),
+            (5, "Asphalt"),
+            (6, "Paint (Curbing)"),
+        ]
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -472,6 +481,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         index: int
         section_index: int
         start_value: Optional[float]
+        subtype_value: Optional[int] = None
 
     def _build_fsect_rows(
         self, trk: object, sgfile: object, section_index: int
@@ -525,13 +535,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         for idx in range(getattr(sect, "ground_fsects", 0)):
             ground_type = "–"
+            ground_value: Optional[int] = None
             if sg_sect is not None and idx < len(sg_sect.ground_ftype):
-                ground_type = self._format_sg_fsect_description(sg_sect.ground_ftype[idx])
+                ground_value = sg_sect.ground_ftype[idx]
+                ground_type = self._format_sg_fsect_description(ground_value)
             elif idx < len(sect.ground_type):
-                ground_type = str(sect.ground_type[idx])
+                ground_value = int(sect.ground_type[idx])
+                ground_type = self._format_sg_fsect_description(ground_value)
             start = sect.ground_dlat_start[idx] if idx < len(sect.ground_dlat_start) else "–"
             end = sect.ground_dlat_end[idx] if idx < len(sect.ground_dlat_end) else "–"
-            _append_row("surface", idx, start, end, "Surface", str(ground_type))
+            row = SGViewerWindow._FsectRow(
+                fsect_type="Surface",
+                description=str(ground_type),
+                start=_format_value(start),
+                end=_format_value(end),
+                kind="surface",
+                index=idx,
+                section_index=section_index,
+                start_value=_parse_value(start),
+                subtype_value=ground_value,
+            )
+            rows.append(row)
         for idx in range(getattr(sect, "num_bounds", 0)):
             bound_type = "–"
             if sg_sect is not None and idx < len(sg_sect.bound_ftype1):
@@ -589,14 +613,44 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     values = ("–", "–", "–", "–")
                     metadata = None
                 for col_index, value in enumerate(values):
+                    if col_index == 1:
+                        self._features_fsect_table.setCellWidget(row_index, col_index, None)
                     item = QtWidgets.QTableWidgetItem(value)
                     if metadata is not None:
                         item.setData(QtCore.Qt.UserRole, metadata)
                     if metadata is None or col_index in (0, 1):
                         item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                     self._features_fsect_table.setItem(row_index, col_index, item)
+                if metadata is not None and row.kind == "surface":
+                    combo = QtWidgets.QComboBox()
+                    combo.addItem("–", None)
+                    for subtype_value, subtype_name in self._surface_subtype_options:
+                        combo.addItem(f"{subtype_value} {subtype_name}", subtype_value)
+                    if row.subtype_value is not None:
+                        combo_index = combo.findData(row.subtype_value)
+                        if combo_index >= 0:
+                            combo.setCurrentIndex(combo_index)
+                    else:
+                        combo.setCurrentIndex(0)
+                    combo.setProperty("fsect_metadata", metadata)
+                    combo.currentIndexChanged.connect(
+                        self._on_features_fsect_subtype_changed
+                    )
+                    self._features_fsect_table.setCellWidget(row_index, 1, combo)
         finally:
             self._is_updating_fsect_table = False
+        self._resize_features_fsect_table()
+
+    def _resize_features_fsect_table(self) -> None:
+        header = self._features_fsect_table.horizontalHeader()
+        self._features_fsect_table.resizeColumnsToContents()
+        total_width = (
+            self._features_fsect_table.verticalHeader().width()
+            + header.length()
+            + self._features_fsect_table.frameWidth() * 2
+        )
+        self._features_fsect_table.setMinimumWidth(total_width)
+        self._features_sidebar.setMinimumWidth(total_width + 24)
 
     def _on_features_fsect_item_changed(
         self, item: QtWidgets.QTableWidgetItem
@@ -633,6 +687,33 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._restore_fsect_row(metadata)
             return
 
+        self.refresh_features_preview()
+        if self._current_selection is not None:
+            self.update_features_sidebar(self._current_selection)
+
+    def _on_features_fsect_subtype_changed(self, _: int) -> None:
+        if self._is_updating_fsect_table:
+            return
+        combo = self.sender()
+        if not isinstance(combo, QtWidgets.QComboBox):
+            return
+        metadata = combo.property("fsect_metadata")
+        if not metadata or metadata.get("kind") != "surface":
+            return
+        subtype_value = combo.currentData()
+        if subtype_value is None:
+            return
+        updated = self._preview.update_fsect_subtype(
+            metadata["section"],
+            metadata["kind"],
+            metadata["index"],
+            int(subtype_value),
+        )
+        if not updated:
+            self.show_status_message("Unable to update fsect subtype.")
+            if self._current_selection is not None:
+                self.update_features_sidebar(self._current_selection)
+            return
         self.refresh_features_preview()
         if self._current_selection is not None:
             self.update_features_sidebar(self._current_selection)

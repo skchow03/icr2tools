@@ -1214,6 +1214,33 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._has_unsaved_changes = True
         return True
 
+    def update_fsect_subtype(
+        self,
+        section_index: int,
+        kind: str,
+        fsect_index: int,
+        subtype: int,
+    ) -> bool:
+        if self._trk is None:
+            return False
+        if section_index < 0 or section_index >= len(self._trk.sects):
+            return False
+        if kind != "surface":
+            return False
+
+        sect = self._trk.sects[section_index]
+        if fsect_index >= len(sect.ground_type):
+            return False
+        sect.ground_type[fsect_index] = subtype
+
+        if self._sgfile is not None and section_index < len(self._sgfile.sects):
+            self._update_sg_fsect_subtype(
+                self._sgfile.sects[section_index], fsect_index, subtype
+            )
+
+        self._has_unsaved_changes = True
+        return True
+
     @staticmethod
     def _update_sg_fsect_dlat(
         section: SGFile.Section,
@@ -1248,6 +1275,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
                         section.fend[idx] = end
                         break
                     count += 1
+
+    @staticmethod
+    def _update_sg_fsect_subtype(
+        section: SGFile.Section,
+        fsect_index: int,
+        subtype: int,
+    ) -> None:
+        ground_types = set(range(0, 7))
+        if fsect_index < len(section.ground_ftype):
+            section.ground_ftype[fsect_index] = subtype
+        count = 0
+        for idx, ftype1 in enumerate(section.ftype1):
+            if ftype1 in ground_types:
+                if count == fsect_index:
+                    section.ftype1[idx] = subtype
+                    if idx < len(section.ftype2):
+                        section.ftype2[idx] = 0
+                    break
+                count += 1
 
     def track_length_message(self) -> str:
         sections = self._section_manager.sections
