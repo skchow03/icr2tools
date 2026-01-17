@@ -174,9 +174,21 @@ class SGViewerController:
         self._window.preview.selectedSectionChanged.connect(
             self._window.update_selection_sidebar
         )
+        self._window.preview.selectedSectionChanged.connect(
+            self._window.update_features_sidebar
+        )
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
         self._window.next_button.clicked.connect(self._window.preview.select_next_section)
+        self._window.features_prev_button.clicked.connect(
+            self._window.preview.select_previous_section
+        )
+        self._window.features_next_button.clicked.connect(
+            self._window.preview.select_next_section
+        )
+        self._window.features_section_combo.currentIndexChanged.connect(
+            self._on_features_section_changed
+        )
         #self._window.new_track_button.clicked.connect(self._start_new_track)
         self._window.new_straight_button.clicked.connect(self._start_new_straight)
         self._window.new_curve_button.clicked.connect(self._start_new_curve)
@@ -203,6 +215,12 @@ class SGViewerController:
             self._refresh_elevation_profile
         )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
+
+    def _on_features_section_changed(self, index: int) -> None:
+        section_index = self._window.features_section_combo.currentData()
+        if section_index is None:
+            return
+        self._window.preview.select_section(int(section_index))
 
     def _should_confirm_reset(self) -> bool:
         sections, _ = self._window.preview.get_section_set()
