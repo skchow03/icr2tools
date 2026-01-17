@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+from dataclasses import replace
 from typing import Callable, Tuple
 
 from track_viewer.geometry import CenterlineIndex
@@ -60,12 +62,10 @@ class PreviewSectionManager:
         previous_signatures = self.section_signatures
 
         new_sections: list[SectionPreview] = []
-        new_signatures: list[tuple] = []
         changed_indices: list[int] = []
 
         for idx, sect in enumerate(sections):
             signature = section_signature(sect)
-            new_signatures.append(signature)
             prev_signature = (
                 previous_signatures[idx] if idx < len(previous_signatures) else None
             )
@@ -84,7 +84,6 @@ class PreviewSectionManager:
         needs_rebuild = length_changed or bool(changed_indices)
 
         self.sections = new_sections
-        self.section_signatures = new_signatures
         self.section_endpoints = [(sect.start, sect.end) for sect in self.sections]
 
         if needs_rebuild:
@@ -96,5 +95,29 @@ class PreviewSectionManager:
             self.sampled_dlongs = dlongs
             self.sampled_bounds = self._combine_bounds_with_background(bounds)
             self.centerline_index = index
+            self.sections = self._rebuild_start_dlongs(self.sections)
+
+        self.section_signatures = compute_section_signatures(self.sections)
 
         return needs_rebuild
+
+    @staticmethod
+    def _rebuild_start_dlongs(sections: list[SectionPreview]) -> list[SectionPreview]:
+        cursor = 0.0
+        updated_sections: list[SectionPreview] = []
+        for section in sections:
+            length = PreviewSectionManager._polyline_length(section)
+            updated_sections.append(
+                replace(section, start_dlong=cursor, length=length)
+            )
+            cursor += float(length)
+        return updated_sections
+
+    @staticmethod
+    def _polyline_length(section: SectionPreview) -> float:
+        if not section.polyline or len(section.polyline) < 2:
+            return float(section.length)
+        total = 0.0
+        for start, end in zip(section.polyline, section.polyline[1:]):
+            total += math.hypot(end[0] - start[0], end[1] - start[1])
+        return total
