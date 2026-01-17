@@ -39,6 +39,9 @@ class SGViewerController:
         self._create_menus()
         self._connect_signals()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
+        self._window.preview.sectionsChanged.connect(
+            self._window.refresh_features_preview
+        )
         self._refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.show_status_message(
@@ -83,6 +86,7 @@ class SGViewerController:
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
         self._update_track_length_display()
+        self._window.refresh_features_preview()
 
 
     def _create_actions(self) -> None:
@@ -364,6 +368,7 @@ class SGViewerController:
             is_untitled=True,
         )
         self._update_track_length_display()
+        self._window.refresh_features_preview()
 
 
 
