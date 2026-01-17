@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-import tempfile
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable, List, Tuple
@@ -1296,10 +1295,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir) / "preview.sg"
-                sgfile.output_sg(str(temp_path))
-                trk = TRKFile.from_sg(str(temp_path))
+            trk = TRKFile.from_sgfile(sgfile)
         except Exception:  # pragma: no cover - fallback for failed rebuilds
             logger.exception("Failed to rebuild TRK data from preview geometry")
             self._trk = None
