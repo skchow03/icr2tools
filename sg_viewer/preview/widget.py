@@ -1503,10 +1503,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         for ground_idx, pos in enumerate(ground_positions):
             start = section.ground_fstart[ground_idx]
             end = section.ground_fend[ground_idx]
-            key = max(start, end)
             entries.append(
                 {
-                    "key": key,
                     "ground_type": int(section.ground_ftype[ground_idx]),
                     "ground_start": int(start),
                     "ground_end": int(end),
@@ -1516,8 +1514,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
                     "fend": int(section.fend[pos]),
                 }
             )
-
-        entries.sort(key=lambda entry: entry["key"], reverse=True)
 
         section.ground_ftype = [entry["ground_type"] for entry in entries]
         section.ground_fstart = [entry["ground_start"] for entry in entries]
