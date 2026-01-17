@@ -115,6 +115,12 @@ class SGViewerController:
         self._scale_track_action.setEnabled(False)
         self._scale_track_action.triggered.connect(self._scale_track)
 
+        self._convert_trk_action = QtWidgets.QAction(
+            "Convert SG to TRK…",
+            self._window,
+        )
+        self._convert_trk_action.triggered.connect(self._convert_sg_to_trk)
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -158,6 +164,7 @@ class SGViewerController:
         tools_menu = self._window.menuBar().addMenu("Tools")
         tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
+        tools_menu.addAction(self._convert_trk_action)
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -449,6 +456,82 @@ class SGViewerController:
         self._window.show_status_message(
             f"Saved {sg_path} and exported CSVs next to it"
         )
+
+    def _convert_sg_to_trk(self) -> None:
+        sg_path = self._ensure_saved_sg()
+        if sg_path is None:
+            return
+
+        default_output = sg_path.with_suffix(".trk")
+        options = QtWidgets.QFileDialog.Options()
+        output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Save TRK As",
+            str(default_output),
+            "TRK files (*.trk *.TRK);;All files (*)",
+            options=options,
+        )
+        if not output_path:
+            return
+
+        trk_path = Path(output_path)
+        if trk_path.suffix.lower() != ".trk":
+            trk_path = trk_path.with_suffix(".trk")
+
+        sg2trk_path = (
+            Path(__file__).resolve().parents[2] / "icr2_core" / "trk" / "sg2trk.py"
+        )
+
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(sg2trk_path),
+                    str(sg_path),
+                    "--format",
+                    "trk",
+                    "--output",
+                    str(trk_path.with_suffix("")),
+                ],
+                cwd=sg2trk_path.parent,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:  # pragma: no cover - UI feedback only
+            error_output = exc.stderr or exc.stdout or str(exc)
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "TRK Export Failed",
+                f"SG saved but TRK export failed:\n{error_output}",
+            )
+            logger.exception("Failed to convert SG to TRK")
+            return
+
+        if trk_path.exists():
+            self._window.show_status_message(f"Saved TRK to {trk_path}")
+        else:
+            self._window.show_status_message("TRK export completed.")
+
+    def _ensure_saved_sg(self) -> Path | None:
+        if self._window.preview.sgfile is None:
+            QtWidgets.QMessageBox.information(
+                self._window, "No SG Loaded", "Load an SG file before exporting."
+            )
+            return None
+
+        if self._current_path is None or self._window.preview.has_unsaved_changes:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Save Required",
+                "Save the SG file before converting to TRK.",
+            )
+            self._save_file_dialog()
+
+        if self._current_path is None or self._window.preview.has_unsaved_changes:
+            return None
+
+        return self._current_path
 
     def _start_new_straight(self) -> None:
         self._window.delete_section_button.setChecked(False)
