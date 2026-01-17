@@ -82,7 +82,7 @@ class SectionSurfaceWidget(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
         center_x = _map(0.0, start_dlong).x()
-        painter.setPen(QtGui.QPen(QtGui.QColor(90, 90, 90), 1, QtCore.Qt.DashLine))
+        painter.setPen(QtGui.QPen(QtGui.QColor(90, 90, 90), 1, QtCore.Qt.DotLine))
         painter.drawLine(
             QtCore.QPointF(center_x, content.top()),
             QtCore.QPointF(center_x, content.bottom()),

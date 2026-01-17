@@ -1179,6 +1179,76 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_bounds,
         )
 
+    def update_fsect_dlat(
+        self,
+        section_index: int,
+        kind: str,
+        fsect_index: int,
+        start: int,
+        end: int,
+    ) -> bool:
+        if self._trk is None:
+            return False
+        if section_index < 0 or section_index >= len(self._trk.sects):
+            return False
+
+        sect = self._trk.sects[section_index]
+        if kind == "surface":
+            if fsect_index >= len(sect.ground_dlat_start):
+                return False
+            sect.ground_dlat_start[fsect_index] = start
+            sect.ground_dlat_end[fsect_index] = end
+        elif kind == "boundary":
+            if fsect_index >= len(sect.bound_dlat_start):
+                return False
+            sect.bound_dlat_start[fsect_index] = start
+            sect.bound_dlat_end[fsect_index] = end
+        else:
+            return False
+
+        if self._sgfile is not None and section_index < len(self._sgfile.sects):
+            self._update_sg_fsect_dlat(
+                self._sgfile.sects[section_index], kind, fsect_index, start, end
+            )
+
+        self._has_unsaved_changes = True
+        return True
+
+    @staticmethod
+    def _update_sg_fsect_dlat(
+        section: SGFile.Section,
+        kind: str,
+        fsect_index: int,
+        start: int,
+        end: int,
+    ) -> None:
+        ground_types = set(range(0, 7))
+
+        if kind == "surface":
+            if fsect_index < len(section.ground_fstart):
+                section.ground_fstart[fsect_index] = start
+                section.ground_fend[fsect_index] = end
+            count = 0
+            for idx, ftype1 in enumerate(section.ftype1):
+                if ftype1 in ground_types:
+                    if count == fsect_index:
+                        section.fstart[idx] = start
+                        section.fend[idx] = end
+                        break
+                    count += 1
+        elif kind == "boundary":
+            if fsect_index < len(section.bound_fstart):
+                section.bound_fstart[fsect_index] = start
+                section.bound_fend[fsect_index] = end
+            count = 0
+            for idx, ftype1 in enumerate(section.ftype1):
+                if ftype1 not in ground_types:
+                    if count == fsect_index:
+                        section.fstart[idx] = start
+                        section.fend[idx] = end
+                        break
+                    count += 1
+
     def track_length_message(self) -> str:
         sections = self._section_manager.sections
         if not sections or not is_closed_loop(sections):
