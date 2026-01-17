@@ -1271,6 +1271,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         sg_section = self._sgfile.sects[section_index]
         if not self._remove_sg_fsect(sg_section, kind, fsect_index):
             return False
+        if kind == "surface":
+            self._reorder_surface_fsects(sg_section)
 
         self._has_unsaved_changes = True
         self._rebuild_trk_from_preview()
@@ -1291,6 +1293,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return False
         if not self._insert_sg_fsect(sg_section, kind, fsect_index):
             return False
+        if kind == "surface":
+            self._reorder_surface_fsects(sg_section)
 
         self._has_unsaved_changes = True
         self._rebuild_trk_from_preview()
@@ -1473,6 +1477,58 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return False
 
         return True
+
+    @staticmethod
+    def _reorder_surface_fsects(section: SGFile.Section) -> None:
+        ground_types = set(range(0, 7))
+        ground_positions: list[int] = []
+        for idx, ftype1 in enumerate(section.ftype1):
+            if ftype1 in ground_types:
+                ground_positions.append(idx)
+
+        if not ground_positions:
+            return
+
+        if (
+            len(section.ground_fstart) < len(ground_positions)
+            or len(section.ground_fend) < len(ground_positions)
+            or len(section.ground_ftype) < len(ground_positions)
+            or len(section.ftype2) < len(section.ftype1)
+            or len(section.fstart) < len(section.ftype1)
+            or len(section.fend) < len(section.ftype1)
+        ):
+            return
+
+        entries: list[dict[str, float | int]] = []
+        for ground_idx, pos in enumerate(ground_positions):
+            start = section.ground_fstart[ground_idx]
+            end = section.ground_fend[ground_idx]
+            key = max(start, end)
+            entries.append(
+                {
+                    "key": key,
+                    "ground_type": int(section.ground_ftype[ground_idx]),
+                    "ground_start": int(start),
+                    "ground_end": int(end),
+                    "ftype1": int(section.ftype1[pos]),
+                    "ftype2": int(section.ftype2[pos]),
+                    "fstart": int(section.fstart[pos]),
+                    "fend": int(section.fend[pos]),
+                }
+            )
+
+        entries.sort(key=lambda entry: entry["key"], reverse=True)
+
+        section.ground_ftype = [entry["ground_type"] for entry in entries]
+        section.ground_fstart = [entry["ground_start"] for entry in entries]
+        section.ground_fend = [entry["ground_end"] for entry in entries]
+
+        for idx, pos in enumerate(ground_positions):
+            entry = entries[idx]
+            section.ftype1[pos] = int(entry["ftype1"])
+            section.ftype2[pos] = int(entry["ftype2"])
+            section.fstart[pos] = int(entry["fstart"])
+            section.fend[pos] = int(entry["fend"])
 
     def track_length_message(self) -> str:
         sections = self._section_manager.sections
