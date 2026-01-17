@@ -126,7 +126,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_next_button = QtWidgets.QPushButton("Next")
         self._features_fsect_table = QtWidgets.QTableWidget(10, 4)
         self._features_fsect_table.setHorizontalHeaderLabels(
-            ["Type", "Description", "Start DLAT", "End DLAT"]
+            ["Type", "Subtype", "Start DLAT", "End DLAT"]
         )
         self._features_fsect_table.verticalHeader().setVisible(True)
         self._features_fsect_table.setEditTriggers(
@@ -149,9 +149,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_fsect_table.itemChanged.connect(
             self._on_features_fsect_item_changed
         )
+        self._features_fsect_table.currentItemChanged.connect(
+            self._on_features_fsect_selection_changed
+        )
         self._features_section_combo.setEnabled(False)
         self._features_prev_button.setEnabled(False)
         self._features_next_button.setEnabled(False)
+        self._features_delete_fsect_button = QtWidgets.QPushButton("Delete")
+        self._features_delete_fsect_button.setEnabled(False)
+        self._features_delete_fsect_button.clicked.connect(
+            self._on_features_delete_fsect_clicked
+        )
+        self._features_insert_fsect_button = QtWidgets.QPushButton("Insert")
+        self._features_insert_fsect_button.setEnabled(False)
+        self._features_insert_fsect_button.clicked.connect(
+            self._on_features_insert_fsect_clicked
+        )
         self._is_updating_fsect_table = False
 
         sidebar_layout = QtWidgets.QVBoxLayout()
@@ -218,6 +231,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         features_sidebar_layout.addLayout(features_section_controls)
         features_sidebar_layout.addLayout(features_nav_controls)
         features_sidebar_layout.addWidget(self._features_fsect_table)
+        features_fsect_controls = QtWidgets.QHBoxLayout()
+        features_fsect_controls.addWidget(self._features_insert_fsect_button)
+        features_fsect_controls.addWidget(self._features_delete_fsect_button)
+        features_sidebar_layout.addLayout(features_fsect_controls)
         features_sidebar_layout.addStretch()
         self._features_sidebar.setLayout(features_sidebar_layout)
 
@@ -468,6 +485,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         description: str
         start: str
         end: str
+        subtype_value: Optional[int]
         kind: str
         index: int
         section_index: int
@@ -509,6 +527,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             end: object,
             fsect_type: str,
             description: str,
+            subtype_value: Optional[int],
         ) -> None:
             rows.append(
                 SGViewerWindow._FsectRow(
@@ -516,6 +535,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     description=description,
                     start=_format_value(start),
                     end=_format_value(end),
+                    subtype_value=subtype_value,
                     kind=kind,
                     index=idx,
                     section_index=section_index,
@@ -525,22 +545,44 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         for idx in range(getattr(sect, "ground_fsects", 0)):
             ground_type = "–"
+            ground_type_value = None
             if sg_sect is not None and idx < len(sg_sect.ground_ftype):
-                ground_type = self._format_sg_fsect_description(sg_sect.ground_ftype[idx])
+                ground_type_value = int(sg_sect.ground_ftype[idx])
+                ground_type = self._format_sg_fsect_description(ground_type_value)
             elif idx < len(sect.ground_type):
-                ground_type = str(sect.ground_type[idx])
+                ground_type_value = int(sect.ground_type[idx])
+                ground_type = str(ground_type_value)
             start = sect.ground_dlat_start[idx] if idx < len(sect.ground_dlat_start) else "–"
             end = sect.ground_dlat_end[idx] if idx < len(sect.ground_dlat_end) else "–"
-            _append_row("surface", idx, start, end, "Surface", str(ground_type))
+            _append_row(
+                "surface",
+                idx,
+                start,
+                end,
+                "Surface",
+                str(ground_type),
+                ground_type_value,
+            )
         for idx in range(getattr(sect, "num_bounds", 0)):
             bound_type = "–"
+            bound_type_value = None
             if sg_sect is not None and idx < len(sg_sect.bound_ftype1):
-                bound_type = self._format_sg_fsect_description(sg_sect.bound_ftype1[idx])
+                bound_type_value = int(sg_sect.bound_ftype1[idx])
+                bound_type = self._format_sg_fsect_description(bound_type_value)
             elif idx < len(sect.bound_type):
-                bound_type = str(sect.bound_type[idx])
+                bound_type_value = int(sect.bound_type[idx])
+                bound_type = str(bound_type_value)
             start = sect.bound_dlat_start[idx] if idx < len(sect.bound_dlat_start) else "–"
             end = sect.bound_dlat_end[idx] if idx < len(sect.bound_dlat_end) else "–"
-            _append_row("boundary", idx, start, end, "Wall", str(bound_type))
+            _append_row(
+                "boundary",
+                idx,
+                start,
+                end,
+                "Wall",
+                str(bound_type),
+                bound_type_value,
+            )
 
         rows.sort(
             key=lambda row: (row.start_value is None, -(row.start_value or 0.0))
@@ -577,6 +619,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._is_updating_fsect_table = True
         try:
             for row_index in range(10):
+                self._features_fsect_table.setCellWidget(row_index, 1, None)
                 if row_index < len(rows):
                     row = rows[row_index]
                     values = (row.fsect_type, row.description, row.start, row.end)
@@ -595,8 +638,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     if metadata is None or col_index in (0, 1):
                         item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                     self._features_fsect_table.setItem(row_index, col_index, item)
+                    if col_index == 1 and metadata is not None:
+                        combo = self._build_fsect_subtype_combo(row, metadata)
+                        self._features_fsect_table.setCellWidget(row_index, col_index, combo)
         finally:
             self._is_updating_fsect_table = False
+        self._update_features_fsect_action_buttons()
+
+    def _build_fsect_subtype_combo(
+        self, row: _FsectRow, metadata: dict
+    ) -> QtWidgets.QComboBox:
+        combo = QtWidgets.QComboBox()
+        for value, label in self._fsect_subtype_options(row.kind):
+            combo.addItem(label, value)
+        if row.subtype_value is not None:
+            index = combo.findData(row.subtype_value)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+        combo.setProperty("metadata", metadata)
+        combo.currentIndexChanged.connect(
+            lambda _: self._on_features_fsect_subtype_changed(combo)
+        )
+        return combo
+
+    @staticmethod
+    def _fsect_subtype_options(kind: str) -> list[tuple[int, str]]:
+        labels = {
+            0: "Grass",
+            1: "Dry grass",
+            2: "Dirt",
+            3: "Sand",
+            4: "Concrete",
+            5: "Asphalt",
+            6: "Paint (Curbing)",
+            7: "Wall",
+            8: "Armco",
+        }
+        if kind == "surface":
+            keys = range(0, 7)
+        else:
+            keys = range(7, 9)
+        return [(key, f"{key} {labels[key]}") for key in keys]
 
     def _on_features_fsect_item_changed(
         self, item: QtWidgets.QTableWidgetItem
@@ -620,6 +702,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self.show_status_message("Fsect values must be numeric.")
             self._restore_fsect_row(metadata)
             return
+        if not self._validate_fsect_dlat_bounds(item.row(), 2, start_value):
+            self.show_status_message(
+                "Start DLAT must be between the values above and below."
+            )
+            self._restore_fsect_row(metadata)
+            return
+        if not self._validate_fsect_dlat_bounds(item.row(), 3, end_value):
+            self.show_status_message(
+                "End DLAT must be between the values above and below."
+            )
+            self._restore_fsect_row(metadata)
+            return
 
         updated = self._preview.update_fsect_dlat(
             metadata["section"],
@@ -633,6 +727,48 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._restore_fsect_row(metadata)
             return
 
+        self.refresh_features_preview()
+        if self._current_selection is not None:
+            self.update_features_sidebar(self._current_selection)
+
+    def _validate_fsect_dlat_bounds(self, row: int, column: int, value: int) -> bool:
+        above = None
+        below = None
+        if row > 0:
+            above_item = self._features_fsect_table.item(row - 1, column)
+            if above_item is not None:
+                above = self._parse_fsect_value(above_item.text())
+        if row < self._features_fsect_table.rowCount() - 1:
+            below_item = self._features_fsect_table.item(row + 1, column)
+            if below_item is not None:
+                below = self._parse_fsect_value(below_item.text())
+        if above is not None and value > above:
+            return False
+        if below is not None and value < below:
+            return False
+        return True
+
+    def _on_features_fsect_subtype_changed(self, combo: QtWidgets.QComboBox) -> None:
+        if self._is_updating_fsect_table:
+            return
+        metadata = combo.property("metadata")
+        if not metadata:
+            return
+        subtype_value = combo.currentData()
+        if subtype_value is None:
+            return
+        updated = self._preview.update_fsect_type(
+            metadata["section"],
+            metadata["kind"],
+            metadata["index"],
+            int(subtype_value),
+        )
+        if not updated:
+            self.show_status_message("Unable to update fsect subtype.")
+            self.refresh_features_preview()
+            if self._current_selection is not None:
+                self.update_features_sidebar(self._current_selection)
+            return
         self.refresh_features_preview()
         if self._current_selection is not None:
             self.update_features_sidebar(self._current_selection)
@@ -693,6 +829,76 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 int(sect.bound_dlat_end[fsect_index]),
             )
         return None
+
+    def _on_features_fsect_selection_changed(
+        self,
+        current: QtWidgets.QTableWidgetItem | None,
+        previous: QtWidgets.QTableWidgetItem | None,
+    ) -> None:
+        del previous
+        if current is None:
+            self._update_features_fsect_action_buttons()
+            return
+        self._update_features_fsect_action_buttons()
+
+    def _current_fsect_metadata(self) -> Optional[dict]:
+        current = self._features_fsect_table.currentItem()
+        if current is None:
+            return None
+        item = self._features_fsect_table.item(current.row(), 2)
+        if item is None:
+            return None
+        metadata = item.data(QtCore.Qt.UserRole)
+        if not metadata:
+            return None
+        return metadata
+
+    def _update_features_fsect_action_buttons(self) -> None:
+        metadata = self._current_fsect_metadata()
+        can_act = metadata is not None
+        self._features_delete_fsect_button.setEnabled(can_act)
+        if not can_act:
+            self._features_insert_fsect_button.setEnabled(False)
+            return
+        total_fsects = self._preview.get_fsect_count(metadata["section"])
+        self._features_insert_fsect_button.setEnabled(total_fsects < 10)
+
+    def _on_features_delete_fsect_clicked(self) -> None:
+        metadata = self._current_fsect_metadata()
+        if not metadata:
+            return
+        updated = self._preview.delete_fsect(
+            metadata["section"],
+            metadata["kind"],
+            metadata["index"],
+        )
+        if not updated:
+            self.show_status_message("Unable to delete fsect.")
+            return
+        self.refresh_features_preview()
+        if self._current_selection is not None:
+            self.update_features_sidebar(self._current_selection)
+
+    def _on_features_insert_fsect_clicked(self) -> None:
+        metadata = self._current_fsect_metadata()
+        if not metadata:
+            return
+        total_fsects = self._preview.get_fsect_count(metadata["section"])
+        if total_fsects >= 10:
+            self.show_status_message("Fsect count cannot exceed 10.")
+            self._update_features_fsect_action_buttons()
+            return
+        updated = self._preview.insert_fsect_after(
+            metadata["section"],
+            metadata["kind"],
+            metadata["index"],
+        )
+        if not updated:
+            self.show_status_message("Unable to insert fsect.")
+            return
+        self.refresh_features_preview()
+        if self._current_selection is not None:
+            self.update_features_sidebar(self._current_selection)
     
     def update_window_title(
         self,
