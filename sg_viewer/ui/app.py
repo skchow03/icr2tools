@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
@@ -11,6 +12,8 @@ from sg_viewer.ui.section_surface_widget import SectionSurfaceWidget
 from sg_viewer.ui.preview_widget import SGPreviewWidget
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
+from icr2_core.trk.trk_utils import ground_type_name
+from icr2_core.trk.utils import sg_ground_to_trk
 
 
 class SGViewerApp(QtWidgets.QApplication):
@@ -52,6 +55,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_surface_preview = SectionSurfaceWidget()
         self._current_selection: SectionSelection | None = None
         self._sidebar = QtWidgets.QWidget()
+        self._features_sidebar = QtWidgets.QWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
@@ -117,6 +121,28 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_heading_label = QtWidgets.QLabel("End Heading (SG): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
+        self._features_section_combo = QtWidgets.QComboBox()
+        self._features_section_combo.setEnabled(False)
+        self._features_prev_button = QtWidgets.QPushButton("Previous")
+        self._features_next_button = QtWidgets.QPushButton("Next")
+        self._features_prev_button.setEnabled(False)
+        self._features_next_button.setEnabled(False)
+        self._features_fsect_table = QtWidgets.QTableWidget(10, 4)
+        self._features_fsect_table.setHorizontalHeaderLabels(
+            ["Surface/Boundary", "Type", "Start DLAT", "End DLAT"]
+        )
+        self._features_fsect_table.verticalHeader().setVisible(False)
+        self._features_fsect_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self._features_fsect_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.NoSelection
+        )
+        self._features_fsect_table.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._features_fsect_table.setMinimumWidth(440)
+        header = self._features_fsect_table.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -152,6 +178,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
+        features_sidebar_layout = QtWidgets.QVBoxLayout()
+        features_sidebar_layout.addWidget(QtWidgets.QLabel("Section"))
+        features_sidebar_layout.addWidget(self._features_section_combo)
+        features_nav_layout = QtWidgets.QHBoxLayout()
+        features_nav_layout.addWidget(self._features_prev_button)
+        features_nav_layout.addWidget(self._features_next_button)
+        features_sidebar_layout.addLayout(features_nav_layout)
+        features_sidebar_layout.addWidget(QtWidgets.QLabel("Fsections"))
+        features_sidebar_layout.addWidget(self._features_fsect_table)
+        features_sidebar_layout.addStretch()
+        self._features_sidebar.setLayout(features_sidebar_layout)
+        self._features_sidebar.setMinimumWidth(460)
+
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addLayout(navigation_layout)
@@ -171,9 +210,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         geometry_container.setLayout(geometry_layout)
 
         features_container = QtWidgets.QWidget()
-        features_layout = QtWidgets.QVBoxLayout()
-        features_layout.addWidget(self._features_preview, stretch=3)
-        features_layout.addWidget(self._section_surface_preview, stretch=1)
+        features_layout = QtWidgets.QHBoxLayout()
+        features_preview_column = QtWidgets.QWidget()
+        features_preview_layout = QtWidgets.QVBoxLayout()
+        features_preview_layout.addWidget(self._features_preview, stretch=3)
+        features_preview_layout.addWidget(self._section_surface_preview, stretch=1)
+        features_preview_column.setLayout(features_preview_layout)
+        features_layout.addWidget(features_preview_column, stretch=1)
+        features_layout.addWidget(self._features_sidebar)
         features_container.setLayout(features_layout)
 
         self._tabs = QtWidgets.QTabWidget()
@@ -249,6 +293,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
 
+    @property
+    def features_section_combo(self) -> QtWidgets.QComboBox:
+        return self._features_section_combo
+
+    @property
+    def features_prev_button(self) -> QtWidgets.QPushButton:
+        return self._features_prev_button
+
+    @property
+    def features_next_button(self) -> QtWidgets.QPushButton:
+        return self._features_next_button
+
     def refresh_features_preview(self) -> None:
         trk, cline, sampled_centerline, sampled_bounds = (
             self._preview.get_surface_preview_data()
@@ -257,6 +313,34 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             trk, cline, sampled_centerline, sampled_bounds
         )
         self.update_section_surface_preview(self._current_selection)
+        self.refresh_features_sidebar()
+
+    def refresh_features_sidebar(self) -> None:
+        sections, _ = self._preview.get_section_set()
+        self._features_section_combo.blockSignals(True)
+        self._features_section_combo.clear()
+        for index, section in enumerate(sections):
+            label = f"Section {index}: {section.type_name.title()}"
+            self._features_section_combo.addItem(label, index)
+        has_sections = bool(sections)
+        self._features_section_combo.setEnabled(has_sections)
+        self._features_prev_button.setEnabled(has_sections)
+        self._features_next_button.setEnabled(has_sections)
+        self._features_section_combo.blockSignals(False)
+
+        if self._current_selection is not None:
+            combo_index = self._features_section_combo.findData(
+                self._current_selection.index
+            )
+            if combo_index != -1:
+                self._features_section_combo.blockSignals(True)
+                self._features_section_combo.setCurrentIndex(combo_index)
+                self._features_section_combo.blockSignals(False)
+        else:
+            self._features_section_combo.blockSignals(True)
+            self._features_section_combo.setCurrentIndex(-1)
+            self._features_section_combo.blockSignals(False)
+        self._update_features_fsect_table(self._current_selection)
 
     def update_section_surface_preview(
         self, selection: SectionSelection | None
@@ -315,6 +399,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
             self.update_section_surface_preview(None)
+            self._update_features_selection(None)
             return
 
         self._current_selection = selection
@@ -357,11 +442,73 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
         self.update_section_surface_preview(selection)
+        self._update_features_selection(selection)
 
     @staticmethod
     def _format_section_link(prefix: str, section_id: int) -> str:
         connection = "Not connected" if section_id == -1 else str(section_id)
         return f"{prefix} Section: {connection}"
+
+    def _update_features_selection(self, selection: SectionSelection | None) -> None:
+        if selection is None:
+            self._features_section_combo.blockSignals(True)
+            self._features_section_combo.setCurrentIndex(-1)
+            self._features_section_combo.blockSignals(False)
+            self._update_features_fsect_table(None)
+            return
+
+        combo_index = self._features_section_combo.findData(selection.index)
+        if combo_index != -1:
+            self._features_section_combo.blockSignals(True)
+            self._features_section_combo.setCurrentIndex(combo_index)
+            self._features_section_combo.blockSignals(False)
+        self._update_features_fsect_table(selection)
+
+    def _update_features_fsect_table(self, selection: SectionSelection | None) -> None:
+        placeholder = "—"
+        for row in range(10):
+            for col in range(4):
+                item = QtWidgets.QTableWidgetItem(placeholder)
+                item.setTextAlignment(QtCore.Qt.AlignCenter)
+                self._features_fsect_table.setItem(row, col, item)
+
+        sgfile = self._preview.sgfile
+        if sgfile is None or selection is None:
+            return
+
+        if selection.index < 0 or selection.index >= len(sgfile.sects):
+            return
+
+        section = sgfile.sects[selection.index]
+        for row in range(min(10, section.num_fsects)):
+            ftype1 = section.ftype1[row]
+            ftype2 = section.ftype2[row]
+            fstart = section.fstart[row]
+            fend = section.fend[row]
+            is_surface = ftype1 in {0, 1, 2, 3, 4, 5, 6}
+            kind = "Surface" if is_surface else "Boundary"
+            type_name = self._format_fsect_type(ftype1, ftype2)
+            values = [kind, type_name, str(fstart), str(fend)]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                item.setTextAlignment(QtCore.Qt.AlignCenter)
+                self._features_fsect_table.setItem(row, col, item)
+
+    def _format_fsect_type(self, ftype1: int, ftype2: int) -> str:
+        if ftype1 in {0, 1, 2, 3, 4, 5, 6}:
+            trk_type = sg_ground_to_trk(ftype1)
+            surface_name = ground_type_name(trk_type) if trk_type is not None else None
+            return surface_name or f"Surface {ftype1}"
+
+        wall_label = "Wall" if ftype1 == 7 else "Armco" if ftype1 == 8 else f"Boundary {ftype1}"
+        fence_label = (
+            "Fence"
+            if ftype2 in {2, 6, 10, 14}
+            else "No fence"
+            if ftype2 in {0, 4, 8, 12}
+            else f"Fence {ftype2}"
+        )
+        return f"{wall_label} / {fence_label}"
     
     def update_window_title(
         self,
