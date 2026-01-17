@@ -140,11 +140,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_fsect_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectItems
         )
-        self._features_fsect_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.Stretch
-        )
+        fsect_header = self._features_fsect_table.horizontalHeader()
+        fsect_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        fsect_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        fsect_header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        fsect_header.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
         self._features_fsect_table.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarAlwaysOff
+            QtCore.Qt.ScrollBarAsNeeded
         )
         self._features_fsect_table.itemChanged.connect(
             self._on_features_fsect_item_changed
@@ -649,6 +651,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self, row: _FsectRow, metadata: dict
     ) -> QtWidgets.QComboBox:
         combo = QtWidgets.QComboBox()
+        combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         for value, label in self._fsect_subtype_options(row.kind):
             combo.addItem(label, value)
         if row.subtype_value is not None:
