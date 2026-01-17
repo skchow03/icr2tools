@@ -1180,6 +1180,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._sampled_bounds,
         )
 
+    def refresh_surface_preview_data(self) -> None:
+        if self._sgfile is None:
+            return
+        self._rebuild_trk_from_preview()
+        self.update()
+
     def update_fsect_dlat(
         self,
         section_index: int,

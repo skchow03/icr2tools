@@ -346,6 +346,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.refresh_feature_section_choices()
         self.update_section_surface_preview(self._current_selection)
 
+    def _refresh_feature_track_diagram(self) -> None:
+        self._preview.refresh_surface_preview_data()
+        self.refresh_features_preview()
+
     def update_section_surface_preview(
         self, selection: SectionSelection | None
     ) -> None:
@@ -744,7 +748,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._restore_fsect_row(metadata)
             return
 
-        self.refresh_features_preview()
+        self._refresh_feature_track_diagram()
         if self._current_selection is not None:
             self.update_features_sidebar(self._current_selection)
 
@@ -786,7 +790,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if self._current_selection is not None:
                 self.update_features_sidebar(self._current_selection)
             return
-        self.refresh_features_preview()
+        self._refresh_feature_track_diagram()
         if self._current_selection is not None:
             self.update_features_sidebar(self._current_selection)
 
@@ -892,7 +896,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if not updated:
             self.show_status_message("Unable to delete fsect.")
             return
-        self.refresh_features_preview()
+        self._refresh_feature_track_diagram()
         if self._current_selection is not None:
             self.update_features_sidebar(self._current_selection)
 
@@ -913,7 +917,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if not updated:
             self.show_status_message("Unable to insert fsect.")
             return
-        self.refresh_features_preview()
+        self._refresh_feature_track_diagram()
         if self._current_selection is not None:
             self.update_features_sidebar(self._current_selection)
     
