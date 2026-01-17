@@ -1274,6 +1274,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._has_unsaved_changes = True
         self._rebuild_trk_from_preview()
+        self.sectionsChanged.emit()
         return True
 
     def insert_fsect_after(
@@ -1293,6 +1294,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._has_unsaved_changes = True
         self._rebuild_trk_from_preview()
+        self.sectionsChanged.emit()
         return True
 
     def get_fsect_count(self, section_index: int) -> int:
