@@ -1710,6 +1710,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
 
+    def select_section_index(self, index: int | None) -> None:
+        if index is None:
+            self._selection.set_selected_section(None)
+            return
+
+        if not self._selection.sections:
+            return
+
+        if index < 0 or index >= len(self._selection.sections):
+            return
+
+        self._selection.set_selected_section(index)
+
     def _sections_from_sgfile(self) -> list[SectionPreview]:
         if self._sgfile is None:
             return []
