@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable, List, Tuple
@@ -11,7 +12,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_alt
+from icr2_core.trk.trk_utils import get_alt, get_cline_pos
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.models import preview_state, selection
 from sg_viewer.preview.geometry import (
@@ -402,6 +403,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
+        self._rebuild_trk_from_preview()
 
         if needs_rebuild:
             self._update_fit_scale()
@@ -1213,6 +1215,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
+        self._rebuild_trk_from_preview()
         if self._section_manager.sampled_dlongs:
             self._track_length = self._section_manager.sampled_dlongs[-1]
         self._update_start_finish_mapping(preserved_start_finish_dlong)
@@ -1256,6 +1259,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
         self._track_length = track_length
+        self._rebuild_trk_from_preview()
         self._start_finish_mapping = None
         self._start_finish_dlong = 0.0 if track_length > 0 else None
 
@@ -1277,6 +1281,33 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._selection.set_selected_section(
             0 if self._section_manager.sections else None
         )
+
+    def _rebuild_trk_from_preview(self) -> None:
+        if self._sgfile is None or not self._section_manager.sections:
+            self._trk = None
+            self._cline = None
+            return
+
+        try:
+            sgfile = self._apply_preview_to_sgfile()
+        except ValueError:
+            self._trk = None
+            self._cline = None
+            return
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir) / "preview.sg"
+                sgfile.output_sg(str(temp_path))
+                trk = TRKFile.from_sg(str(temp_path))
+        except Exception:  # pragma: no cover - fallback for failed rebuilds
+            logger.exception("Failed to rebuild TRK data from preview geometry")
+            self._trk = None
+            self._cline = None
+            return
+
+        self._trk = trk
+        self._cline = get_cline_pos(trk)
 
 
     def _compute_start_finish_mapping_from_samples(
