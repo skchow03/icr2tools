@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
@@ -129,15 +130,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._features_fsect_table.verticalHeader().setVisible(True)
         self._features_fsect_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.NoEditTriggers
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+            | QtWidgets.QAbstractItemView.SelectedClicked
         )
         self._features_fsect_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.NoSelection
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self._features_fsect_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectItems
         )
         self._features_fsect_table.horizontalHeader().setStretchLastSection(True)
+        self._features_fsect_table.itemChanged.connect(
+            self._on_features_fsect_item_changed
+        )
         self._features_section_combo.setEnabled(False)
         self._features_prev_button.setEnabled(False)
         self._features_next_button.setEnabled(False)
+        self._is_updating_fsect_table = False
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -446,38 +456,193 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._build_fsect_rows(trk, selection.index)
         )
 
+    @dataclass(frozen=True)
+    class _FsectRow:
+        label: str
+        start: str
+        end: str
+        kind: str
+        index: int
+        section_index: int
+        start_value: Optional[float]
+
     def _build_fsect_rows(
         self, trk: object, section_index: int
-    ) -> list[tuple[str, str, str]]:
+    ) -> list[_FsectRow]:
         if not hasattr(trk, "sects") or section_index < 0:
             return []
         if section_index >= len(trk.sects):
             return []
         sect = trk.sects[section_index]
-        rows: list[tuple[str, str, str]] = []
+        rows: list[SGViewerWindow._FsectRow] = []
+
+        def _format_value(value: object) -> str:
+            if value is None or value == "–":
+                return "–"
+            try:
+                return f"{int(round(float(value)))}"
+            except (TypeError, ValueError):
+                return str(value)
+
+        def _parse_value(value: object) -> Optional[float]:
+            if value is None or value == "–":
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _append_row(kind: str, idx: int, start: object, end: object, label: str) -> None:
+            rows.append(
+                SGViewerWindow._FsectRow(
+                    label=label,
+                    start=_format_value(start),
+                    end=_format_value(end),
+                    kind=kind,
+                    index=idx,
+                    section_index=section_index,
+                    start_value=_parse_value(start),
+                )
+            )
+
         for idx in range(getattr(sect, "ground_fsects", 0)):
             ground_type = sect.ground_type[idx] if idx < len(sect.ground_type) else "–"
             start = sect.ground_dlat_start[idx] if idx < len(sect.ground_dlat_start) else "–"
             end = sect.ground_dlat_end[idx] if idx < len(sect.ground_dlat_end) else "–"
-            rows.append((f"Surface {ground_type}", str(start), str(end)))
+            _append_row("surface", idx, start, end, f"Surface {ground_type}")
         for idx in range(getattr(sect, "num_bounds", 0)):
             bound_type = sect.bound_type[idx] if idx < len(sect.bound_type) else "–"
             start = sect.bound_dlat_start[idx] if idx < len(sect.bound_dlat_start) else "–"
             end = sect.bound_dlat_end[idx] if idx < len(sect.bound_dlat_end) else "–"
-            rows.append((f"Boundary {bound_type}", str(start), str(end)))
+            _append_row("boundary", idx, start, end, f"Boundary {bound_type}")
+
+        rows.sort(
+            key=lambda row: (row.start_value is None, -(row.start_value or 0.0))
+        )
         return rows[:10]
 
     def _fill_features_fsect_table(
-        self, rows: list[tuple[str, str, str]]
+        self, rows: list[_FsectRow]
     ) -> None:
-        for row_index in range(10):
-            if row_index < len(rows):
-                values = rows[row_index]
-            else:
-                values = ("–", "–", "–")
-            for col_index, value in enumerate(values):
-                item = QtWidgets.QTableWidgetItem(value)
-                self._features_fsect_table.setItem(row_index, col_index, item)
+        self._is_updating_fsect_table = True
+        try:
+            for row_index in range(10):
+                if row_index < len(rows):
+                    row = rows[row_index]
+                    values = (row.label, row.start, row.end)
+                    metadata = {
+                        "kind": row.kind,
+                        "index": row.index,
+                        "section": row.section_index,
+                    }
+                else:
+                    values = ("–", "–", "–")
+                    metadata = None
+                for col_index, value in enumerate(values):
+                    item = QtWidgets.QTableWidgetItem(value)
+                    if metadata is not None:
+                        item.setData(QtCore.Qt.UserRole, metadata)
+                    if metadata is None or col_index == 0:
+                        item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    self._features_fsect_table.setItem(row_index, col_index, item)
+        finally:
+            self._is_updating_fsect_table = False
+
+    def _on_features_fsect_item_changed(
+        self, item: QtWidgets.QTableWidgetItem
+    ) -> None:
+        if self._is_updating_fsect_table:
+            return
+        if item is None or item.column() == 0:
+            return
+        metadata = item.data(QtCore.Qt.UserRole)
+        if not metadata:
+            return
+
+        start_item = self._features_fsect_table.item(item.row(), 1)
+        end_item = self._features_fsect_table.item(item.row(), 2)
+        if start_item is None or end_item is None:
+            return
+
+        start_value = self._parse_fsect_value(start_item.text())
+        end_value = self._parse_fsect_value(end_item.text())
+        if start_value is None or end_value is None:
+            self.show_status_message("Fsect values must be numeric.")
+            self._restore_fsect_row(metadata)
+            return
+
+        updated = self._preview.update_fsect_dlat(
+            metadata["section"],
+            metadata["kind"],
+            metadata["index"],
+            start_value,
+            end_value,
+        )
+        if not updated:
+            self.show_status_message("Unable to update fsect values.")
+            self._restore_fsect_row(metadata)
+            return
+
+        self.refresh_features_preview()
+        if self._current_selection is not None:
+            self.update_features_sidebar(self._current_selection)
+
+    def _parse_fsect_value(self, value: str) -> Optional[int]:
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(round(float(text)))
+        except ValueError:
+            return None
+
+    def _restore_fsect_row(self, metadata: dict) -> None:
+        values = self._lookup_fsect_values(
+            metadata["section"], metadata["kind"], metadata["index"]
+        )
+        if values is None:
+            return
+        self._is_updating_fsect_table = True
+        try:
+            for row in range(self._features_fsect_table.rowCount()):
+                item = self._features_fsect_table.item(row, 1)
+                if item is None:
+                    continue
+                row_meta = item.data(QtCore.Qt.UserRole)
+                if row_meta != metadata:
+                    continue
+                start_item = self._features_fsect_table.item(row, 1)
+                end_item = self._features_fsect_table.item(row, 2)
+                if start_item is not None:
+                    start_item.setText(str(values[0]))
+                if end_item is not None:
+                    end_item.setText(str(values[1]))
+                break
+        finally:
+            self._is_updating_fsect_table = False
+
+    def _lookup_fsect_values(
+        self, section_index: int, kind: str, fsect_index: int
+    ) -> Optional[tuple[int, int]]:
+        trk, _, _, _ = self._preview.get_surface_preview_data()
+        if trk is None or section_index < 0 or section_index >= len(trk.sects):
+            return None
+        sect = trk.sects[section_index]
+        if kind == "surface":
+            if fsect_index >= len(sect.ground_dlat_start):
+                return None
+            return (
+                int(sect.ground_dlat_start[fsect_index]),
+                int(sect.ground_dlat_end[fsect_index]),
+            )
+        if kind == "boundary":
+            if fsect_index >= len(sect.bound_dlat_start):
+                return None
+            return (
+                int(sect.bound_dlat_start[fsect_index]),
+                int(sect.bound_dlat_end[fsect_index]),
+            )
+        return None
     
     def update_window_title(
         self,
