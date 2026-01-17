@@ -8,6 +8,7 @@ Point = Tuple[float, float]
 @dataclass(frozen=True)
 class SectionPreview:
     section_id: int
+    source_id: int | None
     type_name: str
     previous_id: int
     next_id: int

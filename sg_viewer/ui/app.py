@@ -7,6 +7,7 @@ from PyQt5 import QtWidgets
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.features_preview_widget import FeaturesPreviewWidget
+from sg_viewer.ui.section_surface_widget import SectionSurfaceWidget
 from sg_viewer.ui.preview_widget import SGPreviewWidget
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
@@ -48,6 +49,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             show_status=self.show_status_message
         )
         self._features_preview = FeaturesPreviewWidget()
+        self._section_surface_preview = SectionSurfaceWidget()
+        self._current_selection: SectionSelection | None = None
         self._sidebar = QtWidgets.QWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
@@ -169,7 +172,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         features_container = QtWidgets.QWidget()
         features_layout = QtWidgets.QVBoxLayout()
-        features_layout.addWidget(self._features_preview)
+        features_layout.addWidget(self._features_preview, stretch=3)
+        features_layout.addWidget(self._section_surface_preview, stretch=1)
         features_container.setLayout(features_layout)
 
         self._tabs = QtWidgets.QTabWidget()
@@ -252,6 +256,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_preview.set_surface_data(
             trk, cline, sampled_centerline, sampled_bounds
         )
+        self.update_section_surface_preview(self._current_selection)
+
+    def update_section_surface_preview(
+        self, selection: SectionSelection | None
+    ) -> None:
+        trk, _, _, _ = self._preview.get_surface_preview_data()
+        self._section_surface_preview.set_section_data(trk, selection)
 
     def _on_tab_changed(self, index: int) -> None:
         if index == self._features_tab_index:
@@ -287,6 +298,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return f"({_fmt_int(heading[0])}, {_fmt_int(heading[1])})"
 
         if selection is None:
+            self._current_selection = None
             self._section_label.setText("Section: None")
             self._type_label.setText("Type: –")
             self._dlong_label.setText("DLONG: –")
@@ -302,8 +314,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._start_point_label.setText("Start Point: –")
             self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
+            self.update_section_surface_preview(None)
             return
 
+        self._current_selection = selection
         self._section_label.setText(f"Section: {selection.index}")
         self._type_label.setText(f"Type: {selection.type_name}")
         self._dlong_label.setText(
@@ -342,6 +356,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
+        self.update_section_surface_preview(selection)
 
     @staticmethod
     def _format_section_link(prefix: str, section_id: int) -> str:
