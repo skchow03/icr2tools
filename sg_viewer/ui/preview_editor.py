@@ -84,6 +84,7 @@ class PreviewEditor:
 
         new_section = SectionPreview(
             section_id=new_index,
+            source_id=None,
             type_name="straight",
             previous_id=-1,
             next_id=-1,
@@ -134,7 +135,10 @@ class PreviewEditor:
         new_index = len(sections)
         next_start_dlong = self._next_section_start_dlong(sections)
         new_section = replace(
-            new_section, section_id=new_index, start_dlong=next_start_dlong
+            new_section,
+            section_id=new_index,
+            start_dlong=next_start_dlong,
+            source_id=None,
         )
 
         updated_sections, new_section = self._connect_new_section(
@@ -429,8 +433,18 @@ class PreviewEditor:
         first_prev = _adjust_id(original.previous_id)
         second_next = _adjust_id(original.next_id)
 
-        first = replace(first, previous_id=first_prev, next_id=index + 1)
-        second = replace(second, previous_id=index, next_id=second_next)
+        first = replace(
+            first,
+            previous_id=first_prev,
+            next_id=index + 1,
+            source_id=original.source_id,
+        )
+        second = replace(
+            second,
+            previous_id=index,
+            next_id=second_next,
+            source_id=None,
+        )
 
         new_sections: list[SectionPreview] = []
         for i, sect in enumerate(sections):

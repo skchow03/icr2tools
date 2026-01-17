@@ -115,6 +115,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._cline: List[Point] | None = None
         self._start_finish_dlong: float | None = None
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
+        self._section_source_map: dict[int, SGFile.Section] = {}
+        self._next_section_source_id = 0
 
         self._is_panning = False
         self._last_mouse_pos: QtCore.QPoint | None = None
@@ -327,6 +329,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
         self._set_default_view_bounds()
+        self._reset_section_source_map()
         self._update_node_status()
         self._has_unsaved_changes = False
         self._update_fit_scale()
@@ -373,11 +376,13 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._update_node_status()
         self._update_fit_scale()
         self._has_unsaved_changes = False
+        self._reset_section_source_map()
         self.update()
 
     def start_new_track(self) -> None:
         self.clear("New track ready. Click New Straight to start drawing.")
         self._sgfile = self._create_empty_sgfile()
+        self._reset_section_source_map()
         self._set_default_view_bounds()
         self._sampled_centerline = []
         self._track_length = 0.0
@@ -391,6 +396,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             return
 
         sections = self._sections_from_sgfile()
+        self._reset_section_source_map()
 
         if sections:
             last_section = sections[-1]
@@ -417,6 +423,49 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         self._has_unsaved_changes = True
         self.update()
+
+    def _reset_section_source_map(self) -> None:
+        self._section_source_map = {}
+        if self._sgfile is None:
+            self._next_section_source_id = 0
+            return
+
+        for idx, sect in enumerate(self._sgfile.sects):
+            self._section_source_map[idx] = sect
+        self._next_section_source_id = len(self._section_source_map)
+
+    def _assign_section_source_ids(
+        self, sections: list[SectionPreview]
+    ) -> list[SectionPreview]:
+        if self._sgfile is None:
+            return sections
+
+        section_record_length = 58 + 2 * self._sgfile.num_xsects
+        updated_sections: list[SectionPreview] = []
+
+        for section in sections:
+            source_id = section.source_id
+            if source_id is None:
+                source_id = self._next_section_source_id
+                self._next_section_source_id += 1
+                section = replace(section, source_id=source_id)
+
+            updated_sections.append(section)
+
+            if source_id not in self._section_source_map:
+                template_section = [0] * section_record_length
+                self._section_source_map[source_id] = SGFile.Section(
+                    template_section, self._sgfile.num_xsects
+                )
+
+        used_ids = {sect.source_id for sect in updated_sections if sect.source_id is not None}
+        self._section_source_map = {
+            source_id: sect
+            for source_id, sect in self._section_source_map.items()
+            if source_id in used_ids
+        }
+
+        return updated_sections
 
     def load_background_image(self, path: Path) -> None:
         self._background.load_image(path)
@@ -1204,6 +1253,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
     def set_sections(self, sections: list[SectionPreview], start_finish_dlong: float | None = None) -> None:
         self._clear_split_hover()
 
+        sections = self._assign_section_source_ids(sections)
+
         preserved_start_finish_dlong = start_finish_dlong
         if preserved_start_finish_dlong is None:
             preserved_start_finish_dlong = self._start_finish_dlong
@@ -1400,24 +1451,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             raise ValueError("No sections available to save.")
 
         sgfile = self._sgfile
-
-        desired_section_count = len(self._section_manager.sections)
-        current_section_count = len(sgfile.sects)
-
-        if desired_section_count != current_section_count:
-            section_record_length = 58 + 2 * sgfile.num_xsects
-            if desired_section_count > current_section_count:
-                template_section = [0] * section_record_length
-                for _ in range(desired_section_count - current_section_count):
-                    sgfile.sects.append(
-                        SGFile.Section(template_section, sgfile.num_xsects)
-                    )
-            else:
-                sgfile.sects = sgfile.sects[:desired_section_count]
-
-        sgfile.num_sects = desired_section_count
-        if len(sgfile.header) > 4:
-            sgfile.header[4] = desired_section_count
+        self._sync_sgfile_sections()
 
         def _as_int(value: float | int | None, fallback: int = 0) -> int:
             if value is None:
@@ -1480,6 +1514,39 @@ class SGPreviewWidget(QtWidgets.QWidget):
             sg_section.recompute_curve_length()
 
         return sgfile
+
+    def _sync_sgfile_sections(self) -> None:
+        if self._sgfile is None:
+            return
+
+        sections = self._section_manager.sections
+        sgfile = self._sgfile
+        if not sections:
+            sgfile.sects = []
+            sgfile.num_sects = 0
+            if len(sgfile.header) > 4:
+                sgfile.header[4] = 0
+            return
+
+        ordered_sections: list[SGFile.Section] = []
+        for section in sections:
+            source_id = section.source_id
+            if source_id is None:
+                continue
+
+            sg_section = self._section_source_map.get(source_id)
+            if sg_section is None:
+                section_record_length = 58 + 2 * sgfile.num_xsects
+                template_section = [0] * section_record_length
+                sg_section = SGFile.Section(template_section, sgfile.num_xsects)
+                self._section_source_map[source_id] = sg_section
+
+            ordered_sections.append(sg_section)
+
+        sgfile.sects = ordered_sections
+        sgfile.num_sects = len(ordered_sections)
+        if len(sgfile.header) > 4:
+            sgfile.header[4] = len(ordered_sections)
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
         return self._selection.get_section_headings()
@@ -1683,6 +1750,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             sections.append(
                 SectionPreview(
                     section_id=idx,
+                    source_id=idx,
                     type_name=type_name,
                     previous_id=int(getattr(sg_section, "sec_prev", idx - 1)),
                     next_id=int(getattr(sg_section, "sec_next", idx + 1)),
