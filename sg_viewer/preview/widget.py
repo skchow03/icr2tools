@@ -12,6 +12,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt, get_cline_pos
+from icr2_core.trk.utils import convert_wall_fsect_type, sg_ground_to_trk
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.models import preview_state, selection
 from sg_viewer.preview.geometry import (
@@ -1214,6 +1215,94 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._has_unsaved_changes = True
         return True
 
+    def update_fsect_type(
+        self,
+        section_index: int,
+        kind: str,
+        fsect_index: int,
+        subtype: int,
+    ) -> bool:
+        if self._trk is None:
+            return False
+        if section_index < 0 or section_index >= len(self._trk.sects):
+            return False
+
+        sect = self._trk.sects[section_index]
+        if kind == "surface":
+            if fsect_index >= len(sect.ground_type):
+                return False
+            trk_value = sg_ground_to_trk(subtype)
+            if trk_value is None:
+                return False
+            sect.ground_type[fsect_index] = trk_value
+            self._update_trk_ground_data(section_index, fsect_index, trk_value)
+        elif kind == "boundary":
+            if fsect_index >= len(sect.bound_type):
+                return False
+            trk_value = subtype
+            if self._sgfile is not None and section_index < len(self._sgfile.sects):
+                sg_section = self._sgfile.sects[section_index]
+                fence_type = (
+                    sg_section.bound_ftype2[fsect_index]
+                    if fsect_index < len(sg_section.bound_ftype2)
+                    else 0
+                )
+                trk_value = convert_wall_fsect_type(subtype, fence_type)
+            sect.bound_type[fsect_index] = trk_value
+        else:
+            return False
+
+        if self._sgfile is not None and section_index < len(self._sgfile.sects):
+            self._update_sg_fsect_type(
+                self._sgfile.sects[section_index], kind, fsect_index, subtype
+            )
+
+        self._has_unsaved_changes = True
+        return True
+
+    def delete_fsect(
+        self, section_index: int, kind: str, fsect_index: int
+    ) -> bool:
+        if self._sgfile is None:
+            return False
+        if section_index < 0 or section_index >= len(self._sgfile.sects):
+            return False
+
+        sg_section = self._sgfile.sects[section_index]
+        if not self._remove_sg_fsect(sg_section, kind, fsect_index):
+            return False
+
+        self._has_unsaved_changes = True
+        self._rebuild_trk_from_preview()
+        return True
+
+    def insert_fsect_after(
+        self, section_index: int, kind: str, fsect_index: int
+    ) -> bool:
+        if self._sgfile is None:
+            return False
+        if section_index < 0 or section_index >= len(self._sgfile.sects):
+            return False
+
+        sg_section = self._sgfile.sects[section_index]
+        total = sg_section.num_ground_fsects + sg_section.num_boundaries
+        if total >= 10:
+            return False
+        if not self._insert_sg_fsect(sg_section, kind, fsect_index):
+            return False
+
+        self._has_unsaved_changes = True
+        self._rebuild_trk_from_preview()
+        return True
+
+    def get_fsect_count(self, section_index: int) -> int:
+        if self._trk is None:
+            return 0
+        if section_index < 0 or section_index >= len(self._trk.sects):
+            return 0
+        sect = self._trk.sects[section_index]
+        return int(sect.ground_fsects + sect.num_bounds)
+
     @staticmethod
     def _update_sg_fsect_dlat(
         section: SGFile.Section,
@@ -1248,6 +1337,140 @@ class SGPreviewWidget(QtWidgets.QWidget):
                         section.fend[idx] = end
                         break
                     count += 1
+
+    @staticmethod
+    def _find_sg_fsect_index(
+        section: SGFile.Section, kind: str, fsect_index: int
+    ) -> int | None:
+        ground_types = set(range(0, 7))
+        count = 0
+        for idx, ftype1 in enumerate(section.ftype1):
+            is_ground = ftype1 in ground_types
+            if kind == "surface" and is_ground:
+                if count == fsect_index:
+                    return idx
+                count += 1
+            if kind == "boundary" and not is_ground:
+                if count == fsect_index:
+                    return idx
+                count += 1
+        return None
+
+    @staticmethod
+    def _update_sg_fsect_type(
+        section: SGFile.Section,
+        kind: str,
+        fsect_index: int,
+        subtype: int,
+    ) -> None:
+        fsect_offset = SGPreviewWidget._find_sg_fsect_index(
+            section, kind, fsect_index
+        )
+        if fsect_offset is None:
+            return
+
+        if kind == "surface":
+            if fsect_index < len(section.ground_ftype):
+                section.ground_ftype[fsect_index] = subtype
+            section.ftype1[fsect_offset] = subtype
+        elif kind == "boundary":
+            if fsect_index < len(section.bound_ftype1):
+                section.bound_ftype1[fsect_index] = subtype
+            section.ftype1[fsect_offset] = subtype
+
+    def _update_trk_ground_data(
+        self, section_index: int, fsect_index: int, trk_value: int
+    ) -> None:
+        if self._trk is None:
+            return
+        sect = self._trk.sects[section_index]
+        if fsect_index >= sect.ground_fsects:
+            return
+        data_index = sect.ground_counter + fsect_index
+        if data_index < len(self._trk.ground_data):
+            self._trk.ground_data[data_index][2] = trk_value
+
+    def _remove_sg_fsect(
+        self, section: SGFile.Section, kind: str, fsect_index: int
+    ) -> bool:
+        fsect_offset = self._find_sg_fsect_index(section, kind, fsect_index)
+        if fsect_offset is None:
+            return False
+        if fsect_offset >= len(section.ftype1):
+            return False
+
+        for collection in (section.ftype1, section.ftype2, section.fstart, section.fend):
+            del collection[fsect_offset]
+        section.num_fsects -= 1
+
+        if kind == "surface":
+            if fsect_index >= len(section.ground_ftype):
+                return False
+            for collection in (
+                section.ground_ftype,
+                section.ground_fstart,
+                section.ground_fend,
+            ):
+                del collection[fsect_index]
+            section.num_ground_fsects -= 1
+        elif kind == "boundary":
+            if fsect_index >= len(section.bound_ftype1):
+                return False
+            for collection in (
+                section.bound_ftype1,
+                section.bound_ftype2,
+                section.bound_fstart,
+                section.bound_fend,
+            ):
+                del collection[fsect_index]
+            section.num_boundaries -= 1
+        else:
+            return False
+
+        return True
+
+    def _insert_sg_fsect(
+        self, section: SGFile.Section, kind: str, fsect_index: int
+    ) -> bool:
+        fsect_offset = self._find_sg_fsect_index(section, kind, fsect_index)
+        if fsect_offset is None:
+            return False
+        if fsect_offset >= len(section.ftype1):
+            return False
+
+        ftype1 = section.ftype1[fsect_offset]
+        ftype2 = section.ftype2[fsect_offset]
+        fstart = section.fstart[fsect_offset]
+        fend = section.fend[fsect_offset]
+
+        insert_offset = fsect_offset + 1
+        section.ftype1.insert(insert_offset, ftype1)
+        section.ftype2.insert(insert_offset, ftype2)
+        section.fstart.insert(insert_offset, fstart)
+        section.fend.insert(insert_offset, fend)
+        section.num_fsects += 1
+
+        if kind == "surface":
+            if fsect_index >= len(section.ground_ftype):
+                return False
+            insert_index = fsect_index + 1
+            section.ground_ftype.insert(insert_index, ftype1)
+            section.ground_fstart.insert(insert_index, fstart)
+            section.ground_fend.insert(insert_index, fend)
+            section.num_ground_fsects += 1
+        elif kind == "boundary":
+            if fsect_index >= len(section.bound_ftype1):
+                return False
+            insert_index = fsect_index + 1
+            section.bound_ftype1.insert(insert_index, ftype1)
+            section.bound_ftype2.insert(insert_index, ftype2)
+            section.bound_fstart.insert(insert_index, fstart)
+            section.bound_fend.insert(insert_index, fend)
+            section.num_boundaries += 1
+        else:
+            return False
+
+        return True
 
     def track_length_message(self) -> str:
         sections = self._section_manager.sections
