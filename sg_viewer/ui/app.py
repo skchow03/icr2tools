@@ -492,6 +492,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         index: int
         section_index: int
         start_value: Optional[float]
+        end_value: Optional[float]
+        sort_value: Optional[float]
 
     def _build_fsect_rows(
         self, trk: object, sgfile: object, section_index: int
@@ -531,6 +533,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             description: str,
             subtype_value: Optional[int],
         ) -> None:
+            start_value = _parse_value(start)
+            end_value = _parse_value(end)
+            if start_value is None and end_value is None:
+                sort_value = None
+            elif start_value is None:
+                sort_value = end_value
+            elif end_value is None:
+                sort_value = start_value
+            else:
+                sort_value = max(start_value, end_value)
             rows.append(
                 SGViewerWindow._FsectRow(
                     fsect_type=fsect_type,
@@ -541,7 +553,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     kind=kind,
                     index=idx,
                     section_index=section_index,
-                    start_value=_parse_value(start),
+                    start_value=start_value,
+                    end_value=end_value,
+                    sort_value=sort_value,
                 )
             )
 
@@ -587,7 +601,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
 
         rows.sort(
-            key=lambda row: (row.start_value is None, -(row.start_value or 0.0))
+            key=lambda row: (row.sort_value is None, -(row.sort_value or 0.0))
         )
         return rows[:10]
 
