@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Iterable
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.trk.surface_mesh import (
     GroundSurfaceStrip,
@@ -13,6 +14,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import color_from_ground_type
 from sg_viewer.geometry import preview_transform
 from sg_viewer.models import preview_state
+from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
 from sg_viewer.services import sg_rendering
 
 Point = tuple[float, float]
@@ -36,6 +38,10 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
         self._centerline: list[Point] = []
         self._transform_state = preview_state.TransformState()
         self._status_message = "Load an SG file to view track surfaces."
+        self._is_panning = False
+        self._last_mouse_pos: QtCore.QPoint | None = None
+        self.setMouseTracking(True)
+        self.setCursor(QtCore.Qt.OpenHandCursor)
 
     def set_surface_data(
         self,
@@ -92,6 +98,83 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
         self._update_fit_scale()
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401 - Qt signature
+        widget_size = (self.width(), self.height())
+        transform, updated_state = preview_transform.current_transform(
+            self._transform_state, self._bounds, widget_size
+        )
+        self._transform_state = updated_state
+        default_center_value = preview_state.default_center(
+            preview_transform.apply_default_bounds(self._bounds)
+        )
+        new_state = zoom_transform_state(
+            self._transform_state,
+            event.angleDelta().y(),
+            (event.pos().x(), event.pos().y()),
+            widget_size,
+            self.height(),
+            transform,
+            lambda s: preview_state.clamp_scale(s, self._transform_state),
+            lambda: default_center_value,
+            lambda p: preview_state.map_to_track(transform, p, self.height()),
+        )
+        if new_state is None:
+            return
+        self._transform_state = new_state
+        self.update()
+        event.accept()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.LeftButton:
+            widget_size = (self.width(), self.height())
+            transform, updated_state = preview_transform.current_transform(
+                self._transform_state, self._bounds, widget_size
+            )
+            self._transform_state = updated_state
+            if transform is not None:
+                self._is_panning = True
+                self._last_mouse_pos = event.pos()
+                self._transform_state = replace(self._transform_state, user_transform_active=True)
+                self.setCursor(QtCore.Qt.ClosedHandCursor)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if self._is_panning and self._last_mouse_pos is not None:
+            widget_size = (self.width(), self.height())
+            transform, updated_state = preview_transform.current_transform(
+                self._transform_state, self._bounds, widget_size
+            )
+            self._transform_state = updated_state
+            if transform:
+                scale, _ = transform
+                delta = event.pos() - self._last_mouse_pos
+                self._last_mouse_pos = event.pos()
+                center = self._transform_state.view_center or preview_state.default_center(
+                    preview_transform.apply_default_bounds(self._bounds)
+                )
+                if center is not None:
+                    self._transform_state = pan_transform_state(
+                        self._transform_state,
+                        (delta.x(), delta.y()),
+                        scale,
+                        center,
+                    )
+                    self.update()
+                    event.accept()
+                    return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.LeftButton:
+            self._is_panning = False
+            self._last_mouse_pos = None
+            self.setCursor(QtCore.Qt.OpenHandCursor)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def _update_fit_scale(self) -> None:
         self._transform_state = preview_transform.update_fit_scale(

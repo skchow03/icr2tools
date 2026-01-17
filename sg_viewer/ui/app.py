@@ -172,10 +172,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         features_layout.addWidget(self._features_preview)
         features_container.setLayout(features_layout)
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.addTab(geometry_container, "Geometry")
-        tabs.addTab(features_container, "Features")
-        self.setCentralWidget(tabs)
+        self._tabs = QtWidgets.QTabWidget()
+        self._geometry_tab_index = self._tabs.addTab(geometry_container, "Geometry")
+        self._features_tab_index = self._tabs.addTab(features_container, "Features")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+        self.setCentralWidget(self._tabs)
 
         self.controller = SGViewerController(self)
         self.refresh_features_preview()
@@ -251,6 +252,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_preview.set_surface_data(
             trk, cline, sampled_centerline, sampled_bounds
         )
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == self._features_tab_index:
+            self.refresh_features_preview()
 
     def show_status_message(self, message: str) -> None:
         self._preview.set_status_text(message)
