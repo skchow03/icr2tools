@@ -450,6 +450,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def update_features_sidebar(self, selection: SectionSelection | None) -> None:
         trk, _, _, _ = self._preview.get_surface_preview_data()
+        sgfile = self._preview.sgfile
         self.refresh_feature_section_choices()
         if selection is None or trk is None:
             self._features_section_label.setText("Selected Section: –")
@@ -458,7 +459,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._features_section_label.setText(f"Selected Section: {selection.index}")
         self._fill_features_fsect_table(
-            self._build_fsect_rows(trk, selection.index)
+            self._build_fsect_rows(trk, sgfile, selection.index)
         )
 
     @dataclass(frozen=True)
@@ -473,13 +474,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         start_value: Optional[float]
 
     def _build_fsect_rows(
-        self, trk: object, section_index: int
+        self, trk: object, sgfile: object, section_index: int
     ) -> list[_FsectRow]:
         if not hasattr(trk, "sects") or section_index < 0:
             return []
         if section_index >= len(trk.sects):
             return []
         sect = trk.sects[section_index]
+        sg_sect = None
+        if sgfile is not None and hasattr(sgfile, "sects") and section_index < len(sgfile.sects):
+            sg_sect = sgfile.sects[section_index]
         rows: list[SGViewerWindow._FsectRow] = []
 
         def _format_value(value: object) -> str:
@@ -520,12 +524,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
 
         for idx in range(getattr(sect, "ground_fsects", 0)):
-            ground_type = sect.ground_type[idx] if idx < len(sect.ground_type) else "–"
+            ground_type = "–"
+            if sg_sect is not None and idx < len(sg_sect.ground_ftype):
+                ground_type = self._format_sg_fsect_description(sg_sect.ground_ftype[idx])
+            elif idx < len(sect.ground_type):
+                ground_type = str(sect.ground_type[idx])
             start = sect.ground_dlat_start[idx] if idx < len(sect.ground_dlat_start) else "–"
             end = sect.ground_dlat_end[idx] if idx < len(sect.ground_dlat_end) else "–"
             _append_row("surface", idx, start, end, "Surface", str(ground_type))
         for idx in range(getattr(sect, "num_bounds", 0)):
-            bound_type = sect.bound_type[idx] if idx < len(sect.bound_type) else "–"
+            bound_type = "–"
+            if sg_sect is not None and idx < len(sg_sect.bound_ftype1):
+                bound_type = self._format_sg_fsect_description(sg_sect.bound_ftype1[idx])
+            elif idx < len(sect.bound_type):
+                bound_type = str(sect.bound_type[idx])
             start = sect.bound_dlat_start[idx] if idx < len(sect.bound_dlat_start) else "–"
             end = sect.bound_dlat_end[idx] if idx < len(sect.bound_dlat_end) else "–"
             _append_row("boundary", idx, start, end, "Wall", str(bound_type))
@@ -534,6 +546,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             key=lambda row: (row.start_value is None, -(row.start_value or 0.0))
         )
         return rows[:10]
+
+    @staticmethod
+    def _format_sg_fsect_description(value: int | str | None) -> str:
+        if value is None or value == "–":
+            return "–"
+        try:
+            ftype = int(value)
+        except (TypeError, ValueError):
+            return str(value)
+        names = {
+            0: "Grass",
+            1: "Dry grass",
+            2: "Dirt",
+            3: "Sand",
+            4: "Concrete",
+            5: "Asphalt",
+            6: "Paint (Curbing)",
+            7: "Wall",
+            8: "Armco",
+        }
+        name = names.get(ftype)
+        if name is None:
+            return str(ftype)
+        return f"{ftype} {name}"
 
     def _fill_features_fsect_table(
         self, rows: list[_FsectRow]
