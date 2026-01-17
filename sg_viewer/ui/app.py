@@ -124,9 +124,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_section_combo = QtWidgets.QComboBox()
         self._features_prev_button = QtWidgets.QPushButton("Previous")
         self._features_next_button = QtWidgets.QPushButton("Next")
-        self._features_fsect_table = QtWidgets.QTableWidget(10, 3)
+        self._features_fsect_table = QtWidgets.QTableWidget(10, 4)
         self._features_fsect_table.setHorizontalHeaderLabels(
-            ["Surface/Boundary Type", "Start DLAT", "End DLAT"]
+            ["Type", "Description", "Start DLAT", "End DLAT"]
         )
         self._features_fsect_table.verticalHeader().setVisible(True)
         self._features_fsect_table.setEditTriggers(
@@ -140,7 +140,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_fsect_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectItems
         )
-        self._features_fsect_table.horizontalHeader().setStretchLastSection(True)
+        self._features_fsect_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.Stretch
+        )
+        self._features_fsect_table.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarAlwaysOff
+        )
         self._features_fsect_table.itemChanged.connect(
             self._on_features_fsect_item_changed
         )
@@ -458,7 +463,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     @dataclass(frozen=True)
     class _FsectRow:
-        label: str
+        fsect_type: str
+        description: str
         start: str
         end: str
         kind: str
@@ -492,10 +498,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             except (TypeError, ValueError):
                 return None
 
-        def _append_row(kind: str, idx: int, start: object, end: object, label: str) -> None:
+        def _append_row(
+            kind: str,
+            idx: int,
+            start: object,
+            end: object,
+            fsect_type: str,
+            description: str,
+        ) -> None:
             rows.append(
                 SGViewerWindow._FsectRow(
-                    label=label,
+                    fsect_type=fsect_type,
+                    description=description,
                     start=_format_value(start),
                     end=_format_value(end),
                     kind=kind,
@@ -509,12 +523,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ground_type = sect.ground_type[idx] if idx < len(sect.ground_type) else "–"
             start = sect.ground_dlat_start[idx] if idx < len(sect.ground_dlat_start) else "–"
             end = sect.ground_dlat_end[idx] if idx < len(sect.ground_dlat_end) else "–"
-            _append_row("surface", idx, start, end, f"Surface {ground_type}")
+            _append_row("surface", idx, start, end, "Surface", str(ground_type))
         for idx in range(getattr(sect, "num_bounds", 0)):
             bound_type = sect.bound_type[idx] if idx < len(sect.bound_type) else "–"
             start = sect.bound_dlat_start[idx] if idx < len(sect.bound_dlat_start) else "–"
             end = sect.bound_dlat_end[idx] if idx < len(sect.bound_dlat_end) else "–"
-            _append_row("boundary", idx, start, end, f"Boundary {bound_type}")
+            _append_row("boundary", idx, start, end, "Wall", str(bound_type))
 
         rows.sort(
             key=lambda row: (row.start_value is None, -(row.start_value or 0.0))
@@ -529,20 +543,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             for row_index in range(10):
                 if row_index < len(rows):
                     row = rows[row_index]
-                    values = (row.label, row.start, row.end)
+                    values = (row.fsect_type, row.description, row.start, row.end)
                     metadata = {
                         "kind": row.kind,
                         "index": row.index,
                         "section": row.section_index,
                     }
                 else:
-                    values = ("–", "–", "–")
+                    values = ("–", "–", "–", "–")
                     metadata = None
                 for col_index, value in enumerate(values):
                     item = QtWidgets.QTableWidgetItem(value)
                     if metadata is not None:
                         item.setData(QtCore.Qt.UserRole, metadata)
-                    if metadata is None or col_index == 0:
+                    if metadata is None or col_index in (0, 1):
                         item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                     self._features_fsect_table.setItem(row_index, col_index, item)
         finally:
@@ -553,14 +567,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         if self._is_updating_fsect_table:
             return
-        if item is None or item.column() == 0:
+        if item is None or item.column() in (0, 1):
             return
         metadata = item.data(QtCore.Qt.UserRole)
         if not metadata:
             return
 
-        start_item = self._features_fsect_table.item(item.row(), 1)
-        end_item = self._features_fsect_table.item(item.row(), 2)
+        start_item = self._features_fsect_table.item(item.row(), 2)
+        end_item = self._features_fsect_table.item(item.row(), 3)
         if start_item is None or end_item is None:
             return
 
@@ -605,14 +619,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._is_updating_fsect_table = True
         try:
             for row in range(self._features_fsect_table.rowCount()):
-                item = self._features_fsect_table.item(row, 1)
+                item = self._features_fsect_table.item(row, 2)
                 if item is None:
                     continue
                 row_meta = item.data(QtCore.Qt.UserRole)
                 if row_meta != metadata:
                     continue
-                start_item = self._features_fsect_table.item(row, 1)
-                end_item = self._features_fsect_table.item(row, 2)
+                start_item = self._features_fsect_table.item(row, 2)
+                end_item = self._features_fsect_table.item(row, 3)
                 if start_item is not None:
                     start_item.setText(str(values[0]))
                 if end_item is not None:
