@@ -117,6 +117,19 @@ class PreviewStateController:
         self._status_message = data.status_message
         return data
 
+    def rebuild_preview_data(self) -> preview_loader_service.PreviewData | None:
+        if self._sgfile is None:
+            return None
+
+        data = preview_loader_service.load_preview_from_sgfile(self._sgfile)
+        self._sgfile = data.sgfile
+        self._trk = data.trk
+        self._sampled_centerline = data.sampled_centerline
+        self._sampled_bounds = data.sampled_bounds
+        self._track_length = data.track_length
+        self._status_message = data.status_message
+        return data
+
     # ------------------------------------------------------------------
     # Transform helpers
     # ------------------------------------------------------------------
