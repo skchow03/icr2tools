@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -11,7 +11,7 @@ from icr2_core.trk.surface_mesh import (
     compute_mesh_bounds,
 )
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import color_from_ground_type
+from icr2_core.trk.trk_utils import color_from_ground_type, getbounddlat, getxyz
 from sg_viewer.geometry import preview_transform
 from sg_viewer.models import preview_state
 from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
@@ -20,6 +20,13 @@ from sg_viewer.services import sg_rendering
 Point = tuple[float, float]
 Bounds = tuple[float, float, float, float]
 Transform = tuple[float, tuple[float, float]]
+
+
+@dataclass(frozen=True)
+class BoundaryLine:
+    points: tuple[Point, ...]
+    is_wall: bool
+    has_fence: bool
 
 
 class FeaturesPreviewWidget(QtWidgets.QWidget):
@@ -36,6 +43,7 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
         self._surface_mesh: list[GroundSurfaceStrip] = []
         self._bounds: Bounds | None = None
         self._centerline: list[Point] = []
+        self._boundaries: list[BoundaryLine] = []
         self._transform_state = preview_state.TransformState()
         self._status_message = "Load an SG file to view track surfaces."
         self._is_panning = False
@@ -51,6 +59,7 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
         sampled_bounds: Bounds | None,
     ) -> None:
         self._centerline = list(sampled_centerline or [])
+        self._boundaries = []
 
         if trk is None:
             self._surface_mesh = []
@@ -60,6 +69,8 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
             self._surface_mesh = build_ground_surface_mesh(trk, list(cline) if cline else None)
             surface_bounds = compute_mesh_bounds(self._surface_mesh)
             self._bounds = surface_bounds or sampled_bounds
+            if cline:
+                self._boundaries = self._build_boundaries(trk, list(cline))
             if not self._surface_mesh:
                 self._status_message = "No surface data available for this track."
             else:
@@ -87,10 +98,8 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
         if self._surface_mesh:
             self._draw_surface_mesh(painter, self._surface_mesh, transform, self.height())
 
-        if self._centerline:
-            sg_rendering.draw_centerlines(
-                painter, [self._centerline], [], transform, self.height()
-            )
+        if self._boundaries:
+            self._draw_boundaries(painter, self._boundaries, transform, self.height())
 
         if self._status_message:
             sg_rendering.draw_status_message(painter, rect, self._status_message)
@@ -209,3 +218,75 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
             painter.drawPolygon(polygon)
 
         painter.restore()
+
+    @staticmethod
+    def _draw_boundaries(
+        painter: QtGui.QPainter,
+        boundaries: Iterable[BoundaryLine],
+        transform: Transform,
+        widget_height: int,
+    ) -> None:
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        for boundary in boundaries:
+            color = QtGui.QColor("white") if boundary.is_wall else QtGui.QColor("cyan")
+            pen = QtGui.QPen(color, 2)
+            if boundary.has_fence:
+                pen.setStyle(QtCore.Qt.DashLine)
+            pen.setCapStyle(QtCore.Qt.RoundCap)
+            pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            painter.setPen(pen)
+
+            path = QtGui.QPainterPath()
+            points_iter = iter(boundary.points)
+            try:
+                first = next(points_iter)
+            except StopIteration:
+                continue
+
+            path.moveTo(sg_rendering.map_point(first[0], first[1], transform, widget_height))
+            for x, y in points_iter:
+                path.lineTo(sg_rendering.map_point(x, y, transform, widget_height))
+
+            painter.drawPath(path)
+
+        painter.restore()
+
+    @staticmethod
+    def _build_boundaries(trk: TRKFile, cline: list[Point]) -> list[BoundaryLine]:
+        boundaries: list[BoundaryLine] = []
+        for sect_idx, sect in enumerate(trk.sects):
+            if sect.num_bounds <= 0:
+                continue
+
+            if sect.type == 1:
+                num_samples = 2
+            else:
+                num_samples = max(3, round(sect.length / 5000))
+
+            for bound_idx in range(sect.num_bounds):
+                bound_type = sect.bound_type[bound_idx]
+                if bound_type == 0:
+                    continue
+
+                is_wall = bool(bound_type & 4)
+                has_fence = bool(bound_type & 2)
+                points: list[Point] = []
+                for step in range(num_samples):
+                    subsect = step / (num_samples - 1)
+                    dlong = sect.start_dlong + sect.length * subsect
+                    dlat = getbounddlat(trk, sect_idx, subsect, bound_idx)
+                    x, y, _ = getxyz(trk, dlong, dlat, cline)
+                    points.append((x, y))
+
+                if points:
+                    boundaries.append(
+                        BoundaryLine(
+                            points=tuple(points),
+                            is_wall=is_wall,
+                            has_fence=has_fence,
+                        )
+                    )
+
+        return boundaries
