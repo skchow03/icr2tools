@@ -1567,6 +1567,33 @@ class SGPreviewWidget(QtWidgets.QWidget):
         end = start + float(self._section_manager.sections[index].length)
         return start, end
 
+    def update_fsection_dlat(
+        self,
+        section_index: int,
+        fsect_index: int,
+        *,
+        start_dlat: int | None = None,
+        end_dlat: int | None = None,
+    ) -> bool:
+        if self._sgfile is None:
+            return False
+        if section_index < 0 or section_index >= len(self._sgfile.sects):
+            return False
+
+        section = self._sgfile.sects[section_index]
+        if fsect_index < 0 or fsect_index >= section.num_fsects:
+            return False
+
+        if start_dlat is not None:
+            section.fstart[fsect_index] = int(start_dlat)
+        if end_dlat is not None:
+            section.fend[fsect_index] = int(end_dlat)
+
+        self._has_unsaved_changes = True
+        self._rebuild_trk_from_preview()
+        self.sectionsChanged.emit()
+        return True
+
     def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
         if (
             self._sgfile is None
