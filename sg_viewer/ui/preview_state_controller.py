@@ -118,7 +118,7 @@ class PreviewStateController:
         return data
 
     def rebuild_preview_data(self) -> preview_loader_service.PreviewData | None:
-        if self._sgfile is None:
+        if self._sgfile is None or not self._sgfile.sects:
             return None
 
         data = preview_loader_service.load_preview_from_sgfile(self._sgfile)

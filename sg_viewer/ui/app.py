@@ -310,13 +310,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._features_next_button
 
     def refresh_features_preview(self) -> None:
-        self._preview.rebuild_preview_data()
-        trk, cline, sampled_centerline, sampled_bounds = (
-            self._preview.get_surface_preview_data()
-        )
-        self._features_preview.set_surface_data(
-            trk, cline, sampled_centerline, sampled_bounds
-        )
+        sections, _ = self._preview.get_section_set()
+        if sections:
+            self._preview.rebuild_preview_data()
+            trk, cline, sampled_centerline, sampled_bounds = (
+                self._preview.get_surface_preview_data()
+            )
+            self._features_preview.set_surface_data(
+                trk, cline, sampled_centerline, sampled_bounds
+            )
+        else:
+            self._preview.update()
+            self._features_preview.update()
         self._features_preview.set_section_selection(self._current_selection)
         self.refresh_features_sidebar()
 
