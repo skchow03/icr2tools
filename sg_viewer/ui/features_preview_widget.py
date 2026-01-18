@@ -267,9 +267,6 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
 
             for bound_idx in range(sect.num_bounds):
                 bound_type = sect.bound_type[bound_idx]
-                if bound_type == 0:
-                    continue
-
                 is_wall = bool(bound_type & 4)
                 has_fence = bool(bound_type & 2)
                 points: list[Point] = []
