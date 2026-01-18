@@ -424,6 +424,20 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._has_unsaved_changes = True
         self.update()
 
+    def rebuild_preview_data(self) -> None:
+        data = self._controller.rebuild_preview_data()
+        if data is None:
+            return
+
+        self._cline = data.cline
+        self._sampled_centerline = data.sampled_centerline
+        self._sampled_bounds = data.sampled_bounds
+        self._track_length = data.track_length
+        self._start_finish_mapping = data.start_finish_mapping
+        self._status_message = data.status_message
+        self._update_fit_scale()
+        self.update()
+
     def _reset_section_source_map(self) -> None:
         self._section_source_map = {}
         if self._sgfile is None:

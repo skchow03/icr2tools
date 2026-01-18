@@ -14,6 +14,19 @@ from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
 def load_preview(path: Path) -> PreviewData:
     sgfile = SGFile.from_sg(str(path))
     trk = TRKFile.from_sg(str(path))
+    return _build_preview_data(sgfile, trk, status_message=f"Loaded {path.name}")
+
+
+def load_preview_from_sgfile(
+    sgfile: SGFile, *, status_message: str = "Preview updated."
+) -> PreviewData:
+    trk = TRKFile.from_sgfile(sgfile)
+    return _build_preview_data(sgfile, trk, status_message=status_message)
+
+
+def _build_preview_data(
+    sgfile: SGFile, trk: TRKFile, *, status_message: str
+) -> PreviewData:
     cline = get_cline_pos(trk)
     sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
 
@@ -38,7 +51,7 @@ def load_preview(path: Path) -> PreviewData:
         start_finish_mapping=start_finish_mapping,
         sections=sections,
         section_endpoints=section_endpoints,
-        status_message=f"Loaded {path.name}",
+        status_message=status_message,
     )
 
 
