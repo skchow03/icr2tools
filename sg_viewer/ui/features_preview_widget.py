@@ -14,6 +14,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import color_from_ground_type, getbounddlat, getxyz
 from sg_viewer.geometry import preview_transform
 from sg_viewer.models import preview_state
+from sg_viewer.models.selection import SectionSelection
 from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
 from sg_viewer.services import sg_rendering
 
@@ -42,8 +43,12 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
 
         self._surface_mesh: list[GroundSurfaceStrip] = []
         self._bounds: Bounds | None = None
+        self._trk: TRKFile | None = None
+        self._cline: list[Point] = []
         self._centerline: list[Point] = []
         self._boundaries: list[BoundaryLine] = []
+        self._section_selection: SectionSelection | None = None
+        self._section_cross_lines: list[tuple[Point, Point]] = []
         self._transform_state = preview_state.TransformState()
         self._status_message = "Load an SG file to view track surfaces."
         self._is_panning = False
@@ -58,6 +63,8 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
         sampled_centerline: Iterable[Point] | None,
         sampled_bounds: Bounds | None,
     ) -> None:
+        self._trk = trk
+        self._cline = list(cline or [])
         self._centerline = list(sampled_centerline or [])
         self._boundaries = []
 
@@ -66,17 +73,23 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
             self._bounds = sampled_bounds
             self._status_message = "Load an SG file to view track surfaces."
         else:
-            self._surface_mesh = build_ground_surface_mesh(trk, list(cline) if cline else None)
+            self._surface_mesh = build_ground_surface_mesh(trk, self._cline or None)
             surface_bounds = compute_mesh_bounds(self._surface_mesh)
             self._bounds = surface_bounds or sampled_bounds
             if cline:
-                self._boundaries = self._build_boundaries(trk, list(cline))
+                self._boundaries = self._build_boundaries(trk, self._cline)
             if not self._surface_mesh:
                 self._status_message = "No surface data available for this track."
             else:
                 self._status_message = ""
 
+        self._update_section_cross_lines()
         self._update_fit_scale()
+        self.update()
+
+    def set_section_selection(self, selection: SectionSelection | None) -> None:
+        self._section_selection = selection
+        self._update_section_cross_lines()
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
@@ -100,6 +113,11 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
 
         if self._boundaries:
             self._draw_boundaries(painter, self._boundaries, transform, self.height())
+
+        if self._section_cross_lines:
+            self._draw_section_cross_lines(
+                painter, self._section_cross_lines, transform, self.height()
+            )
 
         if self._status_message:
             sg_rendering.draw_status_message(painter, rect, self._status_message)
@@ -190,6 +208,35 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
             self._transform_state, self._bounds, (self.width(), self.height())
         )
 
+    def _update_section_cross_lines(self) -> None:
+        self._section_cross_lines = []
+        if (
+            self._trk is None
+            or self._section_selection is None
+            or not self._cline
+        ):
+            return
+
+        section_index = self._section_selection.index
+        if section_index < 0 or section_index >= len(self._trk.sects):
+            return
+
+        sect = self._trk.sects[section_index]
+        if sect.num_bounds < 2:
+            return
+
+        start_dlong = float(self._section_selection.start_dlong)
+        end_dlong = float(self._section_selection.end_dlong)
+        if end_dlong <= start_dlong:
+            return
+
+        for subsect, dlong in ((0.0, start_dlong), (1.0, end_dlong)):
+            dlat_start = getbounddlat(self._trk, section_index, subsect, 0)
+            dlat_end = getbounddlat(self._trk, section_index, subsect, sect.num_bounds - 1)
+            start_point = getxyz(self._trk, dlong, dlat_start, self._cline)[:2]
+            end_point = getxyz(self._trk, dlong, dlat_end, self._cline)[:2]
+            self._section_cross_lines.append((start_point, end_point))
+
     @staticmethod
     def _draw_surface_mesh(
         painter: QtGui.QPainter,
@@ -250,6 +297,27 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
                 path.lineTo(sg_rendering.map_point(x, y, transform, widget_height))
 
             painter.drawPath(path)
+
+        painter.restore()
+
+    @staticmethod
+    def _draw_section_cross_lines(
+        painter: QtGui.QPainter,
+        lines: Iterable[tuple[Point, Point]],
+        transform: Transform,
+        widget_height: int,
+    ) -> None:
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor("red"), 2)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+
+        for start, end in lines:
+            painter.drawLine(
+                sg_rendering.map_point(start[0], start[1], transform, widget_height),
+                sg_rendering.map_point(end[0], end[1], transform, widget_height),
+            )
 
         painter.restore()
 
