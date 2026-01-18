@@ -595,8 +595,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._restore_fsect_cell(item, previous_text)
             return
 
-        item.setData(QtCore.Qt.UserRole + 1, str(new_value))
-        self.refresh_features_preview()
+        # update_fsection_dlat emits sectionsChanged, which refreshes the table.
+        # Avoid touching the item afterward since it may have been deleted.
+        return
 
     def _restore_fsect_cell(
         self, item: QtWidgets.QTableWidgetItem, previous_text: str | None
