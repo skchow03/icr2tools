@@ -131,16 +131,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._features_fsect_table.verticalHeader().setVisible(False)
         self._features_fsect_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.NoEditTriggers
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
         )
         self._features_fsect_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.NoSelection
+            QtWidgets.QAbstractItemView.SingleSelection
         )
-        self._features_fsect_table.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._features_fsect_table.setFocusPolicy(QtCore.Qt.StrongFocus)
         self._features_fsect_table.setMinimumWidth(440)
         header = self._features_fsect_table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
+        self._features_fsect_table.itemChanged.connect(
+            self._on_features_fsect_item_changed
+        )
+        self._features_fsect_rows: list[dict[str, int]] = []
+        self._updating_features_fsect_table = False
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -457,17 +464,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _update_features_fsect_table(self, selection: SectionSelection | None) -> None:
         placeholder = "—"
+        self._updating_features_fsect_table = True
+        self._features_fsect_table.blockSignals(True)
+        self._features_fsect_rows = []
         for row in range(10):
             for col in range(4):
                 item = QtWidgets.QTableWidgetItem(placeholder)
                 item.setTextAlignment(QtCore.Qt.AlignCenter)
+                item.setFlags(QtCore.Qt.ItemIsEnabled)
                 self._features_fsect_table.setItem(row, col, item)
 
         sgfile = self._preview.sgfile
         if sgfile is None or selection is None:
+            self._features_fsect_table.blockSignals(False)
+            self._updating_features_fsect_table = False
             return
 
         if selection.index < 0 or selection.index >= len(sgfile.sects):
+            self._features_fsect_table.blockSignals(False)
+            self._updating_features_fsect_table = False
             return
 
         section = sgfile.sects[selection.index]
@@ -478,19 +493,36 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             fstart = section.fstart[index]
             fend = section.fend[index]
             sort_key = (min(fstart, fend), max(fstart, fend), index)
-            fsections.append((sort_key, ftype1, ftype2, fstart, fend))
+            fsections.append((sort_key, ftype1, ftype2, fstart, fend, index))
 
         fsections.sort(key=lambda item: item[0])
 
-        for row, (_, ftype1, ftype2, fstart, fend) in enumerate(fsections[:10]):
+        for row, (_, ftype1, ftype2, fstart, fend, fsect_index) in enumerate(
+            fsections[:10]
+        ):
             is_surface = ftype1 in {0, 1, 2, 3, 4, 5, 6}
             kind = "Surface" if is_surface else "Boundary"
             type_name = self._format_fsect_type(ftype1, ftype2)
             values = [kind, type_name, str(fstart), str(fend)]
+            self._features_fsect_rows.append(
+                {"index": fsect_index, "start": int(fstart), "end": int(fend)}
+            )
             for col, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(value)
                 item.setTextAlignment(QtCore.Qt.AlignCenter)
+                item.setData(QtCore.Qt.UserRole, fsect_index)
+                if col in {2, 3}:
+                    item.setFlags(
+                        QtCore.Qt.ItemIsSelectable
+                        | QtCore.Qt.ItemIsEnabled
+                        | QtCore.Qt.ItemIsEditable
+                    )
+                    item.setData(QtCore.Qt.UserRole + 1, value)
+                else:
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                 self._features_fsect_table.setItem(row, col, item)
+        self._features_fsect_table.blockSignals(False)
+        self._updating_features_fsect_table = False
 
     def _format_fsect_type(self, ftype1: int, ftype2: int) -> str:
         if ftype1 in {0, 1, 2, 3, 4, 5, 6}:
@@ -507,6 +539,75 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             else f"Fence {ftype2}"
         )
         return f"{wall_label} / {fence_label}"
+
+    def _on_features_fsect_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if self._updating_features_fsect_table:
+            return
+
+        row = item.row()
+        column = item.column()
+        if column not in {2, 3}:
+            return
+
+        if row >= len(self._features_fsect_rows):
+            return
+
+        fsect_info = self._features_fsect_rows[row]
+        fsect_index = fsect_info["index"]
+        previous_text = item.data(QtCore.Qt.UserRole + 1)
+        try:
+            new_value = int(item.text())
+        except (TypeError, ValueError):
+            self._restore_fsect_cell(item, previous_text)
+            self.show_status_message("DLAT values must be integers.")
+            return
+
+        prev_value = None
+        next_value = None
+        field = "start" if column == 2 else "end"
+        if row > 0:
+            prev_value = self._features_fsect_rows[row - 1][field]
+        if row + 1 < len(self._features_fsect_rows):
+            next_value = self._features_fsect_rows[row + 1][field]
+
+        if prev_value is not None and new_value < prev_value:
+            self._restore_fsect_cell(item, previous_text)
+            self.show_status_message("DLAT value must be >= previous fsection.")
+            return
+
+        if next_value is not None and new_value > next_value:
+            self._restore_fsect_cell(item, previous_text)
+            self.show_status_message("DLAT value must be <= next fsection.")
+            return
+
+        selection = self._current_selection
+        if selection is None:
+            self._restore_fsect_cell(item, previous_text)
+            return
+
+        updated = self._preview.update_fsection_dlat(
+            selection.index,
+            fsect_index,
+            start_dlat=new_value if column == 2 else None,
+            end_dlat=new_value if column == 3 else None,
+        )
+        if not updated:
+            self._restore_fsect_cell(item, previous_text)
+            return
+
+        item.setData(QtCore.Qt.UserRole + 1, str(new_value))
+        self.refresh_features_preview()
+
+    def _restore_fsect_cell(
+        self, item: QtWidgets.QTableWidgetItem, previous_text: str | None
+    ) -> None:
+        if previous_text is None:
+            previous_text = "—"
+        self._updating_features_fsect_table = True
+        self._features_fsect_table.blockSignals(True)
+        item.setText(previous_text)
+        self._features_fsect_table.blockSignals(False)
+        self._updating_features_fsect_table = False
     
     def update_window_title(
         self,
