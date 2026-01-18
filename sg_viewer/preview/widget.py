@@ -1580,14 +1580,30 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if section_index < 0 or section_index >= len(self._sgfile.sects):
             return False
 
-        section = self._sgfile.sects[section_index]
+        section_candidates: list[SGFile.Section] = []
+        if 0 <= section_index < len(self._section_manager.sections):
+            source_id = self._section_manager.sections[section_index].source_id
+            if source_id is not None:
+                source_section = self._section_source_map.get(source_id)
+                if source_section is not None:
+                    section_candidates.append(source_section)
+
+        sg_section = self._sgfile.sects[section_index]
+        if sg_section not in section_candidates:
+            section_candidates.append(sg_section)
+
+        if not section_candidates:
+            return False
+
+        section = section_candidates[0]
         if fsect_index < 0 or fsect_index >= section.num_fsects:
             return False
 
-        if start_dlat is not None:
-            section.fstart[fsect_index] = int(start_dlat)
-        if end_dlat is not None:
-            section.fend[fsect_index] = int(end_dlat)
+        for section in section_candidates:
+            if start_dlat is not None:
+                section.fstart[fsect_index] = int(start_dlat)
+            if end_dlat is not None:
+                section.fend[fsect_index] = int(end_dlat)
 
         self._has_unsaved_changes = True
         self._rebuild_trk_from_preview()
