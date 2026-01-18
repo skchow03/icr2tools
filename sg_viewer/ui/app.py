@@ -8,7 +8,6 @@ from PyQt5 import QtCore, QtWidgets
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.features_preview_widget import FeaturesPreviewWidget
-from sg_viewer.ui.section_surface_widget import SectionSurfaceWidget
 from sg_viewer.ui.preview_widget import SGPreviewWidget
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
@@ -52,7 +51,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             show_status=self.show_status_message
         )
         self._features_preview = FeaturesPreviewWidget()
-        self._section_surface_preview = SectionSurfaceWidget()
         self._current_selection: SectionSelection | None = None
         self._sidebar = QtWidgets.QWidget()
         self._features_sidebar = QtWidgets.QWidget()
@@ -214,7 +212,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         features_preview_column = QtWidgets.QWidget()
         features_preview_layout = QtWidgets.QVBoxLayout()
         features_preview_layout.addWidget(self._features_preview, stretch=3)
-        features_preview_layout.addWidget(self._section_surface_preview, stretch=1)
         features_preview_column.setLayout(features_preview_layout)
         features_layout.addWidget(features_preview_column, stretch=1)
         features_layout.addWidget(self._features_sidebar)
@@ -313,7 +310,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             trk, cline, sampled_centerline, sampled_bounds
         )
         self._features_preview.set_section_selection(self._current_selection)
-        self.update_section_surface_preview(self._current_selection)
         self.refresh_features_sidebar()
 
     def refresh_features_sidebar(self) -> None:
@@ -342,12 +338,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._features_section_combo.setCurrentIndex(-1)
             self._features_section_combo.blockSignals(False)
         self._update_features_fsect_table(self._current_selection)
-
-    def update_section_surface_preview(
-        self, selection: SectionSelection | None
-    ) -> None:
-        trk, _, _, _ = self._preview.get_surface_preview_data()
-        self._section_surface_preview.set_section_data(trk, selection)
 
     def _on_tab_changed(self, index: int) -> None:
         if index == self._features_tab_index:
@@ -399,7 +389,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._start_point_label.setText("Start Point: –")
             self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
-            self.update_section_surface_preview(None)
             self._features_preview.set_section_selection(None)
             self._update_features_selection(None)
             return
@@ -443,7 +432,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
-        self.update_section_surface_preview(selection)
         self._features_preview.set_section_selection(selection)
         self._update_features_selection(selection)
 
@@ -483,11 +471,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
 
         section = sgfile.sects[selection.index]
-        for row in range(min(10, section.num_fsects)):
-            ftype1 = section.ftype1[row]
-            ftype2 = section.ftype2[row]
-            fstart = section.fstart[row]
-            fend = section.fend[row]
+        fsections = []
+        for index in range(section.num_fsects):
+            ftype1 = section.ftype1[index]
+            ftype2 = section.ftype2[index]
+            fstart = section.fstart[index]
+            fend = section.fend[index]
+            sort_key = (min(fstart, fend), max(fstart, fend), index)
+            fsections.append((sort_key, ftype1, ftype2, fstart, fend))
+
+        fsections.sort(key=lambda item: item[0])
+
+        for row, (_, ftype1, ftype2, fstart, fend) in enumerate(fsections[:10]):
             is_surface = ftype1 in {0, 1, 2, 3, 4, 5, 6}
             kind = "Surface" if is_surface else "Boundary"
             type_name = self._format_fsect_type(ftype1, ftype2)
