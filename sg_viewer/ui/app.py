@@ -312,6 +312,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._features_preview.set_surface_data(
             trk, cline, sampled_centerline, sampled_bounds
         )
+        self._features_preview.set_section_selection(self._current_selection)
         self.update_section_surface_preview(self._current_selection)
         self.refresh_features_sidebar()
 
@@ -399,6 +400,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
             self.update_section_surface_preview(None)
+            self._features_preview.set_section_selection(None)
             self._update_features_selection(None)
             return
 
@@ -442,6 +444,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
         self.update_section_surface_preview(selection)
+        self._features_preview.set_section_selection(selection)
         self._update_features_selection(selection)
 
     @staticmethod
