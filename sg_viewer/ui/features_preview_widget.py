@@ -67,15 +67,12 @@ class FeaturesPreviewWidget(QtWidgets.QWidget):
         self._cline = list(cline or [])
         self._centerline = list(sampled_centerline or [])
         self._boundaries = []
+        self._surface_mesh = build_ground_surface_mesh(trk, self._cline or None)
+        self._bounds = compute_mesh_bounds(self._surface_mesh) or sampled_bounds
 
         if trk is None:
-            self._surface_mesh = []
-            self._bounds = sampled_bounds
             self._status_message = "Load an SG file to view track surfaces."
         else:
-            self._surface_mesh = build_ground_surface_mesh(trk, self._cline or None)
-            surface_bounds = compute_mesh_bounds(self._surface_mesh)
-            self._bounds = surface_bounds or sampled_bounds
             if cline:
                 self._boundaries = self._build_boundaries(trk, self._cline)
             if not self._surface_mesh:
