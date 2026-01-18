@@ -596,7 +596,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
 
         # update_fsection_dlat emits sectionsChanged, which refreshes the table.
+        # Refresh the preview immediately so the track diagram updates with the edit.
         # Avoid touching the item afterward since it may have been deleted.
+        self.refresh_features_preview()
         return
 
     def _restore_fsect_cell(
