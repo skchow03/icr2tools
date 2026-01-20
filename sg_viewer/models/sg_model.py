@@ -33,6 +33,8 @@ class SectionPreview:
 class PreviewData:
     sg: SGFile
     sgfile: SGFile
+    # NOTE: trk is optional.
+    # SG Viewer preview must function without TRK.
     trk: TRKFile | None
     cline: List[Point] | None
     sampled_centerline: List[Point]

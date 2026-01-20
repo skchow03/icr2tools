@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+# IMPORTANT:
+# SG Viewer preview must NOT depend on TRK.
+# TRK is optional and must never be required for live editing.
+
 from pathlib import Path
+
 from icr2_core.trk.sg_classes import SGFile
+from icr2_core.trk.trk_classes import TRKFile
+from icr2_core.trk.trk_utils import get_cline_pos
+from track_viewer.geometry import build_centerline_index, sample_centerline
 
 from sg_viewer.geometry.centerline_utils import compute_start_finish_mapping_from_centerline
 from sg_viewer.geometry.sg_geometry import (
@@ -13,11 +21,45 @@ from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
 
 def load_preview(path: Path) -> PreviewData:
     sgfile = SGFile.from_sg(str(path))
-    sections = _build_sections(sgfile)
+    return load_preview_from_sgfile(sgfile, status_message=f"Loaded {path.name}")
+
+
+def load_preview_from_sgfile(
+    sgfile: SGFile,
+    *,
+    status_message: str,
+) -> PreviewData:
+    return _build_preview_data(sgfile, trk=None, status_message=status_message)
+
+
+def enable_trk_overlay(preview: PreviewData) -> None:
+    trk = TRKFile.from_sgfile(preview.sgfile)
+    cline = get_cline_pos(trk)
+    object.__setattr__(preview, "trk", trk)
+    object.__setattr__(preview, "cline", cline)
+
+
+def _build_preview_data(
+    sgfile: SGFile,
+    trk: TRKFile | None,
+    *,
+    status_message: str,
+) -> PreviewData:
+    sections = _build_sections(sgfile, trk)
     sampled, sampled_dlongs, bounds, centerline_index = rebuild_centerline_from_sections(sections)
 
     if not sampled or bounds is None:
         raise ValueError("Failed to build centreline from SG file")
+
+    cline = None
+    if trk is not None:
+        cline = get_cline_pos(trk)
+        trk_sampled, trk_dlongs, trk_bounds = sample_centerline(trk, cline)
+        if trk_sampled and trk_bounds is not None:
+            sampled = trk_sampled
+            sampled_dlongs = trk_dlongs
+            bounds = trk_bounds
+            centerline_index = build_centerline_index(sampled, bounds)
 
     track_length = float(sampled_dlongs[-1]) if sampled_dlongs else 0.0
     start_finish_mapping = compute_start_finish_mapping_from_centerline(sampled)
@@ -26,8 +68,8 @@ def load_preview(path: Path) -> PreviewData:
     return PreviewData(
         sg=sgfile,
         sgfile=sgfile,
-        trk=None,
-        cline=None,
+        trk=trk,
+        cline=cline,
         sampled_centerline=sampled,
         sampled_dlongs=sampled_dlongs,
         sampled_bounds=bounds,
@@ -36,13 +78,15 @@ def load_preview(path: Path) -> PreviewData:
         start_finish_mapping=start_finish_mapping,
         sections=sections,
         section_endpoints=section_endpoints,
-        status_message=f"Loaded {path.name}",
+        status_message=status_message,
     )
 
 
 def _build_sections(
     sgfile: SGFile,
+    trk: TRKFile | None,
 ) -> list[SectionPreview]:
+    _ = trk
     sections: list[SectionPreview] = []
 
     if not sgfile.sects:
