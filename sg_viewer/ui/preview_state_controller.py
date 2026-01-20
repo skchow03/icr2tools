@@ -10,6 +10,7 @@ from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry import preview_transform
 from sg_viewer.models import preview_state
+from sg_viewer.models.sg_model import PreviewData
 from sg_viewer.services import preview_loader_service
 
 Point = Tuple[float, float]
@@ -20,6 +21,7 @@ class PreviewStateController:
     def __init__(self) -> None:
         self._sgfile: SGFile | None = None
         self._trk: TRKFile | None = None
+        self._preview_data: PreviewData | None = None
         self._sampled_centerline: List[Point] = []
         self._sampled_bounds: tuple[float, float, float, float] | None = None
         self._track_length: float | None = None
@@ -94,6 +96,7 @@ class PreviewStateController:
     def clear(self, message: str | None = None) -> None:
         self._sgfile = None
         self._trk = None
+        self._preview_data = None
         self._sampled_centerline = []
         self._sampled_bounds = None
         self._track_length = None
@@ -110,12 +113,21 @@ class PreviewStateController:
 
         self._sgfile = data.sg
         self._trk = data.trk
+        self._preview_data = data
         self._sampled_centerline = data.sampled_centerline
         self._sampled_bounds = data.sampled_bounds
         self._track_length = data.track_length
         self._transform_state = preview_state.TransformState()
         self._status_message = data.status_message
         return data
+
+    def enable_trk_overlay(self) -> TRKFile | None:
+        if self._preview_data is None:
+            return None
+
+        preview_loader_service.enable_trk_overlay(self._preview_data)
+        self._trk = self._preview_data.trk
+        return self._trk
 
     # ------------------------------------------------------------------
     # Transform helpers

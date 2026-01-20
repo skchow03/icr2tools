@@ -8,8 +8,6 @@ from pathlib import Path
 
 from PyQt5 import QtWidgets
 
-from icr2_core.trk.trk_classes import TRKFile
-
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
 from sg_viewer.models.sg_model import SectionPreview
@@ -476,6 +474,10 @@ class SGViewerController:
         sg_path = self._ensure_saved_sg()
         if sg_path is None:
             return
+        try:
+            self._window.preview.enable_trk_overlay()
+        except Exception as exc:
+            logger.exception("Failed to build TRK overlay", exc_info=exc)
 
         default_output = sg_path.with_suffix(".trk")
         options = QtWidgets.QFileDialog.Options()
@@ -784,17 +786,16 @@ class SGViewerController:
             self._refresh_elevation_profile()
             return
 
-        if self._current_path is None:
-            self._window.trk_compare_checkbox.setChecked(False)
-            self._window.show_status_message("Save or open an SG file to compare TRK elevation.")
-            return
-
         try:
-            trk = TRKFile.from_sg(str(self._current_path))
+            trk = self._window.preview.enable_trk_overlay()
         except Exception as exc:
             logger.exception("Failed to build TRK comparison", exc_info=exc)
             self._window.trk_compare_checkbox.setChecked(False)
             self._window.show_status_message("Failed to build TRK comparison.")
+            return
+        if trk is None:
+            self._window.trk_compare_checkbox.setChecked(False)
+            self._window.show_status_message("Save or open an SG file to compare TRK elevation.")
             return
 
         self._window.preview.set_trk_comparison(trk)

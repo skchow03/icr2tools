@@ -25,7 +25,7 @@ class ElevationProfileData:
 
 
 class ElevationProfileWidget(QtWidgets.QWidget):
-    """Lightweight plot for showing SG → TRK elevation behaviour."""
+    """Lightweight plot for showing SG elevation behaviour."""
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)

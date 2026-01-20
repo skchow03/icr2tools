@@ -9,10 +9,10 @@ from typing import Callable, List, Tuple
 import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.services.sg_elevation import sample_sg_elevation
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import get_alt
+from icr2_core.trk.trk_utils import get_cline_pos
+from icr2_core.sg_elevation import sample_sg_elevation
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 from sg_viewer.models import preview_state, selection
 from sg_viewer.preview.geometry import (
@@ -375,6 +375,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._update_fit_scale()
         self._has_unsaved_changes = False
         self.update()
+
+    def enable_trk_overlay(self) -> TRKFile | None:
+        trk = self._controller.enable_trk_overlay()
+        if trk is None:
+            return None
+        self._trk = trk
+        self._cline = get_cline_pos(trk)
+        return trk
 
     def start_new_track(self) -> None:
         self.clear("New track ready. Click New Straight to start drawing.")
@@ -1465,6 +1473,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         samples_per_section: int = 24,
         show_trk: bool = False,
     ) -> ElevationProfileData | None:
+        _ = show_trk
         if (
             self._sgfile is None
             or self._track_length is None
@@ -1515,17 +1524,6 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 fraction = step / samples_per_section
                 dlong = start_dlong + fraction * sg_length
                 dlongs.append(dlong)
-
-        if show_trk and self._trk is not None:
-            trk_altitudes = []
-            sources = (ElevationSource.SG, ElevationSource.TRK)
-            for sect_idx, sg_sect in enumerate(self._sgfile.sects):
-                sg_length = float(sg_sect.length)
-                if sg_length <= 0:
-                    continue
-                for step in range(samples_per_section + 1):
-                    fraction = step / samples_per_section
-                    trk_altitudes.append(get_alt(self._trk, sect_idx, fraction, dlat_value))
 
         return ElevationProfileData(
             dlongs=dlongs,
