@@ -17,7 +17,6 @@ from track_viewer.geometry import project_point_to_centerline
 from sg_viewer.models import preview_state, selection
 from sg_viewer.preview.geometry import (
     CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
-    curve_angles,
 )
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
@@ -43,35 +42,17 @@ from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.models.preview_state_utils import update_node_status
 from sg_viewer.models.sg_model import SectionPreview
-from sg_viewer.preview.hover_detection import find_hovered_unconnected_node
 from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
+from sg_viewer.preview.interaction_state import InteractionState
+from sg_viewer.preview.preview_mutations import project_point_to_polyline
+from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 
 
 logger = logging.getLogger(__name__)
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
-
-
-def _project_point_to_polyline(point: Point, polyline: list[Point]) -> Point | None:
-    if len(polyline) < 2:
-        return None
-
-    best_point: Point | None = None
-    best_distance_sq = float("inf")
-    for start, end in zip(polyline, polyline[1:]):
-        projection = project_point_to_segment(point, start, end)
-        if projection is None:
-            continue
-        dx = projection[0] - point[0]
-        dy = projection[1] - point[1]
-        distance_sq = dx * dx + dy * dy
-        if distance_sq < best_distance_sq:
-            best_distance_sq = distance_sq
-            best_point = projection
-
-    return best_point
 
 
 class PreviewRuntime:
@@ -123,14 +104,11 @@ class PreviewRuntime:
         self._start_finish_dlong: float | None = None
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
 
-        self._is_panning = False
-        self._last_mouse_pos: QtCore.QPoint | None = None
-        self._press_pos: QtCore.QPoint | None = None
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
 
         self._creation_controller = CreationController()
-        self._hovered_endpoint: tuple[int, str] | None = None
+        self._interaction_state = InteractionState()
 
         self._split_section_mode = False
         self._split_previous_status_message: str | None = None
@@ -203,16 +181,47 @@ class PreviewRuntime:
     def request_repaint(self) -> None:
         self._context.request_repaint()
 
+    def log_debug(self, message: str, *args: object) -> None:
+        logger.debug(message, *args)
+
     def _widget_size(self) -> tuple[int, int]:
         return self._context.widget_size()
 
     def _widget_height(self) -> int:
         return self._context.widget_height()
 
+    def widget_size(self) -> tuple[int, int]:
+        return self._widget_size()
+
+    @property
+    def controller(self) -> PreviewStateController:
+        return self._controller
+
+    @property
+    def transform_state(self) -> preview_state.TransformState:
+        return self._transform_state
+
+    @property
+    def delete_section_active(self) -> bool:
+        return self._delete_section_active
+
+    @property
+    def creation_active(self) -> bool:
+        return self._creation_active()
+
+    def set_user_transform_active(self) -> None:
+        self._transform_state = replace(self._transform_state, user_transform_active=True)
+
+    def pan_view(self, delta: tuple[float, float], scale: float, center: tuple[float, float]) -> None:
+        self._transform_state = pan_transform_state(
+            self._transform_state,
+            delta,
+            scale,
+            center,
+        )
+
     def _stop_panning(self) -> None:
-        self._is_panning = False
-        self._last_mouse_pos = None
-        self._press_pos = None
+        self._interaction_state.stop_panning()
 
     @staticmethod
     def _create_empty_sgfile() -> SGFile:
@@ -335,10 +344,8 @@ class PreviewRuntime:
         self._apply_creation_update(self._creation_controller.reset())
         self.cancel_split_section()
         self._editor.reset()
-        self._is_panning = False
-        self._last_mouse_pos = None
-        self._press_pos = None
         self._interaction.reset()
+        self._interaction_state.reset()
         self._status_message = message or "Select an SG file to begin."
         self._selection.reset([], None, None, [])
         self._set_default_view_bounds()
@@ -590,7 +597,7 @@ class PreviewRuntime:
         if section.type_name == "straight":
             projected = project_point_to_segment(track_point, section.start, section.end)
         else:
-            projected = _project_point_to_polyline(track_point, section.polyline)
+            projected = project_point_to_polyline(track_point, section.polyline)
         if projected is None:
             self._clear_split_hover()
             return
@@ -716,7 +723,7 @@ class PreviewRuntime:
 
     @property
     def hovered_endpoint(self) -> tuple[int, str] | None:
-        return self._hovered_endpoint
+        return self._interaction_state.hovered_endpoint
 
     @property
     def show_curve_markers(self) -> bool:
@@ -878,6 +885,30 @@ class PreviewRuntime:
         self._apply_creation_update(update)
         return update.handled
 
+    def handle_creation_mouse_press(self, event: QtGui.QMouseEvent) -> bool:
+        return self._handle_creation_mouse_press(event)
+
+    def handle_creation_mouse_move(self, pos: QtCore.QPoint) -> bool:
+        return self._handle_creation_mouse_move(pos)
+
+    def handle_creation_mouse_release(self, event: QtGui.QMouseEvent) -> bool:
+        return self._handle_creation_mouse_release(event)
+
+    def creation_context(self) -> CreationEventContext | None:
+        return self._creation_context()
+
+    def update_split_hover(self, pos: QtCore.QPoint) -> None:
+        self._update_split_hover(pos)
+
+    def commit_split(self) -> None:
+        self._commit_split()
+
+    def handle_delete_click(self, pos: QtCore.QPoint) -> bool:
+        return self._handle_delete_click(pos)
+
+    def handle_click(self, pos: QtCore.QPoint) -> None:
+        self._handle_click(pos)
+
 
 
     # ------------------------------------------------------------------
@@ -912,162 +943,13 @@ class PreviewRuntime:
         event.accept()
 
     def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._handle_creation_mouse_press(event):
-            return
-
-        if self._delete_section_active and event.button() == QtCore.Qt.LeftButton:
-            self._is_panning = False
-            self._last_mouse_pos = None
-            self._press_pos = event.pos()
-            event.accept()
-            return
-
-# ---------------------------------------------------------
-# NEW: Node disconnect only if that section is selected
-# ---------------------------------------------------------
-        if self._creation_active():
-            event.accept()
-            return
-
-        if self._split_section_mode:
-            self._is_panning = False
-            self._last_mouse_pos = None
-            self._press_pos = None
-            event.accept()
-            return
-
-        if self._interaction.handle_mouse_press(event):
-            logger.debug("mousePressEvent handled by interaction at %s", event.pos())
-            return
-
-        # ---------------------------------------------------------
-        # 2. EXISTING: Begin panning behavior
-        # ---------------------------------------------------------
-        if (
-            event.button() == QtCore.Qt.LeftButton
-            and self._controller.current_transform(self._widget_size()) is not None
-            and not self._interaction.is_dragging_node
-            and not self._interaction.is_dragging_section
-        ):
-            self._is_panning = True
-            self._last_mouse_pos = event.pos()
-            self._press_pos = event.pos()
-            self._transform_state = replace(self._transform_state, user_transform_active=True)
-            logger.debug("mousePressEvent starting pan at %s", event.pos())
-            event.accept()
-            return
+        self._interaction_state.on_mouse_press(event, self)
 
     def on_mouse_move(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._handle_creation_mouse_move(event.pos()):
-            event.accept()
-            return
-
-        if self._creation_active():
-            event.accept()
-            return
-
-        if self._delete_section_active:
-            event.accept()
-            return
-
-        if self._split_section_mode:
-            self._update_split_hover(event.pos())
-            event.accept()
-            return
-
-
-
-        # --------------------------------------------------
-        # THEN let interaction handle the move
-        # --------------------------------------------------
-        if self._interaction.handle_mouse_move(event):
-            self._context.request_repaint()
-            return
-
-
-        if self._is_panning and self._last_mouse_pos is not None:
-            widget_size = self._widget_size()
-            transform = self._controller.current_transform(widget_size)
-            if transform:
-                state = self._transform_state
-                center = state.view_center or self._controller.default_center()
-                if center is not None:
-                    scale, _ = transform
-                    delta = event.pos() - self._last_mouse_pos
-                    self._last_mouse_pos = event.pos()
-                    self._transform_state = pan_transform_state(
-                        state,
-                        (delta.x(), delta.y()),
-                        scale,
-                        center,
-                    )
-                    self._context.request_repaint()
-            event.accept()
-            return
-        
-        context = self._creation_context()
-        if context is not None:
-            hover = find_hovered_unconnected_node(
-                (event.pos().x(), event.pos().y()),
-                context,
-            )
-
-            if hover != self._hovered_endpoint:
-                self._hovered_endpoint = hover
-                self._context.request_repaint()
+        self._interaction_state.on_mouse_move(event, self)
 
     def on_mouse_release(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._handle_creation_mouse_release(event):
-            return
-
-        if self._split_section_mode:
-            if event.button() == QtCore.Qt.LeftButton and self._split_hover_point is not None:
-                self._commit_split()
-            self._press_pos = None
-            event.accept()
-            return
-
-        if event.button() == QtCore.Qt.LeftButton:
-            if self._delete_section_active:
-                if (
-                    self._press_pos is not None
-                    and (event.pos() - self._press_pos).manhattanLength() < 6
-                ):
-                    self._handle_delete_click(event.pos())
-                self._press_pos = None
-                event.accept()
-                return
-            if self._split_section_mode:
-                self._press_pos = None
-                event.accept()
-                return
-            if self._creation_active():
-                event.accept()
-                return
-            if self._interaction.handle_mouse_release(event):
-                logger.debug("mouseReleaseEvent handled by interaction at %s", event.pos())
-                return
-            self._is_panning = False
-            self._last_mouse_pos = None
-            if (
-                self._press_pos is not None
-                and (event.pos() - self._press_pos).manhattanLength() < 6
-            ):
-                logger.debug(
-                    "mouseReleaseEvent treating as click (press=%s, release=%s, delta=%s)",
-                    self._press_pos,
-                    event.pos(),
-                    (event.pos() - self._press_pos).manhattanLength(),
-                )
-                self._handle_click(event.pos())
-            else:
-                logger.debug(
-                    "mouseReleaseEvent ending pan without click (press=%s, release=%s, delta=%s)",
-                    self._press_pos,
-                    event.pos(),
-                    0 if self._press_pos is None else (event.pos() - self._press_pos).manhattanLength(),
-                )
-            self._press_pos = None
+        self._interaction_state.on_mouse_release(event, self)
     def on_leave(self, event: QtCore.QEvent) -> None:  # noqa: D401
         _ = event
         self._clear_split_hover()
@@ -1363,11 +1245,13 @@ class PreviewRuntime:
             self._start_finish_dlong = float(start_dlong) % float(self._track_length)
 
     def apply_preview_to_sgfile(self) -> SGFile:
-        return self._apply_preview_to_sgfile()
+        if self._sgfile is None:
+            raise ValueError("No SG file loaded.")
+        return apply_preview_to_sgfile(self._sgfile, self._section_manager.sections)
 
     def recalculate_dlongs(self) -> bool:
         try:
-            sgfile = self._apply_preview_to_sgfile()
+            sgfile = self.apply_preview_to_sgfile()
         except ValueError:
             return False
 
@@ -1380,99 +1264,10 @@ class PreviewRuntime:
     def save_sg(self, path: Path) -> None:
         """Write the current SG (and any edits) to ``path``."""
 
-        sgfile = self._apply_preview_to_sgfile()
+        sgfile = self.apply_preview_to_sgfile()
 
         sgfile.output_sg(str(path))
         self._has_unsaved_changes = False
-
-    def _apply_preview_to_sgfile(self) -> SGFile:
-        if self._sgfile is None:
-            raise ValueError("No SG file loaded.")
-
-        if not self._section_manager.sections:
-            raise ValueError("No sections available to save.")
-
-        sgfile = self._sgfile
-
-        desired_section_count = len(self._section_manager.sections)
-        current_section_count = len(sgfile.sects)
-
-        if desired_section_count != current_section_count:
-            section_record_length = 58 + 2 * sgfile.num_xsects
-            if desired_section_count > current_section_count:
-                template_section = [0] * section_record_length
-                for _ in range(desired_section_count - current_section_count):
-                    sgfile.sects.append(
-                        SGFile.Section(template_section, sgfile.num_xsects)
-                    )
-            else:
-                sgfile.sects = sgfile.sects[:desired_section_count]
-
-        sgfile.num_sects = desired_section_count
-        if len(sgfile.header) > 4:
-            sgfile.header[4] = desired_section_count
-
-        def _as_int(value: float | int | None, fallback: int = 0) -> int:
-            if value is None:
-                return fallback
-            return int(round(value))
-
-        for sg_section, preview_section in zip(
-            sgfile.sects, self._section_manager.sections
-        ):
-            sg_section.type = 2 if preview_section.type_name == "curve" else 1
-            sg_section.sec_prev = _as_int(preview_section.previous_id, -1)
-            sg_section.sec_next = _as_int(preview_section.next_id, -1)
-
-            start_x, start_y = preview_section.start
-            end_x, end_y = preview_section.end
-            sg_section.start_x = _as_int(start_x)
-            sg_section.start_y = _as_int(start_y)
-            sg_section.end_x = _as_int(end_x)
-            sg_section.end_y = _as_int(end_y)
-
-            sg_section.start_dlong = _as_int(preview_section.start_dlong)
-            sg_section.length = _as_int(preview_section.length)
-
-            center_x, center_y = preview_section.center or (0.0, 0.0)
-            sg_section.center_x = _as_int(center_x)
-            sg_section.center_y = _as_int(center_y)
-
-            start_heading = (
-                (preview_section.sang1, preview_section.sang2)
-                if preview_section.sang1 is not None and preview_section.sang2 is not None
-                else preview_section.start_heading
-            )
-            end_heading = (
-                (preview_section.eang1, preview_section.eang2)
-                if preview_section.eang1 is not None and preview_section.eang2 is not None
-                else preview_section.end_heading
-            )
-
-            sang1 = sang2 = eang1 = eang2 = None
-            if preview_section.type_name == "curve" and preview_section.center is not None:
-                sang1, sang2, eang1, eang2 = curve_angles(
-                    (start_x, start_y),
-                    (end_x, end_y),
-                    (center_x, center_y),
-                    preview_section.radius or 0.0,
-                )
-            else:
-                sang1 = start_heading[0] if start_heading else None
-                sang2 = start_heading[1] if start_heading else None
-                eang1 = end_heading[0] if end_heading else None
-                eang2 = end_heading[1] if end_heading else None
-
-            sg_section.sang1 = _as_int(sang1)
-            sg_section.sang2 = _as_int(sang2)
-            sg_section.eang1 = _as_int(eang1)
-            sg_section.eang2 = _as_int(eang2)
-
-            sg_section.radius = _as_int(preview_section.radius)
-
-            sg_section.recompute_curve_length()
-
-        return sgfile
 
     def get_section_headings(self) -> list[selection.SectionHeadingData]:
         return self._selection.get_section_headings()
