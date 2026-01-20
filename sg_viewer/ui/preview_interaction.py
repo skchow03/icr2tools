@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Callable
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.connect_curve_to_straight import (
     solve_curve_end_to_straight_start,
     solve_straight_end_to_curve_endpoint,
@@ -21,7 +20,13 @@ from sg_viewer.geometry.sg_geometry import (
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
-from sg_viewer.preview.geometry import distance_to_polyline, solve_curve_drag
+from sg_viewer.preview.preview_mutations import (
+    distance_to_polyline,
+    project_point_along_heading,
+    solve_curve_drag,
+    translate_section,
+    update_straight_endpoints,
+)
 
 from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
@@ -479,7 +484,7 @@ class PreviewInteraction:
         else:
             if endtype == "start":
                 if disconnected_start and not disconnected_end:
-                    constrained_start = self._project_point_along_heading(
+                    constrained_start = project_point_along_heading(
                         end, sect.end_heading, track_point
                     )
                     start = constrained_start or track_point
@@ -487,7 +492,7 @@ class PreviewInteraction:
                     start = track_point
             else:
                 if disconnected_end and not disconnected_start:
-                    constrained_end = self._project_point_along_heading(
+                    constrained_end = project_point_along_heading(
                         start, sect.start_heading, track_point
                     )
                     end = constrained_end or track_point
@@ -497,8 +502,7 @@ class PreviewInteraction:
         if sect.type_name == "curve":
             updated_section = solve_curve_drag(sect, start, end)
         else:
-            length = math.hypot(end[0] - start[0], end[1] - start[1])
-            updated_section = replace(sect, start=start, end=end, length=length)
+            updated_section = update_straight_endpoints(sect, start, end)
 
         if updated_section is None:
             return
@@ -671,21 +675,7 @@ class PreviewInteraction:
             if chain_index not in self._chain_drag_origins or chain_index < 0 or chain_index >= len(sections):
                 continue
 
-            start, end, center = self._chain_drag_origins[chain_index]
-            translated_start = (start[0] + dx, start[1] + dy)
-            translated_end = (end[0] + dx, end[1] + dy)
-
-            translated_center = None
-            if center is not None:
-                cx, cy = center
-                translated_center = (cx + dx, cy + dy)
-
-            updated_section = replace(
-                sections[chain_index],
-                start=translated_start,
-                end=translated_end,
-                center=translated_center if translated_center is not None else sections[chain_index].center,
-            )
+            updated_section = translate_section(sections[chain_index], dx, dy)
 
             sections[chain_index] = update_section_geometry(updated_section)
 
@@ -1115,11 +1105,6 @@ class PreviewInteraction:
         self._apply_section_updates(updated_sections)
         self._context.request_repaint()
         return True
-
-    def _project_point_along_heading(
-        self, origin: Point, heading: tuple[float, float] | None, target: Point
-    ) -> Point | None:
-        return _project_point_along_heading(origin, heading, target)
 
     def _points_close(self, a: Point, b: Point, tol: float = 1e-6) -> bool:
         return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol
