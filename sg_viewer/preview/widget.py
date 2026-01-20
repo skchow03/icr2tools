@@ -9,7 +9,7 @@ from typing import Callable, List, Tuple
 import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from icr2_core.sg_elevation import sample_sg_elevation
+from sg_viewer.services.sg_elevation import sample_sg_elevation
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
