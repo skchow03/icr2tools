@@ -120,6 +120,7 @@ class PreviewInteraction:
         self._section_drag_start_sections = None
         self._active_chain_indices = None
         self._set_start_finish_mode = False
+        self._context.end_drag_transform()
 
     def set_set_start_finish_mode(self, active: bool) -> None:
         self._set_start_finish_mode = active
@@ -436,10 +437,14 @@ class PreviewInteraction:
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
         widget_size = self._context.widget_size()
         transform = self._context.current_transform(widget_size)
+        if transform is None:
+            return
+        self._context.begin_drag_transform(transform)
         track_point = self._context.map_to_track(
             (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
         )
         if track_point is None:
+            self._context.end_drag_transform()
             return
         self._active_node = node
         self._is_dragging_node = True
@@ -554,6 +559,7 @@ class PreviewInteraction:
         self._is_dragging_node = False
         self._active_node = None
         self._connection_target = None
+        self._context.end_drag_transform()
 
     def _connect_nodes(
         self, source: tuple[int, str], target: tuple[int, str]
@@ -617,6 +623,11 @@ class PreviewInteraction:
         if chain_indices is None:
             return
 
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
+        if transform is None:
+            return
+        self._context.begin_drag_transform(transform)
         self._active_section_index = index
         self._active_chain_indices = chain_indices
         self._section_drag_start_mouse_screen = QtCore.QPointF(pos)
@@ -677,6 +688,7 @@ class PreviewInteraction:
         self._section_drag_start_mouse_screen = None
         self._section_drag_start_sections = None
         self._active_chain_indices = None
+        self._context.end_drag_transform()
 
     # ------------------------------------------------------------------
     # Utilities

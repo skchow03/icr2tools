@@ -57,6 +57,12 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
         return self._runtime.current_transform(widget_size)
 
+    def begin_drag_transform(self, transform: Transform) -> None:
+        self._runtime.begin_drag_transform(transform)
+
+    def end_drag_transform(self) -> None:
+        self._runtime.end_drag_transform()
+
     def map_to_track(
         self,
         screen_pos: tuple[float, float] | Point,
