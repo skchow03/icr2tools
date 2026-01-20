@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import copy
 from dataclasses import replace
 from typing import TYPE_CHECKING, Callable
 
@@ -71,11 +72,9 @@ class PreviewInteraction:
         self._connection_target: tuple[int, str] | None = None
         self._is_dragging_section = False
         self._active_section_index: int | None = None
-        self._section_drag_origin: Point | None = None
-        self._section_drag_start_end: tuple[Point, Point] | None = None
-        self._section_drag_center: Point | None = None
+        self._section_drag_start_mouse_screen: QtCore.QPointF | None = None
+        self._section_drag_start_sections: list["SectionPreview"] | None = None
         self._active_chain_indices: list[int] | None = None
-        self._chain_drag_origins: dict[int, tuple[Point, Point, Point | None]] | None = None
         self._set_start_finish_mode = False
 
     # ------------------------------------------------------------------
@@ -117,11 +116,9 @@ class PreviewInteraction:
         self._connection_target = None
         self._is_dragging_section = False
         self._active_section_index = None
-        self._section_drag_origin = None
-        self._section_drag_start_end = None
-        self._section_drag_center = None
+        self._section_drag_start_mouse_screen = None
+        self._section_drag_start_sections = None
         self._active_chain_indices = None
-        self._chain_drag_origins = None
         self._set_start_finish_mode = False
 
     def set_set_start_finish_mode(self, active: bool) -> None:
@@ -160,7 +157,7 @@ class PreviewInteraction:
 
         drag_origin = self._hit_test_selected_section_line(event.pos())
         if drag_origin is not None:
-            self._start_section_drag(drag_origin)
+            self._start_section_drag(event.pos())
             event.accept()
             return True
 
@@ -603,7 +600,7 @@ class PreviewInteraction:
     # ------------------------------------------------------------------
     # Section dragging
     # ------------------------------------------------------------------
-    def _start_section_drag(self, track_point: Point) -> None:
+    def _start_section_drag(self, pos: QtCore.QPoint) -> None:
         if self._selection.selected_section_index is None:
             return
         index = self._selection.selected_section_index
@@ -622,37 +619,18 @@ class PreviewInteraction:
 
         self._active_section_index = index
         self._active_chain_indices = chain_indices
-        self._section_drag_origin = track_point
-        self._section_drag_start_end = (sect.start, sect.end)
-        self._section_drag_center = sect.center
-        self._chain_drag_origins = {
-            i: (
-                self._section_manager.sections[i].start,
-                self._section_manager.sections[i].end,
-                self._section_manager.sections[i].center,
-            )
-            for i in chain_indices
-        }
+        self._section_drag_start_mouse_screen = QtCore.QPointF(pos)
+        self._section_drag_start_sections = copy.deepcopy(self._section_manager.sections)
         self._is_dragging_section = True
         self._stop_panning()
 
     def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
-        widget_size = self._context.widget_size()
-        transform = self._context.current_transform(widget_size)
-        track_point = self._context.map_to_track(
-            (pos.x(), pos.y()), widget_size, self._context.widget_height(), transform
-        )
-        if track_point is None:
-            return
-        self._update_section_drag(track_point)
-
-    def _update_section_drag(self, track_point: Point) -> None:
         if (
             not self._is_dragging_section
             or self._active_section_index is None
-            or self._section_drag_origin is None
             or self._active_chain_indices is None
-            or self._chain_drag_origins is None
+            or self._section_drag_start_mouse_screen is None
+            or self._section_drag_start_sections is None
         ):
             return
 
@@ -666,29 +644,39 @@ class PreviewInteraction:
         ):
             return
 
-        dx = track_point[0] - self._section_drag_origin[0]
-        dy = track_point[1] - self._section_drag_origin[1]
+        widget_size = self._context.widget_size()
+        transform = self._context.current_transform(widget_size)
+        if transform is None:
+            return
 
-        sections = list(sections)
+        screen_delta = QtCore.QPointF(pos) - self._section_drag_start_mouse_screen
+        scale = transform[0]
+        if scale == 0:
+            return
+        dx = screen_delta.x() / scale
+        dy = -screen_delta.y() / scale
+        epsilon = 1e-6
+
+        original_sections = self._section_drag_start_sections
+        sections = list(original_sections)
 
         for chain_index in self._active_chain_indices:
-            if chain_index not in self._chain_drag_origins or chain_index < 0 or chain_index >= len(sections):
+            if chain_index < 0 or chain_index >= len(sections):
                 continue
-
-            updated_section = translate_section(sections[chain_index], dx, dy)
-
+            updated_section = translate_section(original_sections[chain_index], dx, dy)
             sections[chain_index] = update_section_geometry(updated_section)
+            applied_dx = updated_section.start[0] - original_sections[chain_index].start[0]
+            applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
+            assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
 
         self._apply_section_updates(sections)
 
     def _end_section_drag(self) -> None:
         self._is_dragging_section = False
         self._active_section_index = None
-        self._section_drag_origin = None
-        self._section_drag_start_end = None
-        self._section_drag_center = None
+        self._section_drag_start_mouse_screen = None
+        self._section_drag_start_sections = None
         self._active_chain_indices = None
-        self._chain_drag_origins = None
 
     # ------------------------------------------------------------------
     # Utilities
