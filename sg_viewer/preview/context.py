@@ -11,6 +11,12 @@ class PreviewContext(Protocol):
     def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
         ...
 
+    def begin_drag_transform(self, transform: Transform) -> None:
+        ...
+
+    def end_drag_transform(self) -> None:
+        ...
+
     def map_to_track(
         self,
         screen_pos: tuple[float, float] | Point,

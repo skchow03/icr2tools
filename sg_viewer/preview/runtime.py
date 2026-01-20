@@ -115,6 +115,9 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._creation_controller = CreationController()
         self._interaction_state = InteractionState()
 
+        self._drag_transform: Transform | None = None
+        self._drag_transform_active = False
+
         self._split_section_mode = False
         self._split_previous_status_message: str | None = None
         self._split_hover_point: Point | None = None
@@ -168,7 +171,7 @@ class PreviewRuntime(PreviewRuntimeOps):
 
     def on_wheel(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         if not self._transform_controller.on_wheel(
             event,
             widget_size=widget_size,
@@ -265,7 +268,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self, *, has_split_hover_point: bool = False
     ) -> InteractionInputs:
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         return InteractionInputs(
             creation_active=self.creation_active,
             delete_section_active=self.delete_section_active,

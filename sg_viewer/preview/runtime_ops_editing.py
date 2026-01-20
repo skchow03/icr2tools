@@ -201,7 +201,7 @@ class _RuntimeEditingMixin:
 
     def _handle_delete_click(self, pos: QtCore.QPoint) -> bool:
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         if transform is None:
             return False
 

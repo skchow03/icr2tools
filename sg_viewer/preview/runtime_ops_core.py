@@ -102,6 +102,9 @@ class _RuntimeCoreMixin:
         self._creation_controller = CreationController()
         self._interaction_state = InteractionState()
 
+        self._drag_transform: Transform | None = None
+        self._drag_transform_active = False
+
         self._split_section_mode = False
         self._split_previous_status_message: str | None = None
         self._split_hover_point: Point | None = None
@@ -143,7 +146,17 @@ class _RuntimeCoreMixin:
         assert hasattr(self, "_editor")
 
     def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
+        if self._drag_transform_active:
+            return self._drag_transform
         return self._controller.current_transform(widget_size)
+
+    def begin_drag_transform(self, transform: Transform) -> None:
+        self._drag_transform = transform
+        self._drag_transform_active = True
+
+    def end_drag_transform(self) -> None:
+        self._drag_transform = None
+        self._drag_transform_active = False
 
     def map_to_track(
         self,
@@ -152,6 +165,8 @@ class _RuntimeCoreMixin:
         widget_height: int,
         transform: Transform | None = None,
     ) -> Point | None:
+        if transform is None and self._drag_transform_active:
+            transform = self._drag_transform
         point = (
             QtCore.QPointF(*screen_pos)
             if isinstance(screen_pos, tuple)
@@ -294,6 +309,8 @@ class _RuntimeCoreMixin:
         return self._editor.delete_section_active
 
     def _update_fit_scale(self) -> None:
+        if self._drag_transform_active:
+            return
         self._transform_controller.update_fit_scale(
             self._section_manager.sampled_bounds, self._widget_size()
         )
@@ -397,6 +414,8 @@ class _RuntimeCoreMixin:
         return self._viewport.combine_bounds_with_background(bounds)
 
     def _fit_view_to_background(self) -> None:
+        if self._drag_transform_active:
+            return
         active_bounds = self._transform_controller.fit_view_to_background(
             self._section_manager.sampled_bounds, self._widget_size()
         )
@@ -477,7 +496,7 @@ class _RuntimeCoreMixin:
 
     def _creation_context(self) -> CreationEventContext | None:
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         if transform is None:
             return None
 
@@ -601,7 +620,7 @@ class _RuntimeCoreMixin:
 
     def on_wheel(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         if not self._transform_controller.on_wheel(
             event,
             widget_size=widget_size,
@@ -698,7 +717,7 @@ class _RuntimeCoreMixin:
         self, *, has_split_hover_point: bool = False
     ) -> InteractionInputs:
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         return InteractionInputs(
             creation_active=self.creation_active,
             delete_section_active=self.delete_section_active,
@@ -760,7 +779,7 @@ class _RuntimeCoreMixin:
             return
 
         widget_size = self._widget_size()
-        transform = self._controller.current_transform(widget_size)
+        transform = self.current_transform(widget_size)
         logger.debug(
             "Handling click at screen %s with widget size %s and transform %s",
             pos,
