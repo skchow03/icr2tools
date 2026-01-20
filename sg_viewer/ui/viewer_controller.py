@@ -426,15 +426,8 @@ class SGViewerController:
 
     def _recalculate_dlongs(self) -> None:
         preview = self._window.preview
-        try:
-            sgfile = preview.apply_preview_to_sgfile()
-        except ValueError:
+        if not preview.recalculate_dlongs():
             return
-
-        sgfile.rebuild_dlongs(0, 0)
-
-        preview.refresh_geometry()
-        preview.sectionsChanged.emit()
 
         self._window.show_status_message(
             "Recalculated all curve lengths and DLONGs"

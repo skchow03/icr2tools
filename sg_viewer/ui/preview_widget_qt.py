@@ -4,6 +4,7 @@ from typing import Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.preview.context import Point, Transform
 from sg_viewer.preview.runtime import PreviewRuntime
 from sg_viewer.ui.preview_presenter import PreviewPresenter
@@ -31,8 +32,10 @@ class PreviewWidgetQt(QtWidgets.QWidget):
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
         self.setPalette(palette)
 
+        self._document = SGDocument()
         self._runtime = PreviewRuntime(
             context=self,
+            sg_document=self._document,
             show_status=show_status,
             emit_selected_section_changed=self.selectedSectionChanged.emit,
             emit_sections_changed=self.sectionsChanged.emit,

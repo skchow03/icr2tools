@@ -28,13 +28,13 @@ from sg_viewer.geometry.centerline_utils import (
     compute_centerline_normal_and_tangent,
     compute_start_finish_mapping_from_centerline,
 )
+from sg_viewer.geometry.derived_geometry import DerivedGeometry
 from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import (
-    build_section_polyline,
-    derive_heading_vectors,
     scale_section,
     rebuild_centerline_from_sections,
 )
+from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
 from sg_viewer.ui.preview_interaction import PreviewInteraction
@@ -82,6 +82,7 @@ class PreviewRuntime:
     def __init__(
         self,
         context: PreviewContext,
+        sg_document: SGDocument,
         show_status: Callable[[str], None] | None = None,
         emit_selected_section_changed: Callable[[object], None] | None = None,
         emit_sections_changed: Callable[[], None] | None = None,
@@ -99,6 +100,12 @@ class PreviewRuntime:
         self._emit_delete_mode_changed = emit_delete_mode_changed
         self._emit_split_section_mode_changed = emit_split_section_mode_changed
         self._emit_scale_changed = emit_scale_changed
+        self._document = sg_document
+        self._derived_geometry = DerivedGeometry(self._document)
+        self._suppress_document_dirty = False
+
+        self._document.section_changed.connect(self._on_section_changed)
+        self._document.geometry_changed.connect(self._on_geometry_changed)
 
         self._controller = PreviewStateController()
 
@@ -234,6 +241,10 @@ class PreviewRuntime:
         return self._controller.sgfile
 
     @property
+    def document(self) -> SGDocument:
+        return self._document
+
+    @property
     def has_unsaved_changes(self) -> bool:
         return self._has_unsaved_changes
 
@@ -311,6 +322,9 @@ class PreviewRuntime:
 
     def clear(self, message: str | None = None) -> None:
         self._controller.clear(message)
+        self._suppress_document_dirty = True
+        self._document.set_sg_data(None)
+        self._suppress_document_dirty = False
         self._cline = None
         self._section_manager.reset()
         self._sampled_centerline = []
@@ -338,6 +352,13 @@ class PreviewRuntime:
         self._section_manager.sampled_bounds = default_bounds
         self._sampled_bounds = default_bounds
 
+    def _on_section_changed(self, section_id: int) -> None:
+        _ = section_id
+        self._refresh_from_document(mark_unsaved=not self._suppress_document_dirty)
+
+    def _on_geometry_changed(self) -> None:
+        self._refresh_from_document(mark_unsaved=not self._suppress_document_dirty)
+
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
@@ -349,29 +370,19 @@ class PreviewRuntime:
             return
 
         self._cline = data.cline
-        self._section_manager.load_sections(
-            sections=data.sections,
-            section_endpoints=data.section_endpoints,
-            sampled_centerline=data.sampled_centerline,
-            sampled_dlongs=data.sampled_dlongs,
-            sampled_bounds=data.sampled_bounds,
-            centerline_index=data.centerline_index,
-        )
-        self._sampled_bounds = self._section_manager.sampled_bounds
-        self._sampled_centerline = self._section_manager.sampled_centerline
-        self._track_length = data.track_length
-        self._start_finish_dlong = 0.0 if data.track_length else None
-        self._start_finish_mapping = data.start_finish_mapping
         self._disconnected_nodes = set()
         self._apply_creation_update(self._creation_controller.reset())
         self._status_message = data.status_message
         self._selection.reset(
-            self._section_manager.sections,
-            self._track_length,
-            self._section_manager.centerline_index,
-            self._section_manager.sampled_dlongs,
+            [],
+            None,
+            None,
+            [],
         )
-        self._update_node_status()
+        self._start_finish_dlong = None
+        self._suppress_document_dirty = True
+        self._document.set_sg_data(data.sgfile)
+        self._suppress_document_dirty = False
         self._update_fit_scale()
         self._has_unsaved_changes = False
         self._context.request_repaint()
@@ -387,6 +398,9 @@ class PreviewRuntime:
     def start_new_track(self) -> None:
         self.clear("New track ready. Click New Straight to start drawing.")
         self._sgfile = self._create_empty_sgfile()
+        self._suppress_document_dirty = True
+        self._document.set_sg_data(self._sgfile)
+        self._suppress_document_dirty = False
         self._set_default_view_bounds()
         self._sampled_centerline = []
         self._track_length = 0.0
@@ -396,34 +410,42 @@ class PreviewRuntime:
         self._context.request_repaint()
 
     def refresh_geometry(self) -> None:
-        if self._sgfile is None:
-            return
+        self._refresh_from_document(mark_unsaved=True)
 
-        sections = self._sections_from_sgfile()
+    def _refresh_from_document(self, *, mark_unsaved: bool) -> None:
+        self._derived_geometry.rebuild_if_needed()
 
-        if sections:
-            last_section = sections[-1]
-            self._track_length = float(last_section.start_dlong + last_section.length)
-        else:
-            self._track_length = None
+        sections = self._derived_geometry.sections
+        sampled_bounds = self._derived_geometry.sampled_bounds or self._viewport.default_bounds()
 
-        needs_rebuild = self._section_manager.set_sections(sections)
-
+        self._section_manager.load_sections(
+            sections=sections,
+            section_endpoints=self._derived_geometry.section_endpoints,
+            sampled_centerline=self._derived_geometry.sampled_centerline,
+            sampled_dlongs=self._derived_geometry.sampled_dlongs,
+            sampled_bounds=sampled_bounds,
+            centerline_index=self._derived_geometry.centerline_index,
+        )
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
-
-        if needs_rebuild:
-            self._update_fit_scale()
+        self._track_length = self._derived_geometry.track_length
+        self._start_finish_mapping = self._derived_geometry.start_finish_mapping
+        if self._track_length <= 0:
+            self._start_finish_dlong = None
+        elif self._start_finish_dlong is None:
+            self._start_finish_dlong = 0.0
 
         self._update_node_status()
-
         self._selection.update_context(
             self._section_manager.sections,
             self._track_length,
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
-        self._has_unsaved_changes = True
+        if mark_unsaved:
+            self._has_unsaved_changes = True
+            if self._emit_sections_changed is not None:
+                self._emit_sections_changed()
         self._context.request_repaint()
 
     def load_background_image(self, path: Path) -> None:
@@ -1343,6 +1365,18 @@ class PreviewRuntime:
     def apply_preview_to_sgfile(self) -> SGFile:
         return self._apply_preview_to_sgfile()
 
+    def recalculate_dlongs(self) -> bool:
+        try:
+            sgfile = self._apply_preview_to_sgfile()
+        except ValueError:
+            return False
+
+        if self._document.sg_data is None:
+            self._document.set_sg_data(sgfile)
+
+        self._document.rebuild_dlongs(0, 0)
+        return True
+
     def save_sg(self, path: Path) -> None:
         """Write the current SG (and any edits) to ``path``."""
 
@@ -1593,64 +1627,3 @@ class PreviewRuntime:
 
         prev_index = (self._selection.selected_section_index - 1) % len(self._selection.sections)
         self._selection.set_selected_section(prev_index)
-
-    def _sections_from_sgfile(self) -> list[SectionPreview]:
-        if self._sgfile is None:
-            return []
-
-        sections: list[SectionPreview] = []
-        for idx, sg_section in enumerate(self._sgfile.sects):
-            type_name = "curve" if sg_section.type == 2 else "straight"
-            start = (float(sg_section.start_x), float(sg_section.start_y))
-            end = (float(sg_section.end_x), float(sg_section.end_y))
-
-            center = (
-                (float(sg_section.center_x), float(sg_section.center_y))
-                if type_name == "curve"
-                else None
-            )
-            radius = float(sg_section.radius) if type_name == "curve" else None
-
-            sang1 = sang2 = eang1 = eang2 = None
-            if type_name == "curve":
-                sang1 = float(sg_section.sang1)
-                sang2 = float(sg_section.sang2)
-                eang1 = float(sg_section.eang1)
-                eang2 = float(sg_section.eang2)
-
-            polyline = build_section_polyline(
-                type_name,
-                start,
-                end,
-                center,
-                radius,
-                (sang1, sang2) if sang1 is not None and sang2 is not None else None,
-                (eang1, eang2) if eang1 is not None and eang2 is not None else None,
-            )
-            start_heading, end_heading = derive_heading_vectors(
-                polyline, sang1, sang2, eang1, eang2
-            )
-
-            sections.append(
-                SectionPreview(
-                    section_id=idx,
-                    type_name=type_name,
-                    previous_id=int(getattr(sg_section, "sec_prev", idx - 1)),
-                    next_id=int(getattr(sg_section, "sec_next", idx + 1)),
-                    start=start,
-                    end=end,
-                    start_dlong=float(sg_section.start_dlong),
-                    length=float(sg_section.length),
-                    center=center,
-                    sang1=sang1,
-                    sang2=sang2,
-                    eang1=eang1,
-                    eang2=eang2,
-                    radius=radius,
-                    start_heading=start_heading,
-                    end_heading=end_heading,
-                    polyline=polyline,
-                )
-            )
-
-        return sections
