@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from enum import Enum
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+
+
+class ElevationSource(Enum):
+    SG = "sg"
+    TRK = "trk"
 
 
 @dataclass
@@ -12,10 +17,11 @@ class ElevationProfileData:
 
     dlongs: list[float]
     sg_altitudes: list[float]
-    trk_altitudes: list[float]
+    trk_altitudes: list[float] | None
     section_ranges: list[tuple[float, float]]
     track_length: float
     xsect_label: str
+    sources: tuple[ElevationSource, ...] = (ElevationSource.SG,)
 
 
 class ElevationProfileWidget(QtWidgets.QWidget):
@@ -105,17 +111,24 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     ) -> None:
         sg_path = QtGui.QPainterPath()
         trk_path = QtGui.QPainterPath()
+        draw_trk = (
+            self._data.trk_altitudes is not None
+            and ElevationSource.TRK in self._data.sources
+        )
         for idx, dlong in enumerate(self._data.dlongs):
             x = self._map_x(dlong, rect, max_dlong)
             y_sg = self._map_y(self._data.sg_altitudes[idx], rect, min_alt, max_alt)
-            y_trk = self._map_y(self._data.trk_altitudes[idx], rect, min_alt, max_alt)
+            if draw_trk:
+                y_trk = self._map_y(self._data.trk_altitudes[idx], rect, min_alt, max_alt)
 
             if idx == 0:
                 sg_path.moveTo(x, y_sg)
-                trk_path.moveTo(x, y_trk)
+                if draw_trk:
+                    trk_path.moveTo(x, y_trk)
             else:
                 sg_path.lineTo(x, y_sg)
-                trk_path.lineTo(x, y_trk)
+                if draw_trk:
+                    trk_path.lineTo(x, y_trk)
 
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -123,8 +136,11 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         painter.setPen(QtGui.QPen(QtGui.QColor("#03a9f4"), 2.0))
         painter.drawPath(sg_path)
 
-        painter.setPen(QtGui.QPen(QtGui.QColor("#ff9800"), 2.0))
-        painter.drawPath(trk_path)
+        if draw_trk:
+            trk_pen = QtGui.QPen(QtGui.QColor("#ff9800"), 2.0)
+            trk_pen.setStyle(QtCore.Qt.DashLine)
+            painter.setPen(trk_pen)
+            painter.drawPath(trk_path)
         painter.restore()
 
     def _draw_axes_labels(
@@ -150,10 +166,9 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         painter.restore()
 
     def _draw_legend(self, painter: QtGui.QPainter, rect: QtCore.QRect) -> None:
-        legend_items = [
-            ("SG-derived cubic", QtGui.QColor("#03a9f4")),
-            ("TRK stored", QtGui.QColor("#ff9800")),
-        ]
+        legend_items = [("SG-derived cubic", QtGui.QColor("#03a9f4"))]
+        if self._data.trk_altitudes is not None and ElevationSource.TRK in self._data.sources:
+            legend_items.append(("TRK stored", QtGui.QColor("#ff9800")))
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor("#ccc")))
         font = painter.font()
@@ -179,7 +194,9 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         return rect.bottom() - relative * rect.height()
 
     def _alt_bounds(self) -> tuple[float, float]:
-        alts: Iterable[float] = [*self._data.sg_altitudes, *self._data.trk_altitudes]
+        alts = list(self._data.sg_altitudes)
+        if self._data.trk_altitudes is not None and ElevationSource.TRK in self._data.sources:
+            alts.extend(self._data.trk_altitudes)
         min_alt = min(alts)
         max_alt = max(alts)
         padding = max(1.0, (max_alt - min_alt) * 0.05)
