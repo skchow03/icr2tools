@@ -2,6 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import List, Tuple
 
+from icr2_core.trk.sg_classes import SGFile
+from icr2_core.trk.trk_classes import TRKFile
+
 Point = Tuple[float, float]
 
 
@@ -28,9 +31,10 @@ class SectionPreview:
 
 @dataclass(frozen=True)
 class PreviewData:
-    sgfile: object
-    trk: object
-    cline: List[Point]
+    sg: SGFile
+    sgfile: SGFile
+    trk: TRKFile | None
+    cline: List[Point] | None
     sampled_centerline: List[Point]
     sampled_dlongs: List[float]
     sampled_bounds: tuple[float, float, float, float]

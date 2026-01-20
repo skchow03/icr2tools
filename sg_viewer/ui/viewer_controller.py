@@ -8,6 +8,8 @@ from pathlib import Path
 
 from PyQt5 import QtWidgets
 
+from icr2_core.trk.trk_classes import TRKFile
+
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
 from sg_viewer.models.sg_model import SectionPreview
@@ -71,6 +73,11 @@ class SGViewerController:
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.delete_section_button.setEnabled(True)
+        self._window.preview.set_trk_comparison(None)
+        self._window.trk_compare_checkbox.blockSignals(True)
+        self._window.trk_compare_checkbox.setChecked(False)
+        self._window.trk_compare_checkbox.setEnabled(True)
+        self._window.trk_compare_checkbox.blockSignals(False)
         sections, _ = self._window.preview.get_section_set()
         self._window.set_start_finish_button.setEnabled(bool(sections))
         self._window.split_section_button.setEnabled(bool(sections))
@@ -197,6 +204,9 @@ class SGViewerController:
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
+        )
+        self._window.trk_compare_checkbox.toggled.connect(
+            self._toggle_trk_comparison
         )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
 
@@ -354,6 +364,11 @@ class SGViewerController:
         self._save_action.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
+        self._window.preview.set_trk_comparison(None)
+        self._window.trk_compare_checkbox.blockSignals(True)
+        self._window.trk_compare_checkbox.setChecked(False)
+        self._window.trk_compare_checkbox.setEnabled(False)
+        self._window.trk_compare_checkbox.blockSignals(False)
         self._window.show_status_message(
             "New track ready. Click New Straight to start drawing."
         )
@@ -632,6 +647,7 @@ class SGViewerController:
                 is_dirty=True,
             )
 
+        self._refresh_elevation_profile()
         self._update_track_length_display()
 
     def _show_section_table(self) -> None:
@@ -756,8 +772,33 @@ class SGViewerController:
         if current_index is None:
             current_index = combo.currentIndex()
 
-        profile = self._window.preview.build_elevation_profile(int(current_index))
+        profile = self._window.preview.build_elevation_profile(
+            int(current_index),
+            show_trk=self._window.trk_compare_checkbox.isChecked(),
+        )
         self._window.profile_widget.set_profile_data(profile)
+
+    def _toggle_trk_comparison(self, checked: bool) -> None:
+        if not checked:
+            self._window.preview.set_trk_comparison(None)
+            self._refresh_elevation_profile()
+            return
+
+        if self._current_path is None:
+            self._window.trk_compare_checkbox.setChecked(False)
+            self._window.show_status_message("Save or open an SG file to compare TRK elevation.")
+            return
+
+        try:
+            trk = TRKFile.from_sg(str(self._current_path))
+        except Exception as exc:
+            logger.exception("Failed to build TRK comparison", exc_info=exc)
+            self._window.trk_compare_checkbox.setChecked(False)
+            self._window.show_status_message("Failed to build TRK comparison.")
+            return
+
+        self._window.preview.set_trk_comparison(trk)
+        self._refresh_elevation_profile()
 
     def _clear_background_state(self) -> None:
         self._window.preview.clear_background_image()

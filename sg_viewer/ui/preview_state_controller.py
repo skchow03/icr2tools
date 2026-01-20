@@ -108,7 +108,7 @@ class PreviewStateController:
         self._status_message = f"Loading {path.name}…"
         data = preview_loader_service.load_preview(path)
 
-        self._sgfile = data.sgfile
+        self._sgfile = data.sg
         self._trk = data.trk
         self._sampled_centerline = data.sampled_centerline
         self._sampled_bounds = data.sampled_bounds

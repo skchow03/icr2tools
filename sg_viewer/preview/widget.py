@@ -9,6 +9,7 @@ from typing import Callable, List, Tuple
 import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from icr2_core.sg_elevation import sample_sg_elevation
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_alt
@@ -23,7 +24,7 @@ from sg_viewer.preview.selection import build_node_positions, find_unconnected_n
 from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
 from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.ui.elevation_profile import ElevationProfileData
+from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
     compute_centerline_normal_and_tangent,
     compute_start_finish_mapping_from_centerline,
@@ -1458,7 +1459,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         end = start + float(self._section_manager.sections[index].length)
         return start, end
 
-    def build_elevation_profile(self, xsect_index: int, samples_per_section: int = 24) -> ElevationProfileData | None:
+    def build_elevation_profile(
+        self,
+        xsect_index: int,
+        samples_per_section: int = 24,
+        show_trk: bool = False,
+    ) -> ElevationProfileData | None:
         if (
             self._sgfile is None
             or self._track_length is None
@@ -1470,63 +1476,56 @@ class SGPreviewWidget(QtWidgets.QWidget):
         def _xsect_label(dlat_value: float) -> str:
             return f"X-Section {xsect_index} (DLAT {dlat_value:.0f})"
 
-        dlat_values = (
-            self._trk.xsect_dlats
-            if self._trk is not None
-            else self._sgfile.xsect_dlats
-        )
-        if xsect_index >= len(dlat_values):
+        if xsect_index >= len(self._sgfile.xsect_dlats):
             return None
 
-        dlat_value = float(dlat_values[xsect_index])
+        dlat_value = float(self._sgfile.xsect_dlats[xsect_index])
 
-        if self._trk is None or self._track_length <= 0:
+        if self._track_length <= 0:
             track_length = float(self._track_length or 0.0)
             track_length = track_length if track_length > 0 else 1.0
             return ElevationProfileData(
                 dlongs=[0.0, track_length],
                 sg_altitudes=[0.0, 0.0],
-                trk_altitudes=[0.0, 0.0],
+                trk_altitudes=None,
                 section_ranges=[],
                 track_length=track_length,
                 xsect_label=_xsect_label(dlat_value),
+                sources=(ElevationSource.SG,),
             )
 
         dlongs: list[float] = []
-        sg_altitudes: list[float] = []
-        trk_altitudes: list[float] = []
         section_ranges: list[tuple[float, float]] = []
+        sg_altitudes = sample_sg_elevation(
+            self._sgfile,
+            xsect_index,
+            resolution=samples_per_section,
+        )
+        trk_altitudes: list[float] | None = None
+        sources = (ElevationSource.SG,)
 
-        for sect_idx, (sg_sect, trk_sect) in enumerate(zip(self._sgfile.sects, self._trk.sects)):
-            prev_idx = (sect_idx - 1) % self._sgfile.num_sects
-            begin_alt = float(self._sgfile.sects[prev_idx].alt[xsect_index])
-            end_alt = float(sg_sect.alt[xsect_index])
-
+        for sg_sect in self._sgfile.sects:
             sg_length = float(sg_sect.length)
             if sg_length <= 0:
                 continue
-            cur_slope = float(self._sgfile.sects[prev_idx].grade[xsect_index]) / 8192.0
-            next_slope = float(sg_sect.grade[xsect_index]) / 8192.0
-            grade1 = (2 * begin_alt / sg_length + cur_slope + next_slope - 2 * end_alt / sg_length) * sg_length
-            grade2 = (3 * end_alt / sg_length - 3 * begin_alt / sg_length - 2 * cur_slope - next_slope) * sg_length
-            grade3 = cur_slope * sg_length
-
-            start_dlong = float(trk_sect.start_dlong)
-            trk_length = float(trk_sect.length)
-            if trk_length <= 0:
-                continue
-            section_ranges.append((start_dlong, start_dlong + trk_length))
+            start_dlong = float(sg_sect.start_dlong)
+            section_ranges.append((start_dlong, start_dlong + sg_length))
 
             for step in range(samples_per_section + 1):
                 fraction = step / samples_per_section
-                dlong = start_dlong + fraction * trk_length
-
-                sg_alt = grade1 * fraction ** 3 + grade2 * fraction ** 2 + grade3 * fraction + begin_alt
-                trk_alt = get_alt(self._trk, sect_idx, fraction, dlat_value)
-
+                dlong = start_dlong + fraction * sg_length
                 dlongs.append(dlong)
-                sg_altitudes.append(sg_alt)
-                trk_altitudes.append(trk_alt)
+
+        if show_trk and self._trk is not None:
+            trk_altitudes = []
+            sources = (ElevationSource.SG, ElevationSource.TRK)
+            for sect_idx, sg_sect in enumerate(self._sgfile.sects):
+                sg_length = float(sg_sect.length)
+                if sg_length <= 0:
+                    continue
+                for step in range(samples_per_section + 1):
+                    fraction = step / samples_per_section
+                    trk_altitudes.append(get_alt(self._trk, sect_idx, fraction, dlat_value))
 
         return ElevationProfileData(
             dlongs=dlongs,
@@ -1535,11 +1534,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
             section_ranges=section_ranges,
             track_length=float(self._track_length),
             xsect_label=_xsect_label(dlat_value),
+            sources=sources,
         )
 
     # ------------------------------------------------------------------
     # Public controls
     # ------------------------------------------------------------------
+    def set_trk_comparison(self, trk: TRKFile | None) -> None:
+        self._trk = trk
+
     def set_show_curve_markers(self, visible: bool) -> None:
         self._show_curve_markers = visible
         self.update()

@@ -1,35 +1,33 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
-
 from icr2_core.trk.sg_classes import SGFile
-from icr2_core.trk.trk_classes import TRKFile
-from track_viewer.geometry import build_centerline_index, sample_centerline
 
-from sg_viewer.geometry.centerline_utils import compute_centerline_normal_and_tangent
-from sg_viewer.geometry.sg_geometry import build_section_polyline, derive_heading_vectors
+from sg_viewer.geometry.centerline_utils import compute_start_finish_mapping_from_centerline
+from sg_viewer.geometry.sg_geometry import (
+    build_section_polyline,
+    derive_heading_vectors,
+    rebuild_centerline_from_sections,
+)
 from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
 
 def load_preview(path: Path) -> PreviewData:
     sgfile = SGFile.from_sg(str(path))
-    trk = TRKFile.from_sg(str(path))
-    cline = get_cline_pos(trk)
-    sampled, sampled_dlongs, bounds = sample_centerline(trk, cline)
+    sections = _build_sections(sgfile)
+    sampled, sampled_dlongs, bounds, centerline_index = rebuild_centerline_from_sections(sections)
 
     if not sampled or bounds is None:
         raise ValueError("Failed to build centreline from SG file")
 
-    centerline_index = build_centerline_index(sampled, bounds)
-    track_length = float(trk.trklength)
-    start_finish_mapping = compute_centerline_normal_and_tangent(trk, cline, track_length, 0.0)
-    sections = _build_sections(sgfile, trk, cline, track_length)
+    track_length = float(sampled_dlongs[-1]) if sampled_dlongs else 0.0
+    start_finish_mapping = compute_start_finish_mapping_from_centerline(sampled)
     section_endpoints = [(sect.start, sect.end) for sect in sections]
 
     return PreviewData(
+        sg=sgfile,
         sgfile=sgfile,
-        trk=trk,
-        cline=cline,
+        trk=None,
+        cline=None,
         sampled_centerline=sampled,
         sampled_dlongs=sampled_dlongs,
         sampled_bounds=bounds,
@@ -43,16 +41,16 @@ def load_preview(path: Path) -> PreviewData:
 
 
 def _build_sections(
-    sgfile: SGFile, trk: TRKFile, cline: Iterable[Point] | None, track_length: float
+    sgfile: SGFile,
 ) -> list[SectionPreview]:
     sections: list[SectionPreview] = []
 
-    if cline is None or track_length <= 0:
+    if not sgfile.sects:
         return sections
 
-    for idx, (sg_sect, trk_sect) in enumerate(zip(sgfile.sects, trk.sects)):
-        start_dlong = float(trk_sect.start_dlong) % track_length
-        length = float(trk_sect.length)
+    for idx, sg_sect in enumerate(sgfile.sects):
+        start_dlong = float(sg_sect.start_dlong)
+        length = float(sg_sect.length)
 
         start = (float(sg_sect.start_x), float(sg_sect.start_y))
         end = (
@@ -106,7 +104,3 @@ def _build_sections(
         )
 
     return sections
-
-
-# Delayed import to avoid circular dependency
-from icr2_core.trk.trk_utils import get_cline_pos  # noqa: E402  pylint: disable=C0413

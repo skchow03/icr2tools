@@ -96,6 +96,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
+        self._trk_compare_checkbox = QtWidgets.QCheckBox("Show TRK Exported Elevation")
+        self._trk_compare_checkbox.setEnabled(False)
         self._scale_label = QtWidgets.QLabel("Scale: –")
         self._track_length_label = QtWidgets.QLabel("Track length: –")
         self._section_label = QtWidgets.QLabel("Section: None")
@@ -155,6 +157,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         profile_controls = QtWidgets.QHBoxLayout()
         profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
         profile_controls.addWidget(self._xsect_combo)
+        profile_controls.addWidget(self._trk_compare_checkbox)
         preview_column_layout.addLayout(profile_controls)
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
         preview_column.setLayout(preview_column_layout)
@@ -227,6 +230,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
+
+    @property
+    def trk_compare_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._trk_compare_checkbox
 
     def show_status_message(self, message: str) -> None:
         self._preview.set_status_text(message)
