@@ -5,7 +5,7 @@ import pytest
 
 try:  # pragma: no cover - allows tests to be skipped in headless CI without PyQt5
     from PyQt5 import QtWidgets
-    from sg_viewer.ui.preview_widget import SGPreviewWidget
+    from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
     from sg_viewer.sg_model import SectionPreview
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -42,7 +42,7 @@ def _make_section(idx: int, prev: int, next_: int) -> SectionPreview:
 
 
 def test_drag_chain_open_track(qapp):
-    widget = SGPreviewWidget()
+    widget = PreviewWidgetQt()
     widget._sections = [
         _make_section(0, -1, 1),
         _make_section(1, 0, 2),
@@ -55,7 +55,7 @@ def test_drag_chain_open_track(qapp):
 
 
 def test_drag_chain_closed_loop(qapp):
-    widget = SGPreviewWidget()
+    widget = PreviewWidgetQt()
     widget._sections = [
         _make_section(0, 2, 1),
         _make_section(1, 0, 2),

@@ -7,22 +7,21 @@ from pathlib import Path
 from typing import Callable, List, Tuple
 
 import numpy as np
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import get_cline_pos
 from icr2_core.sg_elevation import sample_sg_elevation
-from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
+from track_viewer.geometry import project_point_to_centerline
 from sg_viewer.models import preview_state, selection
 from sg_viewer.preview.geometry import (
     CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
     curve_angles,
 )
-from sg_viewer.preview.render_state import split_nodes_by_status
+from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
-from sg_viewer.services import preview_painter
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
@@ -75,31 +74,31 @@ def _project_point_to_polyline(point: Point, polyline: list[Point]) -> Point | N
     return best_point
 
 
-class SGPreviewWidget(QtWidgets.QWidget):
-    """Minimal preview widget that draws an SG file centreline."""
-
-    selectedSectionChanged = QtCore.pyqtSignal(object)
-    sectionsChanged = QtCore.pyqtSignal()  # NEW
-    newStraightModeChanged = QtCore.pyqtSignal(bool)
-    newCurveModeChanged = QtCore.pyqtSignal(bool)
-    deleteModeChanged = QtCore.pyqtSignal(bool)
-    splitSectionModeChanged = QtCore.pyqtSignal(bool)
-    scaleChanged = QtCore.pyqtSignal(float)
+class PreviewRuntime:
+    """Preview interaction and data model logic."""
 
     CURVE_SOLVE_TOLERANCE = CURVE_SOLVE_TOLERANCE_DEFAULT  # inches
 
     def __init__(
         self,
-        parent: QtWidgets.QWidget | None = None,
+        context: PreviewContext,
         show_status: Callable[[str], None] | None = None,
+        emit_selected_section_changed: Callable[[object], None] | None = None,
+        emit_sections_changed: Callable[[], None] | None = None,
+        emit_new_straight_mode_changed: Callable[[bool], None] | None = None,
+        emit_new_curve_mode_changed: Callable[[bool], None] | None = None,
+        emit_delete_mode_changed: Callable[[bool], None] | None = None,
+        emit_split_section_mode_changed: Callable[[bool], None] | None = None,
+        emit_scale_changed: Callable[[float], None] | None = None,
     ) -> None:
-        super().__init__(parent)
-        self.setMinimumSize(640, 480)
-        self.setMouseTracking(True)
-
-        palette = self.palette()
-        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
-        self.setPalette(palette)
+        self._context = context
+        self._emit_selected_section_changed = emit_selected_section_changed
+        self._emit_sections_changed = emit_sections_changed
+        self._emit_new_straight_mode_changed = emit_new_straight_mode_changed
+        self._emit_new_curve_mode_changed = emit_new_curve_mode_changed
+        self._emit_delete_mode_changed = emit_delete_mode_changed
+        self._emit_split_section_mode_changed = emit_split_section_mode_changed
+        self._emit_scale_changed = emit_scale_changed
 
         self._controller = PreviewStateController()
 
@@ -153,7 +152,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._show_status = show_status or self.set_status_text
 
         self._interaction = PreviewInteraction(
-            self,
+            self._context,
             self._selection,
             self._section_manager,
             self._editor,
@@ -189,19 +188,19 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def set_status(self, text: str) -> None:
         self._status_message = text
-        self.update()
+        self._context.request_repaint()
 
     def set_status_text(self, text: str) -> None:
         self.set_status(text)
 
     def request_repaint(self) -> None:
-        self.update()
+        self._context.request_repaint()
 
-    def widget_size(self) -> tuple[int, int]:
-        return (self.width(), self.height())
+    def _widget_size(self) -> tuple[int, int]:
+        return self._context.widget_size()
 
-    def widget_height(self) -> int:
-        return self.height()
+    def _widget_height(self) -> int:
+        return self._context.widget_height()
 
     def _stop_panning(self) -> None:
         self._is_panning = False
@@ -290,7 +289,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             value.current_scale is not None
             and value.current_scale != previous.current_scale
         ):
-            self.scaleChanged.emit(value.current_scale)
+            if self._emit_scale_changed is not None:
+                self._emit_scale_changed(value.current_scale)
 
     def _set_transform_state(self, value: preview_state.TransformState) -> None:
         self._transform_state = value
@@ -305,7 +305,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _update_fit_scale(self) -> None:
         self._viewport.update_fit_scale(
-            self._section_manager.sampled_bounds, (self.width(), self.height())
+            self._section_manager.sampled_bounds, self._widget_size()
         )
 
 
@@ -331,7 +331,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._update_node_status()
         self._has_unsaved_changes = False
         self._update_fit_scale()
-        self.update()
+        self._context.request_repaint()
 
     def _set_default_view_bounds(self) -> None:
         default_bounds = self._viewport.default_bounds()
@@ -374,7 +374,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._update_node_status()
         self._update_fit_scale()
         self._has_unsaved_changes = False
-        self.update()
+        self._context.request_repaint()
 
     def enable_trk_overlay(self) -> TRKFile | None:
         trk = self._controller.enable_trk_overlay()
@@ -393,7 +393,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._start_finish_dlong = None
         self._has_unsaved_changes = False
         self._update_fit_scale()
-        self.update()
+        self._context.request_repaint()
 
     def refresh_geometry(self) -> None:
         if self._sgfile is None:
@@ -424,16 +424,16 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._section_manager.sampled_dlongs,
         )
         self._has_unsaved_changes = True
-        self.update()
+        self._context.request_repaint()
 
     def load_background_image(self, path: Path) -> None:
         self._background.load_image(path)
         self._fit_view_to_background()
-        self.update()
+        self._context.request_repaint()
 
     def clear_background_image(self) -> None:
         self._background.clear()
-        self.update()
+        self._context.request_repaint()
 
     # ------------------------------------------------------------------
     # New straight creation
@@ -488,7 +488,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         self._set_delete_section_active(True)
         self._status_message = "Click a section to delete it."
-        self.update()
+        self._context.request_repaint()
         return True
 
     def cancel_delete_section(self) -> None:
@@ -508,7 +508,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._apply_creation_update(
                 self._creation_controller.deactivate_creation()
             )
-        self.deleteModeChanged.emit(active)
+        if self._emit_delete_mode_changed is not None:
+            self._emit_delete_mode_changed(active)
 
     # ------------------------------------------------------------------
     # Split section
@@ -525,7 +526,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._split_section_mode = True
         self._apply_creation_update(self._creation_controller.deactivate_creation())
         self.set_status_text("Hover over a straight or curve section to choose split point.")
-        self.splitSectionModeChanged.emit(True)
+        if self._emit_split_section_mode_changed is not None:
+            self._emit_split_section_mode_changed(True)
         self.request_repaint()
         return True
 
@@ -536,14 +538,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._exit_split_section_mode()
 
     def _update_split_hover(self, screen_pos: QtCore.QPoint) -> None:
-        widget_size = (self.width(), self.height())
+        widget_size = self._widget_size()
         transform = self.current_transform(widget_size)
         if transform is None:
             self._clear_split_hover()
             return
 
         track_point = self.map_to_track(
-            screen_pos, widget_size, self.height(), transform
+            screen_pos, widget_size, self._widget_height(), transform
         )
         if track_point is None:
             self._clear_split_hover()
@@ -551,7 +553,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
         section_index = self._selection.find_section_at_point(
             screen_pos,
-            lambda p: self.map_to_track(p, widget_size, self.height(), transform),
+            lambda p: self.map_to_track(p, widget_size, self._widget_height(), transform),
             transform,
         )
         if section_index is None:
@@ -615,7 +617,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
         elif self._split_previous_status_message is not None:
             self._status_message = self._split_previous_status_message
         self._split_previous_status_message = None
-        self.splitSectionModeChanged.emit(False)
+        if self._emit_split_section_mode_changed is not None:
+            self._emit_split_section_mode_changed(False)
         self._show_status(self._status_message)
         self.request_repaint()
 
@@ -625,7 +628,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         self._background.scale_500ths_per_px = scale_500ths_per_px
         self._background.world_xy_at_image_uv_00 = origin
         self._fit_view_to_background()
-        self.update()
+        self._context.request_repaint()
 
     def get_background_settings(self) -> tuple[float, Point]:
         return self._background.scale_500ths_per_px, self._background.world_xy_at_image_uv_00
@@ -640,7 +643,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def _fit_view_to_background(self) -> None:
         active_bounds = self._viewport.fit_view_to_background(
-            self._section_manager.sampled_bounds, (self.width(), self.height())
+            self._section_manager.sampled_bounds, self._widget_size()
         )
         if active_bounds is None:
             return
@@ -658,9 +661,64 @@ class SGPreviewWidget(QtWidgets.QWidget):
         """Update cached node colors directly from section connectivity."""
         update_node_status(self._section_manager.sections, self._node_status)
 
-    def _build_node_positions(self):
+    def build_node_positions(self) -> dict[tuple[int, str], Point]:
         return build_node_positions(self._section_manager.sections)
 
+    @property
+    def background(self) -> PreviewBackground:
+        return self._background
+
+    @property
+    def section_manager(self) -> PreviewSectionManager:
+        return self._section_manager
+
+    @property
+    def selection_manager(self) -> selection.SelectionManager:
+        return self._selection
+
+    @property
+    def interaction(self) -> PreviewInteraction:
+        return self._interaction
+
+    @property
+    def creation_controller(self) -> CreationController:
+        return self._creation_controller
+
+    @property
+    def node_status(self) -> dict[tuple[int, str], str]:
+        return self._node_status
+
+    @property
+    def node_radius_px(self) -> int:
+        return self._node_radius_px
+
+    @property
+    def hovered_endpoint(self) -> tuple[int, str] | None:
+        return self._hovered_endpoint
+
+    @property
+    def show_curve_markers(self) -> bool:
+        return self._show_curve_markers
+
+    @property
+    def show_axes(self) -> bool:
+        return self._show_axes
+
+    @property
+    def start_finish_mapping(self) -> tuple[Point, Point, Point] | None:
+        return self._start_finish_mapping
+
+    @property
+    def status_message(self) -> str:
+        return self._status_message
+
+    @property
+    def split_section_mode(self) -> bool:
+        return self._split_section_mode
+
+    @property
+    def split_hover_point(self) -> Point | None:
+        return self._split_hover_point
     def _can_drag_section_node(self, section: SectionPreview) -> bool:
         return self._editor.can_drag_section_node(
             self._section_manager.sections, section
@@ -685,14 +743,14 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
 
     def _creation_context(self) -> CreationEventContext | None:
-        widget_size = (self.width(), self.height())
+        widget_size = self._widget_size()
         transform = self._controller.current_transform(widget_size)
         if transform is None:
             return None
 
         def map_to_track(point: tuple[float, float]) -> Point | None:
             return self._controller.map_to_track(
-                QtCore.QPointF(*point), widget_size, self.height(), transform
+                QtCore.QPointF(*point), widget_size, self._widget_height(), transform
             )
 
         def find_unconnected_node(
@@ -702,7 +760,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 point,
                 self._section_manager.sections,
                 transform,
-                self.height(),
+                self._widget_height(),
                 self._node_radius_px,
             )
 
@@ -738,19 +796,25 @@ class SGPreviewWidget(QtWidgets.QWidget):
                 self._set_delete_section_active(False)
                 self.cancel_split_section()
                 self._lock_user_transform()
-            self.newStraightModeChanged.emit(self._creation_controller.straight_active)
+            if self._emit_new_straight_mode_changed is not None:
+                self._emit_new_straight_mode_changed(
+                    self._creation_controller.straight_active
+                )
         if update.curve_mode_changed:
             if self._creation_controller.curve_active:
                 self._set_delete_section_active(False)
                 self.cancel_split_section()
                 self._lock_user_transform()
-            self.newCurveModeChanged.emit(self._creation_controller.curve_active)
+            if self._emit_new_curve_mode_changed is not None:
+                self._emit_new_curve_mode_changed(
+                    self._creation_controller.curve_active
+                )
         if update.finalize_straight:
             self._finalize_new_straight()
         if update.finalize_curve:
             self._finalize_new_curve()
         if update.repaint:
-            self.update()
+            self._context.request_repaint()
 
     def _creation_active(self) -> bool:
         return self._creation_controller.straight_active or self._creation_controller.curve_active
@@ -795,80 +859,15 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
 
     # ------------------------------------------------------------------
-    # Qt events
+    # Input events
     # ------------------------------------------------------------------
-    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: D401
-        super().resizeEvent(event)
+    def on_resize(self, event: QtGui.QResizeEvent) -> None:  # noqa: D401
+        _ = event
         self._update_fit_scale()
-        self.update()
+        self._context.request_repaint()
 
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
-        """Paint the preview + our node overlay that uses _node_status directly."""
-        painter = QtGui.QPainter(self)
-
-        # Get the current transform once, reuse it
-        transform = self._controller.current_transform((self.width(), self.height()))
-
-        node_state = None
-        if transform is not None:
-            node_state = preview_painter.NodeOverlayState(
-                node_positions=self._build_node_positions(),
-                node_status=self._node_status,
-                node_radius_px=self._node_radius_px,
-                hovered_node=self._hovered_endpoint,
-                connection_target=self._interaction.connection_target,
-            )
-
-        creation_preview = self._creation_controller.preview_sections()
-        drag_heading_state = None
-        if transform is not None:
-            dragged_heading = self._interaction.dragged_curve_heading()
-            if dragged_heading is not None:
-                drag_section, drag_end_point = dragged_heading
-                drag_heading_state = preview_painter.DragHeadingState(
-                    section=drag_section,
-                    end_point=drag_end_point,
-                )
-
-        preview_painter.paint_preview(
-            painter,
-            preview_painter.BasePreviewState(
-                rect=self.rect(),
-                background_color=self.palette().color(QtGui.QPalette.Window),
-                background_image=self._background.image,
-                background_scale_500ths_per_px=self._background.scale_500ths_per_px,
-                background_origin=self._background.world_xy_at_image_uv_00,
-                sampled_centerline=self._section_manager.sampled_centerline,
-                centerline_polylines=self._section_manager.centerline_polylines,
-                selected_section_points=self._selection.selected_section_points,
-                section_endpoints=self._section_manager.section_endpoints,
-                selected_section_index=self._selection.selected_section_index,
-                show_curve_markers=self._show_curve_markers,
-                show_axes=self._show_axes,
-                sections=self._section_manager.sections,
-                selected_curve_index=self._selection.selected_curve_index,
-                start_finish_mapping=self._start_finish_mapping,
-                status_message=self._status_message,
-                split_section_mode=self._split_section_mode,
-                split_hover_point=self._split_hover_point,
-            ),
-            preview_painter.CreationOverlayState(
-                new_straight_active=creation_preview.new_straight_active,
-                new_straight_start=creation_preview.new_straight_start,
-                new_straight_end=creation_preview.new_straight_end,
-                new_curve_active=creation_preview.new_curve_active,
-                new_curve_start=creation_preview.new_curve_start,
-                new_curve_end=creation_preview.new_curve_end,
-                new_curve_preview=creation_preview.new_curve_preview,
-            ),
-            node_state,
-            drag_heading_state,
-            transform,
-            self.height(),
-        )
-
-    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
-        widget_size = (self.width(), self.height())
+    def on_wheel(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
+        widget_size = self._widget_size()
         transform = self._controller.current_transform(widget_size)
         state = self._transform_state
         new_state = zoom_transform_state(
@@ -876,21 +875,21 @@ class SGPreviewWidget(QtWidgets.QWidget):
             event.angleDelta().y(),
             (event.pos().x(), event.pos().y()),
             widget_size,
-            self.height(),
+            self._widget_height(),
             transform,
             self._controller.clamp_scale,
             self._controller.default_center,
             lambda p: self._controller.map_to_track(
-                QtCore.QPointF(*p), widget_size, self.height(), transform
+                QtCore.QPointF(*p), widget_size, self._widget_height(), transform
             ),
         )
         if new_state is None:
             return
         self._transform_state = new_state
-        self.update()
+        self._context.request_repaint()
         event.accept()
 
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+    def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._handle_creation_mouse_press(event):
             return
 
@@ -924,7 +923,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # ---------------------------------------------------------
         if (
             event.button() == QtCore.Qt.LeftButton
-            and self._controller.current_transform((self.width(), self.height())) is not None
+            and self._controller.current_transform(self._widget_size()) is not None
             and not self._interaction.is_dragging_node
             and not self._interaction.is_dragging_section
         ):
@@ -936,11 +935,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
             event.accept()
             return
 
-        super().mousePressEvent(event)
-
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        
+    def on_mouse_move(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._handle_creation_mouse_move(event.pos()):
             event.accept()
             return
@@ -964,12 +959,12 @@ class SGPreviewWidget(QtWidgets.QWidget):
         # THEN let interaction handle the move
         # --------------------------------------------------
         if self._interaction.handle_mouse_move(event):
-            self.update()
+            self._context.request_repaint()
             return
 
 
         if self._is_panning and self._last_mouse_pos is not None:
-            widget_size = (self.width(), self.height())
+            widget_size = self._widget_size()
             transform = self._controller.current_transform(widget_size)
             if transform:
                 state = self._transform_state
@@ -984,7 +979,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
                         scale,
                         center,
                     )
-                    self.update()
+                    self._context.request_repaint()
             event.accept()
             return
         
@@ -997,13 +992,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
             if hover != self._hovered_endpoint:
                 self._hovered_endpoint = hover
-                self.update()
+                self._context.request_repaint()
 
-
-
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+    def on_mouse_release(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._handle_creation_mouse_release(event):
             return
 
@@ -1055,11 +1046,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
                     0 if self._press_pos is None else (event.pos() - self._press_pos).manhattanLength(),
                 )
             self._press_pos = None
-        super().mouseReleaseEvent(event)
-
-    def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
+    def on_leave(self, event: QtCore.QEvent) -> None:  # noqa: D401
+        _ = event
         self._clear_split_hover()
-        super().leaveEvent(event)
 
     # ------------------------------------------------------------------
     # Selection
@@ -1069,7 +1058,7 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if self._delete_section_active and self._handle_delete_click(pos):
             return
 
-        widget_size = (self.width(), self.height())
+        widget_size = self._widget_size()
         transform = self._controller.current_transform(widget_size)
         logger.debug(
             "Handling click at screen %s with widget size %s and transform %s",
@@ -1079,28 +1068,29 @@ class SGPreviewWidget(QtWidgets.QWidget):
         )
         self._selection.handle_click(
             pos,
-            lambda p: self._controller.map_to_track(p, widget_size, self.height(), transform),
+            lambda p: self._controller.map_to_track(p, widget_size, self._widget_height(), transform),
             transform,
         )
 
     def _on_selection_changed(self, selection_value: object) -> None:
-        self.selectedSectionChanged.emit(selection_value)
-        self.update()
+        if self._emit_selected_section_changed is not None:
+            self._emit_selected_section_changed(selection_value)
+        self._context.request_repaint()
 
     def _handle_delete_click(self, pos: QtCore.QPoint) -> bool:
-        widget_size = (self.width(), self.height())
+        widget_size = self._widget_size()
         transform = self._controller.current_transform(widget_size)
         if transform is None:
             return False
 
         selection_index = self._selection.find_section_at_point(
             pos,
-            lambda p: self._controller.map_to_track(p, widget_size, self.height(), transform),
+            lambda p: self._controller.map_to_track(p, widget_size, self._widget_height(), transform),
             transform,
         )
         if selection_index is None:
             self._status_message = "Click a section to delete it."
-            self.update()
+            self._context.request_repaint()
             return False
 
         self._delete_section(selection_index)
@@ -1226,8 +1216,9 @@ class SGPreviewWidget(QtWidgets.QWidget):
         if preserved_start_finish_dlong is not None and self._track_length:
             self._start_finish_dlong = float(preserved_start_finish_dlong) % float(self._track_length)
         self._has_unsaved_changes = True
-        self.sectionsChanged.emit()  # NEW
-        self.update()
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        self._context.request_repaint()
 
     def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
         (
@@ -1267,7 +1258,8 @@ class SGPreviewWidget(QtWidgets.QWidget):
             self._selection.blockSignals(previous_block_state)
 
         self._has_unsaved_changes = True
-        self.sectionsChanged.emit()
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
         self._selection.set_selected_section(
             0 if self._section_manager.sections else None
         )
@@ -1543,11 +1535,11 @@ class SGPreviewWidget(QtWidgets.QWidget):
 
     def set_show_curve_markers(self, visible: bool) -> None:
         self._show_curve_markers = visible
-        self.update()
+        self._context.request_repaint()
 
     def set_show_axes(self, visible: bool) -> None:
         self._show_axes = visible
-        self.update()
+        self._context.request_repaint()
 
     def activate_set_start_finish_mode(self) -> None:
         """Backward-compatible alias for setting start/finish."""

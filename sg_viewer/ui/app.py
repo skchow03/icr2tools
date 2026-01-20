@@ -6,7 +6,7 @@ from PyQt5 import QtWidgets
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
-from sg_viewer.ui.preview_widget import SGPreviewWidget
+from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
 
@@ -43,7 +43,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             button.setToolTip(f"{label} ({shortcut})")
             button.setShortcut(shortcut)
 
-        self._preview: PreviewContext = SGPreviewWidget(
+        self._preview: PreviewContext = PreviewWidgetQt(
             show_status=self.show_status_message
         )
         self._sidebar = QtWidgets.QWidget()

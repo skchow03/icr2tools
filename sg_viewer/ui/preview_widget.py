@@ -1,4 +1,6 @@
 """Backward-compatible import for the SG preview widget."""
-from sg_viewer.preview.widget import SGPreviewWidget
+from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
 
-__all__ = ["SGPreviewWidget"]
+SGPreviewWidget = PreviewWidgetQt
+
+__all__ = ["PreviewWidgetQt", "SGPreviewWidget"]
