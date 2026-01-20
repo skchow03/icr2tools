@@ -1,33 +1,10 @@
 from __future__ import annotations
 
-from typing import Callable, Iterable
+from typing import Iterable
 
 from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.preview.geometry import curve_angles
 from sg_viewer.models.sg_model import SectionPreview
-from sg_viewer.model.sg_document import SGDocument
-
-
-class EditSession:
-    def __init__(self, sections: list[SectionPreview]) -> None:
-        self._original_sections = list(sections)
-        self._sections = list(sections)
-
-    def apply_mutation(self, mutation_fn: Callable[..., list[SectionPreview]], *args, **kwargs) -> None:
-        self._sections = mutation_fn(self._sections, *args, **kwargs)
-
-    def commit(self, sg_document: SGDocument) -> None:
-        if sg_document.sg_data is None:
-            raise ValueError("No SG data loaded.")
-        sg_document.set_sg_data(apply_preview_to_sgfile(sg_document.sg_data, self._sections))
-
-    def cancel(self) -> None:
-        self._sections = list(self._original_sections)
-
-    def preview_sections(self) -> list[SectionPreview]:
-        return list(self._sections)
-
-
 def apply_preview_to_sgfile(sgfile: SGFile, sections: Iterable[SectionPreview]) -> SGFile:
     sections_list = list(sections)
     if not sections_list:
