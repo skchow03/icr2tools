@@ -1,7 +1,7 @@
 import pytest
 
 try:  # pragma: no cover - allows tests to be skipped in headless CI without PyQt5
-    from sg_viewer.ui.preview_widget import SGPreviewWidget
+    from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
     from PyQt5 import QtWidgets
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -16,7 +16,7 @@ def qapp():
 
 
 def test_new_track_has_default_xsects(qapp):
-    sgfile = SGPreviewWidget._create_empty_sgfile()
+    sgfile = PreviewWidgetQt._create_empty_sgfile()
 
     assert list(sgfile.header[:4]) == [int.from_bytes(b"\x00\x00GS", "little"), 1, 1, 0]
     assert sgfile.num_xsects == 2
