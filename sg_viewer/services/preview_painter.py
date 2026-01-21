@@ -364,7 +364,7 @@ def draw_boundary_posts(painter, posts, color, scale):
     painter.setPen(pen)
 
     for (x1, y1), (x2, y2) in posts:
-        painter.drawLine(x1, y1, x2, y2)
+        painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
 
 
 def _draw_curve_markers(
