@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
+from sg_viewer.models.preview_fsection import PreviewFSection
 
 Point = Tuple[float, float]
 
@@ -27,6 +28,8 @@ class SectionPreview:
     start_heading: tuple[float, float] | None
     end_heading: tuple[float, float] | None
     polyline: List[Point]
+    start_dlat: float = 0.0
+    end_dlat: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -45,4 +48,5 @@ class PreviewData:
     start_finish_mapping: tuple[Point, Point, Point] | None
     sections: List[SectionPreview]
     section_endpoints: List[tuple[Point, Point]]
+    fsections: List[PreviewFSection]
     status_message: str
