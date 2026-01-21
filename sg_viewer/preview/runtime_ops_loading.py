@@ -111,7 +111,10 @@ class _RuntimeLoadingMixin:
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
-        self._sg_preview_model = build_sg_preview_model(self._document)
+        self._sg_preview_model = build_sg_preview_model(
+            self._document,
+            sections=self._derived_geometry.sections,
+        )
         if mark_unsaved:
             self._has_unsaved_changes = True
             if self._emit_sections_changed is not None:
