@@ -314,7 +314,7 @@ def interpolate_dlat_along_polyline(points, start_dlat, end_dlat):
     Assumes polyline spans start_dlat → end_dlat monotonically.
     """
     total_len = sum(
-        (points[i] - points[i - 1]).length()
+        QtCore.QLineF(points[i - 1], points[i]).length()
         for i in range(1, len(points))
     )
 
@@ -323,7 +323,7 @@ def interpolate_dlat_along_polyline(points, start_dlat, end_dlat):
     result.append((points[0], start_dlat))
 
     for i in range(1, len(points)):
-        seg_len = (points[i] - points[i - 1]).length()
+        seg_len = QtCore.QLineF(points[i - 1], points[i]).length()
         acc += seg_len
         t = acc / total_len if total_len > 0 else 0.0
         dlat = start_dlat + t * (end_dlat - start_dlat)
@@ -361,4 +361,3 @@ def split_polyline_by_surface(points, start_dlat, end_dlat, fsections):
         segments.append((current_surface, current_points))
 
     return segments
-
