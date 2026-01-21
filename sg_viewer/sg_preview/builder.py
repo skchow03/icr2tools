@@ -244,6 +244,7 @@ def _sample_curve(
 
     start_angle = math.atan2(start_vec[1], start_vec[0])
     end_angle = math.atan2(end_vec[1], end_vec[0])
+    end_angle = unwrap_angle_pair(start_angle, end_angle)
 
     heading = _heading_from_section(sect, start, end)
     ccw = _is_ccw_turn(start_vec, end_vec, heading)
@@ -376,6 +377,21 @@ def _angle_delta(start_angle: float, end_angle: float, ccw: bool) -> float:
         if delta >= 0:
             delta -= math.tau
     return delta
+
+
+def unwrap_angle_pair(a0: float, a1: float) -> float:
+    """
+    Return a1 adjusted so that (a1 - a0) represents the shortest continuous sweep.
+    Angles are in radians.
+    """
+    delta = a1 - a0
+    while delta > math.pi:
+        a1 -= 2 * math.pi
+        delta = a1 - a0
+    while delta < -math.pi:
+        a1 += 2 * math.pi
+        delta = a1 - a0
+    return a1
 
 
 def _curve_steps(delta: float, steps: Optional[int]) -> int:
