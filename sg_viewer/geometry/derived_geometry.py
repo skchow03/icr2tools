@@ -10,6 +10,7 @@ from sg_viewer.geometry.sg_geometry import (
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
+from sg_viewer.geometry.section_utils import previous_section_index
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.models.sg_model import SectionPreview
 
@@ -116,28 +117,30 @@ class DerivedGeometry:
 
             type_name = "curve" if getattr(sg_sect, "type", None) == 2 else "straight"
             forward_anchor = None
-            if track_closed and idx == 0 and type_name == "curve" and len(sgfile.sects) > 1:
-                next_sect = sgfile.sects[1]
-                next_start = (float(next_sect.start_x), float(next_sect.start_y))
-                next_end = (
-                    float(getattr(next_sect, "end_x", next_start[0])),
-                    float(getattr(next_sect, "end_y", next_start[1])),
+            prev_index = previous_section_index(idx, len(sgfile.sects), track_closed)
+            prev_section = sgfile.sects[prev_index] if prev_index is not None else None
+            if type_name == "curve" and prev_section is not None:
+                prev_start = (float(prev_section.start_x), float(prev_section.start_y))
+                prev_end = (
+                    float(getattr(prev_section, "end_x", prev_start[0])),
+                    float(getattr(prev_section, "end_y", prev_start[1])),
                 )
-                next_center = None
-                next_radius = None
-                next_type = "curve" if getattr(next_sect, "type", None) == 2 else "straight"
-                if next_type == "curve":
-                    next_center = (float(next_sect.center_x), float(next_sect.center_y))
-                    next_radius = float(next_sect.radius)
+                prev_center = None
+                prev_radius = None
+                prev_type = "curve" if getattr(prev_section, "type", None) == 2 else "straight"
+                if prev_type == "curve":
+                    prev_center = (float(prev_section.center_x), float(prev_section.center_y))
+                    prev_radius = float(prev_section.radius)
                 forward_anchor = compute_forward_anchor(
-                    next_type, next_start, next_end, next_center, next_radius
+                    prev_type, prev_start, prev_end, prev_center, prev_radius
                 )
                 if forward_anchor is not None and DEBUG_CURVE_RENDER:
                     logger.info(
-                        "Anchored section 0 curve orientation using section 1",
+                        "Anchored curve orientation using previous section",
                         extra={
-                            "section0_id": idx,
-                            "section1_type": next_type,
+                            "section_id": idx,
+                            "previous_section_id": prev_index,
+                            "previous_section_type": prev_type,
                         },
                     )
 
@@ -161,7 +164,9 @@ class DerivedGeometry:
                 SectionPreview(
                     section_id=idx,
                     type_name=type_name,
-                    previous_id=int(getattr(sg_sect, "sec_prev", idx - 1)),
+                    previous_id=int(
+                        getattr(sg_sect, "sec_prev", prev_index if prev_index is not None else -1)
+                    ),
                     next_id=int(getattr(sg_sect, "sec_next", idx + 1)),
                     start=start,
                     end=end,
