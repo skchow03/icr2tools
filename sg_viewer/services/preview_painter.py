@@ -7,6 +7,10 @@ from PyQt5 import QtCore, QtGui
 
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.render_state import split_nodes_by_status
+from sg_viewer.sg_preview.model import SgPreviewModel
+from sg_viewer.sg_preview.render import render_sg_preview
+from sg_viewer.sg_preview.transform import ViewTransform
+from sg_viewer.sg_preview.view_state import SgPreviewViewState
 from sg_viewer.services import sg_rendering
 
 Point = Tuple[float, float]
@@ -61,12 +65,21 @@ class DragHeadingState:
     end_point: Point | None
 
 
+@dataclass
+class SgPreviewState:
+    model: SgPreviewModel | None
+    transform: ViewTransform | None
+    view_state: SgPreviewViewState
+    enabled: bool
+
+
 def paint_preview(
     painter: QtGui.QPainter,
     base_state: BasePreviewState,
     creation_state: CreationOverlayState,
     node_state: NodeOverlayState | None,
     drag_heading_state: DragHeadingState | None,
+    sg_preview_state: SgPreviewState | None,
     transform: Transform | None,
     widget_height: int,
 ) -> None:
@@ -101,6 +114,14 @@ def paint_preview(
             transform,
             widget_height,
         )
+
+        if sg_preview_state and sg_preview_state.enabled:
+            render_sg_preview(
+                painter,
+                sg_preview_state.model,
+                sg_preview_state.transform,
+                sg_preview_state.view_state,
+            )
 
         if base_state.show_curve_markers:
             _draw_curve_markers(

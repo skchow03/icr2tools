@@ -198,6 +198,9 @@ class SGViewerController:
         self._window.preview.splitSectionModeChanged.connect(self._on_split_mode_changed)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
+        self._window.sg_fsects_checkbox.toggled.connect(
+            self._window.preview.set_show_sg_fsects
+        )
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
         self._window.xsect_combo.currentIndexChanged.connect(
