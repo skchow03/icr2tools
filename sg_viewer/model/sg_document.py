@@ -25,9 +25,9 @@ class SGDocument(QtCore.QObject):
     def sg_data(self) -> SGFile | None:
         return self._sg_data
 
-    def set_sg_data(self, sg_data: SGFile | None) -> None:
+    def set_sg_data(self, sg_data: SGFile | None, *, validate: bool = True) -> None:
         self._sg_data = sg_data
-        if self._sg_data is not None:
+        if self._sg_data is not None and validate:
             self.validate()
         self.metadata_changed.emit()
         self.geometry_changed.emit()
