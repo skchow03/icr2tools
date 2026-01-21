@@ -349,7 +349,7 @@ def draw_boundary_posts(
     painter.setPen(pen)
 
     for a, b in posts:
-        painter.drawLine(a[0], a[1], b[0], b[1])
+        painter.drawLine(QtCore.QPointF(a[0], a[1]), QtCore.QPointF(b[0], b[1]))
 
 
 def _draw_boundary_posts(
