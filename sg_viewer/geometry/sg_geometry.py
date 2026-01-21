@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 import math
+import os
 from dataclasses import replace
 from typing import List, Tuple
 
 from track_viewer.geometry import CenterlineIndex, build_centerline_index
 
 from sg_viewer.models.sg_model import SectionPreview, Point
+
+logger = logging.getLogger(__name__)
+DEBUG_CURVE_RENDER = os.getenv("DEBUG_CURVE_RENDER", "").lower() in {"1", "true", "yes", "on"}
 
 
 def normalize_heading(vec: tuple[float, float] | None) -> tuple[float, float] | None:
@@ -65,6 +70,7 @@ def build_section_polyline(
     radius: float | None,
     start_heading: tuple[float, float] | None,
     end_heading: tuple[float, float] | None,
+    section_id: int | None = None,
 ) -> List[Point]:
     if type_name != "curve" or center is None:
         return [start, end]
@@ -133,6 +139,30 @@ def build_section_polyline(
     if prefer_ccw is None:
         prefer_ccw = _choose_ccw_direction(start_vec, end_vec)
 
+    chord_dir = normalize_heading((end[0] - start[0], end[1] - start[1]))
+    flip_arc_direction = False
+    if chord_dir is not None:
+        start_tangent = (
+            (-start_vec[1], start_vec[0]) if prefer_ccw else (start_vec[1], -start_vec[0])
+        )
+        start_tangent = normalize_heading(start_tangent)
+        if start_tangent is not None:
+            dot = start_tangent[0] * chord_dir[0] + start_tangent[1] * chord_dir[1]
+            flip_arc_direction = dot < 0
+
+    if flip_arc_direction:
+        prefer_ccw = not prefer_ccw
+        if DEBUG_CURVE_RENDER:
+            logger.warning(
+                "Curve render flip applied",
+                extra={
+                    "section_id": section_id,
+                    "radius": radius_length,
+                    "start": start,
+                    "end": end,
+                },
+            )
+
     angle_span = end_angle - start_angle
     if prefer_ccw:
         if angle_span <= 0:
@@ -140,6 +170,17 @@ def build_section_polyline(
     else:
         if angle_span >= 0:
             angle_span -= 2 * math.pi
+
+    force_minor_arc = False
+    if chord_dir is not None:
+        end_tangent = (-end_vec[1], end_vec[0]) if prefer_ccw else (end_vec[1], -end_vec[0])
+        end_tangent = normalize_heading(end_tangent)
+        if end_tangent is not None:
+            end_dot = end_tangent[0] * chord_dir[0] + end_tangent[1] * chord_dir[1]
+            force_minor_arc = end_dot < 0
+
+    if force_minor_arc and abs(angle_span) > math.pi:
+        angle_span -= math.copysign(2 * math.pi, angle_span)
 
     total_angle = abs(angle_span)
     if total_angle < 1e-6:
@@ -211,6 +252,7 @@ def update_section_geometry(section: SectionPreview) -> SectionPreview:
         section.radius,
         start_heading,
         end_heading,
+        section_id=section.section_id,
     )
     start_heading, end_heading = derive_heading_vectors(
         polyline, section.sang1, section.sang2, section.eang1, section.eang2
