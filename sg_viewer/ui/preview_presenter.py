@@ -47,6 +47,15 @@ class PreviewPresenter:
         selection = self._runtime.selection_manager
         background = self._runtime.background
 
+        sg_preview_state = preview_painter.SgPreviewState(
+            model=self._runtime.sg_preview_model,
+            transform=self._runtime.sg_preview_transform(self._context.widget_height())
+            if transform is not None
+            else None,
+            view_state=self._runtime.sg_preview_view_state,
+            enabled=self._runtime.show_sg_fsects,
+        )
+
         preview_painter.paint_preview(
             painter,
             preview_painter.BasePreviewState(
@@ -80,6 +89,7 @@ class PreviewPresenter:
             ),
             node_state,
             drag_heading_state,
+            sg_preview_state,
             transform,
             self._context.widget_height(),
         )

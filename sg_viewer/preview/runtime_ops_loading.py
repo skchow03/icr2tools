@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sg_viewer.sg_preview.builder import build_sg_preview_model
+
 
 class _RuntimeLoadingMixin:
     def clear(self, message: str | None = None) -> None:
@@ -26,6 +28,7 @@ class _RuntimeLoadingMixin:
         self._selection.reset([], None, None, [])
         self._set_default_view_bounds()
         self._update_node_status()
+        self._sg_preview_model = None
         self._has_unsaved_changes = False
         self._update_fit_scale()
         self._context.request_repaint()
@@ -106,6 +109,7 @@ class _RuntimeLoadingMixin:
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
+        self._sg_preview_model = build_sg_preview_model(self._document)
         if mark_unsaved:
             self._has_unsaved_changes = True
             if self._emit_sections_changed is not None:

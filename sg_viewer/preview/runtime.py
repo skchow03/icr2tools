@@ -21,6 +21,7 @@ from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
+from sg_viewer.sg_preview.view_state import SgPreviewViewState
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
     compute_start_finish_mapping_from_centerline,
@@ -108,6 +109,10 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._trk_overlay = TrkOverlayController()
         self._start_finish_dlong: float | None = None
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
+
+        self._sg_preview_model = None
+        self._sg_preview_view_state = SgPreviewViewState()
+        self._show_sg_fsects = False
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)

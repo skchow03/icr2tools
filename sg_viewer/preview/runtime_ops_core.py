@@ -29,6 +29,8 @@ from sg_viewer.preview.selection import build_node_positions, find_unconnected_n
 from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.services.preview_background import PreviewBackground
+from sg_viewer.sg_preview.transform import ViewTransform
+from sg_viewer.sg_preview.view_state import SgPreviewViewState
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
@@ -95,6 +97,10 @@ class _RuntimeCoreMixin:
         self._trk_overlay = TrkOverlayController()
         self._start_finish_dlong: float | None = None
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
+
+        self._sg_preview_model = None
+        self._sg_preview_view_state = SgPreviewViewState()
+        self._show_sg_fsects = False
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
@@ -479,12 +485,32 @@ class _RuntimeCoreMixin:
         return self._show_axes
 
     @property
+    def show_sg_fsects(self) -> bool:
+        return self._show_sg_fsects
+
+    @property
     def start_finish_mapping(self) -> tuple[Point, Point, Point] | None:
         return self._start_finish_mapping
 
     @property
     def status_message(self) -> str:
         return self._status_message
+
+    @property
+    def sg_preview_model(self):
+        return self._sg_preview_model
+
+    @property
+    def sg_preview_view_state(self) -> SgPreviewViewState:
+        return self._sg_preview_view_state
+
+    def sg_preview_transform(self, widget_height: int) -> ViewTransform | None:
+        widget_size = self._widget_size()
+        transform = self.current_transform(widget_size)
+        if transform is None:
+            return None
+        scale, offsets = transform
+        return ViewTransform(scale=scale, offset=(offsets[0], widget_height - offsets[1]))
 
     @property
     def split_section_mode(self) -> bool:
@@ -833,6 +859,10 @@ class _RuntimeCoreMixin:
 
     def set_show_axes(self, visible: bool) -> None:
         self._show_axes = visible
+        self._context.request_repaint()
+
+    def set_show_sg_fsects(self, visible: bool) -> None:
+        self._show_sg_fsects = visible
         self._context.request_repaint()
 
     def activate_set_start_finish_mode(self) -> None:
