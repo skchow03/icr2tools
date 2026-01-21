@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from PyQt5 import QtCore
+
 from sg_viewer.sg_preview.model import Point, SgPreviewModel
 from sg_viewer.sg_preview.transform import ViewTransform
 from sg_viewer.sg_preview.view_state import SgPreviewViewState
@@ -92,5 +94,5 @@ def _set_pen(painter, color, width: float) -> None:
 def _set_brush(painter, color) -> None:
     brush = painter.brush()
     brush.setColor(color)
-    brush.setStyle(type(brush).SolidPattern)
+    brush.setStyle(QtCore.Qt.SolidPattern)
     painter.setBrush(brush)
