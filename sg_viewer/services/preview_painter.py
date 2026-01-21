@@ -359,7 +359,7 @@ def _draw_centerlines(
 def draw_boundary_posts(painter, posts, color, scale):
     pen = painter.pen()
     pen.setColor(color)
-    pen.setCapStyle(pen.FlatCap)
+    pen.setCapStyle(QtCore.Qt.FlatCap)
     pen.setWidthF(max(1.0, scale * 0.75))
     painter.setPen(pen)
 
