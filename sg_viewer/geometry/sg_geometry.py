@@ -141,6 +141,30 @@ def build_section_polyline(
         if angle_span >= 0:
             angle_span -= 2 * math.pi
 
+    def _tangent_for(vec: tuple[float, float], ccw: bool) -> tuple[float, float] | None:
+        vec_norm = normalize_heading(vec)
+        if vec_norm is None:
+            return None
+        if ccw:
+            return (-vec_norm[1], vec_norm[0])
+        return (vec_norm[1], -vec_norm[0])
+
+    if start_heading and end_heading:
+        start_norm = normalize_heading(start_heading)
+        end_norm = normalize_heading(end_heading)
+        ccw = angle_span > 0
+        start_tangent = _tangent_for(start_vec, ccw)
+        end_tangent = _tangent_for(end_vec, ccw)
+        if start_norm and end_norm and start_tangent and end_tangent:
+            start_dot = start_norm[0] * start_tangent[0] + start_norm[1] * start_tangent[1]
+            end_dot = end_norm[0] * end_tangent[0] + end_norm[1] * end_tangent[1]
+            if start_dot < -0.2 and end_dot < -0.2:
+                start_angle = math.atan2(start_vec[1], start_vec[0])
+                end_angle = math.atan2(end_vec[1], end_vec[0])
+                dot = start_vec[0] * end_vec[0] + start_vec[1] * end_vec[1]
+                cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+                angle_span = math.atan2(cross, dot)
+
     total_angle = abs(angle_span)
     if total_angle < 1e-6:
         return [start, end]
