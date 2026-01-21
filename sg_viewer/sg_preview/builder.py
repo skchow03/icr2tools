@@ -31,7 +31,26 @@ def build_sg_preview_model(
     for sect_idx, sect in enumerate(sg_data.sects):
         surface_geoms: list[SgSurfaceGeom] = []
         boundary_geoms: list[SgBoundaryGeom] = []
-        forward = _forward_from_polyline(section_polylines.get(sect_idx), sect_idx)
+        forward = _forward_from_polyline(section_polylines.get(sect_idx), sect_idx, sect)
+        if sect_idx == 0:
+            polyline = section_polylines.get(sect_idx)
+            expected_heading = None
+            flipped = False
+            if polyline:
+                expected_heading = _heading_from_section(sect, polyline[0], polyline[-1])
+                raw_forward = _polyline_forward(polyline)
+                if raw_forward and expected_heading:
+                    dot = raw_forward[0] * expected_heading[0] + raw_forward[1] * expected_heading[1]
+                    flipped = dot < 0
+            logger.debug(
+                "Fsect forward diagnostics",
+                extra={
+                    "section_id": sect_idx,
+                    "forward": forward,
+                    "expected_heading": expected_heading,
+                    "flipped": flipped,
+                },
+            )
 
         ground_lines: list[tuple[float, float, List[Point], dict]] = []
         boundary_lines: list[tuple[float, float, List[Point], dict]] = []
@@ -282,9 +301,22 @@ def _build_section_polylines(
     return polylines
 
 
+def _polyline_forward(polyline: list[Point] | None) -> Optional[Point]:
+    if not polyline or len(polyline) < 2:
+        return None
+    for idx in range(1, len(polyline)):
+        start = polyline[idx - 1]
+        end = polyline[idx]
+        forward = _normalize((end[0] - start[0], end[1] - start[1]))
+        if forward is not None:
+            return forward
+    return None
+
+
 def _forward_from_polyline(
     polyline: list[Point] | None,
     section_id: int,
+    sect=None,
 ) -> Optional[Point]:
     if not polyline:
         return None
@@ -293,9 +325,19 @@ def _forward_from_polyline(
         "Fsect using polyline-derived forward",
         extra={"section_id": section_id},
     )
-    start = polyline[0]
-    end = polyline[1]
-    return _normalize((end[0] - start[0], end[1] - start[1]))
+    forward = _polyline_forward(polyline)
+    if forward is None:
+        return None
+    expected = _heading_from_section(sect, polyline[0], polyline[-1]) if sect is not None else None
+    if expected is not None:
+        dot = forward[0] * expected[0] + forward[1] * expected[1]
+        if dot < 0:
+            forward = (-forward[0], -forward[1])
+            logger.debug(
+                "Fsect forward flipped to match section heading",
+                extra={"section_id": section_id},
+            )
+    return forward
 
 
 def _normal_sign_from_forward(
