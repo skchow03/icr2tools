@@ -147,7 +147,9 @@ class _RuntimeEditingMixin:
 
         sections, track_length = result
         self._track_length = track_length
+        self._split_fsects_by_section(idx)
         self.set_sections(sections)
+        self._validate_section_fsects_alignment()
         if idx + 1 < len(sections):
             self._selection.set_selected_section(idx + 1)
         self._exit_split_section_mode("Split complete.")
@@ -228,7 +230,9 @@ class _RuntimeEditingMixin:
             return
 
         self._track_length = track_length
+        self._delete_fsects_by_section(index)
         self.set_sections(new_sections)
+        self._validate_section_fsects_alignment()
         self._selection.set_selected_section(None)
         self._status_message = status
         self._set_delete_section_active(False)

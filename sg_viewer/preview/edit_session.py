@@ -1,14 +1,52 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.preview.geometry import curve_angles
 from sg_viewer.models.sg_model import SectionPreview
-def apply_preview_to_sgfile(sgfile: SGFile, sections: Iterable[SectionPreview]) -> SGFile:
+from sg_viewer.models.preview_fsection import PreviewFSection
+
+def apply_preview_to_sgfile(
+    sgfile: SGFile,
+    sections: Iterable[SectionPreview],
+    fsects_by_section: Sequence[Sequence[PreviewFSection]] | None = None,
+) -> SGFile:
     sections_list = list(sections)
     if not sections_list:
         raise ValueError("No sections available to save.")
+
+    def _apply_fsects(
+        dest: SGFile.Section, fsects: Sequence[PreviewFSection] | None
+    ) -> None:
+        fsects = list(fsects or [])
+        dest.num_fsects = len(fsects)
+        dest.ftype1 = [int(fsect.surface_type) for fsect in fsects]
+        dest.ftype2 = [int(fsect.type2) for fsect in fsects]
+        dest.fstart = [int(round(fsect.start_dlat)) for fsect in fsects]
+        dest.fend = [int(round(fsect.end_dlat)) for fsect in fsects]
+
+        dest.ground_ftype = []
+        dest.ground_fstart = []
+        dest.ground_fend = []
+        dest.bound_ftype1 = []
+        dest.bound_ftype2 = []
+        dest.bound_fstart = []
+        dest.bound_fend = []
+
+        for fsect in fsects:
+            if int(fsect.surface_type) in {0, 1, 2, 3, 4, 5, 6}:
+                dest.ground_ftype.append(int(fsect.surface_type))
+                dest.ground_fstart.append(int(round(fsect.start_dlat)))
+                dest.ground_fend.append(int(round(fsect.end_dlat)))
+            else:
+                dest.bound_ftype1.append(int(fsect.surface_type))
+                dest.bound_ftype2.append(int(fsect.type2))
+                dest.bound_fstart.append(int(round(fsect.start_dlat)))
+                dest.bound_fend.append(int(round(fsect.end_dlat)))
+
+        dest.num_ground_fsects = len(dest.ground_ftype)
+        dest.num_boundaries = len(dest.bound_ftype1)
 
     def _clone_fsects(source: SGFile.Section, dest: SGFile.Section) -> None:
         dest.num_fsects = int(getattr(source, "num_fsects", 0))
@@ -51,7 +89,9 @@ def apply_preview_to_sgfile(sgfile: SGFile, sections: Iterable[SectionPreview]) 
             return fallback
         return int(round(value))
 
-    for sg_section, preview_section in zip(sgfile.sects, sections_list):
+    for index, (sg_section, preview_section) in enumerate(
+        zip(sgfile.sects, sections_list)
+    ):
         sg_section.type = 2 if preview_section.type_name == "curve" else 1
         sg_section.sec_prev = _as_int(preview_section.previous_id, -1)
         sg_section.sec_next = _as_int(preview_section.next_id, -1)
@@ -103,5 +143,8 @@ def apply_preview_to_sgfile(sgfile: SGFile, sections: Iterable[SectionPreview]) 
         sg_section.radius = _as_int(preview_section.radius)
 
         sg_section.recompute_curve_length()
+
+        if fsects_by_section is not None and index < len(fsects_by_section):
+            _apply_fsects(sg_section, fsects_by_section[index])
 
     return sgfile

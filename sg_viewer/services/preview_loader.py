@@ -179,3 +179,30 @@ def build_fsections(sgfile: SGFile) -> list[PreviewFSection]:
             )
 
     return fsections
+
+
+def build_fsects_by_section(sgfile: SGFile) -> list[list[PreviewFSection]]:
+    fsects_by_section: list[list[PreviewFSection]] = []
+    for sect in sgfile.sects or []:
+        ftype1_list = list(getattr(sect, "ftype1", []))
+        ftype2_list = list(getattr(sect, "ftype2", []))
+        fstart_list = list(getattr(sect, "fstart", []))
+        fend_list = list(getattr(sect, "fend", []))
+
+        section_fsects: list[PreviewFSection] = []
+        for idx, ftype1 in enumerate(ftype1_list):
+            start_dlat = float(fstart_list[idx]) if idx < len(fstart_list) else 0.0
+            end_dlat = float(fend_list[idx]) if idx < len(fend_list) else 0.0
+            type2 = int(ftype2_list[idx]) if idx < len(ftype2_list) else 0
+            section_fsects.append(
+                PreviewFSection(
+                    start_dlat=start_dlat,
+                    end_dlat=end_dlat,
+                    surface_type=int(ftype1),
+                    type2=type2,
+                )
+            )
+
+        fsects_by_section.append(section_fsects)
+
+    return fsects_by_section
