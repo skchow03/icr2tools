@@ -36,11 +36,17 @@ class _RuntimePersistenceMixin:
             return False
 
         try:
-            self.apply_preview_to_sgfile()
+            sgfile = self.apply_preview_to_sgfile()
         except ValueError:
             return False
 
-        fsections = preview_loader_service.build_fsections(self._sgfile)
+        self._suppress_document_dirty = True
+        try:
+            self._document.set_sg_data(sgfile)
+        finally:
+            self._suppress_document_dirty = False
+
+        fsections = preview_loader_service.build_fsections(sgfile)
         object.__setattr__(self._preview_data, "fsections", fsections)
         self._context.request_repaint()
         return True
