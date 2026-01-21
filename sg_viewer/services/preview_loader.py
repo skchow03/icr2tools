@@ -17,6 +17,7 @@ from sg_viewer.geometry.sg_geometry import (
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
+from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
 
 def load_preview(path: Path) -> PreviewData:
@@ -78,6 +79,7 @@ def _build_preview_data(
         start_finish_mapping=start_finish_mapping,
         sections=sections,
         section_endpoints=section_endpoints,
+        fsections=_build_fsections(sgfile),
         status_message=status_message,
     )
 
@@ -101,6 +103,8 @@ def _build_sections(
             float(getattr(sg_sect, "end_x", start[0])),
             float(getattr(sg_sect, "end_y", start[1])),
         )
+        start_dlat = float(getattr(sg_sect, "start_dlat", 0.0))
+        end_dlat = float(getattr(sg_sect, "end_dlat", 0.0))
 
         center = None
         radius = None
@@ -144,7 +148,34 @@ def _build_sections(
                 start_heading=start_heading,
                 end_heading=end_heading,
                 polyline=polyline,
+                start_dlat=start_dlat,
+                end_dlat=end_dlat,
             )
         )
 
     return sections
+
+
+def _build_fsections(sgfile: SGFile) -> list[PreviewFSection]:
+    fsections: list[PreviewFSection] = []
+    for sect in sgfile.sects or []:
+        ftype1_list = list(getattr(sect, "ftype1", []))
+        ftype2_list = list(getattr(sect, "ftype2", []))
+        fstart_list = list(getattr(sect, "fstart", []))
+        fend_list = list(getattr(sect, "fend", []))
+
+        for idx, ftype1 in enumerate(ftype1_list):
+            start_dlat = float(fstart_list[idx]) if idx < len(fstart_list) else 0.0
+            end_dlat = float(fend_list[idx]) if idx < len(fend_list) else 0.0
+            type2 = int(ftype2_list[idx]) if idx < len(ftype2_list) else 0
+
+            fsections.append(
+                PreviewFSection(
+                    start_dlat=start_dlat,
+                    end_dlat=end_dlat,
+                    surface_type=int(ftype1),
+                    type2=type2,
+                )
+            )
+
+    return fsections
