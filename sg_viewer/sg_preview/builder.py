@@ -225,7 +225,15 @@ def _heading_from_section(sect, start: Point, end: Point) -> Optional[Point]:
     if sang1 is not None and sang2 is not None:
         hx = _fixed_to_float(float(sang1))
         hy = _fixed_to_float(float(sang2))
-        return _normalize((hx, hy))
+        heading = _normalize((hx, hy))
+        if heading is None:
+            return None
+        chord = _normalize((end[0] - start[0], end[1] - start[1]))
+        if chord is not None:
+            dot = heading[0] * chord[0] + heading[1] * chord[1]
+            if dot < 0:
+                heading = (-heading[0], -heading[1])
+        return heading
 
     dx = end[0] - start[0]
     dy = end[1] - start[1]
