@@ -7,6 +7,20 @@ from PyQt5 import QtCore, QtGui
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
+SURFACE_COLORS = {
+    0: QtGui.QColor(40, 140, 40),
+    1: QtGui.QColor(120, 170, 80),
+    2: QtGui.QColor(140, 100, 60),
+    3: QtGui.QColor(200, 190, 120),
+    4: QtGui.QColor(170, 170, 170),
+    5: QtGui.QColor(80, 80, 80),
+    6: QtGui.QColor(220, 40, 40),
+    7: QtGui.QColor(200, 200, 220),
+    8: QtGui.QColor(180, 180, 180),
+}
+
+DEFAULT_SURFACE_COLOR = QtGui.QColor(128, 128, 128)
+
 
 def draw_status_message(painter: QtGui.QPainter, rect: QtCore.QRect, message: str) -> None:
     if not message:
@@ -293,4 +307,58 @@ def draw_start_finish_line(
     painter.drawLine(QtCore.QLineF(direction_start, direction_end))
     painter.restore()
 
+
+def interpolate_dlat_along_polyline(points, start_dlat, end_dlat):
+    """
+    Returns list of (point, dlat) tuples.
+    Assumes polyline spans start_dlat → end_dlat monotonically.
+    """
+    total_len = sum(
+        (points[i] - points[i - 1]).length()
+        for i in range(1, len(points))
+    )
+
+    result = []
+    acc = 0.0
+    result.append((points[0], start_dlat))
+
+    for i in range(1, len(points)):
+        seg_len = (points[i] - points[i - 1]).length()
+        acc += seg_len
+        t = acc / total_len if total_len > 0 else 0.0
+        dlat = start_dlat + t * (end_dlat - start_dlat)
+        result.append((points[i], dlat))
+
+    return result
+
+
+def resolve_surface_at_dlat(dlat, fsections):
+    for fs in fsections:
+        if fs.start_dlat <= dlat <= fs.end_dlat:
+            return fs.surface_type
+    return None
+
+
+def split_polyline_by_surface(points, start_dlat, end_dlat, fsections):
+    samples = interpolate_dlat_along_polyline(points, start_dlat, end_dlat)
+
+    segments = []
+    current_surface = None
+    current_points = []
+
+    for point, dlat in samples:
+        surface = resolve_surface_at_dlat(dlat, fsections)
+
+        if surface != current_surface:
+            if len(current_points) >= 2:
+                segments.append((current_surface, current_points))
+            current_surface = surface
+            current_points = [point]
+        else:
+            current_points.append(point)
+
+    if len(current_points) >= 2:
+        segments.append((current_surface, current_points))
+
+    return segments
 

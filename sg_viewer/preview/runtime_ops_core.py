@@ -11,6 +11,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.models import preview_state, selection
 from sg_viewer.models.preview_state_utils import update_node_status
+from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import PreviewData, SectionPreview
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.creation_controller import (
@@ -190,6 +191,12 @@ class _RuntimeCoreMixin:
         return self._controller.map_to_track(
             QtCore.QPointF(*point), widget_size, widget_height, transform
         )
+
+    @property
+    def preview_fsections(self) -> list[PreviewFSection]:
+        if self._preview_data is None:
+            return []
+        return list(self._preview_data.fsections)
 
     def set_status(self, text: str) -> None:
         self._status_message = text
