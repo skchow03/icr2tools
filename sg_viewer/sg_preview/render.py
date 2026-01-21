@@ -11,7 +11,6 @@ from sg_viewer.services import sg_rendering
 
 _SURFACE_FILL_RGBA = (60, 160, 120, 110)
 _SURFACE_OUTLINE_RGBA = (80, 200, 150, 180)
-_BOUNDARY_RGBA = (230, 230, 230, 200)
 _FSECT_OUTLINE_RGBA = (120, 180, 220, 160)
 _SHOW_FSECT_OUTLINES = False
 
@@ -63,13 +62,30 @@ def _draw_surfaces(painter, model: SgPreviewModel, transform: ViewTransform) -> 
 
 
 def _draw_boundaries(painter, model: SgPreviewModel, transform: ViewTransform) -> None:
-    color = _make_color(painter, *_BOUNDARY_RGBA)
-    _set_pen(painter, color, 1.2)
     for fsect in model.fsects:
         for boundary in fsect.boundaries:
+            kind = _boundary_kind(boundary.attrs)
+            if kind is None:
+                continue
+            is_fence = _is_fence(boundary.attrs)
+            if kind == "wall":
+                pen = sg_rendering.make_boundary_pen(
+                    sg_rendering.WALL_COLOR,
+                    is_fence=is_fence,
+                    width=2.0,
+                )
+            elif kind == "armco":
+                pen = sg_rendering.make_boundary_pen(
+                    sg_rendering.ARMCO_COLOR,
+                    is_fence=is_fence,
+                    width=2.0,
+                )
+            else:
+                continue
             points = _map_points(boundary.points, transform)
             if len(points) < 2:
                 continue
+            painter.setPen(pen)
             painter.drawPolyline(points)
 
 
@@ -109,6 +125,20 @@ def _set_pen(painter, color, width: float) -> None:
     pen.setColor(color)
     pen.setWidthF(width)
     painter.setPen(pen)
+
+
+def _boundary_kind(attrs: dict) -> str | None:
+    type1 = int(attrs.get("type1", -1))
+    if type1 == 7:
+        return "wall"
+    if type1 == 8:
+        return "armco"
+    return None
+
+
+def _is_fence(attrs: dict) -> bool:
+    type2 = int(attrs.get("type2", 0))
+    return type2 in {2, 6, 10, 14}
 
 
 def _set_brush(painter, color) -> None:

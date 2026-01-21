@@ -4,12 +4,9 @@ from dataclasses import dataclass
 from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
-from PyQt5.QtGui import QColor
-
 from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.render_state import split_nodes_by_status
-from sg_viewer.preview.preview_defaults import BOUNDARY_KIND
 from sg_viewer.sg_preview.model import SgPreviewModel
 from sg_viewer.sg_preview.render import render_sg_preview
 from sg_viewer.sg_preview.transform import ViewTransform
@@ -19,8 +16,6 @@ from sg_viewer.services import sg_rendering
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 BASE_WIDTH = 3.0
-WALL_COLOR = QColor(255, 255, 255)
-ARMCO_COLOR = QColor(0, 255, 255)
 
 
 @dataclass
@@ -122,34 +117,6 @@ def paint_preview(
             transform,
             widget_height,
         )
-        scale, _ = transform
-        if scale != 0:
-            dg = base_state
-            for sect in dg.sections:
-                for side in ("left", "right"):
-                    posts = dg.boundary_posts.get((sect.section_id, side))
-                    if not posts:
-                        continue
-
-                    mapped_posts = []
-                    for start, end in posts:
-                        mapped_start = _map_point(start, transform, widget_height)
-                        mapped_end = _map_point(end, transform, widget_height)
-                        mapped_posts.append(
-                            (
-                                (mapped_start.x(), mapped_start.y()),
-                                (mapped_end.x(), mapped_end.y()),
-                            )
-                        )
-
-                    color = ARMCO_COLOR if BOUNDARY_KIND == "armco" else WALL_COLOR
-                    draw_boundary_posts(
-                        painter,
-                        mapped_posts,
-                        color=color,
-                        scale=scale,
-                    )
-
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
                 painter,
@@ -354,17 +321,6 @@ def _draw_centerlines(
         painter.drawPolyline(QtGui.QPolygonF(selected_points))
 
     painter.restore()
-
-
-def draw_boundary_posts(painter, posts, color, scale):
-    pen = painter.pen()
-    pen.setColor(color)
-    pen.setCapStyle(QtCore.Qt.FlatCap)
-    pen.setWidthF(max(1.0, scale * 0.75))
-    painter.setPen(pen)
-
-    for (x1, y1), (x2, y2) in posts:
-        painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
 
 
 def _draw_curve_markers(

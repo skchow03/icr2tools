@@ -3,9 +3,17 @@ from __future__ import annotations
 from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QPen
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
+
+WALL_COLOR = QColor(255, 255, 255)
+ARMCO_COLOR = QColor(0, 255, 255)
+
+SOLID_PEN_STYLE = Qt.SolidLine
+FENCE_PEN_STYLE = Qt.DashLine
 
 SURFACE_COLORS = {
     0: QtGui.QColor(40, 140, 40),
@@ -20,6 +28,16 @@ SURFACE_COLORS = {
 }
 
 DEFAULT_SURFACE_COLOR = QtGui.QColor(128, 128, 128)
+
+
+def make_boundary_pen(color: QColor, is_fence: bool, width: float) -> QPen:
+    pen = QPen(color)
+    pen.setWidthF(width)
+    pen.setStyle(FENCE_PEN_STYLE if is_fence else SOLID_PEN_STYLE)
+    pen.setCapStyle(Qt.FlatCap)
+    pen.setJoinStyle(Qt.MiterJoin)
+    pen.setCosmetic(True)
+    return pen
 
 
 def draw_status_message(painter: QtGui.QPainter, rect: QtCore.QRect, message: str) -> None:
