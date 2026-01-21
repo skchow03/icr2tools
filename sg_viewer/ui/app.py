@@ -92,6 +92,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._axes_button.setChecked(False)
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("Show SG Fsects (preview)")
         self._sg_fsects_checkbox.setChecked(False)
+        self._refresh_fsects_button = QtWidgets.QPushButton("Refresh Fsects Preview")
+        self._refresh_fsects_button.setEnabled(False)
         self._section_table_button = QtWidgets.QPushButton("Section Table")
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
@@ -133,6 +135,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._axes_button)
         sidebar_layout.addWidget(self._sg_fsects_checkbox)
+        sidebar_layout.addWidget(self._refresh_fsects_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
@@ -226,6 +229,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
         return self._sg_fsects_checkbox
+
+    @property
+    def refresh_fsects_button(self) -> QtWidgets.QPushButton:
+        return self._refresh_fsects_button
 
     @property
     def section_table_button(self) -> QtWidgets.QPushButton:
