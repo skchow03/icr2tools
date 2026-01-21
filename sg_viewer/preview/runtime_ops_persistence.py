@@ -42,7 +42,7 @@ class _RuntimePersistenceMixin:
 
         self._suppress_document_dirty = True
         try:
-            self._document.set_sg_data(sgfile)
+            self._document.set_sg_data(sgfile, validate=False)
             self._document.rebuild_dlongs(0, 0)
         finally:
             self._suppress_document_dirty = False
