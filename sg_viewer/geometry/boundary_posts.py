@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import math
 from typing import List, Tuple
 
@@ -21,9 +20,6 @@ def generate_boundary_posts(
     spacing: float,
     length: float,
 ) -> List[Segment]:
-    """
-    Generate inward-pointing post segments along a boundary polyline.
-    """
     if len(polyline) < 2:
         return []
 
@@ -41,7 +37,7 @@ def generate_boundary_posts(
         if tdir is None:
             continue
 
-        # Normal pointing inward
+        # inward normal
         if side == "left":
             nx, ny = -tdir[1], tdir[0]
         else:
@@ -52,11 +48,7 @@ def generate_boundary_posts(
             f = dist / seg_len
             x = p0[0] + dx * f
             y = p0[1] + dy * f
-
-            start = (x, y)
-            end = (x + nx * length, y + ny * length)
-            posts.append((start, end))
-
+            posts.append(((x, y), (x + nx * length, y + ny * length)))
             dist += spacing
 
         carry = dist - seg_len
