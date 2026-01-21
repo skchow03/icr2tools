@@ -5,6 +5,7 @@ from pathlib import Path
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.sg_elevation import sample_sg_elevation
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
+from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 
 
@@ -28,6 +29,20 @@ class _RuntimePersistenceMixin:
             self._document.set_sg_data(sgfile)
 
         self._document.rebuild_dlongs(0, 0)
+        return True
+
+    def refresh_fsections_preview(self) -> bool:
+        if self._sgfile is None or self._preview_data is None:
+            return False
+
+        try:
+            self.apply_preview_to_sgfile()
+        except ValueError:
+            return False
+
+        fsections = preview_loader_service.build_fsections(self._sgfile)
+        object.__setattr__(self._preview_data, "fsections", fsections)
+        self._context.request_repaint()
         return True
 
     def save_sg(self, path: Path) -> None:

@@ -68,6 +68,7 @@ class SGViewerController:
 
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
+        self._window.refresh_fsects_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.delete_section_button.setEnabled(True)
@@ -200,6 +201,9 @@ class SGViewerController:
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
         self._window.sg_fsects_checkbox.toggled.connect(
             self._window.preview.set_show_sg_fsects
+        )
+        self._window.refresh_fsects_button.clicked.connect(
+            self._refresh_fsects_preview
         )
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
@@ -355,6 +359,7 @@ class SGViewerController:
         self._window.update_selection_sidebar(None)
         self._window.section_table_button.setEnabled(False)
         self._window.heading_table_button.setEnabled(False)
+        self._window.refresh_fsects_button.setEnabled(False)
         self._window.delete_section_button.setEnabled(False)
         self._window.split_section_button.setChecked(False)
         self._window.split_section_button.setEnabled(False)
@@ -434,6 +439,17 @@ class SGViewerController:
 
         self._window.show_status_message(
             "Recalculated all curve lengths and DLONGs"
+        )
+
+    def _refresh_fsects_preview(self) -> None:
+        if self._window.preview.refresh_fsections_preview():
+            self._window.show_status_message(
+                "Refreshed Fsects preview from current geometry."
+            )
+            return
+
+        self._window.show_status_message(
+            "Load an SG file with sections before refreshing Fsects preview."
         )
 
 
@@ -625,6 +641,9 @@ class SGViewerController:
         self._window.set_start_finish_button.setEnabled(has_sections)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
+        self._window.refresh_fsects_button.setEnabled(
+            has_sections and self._window.preview.sgfile is not None
+        )
         self._scale_track_action.setEnabled(
             has_sections and is_closed_loop(sections)
         )

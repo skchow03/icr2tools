@@ -79,7 +79,7 @@ def _build_preview_data(
         start_finish_mapping=start_finish_mapping,
         sections=sections,
         section_endpoints=section_endpoints,
-        fsections=_build_fsections(sgfile),
+        fsections=build_fsections(sgfile),
         status_message=status_message,
     )
 
@@ -156,7 +156,7 @@ def _build_sections(
     return sections
 
 
-def _build_fsections(sgfile: SGFile) -> list[PreviewFSection]:
+def build_fsections(sgfile: SGFile) -> list[PreviewFSection]:
     fsections: list[PreviewFSection] = []
     for sect in sgfile.sects or []:
         ftype1_list = list(getattr(sect, "ftype1", []))
