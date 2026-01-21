@@ -71,6 +71,7 @@ def build_section_polyline(
     start_heading: tuple[float, float] | None,
     end_heading: tuple[float, float] | None,
     section_id: int | None = None,
+    forward_anchor: tuple[float, float] | None = None,
 ) -> List[Point]:
     if type_name != "curve" or center is None:
         return [start, end]
@@ -133,11 +134,22 @@ def build_section_polyline(
     if end_angle is None:
         end_angle = math.atan2(end_vec[1], end_vec[0])
 
-    prefer_ccw = _heading_prefers_ccw(start_vec, start_heading) if start_heading else None
-    if prefer_ccw is None and end_heading:
-        prefer_ccw = _heading_prefers_ccw(end_vec, end_heading)
+    prefer_ccw: bool | None = None
+    forward_norm = normalize_heading(forward_anchor) if forward_anchor is not None else None
+    if forward_norm is not None:
+        ccw_tangent = normalize_heading((-start_vec[1], start_vec[0]))
+        cw_tangent = normalize_heading((start_vec[1], -start_vec[0]))
+        if ccw_tangent is not None and cw_tangent is not None:
+            ccw_dot = ccw_tangent[0] * forward_norm[0] + ccw_tangent[1] * forward_norm[1]
+            cw_dot = cw_tangent[0] * forward_norm[0] + cw_tangent[1] * forward_norm[1]
+            prefer_ccw = ccw_dot >= cw_dot
+
     if prefer_ccw is None:
-        prefer_ccw = _choose_ccw_direction(start_vec, end_vec)
+        prefer_ccw = _heading_prefers_ccw(start_vec, start_heading) if start_heading else None
+        if prefer_ccw is None and end_heading:
+            prefer_ccw = _heading_prefers_ccw(end_vec, end_heading)
+        if prefer_ccw is None:
+            prefer_ccw = _choose_ccw_direction(start_vec, end_vec)
 
     chord_dir = normalize_heading((end[0] - start[0], end[1] - start[1]))
     flip_arc_direction = False
@@ -201,6 +213,29 @@ def build_section_polyline(
     points[-1] = end
 
     return points
+
+
+def compute_forward_anchor(
+    type_name: str,
+    start: Point,
+    end: Point,
+    center: Point | None,
+    radius: float | None,
+) -> tuple[float, float] | None:
+    if type_name == "straight":
+        return normalize_heading((end[0] - start[0], end[1] - start[1]))
+
+    if type_name != "curve" or center is None:
+        return None
+
+    cx, cy = center
+    start_vec = (start[0] - cx, start[1] - cy)
+    if start_vec == (0.0, 0.0):
+        return None
+
+    ccw = radius is None or radius >= 0
+    tangent = (-start_vec[1], start_vec[0]) if ccw else (start_vec[1], -start_vec[0])
+    return normalize_heading(tangent)
 
 
 def derive_heading_vectors(

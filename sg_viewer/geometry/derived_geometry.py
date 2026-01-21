@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import logging
+
 from sg_viewer.geometry.centerline_utils import compute_start_finish_mapping_from_centerline
 from sg_viewer.geometry.sg_geometry import (
+    DEBUG_CURVE_RENDER,
     build_section_polyline,
+    compute_forward_anchor,
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.models.sg_model import SectionPreview
+
+logger = logging.getLogger(__name__)
 
 
 class DerivedGeometry:
@@ -85,6 +91,7 @@ class DerivedGeometry:
 
     def _build_sections(self, sgfile) -> list[SectionPreview]:
         sections: list[SectionPreview] = []
+        track_closed = _is_closed_loop(sgfile.sects)
 
         for idx, sg_sect in enumerate(sgfile.sects):
             start_dlong = float(sg_sect.start_dlong)
@@ -108,6 +115,31 @@ class DerivedGeometry:
                 eang2 = float(sg_sect.eang2)
 
             type_name = "curve" if getattr(sg_sect, "type", None) == 2 else "straight"
+            forward_anchor = None
+            if track_closed and idx == 0 and type_name == "curve" and len(sgfile.sects) > 1:
+                next_sect = sgfile.sects[1]
+                next_start = (float(next_sect.start_x), float(next_sect.start_y))
+                next_end = (
+                    float(getattr(next_sect, "end_x", next_start[0])),
+                    float(getattr(next_sect, "end_y", next_start[1])),
+                )
+                next_center = None
+                next_radius = None
+                next_type = "curve" if getattr(next_sect, "type", None) == 2 else "straight"
+                if next_type == "curve":
+                    next_center = (float(next_sect.center_x), float(next_sect.center_y))
+                    next_radius = float(next_sect.radius)
+                forward_anchor = compute_forward_anchor(
+                    next_type, next_start, next_end, next_center, next_radius
+                )
+                if forward_anchor is not None and DEBUG_CURVE_RENDER:
+                    logger.info(
+                        "Anchored section 0 curve orientation using section 1",
+                        extra={
+                            "section0_id": idx,
+                            "section1_type": next_type,
+                        },
+                    )
 
             polyline = build_section_polyline(
                 type_name,
@@ -118,6 +150,7 @@ class DerivedGeometry:
                 (sang1, sang2) if sang1 is not None and sang2 is not None else None,
                 (eang1, eang2) if eang1 is not None and eang2 is not None else None,
                 section_id=idx,
+                forward_anchor=forward_anchor,
             )
 
             start_heading, end_heading = derive_heading_vectors(
@@ -147,3 +180,41 @@ class DerivedGeometry:
             )
 
         return sections
+
+
+def _is_closed_loop(sects) -> bool:
+    n = len(sects)
+    if n == 0:
+        return False
+
+    for sect in sects:
+        prev_id = getattr(sect, "sec_prev", None)
+        next_id = getattr(sect, "sec_next", None)
+        if prev_id is None or next_id is None:
+            return False
+        prev_id = int(prev_id)
+        next_id = int(next_id)
+        if not (0 <= prev_id < n and 0 <= next_id < n):
+            return False
+
+    visited = set()
+    idx = 0
+    while idx not in visited:
+        visited.add(idx)
+        next_id = int(getattr(sects[idx], "sec_next", -1))
+        if not (0 <= next_id < n):
+            return False
+        idx = next_id
+
+    if idx != 0:
+        return False
+    if len(visited) != n:
+        return False
+
+    for j in visited:
+        next_id = int(getattr(sects[j], "sec_next", -1))
+        prev_id = int(getattr(sects[next_id], "sec_prev", -1))
+        if prev_id != j:
+            return False
+
+    return True
