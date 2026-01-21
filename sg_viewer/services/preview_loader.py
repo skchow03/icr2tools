@@ -4,6 +4,7 @@ from __future__ import annotations
 # SG Viewer preview must NOT depend on TRK.
 # TRK is optional and must never be required for live editing.
 
+import logging
 from pathlib import Path
 
 from icr2_core.trk.sg_classes import SGFile
@@ -13,12 +14,17 @@ from track_viewer.geometry import build_centerline_index, sample_centerline
 
 from sg_viewer.geometry.centerline_utils import compute_start_finish_mapping_from_centerline
 from sg_viewer.geometry.sg_geometry import (
+    DEBUG_CURVE_RENDER,
     build_section_polyline,
+    compute_forward_anchor,
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
 from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
+
+logger = logging.getLogger(__name__)
+
 
 def load_preview(path: Path) -> PreviewData:
     sgfile = SGFile.from_sg(str(path))
@@ -94,6 +100,8 @@ def _build_sections(
     if not sgfile.sects:
         return sections
 
+    track_closed = _is_closed_loop(sgfile.sects)
+
     for idx, sg_sect in enumerate(sgfile.sects):
         start_dlong = float(sg_sect.start_dlong)
         length = float(sg_sect.length)
@@ -117,8 +125,35 @@ def _build_sections(
             eang1 = float(sg_sect.eang1)
             eang2 = float(sg_sect.eang2)
 
+        type_name = "curve" if getattr(sg_sect, "type", None) == 2 else "straight"
+        forward_anchor = None
+        if track_closed and idx == 0 and type_name == "curve" and len(sgfile.sects) > 1:
+            next_sect = sgfile.sects[1]
+            next_start = (float(next_sect.start_x), float(next_sect.start_y))
+            next_end = (
+                float(getattr(next_sect, "end_x", next_start[0])),
+                float(getattr(next_sect, "end_y", next_start[1])),
+            )
+            next_center = None
+            next_radius = None
+            next_type = "curve" if getattr(next_sect, "type", None) == 2 else "straight"
+            if next_type == "curve":
+                next_center = (float(next_sect.center_x), float(next_sect.center_y))
+                next_radius = float(next_sect.radius)
+            forward_anchor = compute_forward_anchor(
+                next_type, next_start, next_end, next_center, next_radius
+            )
+            if forward_anchor is not None and DEBUG_CURVE_RENDER:
+                logger.info(
+                    "Anchored section 0 curve orientation using section 1",
+                    extra={
+                        "section0_id": idx,
+                        "section1_type": next_type,
+                    },
+                )
+
         polyline = build_section_polyline(
-            "curve" if getattr(sg_sect, "type", None) == 2 else "straight",
+            type_name,
             start,
             end,
             center,
@@ -126,6 +161,7 @@ def _build_sections(
             (sang1, sang2) if sang1 is not None and sang2 is not None else None,
             (eang1, eang2) if eang1 is not None and eang2 is not None else None,
             section_id=idx,
+            forward_anchor=forward_anchor,
         )
 
         start_heading, end_heading = derive_heading_vectors(polyline, sang1, sang2, eang1, eang2)
@@ -133,7 +169,7 @@ def _build_sections(
         sections.append(
             SectionPreview(
                 section_id=idx,
-                type_name="curve" if getattr(sg_sect, "type", None) == 2 else "straight",
+                type_name=type_name,
                 previous_id=int(getattr(sg_sect, "sec_prev", idx - 1)),
                 next_id=int(getattr(sg_sect, "sec_next", idx + 1)),
                 start=start,
@@ -155,6 +191,44 @@ def _build_sections(
         )
 
     return sections
+
+
+def _is_closed_loop(sects: list[SGFile.Section]) -> bool:
+    n = len(sects)
+    if n == 0:
+        return False
+
+    for sect in sects:
+        prev_id = getattr(sect, "sec_prev", None)
+        next_id = getattr(sect, "sec_next", None)
+        if prev_id is None or next_id is None:
+            return False
+        prev_id = int(prev_id)
+        next_id = int(next_id)
+        if not (0 <= prev_id < n and 0 <= next_id < n):
+            return False
+
+    visited = set()
+    idx = 0
+    while idx not in visited:
+        visited.add(idx)
+        next_id = int(getattr(sects[idx], "sec_next", -1))
+        if not (0 <= next_id < n):
+            return False
+        idx = next_id
+
+    if idx != 0:
+        return False
+    if len(visited) != n:
+        return False
+
+    for j in visited:
+        next_id = int(getattr(sects[j], "sec_next", -1))
+        prev_id = int(getattr(sects[next_id], "sec_prev", -1))
+        if prev_id != j:
+            return False
+
+    return True
 
 
 def _build_fsections(sgfile: SGFile) -> list[PreviewFSection]:
