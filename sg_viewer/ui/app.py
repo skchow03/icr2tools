@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import List
 
 from PyQt5 import QtWidgets
@@ -114,6 +115,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._start_heading_label = QtWidgets.QLabel("Start Heading (SG): –")
         self._end_heading_label = QtWidgets.QLabel("End Heading (SG): –")
+        self._start_compass_heading_label = QtWidgets.QLabel("Start Heading (Compass): –")
+        self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
 
@@ -147,6 +150,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._next_label)
         sidebar_layout.addWidget(self._start_heading_label)
         sidebar_layout.addWidget(self._end_heading_label)
+        sidebar_layout.addWidget(self._start_compass_heading_label)
+        sidebar_layout.addWidget(self._end_compass_heading_label)
         sidebar_layout.addWidget(self._start_point_label)
         sidebar_layout.addWidget(self._end_point_label)
         sidebar_layout.addStretch()
@@ -271,6 +276,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 return "–"
             return f"({_fmt_int(heading[0])}, {_fmt_int(heading[1])})"
 
+        def _fmt_compass_heading(heading: tuple[float, float] | None) -> str:
+            if heading is None:
+                return "–"
+            hx, hy = heading
+            length = math.hypot(hx, hy)
+            if length <= 0:
+                return "–"
+            angle_deg = math.degrees(math.atan2(hy, hx))
+            compass_deg = (90.0 - angle_deg) % 360.0
+            return f"{compass_deg:.1f}°"
+
         if selection is None:
             self._section_label.setText("Section: None")
             self._type_label.setText("Type: –")
@@ -284,6 +300,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._next_label.setText("Next Section: –")
             self._start_heading_label.setText("Start Heading (SG): –")
             self._end_heading_label.setText("End Heading (SG): –")
+            self._start_compass_heading_label.setText("Start Heading (Compass): –")
+            self._end_compass_heading_label.setText("End Heading (Compass): –")
             self._start_point_label.setText("Start Point: –")
             self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
@@ -318,6 +336,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._end_heading_label.setText(
             f"End Heading (SG): {_fmt_heading(selection.sg_end_heading)}"
+        )
+
+        self._start_compass_heading_label.setText(
+            f"Start Heading (Compass): {_fmt_compass_heading(selection.start_heading)}"
+        )
+        self._end_compass_heading_label.setText(
+            f"End Heading (Compass): {_fmt_compass_heading(selection.end_heading)}"
         )
 
         self._start_point_label.setText(
