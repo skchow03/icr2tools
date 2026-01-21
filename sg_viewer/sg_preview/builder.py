@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Iterable, List, Optional, Tuple
 
@@ -10,19 +11,27 @@ from sg_viewer.sg_preview.model import (
     SgPreviewModel,
     SgSurfaceGeom,
 )
+from sg_viewer.models.sg_model import SectionPreview
+
+logger = logging.getLogger(__name__)
 
 
-def build_sg_preview_model(sg_document) -> SgPreviewModel:
+def build_sg_preview_model(
+    sg_document,
+    sections: Iterable[SectionPreview] | None = None,
+) -> SgPreviewModel:
     sg_data = getattr(sg_document, "sg_data", None)
     if sg_data is None or not getattr(sg_data, "sects", None):
         return SgPreviewModel(fsects=[], bounds=None)
 
     fsects: list[SgFsectGeom] = []
     bounds = None
+    section_polylines = _build_section_polylines(sections)
 
     for sect_idx, sect in enumerate(sg_data.sects):
         surface_geoms: list[SgSurfaceGeom] = []
         boundary_geoms: list[SgBoundaryGeom] = []
+        forward = _forward_from_polyline(section_polylines.get(sect_idx), sect_idx)
 
         ground_lines: list[tuple[float, float, List[Point], dict]] = []
         boundary_lines: list[tuple[float, float, List[Point], dict]] = []
@@ -37,7 +46,12 @@ def build_sg_preview_model(sg_document) -> SgPreviewModel:
             fstart = fstart_list[f_idx] if f_idx < len(fstart_list) else 0
             fend = fend_list[f_idx] if f_idx < len(fend_list) else 0
 
-            line_points = _sample_section_offset(sect, float(fstart), float(fend))
+            line_points = _sample_section_offset(
+                sect,
+                float(fstart),
+                float(fend),
+                forward=forward,
+            )
             line_attrs = {
                 "type1": int(ftype1),
                 "type2": int(ftype2),
@@ -132,6 +146,7 @@ def _sample_section_offset(
     start_dlat: float,
     end_dlat: float,
     steps: Optional[int] = None,
+    forward: Optional[Point] = None,
 ) -> List[Point]:
     start = (float(getattr(sect, "start_x", 0.0)), float(getattr(sect, "start_y", 0.0)))
     end = (
@@ -146,7 +161,16 @@ def _sample_section_offset(
         float(getattr(sect, "center_x", start[0])),
         float(getattr(sect, "center_y", start[1])),
     )
-    return _sample_curve(sect, start, end, center, start_dlat, end_dlat, steps)
+    return _sample_curve(
+        sect,
+        start,
+        end,
+        center,
+        start_dlat,
+        end_dlat,
+        steps,
+        forward=forward,
+    )
 
 
 def _sample_straight(
@@ -187,6 +211,7 @@ def _sample_curve(
     start_dlat: float,
     end_dlat: float,
     steps: Optional[int],
+    forward: Optional[Point],
 ) -> List[Point]:
     sx, sy = start
     ex, ey = end
@@ -205,7 +230,7 @@ def _sample_curve(
     ccw = _is_ccw_turn(start_vec, end_vec, heading)
     delta = _angle_delta(start_angle, end_angle, ccw)
 
-    sign = -1.0 if ccw else 1.0
+    sign = _normal_sign_from_forward(start_vec, forward, ccw)
 
     count = _curve_steps(delta, steps)
     points: list[Point] = []
@@ -243,6 +268,50 @@ def _normalize(vec: Point) -> Optional[Point]:
     if length <= 0:
         return None
     return (vec[0] / length, vec[1] / length)
+
+
+def _build_section_polylines(
+    sections: Iterable[SectionPreview] | None,
+) -> dict[int, list[Point]]:
+    if not sections:
+        return {}
+    polylines: dict[int, list[Point]] = {}
+    for section in sections:
+        if section.polyline:
+            polylines[section.section_id] = list(section.polyline)
+    return polylines
+
+
+def _forward_from_polyline(
+    polyline: list[Point] | None,
+    section_id: int,
+) -> Optional[Point]:
+    if not polyline:
+        return None
+    assert len(polyline) >= 2
+    logger.debug(
+        "Fsect using polyline-derived forward",
+        extra={"section_id": section_id},
+    )
+    start = polyline[0]
+    end = polyline[1]
+    return _normalize((end[0] - start[0], end[1] - start[1]))
+
+
+def _normal_sign_from_forward(
+    start_vec: Point,
+    forward: Optional[Point],
+    ccw: bool,
+) -> float:
+    forward_norm = _normalize(forward) if forward is not None else None
+    if forward_norm is None:
+        return -1.0 if ccw else 1.0
+    normal = (-forward_norm[1], forward_norm[0])
+    radial = _normalize(start_vec)
+    if radial is None:
+        return 1.0
+    dot = normal[0] * radial[0] + normal[1] * radial[1]
+    return 1.0 if dot >= 0 else -1.0
 
 
 def _is_ccw_turn(start_vec: Point, end_vec: Point, heading: Optional[Point]) -> bool:
