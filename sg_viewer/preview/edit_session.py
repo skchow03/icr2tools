@@ -10,6 +10,23 @@ def apply_preview_to_sgfile(sgfile: SGFile, sections: Iterable[SectionPreview]) 
     if not sections_list:
         raise ValueError("No sections available to save.")
 
+    def _clone_fsects(source: SGFile.Section, dest: SGFile.Section) -> None:
+        dest.num_fsects = int(getattr(source, "num_fsects", 0))
+        dest.ftype1 = list(getattr(source, "ftype1", []))
+        dest.ftype2 = list(getattr(source, "ftype2", []))
+        dest.fstart = list(getattr(source, "fstart", []))
+        dest.fend = list(getattr(source, "fend", []))
+
+        dest.ground_ftype = list(getattr(source, "ground_ftype", []))
+        dest.ground_fstart = list(getattr(source, "ground_fstart", []))
+        dest.ground_fend = list(getattr(source, "ground_fend", []))
+        dest.bound_ftype1 = list(getattr(source, "bound_ftype1", []))
+        dest.bound_ftype2 = list(getattr(source, "bound_ftype2", []))
+        dest.bound_fstart = list(getattr(source, "bound_fstart", []))
+        dest.bound_fend = list(getattr(source, "bound_fend", []))
+        dest.num_ground_fsects = len(dest.ground_ftype)
+        dest.num_boundaries = len(dest.bound_ftype1)
+
     desired_section_count = len(sections_list)
     current_section_count = len(sgfile.sects)
 
@@ -18,7 +35,10 @@ def apply_preview_to_sgfile(sgfile: SGFile, sections: Iterable[SectionPreview]) 
         if desired_section_count > current_section_count:
             template_section = [0] * section_record_length
             for _ in range(desired_section_count - current_section_count):
-                sgfile.sects.append(SGFile.Section(template_section, sgfile.num_xsects))
+                new_section = SGFile.Section(template_section, sgfile.num_xsects)
+                if sgfile.sects:
+                    _clone_fsects(sgfile.sects[-1], new_section)
+                sgfile.sects.append(new_section)
         else:
             sgfile.sects = sgfile.sects[:desired_section_count]
 
