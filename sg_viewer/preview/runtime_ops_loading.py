@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from sg_viewer.sg_preview.builder import build_sg_preview_model
+from sg_viewer.services import preview_loader_service
 
 
 class _RuntimeLoadingMixin:
@@ -30,6 +31,7 @@ class _RuntimeLoadingMixin:
         self._set_default_view_bounds()
         self._update_node_status()
         self._sg_preview_model = None
+        self._fsects_by_section = []
         self._has_unsaved_changes = False
         self._update_fit_scale()
         self._context.request_repaint()
@@ -57,6 +59,9 @@ class _RuntimeLoadingMixin:
             return
 
         self._preview_data = data
+        self._fsects_by_section = preview_loader_service.build_fsects_by_section(
+            data.sgfile
+        )
         self._trk_overlay.sync_from_preview(data)
         self._disconnected_nodes = set()
         self._apply_creation_update(self._creation_controller.reset())
@@ -112,6 +117,7 @@ class _RuntimeLoadingMixin:
             self._section_manager.sampled_dlongs,
         )
         self._sg_preview_model = build_sg_preview_model(self._document)
+        self._validate_section_fsects_alignment()
         if mark_unsaved:
             self._has_unsaved_changes = True
             if self._emit_sections_changed is not None:

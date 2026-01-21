@@ -41,6 +41,7 @@ from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.models.preview_state_utils import update_node_status
 from sg_viewer.models.sg_model import PreviewData, SectionPreview
+from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.preview.interaction_state import InteractionInputs, InteractionState, MouseIntent
@@ -117,6 +118,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._sg_preview_model = None
         self._sg_preview_view_state = SgPreviewViewState()
         self._show_sg_fsects = False
+        self._fsects_by_section: list[list[PreviewFSection]] = []
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)

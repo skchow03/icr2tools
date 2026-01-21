@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from pathlib import Path
 from typing import Callable, Tuple
@@ -102,6 +103,7 @@ class _RuntimeCoreMixin:
         self._sg_preview_model = None
         self._sg_preview_view_state = SgPreviewViewState()
         self._show_sg_fsects = False
+        self._fsects_by_section: list[list[PreviewFSection]] = []
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
@@ -151,6 +153,32 @@ class _RuntimeCoreMixin:
         self._set_default_view_bounds()
 
         assert hasattr(self, "_editor")
+
+    def _validate_section_fsects_alignment(self) -> None:
+        if len(self._section_manager.sections) != len(self._fsects_by_section):
+            raise RuntimeError(
+                "Section/Fsect desync: "
+                f"{len(self._section_manager.sections)} sections vs "
+                f"{len(self._fsects_by_section)} fsect blocks"
+            )
+
+    def _insert_fsects_by_section(self, index: int) -> None:
+        if index > 0 and self._fsects_by_section:
+            new_fsects = copy.deepcopy(self._fsects_by_section[index - 1])
+        else:
+            new_fsects = []
+        self._fsects_by_section.insert(index, new_fsects)
+
+    def _split_fsects_by_section(self, index: int) -> None:
+        original_fsects = (
+            self._fsects_by_section[index] if index < len(self._fsects_by_section) else []
+        )
+        self._fsects_by_section[index] = copy.deepcopy(original_fsects)
+        self._fsects_by_section.insert(index + 1, copy.deepcopy(original_fsects))
+
+    def _delete_fsects_by_section(self, index: int) -> None:
+        if 0 <= index < len(self._fsects_by_section):
+            self._fsects_by_section.pop(index)
 
     def current_transform(self, widget_size: tuple[int, int]) -> Transform | None:
         if self._drag_transform_active:
@@ -345,6 +373,7 @@ class _RuntimeCoreMixin:
         self._sampled_centerline = []
         self._track_length = 0.0
         self._start_finish_dlong = None
+        self._fsects_by_section = []
         self._has_unsaved_changes = False
         self._update_fit_scale()
         self._context.request_repaint()
@@ -385,7 +414,9 @@ class _RuntimeCoreMixin:
             return
 
         self._track_length = track_length
+        self._insert_fsects_by_section(new_index)
         self.set_sections(updated_sections)
+        self._validate_section_fsects_alignment()
         self._selection.set_selected_section(new_index)
         self._apply_creation_update(self._creation_controller.finish_straight(status))
 
@@ -397,7 +428,9 @@ class _RuntimeCoreMixin:
             return
 
         self._track_length = track_length
+        self._insert_fsects_by_section(new_index)
         self.set_sections(updated_sections)
+        self._validate_section_fsects_alignment()
         self._selection.set_selected_section(new_index)
         self._apply_creation_update(self._creation_controller.finish_curve(status))
 

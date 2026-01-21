@@ -26,3 +26,7 @@ def enable_trk_overlay(preview: PreviewData) -> None:
 
 def build_fsections(sgfile: SGFile) -> list[PreviewFSection]:
     return preview_loader.build_fsections(sgfile)
+
+
+def build_fsects_by_section(sgfile: SGFile) -> list[list[PreviewFSection]]:
+    return preview_loader.build_fsects_by_section(sgfile)

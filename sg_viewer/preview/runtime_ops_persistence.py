@@ -17,7 +17,11 @@ class _RuntimePersistenceMixin:
     def apply_preview_to_sgfile(self) -> SGFile:
         if self._sgfile is None:
             raise ValueError("No SG file loaded.")
-        return apply_preview_to_sgfile(self._sgfile, self._section_manager.sections)
+        return apply_preview_to_sgfile(
+            self._sgfile,
+            self._section_manager.sections,
+            self._fsects_by_section,
+        )
 
     def recalculate_dlongs(self) -> bool:
         try:
