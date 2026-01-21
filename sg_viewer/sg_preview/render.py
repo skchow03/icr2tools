@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtGui
 
 from sg_viewer.sg_preview.model import Point, SgPreviewModel
 from sg_viewer.sg_preview.transform import ViewTransform
@@ -74,8 +74,12 @@ def _draw_fsect_outlines(painter, model: SgPreviewModel, transform: ViewTransfor
             painter.drawPolygon(points)
 
 
-def _map_points(points: Iterable[Point], transform: ViewTransform) -> list[Point]:
-    return [transform.world_to_screen(p) for p in points]
+def _map_points(points: Iterable[Point], transform: ViewTransform) -> QtGui.QPolygonF:
+    polygon = QtGui.QPolygonF()
+    for point in points:
+        x, y = transform.world_to_screen(point)
+        polygon.append(QtCore.QPointF(x, y))
+    return polygon
 
 
 def _make_color(painter, r: int, g: int, b: int, a: int = 255):
