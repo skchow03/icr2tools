@@ -117,6 +117,7 @@ class DerivedGeometry:
                 radius,
                 (sang1, sang2) if sang1 is not None and sang2 is not None else None,
                 (eang1, eang2) if eang1 is not None and eang2 is not None else None,
+                section_id=idx,
             )
 
             start_heading, end_heading = derive_heading_vectors(
