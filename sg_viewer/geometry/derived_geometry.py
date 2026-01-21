@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from sg_viewer.geometry.centerline_utils import compute_start_finish_mapping_from_centerline
-from sg_viewer.geometry.boundary_posts import generate_boundary_posts
 from sg_viewer.geometry.sg_geometry import (
     build_section_polyline,
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
 from sg_viewer.model.sg_document import SGDocument
-from sg_viewer.models.boundary_styles import BoundaryStyle
 from sg_viewer.models.sg_model import SectionPreview
 
 
@@ -70,15 +68,16 @@ class DerivedGeometry:
             self.sampled_centerline
         )
 
+        from sg_viewer.geometry.boundary_posts import generate_boundary_posts
+
         self.boundary_posts.clear()
         for sect in self.sections:
             for side in ("left", "right"):
-                style = BoundaryStyle(kind="wall", side=side)
                 posts = generate_boundary_posts(
                     sect.polyline,
                     side=side,
-                    spacing=style.post_spacing,
-                    length=style.post_length,
+                    spacing=12.0 * 500.0,
+                    length=2.0 * 500.0,
                 )
                 self.boundary_posts[(sect.section_id, side)] = posts
 

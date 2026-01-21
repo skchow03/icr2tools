@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
+from PyQt5.QtGui import QColor
 
 from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
@@ -18,8 +19,8 @@ from sg_viewer.services import sg_rendering
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 BASE_WIDTH = 3.0
-WALL_COLOR = QtGui.QColor(255, 255, 255)
-ARMCO_COLOR = QtGui.QColor(0, 255, 255)
+WALL_COLOR = QColor(255, 255, 255)
+ARMCO_COLOR = QColor(0, 255, 255)
 
 
 @dataclass
@@ -121,13 +122,33 @@ def paint_preview(
             transform,
             widget_height,
         )
-        _draw_boundary_posts(
-            painter,
-            base_state.sections,
-            base_state.boundary_posts,
-            transform,
-            widget_height,
-        )
+        scale, _ = transform
+        if scale != 0:
+            dg = base_state
+            for sect in dg.sections:
+                for side in ("left", "right"):
+                    posts = dg.boundary_posts.get((sect.section_id, side))
+                    if not posts:
+                        continue
+
+                    mapped_posts = []
+                    for start, end in posts:
+                        mapped_start = _map_point(start, transform, widget_height)
+                        mapped_end = _map_point(end, transform, widget_height)
+                        mapped_posts.append(
+                            (
+                                (mapped_start.x(), mapped_start.y()),
+                                (mapped_end.x(), mapped_end.y()),
+                            )
+                        )
+
+                    color = ARMCO_COLOR if BOUNDARY_KIND == "armco" else WALL_COLOR
+                    draw_boundary_posts(
+                        painter,
+                        mapped_posts,
+                        color=color,
+                        scale=scale,
+                    )
 
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
@@ -335,57 +356,15 @@ def _draw_centerlines(
     painter.restore()
 
 
-def draw_boundary_posts(
-    painter: QtGui.QPainter,
-    posts: Iterable[tuple[tuple[float, float], tuple[float, float]]],
-    *,
-    color: QtGui.QColor,
-    scale: float,
-) -> None:
+def draw_boundary_posts(painter, posts, color, scale):
     pen = painter.pen()
     pen.setColor(color)
+    pen.setCapStyle(pen.FlatCap)
     pen.setWidthF(max(1.0, scale * 0.75))
-    pen.setCapStyle(QtCore.Qt.FlatCap)
     painter.setPen(pen)
 
-    for a, b in posts:
-        painter.drawLine(QtCore.QPointF(a[0], a[1]), QtCore.QPointF(b[0], b[1]))
-
-
-def _draw_boundary_posts(
-    painter: QtGui.QPainter,
-    sections: Iterable[SectionPreview],
-    boundary_posts: dict[tuple[int, str], list[tuple[Point, Point]]],
-    transform: Transform,
-    widget_height: int,
-) -> None:
-    scale, _ = transform
-    if scale == 0:
-        return
-
-    color = ARMCO_COLOR if BOUNDARY_KIND == "armco" else WALL_COLOR
-
-    mapped_posts: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for section in sections:
-        for side in ("left", "right"):
-            posts = boundary_posts.get((section.section_id, side), [])
-            for start, end in posts:
-                mapped_start = _map_point(start, transform, widget_height)
-                mapped_end = _map_point(end, transform, widget_height)
-                mapped_posts.append(
-                    (
-                        (mapped_start.x(), mapped_start.y()),
-                        (mapped_end.x(), mapped_end.y()),
-                    )
-                )
-
-    if not mapped_posts:
-        return
-
-    painter.save()
-    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    draw_boundary_posts(painter, mapped_posts, color=color, scale=scale)
-    painter.restore()
+    for (x1, y1), (x2, y2) in posts:
+        painter.drawLine(x1, y1, x2, y2)
 
 
 def _draw_curve_markers(
