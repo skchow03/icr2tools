@@ -500,6 +500,12 @@ class _RuntimeCoreMixin:
         return self._start_finish_mapping
 
     @property
+    def boundary_posts(
+        self,
+    ) -> dict[tuple[int, str], list[tuple[tuple[float, float], tuple[float, float]]]]:
+        return self._boundary_posts
+
+    @property
     def status_message(self) -> str:
         return self._status_message
 

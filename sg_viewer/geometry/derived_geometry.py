@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from sg_viewer.geometry.centerline_utils import compute_start_finish_mapping_from_centerline
+from sg_viewer.geometry.boundary_posts import generate_boundary_posts
 from sg_viewer.geometry.sg_geometry import (
     build_section_polyline,
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
 from sg_viewer.model.sg_document import SGDocument
+from sg_viewer.models.boundary_styles import BoundaryStyle
 from sg_viewer.models.sg_model import SectionPreview
 
 
@@ -22,6 +24,10 @@ class DerivedGeometry:
         self.centerline_index: object | None = None
         self.track_length: float = 0.0
         self.start_finish_mapping: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None
+        self.boundary_posts: dict[
+            tuple[int, str],
+            list[tuple[tuple[float, float], tuple[float, float]]],
+        ] = {}
 
         self._document.geometry_changed.connect(self.mark_dirty)
 
@@ -42,6 +48,7 @@ class DerivedGeometry:
             self.centerline_index = None
             self.track_length = 0.0
             self.start_finish_mapping = None
+            self.boundary_posts = {}
             self.dirty = False
             return
 
@@ -62,6 +69,18 @@ class DerivedGeometry:
         self.start_finish_mapping = compute_start_finish_mapping_from_centerline(
             self.sampled_centerline
         )
+
+        self.boundary_posts.clear()
+        for sect in self.sections:
+            for side in ("left", "right"):
+                style = BoundaryStyle(kind="wall", side=side)
+                posts = generate_boundary_posts(
+                    sect.polyline,
+                    side=side,
+                    spacing=style.post_spacing,
+                    length=style.post_length,
+                )
+                self.boundary_posts[(sect.section_id, side)] = posts
 
         self.dirty = False
 

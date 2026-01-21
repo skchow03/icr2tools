@@ -4,6 +4,8 @@ import numpy as np
 
 from icr2_core.trk.sg_classes import SGFile
 
+BOUNDARY_KIND = "wall"  # or "armco"
+
 
 def create_empty_sgfile() -> SGFile:
     header = np.array(

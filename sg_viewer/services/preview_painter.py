@@ -8,6 +8,7 @@ from PyQt5 import QtCore, QtGui
 from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.render_state import split_nodes_by_status
+from sg_viewer.preview.preview_defaults import BOUNDARY_KIND
 from sg_viewer.sg_preview.model import SgPreviewModel
 from sg_viewer.sg_preview.render import render_sg_preview
 from sg_viewer.sg_preview.transform import ViewTransform
@@ -17,6 +18,8 @@ from sg_viewer.services import sg_rendering
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 BASE_WIDTH = 3.0
+WALL_COLOR = QtGui.QColor(255, 255, 255)
+ARMCO_COLOR = QtGui.QColor(0, 255, 255)
 
 
 @dataclass
@@ -39,6 +42,7 @@ class BasePreviewState:
     status_message: str
     split_section_mode: bool
     split_hover_point: Point | None
+    boundary_posts: dict[tuple[int, str], list[tuple[Point, Point]]]
 
 
 @dataclass
@@ -114,6 +118,13 @@ def paint_preview(
             base_state.sections,
             base_state.selected_section_points,
             base_state.fsections,
+            transform,
+            widget_height,
+        )
+        _draw_boundary_posts(
+            painter,
+            base_state.sections,
+            base_state.boundary_posts,
             transform,
             widget_height,
         )
@@ -321,6 +332,59 @@ def _draw_centerlines(
         painter.setPen(pen)
         painter.drawPolyline(QtGui.QPolygonF(selected_points))
 
+    painter.restore()
+
+
+def draw_boundary_posts(
+    painter: QtGui.QPainter,
+    posts: Iterable[tuple[tuple[float, float], tuple[float, float]]],
+    *,
+    color: QtGui.QColor,
+    scale: float,
+) -> None:
+    pen = painter.pen()
+    pen.setColor(color)
+    pen.setWidthF(max(1.0, scale * 0.75))
+    pen.setCapStyle(QtCore.Qt.FlatCap)
+    painter.setPen(pen)
+
+    for a, b in posts:
+        painter.drawLine(a[0], a[1], b[0], b[1])
+
+
+def _draw_boundary_posts(
+    painter: QtGui.QPainter,
+    sections: Iterable[SectionPreview],
+    boundary_posts: dict[tuple[int, str], list[tuple[Point, Point]]],
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    scale, _ = transform
+    if scale == 0:
+        return
+
+    color = ARMCO_COLOR if BOUNDARY_KIND == "armco" else WALL_COLOR
+
+    mapped_posts: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    for section in sections:
+        for side in ("left", "right"):
+            posts = boundary_posts.get((section.section_id, side), [])
+            for start, end in posts:
+                mapped_start = _map_point(start, transform, widget_height)
+                mapped_end = _map_point(end, transform, widget_height)
+                mapped_posts.append(
+                    (
+                        (mapped_start.x(), mapped_start.y()),
+                        (mapped_end.x(), mapped_end.y()),
+                    )
+                )
+
+    if not mapped_posts:
+        return
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    draw_boundary_posts(painter, mapped_posts, color=color, scale=scale)
     painter.restore()
 
 
