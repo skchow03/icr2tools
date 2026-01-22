@@ -165,6 +165,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._node_radius_px,
             self._stop_panning,
             show_status=self._show_status,
+            sync_fsects_on_connection=self._sync_fsects_on_connection,
         )
 
 
