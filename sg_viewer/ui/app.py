@@ -7,6 +7,11 @@ from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.preview.context import PreviewContext
+from sg_viewer.ui.altitude_units import (
+    DEFAULT_ALTITUDE_MAX_FEET,
+    DEFAULT_ALTITUDE_MIN_FEET,
+    feet_from_500ths,
+)
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
 from sg_viewer.models.selection import SectionSelection
@@ -125,8 +130,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
+        max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
         self._altitude_slider.setRange(
-            SGDocument.ELEVATION_MIN, SGDocument.ELEVATION_MAX
+            DEFAULT_ALTITUDE_MIN_FEET, DEFAULT_ALTITUDE_MAX_FEET
         )
         self._altitude_slider.setSingleStep(1)
         self._altitude_slider.setPageStep(10)
@@ -140,15 +147,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._altitude_min_spin = QtWidgets.QSpinBox()
         self._altitude_min_spin.setRange(
-            SGDocument.ELEVATION_MIN, SGDocument.ELEVATION_MAX - 1
+            min_altitude_feet, max_altitude_feet - 1
         )
-        self._altitude_min_spin.setValue(SGDocument.ELEVATION_MIN)
+        self._altitude_min_spin.setValue(DEFAULT_ALTITUDE_MIN_FEET)
         self._altitude_min_spin.setKeyboardTracking(False)
         self._altitude_max_spin = QtWidgets.QSpinBox()
         self._altitude_max_spin.setRange(
-            SGDocument.ELEVATION_MIN + 1, SGDocument.ELEVATION_MAX
+            min_altitude_feet + 1, max_altitude_feet
         )
-        self._altitude_max_spin.setValue(SGDocument.ELEVATION_MAX)
+        self._altitude_max_spin.setValue(DEFAULT_ALTITUDE_MAX_FEET)
         self._altitude_max_spin.setKeyboardTracking(False)
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._grade_slider.setRange(-1000, 1000)
@@ -357,8 +364,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_slider.blockSignals(True)
         self._grade_slider.blockSignals(True)
         altitude_value = altitude if altitude is not None else 0
-        self._altitude_slider.setValue(altitude_value)
-        self._altitude_value_label.setText(str(altitude_value))
+        altitude_feet = feet_from_500ths(altitude_value)
+        self._altitude_slider.setValue(altitude_feet)
+        self._altitude_value_label.setText(str(altitude_feet))
         grade_value = grade if grade is not None else 0
         self._grade_slider.setValue(grade_value)
         self._grade_value_label.setText(str(grade_value))
