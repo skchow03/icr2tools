@@ -22,10 +22,6 @@ class DerivedGeometry:
         self.centerline_index: object | None = None
         self.track_length: float = 0.0
         self.start_finish_mapping: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] | None = None
-        self.boundary_posts: dict[
-            tuple[int, str],
-            list[tuple[tuple[float, float], tuple[float, float]]],
-        ] = {}
 
         self._document.geometry_changed.connect(self.mark_dirty)
 
@@ -46,7 +42,6 @@ class DerivedGeometry:
             self.centerline_index = None
             self.track_length = 0.0
             self.start_finish_mapping = None
-            self.boundary_posts = {}
             self._assert_section_id_invariant()
             self.dirty = False
             return
@@ -68,23 +63,6 @@ class DerivedGeometry:
         self.start_finish_mapping = compute_start_finish_mapping_from_centerline(
             self.sampled_centerline
         )
-
-        from sg_viewer.geometry.boundary_posts import generate_boundary_posts
-
-        self.boundary_posts.clear()
-        for sect in self.sections:
-            for side in ("left", "right"):
-                posts = generate_boundary_posts(
-                    sect.polyline,
-                    side=side,
-                    spacing=12.0 * 500.0,
-                    length=2.0 * 500.0,
-                )
-                # NOTE:
-                # section_id is intentionally used as an index-based key.
-                # DerivedGeometry enforces section_id == index after every rebuild,
-                # so this cannot desynchronize unless the invariant is broken.
-                self.boundary_posts[(sect.section_id, side)] = posts
 
         self._assert_section_id_invariant()
         self.dirty = False

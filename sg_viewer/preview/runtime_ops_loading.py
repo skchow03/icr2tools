@@ -12,6 +12,7 @@ class _RuntimeLoadingMixin:
         self._preview_data = None
         self._trk_overlay.disable(None)
         self._suppress_document_dirty = True
+        self._fsects_by_section = []
         self._document.set_sg_data(None)
         self._suppress_document_dirty = False
         self._section_manager.reset()
@@ -19,7 +20,6 @@ class _RuntimeLoadingMixin:
         self._sampled_bounds = None
         self._start_finish_dlong = None
         self._start_finish_mapping = None
-        self._boundary_posts = {}
         self._disconnected_nodes.clear()
         self._apply_creation_update(self._creation_controller.reset())
         self.cancel_split_section()
@@ -31,7 +31,6 @@ class _RuntimeLoadingMixin:
         self._set_default_view_bounds()
         self._update_node_status()
         self._sg_preview_model = None
-        self._fsects_by_section = []
         self._has_unsaved_changes = False
         self._update_fit_scale()
         self._context.request_repaint()
@@ -103,7 +102,6 @@ class _RuntimeLoadingMixin:
         self._sampled_centerline = self._section_manager.sampled_centerline
         self._track_length = self._derived_geometry.track_length
         self._start_finish_mapping = self._derived_geometry.start_finish_mapping
-        self._boundary_posts = self._derived_geometry.boundary_posts
         if self._track_length <= 0:
             self._start_finish_dlong = None
         elif self._start_finish_dlong is None:

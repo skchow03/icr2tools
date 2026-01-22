@@ -38,7 +38,6 @@ class BasePreviewState:
     status_message: str
     split_section_mode: bool
     split_hover_point: Point | None
-    boundary_posts: dict[tuple[int, str], list[tuple[Point, Point]]]
 
 
 @dataclass
