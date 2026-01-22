@@ -52,6 +52,56 @@ class SGDocument(QtCore.QObject):
         self.section_changed.emit(section_id)
         self.geometry_changed.emit()
 
+    def set_section_xsect_altitude(
+        self, section_id: int, xsect_index: int, new_value: float
+    ) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if section_id < 0 or section_id >= len(self._sg_data.sects):
+            raise IndexError("Section index out of range.")
+
+        if xsect_index < 0 or xsect_index >= self._sg_data.num_xsects:
+            raise IndexError("X-section index out of range.")
+
+        section = self._sg_data.sects[section_id]
+        if not section.alt or xsect_index >= len(section.alt):
+            raise ValueError("Section has no elevation data.")
+
+        updated = int(round(new_value))
+        section.alt[xsect_index] = updated
+
+        if __debug__:
+            self.validate()
+
+        self.section_changed.emit(section_id)
+        self.geometry_changed.emit()
+
+    def set_section_xsect_grade(
+        self, section_id: int, xsect_index: int, new_value: float
+    ) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if section_id < 0 or section_id >= len(self._sg_data.sects):
+            raise IndexError("Section index out of range.")
+
+        if xsect_index < 0 or xsect_index >= self._sg_data.num_xsects:
+            raise IndexError("X-section index out of range.")
+
+        section = self._sg_data.sects[section_id]
+        if not section.grade or xsect_index >= len(section.grade):
+            raise ValueError("Section has no grade data.")
+
+        updated = int(round(new_value))
+        section.grade[xsect_index] = updated
+
+        if __debug__:
+            self.validate()
+
+        self.section_changed.emit(section_id)
+        self.geometry_changed.emit()
+
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")
@@ -126,3 +176,8 @@ class SGDocument(QtCore.QObject):
                     raise ValueError(
                         f"Section {idx} elevation {altitude} outside bounds."
                     )
+            grades = list(getattr(section, "grade", []))
+            if len(grades) != num_xsects:
+                raise ValueError(
+                    f"Section {idx} grade count {len(grades)} does not match {num_xsects}."
+                )

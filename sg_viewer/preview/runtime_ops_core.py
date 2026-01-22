@@ -1074,3 +1074,41 @@ class _RuntimeCoreMixin:
         start = float(self._section_manager.sections[index].start_dlong)
         end = start + float(self._section_manager.sections[index].length)
         return start, end
+
+    def get_section_xsect_values(
+        self, section_id: int, xsect_index: int
+    ) -> tuple[int | None, int | None]:
+        sg_data = self._document.sg_data
+        if (
+            sg_data is None
+            or section_id < 0
+            or section_id >= len(sg_data.sects)
+            or xsect_index < 0
+            or xsect_index >= sg_data.num_xsects
+        ):
+            return None, None
+
+        section = sg_data.sects[section_id]
+        altitude = section.alt[xsect_index] if xsect_index < len(section.alt) else None
+        grade = section.grade[xsect_index] if xsect_index < len(section.grade) else None
+        return altitude, grade
+
+    def set_section_xsect_altitude(
+        self, section_id: int, xsect_index: int, altitude: float
+    ) -> bool:
+        try:
+            self._document.set_section_xsect_altitude(
+                section_id, xsect_index, altitude
+            )
+        except (ValueError, IndexError):
+            return False
+        return True
+
+    def set_section_xsect_grade(
+        self, section_id: int, xsect_index: int, grade: float
+    ) -> bool:
+        try:
+            self._document.set_section_xsect_grade(section_id, xsect_index, grade)
+        except (ValueError, IndexError):
+            return False
+        return True

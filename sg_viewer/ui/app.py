@@ -5,6 +5,7 @@ from typing import List
 
 from PyQt5 import QtWidgets
 
+from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
@@ -121,6 +122,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
+        self._altitude_spin = QtWidgets.QSpinBox()
+        self._altitude_spin.setRange(
+            SGDocument.ELEVATION_MIN, SGDocument.ELEVATION_MAX
+        )
+        self._altitude_spin.setKeyboardTracking(False)
+        self._altitude_spin.setEnabled(False)
+        self._grade_spin = QtWidgets.QSpinBox()
+        self._grade_spin.setRange(-1_000_000, 1_000_000)
+        self._grade_spin.setKeyboardTracking(False)
+        self._grade_spin.setEnabled(False)
 
         sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
@@ -157,6 +168,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._end_compass_heading_label)
         sidebar_layout.addWidget(self._start_point_label)
         sidebar_layout.addWidget(self._end_point_label)
+        elevation_layout = QtWidgets.QFormLayout()
+        elevation_layout.addRow("Altitude (xsect):", self._altitude_spin)
+        elevation_layout.addRow("Grade (xsect):", self._grade_spin)
+        sidebar_layout.addLayout(elevation_layout)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
@@ -254,6 +269,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def trk_compare_checkbox(self) -> QtWidgets.QCheckBox:
         return self._trk_compare_checkbox
 
+    @property
+    def altitude_spin(self) -> QtWidgets.QSpinBox:
+        return self._altitude_spin
+
+    @property
+    def grade_spin(self) -> QtWidgets.QSpinBox:
+        return self._grade_spin
+
     def show_status_message(self, message: str) -> None:
         self._preview.set_status_text(message)
 
@@ -266,6 +289,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def update_track_length_label(self, text: str) -> None:
         self._track_length_label.setText(text)
+
+    def update_elevation_inputs(
+        self, altitude: int | None, grade: int | None, enabled: bool
+    ) -> None:
+        self._altitude_spin.blockSignals(True)
+        self._grade_spin.blockSignals(True)
+        self._altitude_spin.setValue(altitude if altitude is not None else 0)
+        self._grade_spin.setValue(grade if grade is not None else 0)
+        self._altitude_spin.setEnabled(enabled)
+        self._grade_spin.setEnabled(enabled)
+        self._altitude_spin.blockSignals(False)
+        self._grade_spin.blockSignals(False)
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:
