@@ -215,7 +215,7 @@ class SGViewerController:
         self._window.altitude_spin.editingFinished.connect(
             self._apply_altitude_edit
         )
-        self._window.grade_spin.editingFinished.connect(self._apply_grade_edit)
+        self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
         self._window.trk_compare_checkbox.toggled.connect(
             self._toggle_trk_comparison
         )
@@ -929,3 +929,7 @@ class SGViewerController:
             selection.index, xsect_index, grade
         ):
             self._refresh_elevation_profile()
+
+    def _on_grade_slider_changed(self, value: int) -> None:
+        self._window.update_grade_display(value)
+        self._apply_grade_edit()
