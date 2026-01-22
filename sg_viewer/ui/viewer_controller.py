@@ -11,6 +11,7 @@ from PyQt5 import QtWidgets
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
 from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
@@ -33,6 +34,7 @@ class SGViewerController:
         self._delete_default_style = window.delete_section_button.styleSheet()
         self._split_default_style = window.split_section_button.styleSheet()
         self._is_untitled = False
+        self._active_selection: SectionSelection | None = None
 
 
         self._create_actions()
@@ -174,7 +176,7 @@ class SGViewerController:
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
-            self._window.update_selection_sidebar
+            self._on_selected_section_changed
         )
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
@@ -210,6 +212,10 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
+        self._window.altitude_spin.editingFinished.connect(
+            self._apply_altitude_edit
+        )
+        self._window.grade_spin.editingFinished.connect(self._apply_grade_edit)
         self._window.trk_compare_checkbox.toggled.connect(
             self._toggle_trk_comparison
         )
@@ -356,6 +362,7 @@ class SGViewerController:
         self._clear_background_state()
         self._current_path = None
         self._window.preview.start_new_track()
+        self._active_selection = None
         self._window.update_selection_sidebar(None)
         self._window.section_table_button.setEnabled(False)
         self._window.heading_table_button.setEnabled(False)
@@ -665,6 +672,7 @@ class SGViewerController:
             )
 
         self._refresh_elevation_profile()
+        self._refresh_elevation_inputs()
         self._update_track_length_display()
 
     def _show_section_table(self) -> None:
@@ -783,6 +791,7 @@ class SGViewerController:
         combo = self._window.xsect_combo
         if not combo.isEnabled():
             self._window.profile_widget.set_profile_data(None)
+            self._refresh_elevation_inputs()
             return
 
         current_index = combo.currentData()
@@ -794,6 +803,7 @@ class SGViewerController:
             show_trk=self._window.trk_compare_checkbox.isChecked(),
         )
         self._window.profile_widget.set_profile_data(profile)
+        self._refresh_elevation_inputs()
 
     def _toggle_trk_comparison(self, checked: bool) -> None:
         if not checked:
@@ -865,3 +875,57 @@ class SGViewerController:
     def _update_track_length_display(self) -> None:
         text = self._window.preview.track_length_message()
         self._window.update_track_length_label(text)
+
+    def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
+        self._active_selection = selection
+        self._window.update_selection_sidebar(selection)
+        self._refresh_elevation_inputs()
+
+    def _current_xsect_index(self) -> int | None:
+        combo = self._window.xsect_combo
+        if not combo.isEnabled():
+            return None
+        current_index = combo.currentData()
+        if current_index is None:
+            current_index = combo.currentIndex()
+        try:
+            return int(current_index)
+        except (TypeError, ValueError):
+            return None
+
+    def _refresh_elevation_inputs(self) -> None:
+        selection = self._active_selection
+        xsect_index = self._current_xsect_index()
+        if selection is None or xsect_index is None:
+            self._window.update_elevation_inputs(None, None, False)
+            return
+
+        altitude, grade = self._window.preview.get_section_xsect_values(
+            selection.index, xsect_index
+        )
+        enabled = altitude is not None and grade is not None
+        self._window.update_elevation_inputs(altitude, grade, enabled)
+
+    def _apply_altitude_edit(self) -> None:
+        selection = self._active_selection
+        xsect_index = self._current_xsect_index()
+        if selection is None or xsect_index is None:
+            return
+
+        altitude = self._window.altitude_spin.value()
+        if self._window.preview.set_section_xsect_altitude(
+            selection.index, xsect_index, altitude
+        ):
+            self._refresh_elevation_profile()
+
+    def _apply_grade_edit(self) -> None:
+        selection = self._active_selection
+        xsect_index = self._current_xsect_index()
+        if selection is None or xsect_index is None:
+            return
+
+        grade = self._window.grade_spin.value()
+        if self._window.preview.set_section_xsect_grade(
+            selection.index, xsect_index, grade
+        ):
+            self._refresh_elevation_profile()
