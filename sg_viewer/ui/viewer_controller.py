@@ -213,8 +213,14 @@ class SGViewerController:
             self._refresh_elevation_profile
         )
         self._window.copy_xsect_button.clicked.connect(self._copy_xsect_to_all)
-        self._window.altitude_spin.editingFinished.connect(
-            self._apply_altitude_edit
+        self._window.altitude_slider.valueChanged.connect(
+            self._on_altitude_slider_changed
+        )
+        self._window.altitude_min_spin.valueChanged.connect(
+            self._on_altitude_range_changed
+        )
+        self._window.altitude_max_spin.valueChanged.connect(
+            self._on_altitude_range_changed
         )
         self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
         self._window.trk_compare_checkbox.toggled.connect(
@@ -915,13 +921,41 @@ class SGViewerController:
         enabled = altitude is not None and grade is not None
         self._window.update_elevation_inputs(altitude, grade, enabled)
 
+    def _on_altitude_slider_changed(self, value: int) -> None:
+        self._window.update_altitude_display(value)
+        self._apply_altitude_edit()
+
+    def _on_altitude_range_changed(self) -> None:
+        min_spin = self._window.altitude_min_spin
+        max_spin = self._window.altitude_max_spin
+        min_value = min_spin.value()
+        max_value = max_spin.value()
+        if min_value >= max_value:
+            if self.sender() is min_spin:
+                max_value = min(min_value + 1, max_spin.maximum())
+                max_spin.blockSignals(True)
+                max_spin.setValue(max_value)
+                max_spin.blockSignals(False)
+            else:
+                min_value = max(max_value - 1, min_spin.minimum())
+                min_spin.blockSignals(True)
+                min_spin.setValue(min_value)
+                min_spin.blockSignals(False)
+
+        self._window.altitude_slider.setRange(min_value, max_value)
+        slider_value = self._window.altitude_slider.value()
+        if slider_value < min_value:
+            self._window.altitude_slider.setValue(min_value)
+        elif slider_value > max_value:
+            self._window.altitude_slider.setValue(max_value)
+
     def _apply_altitude_edit(self) -> None:
         selection = self._active_selection
         xsect_index = self._current_xsect_index()
         if selection is None or xsect_index is None:
             return
 
-        altitude = self._window.altitude_spin.value()
+        altitude = self._window.altitude_slider.value()
         if self._window.preview.set_section_xsect_altitude(
             selection.index, xsect_index, altitude
         ):
