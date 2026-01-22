@@ -102,6 +102,34 @@ class SGDocument(QtCore.QObject):
         self.section_changed.emit(section_id)
         self.geometry_changed.emit()
 
+    def copy_xsect_data_to_all(self, xsect_index: int) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if xsect_index < 0 or xsect_index >= self._sg_data.num_xsects:
+            raise IndexError("X-section index out of range.")
+
+        if not self._sg_data.sects:
+            raise ValueError("No sections available to update.")
+
+        for idx, section in enumerate(self._sg_data.sects):
+            if not section.alt or xsect_index >= len(section.alt):
+                raise ValueError(f"Section {idx} has no elevation data.")
+            if not section.grade or xsect_index >= len(section.grade):
+                raise ValueError(f"Section {idx} has no grade data.")
+
+        num_xsects = self._sg_data.num_xsects
+        for section in self._sg_data.sects:
+            altitude = int(section.alt[xsect_index])
+            grade = int(section.grade[xsect_index])
+            section.alt = [altitude for _ in range(num_xsects)]
+            section.grade = [grade for _ in range(num_xsects)]
+
+        if __debug__:
+            self.validate()
+
+        self.geometry_changed.emit()
+
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")

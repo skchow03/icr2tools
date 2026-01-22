@@ -1112,3 +1112,10 @@ class _RuntimeCoreMixin:
         except (ValueError, IndexError):
             return False
         return True
+
+    def copy_xsect_data_to_all(self, xsect_index: int) -> bool:
+        try:
+            self._document.copy_xsect_data_to_all(xsect_index)
+        except (ValueError, IndexError):
+            return False
+        return True
