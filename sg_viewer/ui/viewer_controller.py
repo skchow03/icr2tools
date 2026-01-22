@@ -13,6 +13,7 @@ from sg_viewer.models.history import FileHistory
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
+    feet_from_500ths,
     feet_from_slider_units,
     feet_to_500ths,
     feet_to_slider_units,
@@ -95,6 +96,7 @@ class SGViewerController:
         self._update_heading_table()
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
+        self._reset_altitude_range_for_track()
         self._update_track_length_display()
 
 
@@ -386,6 +388,7 @@ class SGViewerController:
         self._scale_track_action.setEnabled(False)
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
+        self._reset_altitude_range(0.0, 50.0)
         self._save_action.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
@@ -404,6 +407,39 @@ class SGViewerController:
             is_untitled=True,
         )
         self._update_track_length_display()
+
+    def _reset_altitude_range_for_track(self) -> None:
+        sgfile = self._window.preview.sgfile
+        if sgfile is None:
+            return
+
+        altitudes: list[int] = []
+        for section in sgfile.sects:
+            section_altitudes = list(getattr(section, "alt", []) or [])
+            altitudes.extend(section_altitudes)
+
+        if not altitudes:
+            return
+
+        min_altitude = feet_from_500ths(min(altitudes))
+        max_altitude = feet_from_500ths(max(altitudes))
+        self._reset_altitude_range(min_altitude, max_altitude)
+
+    def _reset_altitude_range(self, min_altitude: float, max_altitude: float) -> None:
+        min_spin = self._window.altitude_min_spin
+        max_spin = self._window.altitude_max_spin
+        min_value = min(min_altitude, max_altitude)
+        max_value = max(min_altitude, max_altitude)
+        if math.isclose(min_value, max_value):
+            max_value = min_value + 0.1
+
+        min_spin.blockSignals(True)
+        max_spin.blockSignals(True)
+        min_spin.setValue(min_value)
+        max_spin.setValue(max_value)
+        min_spin.blockSignals(False)
+        max_spin.blockSignals(False)
+        self._on_altitude_range_changed()
 
 
 
