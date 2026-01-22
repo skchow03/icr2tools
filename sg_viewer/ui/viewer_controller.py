@@ -212,6 +212,7 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
+        self._window.copy_xsect_button.clicked.connect(self._copy_xsect_to_all)
         self._window.altitude_spin.editingFinished.connect(
             self._apply_altitude_edit
         )
@@ -674,6 +675,7 @@ class SGViewerController:
         self._refresh_elevation_profile()
         self._refresh_elevation_inputs()
         self._update_track_length_display()
+        self._update_copy_xsect_button()
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
@@ -786,6 +788,7 @@ class SGViewerController:
         if metadata:
             combo.setCurrentIndex(0)
         combo.blockSignals(False)
+        self._update_copy_xsect_button()
 
     def _refresh_elevation_profile(self) -> None:
         combo = self._window.xsect_combo
@@ -804,6 +807,7 @@ class SGViewerController:
         )
         self._window.profile_widget.set_profile_data(profile)
         self._refresh_elevation_inputs()
+        self._update_copy_xsect_button()
 
     def _toggle_trk_comparison(self, checked: bool) -> None:
         if not checked:
@@ -881,6 +885,11 @@ class SGViewerController:
         self._window.update_selection_sidebar(selection)
         self._refresh_elevation_inputs()
 
+    def _update_copy_xsect_button(self) -> None:
+        combo_enabled = self._window.xsect_combo.isEnabled()
+        sections, _ = self._window.preview.get_section_set()
+        self._window.copy_xsect_button.setEnabled(combo_enabled and bool(sections))
+
     def _current_xsect_index(self) -> int | None:
         combo = self._window.xsect_combo
         if not combo.isEnabled():
@@ -929,6 +938,46 @@ class SGViewerController:
             selection.index, xsect_index, grade
         ):
             self._refresh_elevation_profile()
+
+    def _copy_xsect_to_all(self) -> None:
+        xsect_index = self._current_xsect_index()
+        if xsect_index is None:
+            return
+
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No Sections",
+                "Load an SG file with sections before copying x-section data.",
+            )
+            return
+
+        response = QtWidgets.QMessageBox.warning(
+            self._window,
+            "Copy X-Section Data?",
+            (
+                "This will replace every other x-section's altitude and grade data "
+                "with the values from the selected x-section.\n\nContinue?"
+            ),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            return
+
+        if not self._window.preview.copy_xsect_data_to_all(xsect_index):
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Copy Failed",
+                "Unable to copy x-section data. Ensure all sections have elevation data.",
+            )
+            return
+
+        self._refresh_elevation_profile()
+        self._window.show_status_message(
+            f"Copied x-section {xsect_index} data to all x-sections."
+        )
 
     def _on_grade_slider_changed(self, value: int) -> None:
         self._window.update_grade_display(value)

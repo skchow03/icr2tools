@@ -102,6 +102,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._profile_widget = ElevationProfileWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
+        self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
+        self._copy_xsect_button.setEnabled(False)
         self._trk_compare_checkbox = QtWidgets.QCheckBox("Show TRK Exported Elevation")
         self._trk_compare_checkbox.setEnabled(False)
         self._scale_label = QtWidgets.QLabel("Scale: –")
@@ -195,6 +197,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         profile_controls = QtWidgets.QHBoxLayout()
         profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
         profile_controls.addWidget(self._xsect_combo)
+        profile_controls.addWidget(self._copy_xsect_button)
         profile_controls.addWidget(self._trk_compare_checkbox)
         preview_column_layout.addLayout(profile_controls)
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
@@ -276,6 +279,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
+
+    @property
+    def copy_xsect_button(self) -> QtWidgets.QPushButton:
+        return self._copy_xsect_button
 
     @property
     def trk_compare_checkbox(self) -> QtWidgets.QCheckBox:
