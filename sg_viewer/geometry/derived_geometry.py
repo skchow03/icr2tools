@@ -47,6 +47,7 @@ class DerivedGeometry:
             self.track_length = 0.0
             self.start_finish_mapping = None
             self.boundary_posts = {}
+            self._assert_section_id_invariant()
             self.dirty = False
             return
 
@@ -79,7 +80,10 @@ class DerivedGeometry:
                     spacing=12.0 * 500.0,
                     length=2.0 * 500.0,
                 )
-                # NOTE: section_id is an index, not a persistent identifier.
+                # NOTE:
+                # section_id is intentionally used as an index-based key.
+                # DerivedGeometry enforces section_id == index after every rebuild,
+                # so this cannot desynchronize unless the invariant is broken.
                 self.boundary_posts[(sect.section_id, side)] = posts
 
         self._assert_section_id_invariant()
@@ -161,5 +165,5 @@ class DerivedGeometry:
         for i, sect in enumerate(self.sections):
             if sect.section_id != i:
                 raise RuntimeError(
-                    f"Section ID mismatch: index={i}, section_id={sect.section_id}"
+                    f"SectionPreview.section_id mismatch: index={i}, section_id={sect.section_id}"
                 )
