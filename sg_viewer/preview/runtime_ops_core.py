@@ -163,11 +163,7 @@ class _RuntimeCoreMixin:
             )
 
     def _insert_fsects_by_section(self, index: int) -> None:
-        if index > 0 and self._fsects_by_section:
-            new_fsects = copy.deepcopy(self._fsects_by_section[index - 1])
-        else:
-            new_fsects = []
-        self._fsects_by_section.insert(index, new_fsects)
+        self._fsects_by_section.insert(index, [])
 
     def _split_fsects_by_section(self, index: int) -> None:
         original_fsects = (
