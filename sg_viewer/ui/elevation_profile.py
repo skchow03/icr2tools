@@ -32,9 +32,11 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self.setMinimumHeight(180)
         self._data: ElevationProfileData | None = None
         self._selected_range: tuple[float, float] | None = None
+        self._x_view_range: tuple[float, float] | None = None
 
     def set_profile_data(self, data: ElevationProfileData | None) -> None:
         self._data = data
+        self._x_view_range = None
         self.update()
 
     def set_selected_range(self, dlong_range: tuple[float, float] | None) -> None:
@@ -66,8 +68,13 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             min_alt -= 1
             max_alt += 1
 
-        max_dlong = max(max(self._data.dlongs), self._data.track_length)
+        max_dlong = self._max_dlong()
         if max_dlong <= 0:
+            painter.end()
+            return
+
+        x_start, x_end = self._x_bounds(max_dlong)
+        if x_end <= x_start:
             painter.end()
             return
 
@@ -75,15 +82,15 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         painter.setPen(QtGui.QPen(QtGui.QColor("#bbb")))
         painter.drawRect(plot_rect)
 
-        self._draw_section_highlight(painter, plot_rect, max_dlong)
-        self._draw_series(painter, plot_rect, max_dlong, min_alt, max_alt)
+        self._draw_section_highlight(painter, plot_rect, x_start, x_end)
+        self._draw_series(painter, plot_rect, x_start, x_end, min_alt, max_alt)
         self._draw_axes_labels(painter, plot_rect, min_alt, max_alt)
         self._draw_legend(painter, plot_rect)
         painter.restore()
         painter.end()
 
     def _draw_section_highlight(
-        self, painter: QtGui.QPainter, rect: QtCore.QRect, max_dlong: float
+        self, painter: QtGui.QPainter, rect: QtCore.QRect, x_start: float, x_end: float
     ) -> None:
         if self._selected_range is None:
             return
@@ -93,8 +100,8 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         if span <= 0:
             return
 
-        start_x = self._map_x(start, rect, max_dlong)
-        end_x = self._map_x(end, rect, max_dlong)
+        start_x = self._map_x(start, rect, x_start, x_end)
+        end_x = self._map_x(end, rect, x_start, x_end)
         highlight_rect = QtCore.QRectF(start_x, rect.top(), end_x - start_x, rect.height())
 
         color = QtGui.QColor("#3f51b5")
@@ -105,7 +112,8 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self,
         painter: QtGui.QPainter,
         rect: QtCore.QRect,
-        max_dlong: float,
+        x_start: float,
+        x_end: float,
         min_alt: float,
         max_alt: float,
     ) -> None:
@@ -116,7 +124,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             and ElevationSource.TRK in self._data.sources
         )
         for idx, dlong in enumerate(self._data.dlongs):
-            x = self._map_x(dlong, rect, max_dlong)
+            x = self._map_x(dlong, rect, x_start, x_end)
             y_sg = self._map_y(self._data.sg_altitudes[idx], rect, min_alt, max_alt)
             if draw_trk:
                 y_trk = self._map_y(self._data.trk_altitudes[idx], rect, min_alt, max_alt)
@@ -185,8 +193,12 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
         painter.restore()
 
-    def _map_x(self, dlong: float, rect: QtCore.QRect, max_dlong: float) -> float:
-        return rect.left() + (dlong / max_dlong) * rect.width()
+    def _map_x(
+        self, dlong: float, rect: QtCore.QRect, x_start: float, x_end: float
+    ) -> float:
+        span = max(x_end - x_start, 1e-6)
+        relative = (dlong - x_start) / span
+        return rect.left() + relative * rect.width()
 
     def _map_y(self, altitude: float, rect: QtCore.QRect, min_alt: float, max_alt: float) -> float:
         span = max_alt - min_alt
@@ -201,3 +213,61 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         max_alt = max(alts)
         padding = max(1.0, (max_alt - min_alt) * 0.05)
         return min_alt - padding, max_alt + padding
+
+    def _max_dlong(self) -> float:
+        return max(max(self._data.dlongs), self._data.track_length)
+
+    def _x_bounds(self, max_dlong: float) -> tuple[float, float]:
+        if self._x_view_range is None:
+            return 0.0, max_dlong
+        start, end = self._x_view_range
+        start = max(0.0, min(start, max_dlong))
+        end = max(0.0, min(end, max_dlong))
+        if end <= start:
+            return 0.0, max_dlong
+        return start, end
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
+        if self._data is None or not self._data.dlongs:
+            return
+
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+
+        margins = QtCore.QMargins(48, 20, 16, 32)
+        plot_rect = self.rect().marginsRemoved(margins)
+        if plot_rect.width() <= 0:
+            return
+
+        max_dlong = self._max_dlong()
+        if max_dlong <= 0:
+            return
+
+        x_start, x_end = self._x_bounds(max_dlong)
+        span = x_end - x_start
+        if span <= 0:
+            return
+
+        zoom_in = delta > 0
+        zoom_factor = 0.9 if zoom_in else 1.1
+        new_span = max(span * zoom_factor, max_dlong * 0.02, 1.0)
+        new_span = min(new_span, max_dlong)
+
+        cursor_x = min(max(event.position().x(), plot_rect.left()), plot_rect.right())
+        ratio = (cursor_x - plot_rect.left()) / plot_rect.width()
+        focus = x_start + ratio * span
+
+        new_start = focus - ratio * new_span
+        new_end = new_start + new_span
+
+        if new_start < 0:
+            new_start = 0.0
+            new_end = new_span
+        if new_end > max_dlong:
+            new_end = max_dlong
+            new_start = max(0.0, max_dlong - new_span)
+
+        self._x_view_range = (new_start, new_end)
+        self.update()
+        event.accept()
