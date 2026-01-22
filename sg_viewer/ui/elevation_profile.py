@@ -33,10 +33,21 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._data: ElevationProfileData | None = None
         self._selected_range: tuple[float, float] | None = None
         self._x_view_range: tuple[float, float] | None = None
+        self._is_panning = False
+        self._pan_start_pos: QtCore.QPoint | None = None
+        self._pan_start_range: tuple[float, float] | None = None
 
     def set_profile_data(self, data: ElevationProfileData | None) -> None:
+        if data is None:
+            self._data = None
+            self._x_view_range = None
+            self.update()
+            return
+
+        if self._data is None:
+            self._x_view_range = None
+
         self._data = data
-        self._x_view_range = None
         self.update()
 
     def set_selected_range(self, dlong_range: tuple[float, float] | None) -> None:
@@ -270,4 +281,62 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
         self._x_view_range = (new_start, new_end)
         self.update()
+        event.accept()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() != QtCore.Qt.LeftButton:
+            return
+        if self._data is None or not self._data.dlongs:
+            return
+        self._is_panning = True
+        self._pan_start_pos = event.pos()
+        max_dlong = self._max_dlong()
+        self._pan_start_range = self._x_bounds(max_dlong)
+        self.setCursor(QtCore.Qt.ClosedHandCursor)
+        event.accept()
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if not self._is_panning or self._pan_start_pos is None:
+            return
+        if self._data is None or not self._data.dlongs:
+            return
+        margins = QtCore.QMargins(48, 20, 16, 32)
+        plot_rect = self.rect().marginsRemoved(margins)
+        if plot_rect.width() <= 0:
+            return
+
+        max_dlong = self._max_dlong()
+        if max_dlong <= 0 or self._pan_start_range is None:
+            return
+
+        start, end = self._pan_start_range
+        span = end - start
+        if span <= 0:
+            return
+
+        delta_pixels = event.pos().x() - self._pan_start_pos.x()
+        delta_ratio = delta_pixels / plot_rect.width()
+        delta_dlong = -delta_ratio * span
+
+        new_start = start + delta_dlong
+        new_end = end + delta_dlong
+        if new_start < 0:
+            new_start = 0.0
+            new_end = span
+        if new_end > max_dlong:
+            new_end = max_dlong
+            new_start = max(0.0, max_dlong - span)
+
+        self._x_view_range = (new_start, new_end)
+        self.update()
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() != QtCore.Qt.LeftButton:
+            return
+        if self._is_panning:
+            self._is_panning = False
+            self._pan_start_pos = None
+            self._pan_start_range = None
+            self.unsetCursor()
         event.accept()
