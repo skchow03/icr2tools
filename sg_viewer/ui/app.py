@@ -124,12 +124,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
-        self._altitude_spin = QtWidgets.QSpinBox()
-        self._altitude_spin.setRange(
+        self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._altitude_slider.setRange(
             SGDocument.ELEVATION_MIN, SGDocument.ELEVATION_MAX
         )
-        self._altitude_spin.setKeyboardTracking(False)
-        self._altitude_spin.setEnabled(False)
+        self._altitude_slider.setSingleStep(1)
+        self._altitude_slider.setPageStep(10)
+        self._altitude_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._altitude_slider.setTickInterval(250)
+        self._altitude_slider.setEnabled(False)
+        self._altitude_value_label = QtWidgets.QLabel("0")
+        self._altitude_value_label.setMinimumWidth(40)
+        self._altitude_value_label.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
+        self._altitude_min_spin = QtWidgets.QSpinBox()
+        self._altitude_min_spin.setRange(
+            SGDocument.ELEVATION_MIN, SGDocument.ELEVATION_MAX - 1
+        )
+        self._altitude_min_spin.setValue(SGDocument.ELEVATION_MIN)
+        self._altitude_min_spin.setKeyboardTracking(False)
+        self._altitude_max_spin = QtWidgets.QSpinBox()
+        self._altitude_max_spin.setRange(
+            SGDocument.ELEVATION_MIN + 1, SGDocument.ELEVATION_MAX
+        )
+        self._altitude_max_spin.setValue(SGDocument.ELEVATION_MAX)
+        self._altitude_max_spin.setKeyboardTracking(False)
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._grade_slider.setRange(-1000, 1000)
         self._grade_slider.setSingleStep(1)
@@ -177,7 +197,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._start_point_label)
         sidebar_layout.addWidget(self._end_point_label)
         elevation_layout = QtWidgets.QFormLayout()
-        elevation_layout.addRow("Altitude (xsect):", self._altitude_spin)
+        altitude_container = QtWidgets.QWidget()
+        altitude_layout = QtWidgets.QHBoxLayout()
+        altitude_layout.setContentsMargins(0, 0, 0, 0)
+        altitude_layout.addWidget(self._altitude_slider, stretch=1)
+        altitude_layout.addWidget(self._altitude_value_label)
+        altitude_container.setLayout(altitude_layout)
+        elevation_layout.addRow("Altitude (xsect):", altitude_container)
+        altitude_range_container = QtWidgets.QWidget()
+        altitude_range_layout = QtWidgets.QHBoxLayout()
+        altitude_range_layout.setContentsMargins(0, 0, 0, 0)
+        altitude_range_layout.addWidget(self._altitude_min_spin)
+        altitude_range_layout.addWidget(QtWidgets.QLabel("to"))
+        altitude_range_layout.addWidget(self._altitude_max_spin)
+        altitude_range_container.setLayout(altitude_range_layout)
+        elevation_layout.addRow("Altitude range:", altitude_range_container)
         grade_container = QtWidgets.QWidget()
         grade_layout = QtWidgets.QHBoxLayout()
         grade_layout.setContentsMargins(0, 0, 0, 0)
@@ -289,8 +323,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._trk_compare_checkbox
 
     @property
-    def altitude_spin(self) -> QtWidgets.QSpinBox:
-        return self._altitude_spin
+    def altitude_slider(self) -> QtWidgets.QSlider:
+        return self._altitude_slider
+
+    @property
+    def altitude_min_spin(self) -> QtWidgets.QSpinBox:
+        return self._altitude_min_spin
+
+    @property
+    def altitude_max_spin(self) -> QtWidgets.QSpinBox:
+        return self._altitude_max_spin
 
     @property
     def grade_spin(self) -> QtWidgets.QSlider:
@@ -312,19 +354,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def update_elevation_inputs(
         self, altitude: int | None, grade: int | None, enabled: bool
     ) -> None:
-        self._altitude_spin.blockSignals(True)
+        self._altitude_slider.blockSignals(True)
         self._grade_slider.blockSignals(True)
-        self._altitude_spin.setValue(altitude if altitude is not None else 0)
+        altitude_value = altitude if altitude is not None else 0
+        self._altitude_slider.setValue(altitude_value)
+        self._altitude_value_label.setText(str(altitude_value))
         grade_value = grade if grade is not None else 0
         self._grade_slider.setValue(grade_value)
         self._grade_value_label.setText(str(grade_value))
-        self._altitude_spin.setEnabled(enabled)
+        self._altitude_slider.setEnabled(enabled)
         self._grade_slider.setEnabled(enabled)
-        self._altitude_spin.blockSignals(False)
+        self._altitude_slider.blockSignals(False)
         self._grade_slider.blockSignals(False)
 
     def update_grade_display(self, value: int) -> None:
         self._grade_value_label.setText(str(value))
+
+    def update_altitude_display(self, value: int) -> None:
+        self._altitude_value_label.setText(str(value))
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:
