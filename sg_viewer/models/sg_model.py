@@ -9,6 +9,11 @@ from sg_viewer.models.preview_fsection import PreviewFSection
 Point = Tuple[float, float]
 
 
+# INVARIANT:
+# In preview geometry, section_id MUST always equal the section's index
+# in DerivedGeometry.sections. section_id is not a stable UID.
+# Any code that inserts, removes, or reorders sections MUST renumber
+# section_id to match list order.
 @dataclass(frozen=True)
 class SectionPreview:
     section_id: int
