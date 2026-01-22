@@ -56,6 +56,10 @@ class PreviewInteraction:
         node_radius_px: int,
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
+        sync_fsects_on_connection: Callable[
+            [tuple[int, str], tuple[int, str]], None
+        ]
+        | None = None,
     ) -> None:
         self._context = context
         self._selection = selection
@@ -66,6 +70,7 @@ class PreviewInteraction:
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
         self._show_status = show_status
+        self._sync_fsects_on_connection = sync_fsects_on_connection
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -252,6 +257,11 @@ class PreviewInteraction:
                             return True
 
                         new_curve, new_straight = result
+                        if self._sync_fsects_on_connection is not None:
+                            self._sync_fsects_on_connection(
+                                (dragged_idx, dragged_end),
+                                (target_idx, target_end),
+                            )
                         self._apply_curve_straight_connection(
                             curve_idx=dragged_idx,
                             curve_end=dragged_end,
@@ -282,6 +292,11 @@ class PreviewInteraction:
                             return True
 
                         new_straight, new_curve = result
+                        if self._sync_fsects_on_connection is not None:
+                            self._sync_fsects_on_connection(
+                                (dragged_idx, dragged_end),
+                                (target_idx, target_end),
+                            )
 
                         self._apply_curve_straight_connection(
                             curve_idx=target_idx,
@@ -600,6 +615,9 @@ class PreviewInteraction:
 
         sections[src_index] = update_section_geometry(src_section)
         sections[tgt_index] = update_section_geometry(tgt_section)
+
+        if self._sync_fsects_on_connection is not None:
+            self._sync_fsects_on_connection(source, target)
 
         self._apply_section_updates(sections)
 
