@@ -12,7 +12,11 @@ from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.models.selection import SectionSelection
-from sg_viewer.ui.altitude_units import feet_to_500ths
+from sg_viewer.ui.altitude_units import (
+    feet_from_slider_units,
+    feet_to_500ths,
+    feet_to_slider_units,
+)
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
@@ -933,22 +937,24 @@ class SGViewerController:
         max_value = max_spin.value()
         if min_value >= max_value:
             if self.sender() is min_spin:
-                max_value = min(min_value + 1, max_spin.maximum())
+                max_value = min(min_value + 0.1, max_spin.maximum())
                 max_spin.blockSignals(True)
                 max_spin.setValue(max_value)
                 max_spin.blockSignals(False)
             else:
-                min_value = max(max_value - 1, min_spin.minimum())
+                min_value = max(max_value - 0.1, min_spin.minimum())
                 min_spin.blockSignals(True)
                 min_spin.setValue(min_value)
                 min_spin.blockSignals(False)
 
-        self._window.altitude_slider.setRange(min_value, max_value)
+        min_slider = feet_to_slider_units(min_value)
+        max_slider = feet_to_slider_units(max_value)
+        self._window.altitude_slider.setRange(min_slider, max_slider)
         slider_value = self._window.altitude_slider.value()
-        if slider_value < min_value:
-            self._window.altitude_slider.setValue(min_value)
-        elif slider_value > max_value:
-            self._window.altitude_slider.setValue(max_value)
+        if slider_value < min_slider:
+            self._window.altitude_slider.setValue(min_slider)
+        elif slider_value > max_slider:
+            self._window.altitude_slider.setValue(max_slider)
 
     def _apply_altitude_edit(self) -> None:
         selection = self._active_selection
@@ -956,7 +962,8 @@ class SGViewerController:
         if selection is None or xsect_index is None:
             return
 
-        altitude = feet_to_500ths(self._window.altitude_slider.value())
+        altitude_feet = feet_from_slider_units(self._window.altitude_slider.value())
+        altitude = feet_to_500ths(altitude_feet)
         if self._window.preview.set_section_xsect_altitude(
             selection.index, xsect_index, altitude
         ):

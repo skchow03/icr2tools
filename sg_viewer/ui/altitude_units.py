@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 ALTITUDE_UNITS_PER_FOOT = 6000
+ALTITUDE_SLIDER_SCALE = 10
 
 DEFAULT_ALTITUDE_MIN_FEET = -20
 DEFAULT_ALTITUDE_MAX_FEET = 100
@@ -10,5 +11,13 @@ def feet_to_500ths(value: float) -> int:
     return int(round(value * ALTITUDE_UNITS_PER_FOOT))
 
 
-def feet_from_500ths(value: float) -> int:
-    return int(round(value / ALTITUDE_UNITS_PER_FOOT))
+def feet_from_500ths(value: float) -> float:
+    return value / ALTITUDE_UNITS_PER_FOOT
+
+
+def feet_to_slider_units(value: float) -> int:
+    return int(round(value * ALTITUDE_SLIDER_SCALE))
+
+
+def feet_from_slider_units(value: int) -> float:
+    return value / ALTITUDE_SLIDER_SCALE
