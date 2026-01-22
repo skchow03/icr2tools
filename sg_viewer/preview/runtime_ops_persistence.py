@@ -7,9 +7,61 @@ from icr2_core.sg_elevation import sample_sg_elevation
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
+from sg_viewer.models.preview_fsection import PreviewFSection
 
 
 class _RuntimePersistenceMixin:
+    def _section_geometry_key(self, section: object) -> tuple:
+        start = getattr(section, "start", None)
+        end = getattr(section, "end", None)
+        center = getattr(section, "center", None)
+        return (
+            getattr(section, "type_name", None),
+            start,
+            end,
+            center,
+            getattr(section, "radius", None),
+            getattr(section, "sang1", None),
+            getattr(section, "sang2", None),
+            getattr(section, "eang1", None),
+            getattr(section, "eang2", None),
+        )
+
+    def _realign_fsects_after_recalc(
+        self,
+        old_sections: list,
+        old_fsects: list[list[PreviewFSection]],
+    ) -> None:
+        new_sections = list(self._section_manager.sections)
+        if (
+            not old_sections
+            or not new_sections
+            or len(old_sections) != len(new_sections)
+            or len(old_fsects) != len(old_sections)
+        ):
+            return
+
+        old_keys = [self._section_geometry_key(section) for section in old_sections]
+        new_keys = [self._section_geometry_key(section) for section in new_sections]
+        if old_keys == new_keys:
+            return
+
+        mapping: dict[tuple, list[list[PreviewFSection]]] = {}
+        for key, fsects in zip(old_keys, old_fsects):
+            mapping.setdefault(key, []).append(fsects)
+
+        realigned: list[list[PreviewFSection]] = []
+        for index, key in enumerate(new_keys):
+            bucket = mapping.get(key, [])
+            if bucket:
+                realigned.append(bucket.pop(0))
+            elif index < len(old_fsects):
+                realigned.append(old_fsects[index])
+            else:
+                realigned.append([])
+
+        self._fsects_by_section = realigned
+
     @property
     def has_unsaved_changes(self) -> bool:
         return self._has_unsaved_changes
@@ -29,10 +81,14 @@ class _RuntimePersistenceMixin:
         except ValueError:
             return False
 
+        old_sections = list(self._section_manager.sections)
+        old_fsects = list(self._fsects_by_section)
+
         if self._document.sg_data is None:
             self._document.set_sg_data(sgfile)
 
         self._document.rebuild_dlongs(0, 0)
+        self._realign_fsects_after_recalc(old_sections, old_fsects)
         return True
 
     def refresh_fsections_preview(self) -> bool:
