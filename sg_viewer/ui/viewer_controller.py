@@ -12,6 +12,7 @@ from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.models.selection import SectionSelection
+from sg_viewer.ui.altitude_units import feet_to_500ths
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
@@ -955,7 +956,7 @@ class SGViewerController:
         if selection is None or xsect_index is None:
             return
 
-        altitude = self._window.altitude_slider.value()
+        altitude = feet_to_500ths(self._window.altitude_slider.value())
         if self._window.preview.set_section_xsect_altitude(
             selection.index, xsect_index, altitude
         ):
