@@ -39,6 +39,7 @@ from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.geometry.derived_geometry import DerivedGeometry
+from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 
 
@@ -162,8 +163,27 @@ class _RuntimeCoreMixin:
                 f"{len(self._fsects_by_section)} fsect blocks"
             )
 
-    def _insert_fsects_by_section(self, index: int) -> None:
-        self._fsects_by_section.insert(index, [])
+    def _insert_fsects_by_section(
+        self, index: int, source_index: int | None = None
+    ) -> None:
+        if source_index is not None and 0 <= source_index < len(self._fsects_by_section):
+            self._fsects_by_section.insert(
+                index, copy.deepcopy(self._fsects_by_section[source_index])
+            )
+        else:
+            self._fsects_by_section.insert(index, [])
+
+    def _closed_loop_order(self, sections: list[SectionPreview]) -> list[int]:
+        if not is_closed_loop(sections):
+            return []
+        order: list[int] = []
+        visited: set[int] = set()
+        index = 0
+        while index not in visited:
+            visited.add(index)
+            order.append(index)
+            index = sections[index].next_id
+        return order
 
     def _split_fsects_by_section(self, index: int) -> None:
         original_fsects = (
@@ -401,6 +421,7 @@ class _RuntimeCoreMixin:
         return update.handled
 
     def _finalize_new_straight(self) -> None:
+        was_closed = is_closed_loop(self._section_manager.sections)
         updated_sections, track_length, new_index, status = (
             self._editor.finalize_new_straight(
                 self._section_manager.sections, self._track_length
@@ -410,13 +431,25 @@ class _RuntimeCoreMixin:
             return
 
         self._track_length = track_length
-        self._insert_fsects_by_section(new_index)
+        source_index = None
+        connection = self._creation_controller.straight_interaction.connection
+        if connection is not None:
+            source_index = connection[0]
+        self._insert_fsects_by_section(new_index, source_index)
+        if not was_closed and is_closed_loop(updated_sections):
+            order = self._closed_loop_order(updated_sections)
+            if order and len(order) == len(self._fsects_by_section):
+                self._fsects_by_section = [self._fsects_by_section[i] for i in order]
+                if new_index in order:
+                    new_index = order.index(new_index)
+            updated_sections = set_start_finish(updated_sections, 0)
         self.set_sections(updated_sections)
         self._validate_section_fsects_alignment()
         self._selection.set_selected_section(new_index)
         self._apply_creation_update(self._creation_controller.finish_straight(status))
 
     def _finalize_new_curve(self) -> None:
+        was_closed = is_closed_loop(self._section_manager.sections)
         updated_sections, track_length, new_index, status = self._editor.finalize_new_curve(
             self._section_manager.sections, self._track_length
         )
@@ -424,7 +457,18 @@ class _RuntimeCoreMixin:
             return
 
         self._track_length = track_length
-        self._insert_fsects_by_section(new_index)
+        source_index = None
+        connection = self._creation_controller.curve_interaction.connection
+        if connection is not None:
+            source_index = connection[0]
+        self._insert_fsects_by_section(new_index, source_index)
+        if not was_closed and is_closed_loop(updated_sections):
+            order = self._closed_loop_order(updated_sections)
+            if order and len(order) == len(self._fsects_by_section):
+                self._fsects_by_section = [self._fsects_by_section[i] for i in order]
+                if new_index in order:
+                    new_index = order.index(new_index)
+            updated_sections = set_start_finish(updated_sections, 0)
         self.set_sections(updated_sections)
         self._validate_section_fsects_alignment()
         self._selection.set_selected_section(new_index)
