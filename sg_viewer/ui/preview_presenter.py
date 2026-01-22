@@ -77,7 +77,6 @@ class PreviewPresenter:
                 status_message=self._runtime.status_message,
                 split_section_mode=self._runtime.split_section_mode,
                 split_hover_point=self._runtime.split_hover_point,
-                boundary_posts=self._runtime.boundary_posts,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,

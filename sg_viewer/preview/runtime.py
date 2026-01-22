@@ -110,10 +110,6 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._trk_overlay = TrkOverlayController()
         self._start_finish_dlong: float | None = None
         self._start_finish_mapping: tuple[Point, Point, Point] | None = None
-        self._boundary_posts: dict[
-            tuple[int, str],
-            list[tuple[tuple[float, float], tuple[float, float]]],
-        ] = {}
 
         self._sg_preview_model = None
         self._sg_preview_view_state = SgPreviewViewState()
