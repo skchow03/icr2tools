@@ -299,6 +299,9 @@ class _RuntimeEditingMixin:
     ) -> None:
         self._clear_split_hover()
 
+        old_sections = list(self._section_manager.sections)
+        old_fsects = list(self._fsects_by_section)
+
         preserved_start_finish_dlong = start_finish_dlong
         if preserved_start_finish_dlong is None:
             preserved_start_finish_dlong = self._start_finish_dlong
@@ -306,6 +309,7 @@ class _RuntimeEditingMixin:
             preserved_start_finish_dlong = self._current_start_finish_dlong()
 
         needs_rebuild = self._section_manager.set_sections(sections)
+        self._realign_fsects_after_recalc(old_sections, old_fsects)
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
