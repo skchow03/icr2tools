@@ -79,8 +79,10 @@ class DerivedGeometry:
                     spacing=12.0 * 500.0,
                     length=2.0 * 500.0,
                 )
+                # NOTE: section_id is an index, not a persistent identifier.
                 self.boundary_posts[(sect.section_id, side)] = posts
 
+        self._assert_section_id_invariant()
         self.dirty = False
 
     def _build_sections(self, sgfile) -> list[SectionPreview]:
@@ -145,4 +147,19 @@ class DerivedGeometry:
                 )
             )
 
+        for i, sect in enumerate(sections):
+            object.__setattr__(sect, "section_id", i)
+
+        assert all(
+            i == sect.section_id
+            for i, sect in enumerate(sections)
+        ), "SectionPreview.section_id must equal list index"
+
         return sections
+
+    def _assert_section_id_invariant(self) -> None:
+        for i, sect in enumerate(self.sections):
+            if sect.section_id != i:
+                raise RuntimeError(
+                    f"Section ID mismatch: index={i}, section_id={sect.section_id}"
+                )
