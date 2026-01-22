@@ -11,6 +11,8 @@ from sg_viewer.ui.altitude_units import (
     DEFAULT_ALTITUDE_MAX_FEET,
     DEFAULT_ALTITUDE_MIN_FEET,
     feet_from_500ths,
+    feet_from_slider_units,
+    feet_to_slider_units,
 )
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
@@ -133,28 +135,33 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
         max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
         self._altitude_slider.setRange(
-            DEFAULT_ALTITUDE_MIN_FEET, DEFAULT_ALTITUDE_MAX_FEET
+            feet_to_slider_units(DEFAULT_ALTITUDE_MIN_FEET),
+            feet_to_slider_units(DEFAULT_ALTITUDE_MAX_FEET),
         )
         self._altitude_slider.setSingleStep(1)
         self._altitude_slider.setPageStep(10)
         self._altitude_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self._altitude_slider.setTickInterval(250)
+        self._altitude_slider.setTickInterval(10)
         self._altitude_slider.setEnabled(False)
-        self._altitude_value_label = QtWidgets.QLabel("0")
-        self._altitude_value_label.setMinimumWidth(40)
+        self._altitude_value_label = QtWidgets.QLabel("0.0")
+        self._altitude_value_label.setMinimumWidth(50)
         self._altitude_value_label.setAlignment(
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
-        self._altitude_min_spin = QtWidgets.QSpinBox()
+        self._altitude_min_spin = QtWidgets.QDoubleSpinBox()
         self._altitude_min_spin.setRange(
-            min_altitude_feet, max_altitude_feet - 1
+            min_altitude_feet, max_altitude_feet - 0.1
         )
+        self._altitude_min_spin.setDecimals(1)
+        self._altitude_min_spin.setSingleStep(0.1)
         self._altitude_min_spin.setValue(DEFAULT_ALTITUDE_MIN_FEET)
         self._altitude_min_spin.setKeyboardTracking(False)
-        self._altitude_max_spin = QtWidgets.QSpinBox()
+        self._altitude_max_spin = QtWidgets.QDoubleSpinBox()
         self._altitude_max_spin.setRange(
-            min_altitude_feet + 1, max_altitude_feet
+            min_altitude_feet + 0.1, max_altitude_feet
         )
+        self._altitude_max_spin.setDecimals(1)
+        self._altitude_max_spin.setSingleStep(0.1)
         self._altitude_max_spin.setValue(DEFAULT_ALTITUDE_MAX_FEET)
         self._altitude_max_spin.setKeyboardTracking(False)
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -334,11 +341,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._altitude_slider
 
     @property
-    def altitude_min_spin(self) -> QtWidgets.QSpinBox:
+    def altitude_min_spin(self) -> QtWidgets.QDoubleSpinBox:
         return self._altitude_min_spin
 
     @property
-    def altitude_max_spin(self) -> QtWidgets.QSpinBox:
+    def altitude_max_spin(self) -> QtWidgets.QDoubleSpinBox:
         return self._altitude_max_spin
 
     @property
@@ -365,8 +372,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_slider.blockSignals(True)
         altitude_value = altitude if altitude is not None else 0
         altitude_feet = feet_from_500ths(altitude_value)
-        self._altitude_slider.setValue(altitude_feet)
-        self._altitude_value_label.setText(str(altitude_feet))
+        self._altitude_slider.setValue(feet_to_slider_units(altitude_feet))
+        self._altitude_value_label.setText(f"{altitude_feet:.1f}")
         grade_value = grade if grade is not None else 0
         self._grade_slider.setValue(grade_value)
         self._grade_value_label.setText(str(grade_value))
@@ -379,7 +386,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_value_label.setText(str(value))
 
     def update_altitude_display(self, value: int) -> None:
-        self._altitude_value_label.setText(str(value))
+        altitude_feet = feet_from_slider_units(value)
+        self._altitude_value_label.setText(f"{altitude_feet:.1f}")
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:
