@@ -104,6 +104,8 @@ class _RuntimeCoreMixin:
         self._sg_preview_model = None
         self._sg_preview_view_state = SgPreviewViewState()
         self._show_sg_fsects = False
+        self._show_xsect_dlat_line = False
+        self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
 
         self._selection = selection.SelectionManager()
@@ -650,6 +652,20 @@ class _RuntimeCoreMixin:
         return self._show_sg_fsects
 
     @property
+    def show_xsect_dlat_line(self) -> bool:
+        return self._show_xsect_dlat_line
+
+    @property
+    def selected_xsect_dlat(self) -> float | None:
+        if self._selected_xsect_index is None or self._sgfile is None:
+            return None
+        if self._selected_xsect_index < 0:
+            return None
+        if self._selected_xsect_index >= len(self._sgfile.xsect_dlats):
+            return None
+        return float(self._sgfile.xsect_dlats[self._selected_xsect_index])
+
+    @property
     def start_finish_mapping(self) -> tuple[Point, Point, Point] | None:
         return self._start_finish_mapping
 
@@ -1024,6 +1040,14 @@ class _RuntimeCoreMixin:
 
     def set_show_sg_fsects(self, visible: bool) -> None:
         self._show_sg_fsects = visible
+        self._context.request_repaint()
+
+    def set_show_xsect_dlat_line(self, visible: bool) -> None:
+        self._show_xsect_dlat_line = visible
+        self._context.request_repaint()
+
+    def set_selected_xsect_index(self, index: int | None) -> None:
+        self._selected_xsect_index = int(index) if index is not None else None
         self._context.request_repaint()
 
     def activate_set_start_finish_mode(self) -> None:

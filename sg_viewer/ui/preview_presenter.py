@@ -77,6 +77,13 @@ class PreviewPresenter:
                 status_message=self._runtime.status_message,
                 split_section_mode=self._runtime.split_section_mode,
                 split_hover_point=self._runtime.split_hover_point,
+                xsect_dlat=self._runtime.selected_xsect_dlat
+                if self._runtime.show_sg_fsects
+                else None,
+                show_xsect_dlat_line=(
+                    self._runtime.show_xsect_dlat_line
+                    and self._runtime.show_sg_fsects
+                ),
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,

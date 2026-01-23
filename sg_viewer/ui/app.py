@@ -101,6 +101,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._axes_button.setChecked(False)
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("Show SG Fsects (preview)")
         self._sg_fsects_checkbox.setChecked(False)
+        self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox(
+            "Show X-Section DLAT Line"
+        )
+        self._xsect_dlat_line_checkbox.setChecked(False)
         self._refresh_fsects_button = QtWidgets.QPushButton("Refresh Fsects Preview")
         self._refresh_fsects_button.setEnabled(False)
         self._section_table_button = QtWidgets.QPushButton("Section Table")
@@ -190,6 +194,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._axes_button)
         sidebar_layout.addWidget(self._sg_fsects_checkbox)
+        sidebar_layout.addWidget(self._xsect_dlat_line_checkbox)
         sidebar_layout.addWidget(self._refresh_fsects_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
@@ -311,6 +316,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
         return self._sg_fsects_checkbox
+
+    @property
+    def xsect_dlat_line_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._xsect_dlat_line_checkbox
 
     @property
     def refresh_fsects_button(self) -> QtWidgets.QPushButton:
