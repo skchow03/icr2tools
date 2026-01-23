@@ -22,6 +22,10 @@ from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
+from sg_viewer.ui.elevation_profile import (
+    ElevationProfileData,
+    elevation_profile_alt_bounds,
+)
 from sg_viewer.ui.xsect_elevation import XsectElevationData
 
 logger = logging.getLogger(__name__)
@@ -42,6 +46,7 @@ class SGViewerController:
         self._split_default_style = window.split_section_button.styleSheet()
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
+        self._current_profile: ElevationProfileData | None = None
 
 
         self._create_actions()
@@ -848,6 +853,7 @@ class SGViewerController:
         combo = self._window.xsect_combo
         if not combo.isEnabled():
             self._window.profile_widget.set_profile_data(None)
+            self._current_profile = None
             self._refresh_elevation_inputs()
             self._refresh_xsect_elevation_panel()
             return
@@ -861,6 +867,7 @@ class SGViewerController:
             show_trk=self._window.trk_compare_checkbox.isChecked(),
         )
         self._window.profile_widget.set_profile_data(profile)
+        self._current_profile = profile
         self._refresh_elevation_inputs()
         self._update_copy_xsect_button()
         self._refresh_xsect_elevation_panel()
@@ -1099,11 +1106,17 @@ class SGViewerController:
             return
 
         altitudes = self._window.preview.get_section_xsect_altitudes(selection.index)
+        y_range = (
+            elevation_profile_alt_bounds(self._current_profile)
+            if self._current_profile is not None
+            else None
+        )
         self._window.xsect_elevation_widget.set_xsect_data(
             XsectElevationData(
                 section_index=selection.index,
                 altitudes=[
                     float(value) if value is not None else None for value in altitudes
                 ],
+                y_range=y_range,
             )
         )
