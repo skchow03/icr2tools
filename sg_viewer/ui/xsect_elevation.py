@@ -18,6 +18,8 @@ class XsectElevationData:
 class XsectElevationWidget(QtWidgets.QWidget):
     """Renders elevation values across x-sections for the selected section."""
 
+    xsectClicked = QtCore.pyqtSignal(int)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(140)
@@ -53,27 +55,11 @@ class XsectElevationWidget(QtWidgets.QWidget):
             painter.end()
             return
 
-        margins = QtCore.QMargins(48, 18, 16, 28)
-        plot_rect = self.rect().marginsRemoved(margins)
-        if plot_rect.width() <= 0 or plot_rect.height() <= 0:
+        plot_context = self._plot_context()
+        if plot_context is None:
             painter.end()
             return
-
-        if self._data.y_range is not None:
-            min_alt, max_alt = self._data.y_range
-        else:
-            min_alt = min(valid)
-            max_alt = max(valid)
-            if min_alt == max_alt:
-                min_alt -= 1
-                max_alt += 1
-            padding = max(1.0, (max_alt - min_alt) * 0.05)
-            min_alt -= padding
-            max_alt += padding
-
-        min_alt, max_alt = self._adjust_y_range_for_aspect(
-            min_alt, max_alt, plot_rect, altitudes, self._data.xsect_dlats
-        )
+        plot_rect, min_alt, max_alt = plot_context
 
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor("#bbb")))
@@ -83,6 +69,34 @@ class XsectElevationWidget(QtWidgets.QWidget):
         self._draw_axes_labels(painter, plot_rect, min_alt, max_alt)
         painter.restore()
         painter.end()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() != QtCore.Qt.LeftButton or self._data is None:
+            return
+
+        plot_context = self._plot_context()
+        if plot_context is None:
+            return
+        plot_rect, min_alt, max_alt = plot_context
+        if not plot_rect.contains(event.pos()):
+            return
+
+        altitudes = self._data.altitudes
+        count = len(altitudes)
+        if count == 0:
+            return
+
+        dlats = self._data.xsect_dlats
+        click_pos = event.pos()
+        radius = 6.0
+        for idx, altitude in enumerate(altitudes):
+            if altitude is None:
+                continue
+            x = self._map_x(idx, plot_rect, count, dlats)
+            y = self._map_y(altitude, plot_rect, min_alt, max_alt)
+            if QtCore.QLineF(click_pos, QtCore.QPointF(x, y)).length() <= radius:
+                self.xsectClicked.emit(idx)
+                return
 
     def _draw_profile(
         self,
@@ -179,16 +193,17 @@ class XsectElevationWidget(QtWidgets.QWidget):
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
             f"Alt: {min_alt:.0f}–{max_alt:.0f}",
         )
-        bank_angle = self._banking_angle_degrees()
-        if bank_angle is not None:
+        bank_angles = self._banking_angles_degrees()
+        if bank_angles is not None:
+            prev_bank, next_bank = bank_angles
             painter.drawText(
                 rect.adjusted(0, -18, 0, 0),
                 QtCore.Qt.AlignRight | QtCore.Qt.AlignTop,
-                f"Bank: {bank_angle:+.2f}°",
+                f"Bank Prev: {prev_bank:+.2f}°  Next: {next_bank:+.2f}°",
             )
         painter.restore()
 
-    def _banking_angle_degrees(self) -> float | None:
+    def _banking_angles_degrees(self) -> tuple[float, float] | None:
         if self._data is None:
             return None
 
@@ -198,25 +213,66 @@ class XsectElevationWidget(QtWidgets.QWidget):
             return None
         prev_idx = selected_index - 1
         next_idx = selected_index + 1
-        if prev_idx < 0 or next_idx >= len(altitudes):
+
+        prev_angle = self._banking_angle_between(selected_index, prev_idx)
+        next_angle = self._banking_angle_between(selected_index, next_idx)
+        if prev_angle is None or next_angle is None:
+            return None
+        return prev_angle, next_angle
+
+    def _banking_angle_between(self, base_idx: int, other_idx: int) -> float | None:
+        altitudes = self._data.altitudes if self._data else None
+        if altitudes is None:
+            return None
+        if other_idx < 0 or other_idx >= len(altitudes):
+            return 0.0
+
+        base_alt = altitudes[base_idx]
+        other_alt = altitudes[other_idx]
+        if base_alt is None or other_alt is None:
             return None
 
-        prev_alt = altitudes[prev_idx]
-        next_alt = altitudes[next_idx]
-        if prev_alt is None or next_alt is None:
-            return None
-
-        dlats = self._data.xsect_dlats
+        dlats = self._data.xsect_dlats if self._data else None
         if dlats and len(dlats) == len(altitudes):
-            delta_dlat = dlats[next_idx] - dlats[prev_idx]
+            delta_dlat = dlats[other_idx] - dlats[base_idx]
         else:
-            delta_dlat = float(next_idx - prev_idx)
+            delta_dlat = float(other_idx - base_idx)
 
         if math.isclose(delta_dlat, 0.0):
             return None
 
-        slope = (next_alt - prev_alt) / delta_dlat
+        slope = (other_alt - base_alt) / delta_dlat
         return math.degrees(math.atan(slope))
+
+    def _plot_context(self) -> tuple[QtCore.QRect, float, float] | None:
+        if self._data is None:
+            return None
+        altitudes = self._data.altitudes
+        valid = [alt for alt in altitudes if alt is not None]
+        if not altitudes or not valid:
+            return None
+
+        margins = QtCore.QMargins(48, 18, 16, 28)
+        plot_rect = self.rect().marginsRemoved(margins)
+        if plot_rect.width() <= 0 or plot_rect.height() <= 0:
+            return None
+
+        if self._data.y_range is not None:
+            min_alt, max_alt = self._data.y_range
+        else:
+            min_alt = min(valid)
+            max_alt = max(valid)
+            if min_alt == max_alt:
+                min_alt -= 1
+                max_alt += 1
+            padding = max(1.0, (max_alt - min_alt) * 0.05)
+            min_alt -= padding
+            max_alt += padding
+
+        min_alt, max_alt = self._adjust_y_range_for_aspect(
+            min_alt, max_alt, plot_rect, altitudes, self._data.xsect_dlats
+        )
+        return plot_rect, min_alt, max_alt
 
     @staticmethod
     def _adjust_y_range_for_aspect(
