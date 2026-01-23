@@ -234,6 +234,9 @@ class SGViewerController:
             self._toggle_trk_comparison
         )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
+        self._window.profile_widget.sectionClicked.connect(
+            self._on_profile_section_clicked
+        )
 
     def _should_confirm_reset(self) -> bool:
         sections, _ = self._window.preview.get_section_set()
@@ -931,6 +934,9 @@ class SGViewerController:
         self._active_selection = selection
         self._window.update_selection_sidebar(selection)
         self._refresh_elevation_inputs()
+
+    def _on_profile_section_clicked(self, section_index: int) -> None:
+        self._window.preview.selection_manager.set_selected_section(section_index)
 
     def _update_copy_xsect_button(self) -> None:
         combo_enabled = self._window.xsect_combo.isEnabled()
