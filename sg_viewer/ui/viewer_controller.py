@@ -866,6 +866,9 @@ class SGViewerController:
             int(current_index),
             show_trk=self._window.trk_compare_checkbox.isChecked(),
         )
+        global_bounds = self._window.preview.get_elevation_profile_bounds()
+        if profile is not None and global_bounds is not None:
+            profile.y_range = global_bounds
         self._window.profile_widget.set_profile_data(profile)
         self._current_profile = profile
         self._refresh_elevation_inputs()

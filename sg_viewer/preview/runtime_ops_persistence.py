@@ -187,3 +187,40 @@ class _RuntimePersistenceMixin:
             xsect_label=_xsect_label(dlat_value),
             sources=sources,
         )
+
+    def get_elevation_profile_bounds(
+        self, samples_per_section: int = 24
+    ) -> tuple[float, float] | None:
+        if self._sgfile is None or self._track_length is None:
+            return None
+
+        num_xsects = self._sgfile.num_xsects
+        if num_xsects <= 0:
+            return None
+
+        min_alt: float | None = None
+        max_alt: float | None = None
+        for xsect_index in range(num_xsects):
+            altitudes = sample_sg_elevation(
+                self._sgfile,
+                xsect_index,
+                resolution=samples_per_section,
+            )
+            if not altitudes:
+                continue
+            local_min = min(altitudes)
+            local_max = max(altitudes)
+            if min_alt is None or local_min < min_alt:
+                min_alt = local_min
+            if max_alt is None or local_max > max_alt:
+                max_alt = local_max
+
+        if min_alt is None or max_alt is None:
+            return None
+
+        if min_alt == max_alt:
+            min_alt -= 1.0
+            max_alt += 1.0
+
+        padding = max(1.0, (max_alt - min_alt) * 0.05)
+        return min_alt - padding, max_alt + padding

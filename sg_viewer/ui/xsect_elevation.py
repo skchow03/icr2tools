@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -69,6 +70,10 @@ class XsectElevationWidget(QtWidgets.QWidget):
             padding = max(1.0, (max_alt - min_alt) * 0.05)
             min_alt -= padding
             max_alt += padding
+
+        min_alt, max_alt = self._adjust_y_range_for_aspect(
+            min_alt, max_alt, plot_rect, altitudes, self._data.xsect_dlats
+        )
 
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor("#bbb")))
@@ -174,7 +179,70 @@ class XsectElevationWidget(QtWidgets.QWidget):
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
             f"Alt: {min_alt:.0f}–{max_alt:.0f}",
         )
+        bank_angle = self._banking_angle_degrees()
+        if bank_angle is not None:
+            painter.drawText(
+                rect.adjusted(0, -18, 0, 0),
+                QtCore.Qt.AlignRight | QtCore.Qt.AlignTop,
+                f"Bank: {bank_angle:+.2f}°",
+            )
         painter.restore()
+
+    def _banking_angle_degrees(self) -> float | None:
+        if self._data is None:
+            return None
+
+        altitudes = self._data.altitudes
+        selected_index = self._data.selected_xsect_index
+        if selected_index is None:
+            return None
+        prev_idx = selected_index - 1
+        next_idx = selected_index + 1
+        if prev_idx < 0 or next_idx >= len(altitudes):
+            return None
+
+        prev_alt = altitudes[prev_idx]
+        next_alt = altitudes[next_idx]
+        if prev_alt is None or next_alt is None:
+            return None
+
+        dlats = self._data.xsect_dlats
+        if dlats and len(dlats) == len(altitudes):
+            delta_dlat = dlats[next_idx] - dlats[prev_idx]
+        else:
+            delta_dlat = float(next_idx - prev_idx)
+
+        if math.isclose(delta_dlat, 0.0):
+            return None
+
+        slope = (next_alt - prev_alt) / delta_dlat
+        return math.degrees(math.atan(slope))
+
+    @staticmethod
+    def _adjust_y_range_for_aspect(
+        min_alt: float,
+        max_alt: float,
+        rect: QtCore.QRect,
+        altitudes: list[float | None],
+        dlats: list[float] | None,
+    ) -> tuple[float, float]:
+        count = len(altitudes)
+        if count <= 1 or rect.width() <= 0 or rect.height() <= 0:
+            return min_alt, max_alt
+
+        if dlats and len(dlats) == count:
+            x_span = abs(max(dlats) - min(dlats))
+        else:
+            x_span = float(count - 1)
+
+        if x_span <= 0:
+            return min_alt, max_alt
+
+        target_y_span = x_span * rect.height() / rect.width()
+        current_span = max(max_alt - min_alt, 1e-6)
+        y_span = max(current_span, target_y_span)
+        center = (max_alt + min_alt) / 2.0
+        return center - y_span / 2.0, center + y_span / 2.0
 
     @staticmethod
     def _map_x(

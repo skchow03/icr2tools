@@ -23,9 +23,12 @@ class ElevationProfileData:
     track_length: float
     xsect_label: str
     sources: tuple[ElevationSource, ...] = (ElevationSource.SG,)
+    y_range: tuple[float, float] | None = None
 
 
 def elevation_profile_alt_bounds(data: ElevationProfileData) -> tuple[float, float]:
+    if data.y_range is not None:
+        return data.y_range
     alts = list(data.sg_altitudes)
     if data.trk_altitudes is not None and ElevationSource.TRK in data.sources:
         alts.extend(data.trk_altitudes)
