@@ -199,6 +199,8 @@ class _RuntimeEditingMixin:
         self.set_sections(sections)
         if self._sgfile is not None:
             self.apply_preview_to_sgfile()
+            if self._emit_sections_changed is not None:
+                self._emit_sections_changed()
         self._validate_section_fsects_alignment()
         if idx + 1 < len(sections):
             self._selection.set_selected_section(idx + 1)
