@@ -22,6 +22,7 @@ from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
+from sg_viewer.ui.xsect_elevation import XsectElevationData
 
 logger = logging.getLogger(__name__)
 
@@ -848,6 +849,7 @@ class SGViewerController:
         if not combo.isEnabled():
             self._window.profile_widget.set_profile_data(None)
             self._refresh_elevation_inputs()
+            self._refresh_xsect_elevation_panel()
             return
 
         current_index = combo.currentData()
@@ -861,6 +863,7 @@ class SGViewerController:
         self._window.profile_widget.set_profile_data(profile)
         self._refresh_elevation_inputs()
         self._update_copy_xsect_button()
+        self._refresh_xsect_elevation_panel()
 
     def _toggle_trk_comparison(self, checked: bool) -> None:
         if not checked:
@@ -937,6 +940,7 @@ class SGViewerController:
         self._active_selection = selection
         self._window.update_selection_sidebar(selection)
         self._refresh_elevation_inputs()
+        self._refresh_xsect_elevation_panel()
 
     def _on_profile_section_clicked(self, section_index: int) -> None:
         self._window.preview.selection_manager.set_selected_section(section_index)
@@ -950,6 +954,7 @@ class SGViewerController:
             section_index, xsect_index, altitude
         ):
             self._refresh_elevation_profile()
+            self._refresh_xsect_elevation_panel()
             if (
                 self._active_selection is not None
                 and self._active_selection.index == section_index
@@ -1028,6 +1033,7 @@ class SGViewerController:
             selection.index, xsect_index, altitude
         ):
             self._refresh_elevation_profile()
+            self._refresh_xsect_elevation_panel()
 
     def _apply_grade_edit(self) -> None:
         selection = self._active_selection
@@ -1077,6 +1083,7 @@ class SGViewerController:
             return
 
         self._refresh_elevation_profile()
+        self._refresh_xsect_elevation_panel()
         self._window.show_status_message(
             f"Copied x-section {xsect_index} data to all x-sections."
         )
@@ -1084,3 +1091,19 @@ class SGViewerController:
     def _on_grade_slider_changed(self, value: int) -> None:
         self._window.update_grade_display(value)
         self._apply_grade_edit()
+
+    def _refresh_xsect_elevation_panel(self) -> None:
+        selection = self._active_selection
+        if selection is None:
+            self._window.xsect_elevation_widget.set_xsect_data(None)
+            return
+
+        altitudes = self._window.preview.get_section_xsect_altitudes(selection.index)
+        self._window.xsect_elevation_widget.set_xsect_data(
+            XsectElevationData(
+                section_index=selection.index,
+                altitudes=[
+                    float(value) if value is not None else None for value in altitudes
+                ],
+            )
+        )

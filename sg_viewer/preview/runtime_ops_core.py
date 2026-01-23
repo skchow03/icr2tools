@@ -1093,6 +1093,22 @@ class _RuntimeCoreMixin:
         grade = section.grade[xsect_index] if xsect_index < len(section.grade) else None
         return altitude, grade
 
+    def get_section_xsect_altitudes(self, section_id: int) -> list[int | None]:
+        sg_data = self._document.sg_data
+        if (
+            sg_data is None
+            or section_id < 0
+            or section_id >= len(sg_data.sects)
+        ):
+            return []
+
+        section = sg_data.sects[section_id]
+        num_xsects = sg_data.num_xsects
+        altitudes: list[int | None] = []
+        for idx in range(num_xsects):
+            altitudes.append(section.alt[idx] if idx < len(section.alt) else None)
+        return altitudes
+
     def set_section_xsect_altitude(
         self, section_id: int, xsect_index: int, altitude: float
     ) -> bool:

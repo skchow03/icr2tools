@@ -15,6 +15,7 @@ from sg_viewer.ui.altitude_units import (
     feet_to_slider_units,
 )
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
+from sg_viewer.ui.xsect_elevation import XsectElevationWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
@@ -107,6 +108,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
         self._heading_table_button.setEnabled(False)
         self._profile_widget = ElevationProfileWidget()
+        self._xsect_elevation_widget = XsectElevationWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
@@ -249,6 +251,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         profile_controls.addWidget(self._trk_compare_checkbox)
         preview_column_layout.addLayout(profile_controls)
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
+        preview_column_layout.addWidget(QtWidgets.QLabel("Section X-Section Elevation"))
+        preview_column_layout.addWidget(self._xsect_elevation_widget, stretch=1)
         preview_column.setLayout(preview_column_layout)
 
         container = QtWidgets.QWidget()
@@ -323,6 +327,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def profile_widget(self) -> ElevationProfileWidget:
         return self._profile_widget
+
+    @property
+    def xsect_elevation_widget(self) -> XsectElevationWidget:
+        return self._xsect_elevation_widget
 
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
