@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Iterable, Tuple
 
@@ -38,6 +39,8 @@ class BasePreviewState:
     status_message: str
     split_section_mode: bool
     split_hover_point: Point | None
+    xsect_dlat: float | None
+    show_xsect_dlat_line: bool
 
 
 @dataclass
@@ -116,6 +119,14 @@ def paint_preview(
             transform,
             widget_height,
         )
+        if base_state.show_xsect_dlat_line and base_state.xsect_dlat is not None:
+            _draw_xsect_dlat_line(
+                painter,
+                base_state.sections,
+                base_state.xsect_dlat,
+                transform,
+                widget_height,
+            )
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
                 painter,
@@ -318,6 +329,60 @@ def _draw_centerlines(
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
         painter.drawPolyline(QtGui.QPolygonF(selected_points))
+
+    painter.restore()
+
+
+def _draw_xsect_dlat_line(
+    painter: QtGui.QPainter,
+    sections: Iterable[SectionPreview],
+    dlat: float,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 180))
+    pen.setWidthF(BASE_WIDTH)
+    pen.setCapStyle(QtCore.Qt.RoundCap)
+    pen.setJoinStyle(QtCore.Qt.RoundJoin)
+    painter.setPen(pen)
+
+    for section in sections:
+        polyline = section.polyline
+        if len(polyline) < 2:
+            continue
+
+        offset_points: list[QtCore.QPointF] = []
+        for idx, point in enumerate(polyline):
+            if idx == 0:
+                prev_point = point
+                next_point = polyline[idx + 1]
+            elif idx == len(polyline) - 1:
+                prev_point = polyline[idx - 1]
+                next_point = point
+            else:
+                prev_point = polyline[idx - 1]
+                next_point = polyline[idx + 1]
+
+            dx = next_point[0] - prev_point[0]
+            dy = next_point[1] - prev_point[1]
+            length = math.hypot(dx, dy)
+            if length == 0:
+                continue
+            nx = -dy / length
+            ny = dx / length
+            offset_points.append(
+                sg_rendering.map_point(
+                    point[0] + nx * dlat,
+                    point[1] + ny * dlat,
+                    transform,
+                    widget_height,
+                )
+            )
+
+        if len(offset_points) >= 2:
+            painter.drawPolyline(QtGui.QPolygonF(offset_points))
 
     painter.restore()
 

@@ -114,6 +114,8 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._sg_preview_model = None
         self._sg_preview_view_state = SgPreviewViewState()
         self._show_sg_fsects = False
+        self._show_xsect_dlat_line = False
+        self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
 
         self._selection = selection.SelectionManager()

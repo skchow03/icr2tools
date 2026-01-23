@@ -217,6 +217,9 @@ class SGViewerController:
         self._window.sg_fsects_checkbox.toggled.connect(
             self._window.preview.set_show_sg_fsects
         )
+        self._window.xsect_dlat_line_checkbox.toggled.connect(
+            self._window.preview.set_show_xsect_dlat_line
+        )
         self._window.refresh_fsects_button.clicked.connect(
             self._refresh_fsects_preview
         )
@@ -855,6 +858,7 @@ class SGViewerController:
     def _refresh_elevation_profile(self) -> None:
         combo = self._window.xsect_combo
         if not combo.isEnabled():
+            self._window.preview.set_selected_xsect_index(None)
             self._window.profile_widget.set_profile_data(None)
             self._current_profile = None
             self._refresh_elevation_inputs()
@@ -864,6 +868,7 @@ class SGViewerController:
         current_index = combo.currentData()
         if current_index is None:
             current_index = combo.currentIndex()
+        self._window.preview.set_selected_xsect_index(int(current_index))
 
         profile = self._window.preview.build_elevation_profile(
             int(current_index),
