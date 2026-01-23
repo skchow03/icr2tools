@@ -170,6 +170,93 @@ class _RuntimeEditingMixin:
         if len(sg_data.header) > 4:
             sg_data.header[4] = sg_data.num_sects
 
+    def _sg_track_length(self, sg_data) -> float:
+        if sg_data is None:
+            return 0.0
+
+        max_end = 0.0
+        for section in getattr(sg_data, "sects", []):
+            start_dlong = float(getattr(section, "start_dlong", 0.0))
+            length = float(getattr(section, "length", 0.0))
+            if length < 0:
+                continue
+            max_end = max(max_end, start_dlong + length)
+        return max_end
+
+    def _section_at_dlong(self, sg_data, dlong: float) -> tuple[int, float] | None:
+        sections = list(getattr(sg_data, "sects", []))
+        if not sections:
+            return None
+
+        track_length = self._sg_track_length(sg_data)
+        if track_length <= 0:
+            return None
+
+        normalized = float(dlong) % track_length
+        for idx, section in enumerate(sections):
+            start_dlong = float(getattr(section, "start_dlong", 0.0))
+            length = float(getattr(section, "length", 0.0))
+            if length <= 0:
+                continue
+            end_dlong = start_dlong + length
+            if normalized < start_dlong:
+                continue
+            if normalized <= end_dlong or math.isclose(normalized, end_dlong):
+                subsect = (normalized - start_dlong) / length if length else 0.0
+                subsect = min(max(subsect, 0.0), 1.0)
+                return idx, subsect
+
+        last_idx = len(sections) - 1
+        last_length = float(getattr(sections[last_idx], "length", 0.0))
+        return last_idx, 1.0 if last_length > 0 else 0.0
+
+    def _recalculate_elevations_after_drag(self) -> bool:
+        if self._sgfile is None:
+            return False
+
+        if not self._section_manager.sections:
+            return False
+
+        old_sg = copy.deepcopy(self._sgfile)
+        if not old_sg.sects or old_sg.num_xsects <= 0:
+            return False
+
+        if any(not sect.alt or not sect.grade for sect in self._sgfile.sects):
+            return False
+
+        try:
+            self.apply_preview_to_sgfile()
+        except ValueError:
+            return False
+
+        num_xsects = old_sg.num_xsects
+        updated = False
+        for section in self._sgfile.sects:
+            start_dlong = float(getattr(section, "start_dlong", 0.0))
+            length = float(getattr(section, "length", 0.0))
+            end_dlong = start_dlong + length
+            location = self._section_at_dlong(old_sg, end_dlong)
+            if location is None:
+                continue
+            old_index, subsect = location
+            for xsect_idx in range(num_xsects):
+                altitude, grade = sg_xsect_altitude_grade_at(
+                    old_sg, old_index, subsect, xsect_idx
+                )
+                updated_altitude = int(round(altitude))
+                updated_grade = int(round(grade))
+                if (
+                    section.alt[xsect_idx] != updated_altitude
+                    or section.grade[xsect_idx] != updated_grade
+                ):
+                    updated = True
+                section.alt[xsect_idx] = updated_altitude
+                section.grade[xsect_idx] = updated_grade
+
+        if updated and self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        return updated
+
     def _commit_split(self) -> None:
         idx = self._split_hover_section_index
         point = self._split_hover_point
