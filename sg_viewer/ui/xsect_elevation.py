@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class XsectElevationData:
     section_index: int
     altitudes: list[float | None]
+    y_range: tuple[float, float] | None = None
 
 
 class XsectElevationWidget(QtWidgets.QWidget):
@@ -55,14 +56,17 @@ class XsectElevationWidget(QtWidgets.QWidget):
             painter.end()
             return
 
-        min_alt = min(valid)
-        max_alt = max(valid)
-        if min_alt == max_alt:
-            min_alt -= 1
-            max_alt += 1
-        padding = max(1.0, (max_alt - min_alt) * 0.05)
-        min_alt -= padding
-        max_alt += padding
+        if self._data.y_range is not None:
+            min_alt, max_alt = self._data.y_range
+        else:
+            min_alt = min(valid)
+            max_alt = max(valid)
+            if min_alt == max_alt:
+                min_alt -= 1
+                max_alt += 1
+            padding = max(1.0, (max_alt - min_alt) * 0.05)
+            min_alt -= padding
+            max_alt += padding
 
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor("#bbb")))

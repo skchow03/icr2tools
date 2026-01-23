@@ -25,6 +25,16 @@ class ElevationProfileData:
     sources: tuple[ElevationSource, ...] = (ElevationSource.SG,)
 
 
+def elevation_profile_alt_bounds(data: ElevationProfileData) -> tuple[float, float]:
+    alts = list(data.sg_altitudes)
+    if data.trk_altitudes is not None and ElevationSource.TRK in data.sources:
+        alts.extend(data.trk_altitudes)
+    min_alt = min(alts)
+    max_alt = max(alts)
+    padding = max(1.0, (max_alt - min_alt) * 0.05)
+    return min_alt - padding, max_alt + padding
+
+
 class ElevationProfileWidget(QtWidgets.QWidget):
     """Lightweight plot for showing SG elevation behaviour."""
 
@@ -290,13 +300,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         return rect.bottom() - relative * rect.height()
 
     def _alt_bounds(self) -> tuple[float, float]:
-        alts = list(self._data.sg_altitudes)
-        if self._data.trk_altitudes is not None and ElevationSource.TRK in self._data.sources:
-            alts.extend(self._data.trk_altitudes)
-        min_alt = min(alts)
-        max_alt = max(alts)
-        padding = max(1.0, (max_alt - min_alt) * 0.05)
-        return min_alt - padding, max_alt + padding
+        return elevation_profile_alt_bounds(self._data)
 
     def _max_dlong(self) -> float:
         return max(max(self._data.dlongs), self._data.track_length)
