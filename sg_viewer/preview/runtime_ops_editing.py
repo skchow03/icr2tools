@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+from dataclasses import replace
 
 from PyQt5 import QtCore
 
@@ -217,6 +218,10 @@ class _RuntimeEditingMixin:
         if not self._section_manager.sections:
             return False
 
+        if self._refresh_section_dlongs_after_drag():
+            if not self._section_manager.sections:
+                return False
+
         old_sg = copy.deepcopy(self._sgfile)
         if not old_sg.sects or old_sg.num_xsects <= 0:
             return False
@@ -256,6 +261,29 @@ class _RuntimeEditingMixin:
         if updated and self._emit_sections_changed is not None:
             self._emit_sections_changed()
         return updated
+
+    def _refresh_section_dlongs_after_drag(self) -> bool:
+        sections = list(self._section_manager.sections)
+        if not sections:
+            return False
+
+        dlong = 0.0
+        updated_sections: list[SectionPreview] = []
+        changed = False
+        for idx, section in enumerate(sections):
+            current_start = (
+                float(section.start_dlong) if section.start_dlong is not None else dlong
+            )
+            if not math.isclose(current_start, dlong):
+                changed = True
+            updated_sections.append(
+                replace(section, section_id=idx, start_dlong=dlong)
+            )
+            dlong += float(getattr(section, "length", 0.0))
+
+        if changed:
+            self.set_sections(updated_sections)
+        return changed
 
     def _commit_split(self) -> None:
         idx = self._split_hover_section_index
