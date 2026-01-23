@@ -5,6 +5,13 @@ from typing import Iterable
 from PyQt5 import QtCore
 
 from icr2_core.trk.sg_classes import SGFile
+from sg_viewer.sg_document_fsects import (
+    FSection,
+    delete_fsection,
+    insert_fsection,
+    replace_fsections,
+    update_fsection,
+)
 
 
 class SGDocument(QtCore.QObject):
@@ -139,6 +146,42 @@ class SGDocument(QtCore.QObject):
         if __debug__:
             self.validate()
 
+        self.geometry_changed.emit()
+
+    def add_fsection(self, section_id: int, index: int, fsect: FSection) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        insert_fsection(self._sg_data, section_id, index, fsect)
+
+        self.section_changed.emit(section_id)
+        self.geometry_changed.emit()
+
+    def edit_fsection(self, section_id: int, index: int, **fields: object) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        update_fsection(self._sg_data, section_id, index, **fields)
+
+        self.section_changed.emit(section_id)
+        self.geometry_changed.emit()
+
+    def remove_fsection(self, section_id: int, index: int) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        delete_fsection(self._sg_data, section_id, index)
+
+        self.section_changed.emit(section_id)
+        self.geometry_changed.emit()
+
+    def replace_fsections(self, section_id: int, fsects: list[FSection]) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        replace_fsections(self._sg_data, section_id, fsects)
+
+        self.section_changed.emit(section_id)
         self.geometry_changed.emit()
 
     def validate(self) -> None:

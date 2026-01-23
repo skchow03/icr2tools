@@ -4,6 +4,7 @@ from typing import Iterable
 
 from PyQt5 import QtCore, QtGui
 
+from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
 from sg_viewer.sg_preview.model import Point, SgPreviewModel
 from sg_viewer.sg_preview.transform import ViewTransform
 from sg_viewer.sg_preview.view_state import SgPreviewViewState
@@ -42,13 +43,13 @@ def render_sg_preview(
 def _draw_surfaces(painter, model: SgPreviewModel, transform: ViewTransform) -> None:
     for fsect in model.fsects:
         for surface in fsect.surfaces:
-            surface_type = surface.attrs.get("type1") if surface.attrs else None
-            if surface_type is None:
-                base_color = sg_rendering.DEFAULT_SURFACE_COLOR
-            else:
-                base_color = sg_rendering.SURFACE_COLORS.get(
-                    int(surface_type), sg_rendering.DEFAULT_SURFACE_COLOR
-                )
+            attrs = surface.attrs or {}
+            style = resolve_fsection_style(attrs.get("type1"), attrs.get("type2"))
+            base_color = (
+                style.surface_color
+                if style is not None and style.surface_color is not None
+                else sg_rendering.DEFAULT_SURFACE_COLOR
+            )
             fill = _make_color_from_qcolor(painter, base_color, _SURFACE_FILL_RGBA[3])
             outline = _make_color_from_qcolor(
                 painter, base_color.darker(130), _SURFACE_OUTLINE_RGBA[3]
@@ -64,24 +65,15 @@ def _draw_surfaces(painter, model: SgPreviewModel, transform: ViewTransform) -> 
 def _draw_boundaries(painter, model: SgPreviewModel, transform: ViewTransform) -> None:
     for fsect in model.fsects:
         for boundary in fsect.boundaries:
-            kind = _boundary_kind(boundary.attrs)
-            if kind is None:
+            attrs = boundary.attrs or {}
+            style = resolve_fsection_style(attrs.get("type1"), attrs.get("type2"))
+            if style is None or style.role != "boundary" or style.boundary_color is None:
                 continue
-            is_fence = _is_fence(boundary.attrs)
-            if kind == "wall":
-                pen = sg_rendering.make_boundary_pen(
-                    sg_rendering.WALL_COLOR,
-                    is_fence=is_fence,
-                    width=2.0,
-                )
-            elif kind == "armco":
-                pen = sg_rendering.make_boundary_pen(
-                    sg_rendering.ARMCO_COLOR,
-                    is_fence=is_fence,
-                    width=2.0,
-                )
-            else:
-                continue
+            pen = sg_rendering.make_boundary_pen(
+                style.boundary_color,
+                is_fence=style.is_fence,
+                width=style.boundary_width or 2.0,
+            )
             points = _map_points(boundary.points, transform)
             if len(points) < 2:
                 continue
@@ -125,20 +117,6 @@ def _set_pen(painter, color, width: float) -> None:
     pen.setColor(color)
     pen.setWidthF(width)
     painter.setPen(pen)
-
-
-def _boundary_kind(attrs: dict) -> str | None:
-    type1 = int(attrs.get("type1", -1))
-    if type1 == 7:
-        return "wall"
-    if type1 == 8:
-        return "armco"
-    return None
-
-
-def _is_fence(attrs: dict) -> bool:
-    type2 = int(attrs.get("type2", 0))
-    return type2 in {2, 6, 10, 14}
 
 
 def _set_brush(painter, color) -> None:
