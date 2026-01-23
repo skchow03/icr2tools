@@ -259,7 +259,10 @@ class PreviewRuntime(PreviewRuntimeOps):
             event.accept()
             return
 
+        was_dragging_node = self._interaction.is_dragging_node
         if self._interaction.handle_mouse_release(event):
+            if was_dragging_node:
+                self._recalculate_elevations_after_drag()
             self.log_debug(
                 "mouseReleaseEvent handled by interaction at %s", event.pos()
             )
