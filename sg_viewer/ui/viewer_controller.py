@@ -237,6 +237,9 @@ class SGViewerController:
         self._window.profile_widget.sectionClicked.connect(
             self._on_profile_section_clicked
         )
+        self._window.profile_widget.altitudeDragged.connect(
+            self._on_profile_altitude_dragged
+        )
 
     def _should_confirm_reset(self) -> bool:
         sections, _ = self._window.preview.get_section_set()
@@ -937,6 +940,21 @@ class SGViewerController:
 
     def _on_profile_section_clicked(self, section_index: int) -> None:
         self._window.preview.selection_manager.set_selected_section(section_index)
+
+    def _on_profile_altitude_dragged(self, section_index: int, altitude: float) -> None:
+        xsect_index = self._current_xsect_index()
+        if xsect_index is None:
+            return
+
+        if self._window.preview.set_section_xsect_altitude(
+            section_index, xsect_index, altitude
+        ):
+            self._refresh_elevation_profile()
+            if (
+                self._active_selection is not None
+                and self._active_selection.index == section_index
+            ):
+                self._refresh_elevation_inputs()
 
     def _update_copy_xsect_button(self) -> None:
         combo_enabled = self._window.xsect_combo.isEnabled()

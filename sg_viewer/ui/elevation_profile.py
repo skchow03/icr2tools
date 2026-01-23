@@ -29,6 +29,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     """Lightweight plot for showing SG elevation behaviour."""
 
     sectionClicked = QtCore.pyqtSignal(int)
+    altitudeDragged = QtCore.pyqtSignal(int, float)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,6 +38,8 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._selected_range: tuple[float, float] | None = None
         self._x_view_range: tuple[float, float] | None = None
         self._is_panning = False
+        self._is_dragging_marker = False
+        self._dragged_section: int | None = None
         self._pan_start_pos: QtCore.QPoint | None = None
         self._pan_start_range: tuple[float, float] | None = None
         self._pending_click = False
@@ -208,6 +211,30 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
         painter.restore()
 
+    def _selected_marker_position(
+        self,
+        rect: QtCore.QRect,
+        x_start: float,
+        x_end: float,
+        min_alt: float,
+        max_alt: float,
+    ) -> tuple[QtCore.QPointF, int] | None:
+        if self._selected_range is None:
+            return None
+
+        selected_end = self._selected_range[1]
+        altitude = self._altitude_at_dlong(selected_end)
+        if altitude is None:
+            return None
+
+        section_index = self._section_index_for_dlong(selected_end)
+        if section_index is None:
+            return None
+
+        x = self._map_x(selected_end, rect, x_start, x_end)
+        y = self._map_y(altitude, rect, min_alt, max_alt)
+        return QtCore.QPointF(x, y), section_index
+
     def _draw_axes_labels(
         self, painter: QtGui.QPainter, rect: QtCore.QRect, min_alt: float, max_alt: float
     ) -> None:
@@ -355,6 +382,16 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             return
         if self._data is None or not self._data.dlongs:
             return
+        hit_marker = self._hit_selected_marker(event.pos())
+        if hit_marker is not None:
+            self._is_dragging_marker = True
+            self._dragged_section = hit_marker
+            self._pending_click = False
+            self._pan_start_pos = None
+            self._pan_start_range = None
+            self.setCursor(QtCore.Qt.SizeVerCursor)
+            event.accept()
+            return
         self._is_panning = False
         self._pending_click = True
         self._pan_start_pos = event.pos()
@@ -363,6 +400,10 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         event.accept()
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._is_dragging_marker:
+            self._update_dragged_altitude(event.pos())
+            event.accept()
+            return
         if self._pan_start_pos is None or not self._pending_click:
             return
         if self._data is None or not self._data.dlongs:
@@ -408,6 +449,12 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() != QtCore.Qt.LeftButton:
             return
+        if self._is_dragging_marker:
+            self._is_dragging_marker = False
+            self._dragged_section = None
+            self.unsetCursor()
+            event.accept()
+            return
         if self._pending_click and not self._is_panning:
             self._handle_click(event.pos())
         self._is_panning = False
@@ -416,6 +463,58 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._pan_start_range = None
         self.unsetCursor()
         event.accept()
+
+    def _hit_selected_marker(self, pos: QtCore.QPoint) -> int | None:
+        if self._data is None or not self._data.dlongs:
+            return None
+        margins = QtCore.QMargins(48, 20, 16, 32)
+        plot_rect = self.rect().marginsRemoved(margins)
+        if plot_rect.width() <= 0 or plot_rect.height() <= 0:
+            return None
+        max_dlong = self._max_dlong()
+        if max_dlong <= 0:
+            return None
+        x_start, x_end = self._x_bounds(max_dlong)
+        if x_end <= x_start:
+            return None
+        min_alt, max_alt = self._alt_bounds()
+        if min_alt == max_alt:
+            min_alt -= 1
+            max_alt += 1
+        marker = self._selected_marker_position(
+            plot_rect, x_start, x_end, min_alt, max_alt
+        )
+        if marker is None:
+            return None
+        marker_pos, section_index = marker
+        radius = 6.0
+        dx = marker_pos.x() - pos.x()
+        dy = marker_pos.y() - pos.y()
+        if dx * dx + dy * dy <= radius * radius:
+            return section_index
+        return None
+
+    def _update_dragged_altitude(self, pos: QtCore.QPoint) -> None:
+        if self._data is None or not self._data.dlongs or self._dragged_section is None:
+            return
+        margins = QtCore.QMargins(48, 20, 16, 32)
+        plot_rect = self.rect().marginsRemoved(margins)
+        if plot_rect.width() <= 0 or plot_rect.height() <= 0:
+            return
+        max_dlong = self._max_dlong()
+        if max_dlong <= 0:
+            return
+        x_start, x_end = self._x_bounds(max_dlong)
+        if x_end <= x_start:
+            return
+        min_alt, max_alt = self._alt_bounds()
+        if min_alt == max_alt:
+            min_alt -= 1
+            max_alt += 1
+        clamped_y = min(max(pos.y(), plot_rect.top()), plot_rect.bottom())
+        ratio = (plot_rect.bottom() - clamped_y) / plot_rect.height()
+        altitude = min_alt + ratio * (max_alt - min_alt)
+        self.altitudeDragged.emit(self._dragged_section, altitude)
 
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         if self._data is None or not self._data.dlongs:
