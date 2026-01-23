@@ -66,6 +66,47 @@ def _altitude_for_xsect(sg, sect_idx: int, subsect: float, xsect_idx: int) -> fl
     return grade1 * t ** 3 + grade2 * t ** 2 + grade3 * t + begin_alt
 
 
+def sg_xsect_altitude_grade_at(
+    sg,
+    sect_idx: int,
+    subsect: float,
+    xsect_idx: int,
+) -> tuple[float, float]:
+    """
+    Return the altitude and grade at ``subsect`` for a specific x-section.
+    ``subsect`` is normalized [0..1] within the section.
+    """
+    sections = getattr(sg, "sects", [])
+    if not sections:
+        return 0.0, 0.0
+
+    num_sects = len(sections)
+    prev_idx = (sect_idx - 1) % num_sects
+    cur_sect = sections[sect_idx]
+    prev_sect = sections[prev_idx]
+
+    begin_alt = float(prev_sect.alt[xsect_idx])
+    end_alt = float(cur_sect.alt[xsect_idx])
+    sg_length = float(cur_sect.length)
+    if sg_length <= 0:
+        return begin_alt, float(prev_sect.grade[xsect_idx])
+
+    cur_slope = float(prev_sect.grade[xsect_idx]) / 8192.0
+    next_slope = float(cur_sect.grade[xsect_idx]) / 8192.0
+    grade1 = (
+        2 * begin_alt / sg_length + cur_slope + next_slope - 2 * end_alt / sg_length
+    ) * sg_length
+    grade2 = (
+        3 * end_alt / sg_length - 3 * begin_alt / sg_length - 2 * cur_slope - next_slope
+    ) * sg_length
+    grade3 = cur_slope * sg_length
+
+    t = min(max(subsect, 0.0), 1.0)
+    altitude = grade1 * t ** 3 + grade2 * t ** 2 + grade3 * t + begin_alt
+    slope = (3 * grade1 * t ** 2 + 2 * grade2 * t + grade3) / sg_length
+    return altitude, slope * 8192.0
+
+
 def sg_altitude_at(
     sg,
     sect_idx: int,

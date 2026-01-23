@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 import math
 
 from PyQt5 import QtCore
 
+from icr2_core.sg_elevation import sg_xsect_altitude_grade_at
 from sg_viewer.geometry.centerline_utils import (
     compute_start_finish_mapping_from_centerline,
 )
@@ -126,6 +128,48 @@ class _RuntimeEditingMixin:
             self._split_hover_section_index = None
             self.request_repaint()
 
+    def _split_xsect_elevations(self, index: int, split_fraction: float) -> None:
+        sg_data = self._document.sg_data
+        if (
+            sg_data is None
+            or split_fraction <= 0.0
+            or split_fraction >= 1.0
+            or index < 0
+            or index >= len(sg_data.sects)
+        ):
+            return
+
+        num_xsects = sg_data.num_xsects
+        if num_xsects <= 0:
+            return
+
+        original_section = sg_data.sects[index]
+        if not original_section.alt or not original_section.grade:
+            return
+
+        new_section = copy.deepcopy(original_section)
+        original_alt = list(original_section.alt)
+        original_grade = list(original_section.grade)
+
+        split_altitudes: list[int] = []
+        split_grades: list[int] = []
+        for xsect_idx in range(num_xsects):
+            altitude, grade = sg_xsect_altitude_grade_at(
+                sg_data, index, split_fraction, xsect_idx
+            )
+            split_altitudes.append(int(round(altitude)))
+            split_grades.append(int(round(grade)))
+
+        original_section.alt = split_altitudes
+        original_section.grade = split_grades
+        new_section.alt = original_alt
+        new_section.grade = original_grade
+
+        sg_data.sects.insert(index + 1, new_section)
+        sg_data.num_sects = len(sg_data.sects)
+        if len(sg_data.header) > 4:
+            sg_data.header[4] = sg_data.num_sects
+
     def _commit_split(self) -> None:
         idx = self._split_hover_section_index
         point = self._split_hover_point
@@ -134,6 +178,7 @@ class _RuntimeEditingMixin:
             return
 
         section = self._section_manager.sections[idx]
+        original_length = float(section.length)
         if section.type_name == "curve":
             result = self._editor.split_curve_section(
                 list(self._section_manager.sections), idx, point
@@ -147,8 +192,13 @@ class _RuntimeEditingMixin:
 
         sections, track_length = result
         self._track_length = track_length
+        if original_length > 0 and idx < len(sections):
+            split_fraction = float(sections[idx].length) / original_length
+            self._split_xsect_elevations(idx, split_fraction)
         self._split_fsects_by_section(idx)
         self.set_sections(sections)
+        if self._sgfile is not None:
+            self.apply_preview_to_sgfile()
         self._validate_section_fsects_alignment()
         if idx + 1 < len(sections):
             self._selection.set_selected_section(idx + 1)
