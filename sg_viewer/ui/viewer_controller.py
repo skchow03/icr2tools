@@ -1106,6 +1106,8 @@ class SGViewerController:
             return
 
         altitudes = self._window.preview.get_section_xsect_altitudes(selection.index)
+        metadata = self._window.preview.get_xsect_metadata()
+        xsect_dlats = [dlat for _, dlat in metadata] if metadata else None
         y_range = (
             elevation_profile_alt_bounds(self._current_profile)
             if self._current_profile is not None
@@ -1117,6 +1119,8 @@ class SGViewerController:
                 altitudes=[
                     float(value) if value is not None else None for value in altitudes
                 ],
+                xsect_dlats=xsect_dlats,
+                selected_xsect_index=self._current_xsect_index(),
                 y_range=y_range,
             )
         )

@@ -9,6 +9,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class XsectElevationData:
     section_index: int
     altitudes: list[float | None]
+    xsect_dlats: list[float] | None = None
+    selected_xsect_index: int | None = None
     y_range: tuple[float, float] | None = None
 
 
@@ -89,6 +91,9 @@ class XsectElevationWidget(QtWidgets.QWidget):
         if count == 0:
             return
 
+        dlats = self._data.xsect_dlats if self._data else None
+        selected_index = self._data.selected_xsect_index if self._data else None
+
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
         painter.setPen(QtGui.QPen(QtGui.QColor("#4caf50"), 2.0))
@@ -99,7 +104,7 @@ class XsectElevationWidget(QtWidgets.QWidget):
             if altitude is None:
                 started = False
                 continue
-            x = self._map_x(idx, rect, count)
+            x = self._map_x(idx, rect, count, dlats)
             y = self._map_y(altitude, rect, min_alt, max_alt)
             if not started:
                 path.moveTo(x, y)
@@ -109,14 +114,36 @@ class XsectElevationWidget(QtWidgets.QWidget):
 
         painter.drawPath(path)
 
-        painter.setBrush(QtGui.QBrush(QtGui.QColor("#4caf50")))
         radius = 3.0
         for idx, altitude in enumerate(altitudes):
             if altitude is None:
                 continue
-            x = self._map_x(idx, rect, count)
+            if idx == selected_index:
+                continue
+            x = self._map_x(idx, rect, count, dlats)
             y = self._map_y(altitude, rect, min_alt, max_alt)
+            painter.setBrush(QtGui.QBrush(QtGui.QColor("#4caf50")))
             painter.drawEllipse(QtCore.QRectF(x - radius, y - radius, radius * 2, radius * 2))
+
+        if (
+            selected_index is not None
+            and 0 <= selected_index < count
+            and altitudes[selected_index] is not None
+        ):
+            selected_alt = altitudes[selected_index]
+            selected_x = self._map_x(selected_index, rect, count, dlats)
+            selected_y = self._map_y(selected_alt, rect, min_alt, max_alt)
+            highlight_radius = 4.5
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#4caf50"), 2.0))
+            painter.drawEllipse(
+                QtCore.QRectF(
+                    selected_x - highlight_radius,
+                    selected_y - highlight_radius,
+                    highlight_radius * 2,
+                    highlight_radius * 2,
+                )
+            )
         painter.restore()
 
     def _draw_axes_labels(
@@ -140,7 +167,7 @@ class XsectElevationWidget(QtWidgets.QWidget):
         painter.drawText(
             rect.adjusted(0, 0, 0, 18),
             QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
-            "X-Sections (0 → left)",
+            "DLAT (min → right)",
         )
         painter.drawText(
             rect.adjusted(0, -18, 0, 0),
@@ -150,9 +177,21 @@ class XsectElevationWidget(QtWidgets.QWidget):
         painter.restore()
 
     @staticmethod
-    def _map_x(index: int, rect: QtCore.QRect, count: int) -> float:
+    def _map_x(
+        index: int,
+        rect: QtCore.QRect,
+        count: int,
+        dlats: list[float] | None = None,
+    ) -> float:
         if count <= 1:
             return rect.right()
+        if dlats and len(dlats) == count:
+            min_dlat = min(dlats)
+            max_dlat = max(dlats)
+            if max_dlat == min_dlat:
+                return rect.center().x()
+            ratio = (dlats[index] - min_dlat) / (max_dlat - min_dlat)
+            return rect.right() - ratio * rect.width()
         ratio = index / (count - 1)
         return rect.right() - ratio * rect.width()
 
