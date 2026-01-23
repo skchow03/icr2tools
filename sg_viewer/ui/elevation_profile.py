@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -27,6 +28,8 @@ class ElevationProfileData:
 class ElevationProfileWidget(QtWidgets.QWidget):
     """Lightweight plot for showing SG elevation behaviour."""
 
+    sectionClicked = QtCore.pyqtSignal(int)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(180)
@@ -36,6 +39,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._is_panning = False
         self._pan_start_pos: QtCore.QPoint | None = None
         self._pan_start_range: tuple[float, float] | None = None
+        self._pending_click = False
 
     def set_profile_data(self, data: ElevationProfileData | None) -> None:
         if data is None:
@@ -95,6 +99,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
         self._draw_section_highlight(painter, plot_rect, x_start, x_end)
         self._draw_series(painter, plot_rect, x_start, x_end, min_alt, max_alt)
+        self._draw_section_markers(painter, plot_rect, x_start, x_end, min_alt, max_alt)
         self._draw_axes_labels(painter, plot_rect, min_alt, max_alt)
         self._draw_legend(painter, plot_rect)
         painter.restore()
@@ -160,6 +165,47 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             trk_pen.setStyle(QtCore.Qt.DashLine)
             painter.setPen(trk_pen)
             painter.drawPath(trk_path)
+        painter.restore()
+
+    def _draw_section_markers(
+        self,
+        painter: QtGui.QPainter,
+        rect: QtCore.QRect,
+        x_start: float,
+        x_end: float,
+        min_alt: float,
+        max_alt: float,
+    ) -> None:
+        if not self._data.section_ranges:
+            return
+
+        selected_end: float | None = None
+        if self._selected_range is not None:
+            selected_end = self._selected_range[1]
+
+        radius = 4.0
+        pen = QtGui.QPen(QtGui.QColor("#03a9f4"), 1.5)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setPen(pen)
+
+        for _, end in self._data.section_ranges:
+            altitude = self._altitude_at_dlong(end)
+            if altitude is None:
+                continue
+            x = self._map_x(end, rect, x_start, x_end)
+            y = self._map_y(altitude, rect, min_alt, max_alt)
+            rect_f = QtCore.QRectF(x - radius, y - radius, radius * 2, radius * 2)
+            is_selected_end = (
+                selected_end is not None
+                and math.isclose(end, selected_end, rel_tol=1e-6, abs_tol=1e-3)
+            )
+            if is_selected_end:
+                painter.setBrush(QtCore.Qt.NoBrush)
+            else:
+                painter.setBrush(QtGui.QBrush(QtGui.QColor("#03a9f4")))
+            painter.drawEllipse(rect_f)
+
         painter.restore()
 
     def _draw_axes_labels(
@@ -228,6 +274,27 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     def _max_dlong(self) -> float:
         return max(max(self._data.dlongs), self._data.track_length)
 
+    def _altitude_at_dlong(self, dlong: float) -> float | None:
+        if not self._data.dlongs:
+            return None
+
+        dlongs = self._data.dlongs
+        altitudes = self._data.sg_altitudes
+        if dlong <= dlongs[0]:
+            return altitudes[0]
+        if dlong >= dlongs[-1]:
+            return altitudes[-1]
+
+        for idx in range(1, len(dlongs)):
+            if dlongs[idx] >= dlong:
+                d0 = dlongs[idx - 1]
+                d1 = dlongs[idx]
+                if math.isclose(d1, d0):
+                    return altitudes[idx]
+                ratio = (dlong - d0) / (d1 - d0)
+                return altitudes[idx - 1] + ratio * (altitudes[idx] - altitudes[idx - 1])
+        return altitudes[-1]
+
     def _x_bounds(self, max_dlong: float) -> tuple[float, float]:
         if self._x_view_range is None:
             return 0.0, max_dlong
@@ -288,18 +355,25 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             return
         if self._data is None or not self._data.dlongs:
             return
-        self._is_panning = True
+        self._is_panning = False
+        self._pending_click = True
         self._pan_start_pos = event.pos()
         max_dlong = self._max_dlong()
         self._pan_start_range = self._x_bounds(max_dlong)
-        self.setCursor(QtCore.Qt.ClosedHandCursor)
         event.accept()
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if not self._is_panning or self._pan_start_pos is None:
+        if self._pan_start_pos is None or not self._pending_click:
             return
         if self._data is None or not self._data.dlongs:
             return
+        if not self._is_panning:
+            threshold = QtWidgets.QApplication.startDragDistance()
+            if (event.pos() - self._pan_start_pos).manhattanLength() < threshold:
+                return
+            self._is_panning = True
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
+
         margins = QtCore.QMargins(48, 20, 16, 32)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0:
@@ -334,9 +408,50 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() != QtCore.Qt.LeftButton:
             return
-        if self._is_panning:
-            self._is_panning = False
-            self._pan_start_pos = None
-            self._pan_start_range = None
-            self.unsetCursor()
+        if self._pending_click and not self._is_panning:
+            self._handle_click(event.pos())
+        self._is_panning = False
+        self._pending_click = False
+        self._pan_start_pos = None
+        self._pan_start_range = None
+        self.unsetCursor()
         event.accept()
+
+    def _handle_click(self, pos: QtCore.QPoint) -> None:
+        if self._data is None or not self._data.dlongs:
+            return
+        margins = QtCore.QMargins(48, 20, 16, 32)
+        plot_rect = self.rect().marginsRemoved(margins)
+        if plot_rect.width() <= 0 or not plot_rect.contains(pos):
+            return
+
+        max_dlong = self._max_dlong()
+        if max_dlong <= 0:
+            return
+
+        x_start, x_end = self._x_bounds(max_dlong)
+        span = x_end - x_start
+        if span <= 0:
+            return
+
+        ratio = (pos.x() - plot_rect.left()) / plot_rect.width()
+        ratio = min(max(ratio, 0.0), 1.0)
+        dlong = x_start + ratio * span
+
+        section_index = self._section_index_for_dlong(dlong)
+        if section_index is not None:
+            self.sectionClicked.emit(section_index)
+
+    def _section_index_for_dlong(self, dlong: float) -> int | None:
+        if not self._data.section_ranges:
+            return None
+
+        track_length = self._data.track_length
+        for idx, (start, end) in enumerate(self._data.section_ranges):
+            if start <= dlong <= end:
+                return idx
+            if track_length > 0 and end > track_length and (
+                dlong >= start or dlong <= end - track_length
+            ):
+                return idx
+        return None
