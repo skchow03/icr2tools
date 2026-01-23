@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from sg_viewer.sg_preview.builder import build_sg_preview_model
 from sg_viewer.services import preview_loader_service
+
+
+logger = logging.getLogger(__name__)
 
 
 class _RuntimeLoadingMixin:
@@ -115,6 +119,24 @@ class _RuntimeLoadingMixin:
             self._section_manager.sampled_dlongs,
         )
         self._sg_preview_model = build_sg_preview_model(self._document)
+        if len(self._section_manager.sections) != len(self._fsects_by_section):
+            if self._document.sg_data is not None:
+                self._fsects_by_section = preview_loader_service.build_fsects_by_section(
+                    self._document.sg_data
+                )
+            if len(self._section_manager.sections) != len(self._fsects_by_section):
+                logger.warning(
+                    "Fsect count desync; realigning fsects (%d) to sections (%d).",
+                    len(self._fsects_by_section),
+                    len(self._section_manager.sections),
+                )
+                desired_count = len(self._section_manager.sections)
+                if len(self._fsects_by_section) > desired_count:
+                    self._fsects_by_section = self._fsects_by_section[:desired_count]
+                else:
+                    self._fsects_by_section.extend(
+                        [[] for _ in range(desired_count - len(self._fsects_by_section))]
+                    )
         self._validate_section_fsects_alignment()
         if mark_unsaved:
             self._has_unsaved_changes = True
