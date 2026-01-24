@@ -90,10 +90,6 @@ class SGViewerController:
         self._window.new_curve_button.setEnabled(True)
         self._window.delete_section_button.setEnabled(True)
         self._window.preview.set_trk_comparison(None)
-        self._window.trk_compare_checkbox.blockSignals(True)
-        self._window.trk_compare_checkbox.setChecked(False)
-        self._window.trk_compare_checkbox.setEnabled(True)
-        self._window.trk_compare_checkbox.blockSignals(False)
         sections, _ = self._window.preview.get_section_set()
         self._window.set_start_finish_button.setEnabled(bool(sections))
         self._window.split_section_button.setEnabled(bool(sections))
@@ -244,9 +240,6 @@ class SGViewerController:
             self._on_altitude_range_changed
         )
         self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
-        self._window.trk_compare_checkbox.toggled.connect(
-            self._toggle_trk_comparison
-        )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
         self._window.profile_widget.sectionClicked.connect(
             self._on_profile_section_clicked
@@ -418,10 +411,6 @@ class SGViewerController:
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.preview.set_trk_comparison(None)
-        self._window.trk_compare_checkbox.blockSignals(True)
-        self._window.trk_compare_checkbox.setChecked(False)
-        self._window.trk_compare_checkbox.setEnabled(False)
-        self._window.trk_compare_checkbox.blockSignals(False)
         self._window.show_status_message(
             "New track ready. Click New Straight to start drawing."
         )
@@ -934,10 +923,7 @@ class SGViewerController:
             current_index = combo.currentIndex()
         self._window.preview.set_selected_xsect_index(int(current_index))
 
-        profile = self._window.preview.build_elevation_profile(
-            int(current_index),
-            show_trk=self._window.trk_compare_checkbox.isChecked(),
-        )
+        profile = self._window.preview.build_elevation_profile(int(current_index))
         global_bounds = self._window.preview.get_elevation_profile_bounds()
         if profile is not None and global_bounds is not None:
             profile.y_range = global_bounds
@@ -946,27 +932,6 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._update_copy_xsect_button()
         self._refresh_xsect_elevation_panel()
-
-    def _toggle_trk_comparison(self, checked: bool) -> None:
-        if not checked:
-            self._window.preview.set_trk_comparison(None)
-            self._refresh_elevation_profile()
-            return
-
-        try:
-            trk = self._window.preview.enable_trk_overlay()
-        except Exception as exc:
-            logger.exception("Failed to build TRK comparison", exc_info=exc)
-            self._window.trk_compare_checkbox.setChecked(False)
-            self._window.show_status_message("Failed to build TRK comparison.")
-            return
-        if trk is None:
-            self._window.trk_compare_checkbox.setChecked(False)
-            self._window.show_status_message("Save or open an SG file to compare TRK elevation.")
-            return
-
-        self._window.preview.set_trk_comparison(trk)
-        self._refresh_elevation_profile()
 
     def _clear_background_state(self) -> None:
         self._window.preview.clear_background_image()
