@@ -1088,6 +1088,13 @@ class _RuntimeCoreMixin:
             return []
         return [(idx, float(dlat)) for idx, dlat in enumerate(self._sgfile.xsect_dlats)]
 
+    def set_xsect_definitions(self, entries: list[tuple[int | None, float]]) -> bool:
+        try:
+            self._document.set_xsect_definitions(entries)
+        except (ValueError, IndexError):
+            return False
+        return True
+
     def get_section_range(self, index: int) -> tuple[float, float] | None:
         if (
             not self._section_manager.sections
