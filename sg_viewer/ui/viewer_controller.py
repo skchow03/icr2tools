@@ -22,6 +22,7 @@ from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
+from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
 from sg_viewer.ui.elevation_profile import (
     ElevationProfileData,
     elevation_profile_alt_bounds,
@@ -38,6 +39,7 @@ class SGViewerController:
         self._window = window
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
+        self._xsect_table_window: XsectTableWindow | None = None
         self._current_path: Path | None = None
         self._history = FileHistory()
         self._new_straight_default_style = window.new_straight_button.styleSheet()
@@ -82,6 +84,7 @@ class SGViewerController:
 
         self._window.section_table_button.setEnabled(True)
         self._window.heading_table_button.setEnabled(True)
+        self._window.xsect_table_button.setEnabled(True)
         self._window.refresh_fsects_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
@@ -100,6 +103,7 @@ class SGViewerController:
         self._refresh_recent_menu()
         self._update_section_table()
         self._update_heading_table()
+        self._update_xsect_table()
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
         self._reset_altitude_range_for_track()
@@ -225,6 +229,7 @@ class SGViewerController:
         )
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
+        self._window.xsect_table_button.clicked.connect(self._show_xsect_table)
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
@@ -398,12 +403,14 @@ class SGViewerController:
         self._window.update_selection_sidebar(None)
         self._window.section_table_button.setEnabled(False)
         self._window.heading_table_button.setEnabled(False)
+        self._window.xsect_table_button.setEnabled(True)
         self._window.refresh_fsects_button.setEnabled(False)
         self._window.delete_section_button.setEnabled(False)
         self._window.split_section_button.setChecked(False)
         self._window.split_section_button.setEnabled(False)
         self._window.set_start_finish_button.setEnabled(False)
         self._scale_track_action.setEnabled(False)
+        self._update_xsect_table()
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
         self._reset_altitude_range(0.0, 50.0)
@@ -793,6 +800,60 @@ class SGViewerController:
         headings = self._window.preview.get_section_headings()
         self._heading_table_window.set_headings(headings)
 
+    def _show_xsect_table(self) -> None:
+        metadata = self._window.preview.get_xsect_metadata()
+        if not metadata:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No X-Sections",
+                "Load an SG file to view X-section DLAT values.",
+            )
+            return
+
+        if self._xsect_table_window is None:
+            self._xsect_table_window = XsectTableWindow(self._window)
+            self._xsect_table_window.on_xsects_edited(self._apply_xsect_table_edits)
+
+        self._xsect_table_window.set_xsects(metadata)
+        self._xsect_table_window.show()
+        self._xsect_table_window.raise_()
+        self._xsect_table_window.activateWindow()
+
+    def _update_xsect_table(self) -> None:
+        if self._xsect_table_window is None:
+            return
+
+        metadata = self._window.preview.get_xsect_metadata()
+        self._xsect_table_window.set_xsects(metadata)
+
+    def _apply_xsect_table_edits(self, entries: list[XsectEntry]) -> None:
+        if not entries:
+            return
+        sorted_entries = sorted(entries, key=lambda entry: entry.dlat)
+        if len(sorted_entries) < 2:
+            return
+        payload = [
+            (entry.key if entry.key is not None and entry.key >= 0 else None, entry.dlat)
+            for entry in sorted_entries
+        ]
+        old_selected = self._current_xsect_index()
+        if not self._window.preview.set_xsect_definitions(payload):
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "X-Section Table",
+                "Unable to update X-section DLAT values.",
+            )
+            return
+
+        new_selected = None
+        if old_selected is not None:
+            for idx, (key, _) in enumerate(payload):
+                if key == old_selected:
+                    new_selected = idx
+                    break
+
+        self._populate_xsect_choices(preferred_index=new_selected)
+        self._refresh_elevation_profile()
     def _scale_track(self) -> None:
         sections, _ = self._window.preview.get_section_set()
         if not sections or not is_closed_loop(sections):
@@ -842,7 +903,7 @@ class SGViewerController:
         self._window.show_status_message(status)
         self._update_track_length_display()
 
-    def _populate_xsect_choices(self) -> None:
+    def _populate_xsect_choices(self, preferred_index: int | None = None) -> None:
         metadata = self._window.preview.get_xsect_metadata()
         combo = self._window.xsect_combo
         combo.blockSignals(True)
@@ -851,7 +912,10 @@ class SGViewerController:
             combo.addItem(f"{idx} (DLAT {dlat:.0f})", idx)
         combo.setEnabled(bool(metadata))
         if metadata:
-            combo.setCurrentIndex(0)
+            target_index = 0
+            if preferred_index is not None:
+                target_index = max(0, min(preferred_index, len(metadata) - 1))
+            combo.setCurrentIndex(target_index)
         combo.blockSignals(False)
         self._update_copy_xsect_button()
 

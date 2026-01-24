@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from PyQt5 import QtCore
+import numpy as np
 
 from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.sg_document_fsects import (
@@ -135,6 +136,62 @@ class SGDocument(QtCore.QObject):
         if __debug__:
             self.validate()
 
+        self.geometry_changed.emit()
+
+    def set_xsect_definitions(self, entries: list[tuple[int | None, float]]) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if len(entries) < 2:
+            raise ValueError("At least two X-sections are required.")
+        if len(entries) > 10:
+            raise ValueError("At most ten X-sections are supported.")
+
+        num_existing = int(self._sg_data.num_xsects)
+        used_indices: set[int] = set()
+        index_map: list[int | None] = []
+        dlats: list[int] = []
+
+        for key, dlat in entries:
+            if key is None:
+                index_map.append(None)
+            else:
+                index = int(key)
+                if index < 0 or index >= num_existing:
+                    raise IndexError("X-section index out of range.")
+                if index in used_indices:
+                    raise ValueError("Duplicate X-section entries provided.")
+                used_indices.add(index)
+                index_map.append(index)
+            dlats.append(int(round(dlat)))
+
+        dtype = getattr(self._sg_data.xsect_dlats, "dtype", np.int32)
+        self._sg_data.xsect_dlats = np.array(dlats, dtype=dtype)
+        self._sg_data.num_xsects = len(dlats)
+        if len(self._sg_data.header) > 5:
+            self._sg_data.header[5] = len(dlats)
+
+        for section in self._sg_data.sects:
+            altitudes = list(getattr(section, "alt", []))
+            grades = list(getattr(section, "grade", []))
+            new_altitudes: list[int] = []
+            new_grades: list[int] = []
+            for source in index_map:
+                if source is None:
+                    new_altitudes.append(0)
+                    new_grades.append(0)
+                else:
+                    if source >= len(altitudes) or source >= len(grades):
+                        raise ValueError("Section elevation data is incomplete.")
+                    new_altitudes.append(int(altitudes[source]))
+                    new_grades.append(int(grades[source]))
+            section.alt = new_altitudes
+            section.grade = new_grades
+
+        if __debug__:
+            self.validate()
+
+        self.metadata_changed.emit()
         self.geometry_changed.emit()
 
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:

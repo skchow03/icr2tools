@@ -111,6 +111,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
         self._heading_table_button.setEnabled(False)
+        self._xsect_table_button = QtWidgets.QPushButton("X-Section Table")
+        self._xsect_table_button.setEnabled(False)
         self._profile_widget = ElevationProfileWidget()
         self._xsect_elevation_widget = XsectElevationWidget()
         self._xsect_combo = QtWidgets.QComboBox()
@@ -198,6 +200,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._refresh_fsects_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
+        sidebar_layout.addWidget(self._xsect_table_button)
         sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
         sidebar_layout.addWidget(self._scale_label)
         sidebar_layout.addWidget(self._track_length_label)
@@ -332,6 +335,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def heading_table_button(self) -> QtWidgets.QPushButton:
         return self._heading_table_button
+
+    @property
+    def xsect_table_button(self) -> QtWidgets.QPushButton:
+        return self._xsect_table_button
 
     @property
     def profile_widget(self) -> ElevationProfileWidget:
