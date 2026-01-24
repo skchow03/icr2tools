@@ -354,7 +354,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._copy_xsect_button
 
     @property
-    @property
     def altitude_slider(self) -> QtWidgets.QSlider:
         return self._altitude_slider
 
