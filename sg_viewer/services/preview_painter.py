@@ -342,8 +342,9 @@ def _draw_xsect_dlat_line(
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 180))
+    pen = QtGui.QPen(QtGui.QColor("limegreen"))
     pen.setWidthF(BASE_WIDTH)
+    pen.setStyle(QtCore.Qt.DotLine)
     pen.setCapStyle(QtCore.Qt.RoundCap)
     pen.setJoinStyle(QtCore.Qt.RoundJoin)
     painter.setPen(pen)
