@@ -262,6 +262,29 @@ class SGDocument(QtCore.QObject):
         """
         sections = list(sections)
         count = len(sections)
+        link_ids: list[int] = []
+        for sect in sections:
+            prev_id = getattr(sect, "previous_id", getattr(sect, "sec_prev", None))
+            next_id = getattr(sect, "next_id", getattr(sect, "sec_next", None))
+            for value in (prev_id, next_id):
+                if value is None or value == -1:
+                    continue
+                if isinstance(value, int):
+                    link_ids.append(value)
+
+        one_based = False
+        if link_ids:
+            min_id = min(link_ids)
+            max_id = max(link_ids)
+            if max_id == count or (min_id >= 1 and max_id <= count and 0 not in link_ids):
+                one_based = True
+
+        def normalize_id(value: int | None) -> int | None:
+            if value is None or value == -1:
+                return None
+            if not isinstance(value, int):
+                return None
+            return value - 1 if one_based else value
 
         def valid_id(i):
             return isinstance(i, int) and 0 <= i < count
@@ -270,30 +293,34 @@ class SGDocument(QtCore.QObject):
             sid = getattr(sect, "section_id", idx)
             prev_id = getattr(sect, "previous_id", getattr(sect, "sec_prev", None))
             next_id = getattr(sect, "next_id", getattr(sect, "sec_next", None))
+            norm_prev_id = normalize_id(prev_id)
+            norm_next_id = normalize_id(next_id)
 
             # Validate previous link
-            if prev_id is not None and prev_id != -1:
-                if not valid_id(prev_id):
+            if norm_prev_id is not None:
+                if not valid_id(norm_prev_id):
                     raise ValueError(f"Section {sid}: invalid previous_id {prev_id}")
-                prev_sect = sections[prev_id]
+                prev_sect = sections[norm_prev_id]
                 prev_next_id = getattr(
                     prev_sect, "next_id", getattr(prev_sect, "sec_next", None)
                 )
-                if prev_next_id != sid:
+                norm_prev_next_id = normalize_id(prev_next_id)
+                if norm_prev_next_id != idx:
                     raise ValueError(
                         f"Section {sid}: previous_id {prev_id} not reciprocated "
                         f"(prev.next_id={prev_next_id})"
                     )
 
             # Validate next link
-            if next_id is not None and next_id != -1:
-                if not valid_id(next_id):
+            if norm_next_id is not None:
+                if not valid_id(norm_next_id):
                     raise ValueError(f"Section {sid}: invalid next_id {next_id}")
-                next_sect = sections[next_id]
+                next_sect = sections[norm_next_id]
                 next_prev_id = getattr(
                     next_sect, "previous_id", getattr(next_sect, "sec_prev", None)
                 )
-                if next_prev_id != sid:
+                norm_next_prev_id = normalize_id(next_prev_id)
+                if norm_next_prev_id != idx:
                     raise ValueError(
                         f"Section {sid}: next_id {next_id} not reciprocated "
                         f"(next.previous_id={next_prev_id})"
@@ -304,7 +331,7 @@ class SGDocument(QtCore.QObject):
 
         # Ensure exactly one connected component (optional but recommended)
         visited = set()
-        stack = [getattr(sections[0], "section_id", 0)]
+        stack = [0]
 
         while stack:
             cur = stack.pop()
@@ -312,11 +339,13 @@ class SGDocument(QtCore.QObject):
                 continue
             visited.add(cur)
             s = sections[cur]
-            cur_next = getattr(s, "next_id", getattr(s, "sec_next", None))
-            cur_prev = getattr(s, "previous_id", getattr(s, "sec_prev", None))
-            if cur_next not in (None, -1):
+            cur_next = normalize_id(getattr(s, "next_id", getattr(s, "sec_next", None)))
+            cur_prev = normalize_id(
+                getattr(s, "previous_id", getattr(s, "sec_prev", None))
+            )
+            if cur_next is not None:
                 stack.append(cur_next)
-            if cur_prev not in (None, -1):
+            if cur_prev is not None:
                 stack.append(cur_prev)
 
         if len(visited) != len(sections):
