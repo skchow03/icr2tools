@@ -119,8 +119,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_combo.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
         self._copy_xsect_button.setEnabled(False)
-        self._trk_compare_checkbox = QtWidgets.QCheckBox("Show TRK Exported Elevation")
-        self._trk_compare_checkbox.setEnabled(False)
         self._scale_label = QtWidgets.QLabel("Scale: –")
         self._track_length_label = QtWidgets.QLabel("Track length: –")
         self._section_label = QtWidgets.QLabel("Section: None")
@@ -196,7 +194,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._axes_button)
         sidebar_layout.addWidget(self._sg_fsects_checkbox)
-        sidebar_layout.addWidget(self._xsect_dlat_line_checkbox)
         sidebar_layout.addWidget(self._refresh_fsects_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
@@ -256,7 +253,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
         profile_controls.addWidget(self._xsect_combo)
         profile_controls.addWidget(self._copy_xsect_button)
-        profile_controls.addWidget(self._trk_compare_checkbox)
+        profile_controls.addWidget(self._xsect_dlat_line_checkbox)
         preview_column_layout.addLayout(profile_controls)
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
         preview_column_layout.addWidget(QtWidgets.QLabel("Section X-Section Elevation"))
@@ -357,9 +354,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._copy_xsect_button
 
     @property
-    def trk_compare_checkbox(self) -> QtWidgets.QCheckBox:
-        return self._trk_compare_checkbox
-
     @property
     def altitude_slider(self) -> QtWidgets.QSlider:
         return self._altitude_slider
