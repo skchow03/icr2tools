@@ -254,26 +254,73 @@ class SGDocument(QtCore.QObject):
         self._validate_elevations(sg_data)
 
     def _validate_section_links(self, sections: Iterable[object]) -> None:
-        sections_list = list(sections)
-        total = len(sections_list)
-        if total == 0:
+        """
+        Validates section topology:
+        - IDs must be in range
+        - previous/next links must be reciprocal
+        - ordering is NOT enforced
+        """
+        sections = list(sections)
+        count = len(sections)
+
+        def valid_id(i):
+            return isinstance(i, int) and 0 <= i < count
+
+        for idx, sect in enumerate(sections):
+            sid = getattr(sect, "section_id", idx)
+            prev_id = getattr(sect, "previous_id", getattr(sect, "sec_prev", None))
+            next_id = getattr(sect, "next_id", getattr(sect, "sec_next", None))
+
+            # Validate previous link
+            if prev_id is not None and prev_id != -1:
+                if not valid_id(prev_id):
+                    raise ValueError(f"Section {sid}: invalid previous_id {prev_id}")
+                prev_sect = sections[prev_id]
+                prev_next_id = getattr(
+                    prev_sect, "next_id", getattr(prev_sect, "sec_next", None)
+                )
+                if prev_next_id != sid:
+                    raise ValueError(
+                        f"Section {sid}: previous_id {prev_id} not reciprocated "
+                        f"(prev.next_id={prev_next_id})"
+                    )
+
+            # Validate next link
+            if next_id is not None and next_id != -1:
+                if not valid_id(next_id):
+                    raise ValueError(f"Section {sid}: invalid next_id {next_id}")
+                next_sect = sections[next_id]
+                next_prev_id = getattr(
+                    next_sect, "previous_id", getattr(next_sect, "sec_prev", None)
+                )
+                if next_prev_id != sid:
+                    raise ValueError(
+                        f"Section {sid}: next_id {next_id} not reciprocated "
+                        f"(next.previous_id={next_prev_id})"
+                    )
+
+        if count == 0:
             return
 
-        for idx, section in enumerate(sections_list):
-            sec_prev = int(getattr(section, "sec_prev", -1))
-            sec_next = int(getattr(section, "sec_next", -1))
+        # Ensure exactly one connected component (optional but recommended)
+        visited = set()
+        stack = [getattr(sections[0], "section_id", 0)]
 
-            expected_prev = idx - 1
-            expected_next = idx + 1
-            if idx == 0 and total > 1:
-                expected_prev = total - 1
-            if idx == total - 1 and total > 1:
-                expected_next = 0
+        while stack:
+            cur = stack.pop()
+            if cur in visited:
+                continue
+            visited.add(cur)
+            s = sections[cur]
+            cur_next = getattr(s, "next_id", getattr(s, "sec_next", None))
+            cur_prev = getattr(s, "previous_id", getattr(s, "sec_prev", None))
+            if cur_next not in (None, -1):
+                stack.append(cur_next)
+            if cur_prev not in (None, -1):
+                stack.append(cur_prev)
 
-            if sec_prev not in (-1, expected_prev):
-                raise ValueError(f"Section {idx} has invalid previous index {sec_prev}.")
-            if sec_next not in (-1, expected_next):
-                raise ValueError(f"Section {idx} has invalid next index {sec_next}.")
+        if len(visited) != len(sections):
+            raise ValueError("Track sections are not fully connected")
 
     def _validate_dlongs(self, sections: Iterable[object]) -> None:
         last_start = None
