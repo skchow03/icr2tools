@@ -6,6 +6,7 @@ from typing import List
 from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.model.sg_document import SGDocument
+from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.altitude_units import (
     DEFAULT_ALTITUDE_MAX_FEET,
@@ -137,6 +138,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
+        self._fsect_table = QtWidgets.QTableWidget(0, 5)
+        self._fsect_table.setHorizontalHeaderLabels(
+            [
+                "Index",
+                "Start DLAT",
+                "End DLAT",
+                "Type",
+                "Type Description",
+            ]
+        )
+        self._fsect_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
+        self._fsect_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.NoSelection
+        )
+        self._fsect_table.verticalHeader().setVisible(False)
+        self._fsect_table.horizontalHeader().setStretchLastSection(True)
+        self._fsect_table.setMinimumHeight(160)
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
         max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
@@ -217,6 +237,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._end_compass_heading_label)
         sidebar_layout.addWidget(self._start_point_label)
         sidebar_layout.addWidget(self._end_point_label)
+        sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
+        sidebar_layout.addWidget(self._fsect_table)
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
         altitude_layout = QtWidgets.QHBoxLayout()
@@ -262,8 +284,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(preview_column, stretch=1)
         layout.addWidget(self._sidebar)
+        layout.addWidget(preview_column, stretch=1)
         container.setLayout(layout)
         self.setCentralWidget(container)
 
@@ -451,6 +473,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._start_point_label.setText("Start Point: –")
             self._end_point_label.setText("End Point: –")
             self._profile_widget.set_selected_range(None)
+            self._update_fsect_table(None)
             return
 
         self._section_label.setText(f"Section: {selection.index}")
@@ -498,11 +521,52 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
+        self._update_fsect_table(selection.index)
 
     @staticmethod
     def _format_section_link(prefix: str, section_id: int) -> str:
         connection = "Not connected" if section_id == -1 else str(section_id)
         return f"{prefix} Section: {connection}"
+
+    def _update_fsect_table(self, section_index: int | None) -> None:
+        fsects = self._preview.get_section_fsects(section_index)
+        self._fsect_table.setRowCount(len(fsects))
+        for row_index, fsect in enumerate(fsects):
+            start_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.start_dlat))}")
+            end_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.end_dlat))}")
+            type_item = QtWidgets.QTableWidgetItem(str(int(fsect.surface_type)))
+            desc_item = QtWidgets.QTableWidgetItem(
+                self._fsect_type_description(fsect.surface_type, fsect.type2)
+            )
+            self._fsect_table.setItem(
+                row_index, 0, QtWidgets.QTableWidgetItem(str(row_index))
+            )
+            self._fsect_table.setItem(row_index, 1, start_item)
+            self._fsect_table.setItem(row_index, 2, end_item)
+            self._fsect_table.setItem(row_index, 3, type_item)
+            self._fsect_table.setItem(row_index, 4, desc_item)
+        if not fsects:
+            self._fsect_table.setRowCount(0)
+
+    @staticmethod
+    def _fsect_type_description(surface_type: int, type2: int) -> str:
+        ground_map = {
+            0: "Grass",
+            1: "Dry grass",
+            2: "Dirt",
+            3: "Sand",
+            4: "Concrete",
+            5: "Asphalt",
+            6: "Paint (Curbing)",
+        }
+        if surface_type in ground_map:
+            return ground_map[surface_type]
+        if surface_type in {7, 8}:
+            base = "Wall" if surface_type == 7 else "Armco"
+            if type2 in FENCE_TYPE2:
+                return f"{base} (Fence)"
+            return base
+        return "Unknown"
     
     def update_window_title(
         self,

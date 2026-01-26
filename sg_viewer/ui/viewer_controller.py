@@ -515,6 +515,8 @@ class SGViewerController:
             self._window.show_status_message(
                 "Refreshed Fsects preview from current geometry."
             )
+            if self._active_selection is not None:
+                self._window.update_selection_sidebar(self._active_selection)
             return
 
         self._window.show_status_message(
