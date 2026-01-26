@@ -38,6 +38,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("SG Viewer")
         self.resize(960, 720)
+        self._selected_section_index: int | None = None
+        self._updating_fsect_table = False
 
         shortcut_labels = {
             "new_straight": "Ctrl+Alt+S",
@@ -58,6 +60,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             show_status=self.show_status_message
         )
         self._sidebar = QtWidgets.QWidget()
+        self._fsect_sidebar = QtWidgets.QWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
@@ -213,8 +216,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._set_start_finish_button)
         sidebar_layout.addWidget(self._radii_button)
         sidebar_layout.addWidget(self._axes_button)
-        sidebar_layout.addWidget(self._sg_fsects_checkbox)
-        sidebar_layout.addWidget(self._refresh_fsects_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(self._xsect_table_button)
@@ -237,8 +238,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addWidget(self._end_compass_heading_label)
         sidebar_layout.addWidget(self._start_point_label)
         sidebar_layout.addWidget(self._end_point_label)
-        sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
-        sidebar_layout.addWidget(self._fsect_table)
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
         altitude_layout = QtWidgets.QHBoxLayout()
@@ -266,6 +265,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
 
+        fsect_sidebar_layout = QtWidgets.QVBoxLayout()
+        fsect_sidebar_layout.addWidget(self._sg_fsects_checkbox)
+        fsect_sidebar_layout.addWidget(self._refresh_fsects_button)
+        fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
+        fsect_sidebar_layout.addWidget(self._fsect_table)
+        fsect_sidebar_layout.addStretch()
+        self._fsect_sidebar.setLayout(fsect_sidebar_layout)
+
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addLayout(navigation_layout)
@@ -286,6 +293,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self._sidebar)
         layout.addWidget(preview_column, stretch=1)
+        layout.addWidget(self._fsect_sidebar)
         container.setLayout(layout)
         self.setCentralWidget(container)
 
@@ -456,6 +464,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return f"{compass_deg:.1f}°"
 
         if selection is None:
+            self._selected_section_index = None
             self._section_label.setText("Section: None")
             self._type_label.setText("Type: –")
             self._dlong_label.setText("DLONG: –")
@@ -476,6 +485,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._update_fsect_table(None)
             return
 
+        self._selected_section_index = selection.index
         self._section_label.setText(f"Section: {selection.index}")
         self._type_label.setText(f"Type: {selection.type_name}")
         self._dlong_label.setText(
@@ -530,23 +540,84 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _update_fsect_table(self, section_index: int | None) -> None:
         fsects = self._preview.get_section_fsects(section_index)
+        self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
         for row_index, fsect in enumerate(fsects):
             start_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.start_dlat))}")
             end_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.end_dlat))}")
             type_item = QtWidgets.QTableWidgetItem(str(int(fsect.surface_type)))
-            desc_item = QtWidgets.QTableWidgetItem(
-                self._fsect_type_description(fsect.surface_type, fsect.type2)
-            )
             self._fsect_table.setItem(
                 row_index, 0, QtWidgets.QTableWidgetItem(str(row_index))
             )
             self._fsect_table.setItem(row_index, 1, start_item)
             self._fsect_table.setItem(row_index, 2, end_item)
             self._fsect_table.setItem(row_index, 3, type_item)
-            self._fsect_table.setItem(row_index, 4, desc_item)
+            combo = QtWidgets.QComboBox()
+            for label, surface_type, type2 in self._fsect_type_options():
+                combo.addItem(label, (surface_type, type2))
+            combo.setCurrentIndex(
+                self._fsect_type_index(fsect.surface_type, fsect.type2)
+            )
+            combo.currentIndexChanged.connect(
+                lambda _idx, row=row_index, widget=combo: self._on_fsect_type_changed(
+                    row, widget
+                )
+            )
+            self._fsect_table.setCellWidget(row_index, 4, combo)
         if not fsects:
             self._fsect_table.setRowCount(0)
+        self._updating_fsect_table = False
+
+    def _on_fsect_type_changed(
+        self, row_index: int, widget: QtWidgets.QComboBox
+    ) -> None:
+        if self._updating_fsect_table:
+            return
+        section_index = self._selected_section_index
+        if section_index is None:
+            return
+        selection = widget.currentData()
+        if selection is None:
+            return
+        surface_type, type2 = selection
+        type_item = self._fsect_table.item(row_index, 3)
+        if type_item is not None:
+            type_item.setText(str(surface_type))
+        self._preview.update_fsection_type(
+            section_index,
+            row_index,
+            surface_type=surface_type,
+            type2=type2,
+        )
+
+    @staticmethod
+    def _fsect_type_options() -> list[tuple[str, int, int]]:
+        fence_type = min(FENCE_TYPE2) if FENCE_TYPE2 else 0
+        return [
+            ("Grass", 0, 0),
+            ("Dry grass", 1, 0),
+            ("Dirt", 2, 0),
+            ("Sand", 3, 0),
+            ("Concrete", 4, 0),
+            ("Asphalt", 5, 0),
+            ("Paint (Curbing)", 6, 0),
+            ("Wall", 7, 0),
+            ("Wall (Fence)", 7, fence_type),
+            ("Armco", 8, 0),
+            ("Armco (Fence)", 8, fence_type),
+        ]
+
+    @staticmethod
+    def _fsect_type_index(surface_type: int, type2: int) -> int:
+        is_fence = surface_type in {7, 8} and type2 in FENCE_TYPE2
+        options = SGViewerWindow._fsect_type_options()
+        for index, (_label, option_surface, option_type2) in enumerate(options):
+            option_fence = (
+                option_surface in {7, 8} and option_type2 in FENCE_TYPE2
+            )
+            if option_surface == surface_type and option_fence == is_fence:
+                return index
+        return 0
 
     @staticmethod
     def _fsect_type_description(surface_type: int, type2: int) -> str:
