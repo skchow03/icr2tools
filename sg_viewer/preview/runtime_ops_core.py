@@ -374,6 +374,42 @@ class _RuntimeCoreMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
+    def update_fsection_dlat(
+        self,
+        section_index: int,
+        fsect_index: int,
+        *,
+        start_dlat: float | None = None,
+        end_dlat: float | None = None,
+    ) -> None:
+        if section_index < 0 or section_index >= len(self._fsects_by_section):
+            return
+        fsects = list(self._fsects_by_section[section_index])
+        if fsect_index < 0 or fsect_index >= len(fsects):
+            return
+        current = fsects[fsect_index]
+        new_start = current.start_dlat if start_dlat is None else float(start_dlat)
+        new_end = current.end_dlat if end_dlat is None else float(end_dlat)
+        if new_start > new_end:
+            new_start, new_end = new_end, new_start
+        if (
+            current.start_dlat == new_start
+            and current.end_dlat == new_end
+        ):
+            return
+        fsects[fsect_index] = PreviewFSection(
+            start_dlat=new_start,
+            end_dlat=new_end,
+            surface_type=current.surface_type,
+            type2=current.type2,
+        )
+        self._fsects_by_section[section_index] = fsects
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+
     def log_debug(self, message: str, *args: object) -> None:
         logger.debug(message, *args)
 
