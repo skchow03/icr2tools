@@ -391,7 +391,7 @@ class _RuntimeCoreMixin:
         new_start = current.start_dlat if start_dlat is None else float(start_dlat)
         new_end = current.end_dlat if end_dlat is None else float(end_dlat)
         if new_start > new_end:
-            new_start, new_end = new_end, new_start
+            return
         if (
             current.start_dlat == new_start
             and current.end_dlat == new_end
