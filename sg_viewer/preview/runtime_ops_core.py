@@ -342,6 +342,38 @@ class _RuntimeCoreMixin:
     def request_repaint(self) -> None:
         self._context.request_repaint()
 
+    def update_fsection_type(
+        self,
+        section_index: int,
+        fsect_index: int,
+        *,
+        surface_type: int,
+        type2: int,
+    ) -> None:
+        if section_index < 0 or section_index >= len(self._fsects_by_section):
+            return
+        fsects = list(self._fsects_by_section[section_index])
+        if fsect_index < 0 or fsect_index >= len(fsects):
+            return
+        current = fsects[fsect_index]
+        if (
+            current.surface_type == surface_type
+            and current.type2 == type2
+        ):
+            return
+        fsects[fsect_index] = PreviewFSection(
+            start_dlat=current.start_dlat,
+            end_dlat=current.end_dlat,
+            surface_type=surface_type,
+            type2=type2,
+        )
+        self._fsects_by_section[section_index] = fsects
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+
     def log_debug(self, message: str, *args: object) -> None:
         logger.debug(message, *args)
 
