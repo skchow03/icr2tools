@@ -158,7 +158,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.NoSelection
         )
         self._fsect_table.verticalHeader().setVisible(False)
+        self._fsect_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents
+        )
         self._fsect_table.horizontalHeader().setStretchLastSection(True)
+        self._fsect_table.setSizeAdjustPolicy(
+            QtWidgets.QAbstractScrollArea.AdjustToContents
+        )
         self._fsect_table.setMinimumHeight(160)
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
@@ -290,10 +296,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column.setLayout(preview_column_layout)
 
         container = QtWidgets.QWidget()
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.addWidget(self._sidebar)
+        splitter.addWidget(preview_column)
+        splitter.addWidget(self._fsect_sidebar)
+        splitter.setStretchFactor(1, 1)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(2, False)
         layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self._sidebar)
-        layout.addWidget(preview_column, stretch=1)
-        layout.addWidget(self._fsect_sidebar)
+        layout.addWidget(splitter)
         container.setLayout(layout)
         self.setCentralWidget(container)
 
@@ -567,6 +578,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if not fsects:
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
+        self._fsect_table.resizeColumnsToContents()
 
     def _on_fsect_type_changed(
         self, row_index: int, widget: QtWidgets.QComboBox
