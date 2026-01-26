@@ -323,6 +323,15 @@ class _RuntimeCoreMixin:
             return []
         return list(self._preview_data.fsections)
 
+    def get_section_fsects(
+        self, section_index: int | None
+    ) -> list[PreviewFSection]:
+        if section_index is None:
+            return []
+        if section_index < 0 or section_index >= len(self._fsects_by_section):
+            return []
+        return list(self._fsects_by_section[section_index])
+
     def set_status(self, text: str) -> None:
         self._status_message = text
         self._context.request_repaint()
