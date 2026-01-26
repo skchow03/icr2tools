@@ -152,10 +152,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ]
         )
         self._fsect_table.setEditTriggers(
-            QtWidgets.QAbstractItemView.NoEditTriggers
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
         )
         self._fsect_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.NoSelection
+            QtWidgets.QAbstractItemView.SingleSelection
         )
         self._fsect_table.verticalHeader().setVisible(False)
         self._fsect_table.horizontalHeader().setSectionResizeMode(
@@ -166,6 +168,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractScrollArea.AdjustToContents
         )
         self._fsect_table.setMinimumHeight(160)
+        self._fsect_table.cellChanged.connect(self._on_fsect_cell_changed)
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
         max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
@@ -557,6 +560,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             start_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.start_dlat))}")
             end_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.end_dlat))}")
             type_item = QtWidgets.QTableWidgetItem(str(int(fsect.surface_type)))
+            for editable_item in (start_item, end_item):
+                editable_item.setFlags(
+                    editable_item.flags()
+                    | QtCore.Qt.ItemIsEditable
+                    | QtCore.Qt.ItemIsSelectable
+                )
             self._fsect_table.setItem(
                 row_index, 0, QtWidgets.QTableWidgetItem(str(row_index))
             )
@@ -579,6 +588,50 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
         self._fsect_table.resizeColumnsToContents()
+
+    def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
+        if self._updating_fsect_table:
+            return
+        if column_index not in (1, 2):
+            return
+        section_index = self._selected_section_index
+        if section_index is None:
+            return
+        fsects = self._preview.get_section_fsects(section_index)
+        if row_index < 0 or row_index >= len(fsects):
+            return
+        item = self._fsect_table.item(row_index, column_index)
+        if item is None:
+            return
+        text = item.text().strip()
+        try:
+            new_value = float(text)
+        except ValueError:
+            self._reset_fsect_dlat_cell(row_index, column_index, fsects[row_index])
+            return
+        if column_index == 1:
+            self._preview.update_fsection_dlat(
+                section_index, row_index, start_dlat=new_value
+            )
+        else:
+            self._preview.update_fsection_dlat(
+                section_index, row_index, end_dlat=new_value
+            )
+        self._update_fsect_table(section_index)
+
+    def _reset_fsect_dlat_cell(
+        self,
+        row_index: int,
+        column_index: int,
+        fsect,
+    ) -> None:
+        value = fsect.start_dlat if column_index == 1 else fsect.end_dlat
+        item = self._fsect_table.item(row_index, column_index)
+        if item is None:
+            return
+        self._updating_fsect_table = True
+        item.setText(f"{int(round(value))}")
+        self._updating_fsect_table = False
 
     def _on_fsect_type_changed(
         self, row_index: int, widget: QtWidgets.QComboBox
