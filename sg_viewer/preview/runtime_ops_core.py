@@ -149,6 +149,7 @@ class _RuntimeCoreMixin:
             self._section_manager,
             self._editor,
             self.set_sections,
+            self.update_drag_preview,
             self.rebuild_after_start_finish,
             self._node_radius_px,
             self._stop_panning,

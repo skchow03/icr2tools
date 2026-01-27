@@ -98,3 +98,44 @@ class PreviewSectionManager:
             self.centerline_index = index
 
         return needs_rebuild
+
+    def update_drag_preview(self, sections: list[SectionPreview]) -> bool:
+        if len(sections) != len(self.sections):
+            return False
+
+        previous_signatures = self.section_signatures
+        new_sections: list[SectionPreview] = []
+        new_signatures: list[tuple] = []
+        changed_indices: list[int] = []
+
+        for idx, sect in enumerate(sections):
+            signature = section_signature(sect)
+            new_signatures.append(signature)
+            prev_signature = (
+                previous_signatures[idx] if idx < len(previous_signatures) else None
+            )
+
+            if (
+                prev_signature is not None
+                and prev_signature == signature
+                and idx < len(self.sections)
+            ):
+                new_sections.append(self.sections[idx])
+            else:
+                new_sections.append(update_section_geometry(sect))
+                changed_indices.append(idx)
+
+        if not changed_indices:
+            return False
+
+        self.sections = new_sections
+        self.section_signatures = new_signatures
+        self.section_endpoints = [(sect.start, sect.end) for sect in self.sections]
+
+        if len(self.centerline_polylines) != len(self.sections):
+            self.centerline_polylines = [sect.polyline for sect in self.sections]
+        else:
+            for idx in changed_indices:
+                self.centerline_polylines[idx] = self.sections[idx].polyline
+
+        return True

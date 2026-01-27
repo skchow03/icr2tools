@@ -504,6 +504,32 @@ class _RuntimeEditingMixin:
             self._emit_sections_changed()
         self._context.request_repaint()
 
+    def update_drag_preview(self, sections: list[SectionPreview]) -> None:
+        if len(sections) != len(self._section_manager.sections):
+            self.set_sections(sections)
+            return
+
+        self._clear_split_hover()
+        updated = self._section_manager.update_drag_preview(sections)
+        if not updated:
+            return
+
+        self._sampled_bounds = self._section_manager.sampled_bounds
+        self._sampled_centerline = self._section_manager.sampled_centerline
+
+        self._update_node_status()
+
+        self._selection.update_context(
+            self._section_manager.sections,
+            self._track_length,
+            self._section_manager.centerline_index,
+            self._section_manager.sampled_dlongs,
+        )
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        self._context.request_repaint()
+
     def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
         (
             cline,
