@@ -52,6 +52,7 @@ class PreviewInteraction:
         section_manager: "PreviewSectionManager",
         editor: "PreviewEditor",
         set_sections: Callable[[list["SectionPreview"], float | None], None],
+        update_drag_preview: Callable[[list["SectionPreview"]], None],
         rebuild_after_start_finish: Callable[[list["SectionPreview"]], None],
         node_radius_px: int,
         stop_panning: Callable[[], None],
@@ -67,6 +68,7 @@ class PreviewInteraction:
         self._section_manager = section_manager
         self._editor = editor
         self._set_sections = set_sections
+        self._update_drag_preview = update_drag_preview
         self._rebuild_after_start_finish = rebuild_after_start_finish
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
@@ -573,6 +575,8 @@ class PreviewInteraction:
         self._context.request_repaint()
 
     def _end_node_drag(self) -> None:
+        if self._drag_state_active:
+            self._set_sections(list(self._section_manager.sections))
         self._clear_drag_state()
 
     def _clear_drag_state(self) -> None:
@@ -708,6 +712,8 @@ class PreviewInteraction:
         self._apply_section_updates(sections)
 
     def _end_section_drag(self) -> None:
+        if self._drag_state_active:
+            self._set_sections(list(self._section_manager.sections))
         self._is_dragging_section = False
         self._active_section_index = None
         self._section_drag_start_mouse_screen = None
@@ -802,7 +808,10 @@ class PreviewInteraction:
         if __debug__:
             for section in sections:
                 assert_section_geometry_consistent(section)
-        self._set_sections(sections)
+        if self._drag_state_active:
+            self._update_drag_preview(sections)
+        else:
+            self._set_sections(sections)
 
     def _shared_straight_pair(
         self, dragged_key: tuple[int, str]
