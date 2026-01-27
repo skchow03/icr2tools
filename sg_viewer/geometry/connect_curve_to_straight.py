@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import replace
 from typing import Optional, Tuple
@@ -10,8 +11,10 @@ from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.sg_geometry import signed_radius_from_heading
 from sg_viewer.geometry.connect_straight_to_curve import solve_straight_to_curve_free_end
 
-DEBUG_CURVE_STRAIGHT = True
+DEBUG_CURVE_STRAIGHT = False
 DEBUG_CURVE_STRAIGHT_VERBOSE = False
+
+logger = logging.getLogger(__name__)
 
 
 def _reverse_section_endpoints(section: SectionPreview) -> SectionPreview:
@@ -129,24 +132,22 @@ def solve_curve_end_to_straight_start(
     straight_heading = (straight_heading[0] / sh_len, straight_heading[1] / sh_len)
     hx, hy = straight_heading
 
-    if DEBUG_CURVE_STRAIGHT:
-        print("\n=== CURVE → STRAIGHT SOLVE ATTEMPT ===")
-        print("Curve start:", curve.start)
-        print("Curve end (original):", curve.end)
-        print("Curve start heading:", curve.start_heading)
-        print("Curve radius:", curve.radius)
-        print("Straight start:", straight.start)
-        print("Straight end:", straight.end)
-        print("Straight length:", straight.length)
-        print("Straight forward heading:", straight_heading)
-    if DEBUG_CURVE_STRAIGHT:
+    if DEBUG_CURVE_STRAIGHT and logger.isEnabledFor(logging.DEBUG):
+        logger.debug("\n=== CURVE → STRAIGHT SOLVE ATTEMPT ===")
+        logger.debug("Curve start: %s", curve.start)
+        logger.debug("Curve end (original): %s", curve.end)
+        logger.debug("Curve start heading: %s", curve.start_heading)
+        logger.debug("Curve radius: %s", curve.radius)
+        logger.debug("Straight start: %s", straight.start)
+        logger.debug("Straight end: %s", straight.end)
+        logger.debug("Straight length: %s", straight.length)
+        logger.debug("Straight forward heading: %s", straight_heading)
         sh = straight_heading
-        angle = math.degrees(math.atan2(sh[1], sh[0]))
-        print(f"Straight heading angle: {angle:.2f}°")
-    if DEBUG_CURVE_STRAIGHT:
+        straight_angle = math.degrees(math.atan2(sh[1], sh[0]))
+        logger.debug("Straight heading angle: %.2f°", straight_angle)
         ch = curve.start_heading
-        angle = math.degrees(math.atan2(ch[1], ch[0]))
-        print(f"Curve start heading angle: {angle:.2f}°")
+        curve_angle = math.degrees(math.atan2(ch[1], ch[0]))
+        logger.debug("Curve start heading angle: %.2f°", curve_angle)
 
 
     # ------------------------
@@ -218,12 +219,16 @@ def solve_curve_end_to_straight_start(
                     best_L = L
 
 
-                    if DEBUG_CURVE_STRAIGHT_VERBOSE:
-                        print(
-                            f"  NEW BEST: L={L:,.1f} "
-                            f"orient={orient:+} "
-                            f"Δ={delta:.4f}° "
-                            f"radius={cand.radius:,.1f}"
+                    if (
+                        DEBUG_CURVE_STRAIGHT_VERBOSE
+                        and logger.isEnabledFor(logging.DEBUG)
+                    ):
+                        logger.debug(
+                            "  NEW BEST: L=%s orient=%+0.1f Δ=%.4f° radius=%s",
+                            f"{L:,.1f}",
+                            orient,
+                            delta,
+                            f"{cand.radius:,.1f}",
                         )
 
     def delta_for_L(L: float) -> Optional[float]:
@@ -284,8 +289,8 @@ def solve_curve_end_to_straight_start(
         prev_delta = d
 
     if best_L is None:
-        if DEBUG_CURVE_STRAIGHT:
-            print("\nSOLVE FAILED: no candidates at all")
+        if DEBUG_CURVE_STRAIGHT and logger.isEnabledFor(logging.DEBUG):
+            logger.debug("\nSOLVE FAILED: no candidates at all")
         return None
 
 
@@ -344,11 +349,11 @@ def solve_curve_end_to_straight_start(
     # ------------------------
 
     if best_solution is None or best_abs_delta > heading_tol:
-
-        if DEBUG_CURVE_STRAIGHT:
-            print(
-                f"\nSOLVE FAILED: best Δ={best_signed_delta:.3f}° "
-                f"(tolerance {heading_tol:.3f}°)"
+        if DEBUG_CURVE_STRAIGHT and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "\nSOLVE FAILED: best Δ=%.3f° (tolerance %.3f°)",
+                best_signed_delta,
+                heading_tol,
             )
         return None
 
@@ -387,8 +392,8 @@ def solve_curve_end_to_straight_start(
         polyline=[new_straight_start, new_straight_end],
     )
 
-    if DEBUG_CURVE_STRAIGHT:
-        print("\n=== CURVE → STRAIGHT SOLUTION ACCEPTED ===")
+    if DEBUG_CURVE_STRAIGHT and logger.isEnabledFor(logging.DEBUG):
+        logger.debug("\n=== CURVE → STRAIGHT SOLUTION ACCEPTED ===")
 
         # --- Straight changes ---
         old_start = straight.start
@@ -401,19 +406,28 @@ def solve_curve_end_to_straight_start(
             + (straight.end[1] - new_start[1]) * h[1]
         )
 
-        print("Straight:")
-        print(f"  start: {_fmt(old_start)} → {_fmt(new_start)}")
-        print(f"  length: {old_L:,.1f} → {new_L:,.1f}  (Δ {new_L - old_L:,.1f})")
+        logger.debug("Straight:")
+        logger.debug("  start: %s → %s", _fmt(old_start), _fmt(new_start))
+        logger.debug(
+            "  length: %s → %s  (Δ %s)",
+            f"{old_L:,.1f}",
+            f"{new_L:,.1f}",
+            f"{new_L - old_L:,.1f}",
+        )
 
         # --- Curve changes ---
-        print("Curve:")
-        print(
-            f"  radius: {curve.radius:,.1f} → {best_solution.radius:,.1f} "
-            f"(Δ {best_solution.radius - curve.radius:,.1f})"
+        logger.debug("Curve:")
+        logger.debug(
+            "  radius: %s → %s (Δ %s)",
+            f"{curve.radius:,.1f}",
+            f"{best_solution.radius:,.1f}",
+            f"{best_solution.radius - curve.radius:,.1f}",
         )
-        print(
-            f"  arc len: {curve.length:,.1f} → {best_solution.length:,.1f} "
-            f"(Δ {best_solution.length - curve.length:,.1f})"
+        logger.debug(
+            "  arc len: %s → %s (Δ %s)",
+            f"{curve.length:,.1f}",
+            f"{best_solution.length:,.1f}",
+            f"{best_solution.length - curve.length:,.1f}",
         )
 
         # --- Join quality ---
@@ -422,21 +436,28 @@ def solve_curve_end_to_straight_start(
             straight_heading,
         )
 
-        print(f"Join quality:")
-        print(f"  end heading delta: {delta:.2f}°")
+        logger.debug("Join quality:")
+        logger.debug("  end heading delta: %.2f°", delta)
 
-    if DEBUG_CURVE_STRAIGHT:
-        print("\n=== CURVE → STRAIGHT SOLVE SUMMARY ===")
-        print(f"Total L samples tested: {tries_total:,}")
-        print(f"Total curve candidates evaluated: {tries_candidates:,}")
-        print(f"Best join Δ heading: {best_signed_delta:.6f}° (abs {best_abs_delta:.6f}°)")
-
-        print(f"Join L: {best_L:,.2f}")
-        print(
-            f"Curve radius: {curve.radius:,.1f} → {best_solution.radius:,.1f}"
+        logger.debug("\n=== CURVE → STRAIGHT SOLVE SUMMARY ===")
+        logger.debug("Total L samples tested: %s", f"{tries_total:,}")
+        logger.debug("Total curve candidates evaluated: %s", f"{tries_candidates:,}")
+        logger.debug(
+            "Best join Δ heading: %.6f° (abs %.6f°)",
+            best_signed_delta,
+            best_abs_delta,
         )
-        print(
-            f"Curve arc: {curve.length:,.1f} → {best_solution.length:,.1f}"
+
+        logger.debug("Join L: %s", f"{best_L:,.2f}")
+        logger.debug(
+            "Curve radius: %s → %s",
+            f"{curve.radius:,.1f}",
+            f"{best_solution.radius:,.1f}",
+        )
+        logger.debug(
+            "Curve arc: %s → %s",
+            f"{curve.length:,.1f}",
+            f"{best_solution.length:,.1f}",
         )
 
 
