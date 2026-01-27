@@ -56,7 +56,13 @@ class PreviewSectionManager:
         self.centerline_index = centerline_index
         self.centerline_polylines = [sect.polyline for sect in self.sections]
 
-    def set_sections(self, sections: list[SectionPreview]) -> bool:
+    def set_sections(
+        self,
+        sections: list[SectionPreview],
+        *,
+        rebuild_centerline: bool = True,
+        force_rebuild: bool = False,
+    ) -> bool:
         previous_signatures = self.section_signatures
 
         new_sections: list[SectionPreview] = []
@@ -81,13 +87,13 @@ class PreviewSectionManager:
                 changed_indices.append(idx)
 
         length_changed = len(sections) != len(self.sections)
-        needs_rebuild = length_changed or bool(changed_indices)
+        needs_rebuild = force_rebuild or length_changed or bool(changed_indices)
 
         self.sections = new_sections
         self.section_signatures = new_signatures
         self.section_endpoints = [(sect.start, sect.end) for sect in self.sections]
 
-        if needs_rebuild:
+        if rebuild_centerline and needs_rebuild:
             points, dlongs, bounds, index = rebuild_centerline_from_sections(
                 self.sections
             )
@@ -97,4 +103,7 @@ class PreviewSectionManager:
             self.sampled_bounds = self._combine_bounds_with_background(bounds)
             self.centerline_index = index
 
-        return needs_rebuild
+        if not rebuild_centerline:
+            self.centerline_polylines = [sect.polyline for sect in self.sections]
+
+        return rebuild_centerline and needs_rebuild

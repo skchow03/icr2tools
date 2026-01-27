@@ -15,7 +15,6 @@ from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
-    rebuild_centerline_from_sections,
     update_section_geometry,
 )
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
@@ -51,7 +50,7 @@ class PreviewInteraction:
         selection: "SelectionManager",
         section_manager: "PreviewSectionManager",
         editor: "PreviewEditor",
-        set_sections: Callable[[list["SectionPreview"], float | None], None],
+        set_sections: Callable[..., None],
         rebuild_after_start_finish: Callable[[list["SectionPreview"]], None],
         node_radius_px: int,
         stop_panning: Callable[[], None],
@@ -311,6 +310,7 @@ class PreviewInteraction:
                         self._clear_drag_state()
                         return True
 
+                    self._finalize_drag_rebuild()
                     self._clear_drag_state()
                     event.accept()
                     return True
@@ -320,10 +320,13 @@ class PreviewInteraction:
             self._end_node_drag()
             if active_node is not None and connection_target is not None:
                 self._connect_nodes(active_node, connection_target)
+            if connection_target is None:
+                self._finalize_drag_rebuild()
             event.accept()
             return True
         if self._is_dragging_section:
             self._end_section_drag()
+            self._finalize_drag_rebuild()
             event.accept()
             return True
 
@@ -527,7 +530,7 @@ class PreviewInteraction:
         sections = list(sections)
         sections[sect_index] = updated_section
         sections[sect_index] = update_section_geometry(sections[sect_index])
-        self._apply_section_updates(sections)
+        self._apply_section_updates(sections, rebuild_centerline=False)
 
     def _update_connection_target(
         self,
@@ -698,7 +701,7 @@ class PreviewInteraction:
             applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
             assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
 
-        self._apply_section_updates(sections)
+        self._apply_section_updates(sections, rebuild_centerline=False)
 
     def _end_section_drag(self) -> None:
         self._is_dragging_section = False
@@ -783,11 +786,22 @@ class PreviewInteraction:
             if disconnected:
                 print("Not closed — disconnected sections:", disconnected)
 
-    def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
+    def _apply_section_updates(
+        self, sections: list["SectionPreview"], *, rebuild_centerline: bool = True
+    ) -> None:
         if __debug__:
             for section in sections:
                 assert_section_geometry_consistent(section)
-        self._set_sections(sections)
+        self._set_sections(sections, rebuild_centerline=rebuild_centerline)
+
+    def _finalize_drag_rebuild(self) -> None:
+        if not self._section_manager.sections:
+            return
+        self._set_sections(
+            list(self._section_manager.sections),
+            rebuild_centerline=True,
+            force_rebuild=True,
+        )
 
     def _shared_straight_pair(
         self, dragged_key: tuple[int, str]
@@ -934,7 +948,7 @@ class PreviewInteraction:
         sections[s1_idx] = s1_new
         sections[s2_idx] = s2_new
 
-        self._apply_section_updates(sections)
+        self._apply_section_updates(sections, rebuild_centerline=False)
         self._context.request_repaint()
         return True
 
@@ -1034,7 +1048,7 @@ class PreviewInteraction:
         updated_sections[s1_idx] = update_section_geometry(updated_section_1)
         updated_sections[s2_idx] = update_section_geometry(updated_section_2)
 
-        self._apply_section_updates(updated_sections)
+        self._apply_section_updates(updated_sections, rebuild_centerline=False)
         self._context.request_repaint()
         return True
 

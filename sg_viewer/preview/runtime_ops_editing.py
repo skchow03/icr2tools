@@ -462,7 +462,12 @@ class _RuntimeEditingMixin:
         )
 
     def set_sections(
-        self, sections: list[SectionPreview], start_finish_dlong: float | None = None
+        self,
+        sections: list[SectionPreview],
+        start_finish_dlong: float | None = None,
+        *,
+        rebuild_centerline: bool = True,
+        force_rebuild: bool = False,
     ) -> None:
         self._clear_split_hover()
 
@@ -475,17 +480,22 @@ class _RuntimeEditingMixin:
         if preserved_start_finish_dlong is None:
             preserved_start_finish_dlong = self._current_start_finish_dlong()
 
-        needs_rebuild = self._section_manager.set_sections(sections)
+        needs_rebuild = self._section_manager.set_sections(
+            sections,
+            rebuild_centerline=rebuild_centerline,
+            force_rebuild=force_rebuild,
+        )
         self._realign_fsects_after_recalc(old_sections, old_fsects)
 
-        self._sampled_bounds = self._section_manager.sampled_bounds
-        self._sampled_centerline = self._section_manager.sampled_centerline
-        if self._section_manager.sampled_dlongs:
-            self._track_length = self._section_manager.sampled_dlongs[-1]
-        self._update_start_finish_mapping(preserved_start_finish_dlong)
+        if rebuild_centerline:
+            self._sampled_bounds = self._section_manager.sampled_bounds
+            self._sampled_centerline = self._section_manager.sampled_centerline
+            if self._section_manager.sampled_dlongs:
+                self._track_length = self._section_manager.sampled_dlongs[-1]
+            self._update_start_finish_mapping(preserved_start_finish_dlong)
 
-        if needs_rebuild:
-            self._update_fit_scale()
+            if needs_rebuild:
+                self._update_fit_scale()
 
         self._update_node_status()
 
