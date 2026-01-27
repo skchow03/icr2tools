@@ -15,6 +15,7 @@ from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
+    update_section_geometry_drag,
     update_section_geometry,
 )
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
@@ -530,7 +531,10 @@ class PreviewInteraction:
 
         sections = list(sections)
         sections[sect_index] = updated_section
-        sections[sect_index] = update_section_geometry(sections[sect_index])
+        if self._is_dragging_node:
+            sections[sect_index] = update_section_geometry_drag(sections[sect_index])
+        else:
+            sections[sect_index] = update_section_geometry(sections[sect_index])
         self._apply_section_updates(sections, rebuild_centerline=False)
 
     def _update_connection_target(
@@ -699,7 +703,10 @@ class PreviewInteraction:
             if chain_index < 0 or chain_index >= len(sections):
                 continue
             updated_section = translate_section(original_sections[chain_index], dx, dy)
-            sections[chain_index] = update_section_geometry(updated_section)
+            if self._is_dragging_node:
+                sections[chain_index] = update_section_geometry_drag(updated_section)
+            else:
+                sections[chain_index] = update_section_geometry(updated_section)
             applied_dx = updated_section.start[0] - original_sections[chain_index].start[0]
             applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
             assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
@@ -801,8 +808,12 @@ class PreviewInteraction:
     def _finalize_drag_rebuild(self) -> None:
         if not self._section_manager.sections:
             return
+        sections = [
+            update_section_geometry(section)
+            for section in self._section_manager.sections
+        ]
         self._set_sections(
-            list(self._section_manager.sections),
+            sections,
             rebuild_centerline=True,
             force_rebuild=True,
         )
@@ -945,8 +956,12 @@ class PreviewInteraction:
         s1_new = replace(s1, end=P, length=s1_length)
         s2_new = replace(s2, start=P, length=s2_length)
 
-        s1_new = update_section_geometry(s1_new)
-        s2_new = update_section_geometry(s2_new)
+        if self._is_dragging_node:
+            s1_new = update_section_geometry_drag(s1_new)
+            s2_new = update_section_geometry_drag(s2_new)
+        else:
+            s1_new = update_section_geometry(s1_new)
+            s2_new = update_section_geometry(s2_new)
 
         sections = list(sections)
         sections[s1_idx] = s1_new
@@ -1049,8 +1064,12 @@ class PreviewInteraction:
             center=center,
         )
 
-        updated_sections[s1_idx] = update_section_geometry(updated_section_1)
-        updated_sections[s2_idx] = update_section_geometry(updated_section_2)
+        if self._is_dragging_node:
+            updated_sections[s1_idx] = update_section_geometry_drag(updated_section_1)
+            updated_sections[s2_idx] = update_section_geometry_drag(updated_section_2)
+        else:
+            updated_sections[s1_idx] = update_section_geometry(updated_section_1)
+            updated_sections[s2_idx] = update_section_geometry(updated_section_2)
 
         self._apply_section_updates(updated_sections, rebuild_centerline=False)
         self._context.request_repaint()
@@ -1135,8 +1154,12 @@ class PreviewInteraction:
         updated_section_1 = replace(section_1, end=constrained_point)
         updated_section_2 = replace(section_2, start=constrained_point)
 
-        updated_sections[section_1_index] = update_section_geometry(updated_section_1)
-        updated_sections[section_2_index] = update_section_geometry(updated_section_2)
+        if self._is_dragging_node:
+            updated_sections[section_1_index] = update_section_geometry_drag(updated_section_1)
+            updated_sections[section_2_index] = update_section_geometry_drag(updated_section_2)
+        else:
+            updated_sections[section_1_index] = update_section_geometry(updated_section_1)
+            updated_sections[section_2_index] = update_section_geometry(updated_section_2)
 
         self._apply_section_updates(updated_sections)
         self._context.request_repaint()
