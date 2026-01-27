@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from pathlib import Path
 
@@ -14,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 
 class _RuntimePersistenceMixin:
+    def _profile_sgfile(self) -> SGFile | None:
+        base = self._document.sg_data or self._sgfile
+        if base is None:
+            return None
+
+        sgfile = copy.deepcopy(base)
+        if self._section_manager.sections:
+            try:
+                apply_preview_to_sgfile(
+                    sgfile,
+                    self._section_manager.sections,
+                    self._fsects_by_section,
+                )
+            except ValueError:
+                pass
+        return sgfile
+
     def _section_geometry_key(self, section: object) -> tuple:
         start = getattr(section, "start", None)
         end = getattr(section, "end", None)
@@ -143,21 +161,22 @@ class _RuntimePersistenceMixin:
         show_trk: bool = False,
     ) -> ElevationProfileData | None:
         _ = show_trk
+        sgfile = self._profile_sgfile()
         if (
-            self._sgfile is None
+            sgfile is None
             or self._track_length is None
             or xsect_index < 0
-            or xsect_index >= self._sgfile.num_xsects
+            or xsect_index >= sgfile.num_xsects
         ):
             return None
 
         def _xsect_label(dlat_value: float) -> str:
             return f"X-Section {xsect_index} (DLAT {dlat_value:.0f})"
 
-        if xsect_index >= len(self._sgfile.xsect_dlats):
+        if xsect_index >= len(sgfile.xsect_dlats):
             return None
 
-        dlats = [float(value) for value in self._sgfile.xsect_dlats]
+        dlats = [float(value) for value in sgfile.xsect_dlats]
         if xsect_index >= len(dlats):
             return None
 
@@ -181,7 +200,7 @@ class _RuntimePersistenceMixin:
         if cached is None:
             dlongs: list[float] = []
             section_ranges: list[tuple[float, float]] = []
-            for sg_sect in self._sgfile.sects:
+            for sg_sect in sgfile.sects:
                 sg_length = float(sg_sect.length)
                 if sg_length <= 0:
                     continue
@@ -198,7 +217,7 @@ class _RuntimePersistenceMixin:
         min_dlat = min(dlats)
         max_dlat = max(dlats)
         sg_altitudes = sample_sg_elevation_with_dlats(
-            self._sgfile,
+            sgfile,
             xsect_index,
             dlats,
             min_dlat,
@@ -221,16 +240,17 @@ class _RuntimePersistenceMixin:
     def get_elevation_profile_bounds(
         self, samples_per_section: int = 10
     ) -> tuple[float, float] | None:
-        if self._sgfile is None or self._track_length is None:
+        sgfile = self._profile_sgfile()
+        if sgfile is None or self._track_length is None:
             return None
 
         cache_key = (samples_per_section, self._sg_version)
 
-        num_xsects = self._sgfile.num_xsects
+        num_xsects = sgfile.num_xsects
         if num_xsects <= 0:
             return None
 
-        dlats = [float(value) for value in self._sgfile.xsect_dlats]
+        dlats = [float(value) for value in sgfile.xsect_dlats]
         if not dlats:
             return None
 
@@ -248,7 +268,7 @@ class _RuntimePersistenceMixin:
 
         for xsect_index in sorted(dirty):
             altitudes = sample_sg_elevation_with_dlats(
-                self._sgfile,
+                sgfile,
                 xsect_index,
                 dlats,
                 min_dlat,
