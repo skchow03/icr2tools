@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from icr2_core.trk.sg_classes import SGFile
-from icr2_core.sg_elevation import sample_sg_elevation
+from icr2_core.sg_elevation import sample_sg_elevation, sample_sg_elevation_with_dlats
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
@@ -145,7 +145,11 @@ class _RuntimePersistenceMixin:
         if xsect_index >= len(self._sgfile.xsect_dlats):
             return None
 
-        dlat_value = float(self._sgfile.xsect_dlats[xsect_index])
+        dlats = [float(value) for value in self._sgfile.xsect_dlats]
+        if xsect_index >= len(dlats):
+            return None
+
+        dlat_value = dlats[xsect_index]
 
         if self._track_length <= 0:
             track_length = float(self._track_length or 0.0)
@@ -179,9 +183,14 @@ class _RuntimePersistenceMixin:
             self._elevation_profile_cache[cache_key] = (dlongs, section_ranges)
         else:
             dlongs, section_ranges = cached
-        sg_altitudes = sample_sg_elevation(
+        min_dlat = min(dlats)
+        max_dlat = max(dlats)
+        sg_altitudes = sample_sg_elevation_with_dlats(
             self._sgfile,
             xsect_index,
+            dlats,
+            min_dlat,
+            max_dlat,
             resolution=samples_per_section,
         )
         trk_altitudes: list[float] | None = None
@@ -209,6 +218,13 @@ class _RuntimePersistenceMixin:
         if num_xsects <= 0:
             return None
 
+        dlats = [float(value) for value in self._sgfile.xsect_dlats]
+        if not dlats:
+            return None
+
+        min_dlat = min(dlats)
+        max_dlat = max(dlats)
+
         per_xsect_cache = self._elevation_xsect_bounds_cache.setdefault(cache_key, {})
         dirty = self._elevation_xsect_bounds_dirty.setdefault(cache_key, set())
         missing = [idx for idx in range(num_xsects) if idx not in per_xsect_cache]
@@ -219,9 +235,12 @@ class _RuntimePersistenceMixin:
             return self._elevation_bounds_cache[cache_key]
 
         for xsect_index in sorted(dirty):
-            altitudes = sample_sg_elevation(
+            altitudes = sample_sg_elevation_with_dlats(
                 self._sgfile,
                 xsect_index,
+                dlats,
+                min_dlat,
+                max_dlat,
                 resolution=samples_per_section,
             )
             if not altitudes:

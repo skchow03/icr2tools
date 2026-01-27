@@ -187,16 +187,40 @@ def sample_sg_elevation(
     """
     Return a list of altitude samples across the section.
     """
-    sections = getattr(sg, "sects", [])
-    if not sections:
-        return []
-
     dlats = _xsect_dlats(sg)
-    if sect_idx < 0 or sect_idx >= len(dlats):
+    if not dlats:
         return []
 
     min_dlat = min(dlats)
     max_dlat = max(dlats)
+    return sample_sg_elevation_with_dlats(
+        sg,
+        sect_idx,
+        dlats,
+        min_dlat,
+        max_dlat,
+        resolution=resolution,
+    )
+
+
+def sample_sg_elevation_with_dlats(
+    sg,
+    sect_idx: int,
+    dlats: list[float],
+    min_dlat: float,
+    max_dlat: float,
+    resolution: int = 256,
+) -> list[float]:
+    """
+    Return a list of altitude samples across the section using precomputed DLATs.
+    """
+    sections = getattr(sg, "sects", [])
+    if not sections:
+        return []
+
+    if sect_idx < 0 or sect_idx >= len(dlats):
+        return []
+
     dlat_norm = (
         0.0
         if min_dlat == max_dlat
