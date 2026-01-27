@@ -166,6 +166,43 @@ def solve_curve_end_to_straight_start(
 
     E = straight.end
     L0 = straight.length
+    orientation_hint = 1.0
+    if curve.radius is not None and curve.radius != 0:
+        orientation_hint = 1.0 if curve.radius > 0 else -1.0
+    elif curve.center is not None:
+        center_vec = (
+            curve.center[0] - curve_start[0],
+            curve.center[1] - curve_start[1],
+        )
+        cross = (
+            curve_start_heading[0] * center_vec[1]
+            - curve_start_heading[1] * center_vec[0]
+        )
+        if cross != 0:
+            orientation_hint = 1.0 if cross > 0 else -1.0
+    fallback_orientation_hint = -orientation_hint
+
+    def solve_candidates(curve_template: SectionPreview, end_point: tuple[float, float]):
+        candidates = _solve_curve_with_fixed_heading(
+            sect=curve_template,
+            start=curve_start,
+            end=end_point,
+            fixed_point=curve_start,
+            fixed_heading=curve_start_heading,
+            fixed_point_is_start=True,
+            orientation_hint=orientation_hint,
+        )
+        if not candidates and fallback_orientation_hint is not None:
+            candidates = _solve_curve_with_fixed_heading(
+                sect=curve_template,
+                start=curve_start,
+                end=end_point,
+                fixed_point=curve_start,
+                fixed_heading=curve_start_heading,
+                fixed_point_is_start=True,
+                orientation_hint=fallback_orientation_hint,
+            )
+        return candidates
 
     def try_L(L: float):
         nonlocal best_solution, best_abs_delta, best_signed_delta, best_L, tries_total, tries_candidates
@@ -187,49 +224,40 @@ def solve_curve_end_to_straight_start(
             polyline=[curve_start, P],
         )
 
-        for orient in (+1.0, -1.0):
-            candidates = _solve_curve_with_fixed_heading(
-                sect=curve_template,
-                start=curve_start,
-                end=P,
-                fixed_point=curve_start,
-                fixed_heading=curve_start_heading,
-                fixed_point_is_start=True,
-                orientation_hint=orient,
-            )
+        candidates = solve_candidates(curve_template, P)
 
-            for cand in candidates:
-                tries_candidates += 1
-                if cand.end_heading is None:
-                    continue
+        for cand in candidates:
+            tries_candidates += 1
+            if cand.end_heading is None:
+                continue
 
-                eh = cand.end_heading
-                eh_len = math.hypot(eh[0], eh[1])
-                if eh_len <= 0:
-                    continue
-                eh = (eh[0] / eh_len, eh[1] / eh_len)
+            eh = cand.end_heading
+            eh_len = math.hypot(eh[0], eh[1])
+            if eh_len <= 0:
+                continue
+            eh = (eh[0] / eh_len, eh[1] / eh_len)
 
-                delta = _signed_angle_deg(eh, straight_heading)
+            delta = _signed_angle_deg(eh, straight_heading)
 
-                abs_delta = abs(delta)
-                if abs_delta < best_abs_delta:
-                    best_abs_delta = abs_delta
-                    best_signed_delta = delta
-                    best_solution = cand
-                    best_L = L
+            abs_delta = abs(delta)
+            if abs_delta < best_abs_delta:
+                best_abs_delta = abs_delta
+                best_signed_delta = delta
+                best_solution = cand
+                best_L = L
 
 
-                    if (
-                        DEBUG_CURVE_STRAIGHT_VERBOSE
-                        and logger.isEnabledFor(logging.DEBUG)
-                    ):
-                        logger.debug(
-                            "  NEW BEST: L=%s orient=%+0.1f Δ=%.4f° radius=%s",
-                            f"{L:,.1f}",
-                            orient,
-                            delta,
-                            f"{cand.radius:,.1f}",
-                        )
+                if (
+                    DEBUG_CURVE_STRAIGHT_VERBOSE
+                    and logger.isEnabledFor(logging.DEBUG)
+                ):
+                    logger.debug(
+                        "  NEW BEST: L=%s orient=%+0.1f Δ=%.4f° radius=%s",
+                        f"{L:,.1f}",
+                        orientation_hint,
+                        delta,
+                        f"{cand.radius:,.1f}",
+                    )
 
     def delta_for_L(L: float) -> Optional[float]:
         if L <= 1.0:
@@ -244,28 +272,19 @@ def solve_curve_end_to_straight_start(
             polyline=[curve_start, P],
         )
 
-        for orient in (+1.0, -1.0):
-            candidates = _solve_curve_with_fixed_heading(
-                sect=curve_template,
-                start=curve_start,
-                end=P,
-                fixed_point=curve_start,
-                fixed_heading=curve_start_heading,
-                fixed_point_is_start=True,
-                orientation_hint=orient,
-            )
+        candidates = solve_candidates(curve_template, P)
 
-            for cand in candidates:
-                if cand.end_heading is None:
-                    continue
+        for cand in candidates:
+            if cand.end_heading is None:
+                continue
 
-                eh = cand.end_heading
-                l = math.hypot(eh[0], eh[1])
-                if l <= 0:
-                    continue
+            eh = cand.end_heading
+            l = math.hypot(eh[0], eh[1])
+            if l <= 0:
+                continue
 
-                eh = (eh[0] / l, eh[1] / l)
-                return _signed_angle_deg(eh, straight_heading)
+            eh = (eh[0] / l, eh[1] / l)
+            return _signed_angle_deg(eh, straight_heading)
 
         return None
 
