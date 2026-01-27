@@ -297,22 +297,41 @@ def solve_curve_end_to_straight_start(
 
 
     # ------------------------
-    # Phase 1: coarse scan
+    # Phase 1: adaptive scan
     # ------------------------
     bracket = None
-    prev_L = None
-    prev_delta = None
+    scan_min_mult = 0.01
+    scan_max_mult = 20.0
+    max_range_mult = 80.0
+    samples = 150
+    passes = 0
 
-    for i in range(1, 2000):   # 0.01 → 20x straight length
-        L = L0 * (i * 0.01)
-        try_L(L)
-        d = delta_for_L(L)
-        if d is not None and prev_delta is not None:
-            if d * prev_delta < 0:
-                bracket = (prev_L, L)
-                break
-        prev_L = L
-        prev_delta = d
+    while bracket is None and passes < 5:
+        prev_L = None
+        prev_delta = None
+        step = (scan_max_mult - scan_min_mult) / samples
+
+        for i in range(samples + 1):
+            L = L0 * (scan_min_mult + step * i)
+            if L <= 0:
+                continue
+            try_L(L)
+            d = delta_for_L(L)
+            if d is not None and prev_delta is not None:
+                if d * prev_delta < 0:
+                    bracket = (prev_L, L)
+                    break
+            prev_L = L
+            prev_delta = d
+
+        if bracket is not None:
+            break
+
+        if scan_max_mult < max_range_mult:
+            scan_max_mult = min(max_range_mult, scan_max_mult * 2.0)
+        else:
+            samples *= 2
+        passes += 1
 
     if best_L is None:
         if DEBUG_CURVE_STRAIGHT and logger.isEnabledFor(logging.DEBUG):
