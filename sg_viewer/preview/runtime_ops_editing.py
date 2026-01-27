@@ -15,6 +15,7 @@ from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, scale_section
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.preview.preview_mutations import project_point_to_polyline
 from sg_viewer.preview.runtime_ops_core import Point
 
@@ -464,6 +465,25 @@ class _RuntimeEditingMixin:
             track_length,
         )
 
+    def _ensure_default_elevations(self, sections: list[SectionPreview]) -> None:
+        sg_data = self._document.sg_data
+        if sg_data is None or sg_data.num_xsects <= 0:
+            return
+
+        if len(sg_data.sects) < len(sections):
+            apply_preview_to_sgfile(sg_data, sections, self._fsects_by_section)
+
+        num_xsects = sg_data.num_xsects
+        for section in sg_data.sects:
+            if not section.alt or len(section.alt) < num_xsects:
+                current = list(section.alt) if section.alt else []
+                current.extend([0] * (num_xsects - len(current)))
+                section.alt = current
+            if not section.grade or len(section.grade) < num_xsects:
+                current = list(section.grade) if section.grade else []
+                current.extend([0] * (num_xsects - len(current)))
+                section.grade = current
+
     def set_sections(
         self,
         sections: list[SectionPreview],
@@ -508,6 +528,7 @@ class _RuntimeEditingMixin:
             self._start_finish_dlong = float(preserved_start_finish_dlong) % float(
                 self._track_length
             )
+        self._ensure_default_elevations(sections)
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
