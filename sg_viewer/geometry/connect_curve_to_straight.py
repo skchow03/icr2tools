@@ -181,6 +181,7 @@ def solve_curve_end_to_straight_start(
         if cross != 0:
             orientation_hint = 1.0 if cross > 0 else -1.0
     fallback_orientation_hint = -orientation_hint
+    solve_cache: dict[float, Optional[tuple[SectionPreview, float]]] = {}
 
     def solve_candidates(curve_template: SectionPreview, end_point: tuple[float, float]):
         candidates = _solve_curve_with_fixed_heading(
@@ -204,13 +205,16 @@ def solve_curve_end_to_straight_start(
             )
         return candidates
 
-    def try_L(L: float):
-        nonlocal best_solution, best_abs_delta, best_signed_delta, best_L, tries_total, tries_candidates
+    def solve_for_L(L: float) -> Optional[tuple[SectionPreview, float]]:
+        nonlocal tries_candidates
 
+        cached = solve_cache.get(L)
+        if cached is not None or L in solve_cache:
+            return cached
 
-        tries_total += 1
         if L <= 1.0:
-            return
+            solve_cache[L] = None
+            return None
 
         P = (
             E[0] - hx * L,
@@ -225,6 +229,9 @@ def solve_curve_end_to_straight_start(
         )
 
         candidates = solve_candidates(curve_template, P)
+        best_candidate = None
+        best_delta = None
+        best_abs = float("inf")
 
         for cand in candidates:
             tries_candidates += 1
@@ -238,55 +245,55 @@ def solve_curve_end_to_straight_start(
             eh = (eh[0] / eh_len, eh[1] / eh_len)
 
             delta = _signed_angle_deg(eh, straight_heading)
-
             abs_delta = abs(delta)
-            if abs_delta < best_abs_delta:
-                best_abs_delta = abs_delta
-                best_signed_delta = delta
-                best_solution = cand
-                best_L = L
+            if abs_delta < best_abs:
+                best_abs = abs_delta
+                best_candidate = cand
+                best_delta = delta
 
-
-                if (
-                    DEBUG_CURVE_STRAIGHT_VERBOSE
-                    and logger.isEnabledFor(logging.DEBUG)
-                ):
-                    logger.debug(
-                        "  NEW BEST: L=%s orient=%+0.1f Δ=%.4f° radius=%s",
-                        f"{L:,.1f}",
-                        orientation_hint,
-                        delta,
-                        f"{cand.radius:,.1f}",
-                    )
-
-    def delta_for_L(L: float) -> Optional[float]:
-        if L <= 1.0:
+        if best_candidate is None or best_delta is None:
+            solve_cache[L] = None
             return None
 
-        P = (E[0] - hx * L, E[1] - hy * L)
+        solve_cache[L] = (best_candidate, best_delta)
+        return solve_cache[L]
 
-        curve_template = replace(
-            curve,
-            start=curve_start,
-            end=P,
-            polyline=[curve_start, P],
-        )
+    def try_L(L: float) -> Optional[tuple[SectionPreview, float]]:
+        nonlocal best_solution, best_abs_delta, best_signed_delta, best_L, tries_total, tries_candidates
 
-        candidates = solve_candidates(curve_template, P)
 
-        for cand in candidates:
-            if cand.end_heading is None:
-                continue
+        tries_total += 1
+        result = solve_for_L(L)
+        if result is None:
+            return None
 
-            eh = cand.end_heading
-            l = math.hypot(eh[0], eh[1])
-            if l <= 0:
-                continue
+        cand, delta = result
+        abs_delta = abs(delta)
+        if abs_delta < best_abs_delta:
+            best_abs_delta = abs_delta
+            best_signed_delta = delta
+            best_solution = cand
+            best_L = L
 
-            eh = (eh[0] / l, eh[1] / l)
-            return _signed_angle_deg(eh, straight_heading)
+            if (
+                DEBUG_CURVE_STRAIGHT_VERBOSE
+                and logger.isEnabledFor(logging.DEBUG)
+            ):
+                logger.debug(
+                    "  NEW BEST: L=%s orient=%+0.1f Δ=%.4f° radius=%s",
+                    f"{L:,.1f}",
+                    orientation_hint,
+                    delta,
+                    f"{cand.radius:,.1f}",
+                )
 
-        return None
+        return result
+
+    def delta_for_L(L: float) -> Optional[float]:
+        result = solve_for_L(L)
+        if result is None:
+            return None
+        return result[1]
 
 
     # ------------------------
