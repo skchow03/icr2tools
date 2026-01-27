@@ -485,33 +485,37 @@ class _RuntimeEditingMixin:
             rebuild_centerline=rebuild_centerline,
             force_rebuild=force_rebuild,
         )
-        self._realign_fsects_after_recalc(old_sections, old_fsects)
+        if not self._drag_active:
+            self._realign_fsects_after_recalc(old_sections, old_fsects)
 
         if rebuild_centerline:
             self._sampled_bounds = self._section_manager.sampled_bounds
             self._sampled_centerline = self._section_manager.sampled_centerline
             if self._section_manager.sampled_dlongs:
                 self._track_length = self._section_manager.sampled_dlongs[-1]
-            self._update_start_finish_mapping(preserved_start_finish_dlong)
+            if not self._drag_active:
+                self._update_start_finish_mapping(preserved_start_finish_dlong)
 
-            if needs_rebuild:
+            if needs_rebuild and not self._drag_active:
                 self._update_fit_scale()
 
-        self._update_node_status()
+        if not self._drag_active:
+            self._update_node_status()
 
-        self._selection.update_context(
-            self._section_manager.sections,
-            self._track_length,
-            self._section_manager.centerline_index,
-            self._section_manager.sampled_dlongs,
-        )
-        if preserved_start_finish_dlong is not None and self._track_length:
-            self._start_finish_dlong = float(preserved_start_finish_dlong) % float(
-                self._track_length
+        if not self._drag_active:
+            self._selection.update_context(
+                self._section_manager.sections,
+                self._track_length,
+                self._section_manager.centerline_index,
+                self._section_manager.sampled_dlongs,
             )
-        self._has_unsaved_changes = True
-        if self._emit_sections_changed is not None:
-            self._emit_sections_changed()
+            if preserved_start_finish_dlong is not None and self._track_length:
+                self._start_finish_dlong = float(preserved_start_finish_dlong) % float(
+                    self._track_length
+                )
+            self._has_unsaved_changes = True
+            if self._emit_sections_changed is not None:
+                self._emit_sections_changed()
         self._context.request_repaint()
 
     def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
