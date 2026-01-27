@@ -150,6 +150,7 @@ class _RuntimeCoreMixin:
             self._editor,
             self.set_sections,
             self.rebuild_after_start_finish,
+            self._document,
             self._node_radius_px,
             self._stop_panning,
             show_status=self._show_status,

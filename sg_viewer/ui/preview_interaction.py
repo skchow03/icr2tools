@@ -35,6 +35,7 @@ from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
 
 if TYPE_CHECKING:
     from sg_viewer.models.selection import SelectionManager
+    from sg_viewer.model.sg_document import SGDocument
     from sg_viewer.models.sg_model import SectionPreview
     from sg_viewer.ui.preview_editor import PreviewEditor
     from sg_viewer.ui.preview_section_manager import PreviewSectionManager
@@ -53,6 +54,7 @@ class PreviewInteraction:
         editor: "PreviewEditor",
         set_sections: Callable[..., None],
         rebuild_after_start_finish: Callable[[list["SectionPreview"]], None],
+        document: "SGDocument",
         node_radius_px: int,
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
@@ -67,11 +69,13 @@ class PreviewInteraction:
         self._editor = editor
         self._set_sections = set_sections
         self._rebuild_after_start_finish = rebuild_after_start_finish
+        self._document = document
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
         self._show_status = show_status
         self._sync_fsects_on_connection = sync_fsects_on_connection
 
+        self._drag_in_progress = False
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
         self._connection_target: tuple[int, str] | None = None
@@ -81,6 +85,7 @@ class PreviewInteraction:
         self._section_drag_start_sections: list["SectionPreview"] | None = None
         self._active_chain_indices: list[int] | None = None
         self._set_start_finish_mode = False
+        self._pending_curve_drag: tuple[int, Point, Point] | None = None
 
     # ------------------------------------------------------------------
     # State helpers
@@ -125,6 +130,8 @@ class PreviewInteraction:
         self._section_drag_start_sections = None
         self._active_chain_indices = None
         self._set_start_finish_mode = False
+        self._pending_curve_drag = None
+        self._set_drag_in_progress(False)
         self._context.end_drag_transform()
 
     def set_set_start_finish_mode(self, active: bool) -> None:
@@ -232,6 +239,7 @@ class PreviewInteraction:
                 return True
 
         if self._is_dragging_node:
+            self._set_drag_in_progress(False)
             if self._connection_target is not None:
                 if self._active_node is not None:
                     dragged_idx, dragged_end = self._active_node
@@ -318,11 +326,11 @@ class PreviewInteraction:
 
             active_node = self._active_node
             connection_target = self._connection_target
+            if connection_target is None:
+                self._finalize_drag_rebuild()
             self._end_node_drag()
             if active_node is not None and connection_target is not None:
                 self._connect_nodes(active_node, connection_target)
-            if connection_target is None:
-                self._finalize_drag_rebuild()
             event.accept()
             return True
         if self._is_dragging_section:
@@ -468,6 +476,7 @@ class PreviewInteraction:
         self._context.begin_drag()
         self._active_node = node
         self._is_dragging_node = True
+        self._set_drag_in_progress(True)
         self._connection_target = None
         self._stop_panning()
         self._update_dragged_section(track_point)
@@ -522,16 +531,15 @@ class PreviewInteraction:
                     end = track_point
 
         if sect.type_name == "curve":
-            updated_section = solve_curve_drag(sect, start, end)
+            updated_section = replace(sect, start=start, end=end)
+            if self._drag_in_progress:
+                self._pending_curve_drag = (sect_index, start, end)
         else:
             updated_section = update_straight_endpoints(sect, start, end)
 
-        if updated_section is None:
-            return
-
         sections = list(sections)
         sections[sect_index] = updated_section
-        if self._is_dragging_node:
+        if self._drag_in_progress:
             sections[sect_index] = update_section_geometry_drag(sections[sect_index])
         else:
             sections[sect_index] = update_section_geometry(sections[sect_index])
@@ -582,6 +590,8 @@ class PreviewInteraction:
         self._is_dragging_node = False
         self._active_node = None
         self._connection_target = None
+        self._pending_curve_drag = None
+        self._set_drag_in_progress(False)
         self._context.end_drag()
         self._context.end_drag_transform()
 
@@ -661,6 +671,7 @@ class PreviewInteraction:
         self._section_drag_start_mouse_screen = QtCore.QPointF(pos)
         self._section_drag_start_sections = copy.deepcopy(self._section_manager.sections)
         self._is_dragging_section = True
+        self._set_drag_in_progress(True)
         self._stop_panning()
 
     def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
@@ -703,7 +714,7 @@ class PreviewInteraction:
             if chain_index < 0 or chain_index >= len(sections):
                 continue
             updated_section = translate_section(original_sections[chain_index], dx, dy)
-            if self._is_dragging_node:
+            if self._drag_in_progress:
                 sections[chain_index] = update_section_geometry_drag(updated_section)
             else:
                 sections[chain_index] = update_section_geometry(updated_section)
@@ -719,6 +730,8 @@ class PreviewInteraction:
         self._section_drag_start_mouse_screen = None
         self._section_drag_start_sections = None
         self._active_chain_indices = None
+        self._pending_curve_drag = None
+        self._set_drag_in_progress(False)
         self._context.end_drag()
         self._context.end_drag_transform()
 
@@ -808,10 +821,17 @@ class PreviewInteraction:
     def _finalize_drag_rebuild(self) -> None:
         if not self._section_manager.sections:
             return
-        sections = [
-            update_section_geometry(section)
-            for section in self._section_manager.sections
-        ]
+        sections = list(self._section_manager.sections)
+        if self._pending_curve_drag is not None:
+            sect_index, start, end = self._pending_curve_drag
+            if 0 <= sect_index < len(sections):
+                section = sections[sect_index]
+                if section.type_name == "curve":
+                    solved = solve_curve_drag(section, start, end)
+                    if solved is not None:
+                        sections[sect_index] = solved
+        sections = [update_section_geometry(section) for section in sections]
+        self._pending_curve_drag = None
         self._set_sections(
             sections,
             rebuild_centerline=True,
@@ -956,7 +976,7 @@ class PreviewInteraction:
         s1_new = replace(s1, end=P, length=s1_length)
         s2_new = replace(s2, start=P, length=s2_length)
 
-        if self._is_dragging_node:
+        if self._drag_in_progress:
             s1_new = update_section_geometry_drag(s1_new)
             s2_new = update_section_geometry_drag(s2_new)
         else:
@@ -1064,7 +1084,7 @@ class PreviewInteraction:
             center=center,
         )
 
-        if self._is_dragging_node:
+        if self._drag_in_progress:
             updated_sections[s1_idx] = update_section_geometry_drag(updated_section_1)
             updated_sections[s2_idx] = update_section_geometry_drag(updated_section_2)
         else:
@@ -1154,16 +1174,20 @@ class PreviewInteraction:
         updated_section_1 = replace(section_1, end=constrained_point)
         updated_section_2 = replace(section_2, start=constrained_point)
 
-        if self._is_dragging_node:
+        if self._drag_in_progress:
             updated_sections[section_1_index] = update_section_geometry_drag(updated_section_1)
             updated_sections[section_2_index] = update_section_geometry_drag(updated_section_2)
         else:
             updated_sections[section_1_index] = update_section_geometry(updated_section_1)
             updated_sections[section_2_index] = update_section_geometry(updated_section_2)
 
-        self._apply_section_updates(updated_sections)
+        self._apply_section_updates(updated_sections, rebuild_centerline=False)
         self._context.request_repaint()
         return True
+
+    def _set_drag_in_progress(self, active: bool) -> None:
+        self._drag_in_progress = active
+        self._document.drag_in_progress = active
 
     def _points_close(self, a: Point, b: Point, tol: float = 1e-6) -> bool:
         return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol

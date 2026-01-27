@@ -29,6 +29,8 @@ class DerivedGeometry:
         self.dirty = True
 
     def rebuild_if_needed(self) -> None:
+        if self._document.drag_in_progress:
+            return
         if not self.dirty:
             return
 
