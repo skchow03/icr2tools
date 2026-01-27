@@ -56,6 +56,7 @@ class PreviewInteraction:
         node_radius_px: int,
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
+        emit_drag_state_changed: Callable[[bool], None] | None = None,
         sync_fsects_on_connection: Callable[
             [tuple[int, str], tuple[int, str]], None
         ]
@@ -70,6 +71,7 @@ class PreviewInteraction:
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
         self._show_status = show_status
+        self._emit_drag_state_changed = emit_drag_state_changed
         self._sync_fsects_on_connection = sync_fsects_on_connection
 
         self._is_dragging_node = False
@@ -81,6 +83,7 @@ class PreviewInteraction:
         self._section_drag_start_sections: list["SectionPreview"] | None = None
         self._active_chain_indices: list[int] | None = None
         self._set_start_finish_mode = False
+        self._drag_state_active = False
 
     # ------------------------------------------------------------------
     # State helpers
@@ -125,6 +128,7 @@ class PreviewInteraction:
         self._section_drag_start_sections = None
         self._active_chain_indices = None
         self._set_start_finish_mode = False
+        self._set_drag_state(False)
         self._context.end_drag_transform()
 
     def set_set_start_finish_mode(self, active: bool) -> None:
@@ -463,6 +467,7 @@ class PreviewInteraction:
             return
         self._active_node = node
         self._is_dragging_node = True
+        self._set_drag_state(True)
         self._connection_target = None
         self._stop_panning()
         self._update_dragged_section(track_point)
@@ -574,6 +579,7 @@ class PreviewInteraction:
         self._is_dragging_node = False
         self._active_node = None
         self._connection_target = None
+        self._set_drag_state(False)
         self._context.end_drag_transform()
 
     def _connect_nodes(
@@ -651,6 +657,7 @@ class PreviewInteraction:
         self._section_drag_start_mouse_screen = QtCore.QPointF(pos)
         self._section_drag_start_sections = copy.deepcopy(self._section_manager.sections)
         self._is_dragging_section = True
+        self._set_drag_state(True)
         self._stop_panning()
 
     def _update_section_drag_position(self, pos: QtCore.QPoint) -> None:
@@ -706,7 +713,15 @@ class PreviewInteraction:
         self._section_drag_start_mouse_screen = None
         self._section_drag_start_sections = None
         self._active_chain_indices = None
+        self._set_drag_state(False)
         self._context.end_drag_transform()
+
+    def _set_drag_state(self, active: bool) -> None:
+        if self._drag_state_active == active:
+            return
+        self._drag_state_active = active
+        if self._emit_drag_state_changed is not None:
+            self._emit_drag_state_changed(active)
 
     # ------------------------------------------------------------------
     # Utilities

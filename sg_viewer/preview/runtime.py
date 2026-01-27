@@ -72,6 +72,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         emit_delete_mode_changed: Callable[[bool], None] | None = None,
         emit_split_section_mode_changed: Callable[[bool], None] | None = None,
         emit_scale_changed: Callable[[float], None] | None = None,
+        emit_interaction_drag_changed: Callable[[bool], None] | None = None,
     ) -> None:
         self._context = context
         self._emit_selected_section_changed = emit_selected_section_changed
@@ -81,6 +82,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._emit_delete_mode_changed = emit_delete_mode_changed
         self._emit_split_section_mode_changed = emit_split_section_mode_changed
         self._emit_scale_changed = emit_scale_changed
+        self._emit_interaction_drag_changed = emit_interaction_drag_changed
         self._document = sg_document
         self._derived_geometry = DerivedGeometry(self._document)
         self._suppress_document_dirty = False
@@ -163,6 +165,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._node_radius_px,
             self._stop_panning,
             show_status=self._show_status,
+            emit_drag_state_changed=self._emit_interaction_drag_changed,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
         )
 

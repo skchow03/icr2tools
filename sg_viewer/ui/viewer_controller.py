@@ -49,6 +49,7 @@ class SGViewerController:
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
         self._current_profile: ElevationProfileData | None = None
+        self._deferred_profile_refresh = False
 
 
         self._create_actions()
@@ -212,6 +213,9 @@ class SGViewerController:
         )
         self._window.preview.deleteModeChanged.connect(self._on_delete_mode_changed)
         self._window.preview.splitSectionModeChanged.connect(self._on_split_mode_changed)
+        self._window.preview.interactionDragChanged.connect(
+            self._on_preview_drag_state_changed
+        )
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
         self._window.sg_fsects_checkbox.toggled.connect(
@@ -289,6 +293,14 @@ class SGViewerController:
 
     def _on_scale_changed(self, scale: float) -> None:
         self._window.update_scale_label(scale)
+
+    def _on_preview_drag_state_changed(self, dragging: bool) -> None:
+        if dragging:
+            return
+
+        if self._deferred_profile_refresh:
+            self._deferred_profile_refresh = False
+            self._refresh_elevation_profile()
 
     def _open_background_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -735,7 +747,10 @@ class SGViewerController:
                 is_dirty=True,
             )
 
-        self._refresh_elevation_profile()
+        if self._window.preview.is_interaction_dragging:
+            self._deferred_profile_refresh = True
+        else:
+            self._refresh_elevation_profile()
         self._refresh_elevation_inputs()
         self._update_track_length_display()
         self._update_copy_xsect_button()
