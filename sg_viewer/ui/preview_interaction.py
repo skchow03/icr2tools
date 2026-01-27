@@ -773,12 +773,10 @@ class PreviewInteraction:
         start_idx: int,
         changed_indices: list[int],
     ) -> None:
-        self._set_sections(updated_sections, changed_indices=changed_indices)
-
-        sections = self._section_manager.sections
-
         old_closed = is_closed_loop(old_sections)
-        new_closed = is_closed_loop(sections)
+        new_closed = is_closed_loop(updated_sections)
+
+        sections = updated_sections
 
         if DEBUG_LOOP_DETECTION:
             print("=== LOOP DETECTION CHECK ===")
@@ -800,6 +798,10 @@ class PreviewInteraction:
             self._set_sections(sections, changed_indices=changed_indices)
 
             self._show_status("Closed loop detected — track direction fixed")
+        else:
+            self._set_sections(sections, changed_indices=changed_indices)
+
+        sections = self._section_manager.sections
 
         if DEBUG_LOOP_DETECTION and not new_closed:
             disconnected = []
