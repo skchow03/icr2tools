@@ -443,6 +443,25 @@ class _RuntimeCoreMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
+    def copy_section_fsects(self, source_index: int, target_index: int) -> bool:
+        if (
+            source_index == target_index
+            or source_index < 0
+            or target_index < 0
+            or source_index >= len(self._fsects_by_section)
+            or target_index >= len(self._fsects_by_section)
+        ):
+            return False
+
+        source_fsects = self._fsects_by_section[source_index]
+        self._fsects_by_section[target_index] = copy.deepcopy(source_fsects)
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+        return True
+
     def log_debug(self, message: str, *args: object) -> None:
         logger.debug(message, *args)
 

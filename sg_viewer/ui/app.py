@@ -111,6 +111,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_dlat_line_checkbox.setChecked(False)
         self._refresh_fsects_button = QtWidgets.QPushButton("Refresh Fsects Preview")
         self._refresh_fsects_button.setEnabled(False)
+        self._copy_fsects_prev_button = QtWidgets.QPushButton(
+            "Copy Fsects to Previous"
+        )
+        self._copy_fsects_prev_button.setEnabled(False)
+        self._copy_fsects_next_button = QtWidgets.QPushButton("Copy Fsects to Next")
+        self._copy_fsects_next_button.setEnabled(False)
         self._section_table_button = QtWidgets.QPushButton("Section Table")
         self._section_table_button.setEnabled(False)
         self._heading_table_button = QtWidgets.QPushButton("Heading Table")
@@ -292,6 +298,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         fsect_sidebar_layout = QtWidgets.QVBoxLayout()
         fsect_sidebar_layout.addWidget(self._sg_fsects_checkbox)
         fsect_sidebar_layout.addWidget(self._refresh_fsects_button)
+        fsect_sidebar_layout.addWidget(self._copy_fsects_prev_button)
+        fsect_sidebar_layout.addWidget(self._copy_fsects_next_button)
         fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
         fsect_sidebar_layout.addWidget(self._fsect_table)
         fsect_sidebar_layout.addStretch()
@@ -386,6 +394,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def refresh_fsects_button(self) -> QtWidgets.QPushButton:
         return self._refresh_fsects_button
+
+    @property
+    def copy_fsects_prev_button(self) -> QtWidgets.QPushButton:
+        return self._copy_fsects_prev_button
+
+    @property
+    def copy_fsects_next_button(self) -> QtWidgets.QPushButton:
+        return self._copy_fsects_next_button
 
     @property
     def section_table_button(self) -> QtWidgets.QPushButton:
