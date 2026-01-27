@@ -144,6 +144,9 @@ class _RuntimeCoreMixin:
         self._show_status = show_status or self.set_status_text
         self._sg_version = 0
         self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
+        self._elevation_profile_cache: dict[
+            tuple[int, int], tuple[list[float], list[tuple[float, float]]]
+        ] = {}
 
         self._interaction = PreviewInteraction(
             self._context,
@@ -167,6 +170,7 @@ class _RuntimeCoreMixin:
     def _bump_sg_version(self) -> None:
         self._sg_version += 1
         self._elevation_bounds_cache.clear()
+        self._elevation_profile_cache.clear()
 
     @property
     def is_interaction_dragging(self) -> bool:
