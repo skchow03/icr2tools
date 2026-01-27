@@ -142,6 +142,8 @@ class _RuntimeCoreMixin:
         self._node_radius_px = 6
         self._has_unsaved_changes = False
         self._show_status = show_status or self.set_status_text
+        self._sg_version = 0
+        self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
 
         self._interaction = PreviewInteraction(
             self._context,
@@ -161,6 +163,10 @@ class _RuntimeCoreMixin:
         self._set_default_view_bounds()
 
         assert hasattr(self, "_editor")
+
+    def _bump_sg_version(self) -> None:
+        self._sg_version += 1
+        self._elevation_bounds_cache.clear()
 
     @property
     def is_interaction_dragging(self) -> bool:
@@ -1235,6 +1241,7 @@ class _RuntimeCoreMixin:
             )
         except (ValueError, IndexError):
             return False
+        self._bump_sg_version()
         return True
 
     def set_section_xsect_grade(
@@ -1244,6 +1251,7 @@ class _RuntimeCoreMixin:
             self._document.set_section_xsect_grade(section_id, xsect_index, grade)
         except (ValueError, IndexError):
             return False
+        self._bump_sg_version()
         return True
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> bool:
@@ -1251,4 +1259,5 @@ class _RuntimeCoreMixin:
             self._document.copy_xsect_data_to_all(xsect_index)
         except (ValueError, IndexError):
             return False
+        self._bump_sg_version()
         return True

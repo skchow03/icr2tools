@@ -69,11 +69,13 @@ class _RuntimePersistenceMixin:
     def apply_preview_to_sgfile(self) -> SGFile:
         if self._sgfile is None:
             raise ValueError("No SG file loaded.")
-        return apply_preview_to_sgfile(
+        sgfile = apply_preview_to_sgfile(
             self._sgfile,
             self._section_manager.sections,
             self._fsects_by_section,
         )
+        self._bump_sg_version()
+        return sgfile
 
     def recalculate_dlongs(self) -> bool:
         try:
@@ -194,6 +196,10 @@ class _RuntimePersistenceMixin:
         if self._sgfile is None or self._track_length is None:
             return None
 
+        cache_key = (samples_per_section, self._sg_version)
+        if cache_key in self._elevation_bounds_cache:
+            return self._elevation_bounds_cache[cache_key]
+
         num_xsects = self._sgfile.num_xsects
         if num_xsects <= 0:
             return None
@@ -216,6 +222,7 @@ class _RuntimePersistenceMixin:
                 max_alt = local_max
 
         if min_alt is None or max_alt is None:
+            self._elevation_bounds_cache[cache_key] = None
             return None
 
         if min_alt == max_alt:
@@ -223,4 +230,6 @@ class _RuntimePersistenceMixin:
             max_alt += 1.0
 
         padding = max(1.0, (max_alt - min_alt) * 0.05)
-        return min_alt - padding, max_alt + padding
+        bounds = (min_alt - padding, max_alt + padding)
+        self._elevation_bounds_cache[cache_key] = bounds
+        return bounds
