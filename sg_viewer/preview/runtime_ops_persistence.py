@@ -90,6 +90,7 @@ class _RuntimePersistenceMixin:
             self._document.set_sg_data(sgfile)
 
         self._document.rebuild_dlongs(0, 0)
+        self._elevation_profile_cache.clear()
         self._realign_fsects_after_recalc(old_sections, old_fsects)
         return True
 
@@ -106,6 +107,7 @@ class _RuntimePersistenceMixin:
         try:
             self._document.set_sg_data(sgfile, validate=False)
             self._document.rebuild_dlongs(0, 0)
+            self._elevation_profile_cache.clear()
         finally:
             self._suppress_document_dirty = False
 
@@ -158,8 +160,25 @@ class _RuntimePersistenceMixin:
                 sources=(ElevationSource.SG,),
             )
 
-        dlongs: list[float] = []
-        section_ranges: list[tuple[float, float]] = []
+        cache_key = (samples_per_section, self._sg_version)
+        cached = self._elevation_profile_cache.get(cache_key)
+        if cached is None:
+            dlongs: list[float] = []
+            section_ranges: list[tuple[float, float]] = []
+            for sg_sect in self._sgfile.sects:
+                sg_length = float(sg_sect.length)
+                if sg_length <= 0:
+                    continue
+                start_dlong = float(sg_sect.start_dlong)
+                section_ranges.append((start_dlong, start_dlong + sg_length))
+
+                for step in range(samples_per_section + 1):
+                    fraction = step / samples_per_section
+                    dlong = start_dlong + fraction * sg_length
+                    dlongs.append(dlong)
+            self._elevation_profile_cache[cache_key] = (dlongs, section_ranges)
+        else:
+            dlongs, section_ranges = cached
         sg_altitudes = sample_sg_elevation(
             self._sgfile,
             xsect_index,
@@ -168,23 +187,11 @@ class _RuntimePersistenceMixin:
         trk_altitudes: list[float] | None = None
         sources = (ElevationSource.SG,)
 
-        for sg_sect in self._sgfile.sects:
-            sg_length = float(sg_sect.length)
-            if sg_length <= 0:
-                continue
-            start_dlong = float(sg_sect.start_dlong)
-            section_ranges.append((start_dlong, start_dlong + sg_length))
-
-            for step in range(samples_per_section + 1):
-                fraction = step / samples_per_section
-                dlong = start_dlong + fraction * sg_length
-                dlongs.append(dlong)
-
         return ElevationProfileData(
-            dlongs=dlongs,
+            dlongs=list(dlongs),
             sg_altitudes=sg_altitudes,
             trk_altitudes=trk_altitudes,
-            section_ranges=section_ranges,
+            section_ranges=list(section_ranges),
             track_length=float(self._track_length),
             xsect_label=_xsect_label(dlat_value),
             sources=sources,
