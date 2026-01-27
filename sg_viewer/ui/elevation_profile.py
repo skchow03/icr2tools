@@ -32,6 +32,8 @@ def elevation_profile_alt_bounds(data: ElevationProfileData) -> tuple[float, flo
     alts = list(data.sg_altitudes)
     if data.trk_altitudes is not None and ElevationSource.TRK in data.sources:
         alts.extend(data.trk_altitudes)
+    if not alts:
+        return (0.0, 1.0)
     min_alt = min(alts)
     max_alt = max(alts)
     padding = max(1.0, (max_alt - min_alt) * 0.05)
