@@ -17,6 +17,7 @@ from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
     update_section_geometry_drag,
     update_section_geometry,
+    update_section_geometry_preview,
 )
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
@@ -26,7 +27,6 @@ from sg_viewer.preview.preview_mutations import (
     project_point_along_heading,
     solve_curve_drag,
     translate_section,
-    update_straight_endpoints,
 )
 
 from sg_viewer.geometry.topology import is_closed_loop
@@ -530,24 +530,23 @@ class PreviewInteraction:
                 else:
                     end = track_point
 
-        if sect.type_name == "curve":
-            updated_section = replace(sect, start=start, end=end)
-            if self._drag_in_progress:
-                self._pending_curve_drag = (sect_index, start, end)
-        else:
-            updated_section = update_straight_endpoints(sect, start, end)
+        if sect.type_name == "curve" and self._drag_in_progress:
+            self._pending_curve_drag = (sect_index, start, end)
 
-        sections = list(sections)
-        sections[sect_index] = updated_section
-        if self._drag_in_progress:
-            sections[sect_index] = update_section_geometry_drag(sections[sect_index])
+        updated = list(sections)
+        sect = updated[sect_index]
+        if endtype == "start":
+            sect = replace(sect, start=start)
         else:
-            sections[sect_index] = update_section_geometry(sections[sect_index])
+            sect = replace(sect, end=end)
+
+        updated[sect_index] = update_section_geometry_preview(sect)
         self._apply_section_updates(
-            sections,
+            updated,
             rebuild_centerline=False,
             changed_indices=[sect_index],
         )
+        self._context.request_repaint()
 
     def _update_connection_target(
         self,
@@ -994,8 +993,8 @@ class PreviewInteraction:
         s2_new = replace(s2, start=P, length=s2_length)
 
         if self._drag_in_progress:
-            s1_new = update_section_geometry_drag(s1_new)
-            s2_new = update_section_geometry_drag(s2_new)
+            s1_new = update_section_geometry_preview(s1_new)
+            s2_new = update_section_geometry_preview(s2_new)
         else:
             s1_new = update_section_geometry(s1_new)
             s2_new = update_section_geometry(s2_new)
@@ -1105,12 +1104,8 @@ class PreviewInteraction:
             center=center,
         )
 
-        if self._drag_in_progress:
-            updated_sections[s1_idx] = update_section_geometry_drag(updated_section_1)
-            updated_sections[s2_idx] = update_section_geometry_drag(updated_section_2)
-        else:
-            updated_sections[s1_idx] = update_section_geometry(updated_section_1)
-            updated_sections[s2_idx] = update_section_geometry(updated_section_2)
+        updated_sections[s1_idx] = update_section_geometry_preview(updated_section_1)
+        updated_sections[s2_idx] = update_section_geometry_preview(updated_section_2)
 
         self._apply_section_updates(
             updated_sections,
@@ -1200,8 +1195,8 @@ class PreviewInteraction:
         updated_section_2 = replace(section_2, start=constrained_point)
 
         if self._drag_in_progress:
-            updated_sections[section_1_index] = update_section_geometry_drag(updated_section_1)
-            updated_sections[section_2_index] = update_section_geometry_drag(updated_section_2)
+            updated_sections[section_1_index] = update_section_geometry_preview(updated_section_1)
+            updated_sections[section_2_index] = update_section_geometry_preview(updated_section_2)
         else:
             updated_sections[section_1_index] = update_section_geometry(updated_section_1)
             updated_sections[section_2_index] = update_section_geometry(updated_section_2)

@@ -6,6 +6,7 @@ from typing import List, Tuple
 
 from track_viewer.geometry import CenterlineIndex, build_centerline_index
 
+from sg_viewer.geometry.curve_solver import _solve_curve_drag
 from sg_viewer.models.sg_model import SectionPreview, Point
 
 
@@ -241,6 +242,61 @@ def update_section_geometry(section: SectionPreview) -> SectionPreview:
     )
 
     return replace(section, polyline=polyline, start_heading=start_heading, end_heading=end_heading)
+
+
+def update_section_geometry_preview(section: SectionPreview) -> SectionPreview:
+    """
+    Fast geometry update for interactive drag preview.
+    - No global side effects
+    - No neighbor solving
+    - No centerline rebuild
+    """
+    if section.type_name == "straight":
+        dx = section.end[0] - section.start[0]
+        dy = section.end[1] - section.start[1]
+        length = math.hypot(dx, dy)
+
+        start_heading = section.start_heading
+        end_heading = section.end_heading
+        if length > 1e-6:
+            hx = dx / length
+            hy = dy / length
+            start_heading = (hx, hy)
+            end_heading = (hx, hy)
+
+        polyline = [section.start, section.end]
+        return replace(
+            section,
+            length=length,
+            start_heading=start_heading,
+            end_heading=end_heading,
+            polyline=polyline,
+        )
+
+    if section.type_name == "curve":
+        solved = _solve_curve_drag(
+            section,
+            section.start,
+            section.end,
+            tolerance=4.0,
+            max_iters=12,
+        )
+        if solved is not None:
+            polyline = build_section_polyline(
+                solved.type_name,
+                solved.start,
+                solved.end,
+                solved.center,
+                solved.radius,
+                solved.start_heading,
+                solved.end_heading,
+            )
+            return replace(solved, polyline=polyline)
+
+        polyline = [section.start, section.end]
+        return replace(section, polyline=polyline)
+
+    return section
 
 
 def update_section_geometry_drag(section: SectionPreview) -> SectionPreview:

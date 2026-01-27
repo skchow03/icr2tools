@@ -151,7 +151,11 @@ def _solve_curve_with_fixed_heading(
 
 
 def _solve_curve_drag(
-    sect: SectionPreview, start: Point, end: Point, tolerance: float
+    sect: SectionPreview,
+    start: Point,
+    end: Point,
+    tolerance: float,
+    max_iters: int | None = None,
 ) -> SectionPreview | None:
     if start == end:
         return None
