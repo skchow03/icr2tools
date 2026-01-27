@@ -15,6 +15,10 @@ def _denormalize_dlat(sg, dlat: float) -> float:
 
     min_dlat = min(dlats)
     max_dlat = max(dlats)
+    return _denormalize_dlat_with_bounds(dlat, min_dlat, max_dlat)
+
+
+def _denormalize_dlat_with_bounds(dlat: float, min_dlat: float, max_dlat: float) -> float:
     if min_dlat == max_dlat:
         return min_dlat
 
@@ -122,7 +126,39 @@ def sg_altitude_at(
         return 0.0
 
     dlats = _xsect_dlats(sg)
-    actual_dlat = _denormalize_dlat(sg, dlat)
+    if not dlats:
+        return _sg_altitude_at_with_dlats(sg, sect_idx, subsect_idx, dlat, [], 0.0, 0.0)
+
+    min_dlat = min(dlats)
+    max_dlat = max(dlats)
+    return _sg_altitude_at_with_dlats(
+        sg,
+        sect_idx,
+        subsect_idx,
+        dlat,
+        dlats,
+        min_dlat,
+        max_dlat,
+    )
+
+
+def _sg_altitude_at_with_dlats(
+    sg,
+    sect_idx: int,
+    subsect_idx: int,
+    dlat: float,
+    dlats: list[float],
+    min_dlat: float,
+    max_dlat: float,
+) -> float:
+    sections = getattr(sg, "sects", [])
+    if not sections:
+        return 0.0
+
+    if dlats:
+        actual_dlat = _denormalize_dlat_with_bounds(dlat, min_dlat, max_dlat)
+    else:
+        actual_dlat = dlat
     left_xsect, right_xsect = _xsect_pair_for_dlat(dlats, actual_dlat)
 
     left_alt = _altitude_for_xsect(sg, sect_idx, subsect_idx, left_xsect)
@@ -161,10 +197,11 @@ def sample_sg_elevation(
 
     min_dlat = min(dlats)
     max_dlat = max(dlats)
-    if min_dlat == max_dlat:
-        dlat_norm = 0.0
-    else:
-        dlat_norm = (dlats[sect_idx] - min_dlat) / (max_dlat - min_dlat)
+    dlat_norm = (
+        0.0
+        if min_dlat == max_dlat
+        else (dlats[sect_idx] - min_dlat) / (max_dlat - min_dlat)
+    )
 
     samples = max(int(resolution), 1)
     altitudes: list[float] = []
@@ -175,6 +212,16 @@ def sample_sg_elevation(
             continue
         for step in range(samples + 1):
             fraction = step / samples
-            altitudes.append(sg_altitude_at(sg, section_index, fraction, dlat_norm))
+            altitudes.append(
+                _sg_altitude_at_with_dlats(
+                    sg,
+                    section_index,
+                    fraction,
+                    dlat_norm,
+                    dlats,
+                    min_dlat,
+                    max_dlat,
+                )
+            )
 
     return altitudes
