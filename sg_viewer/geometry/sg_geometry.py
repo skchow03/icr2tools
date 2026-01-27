@@ -251,6 +251,12 @@ def update_section_geometry_drag(section: SectionPreview) -> SectionPreview:
       - recompute elevation coupling
       - normalize fsects
     """
+    if section.polyline and len(section.polyline) >= 2:
+        updated_polyline = list(section.polyline)
+        updated_polyline[0] = section.start
+        updated_polyline[-1] = section.end
+        object.__setattr__(section, "polyline", updated_polyline)
+
     if section.type_name == "straight":
         object.__setattr__(
             section,
