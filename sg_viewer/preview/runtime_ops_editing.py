@@ -462,7 +462,11 @@ class _RuntimeEditingMixin:
         )
 
     def set_sections(
-        self, sections: list[SectionPreview], start_finish_dlong: float | None = None
+        self,
+        sections: list[SectionPreview],
+        start_finish_dlong: float | None = None,
+        *,
+        changed_indices: list[int] | None = None,
     ) -> None:
         self._clear_split_hover()
 
@@ -475,7 +479,9 @@ class _RuntimeEditingMixin:
         if preserved_start_finish_dlong is None:
             preserved_start_finish_dlong = self._current_start_finish_dlong()
 
-        needs_rebuild = self._section_manager.set_sections(sections)
+        needs_rebuild = self._section_manager.set_sections(
+            sections, changed_indices=changed_indices
+        )
         self._realign_fsects_after_recalc(old_sections, old_fsects)
 
         self._sampled_bounds = self._section_manager.sampled_bounds

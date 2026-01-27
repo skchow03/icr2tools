@@ -51,7 +51,7 @@ class PreviewInteraction:
         selection: "SelectionManager",
         section_manager: "PreviewSectionManager",
         editor: "PreviewEditor",
-        set_sections: Callable[[list["SectionPreview"], float | None], None],
+        set_sections: Callable[..., None],
         update_drag_preview: Callable[[list["SectionPreview"]], None],
         rebuild_after_start_finish: Callable[[list["SectionPreview"]], None],
         node_radius_px: int,
@@ -534,7 +534,7 @@ class PreviewInteraction:
         sections = list(sections)
         sections[sect_index] = updated_section
         sections[sect_index] = update_section_geometry(sections[sect_index])
-        self._apply_section_updates(sections)
+        self._apply_section_updates(sections, changed_indices=[sect_index])
 
     def _update_connection_target(
         self,
@@ -629,7 +629,7 @@ class PreviewInteraction:
         if self._sync_fsects_on_connection is not None:
             self._sync_fsects_on_connection(source, target)
 
-        self._apply_section_updates(sections)
+        self._apply_section_updates(sections, changed_indices=[src_index, tgt_index])
 
     # ------------------------------------------------------------------
     # Section dragging
@@ -709,7 +709,7 @@ class PreviewInteraction:
             applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
             assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
 
-        self._apply_section_updates(sections)
+        self._apply_section_updates(sections, changed_indices=self._active_chain_indices)
 
     def _end_section_drag(self) -> None:
         if self._drag_state_active:
@@ -758,7 +758,12 @@ class PreviewInteraction:
         sections[curve_idx] = update_section_geometry(curve)
         sections[straight_idx] = update_section_geometry(straight)
 
-        self._finalize_connection_updates(old_sections, sections, start_idx=curve_idx)
+        self._finalize_connection_updates(
+            old_sections,
+            sections,
+            start_idx=curve_idx,
+            changed_indices=[curve_idx, straight_idx],
+        )
 
     def _finalize_connection_updates(
         self,
@@ -766,8 +771,9 @@ class PreviewInteraction:
         updated_sections: list["SectionPreview"],
         *,
         start_idx: int,
+        changed_indices: list[int],
     ) -> None:
-        self._set_sections(updated_sections)
+        self._set_sections(updated_sections, changed_indices=changed_indices)
 
         sections = self._section_manager.sections
 
@@ -791,7 +797,7 @@ class PreviewInteraction:
                 start_idx=canonical_start_idx,
             )
 
-            self._set_sections(sections)
+            self._set_sections(sections, changed_indices=changed_indices)
 
             self._show_status("Closed loop detected — track direction fixed")
 
@@ -804,14 +810,18 @@ class PreviewInteraction:
             if disconnected:
                 print("Not closed — disconnected sections:", disconnected)
 
-    def _apply_section_updates(self, sections: list["SectionPreview"]) -> None:
+    def _apply_section_updates(
+        self,
+        sections: list["SectionPreview"],
+        changed_indices: list[int] | None = None,
+    ) -> None:
         if __debug__:
             for section in sections:
                 assert_section_geometry_consistent(section)
         if self._drag_state_active:
             self._update_drag_preview(sections)
         else:
-            self._set_sections(sections)
+            self._set_sections(sections, changed_indices=changed_indices)
 
     def _shared_straight_pair(
         self, dragged_key: tuple[int, str]
