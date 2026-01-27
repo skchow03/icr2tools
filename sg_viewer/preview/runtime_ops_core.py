@@ -144,6 +144,10 @@ class _RuntimeCoreMixin:
         self._show_status = show_status or self.set_status_text
         self._sg_version = 0
         self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
+        self._elevation_xsect_bounds_cache: dict[
+            tuple[int, int], dict[int, tuple[float, float] | None]
+        ] = {}
+        self._elevation_xsect_bounds_dirty: dict[tuple[int, int], set[int]] = {}
         self._elevation_profile_cache: dict[
             tuple[int, int], tuple[list[float], list[tuple[float, float]]]
         ] = {}
@@ -170,7 +174,17 @@ class _RuntimeCoreMixin:
     def _bump_sg_version(self) -> None:
         self._sg_version += 1
         self._elevation_bounds_cache.clear()
+        self._elevation_xsect_bounds_cache.clear()
+        self._elevation_xsect_bounds_dirty.clear()
         self._elevation_profile_cache.clear()
+
+    def _mark_xsect_bounds_dirty(self, xsect_index: int) -> None:
+        for cache_key, dirty in self._elevation_xsect_bounds_dirty.items():
+            if cache_key[1] == self._sg_version:
+                dirty.add(xsect_index)
+        for cache_key in list(self._elevation_bounds_cache):
+            if cache_key[1] == self._sg_version:
+                self._elevation_bounds_cache.pop(cache_key, None)
 
     @property
     def is_interaction_dragging(self) -> bool:
@@ -1245,7 +1259,7 @@ class _RuntimeCoreMixin:
             )
         except (ValueError, IndexError):
             return False
-        self._bump_sg_version()
+        self._mark_xsect_bounds_dirty(xsect_index)
         return True
 
     def set_section_xsect_grade(
@@ -1255,7 +1269,7 @@ class _RuntimeCoreMixin:
             self._document.set_section_xsect_grade(section_id, xsect_index, grade)
         except (ValueError, IndexError):
             return False
-        self._bump_sg_version()
+        self._mark_xsect_bounds_dirty(xsect_index)
         return True
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> bool:

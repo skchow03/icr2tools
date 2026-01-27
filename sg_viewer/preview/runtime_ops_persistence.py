@@ -204,25 +204,39 @@ class _RuntimePersistenceMixin:
             return None
 
         cache_key = (samples_per_section, self._sg_version)
-        if cache_key in self._elevation_bounds_cache:
-            return self._elevation_bounds_cache[cache_key]
 
         num_xsects = self._sgfile.num_xsects
         if num_xsects <= 0:
             return None
 
-        min_alt: float | None = None
-        max_alt: float | None = None
-        for xsect_index in range(num_xsects):
+        per_xsect_cache = self._elevation_xsect_bounds_cache.setdefault(cache_key, {})
+        dirty = self._elevation_xsect_bounds_dirty.setdefault(cache_key, set())
+        missing = [idx for idx in range(num_xsects) if idx not in per_xsect_cache]
+        if missing:
+            dirty.update(missing)
+
+        if not dirty and cache_key in self._elevation_bounds_cache:
+            return self._elevation_bounds_cache[cache_key]
+
+        for xsect_index in sorted(dirty):
             altitudes = sample_sg_elevation(
                 self._sgfile,
                 xsect_index,
                 resolution=samples_per_section,
             )
             if not altitudes:
+                per_xsect_cache[xsect_index] = None
                 continue
-            local_min = min(altitudes)
-            local_max = max(altitudes)
+            per_xsect_cache[xsect_index] = (min(altitudes), max(altitudes))
+        dirty.clear()
+
+        min_alt: float | None = None
+        max_alt: float | None = None
+        for xsect_index in range(num_xsects):
+            cached = per_xsect_cache.get(xsect_index)
+            if cached is None:
+                continue
+            local_min, local_max = cached
             if min_alt is None or local_min < min_alt:
                 min_alt = local_min
             if max_alt is None or local_max > max_alt:
