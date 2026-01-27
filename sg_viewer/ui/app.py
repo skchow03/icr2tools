@@ -123,6 +123,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_combo.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
         self._copy_xsect_button.setEnabled(False)
+        self._elevation_samples_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._elevation_samples_slider.setRange(10, 32)
+        self._elevation_samples_slider.setSingleStep(1)
+        self._elevation_samples_slider.setPageStep(2)
+        self._elevation_samples_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._elevation_samples_slider.setTickInterval(2)
+        self._elevation_samples_slider.setValue(10)
+        self._elevation_samples_slider.setToolTip(
+            "Number of elevation samples per track section."
+        )
+        self._elevation_samples_value_label = QtWidgets.QLabel("10")
+        self._elevation_samples_value_label.setMinimumWidth(24)
+        self._elevation_samples_value_label.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
         self._scale_label = QtWidgets.QLabel("Scale: –")
         self._track_length_label = QtWidgets.QLabel("Track length: –")
         self._section_label = QtWidgets.QLabel("Section: None")
@@ -292,6 +307,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         profile_controls.addWidget(self._xsect_combo)
         profile_controls.addWidget(self._copy_xsect_button)
         profile_controls.addWidget(self._xsect_dlat_line_checkbox)
+        profile_controls.addWidget(QtWidgets.QLabel("Samples/Section:"))
+        profile_controls.addWidget(self._elevation_samples_slider, stretch=1)
+        profile_controls.addWidget(self._elevation_samples_value_label)
         preview_column_layout.addLayout(profile_controls)
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
         preview_column_layout.addWidget(QtWidgets.QLabel("Section X-Section Elevation"))
@@ -398,6 +416,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._copy_xsect_button
 
     @property
+    def elevation_samples_slider(self) -> QtWidgets.QSlider:
+        return self._elevation_samples_slider
+
+    @property
     def altitude_slider(self) -> QtWidgets.QSlider:
         return self._altitude_slider
 
@@ -449,6 +471,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def update_altitude_display(self, value: int) -> None:
         altitude_feet = feet_from_slider_units(value)
         self._altitude_value_label.setText(f"{altitude_feet:.1f}")
+
+    def update_elevation_samples_display(self, value: int) -> None:
+        self._elevation_samples_value_label.setText(str(value))
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:

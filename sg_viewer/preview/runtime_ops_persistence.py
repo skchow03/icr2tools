@@ -127,7 +127,7 @@ class _RuntimePersistenceMixin:
     def build_elevation_profile(
         self,
         xsect_index: int,
-        samples_per_section: int = 24,
+        samples_per_section: int = 10,
         show_trk: bool = False,
     ) -> ElevationProfileData | None:
         _ = show_trk
@@ -207,7 +207,7 @@ class _RuntimePersistenceMixin:
         )
 
     def get_elevation_profile_bounds(
-        self, samples_per_section: int = 24
+        self, samples_per_section: int = 10
     ) -> tuple[float, float] | None:
         if self._sgfile is None or self._track_length is None:
             return None
