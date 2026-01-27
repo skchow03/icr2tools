@@ -525,9 +525,6 @@ class _RuntimeEditingMixin:
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
-        self._has_unsaved_changes = True
-        if self._emit_sections_changed is not None:
-            self._emit_sections_changed()
         self._context.request_repaint()
 
     def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
