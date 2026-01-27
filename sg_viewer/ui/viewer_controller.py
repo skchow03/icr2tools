@@ -228,6 +228,12 @@ class SGViewerController:
         self._window.refresh_fsects_button.clicked.connect(
             self._refresh_fsects_preview
         )
+        self._window.copy_fsects_prev_button.clicked.connect(
+            self._copy_fsects_to_previous
+        )
+        self._window.copy_fsects_next_button.clicked.connect(
+            self._copy_fsects_to_next
+        )
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
         self._window.xsect_table_button.clicked.connect(self._show_xsect_table)
@@ -758,6 +764,7 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._update_track_length_display()
         self._update_copy_xsect_button()
+        self._update_copy_fsects_buttons()
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
@@ -1027,6 +1034,7 @@ class SGViewerController:
         self._window.update_selection_sidebar(selection)
         self._refresh_elevation_inputs()
         self._refresh_xsect_elevation_panel()
+        self._update_copy_fsects_buttons()
 
     def _on_profile_section_clicked(self, section_index: int) -> None:
         self._window.preview.selection_manager.set_selected_section(section_index)
@@ -1064,6 +1072,21 @@ class SGViewerController:
         combo_enabled = self._window.xsect_combo.isEnabled()
         sections, _ = self._window.preview.get_section_set()
         self._window.copy_xsect_button.setEnabled(combo_enabled and bool(sections))
+
+    def _update_copy_fsects_buttons(self) -> None:
+        selection = self._active_selection
+        sections, _ = self._window.preview.get_section_set()
+        total_sections = len(sections)
+        has_selection = selection is not None and total_sections > 0
+        prev_enabled = False
+        next_enabled = False
+        if has_selection:
+            prev_index = selection.previous_id
+            next_index = selection.next_id
+            prev_enabled = 0 <= prev_index < total_sections
+            next_enabled = 0 <= next_index < total_sections
+        self._window.copy_fsects_prev_button.setEnabled(prev_enabled)
+        self._window.copy_fsects_next_button.setEnabled(next_enabled)
 
     def _current_xsect_index(self) -> int | None:
         combo = self._window.xsect_combo
@@ -1185,6 +1208,46 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
         self._window.show_status_message(
             f"Copied x-section {xsect_index} data to all x-sections."
+        )
+
+    def _copy_fsects_to_previous(self) -> None:
+        self._copy_fsects_to_neighbor(direction="previous")
+
+    def _copy_fsects_to_next(self) -> None:
+        self._copy_fsects_to_neighbor(direction="next")
+
+    def _copy_fsects_to_neighbor(self, *, direction: str) -> None:
+        selection = self._active_selection
+        if selection is None:
+            return
+        if direction == "previous":
+            target_index = selection.previous_id
+        elif direction == "next":
+            target_index = selection.next_id
+        else:
+            return
+
+        sections, _ = self._window.preview.get_section_set()
+        if target_index < 0 or target_index >= len(sections):
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Copy Fsects",
+                f"No {direction} section is connected to this section.",
+            )
+            return
+
+        if not self._window.preview.copy_section_fsects(
+            selection.index, target_index
+        ):
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Copy Failed",
+                "Unable to copy fsect data to the requested section.",
+            )
+            return
+
+        self._window.show_status_message(
+            f"Copied fsects from section {selection.index} to {direction} section {target_index}."
         )
 
     def _on_grade_slider_changed(self, value: int) -> None:
