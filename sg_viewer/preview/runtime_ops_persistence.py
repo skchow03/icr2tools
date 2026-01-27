@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from icr2_core.trk.sg_classes import SGFile
@@ -8,6 +9,8 @@ from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.models.preview_fsection import PreviewFSection
+
+logger = logging.getLogger(__name__)
 
 
 class _RuntimePersistenceMixin:
@@ -89,7 +92,12 @@ class _RuntimePersistenceMixin:
         if self._document.sg_data is None:
             self._document.set_sg_data(sgfile)
 
-        self._document.rebuild_dlongs(0, 0)
+        try:
+            self._document.rebuild_dlongs(0, 0)
+        except ValueError as exc:
+            self._show_status(f"Unable to recalculate lengths: {exc}")
+            logger.warning("Recalculate dlongs failed: %s", exc)
+            return False
         self._elevation_profile_cache.clear()
         self._realign_fsects_after_recalc(old_sections, old_fsects)
         return True
@@ -108,6 +116,10 @@ class _RuntimePersistenceMixin:
             self._document.set_sg_data(sgfile, validate=False)
             self._document.rebuild_dlongs(0, 0)
             self._elevation_profile_cache.clear()
+        except ValueError as exc:
+            self._show_status(f"Unable to refresh Fsects preview: {exc}")
+            logger.warning("Refresh fsections preview failed: %s", exc)
+            return False
         finally:
             self._suppress_document_dirty = False
 
