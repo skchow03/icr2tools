@@ -31,6 +31,7 @@ class PreviewRuntimeOps(
         emit_delete_mode_changed: Callable[[bool], None] | None = None,
         emit_split_section_mode_changed: Callable[[bool], None] | None = None,
         emit_scale_changed: Callable[[float], None] | None = None,
+        emit_interaction_drag_changed: Callable[[bool], None] | None = None,
     ) -> None:
         super().__init__(
             context,
@@ -43,4 +44,5 @@ class PreviewRuntimeOps(
             emit_delete_mode_changed,
             emit_split_section_mode_changed,
             emit_scale_changed,
+            emit_interaction_drag_changed,
         )

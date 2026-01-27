@@ -18,6 +18,7 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     deleteModeChanged = QtCore.pyqtSignal(bool)
     splitSectionModeChanged = QtCore.pyqtSignal(bool)
     scaleChanged = QtCore.pyqtSignal(float)
+    interactionDragChanged = QtCore.pyqtSignal(bool)
 
     def __init__(
         self,
@@ -44,6 +45,7 @@ class PreviewWidgetQt(QtWidgets.QWidget):
             emit_delete_mode_changed=self.deleteModeChanged.emit,
             emit_split_section_mode_changed=self.splitSectionModeChanged.emit,
             emit_scale_changed=self.scaleChanged.emit,
+            emit_interaction_drag_changed=self.interactionDragChanged.emit,
         )
         self._presenter = PreviewPresenter(
             context=self,
