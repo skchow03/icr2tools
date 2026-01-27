@@ -1246,6 +1246,7 @@ class SGViewerController:
             )
             return
 
+        self._window.preview.selection_manager.set_selected_section(target_index)
         self._window.show_status_message(
             f"Copied fsects from section {selection.index} to {direction} section {target_index}."
         )
