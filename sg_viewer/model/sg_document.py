@@ -26,6 +26,7 @@ class SGDocument(QtCore.QObject):
     def __init__(self, sg_data: SGFile | None = None, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._sg_data = sg_data
+        self.drag_in_progress = False
         if self._sg_data is not None:
             self.validate()
 
