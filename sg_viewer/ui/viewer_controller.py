@@ -235,6 +235,9 @@ class SGViewerController:
             self._refresh_elevation_profile
         )
         self._window.copy_xsect_button.clicked.connect(self._copy_xsect_to_all)
+        self._window.elevation_samples_slider.valueChanged.connect(
+            self._on_elevation_samples_changed
+        )
         self._window.altitude_slider.valueChanged.connect(
             self._on_altitude_slider_changed
         )
@@ -941,13 +944,19 @@ class SGViewerController:
             current_index = combo.currentIndex()
         self._window.preview.set_selected_xsect_index(int(current_index))
 
-        profile = self._window.preview.build_elevation_profile(int(current_index))
+        samples_per_section = self._current_samples_per_section()
+        profile = self._window.preview.build_elevation_profile(
+            int(current_index),
+            samples_per_section=samples_per_section,
+        )
         if profile is not None:
             global_bounds: tuple[float, float] | None = None
             if self._profile_dragging and self._current_profile is not None:
                 global_bounds = self._current_profile.y_range
             else:
-                global_bounds = self._window.preview.get_elevation_profile_bounds()
+                global_bounds = self._window.preview.get_elevation_profile_bounds(
+                    samples_per_section=samples_per_section
+                )
             if global_bounds is not None:
                 profile.y_range = global_bounds
         self._window.profile_widget.set_profile_data(profile)
@@ -955,6 +964,13 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._update_copy_xsect_button()
         self._refresh_xsect_elevation_panel()
+
+    def _current_samples_per_section(self) -> int:
+        return int(self._window.elevation_samples_slider.value())
+
+    def _on_elevation_samples_changed(self, value: int) -> None:
+        self._window.update_elevation_samples_display(value)
+        self._refresh_elevation_profile()
 
     def _clear_background_state(self) -> None:
         self._window.preview.clear_background_image()
