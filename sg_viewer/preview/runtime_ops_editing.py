@@ -170,6 +170,7 @@ class _RuntimeEditingMixin:
         sg_data.num_sects = len(sg_data.sects)
         if len(sg_data.header) > 4:
             sg_data.header[4] = sg_data.num_sects
+        self._bump_sg_version()
 
     def _sg_track_length(self, sg_data) -> float:
         if sg_data is None:
@@ -260,6 +261,8 @@ class _RuntimeEditingMixin:
 
         if updated and self._emit_sections_changed is not None:
             self._emit_sections_changed()
+        if updated:
+            self._bump_sg_version()
         return updated
 
     def _refresh_section_dlongs_after_drag(self) -> bool:
@@ -509,6 +512,7 @@ class _RuntimeEditingMixin:
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
         self._context.request_repaint()
+        self._bump_sg_version()
 
     def update_drag_preview(self, sections: list[SectionPreview]) -> None:
         if len(sections) != len(self._section_manager.sections):

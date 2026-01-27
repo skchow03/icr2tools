@@ -50,6 +50,7 @@ class SGViewerController:
         self._active_selection: SectionSelection | None = None
         self._current_profile: ElevationProfileData | None = None
         self._deferred_profile_refresh = False
+        self._profile_dragging = False
 
 
         self._create_actions()
@@ -941,9 +942,14 @@ class SGViewerController:
         self._window.preview.set_selected_xsect_index(int(current_index))
 
         profile = self._window.preview.build_elevation_profile(int(current_index))
-        global_bounds = self._window.preview.get_elevation_profile_bounds()
-        if profile is not None and global_bounds is not None:
-            profile.y_range = global_bounds
+        if profile is not None:
+            global_bounds: tuple[float, float] | None = None
+            if self._profile_dragging and self._current_profile is not None:
+                global_bounds = self._current_profile.y_range
+            else:
+                global_bounds = self._window.preview.get_elevation_profile_bounds()
+            if global_bounds is not None:
+                profile.y_range = global_bounds
         self._window.profile_widget.set_profile_data(profile)
         self._current_profile = profile
         self._refresh_elevation_inputs()
@@ -1014,16 +1020,20 @@ class SGViewerController:
         if xsect_index is None:
             return
 
-        if self._window.preview.set_section_xsect_altitude(
-            section_index, xsect_index, altitude
-        ):
-            self._refresh_elevation_profile()
-            self._refresh_xsect_elevation_panel()
-            if (
-                self._active_selection is not None
-                and self._active_selection.index == section_index
+        self._profile_dragging = True
+        try:
+            if self._window.preview.set_section_xsect_altitude(
+                section_index, xsect_index, altitude
             ):
-                self._refresh_elevation_inputs()
+                self._refresh_elevation_profile()
+                self._refresh_xsect_elevation_panel()
+                if (
+                    self._active_selection is not None
+                    and self._active_selection.index == section_index
+                ):
+                    self._refresh_elevation_inputs()
+        finally:
+            self._profile_dragging = False
 
     def _on_xsect_node_clicked(self, xsect_index: int) -> None:
         combo = self._window.xsect_combo

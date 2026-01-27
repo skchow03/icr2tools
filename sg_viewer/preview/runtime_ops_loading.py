@@ -19,6 +19,7 @@ class _RuntimeLoadingMixin:
         self._fsects_by_section = []
         self._document.set_sg_data(None)
         self._suppress_document_dirty = False
+        self._bump_sg_version()
         self._section_manager.reset()
         self._sampled_centerline = []
         self._sampled_bounds = None
@@ -79,6 +80,7 @@ class _RuntimeLoadingMixin:
         self._suppress_document_dirty = True
         self._document.set_sg_data(data.sgfile)
         self._suppress_document_dirty = False
+        self._bump_sg_version()
         self._update_fit_scale()
         self._has_unsaved_changes = False
         self._context.request_repaint()
