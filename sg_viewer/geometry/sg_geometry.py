@@ -243,6 +243,47 @@ def update_section_geometry(section: SectionPreview) -> SectionPreview:
     return replace(section, polyline=polyline, start_heading=start_heading, end_heading=end_heading)
 
 
+def update_section_geometry_drag(section: SectionPreview) -> SectionPreview:
+    """
+    Lightweight geometry update for drag preview.
+    Does NOT:
+      - rebuild full polyline
+      - recompute elevation coupling
+      - normalize fsects
+    """
+    if section.type_name == "straight":
+        object.__setattr__(
+            section,
+            "length",
+            math.hypot(
+                section.end[0] - section.start[0],
+                section.end[1] - section.start[1],
+            ),
+        )
+        return section
+
+    if section.type_name == "curve":
+        if section.center is not None and section.radius is not None:
+            object.__setattr__(
+                section,
+                "length",
+                abs(section.radius)
+                * abs(
+                    math.atan2(
+                        section.end[1] - section.center[1],
+                        section.end[0] - section.center[0],
+                    )
+                    - math.atan2(
+                        section.start[1] - section.center[1],
+                        section.start[0] - section.center[0],
+                    )
+                ),
+            )
+        return section
+
+    return section
+
+
 def scale_section(section: SectionPreview, factor: float) -> SectionPreview:
     """Return a copy of ``section`` scaled uniformly by ``factor``."""
 
