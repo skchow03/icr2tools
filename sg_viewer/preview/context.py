@@ -17,6 +17,12 @@ class PreviewContext(Protocol):
     def end_drag_transform(self) -> None:
         ...
 
+    def begin_drag(self) -> None:
+        ...
+
+    def end_drag(self) -> None:
+        ...
+
     def map_to_track(
         self,
         screen_pos: tuple[float, float] | Point,

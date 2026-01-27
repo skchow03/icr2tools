@@ -464,6 +464,7 @@ class PreviewInteraction:
         if track_point is None:
             self._context.end_drag_transform()
             return
+        self._context.begin_drag()
         self._active_node = node
         self._is_dragging_node = True
         self._connection_target = None
@@ -577,6 +578,7 @@ class PreviewInteraction:
         self._is_dragging_node = False
         self._active_node = None
         self._connection_target = None
+        self._context.end_drag()
         self._context.end_drag_transform()
 
     def _connect_nodes(
@@ -649,6 +651,7 @@ class PreviewInteraction:
         if transform is None:
             return
         self._context.begin_drag_transform(transform)
+        self._context.begin_drag()
         self._active_section_index = index
         self._active_chain_indices = chain_indices
         self._section_drag_start_mouse_screen = QtCore.QPointF(pos)
@@ -709,6 +712,7 @@ class PreviewInteraction:
         self._section_drag_start_mouse_screen = None
         self._section_drag_start_sections = None
         self._active_chain_indices = None
+        self._context.end_drag()
         self._context.end_drag_transform()
 
     # ------------------------------------------------------------------

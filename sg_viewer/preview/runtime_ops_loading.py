@@ -35,6 +35,8 @@ class _RuntimeLoadingMixin:
         self._set_default_view_bounds()
         self._update_node_status()
         self._sg_preview_model = None
+        self._drag_active = False
+        self._cached_preview_model = None
         self._has_unsaved_changes = False
         self._update_fit_scale()
         self._context.request_repaint()
@@ -118,7 +120,7 @@ class _RuntimeLoadingMixin:
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
-        self._sg_preview_model = build_sg_preview_model(self._document)
+        self._sg_preview_model = self._build_sg_preview_model()
         if len(self._section_manager.sections) != len(self._fsects_by_section):
             if self._document.sg_data is not None:
                 self._fsects_by_section = preview_loader_service.build_fsects_by_section(
@@ -143,3 +145,10 @@ class _RuntimeLoadingMixin:
             if self._emit_sections_changed is not None:
                 self._emit_sections_changed()
         self._context.request_repaint()
+
+    def _build_sg_preview_model(self):
+        if self._drag_active:
+            if self._cached_preview_model is None:
+                self._cached_preview_model = build_sg_preview_model(self._document)
+            return self._cached_preview_model
+        return build_sg_preview_model(self._document)
