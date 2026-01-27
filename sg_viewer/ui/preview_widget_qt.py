@@ -63,6 +63,12 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     def end_drag_transform(self) -> None:
         self._runtime.end_drag_transform()
 
+    def begin_drag(self) -> None:
+        self._runtime.begin_drag()
+
+    def end_drag(self) -> None:
+        self._runtime.end_drag()
+
     def map_to_track(
         self,
         screen_pos: tuple[float, float] | Point,

@@ -116,6 +116,8 @@ class _RuntimeCoreMixin:
 
         self._drag_transform: Transform | None = None
         self._drag_transform_active = False
+        self._drag_active = False
+        self._cached_preview_model = None
 
         self._split_section_mode = False
         self._split_previous_status_message: str | None = None
@@ -341,6 +343,18 @@ class _RuntimeCoreMixin:
 
     def request_repaint(self) -> None:
         self._context.request_repaint()
+
+    def request_rebuild(self) -> None:
+        self._sg_preview_model = self._build_sg_preview_model()
+        self._context.request_repaint()
+
+    def begin_drag(self) -> None:
+        self._drag_active = True
+
+    def end_drag(self) -> None:
+        self._drag_active = False
+        self._cached_preview_model = None
+        self.request_rebuild()
 
     def update_fsection_type(
         self,

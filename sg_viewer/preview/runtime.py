@@ -126,6 +126,8 @@ class PreviewRuntime(PreviewRuntimeOps):
 
         self._drag_transform: Transform | None = None
         self._drag_transform_active = False
+        self._drag_active = False
+        self._cached_preview_model = None
 
         self._split_section_mode = False
         self._split_previous_status_message: str | None = None
