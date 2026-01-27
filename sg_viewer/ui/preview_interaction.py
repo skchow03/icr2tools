@@ -543,7 +543,11 @@ class PreviewInteraction:
             sections[sect_index] = update_section_geometry_drag(sections[sect_index])
         else:
             sections[sect_index] = update_section_geometry(sections[sect_index])
-        self._apply_section_updates(sections, rebuild_centerline=False)
+        self._apply_section_updates(
+            sections,
+            rebuild_centerline=False,
+            changed_indices=[sect_index],
+        )
 
     def _update_connection_target(
         self,
@@ -722,7 +726,11 @@ class PreviewInteraction:
             applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
             assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
 
-        self._apply_section_updates(sections, rebuild_centerline=False)
+        self._apply_section_updates(
+            sections,
+            rebuild_centerline=False,
+            changed_indices=list(self._active_chain_indices),
+        )
 
     def _end_section_drag(self) -> None:
         self._is_dragging_section = False
@@ -811,11 +819,20 @@ class PreviewInteraction:
                 print("Not closed — disconnected sections:", disconnected)
 
     def _apply_section_updates(
-        self, sections: list["SectionPreview"], *, rebuild_centerline: bool = True
+        self,
+        sections: list["SectionPreview"],
+        *,
+        rebuild_centerline: bool = True,
+        changed_indices: list[int] | None = None,
     ) -> None:
         if __debug__:
-            for section in sections:
-                assert_section_geometry_consistent(section)
+            if changed_indices is None:
+                for section in sections:
+                    assert_section_geometry_consistent(section)
+            else:
+                for index in changed_indices:
+                    if 0 <= index < len(sections):
+                        assert_section_geometry_consistent(sections[index])
         self._set_sections(sections, rebuild_centerline=rebuild_centerline)
 
     def _finalize_drag_rebuild(self) -> None:
@@ -987,7 +1004,11 @@ class PreviewInteraction:
         sections[s1_idx] = s1_new
         sections[s2_idx] = s2_new
 
-        self._apply_section_updates(sections, rebuild_centerline=False)
+        self._apply_section_updates(
+            sections,
+            rebuild_centerline=False,
+            changed_indices=[s1_idx, s2_idx],
+        )
         self._context.request_repaint()
         return True
 
@@ -1091,7 +1112,11 @@ class PreviewInteraction:
             updated_sections[s1_idx] = update_section_geometry(updated_section_1)
             updated_sections[s2_idx] = update_section_geometry(updated_section_2)
 
-        self._apply_section_updates(updated_sections, rebuild_centerline=False)
+        self._apply_section_updates(
+            updated_sections,
+            rebuild_centerline=False,
+            changed_indices=[s1_idx, s2_idx],
+        )
         self._context.request_repaint()
         return True
 
@@ -1181,7 +1206,11 @@ class PreviewInteraction:
             updated_sections[section_1_index] = update_section_geometry(updated_section_1)
             updated_sections[section_2_index] = update_section_geometry(updated_section_2)
 
-        self._apply_section_updates(updated_sections, rebuild_centerline=False)
+        self._apply_section_updates(
+            updated_sections,
+            rebuild_centerline=False,
+            changed_indices=[section_1_index, section_2_index],
+        )
         self._context.request_repaint()
         return True
 
