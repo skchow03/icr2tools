@@ -16,6 +16,7 @@ from sg_viewer.ui.altitude_units import (
     feet_to_slider_units,
 )
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
+from sg_viewer.ui.fsect_diagram_widget import FsectDiagramWidget
 from sg_viewer.ui.xsect_elevation import XsectElevationWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
 from sg_viewer.models.selection import SectionSelection
@@ -193,6 +194,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._fsect_table.setMinimumHeight(160)
         self._fsect_table.cellChanged.connect(self._on_fsect_cell_changed)
+        self._fsect_diagram = FsectDiagramWidget(
+            on_dlat_changed=self._on_fsect_diagram_dlat_changed
+        )
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
         max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
@@ -312,6 +316,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         fsect_units_layout.addStretch()
         fsect_sidebar_layout.addLayout(fsect_units_layout)
         fsect_sidebar_layout.addWidget(self._fsect_table)
+        fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsect Diagram"))
+        fsect_sidebar_layout.addWidget(self._fsect_diagram)
         fsect_sidebar_layout.addStretch()
         self._fsect_sidebar.setLayout(fsect_sidebar_layout)
 
@@ -657,6 +663,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
         self._fsect_table.resizeColumnsToContents()
+        self._fsect_diagram.set_fsects(section_index, fsects)
 
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._updating_fsect_table:
@@ -760,6 +767,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             surface_type=surface_type,
             type2=type2,
         )
+
+    def _on_fsect_diagram_dlat_changed(
+        self, section_index: int, row_index: int, endpoint: str, new_dlat: float
+    ) -> None:
+        if endpoint == "start":
+            self._preview.update_fsection_dlat(
+                section_index, row_index, start_dlat=new_dlat
+            )
+        else:
+            self._preview.update_fsection_dlat(
+                section_index, row_index, end_dlat=new_dlat
+            )
+        self._update_fsect_table(section_index)
 
     @staticmethod
     def _fsect_type_options() -> list[tuple[str, int, int]]:
