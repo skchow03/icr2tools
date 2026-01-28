@@ -121,7 +121,7 @@ class _RuntimePersistenceMixin:
         return True
 
     def refresh_fsections_preview(self) -> bool:
-        if self._sgfile is None or self._preview_data is None:
+        if self._sgfile is None:
             return False
 
         try:
@@ -141,8 +141,19 @@ class _RuntimePersistenceMixin:
         finally:
             self._suppress_document_dirty = False
 
-        fsections = preview_loader_service.build_fsections(sgfile)
-        object.__setattr__(self._preview_data, "fsections", fsections)
+        if self._preview_data is None:
+            try:
+                self._preview_data = preview_loader_service.load_preview_from_sgfile(
+                    sgfile,
+                    status_message=self._status_message,
+                )
+            except ValueError as exc:
+                self._show_status(f"Unable to refresh Fsects preview: {exc}")
+                logger.warning("Refresh fsections preview failed: %s", exc)
+                return False
+        else:
+            fsections = preview_loader_service.build_fsections(sgfile)
+            object.__setattr__(self._preview_data, "fsections", fsections)
         self._context.request_repaint()
         return True
 
