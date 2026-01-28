@@ -10,6 +10,7 @@ from PyQt5 import QtWidgets
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
+from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.models.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -233,6 +234,12 @@ class SGViewerController:
         )
         self._window.copy_fsects_next_button.clicked.connect(
             self._copy_fsects_to_next
+        )
+        self._window.add_fsect_button.clicked.connect(
+            self._add_fsect_below_selected
+        )
+        self._window.delete_fsect_button.clicked.connect(
+            self._delete_selected_fsect
         )
         self._window.section_table_button.clicked.connect(self._show_section_table)
         self._window.heading_table_button.clicked.connect(self._show_heading_table)
@@ -765,6 +772,7 @@ class SGViewerController:
         self._update_track_length_display()
         self._update_copy_xsect_button()
         self._update_copy_fsects_buttons()
+        self._update_fsect_edit_buttons()
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
@@ -1035,6 +1043,7 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._refresh_xsect_elevation_panel()
         self._update_copy_fsects_buttons()
+        self._update_fsect_edit_buttons()
 
     def _on_profile_section_clicked(self, section_index: int) -> None:
         self._window.preview.selection_manager.set_selected_section(section_index)
@@ -1087,6 +1096,16 @@ class SGViewerController:
             next_enabled = 0 <= next_index < total_sections
         self._window.copy_fsects_prev_button.setEnabled(prev_enabled)
         self._window.copy_fsects_next_button.setEnabled(next_enabled)
+
+    def _update_fsect_edit_buttons(self) -> None:
+        selection = self._active_selection
+        if selection is None:
+            self._window.add_fsect_button.setEnabled(False)
+            self._window.delete_fsect_button.setEnabled(False)
+            return
+        self._window.add_fsect_button.setEnabled(True)
+        fsects = self._window.preview.get_section_fsects(selection.index)
+        self._window.delete_fsect_button.setEnabled(bool(fsects))
 
     def _current_xsect_index(self) -> int | None:
         combo = self._window.xsect_combo
@@ -1249,6 +1268,71 @@ class SGViewerController:
         self._window.preview.selection_manager.set_selected_section(target_index)
         self._window.show_status_message(
             f"Copied fsects from section {selection.index} to {direction} section {target_index}."
+        )
+
+    def _add_fsect_below_selected(self) -> None:
+        selection = self._active_selection
+        if selection is None:
+            return
+        section_index = selection.index
+        fsects = self._window.preview.get_section_fsects(section_index)
+        if not fsects:
+            new_fsect = PreviewFSection(
+                start_dlat=-300000,
+                end_dlat=-300000,
+                surface_type=7,
+                type2=0,
+            )
+            insert_index = 0
+        else:
+            row_index = self._window.fsect_table.currentRow()
+            if row_index < 0 or row_index >= len(fsects):
+                self._window.show_status_message(
+                    "Select an Fsect row to add below."
+                )
+                return
+            current = fsects[row_index]
+            new_fsect = PreviewFSection(
+                start_dlat=current.start_dlat,
+                end_dlat=current.end_dlat,
+                surface_type=current.surface_type,
+                type2=current.type2,
+            )
+            insert_index = row_index + 1
+        self._window.preview.insert_fsection(
+            section_index,
+            insert_index,
+            new_fsect,
+        )
+        self._window.update_selection_sidebar(selection)
+        self._window.fsect_table.setCurrentCell(insert_index, 0)
+        self._update_fsect_edit_buttons()
+        self._window.show_status_message(
+            f"Added fsect at row {insert_index}."
+        )
+
+    def _delete_selected_fsect(self) -> None:
+        selection = self._active_selection
+        if selection is None:
+            return
+        row_index = self._window.fsect_table.currentRow()
+        fsects = self._window.preview.get_section_fsects(selection.index)
+        if row_index < 0 or row_index >= len(fsects):
+            self._window.show_status_message(
+                "Select an Fsect row to delete."
+            )
+            return
+        self._window.preview.delete_fsection(selection.index, row_index)
+        self._window.update_selection_sidebar(selection)
+        remaining = len(self._window.preview.get_section_fsects(selection.index))
+        if remaining:
+            self._window.fsect_table.setCurrentCell(
+                min(row_index, remaining - 1),
+                0,
+            )
+        self._update_fsect_edit_buttons()
+        self._window.show_status_message(
+            f"Deleted fsect row {row_index}."
         )
 
     def _on_grade_slider_changed(self, value: int) -> None:

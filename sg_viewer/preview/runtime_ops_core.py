@@ -443,6 +443,45 @@ class _RuntimeCoreMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
+    def insert_fsection(
+        self,
+        section_index: int,
+        insert_index: int,
+        fsect: PreviewFSection,
+    ) -> None:
+        if section_index < 0 or section_index >= len(self._fsects_by_section):
+            return
+        fsects = list(self._fsects_by_section[section_index])
+        if insert_index < 0:
+            insert_index = 0
+        if insert_index > len(fsects):
+            insert_index = len(fsects)
+        fsects.insert(insert_index, fsect)
+        self._fsects_by_section[section_index] = fsects
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+
+    def delete_fsection(
+        self,
+        section_index: int,
+        fsect_index: int,
+    ) -> None:
+        if section_index < 0 or section_index >= len(self._fsects_by_section):
+            return
+        fsects = list(self._fsects_by_section[section_index])
+        if fsect_index < 0 or fsect_index >= len(fsects):
+            return
+        fsects.pop(fsect_index)
+        self._fsects_by_section[section_index] = fsects
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+
     def copy_section_fsects(self, source_index: int, target_index: int) -> bool:
         if (
             source_index == target_index
