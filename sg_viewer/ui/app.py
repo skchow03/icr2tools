@@ -626,7 +626,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             end_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.end_dlat)
             )
-            type_item = QtWidgets.QTableWidgetItem(str(int(fsect.surface_type)))
+            type_item = QtWidgets.QTableWidgetItem(
+                self._fsect_type_description(fsect.surface_type, fsect.type2)
+            )
             for editable_item in (start_item, end_item):
                 editable_item.setFlags(
                     editable_item.flags()
@@ -712,8 +714,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Index",
                 f"Start DLAT ({unit_label})",
                 f"End DLAT ({unit_label})",
-                "Type",
                 "Type Description",
+                "Type Selection",
             ]
         )
 
@@ -751,7 +753,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         surface_type, type2 = selection
         type_item = self._fsect_table.item(row_index, 3)
         if type_item is not None:
-            type_item.setText(str(surface_type))
+            type_item.setText(self._fsect_type_description(surface_type, type2))
         self._preview.update_fsection_type(
             section_index,
             row_index,
@@ -807,7 +809,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 return f"{base} (Fence)"
             return base
         return "Unknown"
-    
+
     def update_window_title(
         self,
         *,
