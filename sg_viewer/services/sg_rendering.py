@@ -39,6 +39,11 @@ def _parse_ini_color(value: str) -> QtGui.QColor | None:
     if cleaned.startswith("#"):
         parsed = QtGui.QColor(cleaned)
         return parsed if parsed.isValid() else None
+    if cleaned.lower().startswith("0x"):
+        cleaned = cleaned[2:]
+    if len(cleaned) in {6, 8} and all(char in "0123456789abcdefABCDEF" for char in cleaned):
+        parsed = QtGui.QColor(f"#{cleaned}")
+        return parsed if parsed.isValid() else None
     parts = [part.strip() for part in cleaned.split(",")]
     if len(parts) != 3:
         return None
