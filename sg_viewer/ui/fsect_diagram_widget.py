@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Iterable
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
+from sg_viewer.services import sg_rendering
+
+
+@dataclass
+class _FsectNode:
+    fsect_index: int
+    endpoint: str
+    center: QtCore.QPointF
+    dlat: float
+
+
+class FsectDiagramWidget(QtWidgets.QWidget):
+    dlatChanged = QtCore.pyqtSignal(int, int, str, float)
+
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        on_dlat_changed: Callable[[int, int, str, float], None] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(140)
+        self.setMouseTracking(True)
+        self._section_index: int | None = None
+        self._fsects: list[PreviewFSection] = []
+        self._nodes: list[_FsectNode] = []
+        self._dragged_node: _FsectNode | None = None
+        self._range: tuple[float, float] = (-1.0, 1.0)
+        if on_dlat_changed is not None:
+            self.dlatChanged.connect(on_dlat_changed)
+
+    def set_fsects(
+        self, section_index: int | None, fsects: Iterable[PreviewFSection]
+    ) -> None:
+        self._section_index = section_index
+        self._fsects = list(fsects)
+        self._range = self._calculate_dlat_range(self._fsects)
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
+        _ = event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+        rect = self.rect()
+        painter.fillRect(rect, self.palette().color(QtGui.QPalette.Base))
+        if not self._fsects:
+            self._draw_placeholder(painter, rect)
+            return
+
+        plot_rect = rect.adjusted(10, 10, -10, -10)
+        min_dlat, max_dlat = self._range
+        left = plot_rect.left()
+        right = plot_rect.right()
+        top = plot_rect.top()
+        bottom = plot_rect.bottom()
+        width = max(1.0, float(right - left))
+        height = max(1.0, float(bottom - top))
+
+        center_x = (left + right) / 2.0
+        self._draw_center_axis(painter, top, bottom, center_x)
+
+        self._nodes = []
+        for index, fsect in enumerate(self._fsects):
+            start_x = self._dlat_to_x(fsect.start_dlat, left, width, min_dlat, max_dlat)
+            end_x = self._dlat_to_x(fsect.end_dlat, left, width, min_dlat, max_dlat)
+            start_point = QtCore.QPointF(start_x, bottom)
+            end_point = QtCore.QPointF(end_x, top)
+            pen = self._pen_for_fsect(fsect)
+            painter.setPen(pen)
+            painter.drawLine(start_point, end_point)
+            self._nodes.append(
+                _FsectNode(index, "start", start_point, fsect.start_dlat)
+            )
+            self._nodes.append(_FsectNode(index, "end", end_point, fsect.end_dlat))
+
+        for node in self._nodes:
+            self._draw_node(painter, node)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() != QtCore.Qt.LeftButton:
+            return
+        node = self._find_node_at(event.pos())
+        if node is None:
+            return
+        self._dragged_node = node
+        self.setCursor(QtCore.Qt.ClosedHandCursor)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._dragged_node is None:
+            hovered = self._find_node_at(event.pos())
+            self.setCursor(
+                QtCore.Qt.OpenHandCursor if hovered is not None else QtCore.Qt.ArrowCursor
+            )
+            return
+        if self._section_index is None:
+            return
+        rect = self.rect().adjusted(10, 10, -10, -10)
+        min_dlat, max_dlat = self._range
+        left = rect.left()
+        right = rect.right()
+        width = max(1.0, float(right - left))
+        new_dlat = self._x_to_dlat(
+            event.pos().x(), left, width, min_dlat, max_dlat
+        )
+        self._update_local_dlat(self._dragged_node, new_dlat)
+        self.dlatChanged.emit(
+            self._section_index,
+            self._dragged_node.fsect_index,
+            self._dragged_node.endpoint,
+            new_dlat,
+        )
+        self.update()
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() != QtCore.Qt.LeftButton:
+            return
+        self._dragged_node = None
+        self.setCursor(QtCore.Qt.ArrowCursor)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
+        _ = event
+        if self._dragged_node is None:
+            self.setCursor(QtCore.Qt.ArrowCursor)
+
+    @staticmethod
+    def _calculate_dlat_range(fsects: Iterable[PreviewFSection]) -> tuple[float, float]:
+        values = [fs.start_dlat for fs in fsects] + [fs.end_dlat for fs in fsects]
+        if not values:
+            return (-1.0, 1.0)
+        min_dlat = min(values)
+        max_dlat = max(values)
+        if min_dlat == max_dlat:
+            pad = max(100.0, abs(min_dlat) * 0.1)
+            return (min_dlat - pad, max_dlat + pad)
+        pad = max((max_dlat - min_dlat) * 0.1, 100.0)
+        return (min_dlat - pad, max_dlat + pad)
+
+    @staticmethod
+    def _dlat_to_x(
+        dlat: float, left: float, width: float, min_dlat: float, max_dlat: float
+    ) -> float:
+        span = max(max_dlat - min_dlat, 1.0)
+        ratio = (max_dlat - dlat) / span
+        return left + ratio * width
+
+    @staticmethod
+    def _x_to_dlat(
+        x: float, left: float, width: float, min_dlat: float, max_dlat: float
+    ) -> float:
+        span = max(max_dlat - min_dlat, 1.0)
+        ratio = (x - left) / width
+        return max_dlat - ratio * span
+
+    def _draw_center_axis(
+        self, painter: QtGui.QPainter, top: float, bottom: float, x: float
+    ) -> None:
+        pen = QtGui.QPen(QtGui.QColor(160, 160, 160, 160))
+        pen.setStyle(QtCore.Qt.DashLine)
+        painter.setPen(pen)
+        painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
+
+    def _draw_node(self, painter: QtGui.QPainter, node: _FsectNode) -> None:
+        radius = 5
+        color = QtGui.QColor("white")
+        painter.setBrush(color)
+        pen = QtGui.QPen(QtGui.QColor("black"))
+        pen.setWidthF(1.0)
+        painter.setPen(pen)
+        painter.drawEllipse(node.center, radius, radius)
+
+    def _find_node_at(self, pos: QtCore.QPoint) -> _FsectNode | None:
+        radius = 7
+        for node in self._nodes:
+            if QtCore.QLineF(pos, node.center).length() <= radius:
+                return node
+        return None
+
+    @staticmethod
+    def _pen_for_fsect(fsect: PreviewFSection) -> QtGui.QPen:
+        style = resolve_fsection_style(fsect.surface_type, fsect.type2)
+        if (
+            style is not None
+            and style.role == "boundary"
+            and style.boundary_color is not None
+        ):
+            return sg_rendering.make_boundary_pen(
+                style.boundary_color,
+                is_fence=style.is_fence,
+                width=2.0,
+            )
+        if style is not None and style.surface_color is not None:
+            color = style.surface_color
+        else:
+            color = sg_rendering.DEFAULT_SURFACE_COLOR
+        pen = QtGui.QPen(color)
+        pen.setWidthF(2.0)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        return pen
+
+    def _draw_placeholder(self, painter: QtGui.QPainter, rect: QtCore.QRect) -> None:
+        painter.save()
+        pen = QtGui.QPen(QtGui.QColor(120, 120, 120))
+        painter.setPen(pen)
+        painter.drawText(rect, QtCore.Qt.AlignCenter, "No fsects to display")
+        painter.restore()
+
+    def _update_local_dlat(self, node: _FsectNode, new_dlat: float) -> None:
+        if node.fsect_index < 0 or node.fsect_index >= len(self._fsects):
+            return
+        current = self._fsects[node.fsect_index]
+        if node.endpoint == "start":
+            self._fsects[node.fsect_index] = PreviewFSection(
+                start_dlat=new_dlat,
+                end_dlat=current.end_dlat,
+                surface_type=current.surface_type,
+                type2=current.type2,
+            )
+        else:
+            self._fsects[node.fsect_index] = PreviewFSection(
+                start_dlat=current.start_dlat,
+                end_dlat=new_dlat,
+                surface_type=current.surface_type,
+                type2=current.type2,
+            )
