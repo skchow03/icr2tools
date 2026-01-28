@@ -166,16 +166,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
-        self._fsect_table = QtWidgets.QTableWidget(0, 5)
-        self._fsect_table.setHorizontalHeaderLabels(
-            [
-                "Index",
-                "Start DLAT",
-                "End DLAT",
-                "Type",
-                "Type Description",
-            ]
+        self._fsect_dlat_units_combo = QtWidgets.QComboBox()
+        self._fsect_dlat_units_combo.addItem("Feet", "feet")
+        self._fsect_dlat_units_combo.addItem("500ths", "500ths")
+        self._fsect_dlat_units_combo.setCurrentIndex(0)
+        self._fsect_dlat_units_combo.currentIndexChanged.connect(
+            self._on_fsect_dlat_units_changed
         )
+        self._fsect_table = QtWidgets.QTableWidget(0, 5)
+        self._update_fsect_table_headers()
         self._fsect_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.SelectedClicked
@@ -307,6 +306,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         fsect_sidebar_layout.addWidget(self._add_fsect_button)
         fsect_sidebar_layout.addWidget(self._delete_fsect_button)
         fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
+        fsect_units_layout = QtWidgets.QHBoxLayout()
+        fsect_units_layout.addWidget(QtWidgets.QLabel("DLAT units:"))
+        fsect_units_layout.addWidget(self._fsect_dlat_units_combo)
+        fsect_units_layout.addStretch()
+        fsect_sidebar_layout.addLayout(fsect_units_layout)
         fsect_sidebar_layout.addWidget(self._fsect_table)
         fsect_sidebar_layout.addStretch()
         self._fsect_sidebar.setLayout(fsect_sidebar_layout)
@@ -616,8 +620,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
         for row_index, fsect in enumerate(fsects):
-            start_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.start_dlat))}")
-            end_item = QtWidgets.QTableWidgetItem(f"{int(round(fsect.end_dlat))}")
+            start_item = QtWidgets.QTableWidgetItem(
+                self._format_fsect_dlat(fsect.start_dlat)
+            )
+            end_item = QtWidgets.QTableWidgetItem(
+                self._format_fsect_dlat(fsect.end_dlat)
+            )
             type_item = QtWidgets.QTableWidgetItem(str(int(fsect.surface_type)))
             for editable_item in (start_item, end_item):
                 editable_item.setFlags(
@@ -668,6 +676,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         except ValueError:
             self._reset_fsect_dlat_cell(row_index, column_index, fsects[row_index])
             return
+        new_value = self._fsect_dlat_from_display_units(new_value)
         if column_index == 1:
             self._preview.update_fsection_dlat(
                 section_index, row_index, start_dlat=new_value
@@ -689,8 +698,44 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if item is None:
             return
         self._updating_fsect_table = True
-        item.setText(f"{int(round(value))}")
+        item.setText(self._format_fsect_dlat(value))
         self._updating_fsect_table = False
+
+    def _on_fsect_dlat_units_changed(self) -> None:
+        self._update_fsect_table_headers()
+        self._update_fsect_table(self._selected_section_index)
+
+    def _update_fsect_table_headers(self) -> None:
+        unit_label = self._fsect_dlat_units_label()
+        self._fsect_table.setHorizontalHeaderLabels(
+            [
+                "Index",
+                f"Start DLAT ({unit_label})",
+                f"End DLAT ({unit_label})",
+                "Type",
+                "Type Description",
+            ]
+        )
+
+    def _fsect_dlat_units_label(self) -> str:
+        unit = self._fsect_dlat_units_combo.currentData()
+        return "ft" if unit == "feet" else "500ths"
+
+    def _fsect_dlat_to_display_units(self, value: float) -> float:
+        if self._fsect_dlat_units_combo.currentData() == "feet":
+            return value / 6000.0
+        return value
+
+    def _fsect_dlat_from_display_units(self, value: float) -> float:
+        if self._fsect_dlat_units_combo.currentData() == "feet":
+            return value * 6000.0
+        return value
+
+    def _format_fsect_dlat(self, value: float) -> str:
+        display_value = self._fsect_dlat_to_display_units(value)
+        if self._fsect_dlat_units_combo.currentData() == "feet":
+            return f"{display_value:.3f}".rstrip("0").rstrip(".")
+        return f"{int(round(display_value))}"
 
     def _on_fsect_type_changed(
         self, row_index: int, widget: QtWidgets.QComboBox
