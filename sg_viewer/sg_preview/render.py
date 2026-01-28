@@ -10,9 +10,9 @@ from sg_viewer.sg_preview.transform import ViewTransform
 from sg_viewer.sg_preview.view_state import SgPreviewViewState
 from sg_viewer.services import sg_rendering
 
-_SURFACE_FILL_RGBA = (60, 160, 120, 110)
-_SURFACE_OUTLINE_RGBA = (80, 200, 150, 180)
-_FSECT_OUTLINE_RGBA = (120, 180, 220, 160)
+_SURFACE_FILL_RGBA = (60, 160, 120, 255)
+_SURFACE_OUTLINE_RGBA = (80, 200, 150, 255)
+_FSECT_OUTLINE_RGBA = (120, 180, 220, 255)
 _SHOW_FSECT_OUTLINES = False
 
 
