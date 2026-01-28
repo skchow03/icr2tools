@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from configparser import ConfigParser
+from pathlib import Path
 from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
@@ -9,13 +11,13 @@ from PyQt5.QtGui import QColor, QPen
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 
-WALL_COLOR = QColor(255, 255, 255)
-ARMCO_COLOR = QColor(0, 255, 255)
+_DEFAULT_WALL_COLOR = QColor(255, 255, 255)
+_DEFAULT_ARMCO_COLOR = QColor(0, 255, 255)
 
 SOLID_PEN_STYLE = Qt.SolidLine
 FENCE_PEN_STYLE = Qt.DashLine
 
-SURFACE_COLORS = {
+_DEFAULT_SURFACE_COLORS = {
     0: QtGui.QColor(40, 140, 40),
     1: QtGui.QColor(120, 170, 80),
     2: QtGui.QColor(140, 100, 60),
@@ -28,6 +30,64 @@ SURFACE_COLORS = {
 }
 
 DEFAULT_SURFACE_COLOR = QtGui.QColor(128, 128, 128)
+
+
+def _parse_ini_color(value: str) -> QtGui.QColor | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if cleaned.startswith("#"):
+        parsed = QtGui.QColor(cleaned)
+        return parsed if parsed.isValid() else None
+    parts = [part.strip() for part in cleaned.split(",")]
+    if len(parts) != 3:
+        return None
+    try:
+        r, g, b = (int(part) for part in parts)
+    except ValueError:
+        return None
+    for channel in (r, g, b):
+        if channel < 0 or channel > 255:
+            return None
+    return QtGui.QColor(r, g, b)
+
+
+def _load_fsection_colors() -> tuple[dict[int, QtGui.QColor], QtGui.QColor, QtGui.QColor]:
+    surfaces = {key: QtGui.QColor(color) for key, color in _DEFAULT_SURFACE_COLORS.items()}
+    wall_color = QtGui.QColor(_DEFAULT_WALL_COLOR)
+    armco_color = QtGui.QColor(_DEFAULT_ARMCO_COLOR)
+    config_path = Path(__file__).resolve().parents[1] / "rendering" / "fsection_colors.ini"
+    if not config_path.exists():
+        return surfaces, wall_color, armco_color
+
+    parser = ConfigParser()
+    parser.read(config_path)
+    if parser.has_section("surface"):
+        for key, value in parser.items("surface"):
+            try:
+                surface_id = int(key)
+            except ValueError:
+                continue
+            color = _parse_ini_color(value)
+            if color is not None:
+                surfaces[surface_id] = color
+    if parser.has_section("boundary"):
+        for key, value in parser.items("boundary"):
+            try:
+                boundary_id = int(key)
+            except ValueError:
+                continue
+            color = _parse_ini_color(value)
+            if color is None:
+                continue
+            if boundary_id == 7:
+                wall_color = color
+            elif boundary_id == 8:
+                armco_color = color
+    return surfaces, wall_color, armco_color
+
+
+SURFACE_COLORS, WALL_COLOR, ARMCO_COLOR = _load_fsection_colors()
 
 
 def make_boundary_pen(color: QColor, is_fence: bool, width: float) -> QPen:
