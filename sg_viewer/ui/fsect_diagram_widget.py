@@ -32,6 +32,8 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self._section_index: int | None = None
         self._fsects: list[PreviewFSection] = []
+        self._prev_fsects: list[PreviewFSection] = []
+        self._next_fsects: list[PreviewFSection] = []
         self._nodes: list[_FsectNode] = []
         self._dragged_node: _FsectNode | None = None
         self._range: tuple[float, float] = (-1.0, 1.0)
@@ -39,10 +41,17 @@ class FsectDiagramWidget(QtWidgets.QWidget):
             self.dlatChanged.connect(on_dlat_changed)
 
     def set_fsects(
-        self, section_index: int | None, fsects: Iterable[PreviewFSection]
+        self,
+        section_index: int | None,
+        fsects: Iterable[PreviewFSection],
+        *,
+        prev_fsects: Iterable[PreviewFSection] | None = None,
+        next_fsects: Iterable[PreviewFSection] | None = None,
     ) -> None:
         self._section_index = section_index
         self._fsects = list(fsects)
+        self._prev_fsects = list(prev_fsects or [])
+        self._next_fsects = list(next_fsects or [])
         self._range = self._calculate_dlat_range(self._fsects)
         self.update()
 
@@ -68,6 +77,15 @@ class FsectDiagramWidget(QtWidgets.QWidget):
 
         center_x = (left + right) / 2.0
         self._draw_center_axis(painter, top, bottom, center_x)
+        self._draw_stub_lines(
+            painter,
+            left,
+            width,
+            top,
+            bottom,
+            min_dlat,
+            max_dlat,
+        )
 
         self._nodes = []
         for index, fsect in enumerate(self._fsects):
@@ -170,8 +188,8 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
 
     def _draw_node(self, painter: QtGui.QPainter, node: _FsectNode) -> None:
-        arrow_length = 10.0
-        arrow_half_width = 6.0
+        arrow_length = 5.0
+        arrow_half_width = 3.0
         tip = node.center
         if node.endpoint == "start":
             base_y = tip.y() - arrow_length
@@ -185,7 +203,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
                 QtCore.QPointF(tip.x() + arrow_half_width, base_y),
             ]
         )
-        color = QtGui.QColor("white")
+        color = self._pen_for_fsect(self._fsects[node.fsect_index]).color()
         painter.setBrush(color)
         pen = QtGui.QPen(color)
         pen.setWidthF(1.0)
@@ -221,6 +239,36 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         return pen
+
+    def _draw_stub_lines(
+        self,
+        painter: QtGui.QPainter,
+        left: float,
+        width: float,
+        top: float,
+        bottom: float,
+        min_dlat: float,
+        max_dlat: float,
+    ) -> None:
+        stub_length = 6.0
+        top_start = QtCore.QPointF
+        bottom_start = QtCore.QPointF
+        for fsect in self._next_fsects:
+            x = self._dlat_to_x(fsect.start_dlat, left, width, min_dlat, max_dlat)
+            pen = self._pen_for_fsect(fsect)
+            painter.setPen(pen)
+            painter.drawLine(
+                top_start(x, top),
+                top_start(x, top + stub_length),
+            )
+        for fsect in self._prev_fsects:
+            x = self._dlat_to_x(fsect.end_dlat, left, width, min_dlat, max_dlat)
+            pen = self._pen_for_fsect(fsect)
+            painter.setPen(pen)
+            painter.drawLine(
+                bottom_start(x, bottom - stub_length),
+                bottom_start(x, bottom),
+            )
 
     def _draw_placeholder(self, painter: QtGui.QPainter, rect: QtCore.QRect) -> None:
         painter.save()

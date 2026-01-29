@@ -663,7 +663,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
         self._fsect_table.resizeColumnsToContents()
-        self._fsect_diagram.set_fsects(section_index, fsects)
+        prev_fsects = (
+            self._preview.get_section_fsects(section_index - 1)
+            if section_index is not None
+            else []
+        )
+        next_fsects = (
+            self._preview.get_section_fsects(section_index + 1)
+            if section_index is not None
+            else []
+        )
+        self._fsect_diagram.set_fsects(
+            section_index,
+            fsects,
+            prev_fsects=prev_fsects,
+            next_fsects=next_fsects,
+        )
 
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._updating_fsect_table:
