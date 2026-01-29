@@ -86,6 +86,7 @@ class PreviewInteraction:
         self._active_chain_indices: list[int] | None = None
         self._set_start_finish_mode = False
         self._drag_state_active = False
+        self._last_dragged_indices: list[int] | None = None
 
     # ------------------------------------------------------------------
     # State helpers
@@ -101,6 +102,12 @@ class PreviewInteraction:
     @property
     def connection_target(self) -> tuple[int, str] | None:
         return self._connection_target
+
+    @property
+    def last_dragged_indices(self) -> tuple[int, ...] | None:
+        if self._last_dragged_indices is None:
+            return None
+        return tuple(self._last_dragged_indices)
 
     def dragged_curve_heading(self) -> tuple["SectionPreview", Point] | None:
         if not self._is_dragging_node or self._active_node is None:
@@ -132,6 +139,7 @@ class PreviewInteraction:
         self._set_start_finish_mode = False
         self._set_drag_state(False)
         self._context.end_drag_transform()
+        self._last_dragged_indices = None
 
     def set_set_start_finish_mode(self, active: bool) -> None:
         self._set_start_finish_mode = active
@@ -472,6 +480,7 @@ class PreviewInteraction:
         self._set_drag_state(True)
         self._connection_target = None
         self._stop_panning()
+        self._last_dragged_indices = [node[0]]
         self._update_dragged_section(track_point)
 
     def _update_dragged_section(self, track_point: Point) -> None:
@@ -970,6 +979,7 @@ class PreviewInteraction:
         sections[s1_idx] = s1_new
         sections[s2_idx] = s2_new
 
+        self._last_dragged_indices = [s1_idx, s2_idx]
         self._apply_section_updates(sections)
         self._context.request_repaint()
         return True
@@ -1070,6 +1080,7 @@ class PreviewInteraction:
         updated_sections[s1_idx] = update_section_geometry(updated_section_1)
         updated_sections[s2_idx] = update_section_geometry(updated_section_2)
 
+        self._last_dragged_indices = [s1_idx, s2_idx]
         self._apply_section_updates(updated_sections)
         self._context.request_repaint()
         return True
@@ -1156,6 +1167,7 @@ class PreviewInteraction:
         updated_sections[section_1_index] = update_section_geometry(updated_section_1)
         updated_sections[section_2_index] = update_section_geometry(updated_section_2)
 
+        self._last_dragged_indices = [section_1_index, section_2_index]
         self._apply_section_updates(updated_sections)
         self._context.request_repaint()
         return True
