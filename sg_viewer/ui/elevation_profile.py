@@ -45,6 +45,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
     sectionClicked = QtCore.pyqtSignal(int)
     altitudeDragged = QtCore.pyqtSignal(int, float)
+    altitudeDragFinished = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -460,6 +461,8 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             return
         if self._is_dragging_marker:
             self._is_dragging_marker = False
+            if self._dragged_section is not None:
+                self.altitudeDragFinished.emit(self._dragged_section)
             self._dragged_section = None
             self.unsetCursor()
             event.accept()

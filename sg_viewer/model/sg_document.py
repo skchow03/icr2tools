@@ -40,7 +40,9 @@ class SGDocument(QtCore.QObject):
         self.metadata_changed.emit()
         self.geometry_changed.emit()
 
-    def set_section_elevation(self, section_id: int, new_value: float) -> None:
+    def set_section_elevation(
+        self, section_id: int, new_value: float, *, validate: bool = True
+    ) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")
 
@@ -54,14 +56,19 @@ class SGDocument(QtCore.QObject):
         updated = int(round(new_value))
         section.alt = [updated for _ in section.alt]
 
-        if __debug__:
+        if __debug__ and validate:
             self.validate()
 
         self.section_changed.emit(section_id)
         self.geometry_changed.emit()
 
     def set_section_xsect_altitude(
-        self, section_id: int, xsect_index: int, new_value: float
+        self,
+        section_id: int,
+        xsect_index: int,
+        new_value: float,
+        *,
+        validate: bool = True,
     ) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")
@@ -79,14 +86,19 @@ class SGDocument(QtCore.QObject):
         updated = int(round(new_value))
         section.alt[xsect_index] = updated
 
-        if __debug__:
+        if __debug__ and validate:
             self.validate()
 
         self.section_changed.emit(section_id)
         self.geometry_changed.emit()
 
     def set_section_xsect_grade(
-        self, section_id: int, xsect_index: int, new_value: float
+        self,
+        section_id: int,
+        xsect_index: int,
+        new_value: float,
+        *,
+        validate: bool = True,
     ) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")
@@ -104,7 +116,7 @@ class SGDocument(QtCore.QObject):
         updated = int(round(new_value))
         section.grade[xsect_index] = updated
 
-        if __debug__:
+        if __debug__ and validate:
             self.validate()
 
         self.section_changed.emit(section_id)
