@@ -38,7 +38,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._dragged_node: _FsectNode | None = None
         self._panning = False
         self._pan_last_pos: QtCore.QPoint | None = None
-        self._range: tuple[float, float] = (-40.0, 40.0)
+        self._range: tuple[float, float] = (-300000.0, 300000.0)
         if on_dlat_changed is not None:
             self.dlatChanged.connect(on_dlat_changed)
 
