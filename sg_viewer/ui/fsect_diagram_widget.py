@@ -179,16 +179,18 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         left = rect.left()
         right = rect.right()
         width = max(1.0, float(right - left))
-        cursor_dlat = self._x_to_dlat(event.pos().x(), left, width, min_dlat, max_dlat)
+        cursor_x = event.pos().x()
+        cursor_ratio = (cursor_x - left) / width
+        cursor_dlat = self._x_to_dlat(cursor_x, left, width, min_dlat, max_dlat)
         span = max(max_dlat - min_dlat, 1.0)
         delta = event.angleDelta().y()
         if delta == 0:
             return
         zoom_factor = 0.9 if delta > 0 else 1.1
         new_span = max(span * zoom_factor, 1.0)
-        half_span = new_span / 2.0
-        center = cursor_dlat
-        self._range = (center - half_span, center + half_span)
+        new_max = cursor_dlat + cursor_ratio * new_span
+        new_min = new_max - new_span
+        self._range = (new_min, new_max)
         self.update()
 
     @staticmethod
@@ -292,7 +294,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         max_dlat: float,
     ) -> None:
         stub_length = 6.0
-        stub_offset = 4.0
+        stub_offset = 0.0
         top_start = QtCore.QPointF
         bottom_start = QtCore.QPointF
         for fsect in self._next_fsects:
