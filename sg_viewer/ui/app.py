@@ -149,6 +149,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._elevation_samples_value_label.setAlignment(
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
+        self._recalc_elevation_button = QtWidgets.QPushButton("Recalc Elevations")
+        self._recalc_elevation_button.setEnabled(False)
+        self._recalc_elevation_button.setToolTip(
+            "Recalculate elevation values for the entire track."
+        )
         self._scale_label = QtWidgets.QLabel("Scale: –")
         self._track_length_label = QtWidgets.QLabel("Track length: –")
         self._section_label = QtWidgets.QLabel("Section: None")
@@ -334,6 +339,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         profile_controls.addWidget(QtWidgets.QLabel("Samples/Section:"))
         profile_controls.addWidget(self._elevation_samples_slider, stretch=1)
         profile_controls.addWidget(self._elevation_samples_value_label)
+        profile_controls.addWidget(self._recalc_elevation_button)
         preview_column_layout.addLayout(profile_controls)
         preview_column_layout.addWidget(self._profile_widget, stretch=2)
         preview_column_layout.addWidget(QtWidgets.QLabel("Section X-Section Elevation"))
@@ -462,6 +468,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def elevation_samples_slider(self) -> QtWidgets.QSlider:
         return self._elevation_samples_slider
+
+    @property
+    def recalc_elevation_button(self) -> QtWidgets.QPushButton:
+        return self._recalc_elevation_button
 
     @property
     def altitude_slider(self) -> QtWidgets.QSlider:

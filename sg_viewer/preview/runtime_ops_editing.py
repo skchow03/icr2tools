@@ -319,6 +319,9 @@ class _RuntimeEditingMixin:
             self._emit_sections_changed()
         return updated
 
+    def recalculate_elevations(self, affected_indices: list[int] | None = None) -> bool:
+        return self._recalculate_elevations_after_drag(affected_indices)
+
     def _refresh_section_dlongs_after_drag(self) -> bool:
         sections = list(self._section_manager.sections)
         if not sections:
