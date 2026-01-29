@@ -52,7 +52,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
         rect = self.rect()
-        painter.fillRect(rect, self.palette().color(QtGui.QPalette.Base))
+        painter.fillRect(rect, QtGui.QColor("black"))
         if not self._fsects:
             self._draw_placeholder(painter, rect)
             return
@@ -170,13 +170,27 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
 
     def _draw_node(self, painter: QtGui.QPainter, node: _FsectNode) -> None:
-        radius = 5
+        arrow_length = 10.0
+        arrow_half_width = 6.0
+        tip = node.center
+        if node.endpoint == "start":
+            base_y = tip.y() - arrow_length
+        else:
+            base_y = tip.y() + arrow_length
+
+        polygon = QtGui.QPolygonF(
+            [
+                QtCore.QPointF(tip.x(), tip.y()),
+                QtCore.QPointF(tip.x() - arrow_half_width, base_y),
+                QtCore.QPointF(tip.x() + arrow_half_width, base_y),
+            ]
+        )
         color = QtGui.QColor("white")
         painter.setBrush(color)
-        pen = QtGui.QPen(QtGui.QColor("black"))
+        pen = QtGui.QPen(color)
         pen.setWidthF(1.0)
         painter.setPen(pen)
-        painter.drawEllipse(node.center, radius, radius)
+        painter.drawPolygon(polygon)
 
     def _find_node_at(self, pos: QtCore.QPoint) -> _FsectNode | None:
         radius = 7
@@ -210,7 +224,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
 
     def _draw_placeholder(self, painter: QtGui.QPainter, rect: QtCore.QRect) -> None:
         painter.save()
-        pen = QtGui.QPen(QtGui.QColor(120, 120, 120))
+        pen = QtGui.QPen(QtGui.QColor(200, 200, 200))
         painter.setPen(pen)
         painter.drawText(rect, QtCore.Qt.AlignCenter, "No fsects to display")
         painter.restore()
