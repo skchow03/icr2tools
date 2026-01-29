@@ -5,7 +5,11 @@ import logging
 from pathlib import Path
 
 from icr2_core.trk.sg_classes import SGFile
-from icr2_core.sg_elevation import sample_sg_elevation, sample_sg_elevation_with_dlats
+from icr2_core.sg_elevation import (
+    _sg_altitude_at_with_dlats,
+    sample_sg_elevation,
+    sample_sg_elevation_with_dlats,
+)
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
@@ -117,6 +121,8 @@ class _RuntimePersistenceMixin:
             logger.warning("Recalculate dlongs failed: %s", exc)
             return False
         self._elevation_profile_cache.clear()
+        self._elevation_profile_alt_cache.clear()
+        self._elevation_profile_dirty.clear()
         self._realign_fsects_after_recalc(old_sections, old_fsects)
         return True
 
@@ -134,6 +140,8 @@ class _RuntimePersistenceMixin:
             self._document.set_sg_data(sgfile, validate=False)
             self._document.rebuild_dlongs(0, 0)
             self._elevation_profile_cache.clear()
+            self._elevation_profile_alt_cache.clear()
+            self._elevation_profile_dirty.clear()
         except ValueError as exc:
             self._show_status(f"Unable to refresh Fsects preview: {exc}")
             logger.warning("Refresh fsections preview failed: %s", exc)
@@ -156,6 +164,41 @@ class _RuntimePersistenceMixin:
             object.__setattr__(self._preview_data, "fsections", fsections)
         self._context.request_repaint()
         return True
+
+    def _refresh_profile_altitudes_for_sections(
+        self,
+        sgfile: SGFile,
+        altitudes: list[float],
+        section_offsets: list[tuple[int, int] | None],
+        section_indices: set[int],
+        dlat_norm: float,
+        dlats: list[float],
+        min_dlat: float,
+        max_dlat: float,
+        samples_per_section: int,
+    ) -> None:
+        sections = list(sgfile.sects)
+        for section_index in section_indices:
+            if section_index < 0 or section_index >= len(sections):
+                continue
+            offset_info = section_offsets[section_index]
+            if offset_info is None:
+                continue
+            start_index, count = offset_info
+            sg_length = float(sections[section_index].length)
+            if sg_length <= 0:
+                continue
+            for step in range(count):
+                fraction = step / samples_per_section
+                altitudes[start_index + step] = _sg_altitude_at_with_dlats(
+                    sgfile,
+                    section_index,
+                    fraction,
+                    dlat_norm,
+                    dlats,
+                    min_dlat,
+                    max_dlat,
+                )
 
     def save_sg(self, path: Path) -> None:
         """Write the current SG (and any edits) to ``path``."""
@@ -211,30 +254,63 @@ class _RuntimePersistenceMixin:
         if cached is None:
             dlongs: list[float] = []
             section_ranges: list[tuple[float, float]] = []
-            for sg_sect in sgfile.sects:
+            section_offsets: list[tuple[int, int] | None] = [None] * len(
+                sgfile.sects
+            )
+            for index, sg_sect in enumerate(sgfile.sects):
                 sg_length = float(sg_sect.length)
                 if sg_length <= 0:
                     continue
                 start_dlong = float(sg_sect.start_dlong)
                 section_ranges.append((start_dlong, start_dlong + sg_length))
 
+                start_index = len(dlongs)
                 for step in range(samples_per_section + 1):
                     fraction = step / samples_per_section
                     dlong = start_dlong + fraction * sg_length
                     dlongs.append(dlong)
-            self._elevation_profile_cache[cache_key] = (dlongs, section_ranges)
+                section_offsets[index] = (start_index, samples_per_section + 1)
+            self._elevation_profile_cache[cache_key] = (
+                dlongs,
+                section_ranges,
+                section_offsets,
+            )
         else:
-            dlongs, section_ranges = cached
+            dlongs, section_ranges, section_offsets = cached
         min_dlat = min(dlats)
         max_dlat = max(dlats)
-        sg_altitudes = sample_sg_elevation_with_dlats(
-            sgfile,
-            xsect_index,
-            dlats,
-            min_dlat,
-            max_dlat,
-            resolution=samples_per_section,
+        dlat_norm = (
+            0.0
+            if min_dlat == max_dlat
+            else (dlats[xsect_index] - min_dlat) / (max_dlat - min_dlat)
         )
+        alt_cache_key = (samples_per_section, self._sg_version, xsect_index)
+        sg_altitudes = self._elevation_profile_alt_cache.get(alt_cache_key)
+        dirty_sections = self._elevation_profile_dirty.setdefault(alt_cache_key, set())
+        if sg_altitudes is None:
+            sg_altitudes = sample_sg_elevation_with_dlats(
+                sgfile,
+                xsect_index,
+                dlats,
+                min_dlat,
+                max_dlat,
+                resolution=samples_per_section,
+            )
+            self._elevation_profile_alt_cache[alt_cache_key] = sg_altitudes
+            dirty_sections.clear()
+        elif dirty_sections:
+            self._refresh_profile_altitudes_for_sections(
+                sgfile,
+                sg_altitudes,
+                section_offsets,
+                dirty_sections,
+                dlat_norm,
+                dlats,
+                min_dlat,
+                max_dlat,
+                samples_per_section,
+            )
+            dirty_sections.clear()
         trk_altitudes: list[float] | None = None
         sources = (ElevationSource.SG,)
 

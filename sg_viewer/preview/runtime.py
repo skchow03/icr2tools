@@ -161,8 +161,11 @@ class PreviewRuntime(PreviewRuntimeOps):
         ] = {}
         self._elevation_xsect_bounds_dirty: dict[tuple[int, int], set[int]] = {}
         self._elevation_profile_cache: dict[
-            tuple[int, int], tuple[list[float], list[tuple[float, float]]]
+            tuple[int, int],
+            tuple[list[float], list[tuple[float, float]], list[tuple[int, int] | None]],
         ] = {}
+        self._elevation_profile_alt_cache: dict[tuple[int, int, int], list[float]] = {}
+        self._elevation_profile_dirty: dict[tuple[int, int, int], set[int]] = {}
 
         self._interaction = PreviewInteraction(
             self._context,

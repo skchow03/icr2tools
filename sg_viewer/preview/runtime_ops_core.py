@@ -177,6 +177,8 @@ class _RuntimeCoreMixin:
         self._elevation_xsect_bounds_cache.clear()
         self._elevation_xsect_bounds_dirty.clear()
         self._elevation_profile_cache.clear()
+        self._elevation_profile_alt_cache.clear()
+        self._elevation_profile_dirty.clear()
 
     def _mark_xsect_bounds_dirty(self, xsect_index: int) -> None:
         for cache_key, dirty in self._elevation_xsect_bounds_dirty.items():
@@ -185,6 +187,21 @@ class _RuntimeCoreMixin:
         for cache_key in list(self._elevation_bounds_cache):
             if cache_key[1] == self._sg_version:
                 self._elevation_bounds_cache.pop(cache_key, None)
+
+    def _mark_elevation_profile_sections_dirty(
+        self, section_index: int, xsect_index: int
+    ) -> None:
+        sg_data = self._document.sg_data
+        if sg_data is None:
+            return
+        total_sections = len(sg_data.sects)
+        if total_sections <= 0:
+            return
+        next_index = (section_index + 1) % total_sections
+        dirty_sections = {section_index, next_index}
+        for cache_key, dirty in self._elevation_profile_dirty.items():
+            if cache_key[1] == self._sg_version and cache_key[2] == xsect_index:
+                dirty.update(dirty_sections)
 
     @property
     def is_interaction_dragging(self) -> bool:
@@ -1318,6 +1335,7 @@ class _RuntimeCoreMixin:
         except (ValueError, IndexError):
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
+        self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
         return True
 
     def set_section_xsect_grade(
@@ -1328,6 +1346,7 @@ class _RuntimeCoreMixin:
         except (ValueError, IndexError):
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
+        self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
         return True
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> bool:

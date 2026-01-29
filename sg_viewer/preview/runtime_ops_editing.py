@@ -311,6 +311,8 @@ class _RuntimeEditingMixin:
             geometry_changed = self._section_geometry_changed(old_sg, self._sgfile)
             if geometry_changed:
                 self._elevation_profile_cache.clear()
+                self._elevation_profile_alt_cache.clear()
+                self._elevation_profile_dirty.clear()
             for xsect_idx in range(num_xsects):
                 self._mark_xsect_bounds_dirty(xsect_idx)
         if updated and self._emit_sections_changed is not None:
