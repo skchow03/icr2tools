@@ -52,6 +52,7 @@ class SGViewerController:
         self._current_profile: ElevationProfileData | None = None
         self._deferred_profile_refresh = False
         self._profile_dragging = False
+        self._profile_editing = False
 
 
         self._create_actions()
@@ -975,7 +976,10 @@ class SGViewerController:
         )
         if profile is not None:
             global_bounds: tuple[float, float] | None = None
-            if self._profile_dragging and self._current_profile is not None:
+            if (
+                (self._profile_dragging or self._profile_editing)
+                and self._current_profile is not None
+            ):
                 global_bounds = self._current_profile.y_range
             else:
                 global_bounds = self._window.preview.get_elevation_profile_bounds(
@@ -1147,10 +1151,14 @@ class SGViewerController:
 
     def _on_altitude_slider_changed(self, value: int) -> None:
         self._window.update_altitude_display(value)
+        self._profile_editing = True
         self._apply_altitude_edit()
 
     def _on_altitude_slider_released(self) -> None:
         self._window.preview.validate_document()
+        if self._profile_editing:
+            self._profile_editing = False
+            self._refresh_elevation_profile()
 
     def _on_altitude_range_changed(self) -> None:
         min_spin = self._window.altitude_min_spin
@@ -1353,10 +1361,14 @@ class SGViewerController:
 
     def _on_grade_slider_changed(self, value: int) -> None:
         self._window.update_grade_display(value)
+        self._profile_editing = True
         self._apply_grade_edit()
 
     def _on_grade_edit_finished(self) -> None:
         self._window.preview.validate_document()
+        if self._profile_editing:
+            self._profile_editing = False
+            self._refresh_elevation_profile()
 
     def _refresh_xsect_elevation_panel(self) -> None:
         selection = self._active_selection
