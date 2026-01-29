@@ -18,6 +18,7 @@ from sg_viewer.sg_document_fsects import (
 class SGDocument(QtCore.QObject):
     section_changed = QtCore.pyqtSignal(int)
     geometry_changed = QtCore.pyqtSignal()
+    elevation_changed = QtCore.pyqtSignal(int)
     metadata_changed = QtCore.pyqtSignal()
 
     ELEVATION_MIN = -1_000_000
@@ -59,8 +60,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        self.section_changed.emit(section_id)
-        self.geometry_changed.emit()
+        self.elevation_changed.emit(section_id)
 
     def set_section_xsect_altitude(
         self,
@@ -89,8 +89,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        self.section_changed.emit(section_id)
-        self.geometry_changed.emit()
+        self.elevation_changed.emit(section_id)
 
     def set_section_xsect_grade(
         self,
@@ -119,8 +118,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        self.section_changed.emit(section_id)
-        self.geometry_changed.emit()
+        self.elevation_changed.emit(section_id)
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> None:
         if self._sg_data is None:
