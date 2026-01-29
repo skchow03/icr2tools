@@ -213,7 +213,44 @@ class _RuntimeEditingMixin:
         last_length = float(getattr(sections[last_idx], "length", 0.0))
         return last_idx, 1.0 if last_length > 0 else 0.0
 
-    def _recalculate_elevations_after_drag(self) -> bool:
+    def _expanded_drag_indices(
+        self, indices: list[int] | None, total_sections: int
+    ) -> list[int] | None:
+        if not indices:
+            return None
+        expanded: set[int] = set()
+        for index in indices:
+            if index < 0 or index >= total_sections:
+                continue
+            expanded.add(index)
+            if index - 1 >= 0:
+                expanded.add(index - 1)
+            if index + 1 < total_sections:
+                expanded.add(index + 1)
+        if not expanded:
+            return None
+        return sorted(expanded)
+
+    def _section_geometry_changed(self, old_sg, new_sg) -> bool:
+        old_sections = list(getattr(old_sg, "sects", []))
+        new_sections = list(getattr(new_sg, "sects", []))
+        if len(old_sections) != len(new_sections):
+            return True
+        for old_section, new_section in zip(old_sections, new_sections):
+            if (
+                int(getattr(old_section, "start_dlong", 0))
+                != int(getattr(new_section, "start_dlong", 0))
+            ):
+                return True
+            if int(getattr(old_section, "length", 0)) != int(
+                getattr(new_section, "length", 0)
+            ):
+                return True
+        return False
+
+    def _recalculate_elevations_after_drag(
+        self, affected_indices: list[int] | None = None
+    ) -> bool:
         if self._sgfile is None:
             return False
 
@@ -237,8 +274,18 @@ class _RuntimeEditingMixin:
             return False
 
         num_xsects = old_sg.num_xsects
+        sections_to_update = self._expanded_drag_indices(
+            affected_indices, len(self._sgfile.sects)
+        )
         updated = False
-        for section in self._sgfile.sects:
+        if sections_to_update is None:
+            indices = range(len(self._sgfile.sects))
+        else:
+            indices = sections_to_update
+        for index in indices:
+            if index < 0 or index >= len(self._sgfile.sects):
+                continue
+            section = self._sgfile.sects[index]
             start_dlong = float(getattr(section, "start_dlong", 0.0))
             length = float(getattr(section, "length", 0.0))
             end_dlong = start_dlong + length
@@ -260,10 +307,14 @@ class _RuntimeEditingMixin:
                 section.alt[xsect_idx] = updated_altitude
                 section.grade[xsect_idx] = updated_grade
 
+        if updated:
+            geometry_changed = self._section_geometry_changed(old_sg, self._sgfile)
+            if geometry_changed:
+                self._elevation_profile_cache.clear()
+            for xsect_idx in range(num_xsects):
+                self._mark_xsect_bounds_dirty(xsect_idx)
         if updated and self._emit_sections_changed is not None:
             self._emit_sections_changed()
-        if updated:
-            self._bump_sg_version()
         return updated
 
     def _refresh_section_dlongs_after_drag(self) -> bool:
