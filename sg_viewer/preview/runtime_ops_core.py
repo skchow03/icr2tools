@@ -166,6 +166,7 @@ class _RuntimeCoreMixin:
             show_status=self._show_status,
             emit_drag_state_changed=self._emit_interaction_drag_changed,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
+            recalculate_elevations=self.recalculate_elevations,
         )
 
         self._set_default_view_bounds()

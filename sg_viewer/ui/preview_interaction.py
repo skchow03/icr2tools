@@ -62,6 +62,7 @@ class PreviewInteraction:
             [tuple[int, str], tuple[int, str]], None
         ]
         | None = None,
+        recalculate_elevations: Callable[[list[int] | None], None] | None = None,
     ) -> None:
         self._context = context
         self._selection = selection
@@ -75,6 +76,7 @@ class PreviewInteraction:
         self._show_status = show_status
         self._emit_drag_state_changed = emit_drag_state_changed
         self._sync_fsects_on_connection = sync_fsects_on_connection
+        self._recalculate_elevations = recalculate_elevations
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -458,10 +460,24 @@ class PreviewInteraction:
     def _disconnect_node(self, node: tuple[int, str]) -> None:
         sect_index, endtype = node
         sections = self._section_manager.sections
+        neighbor_index: int | None
+        if endtype == "start":
+            neighbor_index = sections[sect_index].previous_id
+        else:
+            neighbor_index = sections[sect_index].next_id
         updated_sections = self._editor.disconnect_neighboring_section(
             list(sections), sect_index, endtype
         )
         self._apply_section_updates(updated_sections)
+        if self._recalculate_elevations is not None:
+            affected_indices = [sect_index]
+            if (
+                neighbor_index is not None
+                and 0 <= neighbor_index < len(sections)
+                and neighbor_index != sect_index
+            ):
+                affected_indices.append(neighbor_index)
+            self._recalculate_elevations(affected_indices)
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
         widget_size = self._context.widget_size()
@@ -581,6 +597,11 @@ class PreviewInteraction:
             target = None
 
         self._connection_target = target
+        if self._active_node is not None:
+            if target is not None:
+                self._last_dragged_indices = [self._active_node[0], target[0]]
+            else:
+                self._last_dragged_indices = [self._active_node[0]]
         self._context.request_repaint()
 
     def _end_node_drag(self) -> None:
