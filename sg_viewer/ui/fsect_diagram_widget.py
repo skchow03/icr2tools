@@ -36,7 +36,9 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._next_fsects: list[PreviewFSection] = []
         self._nodes: list[_FsectNode] = []
         self._dragged_node: _FsectNode | None = None
-        self._range: tuple[float, float] = (-1.0, 1.0)
+        self._panning = False
+        self._pan_last_pos: QtCore.QPoint | None = None
+        self._range: tuple[float, float] = (-40.0, 40.0)
         if on_dlat_changed is not None:
             self.dlatChanged.connect(on_dlat_changed)
 
@@ -52,7 +54,6 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._fsects = list(fsects)
         self._prev_fsects = list(prev_fsects or [])
         self._next_fsects = list(next_fsects or [])
-        self._range = self._calculate_dlat_range(self._fsects)
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
@@ -108,12 +109,32 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         if event.button() != QtCore.Qt.LeftButton:
             return
         node = self._find_node_at(event.pos())
-        if node is None:
+        if node is not None:
+            self._dragged_node = node
+            self.setCursor(QtCore.Qt.ClosedHandCursor)
             return
-        self._dragged_node = node
+        self._panning = True
+        self._pan_last_pos = event.pos()
         self.setCursor(QtCore.Qt.ClosedHandCursor)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._panning and self._pan_last_pos is not None:
+            rect = self.rect().adjusted(10, 10, -10, -10)
+            min_dlat, max_dlat = self._range
+            left = rect.left()
+            right = rect.right()
+            width = max(1.0, float(right - left))
+            start_dlat = self._x_to_dlat(
+                self._pan_last_pos.x(), left, width, min_dlat, max_dlat
+            )
+            current_dlat = self._x_to_dlat(
+                event.pos().x(), left, width, min_dlat, max_dlat
+            )
+            delta = start_dlat - current_dlat
+            self._range = (min_dlat + delta, max_dlat + delta)
+            self._pan_last_pos = event.pos()
+            self.update()
+            return
         if self._dragged_node is None:
             hovered = self._find_node_at(event.pos())
             self.setCursor(
@@ -143,12 +164,32 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         if event.button() != QtCore.Qt.LeftButton:
             return
         self._dragged_node = None
+        self._panning = False
+        self._pan_last_pos = None
         self.setCursor(QtCore.Qt.ArrowCursor)
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
         _ = event
-        if self._dragged_node is None:
+        if self._dragged_node is None and not self._panning:
             self.setCursor(QtCore.Qt.ArrowCursor)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
+        rect = self.rect().adjusted(10, 10, -10, -10)
+        min_dlat, max_dlat = self._range
+        left = rect.left()
+        right = rect.right()
+        width = max(1.0, float(right - left))
+        cursor_dlat = self._x_to_dlat(event.pos().x(), left, width, min_dlat, max_dlat)
+        span = max(max_dlat - min_dlat, 1.0)
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        zoom_factor = 0.9 if delta > 0 else 1.1
+        new_span = max(span * zoom_factor, 1.0)
+        half_span = new_span / 2.0
+        center = cursor_dlat
+        self._range = (center - half_span, center + half_span)
+        self.update()
 
     @staticmethod
     def _calculate_dlat_range(fsects: Iterable[PreviewFSection]) -> tuple[float, float]:
@@ -251,6 +292,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         max_dlat: float,
     ) -> None:
         stub_length = 6.0
+        stub_offset = 4.0
         top_start = QtCore.QPointF
         bottom_start = QtCore.QPointF
         for fsect in self._next_fsects:
@@ -258,16 +300,16 @@ class FsectDiagramWidget(QtWidgets.QWidget):
             pen = self._pen_for_fsect(fsect)
             painter.setPen(pen)
             painter.drawLine(
-                top_start(x, top),
-                top_start(x, top + stub_length),
+                top_start(x, top - stub_offset - stub_length),
+                top_start(x, top - stub_offset),
             )
         for fsect in self._prev_fsects:
             x = self._dlat_to_x(fsect.end_dlat, left, width, min_dlat, max_dlat)
             pen = self._pen_for_fsect(fsect)
             painter.setPen(pen)
             painter.drawLine(
-                bottom_start(x, bottom - stub_length),
-                bottom_start(x, bottom),
+                bottom_start(x, bottom + stub_offset),
+                bottom_start(x, bottom + stub_offset + stub_length),
             )
 
     def _draw_placeholder(self, painter: QtGui.QPainter, rect: QtCore.QRect) -> None:
