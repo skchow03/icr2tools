@@ -20,6 +20,7 @@ class _FsectNode:
 
 class FsectDiagramWidget(QtWidgets.QWidget):
     dlatChanged = QtCore.pyqtSignal(int, int, str, float)
+    _SNAP_DISTANCE_PX = 8.0
 
     def __init__(
         self,
@@ -76,8 +77,6 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         width = max(1.0, float(right - left))
         height = max(1.0, float(bottom - top))
 
-        center_x = (left + right) / 2.0
-        self._draw_center_axis(painter, top, bottom, center_x)
         self._draw_stub_lines(
             painter,
             left,
@@ -151,6 +150,11 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         new_dlat = self._x_to_dlat(
             event.pos().x(), left, width, min_dlat, max_dlat
         )
+        snapped_dlat = self._snap_dlat(
+            self._dragged_node, float(event.pos().x()), left, width, min_dlat, max_dlat
+        )
+        if snapped_dlat is not None:
+            new_dlat = snapped_dlat
         self._update_local_dlat(self._dragged_node, new_dlat)
         self.dlatChanged.emit(
             self._section_index,
@@ -222,14 +226,6 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         ratio = (x - left) / width
         return max_dlat - ratio * span
 
-    def _draw_center_axis(
-        self, painter: QtGui.QPainter, top: float, bottom: float, x: float
-    ) -> None:
-        pen = QtGui.QPen(QtGui.QColor(160, 160, 160, 160))
-        pen.setStyle(QtCore.Qt.DashLine)
-        painter.setPen(pen)
-        painter.drawLine(QtCore.QPointF(x, top), QtCore.QPointF(x, bottom))
-
     def _draw_node(self, painter: QtGui.QPainter, node: _FsectNode) -> None:
         arrow_length = 5.0
         arrow_half_width = 3.0
@@ -259,6 +255,31 @@ class FsectDiagramWidget(QtWidgets.QWidget):
             if QtCore.QLineF(pos, node.center).length() <= radius:
                 return node
         return None
+
+    def _snap_dlat(
+        self,
+        node: _FsectNode,
+        cursor_x: float,
+        left: float,
+        width: float,
+        min_dlat: float,
+        max_dlat: float,
+    ) -> float | None:
+        if node.endpoint == "start":
+            candidates = [fsect.end_dlat for fsect in self._prev_fsects]
+        else:
+            candidates = [fsect.start_dlat for fsect in self._next_fsects]
+        if not candidates:
+            return None
+        snapped_dlat = None
+        closest = self._SNAP_DISTANCE_PX
+        for dlat in candidates:
+            candidate_x = self._dlat_to_x(dlat, left, width, min_dlat, max_dlat)
+            distance = abs(cursor_x - candidate_x)
+            if distance <= closest:
+                closest = distance
+                snapped_dlat = dlat
+        return snapped_dlat
 
     @staticmethod
     def _pen_for_fsect(fsect: PreviewFSection) -> QtGui.QPen:
