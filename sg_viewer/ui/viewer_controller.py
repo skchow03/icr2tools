@@ -264,7 +264,7 @@ class SGViewerController:
             self._on_altitude_range_changed
         )
         self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
-        self._window.grade_spin.editingFinished.connect(
+        self._window.grade_spin.sliderReleased.connect(
             self._on_grade_edit_finished
         )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
