@@ -254,6 +254,9 @@ class SGViewerController:
         self._window.altitude_slider.valueChanged.connect(
             self._on_altitude_slider_changed
         )
+        self._window.altitude_slider.sliderReleased.connect(
+            self._on_altitude_slider_released
+        )
         self._window.altitude_min_spin.valueChanged.connect(
             self._on_altitude_range_changed
         )
@@ -261,12 +264,18 @@ class SGViewerController:
             self._on_altitude_range_changed
         )
         self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
+        self._window.grade_spin.editingFinished.connect(
+            self._on_grade_edit_finished
+        )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
         self._window.profile_widget.sectionClicked.connect(
             self._on_profile_section_clicked
         )
         self._window.profile_widget.altitudeDragged.connect(
             self._on_profile_altitude_dragged
+        )
+        self._window.profile_widget.altitudeDragFinished.connect(
+            self._on_profile_altitude_drag_finished
         )
         self._window.xsect_elevation_widget.xsectClicked.connect(
             self._on_xsect_node_clicked
@@ -1056,7 +1065,7 @@ class SGViewerController:
         self._profile_dragging = True
         try:
             if self._window.preview.set_section_xsect_altitude(
-                section_index, xsect_index, altitude
+                section_index, xsect_index, altitude, validate=False
             ):
                 self._refresh_elevation_profile()
                 self._refresh_xsect_elevation_panel()
@@ -1067,6 +1076,10 @@ class SGViewerController:
                     self._refresh_elevation_inputs()
         finally:
             self._profile_dragging = False
+
+    def _on_profile_altitude_drag_finished(self, section_index: int) -> None:
+        _ = section_index
+        self._window.preview.validate_document()
 
     def _on_xsect_node_clicked(self, xsect_index: int) -> None:
         combo = self._window.xsect_combo
@@ -1136,6 +1149,9 @@ class SGViewerController:
         self._window.update_altitude_display(value)
         self._apply_altitude_edit()
 
+    def _on_altitude_slider_released(self) -> None:
+        self._window.preview.validate_document()
+
     def _on_altitude_range_changed(self) -> None:
         min_spin = self._window.altitude_min_spin
         max_spin = self._window.altitude_max_spin
@@ -1171,7 +1187,7 @@ class SGViewerController:
         altitude_feet = feet_from_slider_units(self._window.altitude_slider.value())
         altitude = feet_to_500ths(altitude_feet)
         if self._window.preview.set_section_xsect_altitude(
-            selection.index, xsect_index, altitude
+            selection.index, xsect_index, altitude, validate=False
         ):
             self._refresh_elevation_profile()
             self._refresh_xsect_elevation_panel()
@@ -1184,7 +1200,7 @@ class SGViewerController:
 
         grade = self._window.grade_spin.value()
         if self._window.preview.set_section_xsect_grade(
-            selection.index, xsect_index, grade
+            selection.index, xsect_index, grade, validate=False
         ):
             self._refresh_elevation_profile()
 
@@ -1338,6 +1354,9 @@ class SGViewerController:
     def _on_grade_slider_changed(self, value: int) -> None:
         self._window.update_grade_display(value)
         self._apply_grade_edit()
+
+    def _on_grade_edit_finished(self) -> None:
+        self._window.preview.validate_document()
 
     def _refresh_xsect_elevation_panel(self) -> None:
         selection = self._active_selection

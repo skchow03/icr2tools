@@ -1326,11 +1326,16 @@ class _RuntimeCoreMixin:
         return altitudes
 
     def set_section_xsect_altitude(
-        self, section_id: int, xsect_index: int, altitude: float
+        self,
+        section_id: int,
+        xsect_index: int,
+        altitude: float,
+        *,
+        validate: bool = True,
     ) -> bool:
         try:
             self._document.set_section_xsect_altitude(
-                section_id, xsect_index, altitude
+                section_id, xsect_index, altitude, validate=validate
             )
         except (ValueError, IndexError):
             return False
@@ -1339,10 +1344,17 @@ class _RuntimeCoreMixin:
         return True
 
     def set_section_xsect_grade(
-        self, section_id: int, xsect_index: int, grade: float
+        self,
+        section_id: int,
+        xsect_index: int,
+        grade: float,
+        *,
+        validate: bool = True,
     ) -> bool:
         try:
-            self._document.set_section_xsect_grade(section_id, xsect_index, grade)
+            self._document.set_section_xsect_grade(
+                section_id, xsect_index, grade, validate=validate
+            )
         except (ValueError, IndexError):
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
@@ -1355,4 +1367,12 @@ class _RuntimeCoreMixin:
         except (ValueError, IndexError):
             return False
         self._bump_sg_version()
+        return True
+
+    def validate_document(self) -> bool:
+        try:
+            self._document.validate()
+        except ValueError as exc:
+            logger.exception("Validation failed after edit", exc_info=exc)
+            return False
         return True
