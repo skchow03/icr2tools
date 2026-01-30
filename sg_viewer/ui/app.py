@@ -306,6 +306,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         sidebar_layout.addLayout(elevation_layout)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
+        self._sidebar.setFixedWidth(self._sidebar.sizeHint().width())
 
         fsect_sidebar_layout = QtWidgets.QVBoxLayout()
         fsect_sidebar_layout.addWidget(self._sg_fsects_checkbox)
