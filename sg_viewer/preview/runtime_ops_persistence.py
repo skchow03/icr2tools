@@ -251,23 +251,26 @@ class _RuntimePersistenceMixin:
 
         cache_key = (samples_per_section, self._sg_version)
         cached = self._elevation_profile_cache.get(cache_key)
+        profile_sections = list(self._section_manager.sections)
+        if not profile_sections or len(profile_sections) != len(sgfile.sects):
+            profile_sections = list(sgfile.sects)
         if cached is None:
             dlongs: list[float] = []
             section_ranges: list[tuple[float, float]] = []
             section_offsets: list[tuple[int, int] | None] = [None] * len(
-                sgfile.sects
+                profile_sections
             )
-            for index, sg_sect in enumerate(sgfile.sects):
-                sg_length = float(sg_sect.length)
-                if sg_length <= 0:
+            for index, section in enumerate(profile_sections):
+                section_length = float(section.length)
+                if section_length <= 0:
                     continue
-                start_dlong = float(sg_sect.start_dlong)
-                section_ranges.append((start_dlong, start_dlong + sg_length))
+                start_dlong = float(section.start_dlong)
+                section_ranges.append((start_dlong, start_dlong + section_length))
 
                 start_index = len(dlongs)
                 for step in range(samples_per_section + 1):
                     fraction = step / samples_per_section
-                    dlong = start_dlong + fraction * sg_length
+                    dlong = start_dlong + fraction * section_length
                     dlongs.append(dlong)
                 section_offsets[index] = (start_index, samples_per_section + 1)
             self._elevation_profile_cache[cache_key] = (
