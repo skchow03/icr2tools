@@ -44,6 +44,10 @@ class PreviewSectionManager:
         self.sampled_dlongs: list[float] = []
         self.sampled_bounds: tuple[float, float, float, float] | None = None
         self.centerline_index: CenterlineIndex | None = None
+        self._preview_mode = False
+
+    def set_preview_mode(self, active: bool) -> None:
+        self._preview_mode = active
 
     @property
     def sections(self) -> list[SectionPreview]:
@@ -139,6 +143,9 @@ class PreviewSectionManager:
         self._sections = new_sections
         self._section_signatures = new_signatures
         self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
+        if self._preview_mode:
+            return False
+
         self.clear_drag_preview()
 
         if needs_rebuild:

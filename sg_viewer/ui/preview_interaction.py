@@ -140,6 +140,7 @@ class PreviewInteraction:
         self._active_chain_indices = None
         self._set_start_finish_mode = False
         self._set_drag_state(False)
+        self._section_manager.set_preview_mode(False)
         self._context.end_drag_transform()
         self._last_dragged_indices = None
 
@@ -606,6 +607,7 @@ class PreviewInteraction:
 
     def _end_node_drag(self) -> None:
         if self._drag_state_active:
+            self._section_manager.set_preview_mode(False)
             self._set_sections(list(self._section_manager.sections))
         self._clear_drag_state()
 
@@ -743,6 +745,7 @@ class PreviewInteraction:
 
     def _end_section_drag(self) -> None:
         if self._drag_state_active:
+            self._section_manager.set_preview_mode(False)
             self._set_sections(list(self._section_manager.sections))
         self._is_dragging_section = False
         self._active_section_index = None
@@ -756,6 +759,7 @@ class PreviewInteraction:
         if self._drag_state_active == active:
             return
         self._drag_state_active = active
+        self._section_manager.set_preview_mode(active)
         if self._emit_drag_state_changed is not None:
             self._emit_drag_state_changed(active)
 
