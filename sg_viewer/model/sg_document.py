@@ -146,7 +146,8 @@ class SGDocument(QtCore.QObject):
         if __debug__:
             self.validate()
 
-        self.geometry_changed.emit()
+        for section_id in range(len(self._sg_data.sects)):
+            self.elevation_changed.emit(section_id)
 
     def set_xsect_definitions(self, entries: list[tuple[int | None, float]]) -> None:
         if self._sg_data is None:
@@ -202,7 +203,8 @@ class SGDocument(QtCore.QObject):
             self.validate()
 
         self.metadata_changed.emit()
-        self.geometry_changed.emit()
+        for section_id in range(len(self._sg_data.sects)):
+            self.elevation_changed.emit(section_id)
 
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
         if self._sg_data is None:
