@@ -807,6 +807,10 @@ class PreviewInteraction:
         start_idx: int,
         changed_indices: list[int],
     ) -> None:
+        if self._drag_state_active:
+            self._section_manager.set_preview_mode(False)
+            self._section_manager.clear_drag_preview()
+
         old_closed = is_closed_loop(old_sections)
         new_closed = is_closed_loop(updated_sections)
 
