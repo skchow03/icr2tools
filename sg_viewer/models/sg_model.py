@@ -14,9 +14,12 @@ Point = Tuple[float, float]
 # in DerivedGeometry.sections. section_id is not a stable UID.
 # Any code that inserts, removes, or reorders sections MUST renumber
 # section_id to match list order.
+# source_section_id preserves the SG file section index used for elevation
+# and grade data when preview sections are reordered.
 @dataclass(frozen=True)
 class SectionPreview:
     section_id: int
+    source_section_id: int
     type_name: str
     previous_id: int
     next_id: int
