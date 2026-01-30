@@ -110,6 +110,7 @@ class _RuntimeCoreMixin:
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
+        self._last_elevation_recalc_message: str | None = None
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
@@ -392,6 +393,9 @@ class _RuntimeCoreMixin:
 
     def set_status_text(self, text: str) -> None:
         self.set_status(text)
+
+    def last_elevation_recalc_message(self) -> str | None:
+        return self._last_elevation_recalc_message
 
     def request_repaint(self) -> None:
         self._context.request_repaint()

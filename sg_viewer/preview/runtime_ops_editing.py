@@ -251,26 +251,41 @@ class _RuntimeEditingMixin:
     def _recalculate_elevations_after_drag(
         self, affected_indices: list[int] | None = None
     ) -> bool:
+        self._last_elevation_recalc_message = None
         if self._sgfile is None:
+            self._last_elevation_recalc_message = "No SG file is loaded."
             return False
 
         if not self._section_manager.sections:
+            self._last_elevation_recalc_message = "No sections are available."
             return False
 
         if self._refresh_section_dlongs_after_drag():
             if not self._section_manager.sections:
+                self._last_elevation_recalc_message = (
+                    "No sections are available after refreshing DLONGs."
+                )
                 return False
 
         old_sg = copy.deepcopy(self._sgfile)
         if not old_sg.sects or old_sg.num_xsects <= 0:
+            self._last_elevation_recalc_message = (
+                "The SG file has no sections or cross sections."
+            )
             return False
 
         if any(not sect.alt or not sect.grade for sect in self._sgfile.sects):
+            self._last_elevation_recalc_message = (
+                "The SG file is missing elevation or grade data."
+            )
             return False
 
         try:
             self.apply_preview_to_sgfile()
-        except ValueError:
+        except ValueError as exc:
+            self._last_elevation_recalc_message = (
+                f"Failed to apply preview geometry: {exc}"
+            )
             return False
 
         num_xsects = old_sg.num_xsects
@@ -278,6 +293,8 @@ class _RuntimeEditingMixin:
             affected_indices, len(self._sgfile.sects)
         )
         updated = False
+        missing_locations = 0
+        processed_sections = 0
         if sections_to_update is None:
             indices = range(len(self._sgfile.sects))
         else:
@@ -285,12 +302,14 @@ class _RuntimeEditingMixin:
         for index in indices:
             if index < 0 or index >= len(self._sgfile.sects):
                 continue
+            processed_sections += 1
             section = self._sgfile.sects[index]
             start_dlong = float(getattr(section, "start_dlong", 0.0))
             length = float(getattr(section, "length", 0.0))
             end_dlong = start_dlong + length
             location = self._section_at_dlong(old_sg, end_dlong)
             if location is None:
+                missing_locations += 1
                 continue
             old_index, subsect = location
             for xsect_idx in range(num_xsects):
@@ -317,7 +336,18 @@ class _RuntimeEditingMixin:
                 self._mark_xsect_bounds_dirty(xsect_idx)
         if updated and self._emit_sections_changed is not None:
             self._emit_sections_changed()
-        return updated
+        if updated:
+            self._last_elevation_recalc_message = "Recalculated elevation profile."
+            return True
+        if processed_sections > 0 and missing_locations == processed_sections:
+            self._last_elevation_recalc_message = (
+                "Unable to map updated sections to prior elevation data."
+            )
+            return False
+        self._last_elevation_recalc_message = (
+            "Elevation values already match the current geometry."
+        )
+        return True
 
     def recalculate_elevations(self, affected_indices: list[int] | None = None) -> bool:
         return self._recalculate_elevations_after_drag(affected_indices)
