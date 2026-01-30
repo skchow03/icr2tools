@@ -556,14 +556,25 @@ class SGViewerController:
 
     def _recalculate_elevations(self) -> None:
         preview = self._window.preview
-        if not preview.recalculate_elevations():
+        if preview.recalculate_elevations():
+            message = (
+                preview.last_elevation_recalc_message()
+                or "Recalculated elevation profile."
+            )
+            self._window.show_status_message(message)
+            self._refresh_elevation_profile()
+            return
+
+        reason = preview.last_elevation_recalc_message()
+        if reason:
             self._window.show_status_message(
-                "Unable to recalculate elevations for this track."
+                f"Unable to recalculate elevations: {reason}"
             )
             return
 
-        self._window.show_status_message("Recalculated elevation profile.")
-        self._refresh_elevation_profile()
+        self._window.show_status_message(
+            "Unable to recalculate elevations for this track."
+        )
 
     def _refresh_fsects_preview(self) -> None:
         if self._window.preview.refresh_fsections_preview():
