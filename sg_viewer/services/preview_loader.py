@@ -132,6 +132,7 @@ def _build_sections(
         sections.append(
             SectionPreview(
                 section_id=idx,
+                source_section_id=idx,
                 type_name="curve" if getattr(sg_sect, "type", None) == 2 else "straight",
                 previous_id=int(getattr(sg_sect, "sec_prev", idx - 1)),
                 next_id=int(getattr(sg_sect, "sec_next", idx + 1)),

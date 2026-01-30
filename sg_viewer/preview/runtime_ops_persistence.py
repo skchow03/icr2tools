@@ -99,6 +99,12 @@ class _RuntimePersistenceMixin:
             self._section_manager.sections,
             self._fsects_by_section,
         )
+        for section in self._section_manager.sections:
+            source_id = getattr(section, "source_section_id", section.section_id)
+            if source_id != section.section_id:
+                object.__setattr__(
+                    section, "source_section_id", section.section_id
+                )
         self._bump_sg_version()
         return sgfile
 

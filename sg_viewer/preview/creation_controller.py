@@ -504,6 +504,7 @@ class CurveCreationInteraction:
         heading = self._controller._curve_heading
         template = SectionPreview(
             section_id=0,
+            source_section_id=-1,
             type_name="curve",
             previous_id=-1,
             next_id=-1,

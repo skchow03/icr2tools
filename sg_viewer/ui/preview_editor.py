@@ -84,6 +84,7 @@ class PreviewEditor:
 
         new_section = SectionPreview(
             section_id=new_index,
+            source_section_id=-1,
             type_name="straight",
             previous_id=-1,
             next_id=-1,

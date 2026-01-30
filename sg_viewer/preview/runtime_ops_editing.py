@@ -383,6 +383,9 @@ class _RuntimeEditingMixin:
             return
 
         section = self._section_manager.sections[idx]
+        source_index = getattr(section, "source_section_id", idx)
+        if source_index is None or source_index < 0:
+            source_index = idx
         original_length = float(section.length)
         if section.type_name == "curve":
             result = self._editor.split_curve_section(
@@ -399,7 +402,10 @@ class _RuntimeEditingMixin:
         self._track_length = track_length
         if original_length > 0 and idx < len(sections):
             split_fraction = float(sections[idx].length) / original_length
-            self._split_xsect_elevations(idx, split_fraction)
+            self._split_xsect_elevations(source_index, split_fraction)
+            sections = self._update_source_section_ids_after_split(
+                sections, idx, source_index
+            )
         self._split_fsects_by_section(idx)
         self.set_sections(sections)
         if self._sgfile is not None:
@@ -410,6 +416,36 @@ class _RuntimeEditingMixin:
         if idx + 1 < len(sections):
             self._selection.set_selected_section(idx + 1)
         self._exit_split_section_mode("Split complete.")
+
+    def _update_source_section_ids_after_split(
+        self,
+        sections: list[SectionPreview],
+        split_index: int,
+        source_index: int,
+    ) -> list[SectionPreview]:
+        if source_index < 0:
+            return sections
+
+        updated_sections: list[SectionPreview] = []
+        for sect in sections:
+            current_source = getattr(sect, "source_section_id", -1)
+            if current_source is not None and current_source > source_index:
+                updated_sections.append(
+                    replace(sect, source_section_id=current_source + 1)
+                )
+            else:
+                updated_sections.append(sect)
+
+        if split_index < len(updated_sections):
+            updated_sections[split_index] = replace(
+                updated_sections[split_index], source_section_id=source_index
+            )
+        if split_index + 1 < len(updated_sections):
+            updated_sections[split_index + 1] = replace(
+                updated_sections[split_index + 1], source_section_id=source_index + 1
+            )
+
+        return updated_sections
 
     def _exit_split_section_mode(self, status_message: str | None = None) -> None:
         self._split_section_mode = False

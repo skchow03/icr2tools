@@ -16,6 +16,15 @@ def apply_preview_to_sgfile(
     if not sections_list:
         raise ValueError("No sections available to save.")
 
+    alt_grade_snapshot: list[tuple[list[int], list[int]]] = []
+    for sect in sgfile.sects:
+        alt_grade_snapshot.append(
+            (
+                list(getattr(sect, "alt", [])),
+                list(getattr(sect, "grade", [])),
+            )
+        )
+
     def _apply_fsects(
         dest: SGFile.Section, fsects: Sequence[PreviewFSection] | None
     ) -> None:
@@ -143,6 +152,11 @@ def apply_preview_to_sgfile(
         sg_section.radius = _as_int(preview_section.radius)
 
         sg_section.recompute_curve_length()
+
+        source_index = getattr(preview_section, "source_section_id", -1)
+        if source_index is not None and 0 <= source_index < len(alt_grade_snapshot):
+            sg_section.alt = list(alt_grade_snapshot[source_index][0])
+            sg_section.grade = list(alt_grade_snapshot[source_index][1])
 
         if fsects_by_section is not None and index < len(fsects_by_section):
             _apply_fsects(sg_section, fsects_by_section[index])

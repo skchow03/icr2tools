@@ -110,6 +110,7 @@ class DerivedGeometry:
             sections.append(
                 SectionPreview(
                     section_id=idx,
+                    source_section_id=idx,
                     type_name=type_name,
                     previous_id=int(getattr(sg_sect, "sec_prev", idx - 1)),
                     next_id=int(getattr(sg_sect, "sec_next", idx + 1)),
