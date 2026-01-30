@@ -579,6 +579,8 @@ class _RuntimeEditingMixin:
     ) -> None:
         self._clear_split_hover()
 
+        sections = self._normalize_section_dlongs(sections)
+
         old_sections = list(self._section_manager.sections)
         old_fsects = list(self._fsects_by_section)
 
@@ -620,6 +622,28 @@ class _RuntimeEditingMixin:
             self._emit_sections_changed()
         self._context.request_repaint()
         self._bump_sg_version()
+
+    def _normalize_section_dlongs(
+        self, sections: list[SectionPreview]
+    ) -> list[SectionPreview]:
+        if not sections:
+            return sections
+
+        dlong = 0.0
+        updated_sections: list[SectionPreview] = []
+        changed = False
+        for idx, section in enumerate(sections):
+            current_start = (
+                float(section.start_dlong) if section.start_dlong is not None else dlong
+            )
+            if not math.isclose(current_start, dlong) or section.section_id != idx:
+                changed = True
+            updated_sections.append(
+                replace(section, section_id=idx, start_dlong=dlong)
+            )
+            dlong += float(getattr(section, "length", 0.0))
+
+        return updated_sections if changed else sections
 
     def update_drag_preview(self, sections: list[SectionPreview]) -> None:
         if len(sections) != len(self._section_manager.sections):
