@@ -50,6 +50,7 @@ class _RuntimeLoadingMixin:
         self._refresh_from_document(mark_unsaved=not self._suppress_document_dirty)
 
     def _on_geometry_changed(self) -> None:
+        self._bump_sg_version()
         self._refresh_from_document(mark_unsaved=not self._suppress_document_dirty)
 
     def _on_elevation_changed(self, section_id: int) -> None:
