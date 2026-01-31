@@ -4,6 +4,7 @@ from typing import Iterable, Sequence
 
 from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.preview.geometry import curve_angles
+from sg_viewer.geometry.sg_geometry import signed_radius_from_heading
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.models.preview_fsection import PreviewFSection
 
@@ -131,12 +132,19 @@ def apply_preview_to_sgfile(
         )
 
         sang1 = sang2 = eang1 = eang2 = None
+        signed_radius = preview_section.radius
         if preview_section.type_name == "curve" and preview_section.center is not None:
+            signed_radius = signed_radius_from_heading(
+                start_heading or end_heading,
+                (start_x, start_y),
+                (center_x, center_y),
+                preview_section.radius,
+            )
             sang1, sang2, eang1, eang2 = curve_angles(
                 (start_x, start_y),
                 (end_x, end_y),
                 (center_x, center_y),
-                preview_section.radius or 0.0,
+                signed_radius or 0.0,
             )
         else:
             sang1 = start_heading[0] if start_heading else None
@@ -149,7 +157,7 @@ def apply_preview_to_sgfile(
         sg_section.eang1 = _as_int(eang1)
         sg_section.eang2 = _as_int(eang2)
 
-        sg_section.radius = _as_int(preview_section.radius)
+        sg_section.radius = _as_int(signed_radius)
 
         sg_section.recompute_curve_length()
 
