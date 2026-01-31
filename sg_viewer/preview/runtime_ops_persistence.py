@@ -37,19 +37,22 @@ class _RuntimePersistenceMixin:
         return sgfile
 
     def _section_geometry_key(self, section: object) -> tuple:
+        source_id = getattr(section, "source_section_id", None)
+        if source_id is not None and source_id >= 0:
+            return ("source", source_id)
+
         start = getattr(section, "start", None)
         end = getattr(section, "end", None)
+        if start is not None and end is not None and end < start:
+            start, end = end, start
         center = getattr(section, "center", None)
+        radius = getattr(section, "radius", None)
         return (
             getattr(section, "type_name", None),
             start,
             end,
             center,
-            getattr(section, "radius", None),
-            getattr(section, "sang1", None),
-            getattr(section, "sang2", None),
-            getattr(section, "eang1", None),
-            getattr(section, "eang2", None),
+            abs(radius) if radius is not None else None,
         )
 
     def _realign_fsects_after_recalc(
