@@ -23,12 +23,13 @@ class _RuntimeCoreCommitOpsMixin:
             source_index, source_endtype = connection
         self._insert_fsects_by_section(new_index, source_index, source_endtype)
         if not was_closed and is_closed_loop(updated_sections):
-            order = self._closed_loop_order(updated_sections)
-            if order and len(order) == len(self._fsects_by_section):
-                self._fsects_by_section = [self._fsects_by_section[i] for i in order]
-                if new_index in order:
-                    new_index = order.index(new_index)
-            updated_sections = set_start_finish(updated_sections, 0)
+            if not self._has_fsections():
+                order = self._closed_loop_order(updated_sections)
+                if order and len(order) == len(self._fsects_by_section):
+                    self._fsects_by_section = [self._fsects_by_section[i] for i in order]
+                    if new_index in order:
+                        new_index = order.index(new_index)
+                updated_sections = set_start_finish(updated_sections, 0)
         self.set_sections(updated_sections)
         self._validate_section_fsects_alignment()
         self._selection.set_selected_section(new_index)
@@ -50,12 +51,13 @@ class _RuntimeCoreCommitOpsMixin:
             source_index, source_endtype = connection
         self._insert_fsects_by_section(new_index, source_index, source_endtype)
         if not was_closed and is_closed_loop(updated_sections):
-            order = self._closed_loop_order(updated_sections)
-            if order and len(order) == len(self._fsects_by_section):
-                self._fsects_by_section = [self._fsects_by_section[i] for i in order]
-                if new_index in order:
-                    new_index = order.index(new_index)
-            updated_sections = set_start_finish(updated_sections, 0)
+            if not self._has_fsections():
+                order = self._closed_loop_order(updated_sections)
+                if order and len(order) == len(self._fsects_by_section):
+                    self._fsects_by_section = [self._fsects_by_section[i] for i in order]
+                    if new_index in order:
+                        new_index = order.index(new_index)
+                updated_sections = set_start_finish(updated_sections, 0)
         self.set_sections(updated_sections)
         self._validate_section_fsects_alignment()
         self._selection.set_selected_section(new_index)

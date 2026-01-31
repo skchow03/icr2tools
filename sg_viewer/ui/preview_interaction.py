@@ -58,6 +58,7 @@ class PreviewInteraction:
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
         emit_drag_state_changed: Callable[[bool], None] | None = None,
+        lock_section_order: Callable[[], bool] | None = None,
         sync_fsects_on_connection: Callable[
             [tuple[int, str], tuple[int, str]], None
         ]
@@ -75,6 +76,7 @@ class PreviewInteraction:
         self._stop_panning = stop_panning
         self._show_status = show_status
         self._emit_drag_state_changed = emit_drag_state_changed
+        self._lock_section_order = lock_section_order
         self._sync_fsects_on_connection = sync_fsects_on_connection
         self._recalculate_elevations = recalculate_elevations
 
@@ -825,6 +827,15 @@ class PreviewInteraction:
                 print(f"  [{i}] prev={s.previous_id} next={s.next_id}")
 
         if not old_closed and new_closed:
+            lock_order = False
+            if self._lock_section_order is not None:
+                lock_order = self._lock_section_order()
+            if lock_order:
+                self._set_sections(sections, changed_indices=changed_indices)
+                self._show_status(
+                    "Closed loop detected — section order locked to preserve F-sections"
+                )
+                return
             # Preserve Section 0 as the canonical start so the start/finish marker
             # always remains anchored to the beginning of the first section.
             canonical_start_idx = 0

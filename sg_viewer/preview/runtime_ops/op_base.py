@@ -141,6 +141,7 @@ class _RuntimeCoreBaseMixin:
             self._stop_panning,
             show_status=self._show_status,
             emit_drag_state_changed=self._emit_interaction_drag_changed,
+            lock_section_order=self._has_fsections,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
             recalculate_elevations=self.recalculate_elevations,
         )
@@ -154,6 +155,11 @@ class _RuntimeCoreBaseMixin:
         return (
             self._interaction.is_dragging_node
             or self._interaction.is_dragging_section
+        )
+
+    def _has_fsections(self) -> bool:
+        return any(self._fsects_by_section) and any(
+            bool(fsects) for fsects in self._fsects_by_section
         )
 
     def _widget_size(self) -> tuple[int, int]:
