@@ -33,7 +33,7 @@ class BasePreviewState:
     show_curve_markers: bool
     show_axes: bool
     sections: Iterable
-    fsections: list[PreviewFSection]
+    fsections_by_section: list[list[PreviewFSection]]
     selected_curve_index: int | None
     start_finish_mapping: tuple[Point, Point, Point] | None
     status_message: str
@@ -130,7 +130,7 @@ def paint_preview(
             painter,
             base_state.sections,
             base_state.selected_section_points,
-            base_state.fsections,
+            base_state.fsections_by_section,
             transform,
             widget_height,
         )
@@ -284,18 +284,23 @@ def _draw_centerlines(
     painter: QtGui.QPainter,
     sections: Iterable[SectionPreview],
     selected_section_points: Iterable[Point],
-    fsections: list[PreviewFSection],
+    fsections_by_section: list[list[PreviewFSection]],
     transform: Transform,
     widget_height: int,
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
-    for section in sections:
+    for index, section in enumerate(sections):
         polyline = section.polyline
         if len(polyline) < 2:
             continue
 
+        fsections = (
+            fsections_by_section[index]
+            if index < len(fsections_by_section)
+            else []
+        )
         mapped = [
             sg_rendering.map_point(point[0], point[1], transform, widget_height)
             for point in polyline

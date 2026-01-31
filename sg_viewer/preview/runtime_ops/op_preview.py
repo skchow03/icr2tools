@@ -24,6 +24,10 @@ class _RuntimeCorePreviewMixin:
             return []
         return list(self._preview_data.fsections)
 
+    @property
+    def preview_fsections_by_section(self) -> list[list[PreviewFSection]]:
+        return [list(fsects) for fsects in self._fsects_by_section]
+
     def get_section_fsects(self, section_index: int | None) -> list[PreviewFSection]:
         if section_index is None:
             return []

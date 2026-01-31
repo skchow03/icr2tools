@@ -71,7 +71,7 @@ class PreviewPresenter:
                 show_curve_markers=self._runtime.show_curve_markers,
                 show_axes=self._runtime.show_axes,
                 sections=section_manager.sections,
-                fsections=self._runtime.preview_fsections,
+                fsections_by_section=self._runtime.preview_fsections_by_section,
                 selected_curve_index=selection.selected_curve_index,
                 start_finish_mapping=self._runtime.start_finish_mapping,
                 status_message=self._runtime.status_message,
