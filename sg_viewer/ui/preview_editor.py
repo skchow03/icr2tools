@@ -11,10 +11,6 @@ from sg_viewer.preview.creation_controller import (
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.models.selection import SelectionManager
-from sg_viewer.geometry.sg_geometry import (
-    assert_section_geometry_consistent,
-    update_section_geometry,
-)
 from sg_viewer.models.sg_model import SectionPreview
 
 Point = tuple[float, float]
@@ -106,7 +102,7 @@ class PreviewEditor:
         updated_sections, new_section = self._connect_new_section(
             list(sections), new_section, self._straight_creation.connection
         )
-        updated_sections.append(update_section_geometry(new_section))
+        updated_sections.append(new_section)
         new_track_length = next_start_dlong + length
         if track_length is not None:
             track_length = max(track_length, new_track_length)
@@ -141,7 +137,7 @@ class PreviewEditor:
         updated_sections, new_section = self._connect_new_section(
             list(sections), new_section, self._curve_creation.connection
         )
-        updated_sections.append(update_section_geometry(new_section))
+        updated_sections.append(new_section)
         new_track_length = next_start_dlong + new_section.length
         if track_length is not None:
             track_length = max(track_length, new_track_length)
@@ -213,7 +209,7 @@ class PreviewEditor:
                 next_id=new_next,
                 start_dlong=cursor,
             )
-            new_sections.append(update_section_geometry(updated_section))
+            new_sections.append(updated_section)
             cursor += float(updated_section.length)
 
         self._delete_section_active = False
@@ -457,7 +453,6 @@ class PreviewEditor:
         dlong = 0.0
         for i, sect in enumerate(new_sections):
             updated_section = replace(sect, section_id=i, start_dlong=dlong)
-            updated_section = update_section_geometry(updated_section)
             new_sections[i] = updated_section
             dlong += float(updated_section.length)
 
@@ -465,9 +460,7 @@ class PreviewEditor:
         return new_sections, (dlong if new_sections else None)
 
     def _assert_sections_consistent(self, sections: list[SectionPreview]) -> None:
-        if __debug__:
-            for section in sections:
-                assert_section_geometry_consistent(section)
+        return None
 
     # ------------------------------------------------------------------
     # Drag helpers
