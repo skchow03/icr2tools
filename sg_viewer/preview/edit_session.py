@@ -25,6 +25,14 @@ def apply_preview_to_sgfile(
             )
         )
 
+    fsects_by_source: dict[int, Sequence[PreviewFSection]] = {}
+    if fsects_by_section is not None:
+        for preview_section, fsects in zip(sections_list, fsects_by_section):
+            source_id = getattr(preview_section, "source_section_id", -1)
+            if source_id is None or source_id < 0:
+                continue
+            fsects_by_source[source_id] = list(fsects)
+
     def _apply_fsects(
         dest: SGFile.Section, fsects: Sequence[PreviewFSection] | None
     ) -> None:
@@ -158,7 +166,12 @@ def apply_preview_to_sgfile(
             sg_section.alt = list(alt_grade_snapshot[source_index][0])
             sg_section.grade = list(alt_grade_snapshot[source_index][1])
 
-        if fsects_by_section is not None and index < len(fsects_by_section):
-            _apply_fsects(sg_section, fsects_by_section[index])
+        if fsects_by_section is not None:
+            if source_index is not None and source_index >= 0:
+                _apply_fsects(
+                    sg_section, fsects_by_source.get(source_index, [])
+                )
+            else:
+                _apply_fsects(sg_section, [])
 
     return sgfile

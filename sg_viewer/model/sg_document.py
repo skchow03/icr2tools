@@ -34,6 +34,17 @@ class SGDocument(QtCore.QObject):
     def sg_data(self) -> SGFile | None:
         return self._sg_data
 
+    def has_fsections(self) -> bool:
+        sg_data = self._sg_data
+        if sg_data is None:
+            return False
+        for section in sg_data.sects or []:
+            if int(getattr(section, "num_fsects", 0)) > 0:
+                return True
+            if any(getattr(section, "ftype1", [])):
+                return True
+        return False
+
     def set_sg_data(self, sg_data: SGFile | None, *, validate: bool = True) -> None:
         self._sg_data = sg_data
         if self._sg_data is not None and validate:
@@ -209,6 +220,8 @@ class SGDocument(QtCore.QObject):
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")
+        if self.has_fsections():
+            raise RuntimeError("Canonicalization forbidden when F-sections exist")
 
         self._sg_data.rebuild_dlongs(start_index, start_dlong)
 

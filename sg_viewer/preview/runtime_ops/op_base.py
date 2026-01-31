@@ -142,6 +142,7 @@ class _RuntimeCoreBaseMixin:
             show_status=self._show_status,
             emit_drag_state_changed=self._emit_interaction_drag_changed,
             lock_section_order=self._has_fsections,
+            has_fsections=self._document.has_fsections,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
             recalculate_elevations=self.recalculate_elevations,
         )

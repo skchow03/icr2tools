@@ -30,7 +30,6 @@ from sg_viewer.preview.preview_mutations import (
 )
 
 from sg_viewer.geometry.topology import is_closed_loop
-from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
 
 
 if TYPE_CHECKING:
@@ -59,6 +58,7 @@ class PreviewInteraction:
         show_status: Callable[[str], None],
         emit_drag_state_changed: Callable[[bool], None] | None = None,
         lock_section_order: Callable[[], bool] | None = None,
+        has_fsections: Callable[[], bool] | None = None,
         sync_fsects_on_connection: Callable[
             [tuple[int, str], tuple[int, str]], None
         ]
@@ -77,6 +77,7 @@ class PreviewInteraction:
         self._show_status = show_status
         self._emit_drag_state_changed = emit_drag_state_changed
         self._lock_section_order = lock_section_order
+        self._has_fsections = has_fsections
         self._sync_fsects_on_connection = sync_fsects_on_connection
         self._recalculate_elevations = recalculate_elevations
 
@@ -235,6 +236,10 @@ class PreviewInteraction:
                     start_idx = section_idx
 
                 try:
+                    if self._has_fsections is not None and self._has_fsections():
+                        raise RuntimeError(
+                            "Canonicalization forbidden when F-sections exist"
+                        )
                     sections = set_start_finish(sections, start_idx)
                 except ValueError:
                     self._show_status("Track must be closed to set start/finish")
@@ -827,6 +832,10 @@ class PreviewInteraction:
                 print(f"  [{i}] prev={s.previous_id} next={s.next_id}")
 
         if not old_closed and new_closed:
+            sections_before = [
+                getattr(section, "source_section_id", section.section_id)
+                for section in old_sections
+            ]
             lock_order = False
             if self._lock_section_order is not None:
                 lock_order = self._lock_section_order()
@@ -835,18 +844,26 @@ class PreviewInteraction:
                 self._show_status(
                     "Closed loop detected — section order locked to preserve F-sections"
                 )
+                sections_after = [
+                    getattr(section, "source_section_id", section.section_id)
+                    for section in sections
+                ]
+                assert (
+                    sections_before == sections_after
+                ), "Section order changed during loop closure"
                 return
-            # Preserve Section 0 as the canonical start so the start/finish marker
-            # always remains anchored to the beginning of the first section.
-            canonical_start_idx = 0
-            sections = canonicalize_closed_loop(
-                sections,
-                start_idx=canonical_start_idx,
-            )
-
+            if self._has_fsections is not None and self._has_fsections():
+                raise RuntimeError("Canonicalization forbidden when F-sections exist")
             self._set_sections(sections, changed_indices=changed_indices)
+            sections_after = [
+                getattr(section, "source_section_id", section.section_id)
+                for section in sections
+            ]
+            assert (
+                sections_before == sections_after
+            ), "Section order changed during loop closure"
 
-            self._show_status("Closed loop detected — track direction fixed")
+            self._show_status("Closed loop detected — section order preserved")
         else:
             self._set_sections(sections, changed_indices=changed_indices)
 

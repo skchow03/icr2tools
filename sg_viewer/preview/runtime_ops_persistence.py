@@ -66,22 +66,26 @@ class _RuntimePersistenceMixin:
         ):
             return
 
-        old_keys = [self._section_geometry_key(section) for section in old_sections]
-        new_keys = [self._section_geometry_key(section) for section in new_sections]
+        old_keys = [
+            getattr(section, "source_section_id", section.section_id)
+            for section in old_sections
+        ]
+        new_keys = [
+            getattr(section, "source_section_id", section.section_id)
+            for section in new_sections
+        ]
         if old_keys == new_keys:
             return
 
-        mapping: dict[tuple, list[list[PreviewFSection]]] = {}
+        mapping: dict[int, list[list[PreviewFSection]]] = {}
         for key, fsects in zip(old_keys, old_fsects):
             mapping.setdefault(key, []).append(fsects)
 
         realigned: list[list[PreviewFSection]] = []
-        for index, key in enumerate(new_keys):
+        for key in new_keys:
             bucket = mapping.get(key, [])
             if bucket:
                 realigned.append(bucket.pop(0))
-            elif index < len(old_fsects):
-                realigned.append(old_fsects[index])
             else:
                 realigned.append([])
 
@@ -99,12 +103,6 @@ class _RuntimePersistenceMixin:
             self._section_manager.sections,
             self._fsects_by_section,
         )
-        for section in self._section_manager.sections:
-            source_id = getattr(section, "source_section_id", section.section_id)
-            if source_id != section.section_id:
-                object.__setattr__(
-                    section, "source_section_id", section.section_id
-                )
         self._bump_sg_version()
         return sgfile
 
@@ -121,6 +119,10 @@ class _RuntimePersistenceMixin:
             self._document.set_sg_data(sgfile)
 
         try:
+            if self._document.has_fsections():
+                raise RuntimeError(
+                    "Canonicalization forbidden when F-sections exist"
+                )
             self._document.rebuild_dlongs(0, 0)
         except ValueError as exc:
             self._show_status(f"Unable to recalculate lengths: {exc}")
@@ -143,6 +145,10 @@ class _RuntimePersistenceMixin:
 
         self._suppress_document_dirty = True
         try:
+            if self._document.has_fsections():
+                raise RuntimeError(
+                    "Canonicalization forbidden when F-sections exist"
+                )
             self._document.set_sg_data(sgfile, validate=False)
             self._document.rebuild_dlongs(0, 0)
             self._elevation_profile_cache.clear()

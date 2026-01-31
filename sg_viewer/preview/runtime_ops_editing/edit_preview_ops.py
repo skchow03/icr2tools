@@ -477,6 +477,10 @@ class _RuntimeEditPreviewOpsMixin:
             return
 
         try:
+            if self._document.has_fsections():
+                raise RuntimeError(
+                    "Canonicalization forbidden when F-sections exist"
+                )
             new_sections = set_start_finish(
                 self._section_manager.sections, selected_index
             )

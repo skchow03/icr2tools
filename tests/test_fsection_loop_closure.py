@@ -49,6 +49,7 @@ if "numpy" not in sys.modules:
     sys.modules["numpy"] = numpy
 
 from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 
 
@@ -148,10 +149,19 @@ def test_loop_closure_locks_section_order_when_fsections_exist() -> None:
         _make_section(1, start=(2.0, 0.0), end=(0.0, 0.0), previous_id=0, next_id=2),
         _make_section(2, start=(1.0, 0.0), end=(2.0, 0.0), previous_id=1, next_id=-1),
     ]
+    fsects_by_section = [
+        [PreviewFSection(start_dlat=0.0, end_dlat=5.0, surface_type=1, type2=0)],
+        [PreviewFSection(start_dlat=5.0, end_dlat=10.0, surface_type=2, type2=0)],
+        [],
+    ]
+    fsects_snapshot = list(fsects_by_section)
     old_sections = list(sections)
     updated_sections = list(old_sections)
     updated_sections[0] = replace(updated_sections[0], previous_id=2)
     updated_sections[2] = replace(updated_sections[2], next_id=0)
+
+    before_section_ids = [sect.section_id for sect in old_sections]
+    before_source_ids = [sect.source_section_id for sect in old_sections]
 
     section_manager = _FakeSectionManager(old_sections)
     status: list[str] = []
@@ -167,6 +177,7 @@ def test_loop_closure_locks_section_order_when_fsections_exist() -> None:
         stop_panning=lambda: None,
         show_status=status.append,
         lock_section_order=lambda: True,
+        has_fsections=lambda: True,
     )
 
     interaction._finalize_connection_updates(
@@ -181,3 +192,46 @@ def test_loop_closure_locks_section_order_when_fsections_exist() -> None:
     ]
     assert section_manager.sections[0].previous_id == 2
     assert section_manager.sections[2].next_id == 0
+    assert [sect.section_id for sect in section_manager.sections] == before_section_ids
+    assert [sect.source_section_id for sect in section_manager.sections] == before_source_ids
+    assert fsects_by_section == fsects_snapshot
+
+
+def test_loop_closure_canonicalization_guard_when_fsections_exist() -> None:
+    sections = [
+        _make_section(0, start=(0.0, 0.0), end=(1.0, 0.0), previous_id=-1, next_id=1),
+        _make_section(1, start=(2.0, 0.0), end=(0.0, 0.0), previous_id=0, next_id=2),
+        _make_section(2, start=(1.0, 0.0), end=(2.0, 0.0), previous_id=1, next_id=-1),
+    ]
+    old_sections = list(sections)
+    updated_sections = list(old_sections)
+    updated_sections[0] = replace(updated_sections[0], previous_id=2)
+    updated_sections[2] = replace(updated_sections[2], next_id=0)
+
+    section_manager = _FakeSectionManager(old_sections)
+    interaction = PreviewInteraction(
+        context=_FakeContext(),
+        selection=_FakeSelection(),
+        section_manager=section_manager,
+        editor=_FakeEditor(),
+        set_sections=section_manager.set_sections,
+        update_drag_preview=lambda _sections: None,
+        rebuild_after_start_finish=lambda _sections: None,
+        node_radius_px=4,
+        stop_panning=lambda: None,
+        show_status=lambda _message: None,
+        lock_section_order=lambda: False,
+        has_fsections=lambda: True,
+    )
+
+    try:
+        interaction._finalize_connection_updates(
+            old_sections,
+            updated_sections,
+            start_idx=0,
+            changed_indices=[0, 2],
+        )
+    except RuntimeError as exc:
+        assert "Canonicalization forbidden when F-sections exist" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError when F-sections exist")
