@@ -6,6 +6,7 @@ from typing import List, Tuple
 
 from track_viewer.geometry import CenterlineIndex, build_centerline_index
 
+from sg_viewer.geometry.solver_primitives import signed_radius_from_heading as _signed_radius_from_heading
 from sg_viewer.models.sg_model import SectionPreview, Point
 
 
@@ -31,30 +32,8 @@ def signed_radius_from_heading(
     center: Point | None,
     radius: float | None,
 ) -> float | None:
-    """Return ``radius`` with a sign that matches the turn direction.
-
-    ``radius`` is returned unchanged when any inputs needed for determining the
-    turn direction are missing. When possible, the radius magnitude is preserved
-    but its sign is chosen based on whether the centre of the curve sits to the
-    left (positive) or right (negative) of the heading at the start point.
-    """
-
-    if heading is None or center is None or radius is None:
-        return radius
-
-    hx, hy = heading
-    sx, sy = start
-    cx, cy = center
-
-    cross = hx * (cy - sy) - hy * (cx - sx)
-    if abs(cross) <= 1e-9:
-        return radius
-
-    magnitude = abs(radius)
-    if magnitude == 0:
-        return radius
-
-    return magnitude if cross > 0 else -magnitude
+    """Return ``radius`` with a sign that matches the turn direction."""
+    return _signed_radius_from_heading(heading, start, center, radius)
 
 
 def build_section_polyline(

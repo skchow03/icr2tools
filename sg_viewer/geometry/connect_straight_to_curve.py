@@ -3,7 +3,14 @@ import math
 from dataclasses import replace
 from typing import Optional, Tuple
 
-from sg_viewer.geometry.sg_geometry import signed_radius_from_heading, update_section_geometry
+from sg_viewer.geometry.sg_geometry import update_section_geometry
+from sg_viewer.geometry.solver_primitives import (
+    angle_between,
+    circle_center_from_tangent_headings,
+    cross,
+    normalize_heading,
+    signed_radius_from_heading,
+)
 from sg_viewer.models.sg_model import SectionPreview
 
 
@@ -38,24 +45,18 @@ def solve_straight_to_curve_free_end(
             straight.end[1] - straight.start[1],
         )
 
-    hx, hy = straight_heading
-    h_mag = math.hypot(hx, hy)
-    if h_mag <= 0:
+    straight_heading = normalize_heading(straight_heading)
+    if straight_heading is None:
         return None
-    hx /= h_mag
-    hy /= h_mag
-    straight_heading = (hx, hy)
+    hx, hy = straight_heading
 
     curve_end_heading = curve.end_heading
     if curve_end_heading is None:
         return None
-    ex, ey = curve_end_heading
-    eh_mag = math.hypot(ex, ey)
-    if eh_mag <= 0:
+    curve_end_heading = normalize_heading(curve_end_heading)
+    if curve_end_heading is None:
         return None
-    ex /= eh_mag
-    ey /= eh_mag
-    curve_end_heading = (ex, ey)
+    ex, ey = curve_end_heading
 
     straight_start = straight.start
     curve_end = curve.end
@@ -93,33 +94,18 @@ def solve_straight_to_curve_free_end(
         sx, sy = straight_start
         start_point = (sx + hx * length, sy + hy * length)
 
-        # Normals pointing toward the prospective centre
-        ns = (-orientation * hy, orientation * hx)
-        ne = (-orientation * ey, orientation * ex)
-
-        dx = curve_end[0] - start_point[0]
-        dy = curve_end[1] - start_point[1]
-
-        # Solve for intersection of the two normals: start_point + ns * ts = curve_end + ne * te
-        det = ns[0] * (-ne[1]) - ns[1] * (-ne[0])
-        if abs(det) <= 1e-9:
-            return None, None
-
-        ts = (dx * (-ne[1]) - dy * (-ne[0])) / det
-        te = (ns[0] * dy - ns[1] * dx) / det
-
-        # Enforce a consistent orientation (centre should be to the chosen side)
-        if ts <= 0 or te <= 0:
-            return None, None
-
-        radius_start = ts
-        radius_end = te
-        radius_delta = radius_start - radius_end
-
-        center = (
-            start_point[0] + ns[0] * ts,
-            start_point[1] + ns[1] * ts,
+        center_result = circle_center_from_tangent_headings(
+            start=start_point,
+            start_heading=straight_heading,
+            end=curve_end,
+            end_heading=curve_end_heading,
+            orientation=orientation,
         )
+        if center_result is None:
+            return None, None
+        center, radius_start, radius_end = center_result
+
+        radius_delta = radius_start - radius_end
 
         # Validate orientation via the arc direction
         vs = (start_point[0] - center[0], start_point[1] - center[1])
@@ -132,12 +118,11 @@ def solve_straight_to_curve_free_end(
 
         vs_unit = (vs[0] / rs, vs[1] / rs)
         ve_unit = (ve[0] / re, ve[1] / re)
-        cross = vs_unit[0] * ve_unit[1] - vs_unit[1] * ve_unit[0]
-        if cross == 0 or (cross > 0) != (orientation > 0):
+        cross_value = cross(vs_unit, ve_unit)
+        if cross_value == 0 or (cross_value > 0) != (orientation > 0):
             return None, None
 
-        dot = max(-1.0, min(1.0, vs_unit[0] * ve_unit[0] + vs_unit[1] * ve_unit[1]))
-        angle = math.acos(dot)
+        angle = angle_between(vs_unit, ve_unit)
         arc_radius = 0.5 * (rs + re)
         arc_length = arc_radius * angle
         if arc_length <= 0:

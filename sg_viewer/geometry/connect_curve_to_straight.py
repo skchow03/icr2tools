@@ -5,10 +5,15 @@ import math
 from dataclasses import replace
 from typing import Optional, Tuple
 
+from sg_viewer.geometry.solver_primitives import (
+    angle_between_deg,
+    normalize_heading,
+    signed_angle_deg,
+    signed_radius_from_heading,
+)
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import update_section_geometry
-from sg_viewer.geometry.sg_geometry import signed_radius_from_heading
 from sg_viewer.geometry.connect_straight_to_curve import solve_straight_to_curve_free_end
 
 DEBUG_CURVE_STRAIGHT = False
@@ -46,32 +51,8 @@ def _reverse_section_endpoints(section: SectionPreview) -> SectionPreview:
     return reversed_section
 
 
-def _signed_angle_deg(a: tuple[float, float], b: tuple[float, float]) -> float:
-    """
-    Signed angle from a → b in degrees.
-    Positive = CCW, negative = CW.
-    """
-    dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
-    cross = a[0] * b[1] - a[1] * b[0]
-    return math.degrees(math.atan2(cross, dot))
-
-def _deg_between(a, b):
-    dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
-    return math.degrees(math.acos(dot))
-
 def _fmt(v):
     return f"({v[0]:.1f}, {v[1]:.1f})"
-
-def _angle_between(a: tuple[float, float], b: tuple[float, float]) -> float:
-    """Return angle between two unit vectors in radians."""
-    dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
-    return math.acos(dot)
-
-def _normalize(v):
-    l = math.hypot(v[0], v[1])
-    if l == 0:
-        return (0.0, 0.0)
-    return (v[0] / l, v[1] / l)
 
 
 def _straight_forward_heading(straight: SectionPreview) -> Optional[tuple[float, float]]:
@@ -244,7 +225,7 @@ def solve_curve_end_to_straight_start(
                 continue
             eh = (eh[0] / eh_len, eh[1] / eh_len)
 
-            delta = _signed_angle_deg(eh, straight_heading)
+            delta = signed_angle_deg(eh, straight_heading)
             abs_delta = abs(delta)
             if abs_delta < best_abs:
                 best_abs = abs_delta
@@ -476,8 +457,9 @@ def solve_curve_end_to_straight_start(
         )
 
         # --- Join quality ---
-        delta = _deg_between(
-            _normalize(best_solution.end_heading),
+        end_heading_norm = normalize_heading(best_solution.end_heading) or (0.0, 0.0)
+        delta = angle_between_deg(
+            end_heading_norm,
             straight_heading,
         )
 
