@@ -73,6 +73,9 @@ class _RuntimeCoreConnectOpsMixin:
         target_index, target_end = target
         if source_end not in {"start", "end"} or target_end not in {"start", "end"}:
             return
+        if 0 <= source_index < len(self._fsects_by_section):
+            if self._fsects_by_section[source_index]:
+                return
 
         edge_profile = self._fsect_edge_profile(target_index, target_end)
         self._apply_fsect_edge_profile(source_index, source_end, edge_profile)
