@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
+from sg_viewer.geometry.sg_geometry import build_section_polyline
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.geometry import apply_heading_constraint
 
@@ -535,4 +536,13 @@ class CurveCreationInteraction:
             return None
 
         best_candidate = min(candidates, key=lambda sect: sect.length)
-        return best_candidate
+        polyline = build_section_polyline(
+            best_candidate.type_name,
+            best_candidate.start,
+            best_candidate.end,
+            best_candidate.center,
+            best_candidate.radius,
+            best_candidate.start_heading,
+            best_candidate.end_heading,
+        )
+        return replace(best_candidate, polyline=polyline)
