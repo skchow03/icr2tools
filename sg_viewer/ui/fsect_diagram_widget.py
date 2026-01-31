@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
@@ -21,6 +22,9 @@ class _FsectNode:
 class FsectDiagramWidget(QtWidgets.QWidget):
     dlatChanged = QtCore.pyqtSignal(int, int, str, float)
     _SNAP_DISTANCE_PX = 8.0
+    _RULER_TICK_LENGTH = 6.0
+    _RULER_LABEL_MARGIN = 2.0
+    _RULER_FONT_SIZE = 8
 
     def __init__(
         self,
@@ -81,6 +85,15 @@ class FsectDiagramWidget(QtWidgets.QWidget):
             painter,
             left,
             width,
+            top,
+            bottom,
+            min_dlat,
+            max_dlat,
+        )
+        self._draw_ruler(
+            painter,
+            left,
+            right,
             top,
             bottom,
             min_dlat,
@@ -334,6 +347,84 @@ class FsectDiagramWidget(QtWidgets.QWidget):
                 bottom_start(x, bottom + stub_offset),
                 bottom_start(x, bottom + stub_offset + stub_length),
             )
+
+    def _draw_ruler(
+        self,
+        painter: QtGui.QPainter,
+        left: float,
+        right: float,
+        top: float,
+        bottom: float,
+        min_dlat: float,
+        max_dlat: float,
+    ) -> None:
+        span = max(max_dlat - min_dlat, 1.0)
+        width = max(1.0, float(right - left))
+        pixels_per_foot = width / span
+        step = self._select_ruler_step(pixels_per_foot)
+        start_tick = math.ceil(min_dlat / step) * step
+
+        painter.save()
+        font = painter.font()
+        font.setPointSize(self._RULER_FONT_SIZE)
+        painter.setFont(font)
+        pen = QtGui.QPen(QtGui.QColor(180, 180, 180))
+        painter.setPen(pen)
+
+        tick_length = self._RULER_TICK_LENGTH
+        for dlat in self._frange(start_tick, max_dlat, step):
+            x = self._dlat_to_x(dlat, left, width, min_dlat, max_dlat)
+            painter.drawLine(
+                QtCore.QPointF(x, top),
+                QtCore.QPointF(x, top + tick_length),
+            )
+            painter.drawLine(
+                QtCore.QPointF(x, bottom),
+                QtCore.QPointF(x, bottom - tick_length),
+            )
+            label = f"{dlat:.0f}"
+            metrics = QtGui.QFontMetrics(font)
+            label_width = metrics.horizontalAdvance(label)
+            label_height = metrics.height()
+            painter.drawText(
+                QtCore.QRectF(
+                    x - label_width / 2,
+                    top - label_height - self._RULER_LABEL_MARGIN,
+                    label_width,
+                    label_height,
+                ),
+                QtCore.Qt.AlignCenter,
+                label,
+            )
+            painter.drawText(
+                QtCore.QRectF(
+                    x - label_width / 2,
+                    bottom + self._RULER_LABEL_MARGIN,
+                    label_width,
+                    label_height,
+                ),
+                QtCore.Qt.AlignCenter,
+                label,
+            )
+
+        painter.restore()
+
+    @staticmethod
+    def _select_ruler_step(pixels_per_foot: float) -> float:
+        if pixels_per_foot >= 25.0:
+            return 1.0
+        if pixels_per_foot >= 12.0:
+            return 5.0
+        return 10.0
+
+    @staticmethod
+    def _frange(start: float, stop: float, step: float) -> Iterable[float]:
+        if step <= 0:
+            return []
+        value = start
+        while value <= stop:
+            yield value
+            value += step
 
     def _draw_placeholder(self, painter: QtGui.QPainter, rect: QtCore.QRect) -> None:
         painter.save()

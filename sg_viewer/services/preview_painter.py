@@ -41,6 +41,7 @@ class BasePreviewState:
     split_hover_point: Point | None
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
+    show_sg_fsects: bool
 
 
 @dataclass
@@ -131,6 +132,7 @@ def paint_preview(
             base_state.sections,
             base_state.selected_section_points,
             base_state.fsections,
+            base_state.show_sg_fsects,
             transform,
             widget_height,
         )
@@ -285,6 +287,7 @@ def _draw_centerlines(
     sections: Iterable[SectionPreview],
     selected_section_points: Iterable[Point],
     fsections: list[PreviewFSection],
+    show_sg_fsects: bool,
     transform: Transform,
     widget_height: int,
 ) -> None:
@@ -317,6 +320,14 @@ def _draw_centerlines(
             pen.setJoinStyle(QtCore.Qt.RoundJoin)
             painter.setPen(pen)
             painter.drawPolyline(QtGui.QPolygonF(pts))
+
+        if show_sg_fsects:
+            cyan_pen = QtGui.QPen(QtGui.QColor(0, 255, 255))
+            cyan_pen.setWidthF(BASE_WIDTH + 0.5)
+            cyan_pen.setCapStyle(QtCore.Qt.RoundCap)
+            cyan_pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            painter.setPen(cyan_pen)
+            painter.drawPolyline(QtGui.QPolygonF(mapped))
 
     selected_points = [
         sg_rendering.map_point(point[0], point[1], transform, widget_height)

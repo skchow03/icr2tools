@@ -84,6 +84,7 @@ class PreviewPresenter:
                     self._runtime.show_xsect_dlat_line
                     and self._runtime.show_sg_fsects
                 ),
+                show_sg_fsects=self._runtime.show_sg_fsects,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,
