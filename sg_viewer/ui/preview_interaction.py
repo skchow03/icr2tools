@@ -13,11 +13,6 @@ from sg_viewer.geometry.connect_curve_to_straight import (
 )
 from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.picking import project_point_to_segment
-from sg_viewer.geometry.sg_geometry import (
-    assert_section_geometry_consistent,
-    rebuild_centerline_from_sections,
-    update_section_geometry,
-)
 from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
@@ -559,7 +554,6 @@ class PreviewInteraction:
 
         sections = list(sections)
         sections[sect_index] = updated_section
-        sections[sect_index] = update_section_geometry(sections[sect_index])
         self._apply_section_updates(sections, changed_indices=[sect_index])
 
     def _update_connection_target(
@@ -655,8 +649,8 @@ class PreviewInteraction:
         else:
             tgt_section = replace(tgt_section, next_id=src_index)
 
-        sections[src_index] = update_section_geometry(src_section)
-        sections[tgt_index] = update_section_geometry(tgt_section)
+        sections[src_index] = src_section
+        sections[tgt_index] = tgt_section
 
         if self._sync_fsects_on_connection is not None:
             self._sync_fsects_on_connection(source, target)
@@ -736,7 +730,7 @@ class PreviewInteraction:
             if chain_index < 0 or chain_index >= len(sections):
                 continue
             updated_section = translate_section(original_sections[chain_index], dx, dy)
-            sections[chain_index] = update_section_geometry(updated_section)
+            sections[chain_index] = updated_section
             applied_dx = updated_section.start[0] - original_sections[chain_index].start[0]
             applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
             assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
@@ -789,8 +783,8 @@ class PreviewInteraction:
         else:
             straight = replace(straight, next_id=curve_idx)
 
-        sections[curve_idx] = update_section_geometry(curve)
-        sections[straight_idx] = update_section_geometry(straight)
+        sections[curve_idx] = curve
+        sections[straight_idx] = straight
 
         self._finalize_connection_updates(
             old_sections,
@@ -855,9 +849,6 @@ class PreviewInteraction:
         sections: list["SectionPreview"],
         changed_indices: list[int] | None = None,
     ) -> None:
-        if __debug__:
-            for section in sections:
-                assert_section_geometry_consistent(section)
         if self._drag_state_active:
             self._update_drag_preview(sections)
         else:
@@ -1001,8 +992,6 @@ class PreviewInteraction:
         s1_new = replace(s1, end=P, length=s1_length)
         s2_new = replace(s2, start=P, length=s2_length)
 
-        s1_new = update_section_geometry(s1_new)
-        s2_new = update_section_geometry(s2_new)
 
         sections = list(sections)
         sections[s1_idx] = s1_new
@@ -1106,8 +1095,8 @@ class PreviewInteraction:
             center=center,
         )
 
-        updated_sections[s1_idx] = update_section_geometry(updated_section_1)
-        updated_sections[s2_idx] = update_section_geometry(updated_section_2)
+        updated_sections[s1_idx] = updated_section_1
+        updated_sections[s2_idx] = updated_section_2
 
         self._last_dragged_indices = [s1_idx, s2_idx]
         self._apply_section_updates(updated_sections)
@@ -1193,8 +1182,8 @@ class PreviewInteraction:
         updated_section_1 = replace(section_1, end=constrained_point)
         updated_section_2 = replace(section_2, start=constrained_point)
 
-        updated_sections[section_1_index] = update_section_geometry(updated_section_1)
-        updated_sections[section_2_index] = update_section_geometry(updated_section_2)
+        updated_sections[section_1_index] = updated_section_1
+        updated_sections[section_2_index] = updated_section_2
 
         self._last_dragged_indices = [section_1_index, section_2_index]
         self._apply_section_updates(updated_sections)

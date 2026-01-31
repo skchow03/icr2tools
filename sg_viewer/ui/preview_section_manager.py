@@ -5,10 +5,8 @@ from typing import Callable, Tuple
 
 from track_viewer.geometry import CenterlineIndex, build_centerline_index
 
-from sg_viewer.geometry.sg_geometry import (
-    rebuild_centerline_from_sections,
-    update_section_geometry,
-)
+from sg_viewer.geometry.canonicalize import canonicalize_section
+from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections
 from sg_viewer.models.preview_state_utils import (
     compute_section_signatures,
     section_signature,
@@ -85,9 +83,10 @@ class PreviewSectionManager:
         sampled_bounds: tuple[float, float, float, float],
         centerline_index: CenterlineIndex,
     ) -> None:
-        self._sections = sections
-        self._section_signatures = compute_section_signatures(sections)
-        self._section_endpoints = section_endpoints
+        _ = section_endpoints
+        self._sections = self._canonicalize_sections(sections)
+        self._section_signatures = compute_section_signatures(self._sections)
+        self._section_endpoints = [(sect.start, sect.end) for sect in self._sections]
         self.sampled_centerline = sampled_centerline
         self.sampled_dlongs = sampled_dlongs
         self.sampled_bounds = self._combine_bounds_with_background(sampled_bounds)
@@ -112,7 +111,7 @@ class PreviewSectionManager:
         new_signatures: list[tuple] = []
         actual_changed_indices: list[int] = []
 
-        for idx, sect in enumerate(sections):
+        for idx, sect in enumerate(self._canonicalize_sections(sections)):
             signature = section_signature(sect)
             new_signatures.append(signature)
             prev_signature = (
@@ -126,13 +125,13 @@ class PreviewSectionManager:
             ):
                 new_sections.append(self._sections[idx])
             else:
-                new_sections.append(update_section_geometry(sect))
+                new_sections.append(sect)
                 actual_changed_indices.append(idx)
 
         if changed_indices:
             for idx in changed_indices:
                 if 0 <= idx < len(sections) and idx not in actual_changed_indices:
-                    new_sections[idx] = update_section_geometry(sections[idx])
+                    new_sections[idx] = self._canonicalize_sections([sections[idx]])[0]
                     actual_changed_indices.append(idx)
 
         actual_changed_indices = sorted(set(actual_changed_indices))
@@ -337,7 +336,7 @@ class PreviewSectionManager:
         new_signatures: list[tuple] = []
         changed_indices: list[int] = []
 
-        for idx, sect in enumerate(sections):
+        for idx, sect in enumerate(self._canonicalize_sections(sections)):
             signature = section_signature(sect)
             new_signatures.append(signature)
             prev_signature = (
@@ -351,7 +350,7 @@ class PreviewSectionManager:
             ):
                 new_sections.append(base_sections[idx])
             else:
-                new_sections.append(update_section_geometry(sect))
+                new_sections.append(sect)
                 changed_indices.append(idx)
 
         if not changed_indices:
@@ -378,3 +377,12 @@ class PreviewSectionManager:
                 )
 
         return True
+
+    def _canonicalize_sections(
+        self, sections: list[SectionPreview]
+    ) -> list[SectionPreview]:
+        canonicalized: list[SectionPreview] = []
+        for section in sections:
+            section = canonicalize_section(section)
+            canonicalized.append(section)
+        return canonicalized

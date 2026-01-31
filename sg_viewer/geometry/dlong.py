@@ -1,7 +1,6 @@
 from dataclasses import replace
 from typing import List
 
-from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.models.sg_model import SectionPreview
 
@@ -45,7 +44,6 @@ def set_start_finish(
             next_id=(new_idx + 1) % n,
             start_dlong=cursor,
         )
-        s = update_section_geometry(s)
         new_sections.append(s)
         cursor += float(s.length)
 

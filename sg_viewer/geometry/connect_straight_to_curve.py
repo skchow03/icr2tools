@@ -3,13 +3,11 @@ import math
 from dataclasses import replace
 from typing import Optional, Tuple
 
-from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.solver_primitives import (
     angle_between,
     circle_center_from_tangent_headings,
     cross,
     normalize_heading,
-    signed_radius_from_heading,
 )
 from sg_viewer.models.sg_model import SectionPreview
 
@@ -128,8 +126,6 @@ def solve_straight_to_curve_free_end(
         if arc_length <= 0:
             return None, None
 
-        signed_radius = signed_radius_from_heading(straight_heading, start_point, center, arc_radius)
-
         candidate_curve = replace(
             curve,
             start=start_point,
@@ -137,7 +133,7 @@ def solve_straight_to_curve_free_end(
             end=curve_end,
             end_heading=curve_end_heading,
             center=center,
-            radius=signed_radius,
+            radius=arc_radius,
             sang1=straight_heading[0],
             sang2=straight_heading[1],
             eang1=curve_end_heading[0],
@@ -229,9 +225,6 @@ def solve_straight_to_curve_free_end(
         length=best_length,
         polyline=[straight_start, new_straight_end],
     )
-
-    best_curve = update_section_geometry(best_curve)
-    new_straight = update_section_geometry(new_straight)
 
     if DEBUG_STRAIGHT_CURVE and logger.isEnabledFor(logging.DEBUG):
         logger.debug("\n=== STRAIGHT → CURVE SOLUTION ACCEPTED ===")

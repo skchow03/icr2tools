@@ -19,16 +19,6 @@ def _get_endpoint_pos(section: SectionPreview, endtype: str) -> Point:
 
 
 def _set_endpoint_pos(section: SectionPreview, endtype: str, p: Point) -> SectionPreview:
-    # Keep the curve’s existing polyline shape, but patch the first/last point so
-    # the preview looks sane without re-fitting curve params.
-    if section.polyline:
-        poly = list(section.polyline)
-        if endtype == "start":
-            poly[0] = p
-            return replace(section, start=p, polyline=poly)
-        poly[-1] = p
-        return replace(section, end=p, polyline=poly)
-
     return replace(section, start=p) if endtype == "start" else replace(section, end=p)
 
 

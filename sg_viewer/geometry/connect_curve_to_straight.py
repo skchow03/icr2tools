@@ -9,11 +9,9 @@ from sg_viewer.geometry.solver_primitives import (
     angle_between_deg,
     normalize_heading,
     signed_angle_deg,
-    signed_radius_from_heading,
 )
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
-from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.connect_straight_to_curve import solve_straight_to_curve_free_end
 
 DEBUG_CURVE_STRAIGHT = False
@@ -383,22 +381,6 @@ def solve_curve_end_to_straight_start(
             )
         return None
 
-    best_solution = update_section_geometry(best_solution)
-
-    # after you decide best_solution is the curve you will use:
-    signed_r = signed_radius_from_heading(
-        curve_start_heading,      # (hx, hy) at curve start
-        curve_start,              # curve start point
-        best_solution.center,     # solved center
-        best_solution.radius,     # solved (unsigned) radius
-    )
-    if signed_r != best_solution.radius:
-        best_solution = replace(best_solution, radius=signed_r)
-
-    best_solution = update_section_geometry(best_solution)
-
-
-
     # ------------------------
     # Rebuild straight
     # ------------------------
@@ -488,8 +470,6 @@ def solve_curve_end_to_straight_start(
         )
 
 
-    new_straight = update_section_geometry(new_straight)
-
     return best_solution, new_straight
 
 
@@ -565,9 +545,6 @@ def solve_straight_end_to_curve_endpoint(
             end=new_end,
         )
         solved_curve = curve
-
-    solved_curve = update_section_geometry(solved_curve)
-    solved_straight = update_section_geometry(solved_straight)
 
     if solved_straight.length < min_straight_length:
         return None

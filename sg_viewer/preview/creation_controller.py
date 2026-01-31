@@ -5,7 +5,6 @@ from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
-from sg_viewer.geometry.sg_geometry import signed_radius_from_heading, update_section_geometry
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.geometry import apply_heading_constraint
 
@@ -536,10 +535,4 @@ class CurveCreationInteraction:
             return None
 
         best_candidate = min(candidates, key=lambda sect: sect.length)
-        signed_radius = signed_radius_from_heading(
-            heading, start_point, best_candidate.center, best_candidate.radius
-        )
-        if signed_radius != best_candidate.radius:
-            best_candidate = replace(best_candidate, radius=signed_radius)
-
-        return update_section_geometry(best_candidate)
+        return best_candidate
