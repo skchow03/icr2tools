@@ -616,6 +616,7 @@ class PreviewInteraction:
         self, source: tuple[int, str], target: tuple[int, str]
     ) -> None:
         sections = list(self._section_manager.sections)
+        was_closed = is_closed_loop(sections)
 
         if not sections:
             return
@@ -652,7 +653,11 @@ class PreviewInteraction:
         sections[src_index] = src_section
         sections[tgt_index] = tgt_section
 
-        if self._sync_fsects_on_connection is not None:
+        now_closed = is_closed_loop(sections)
+        if (
+            self._sync_fsects_on_connection is not None
+            and not (not was_closed and now_closed)
+        ):
             self._sync_fsects_on_connection(source, target)
 
         self._apply_section_updates(sections, changed_indices=[src_index, tgt_index])
