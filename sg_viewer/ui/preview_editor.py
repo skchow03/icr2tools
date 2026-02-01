@@ -170,6 +170,10 @@ class PreviewEditor:
             return sections, new_section
 
         neighbor = sections[neighbor_index]
+        source_section_id = getattr(neighbor, "source_section_id", neighbor_index)
+        if source_section_id is None or source_section_id < 0:
+            source_section_id = neighbor_index
+        new_section = replace(new_section, source_section_id=source_section_id)
         if endtype == "end":
             new_section = replace(new_section, previous_id=neighbor_index)
             neighbor = replace(neighbor, next_id=new_section.section_id)
