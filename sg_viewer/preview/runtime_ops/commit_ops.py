@@ -31,6 +31,8 @@ class _RuntimeCoreCommitOpsMixin:
             updated_sections = set_start_finish(updated_sections, 0)
         self.set_sections(updated_sections)
         self._validate_section_fsects_alignment()
+        if not was_closed and is_closed_loop(updated_sections) and self._sgfile is not None:
+            self.apply_preview_to_sgfile()
         self._selection.set_selected_section(new_index)
         self._apply_creation_update(self._creation_controller.finish_straight(status))
 
@@ -58,6 +60,8 @@ class _RuntimeCoreCommitOpsMixin:
             updated_sections = set_start_finish(updated_sections, 0)
         self.set_sections(updated_sections)
         self._validate_section_fsects_alignment()
+        if not was_closed and is_closed_loop(updated_sections) and self._sgfile is not None:
+            self.apply_preview_to_sgfile()
         self._selection.set_selected_section(new_index)
         self._apply_creation_update(self._creation_controller.finish_curve(status))
 
