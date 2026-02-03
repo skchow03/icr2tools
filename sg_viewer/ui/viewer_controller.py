@@ -21,6 +21,7 @@ from sg_viewer.ui.altitude_units import (
 )
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
+from sg_viewer.ui.log_viewer_dialog import LogViewerWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
@@ -53,6 +54,7 @@ class SGViewerController:
         self._deferred_profile_refresh = False
         self._profile_dragging = False
         self._profile_editing = False
+        self._log_viewer_window: LogViewerWindow | None = None
 
 
         self._create_actions()
@@ -147,6 +149,12 @@ class SGViewerController:
         )
         self._convert_trk_action.triggered.connect(self._convert_sg_to_trk)
 
+        self._log_viewer_action = QtWidgets.QAction(
+            "View Logs…",
+            self._window,
+        )
+        self._log_viewer_action.triggered.connect(self._show_log_viewer)
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -191,6 +199,8 @@ class SGViewerController:
         tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._convert_trk_action)
+        tools_menu.addSeparator()
+        tools_menu.addAction(self._log_viewer_action)
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -772,6 +782,19 @@ class SGViewerController:
             action = QtWidgets.QAction(str(path), self._open_recent_menu)
             action.triggered.connect(lambda checked=False, p=path: self.load_sg(p))
             self._open_recent_menu.addAction(action)
+
+    def _show_log_viewer(self) -> None:
+        if self._log_viewer_window is None:
+            self._log_viewer_window = LogViewerWindow(self._window)
+            self._log_viewer_window.finished.connect(self._clear_log_viewer_window)
+        root_logger = logging.getLogger()
+        self._log_viewer_window.attach_to_logger(root_logger)
+        self._log_viewer_window.show()
+        self._log_viewer_window.raise_()
+        self._log_viewer_window.activateWindow()
+
+    def _clear_log_viewer_window(self) -> None:
+        self._log_viewer_window = None
 
     def _on_sections_changed(self) -> None:
         sections, _ = self._window.preview.get_section_set()
