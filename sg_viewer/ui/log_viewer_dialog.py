@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 
 class LogMessageEmitter(QtCore.QObject):
@@ -80,7 +80,7 @@ class LogViewerWindow(QtWidgets.QDialog):
 
     def _append_message(self, message: str) -> None:
         self._text.appendPlainText(message)
-        self._text.moveCursor(QtWidgets.QTextCursor.End)
+        self._text.moveCursor(QtGui.QTextCursor.End)
 
     def _copy_all(self) -> None:
         QtWidgets.QApplication.clipboard().setText(self._text.toPlainText())
