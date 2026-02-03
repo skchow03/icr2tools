@@ -125,7 +125,13 @@ class _RuntimeCoreCommitMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
-    def copy_section_fsects(self, source_index: int, target_index: int) -> bool:
+    def copy_section_fsects(
+        self,
+        source_index: int,
+        target_index: int,
+        *,
+        edge: str | None = None,
+    ) -> bool:
         if (
             source_index == target_index
             or source_index < 0
@@ -135,8 +141,12 @@ class _RuntimeCoreCommitMixin:
         ):
             return False
 
-        source_fsects = self._fsects_by_section[source_index]
-        self._fsects_by_section[target_index] = copy.deepcopy(source_fsects)
+        if edge in {"start", "end"}:
+            edge_profile = self._fsect_edge_profile(source_index, edge)
+            self._fsects_by_section[target_index] = copy.deepcopy(edge_profile)
+        else:
+            source_fsects = self._fsects_by_section[source_index]
+            self._fsects_by_section[target_index] = copy.deepcopy(source_fsects)
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()

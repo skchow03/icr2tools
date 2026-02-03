@@ -1307,8 +1307,9 @@ class SGViewerController:
             )
             return
 
+        edge = "start" if direction == "previous" else "end"
         if not self._window.preview.copy_section_fsects(
-            selection.index, target_index
+            selection.index, target_index, edge=edge
         ):
             QtWidgets.QMessageBox.warning(
                 self._window,
