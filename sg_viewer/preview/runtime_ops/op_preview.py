@@ -370,3 +370,15 @@ class _RuntimeCorePreviewMixin:
         for idx in range(num_xsects):
             altitudes.append(section.alt[idx] if idx < len(section.alt) else None)
         return altitudes
+
+    def get_section_xsect_grades(self, section_id: int) -> list[int | None]:
+        sg_data = self._document.sg_data
+        if sg_data is None or section_id < 0 or section_id >= len(sg_data.sects):
+            return []
+
+        section = sg_data.sects[section_id]
+        num_xsects = sg_data.num_xsects
+        grades: list[int | None] = []
+        for idx in range(num_xsects):
+            grades.append(section.grade[idx] if idx < len(section.grade) else None)
+        return grades

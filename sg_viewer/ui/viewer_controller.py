@@ -285,6 +285,12 @@ class SGViewerController:
         self._window.xsect_elevation_widget.xsectClicked.connect(
             self._on_xsect_node_clicked
         )
+        self._window.xsect_elevation_table.cellChanged.connect(
+            self._on_xsect_table_cell_changed
+        )
+        self._window.xsect_altitude_units_combo.currentIndexChanged.connect(
+            self._on_xsect_altitude_units_changed
+        )
 
     def _should_confirm_reset(self) -> bool:
         sections, _ = self._window.preview.get_section_set()
@@ -1227,6 +1233,7 @@ class SGViewerController:
         ):
             self._refresh_elevation_profile()
             self._refresh_xsect_elevation_panel()
+            self._refresh_xsect_elevation_table()
 
     def _apply_grade_edit(self) -> None:
         selection = self._active_selection
@@ -1239,6 +1246,8 @@ class SGViewerController:
             selection.index, xsect_index, grade, validate=False
         ):
             self._refresh_elevation_profile()
+            self._refresh_xsect_elevation_panel()
+            self._refresh_xsect_elevation_table()
 
     def _copy_xsect_to_all(self) -> None:
         xsect_index = self._current_xsect_index()
@@ -1403,6 +1412,7 @@ class SGViewerController:
         selection = self._active_selection
         if selection is None:
             self._window.xsect_elevation_widget.set_xsect_data(None)
+            self._refresh_xsect_elevation_table()
             return
 
         altitudes = self._window.preview.get_section_xsect_altitudes(selection.index)
@@ -1424,3 +1434,71 @@ class SGViewerController:
                 y_range=y_range,
             )
         )
+        self._refresh_xsect_elevation_table()
+
+    def _refresh_xsect_elevation_table(self) -> None:
+        selection = self._active_selection
+        if selection is None:
+            self._window.update_xsect_elevation_table(
+                [], [], None, enabled=False
+            )
+            return
+
+        altitudes = self._window.preview.get_section_xsect_altitudes(selection.index)
+        grades = self._window.preview.get_section_xsect_grades(selection.index)
+        enabled = bool(altitudes) and bool(grades)
+        self._window.update_xsect_elevation_table(
+            altitudes,
+            grades,
+            self._current_xsect_index(),
+            enabled=enabled,
+        )
+
+    def _on_xsect_altitude_units_changed(self) -> None:
+        self._window.update_xsect_table_headers()
+        self._refresh_xsect_elevation_table()
+
+    def _on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
+        if self._window.is_updating_xsect_table:
+            return
+        if column_index not in (1, 2):
+            return
+        selection = self._active_selection
+        if selection is None:
+            return
+        item = self._window.xsect_elevation_table.item(row_index, column_index)
+        if item is None:
+            return
+        text = item.text().strip()
+        if not text:
+            self._refresh_xsect_elevation_table()
+            return
+
+        if column_index == 1:
+            try:
+                display_value = float(text)
+            except ValueError:
+                self._refresh_xsect_elevation_table()
+                return
+            altitude = self._window.xsect_altitude_from_display_units(display_value)
+            if self._window.preview.set_section_xsect_altitude(
+                selection.index, row_index, altitude, validate=False
+            ):
+                self._refresh_elevation_profile()
+                self._refresh_xsect_elevation_panel()
+                self._refresh_xsect_elevation_table()
+        else:
+            try:
+                grade = int(text)
+            except ValueError:
+                self._refresh_xsect_elevation_table()
+                return
+            if self._window.preview.set_section_xsect_grade(
+                selection.index, row_index, grade, validate=False
+            ):
+                self._refresh_elevation_profile()
+                self._refresh_xsect_elevation_panel()
+                self._refresh_xsect_elevation_table()
+
+        if row_index == self._current_xsect_index():
+            self._refresh_elevation_inputs()
