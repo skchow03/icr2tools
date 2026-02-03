@@ -13,6 +13,7 @@ from sg_viewer.ui.altitude_units import (
     DEFAULT_ALTITUDE_MIN_FEET,
     feet_from_500ths,
     feet_from_slider_units,
+    feet_to_500ths,
     feet_to_slider_units,
 )
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
