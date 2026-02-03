@@ -17,10 +17,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SG viewer")
     parser.add_argument(
         "--log-level",
-        default=os.getenv("SG_VIEWER_LOG_LEVEL", "INFO"),
+        default=os.getenv("SG_VIEWER_LOG_LEVEL", "DEBUG"),
         help=(
             "Logging level (e.g. DEBUG, INFO). Defaults to SG_VIEWER_LOG_LEVEL "
-            "environment variable or INFO."
+            "environment variable or DEBUG."
         ),
     )
     parser.add_argument(
