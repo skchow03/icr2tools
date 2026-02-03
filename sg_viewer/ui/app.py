@@ -41,6 +41,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.resize(960, 720)
         self._selected_section_index: int | None = None
         self._updating_fsect_table = False
+        self._updating_xsect_table = False
 
         shortcut_labels = {
             "new_straight": "Ctrl+Alt+S",
@@ -202,6 +203,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_diagram = FsectDiagramWidget(
             on_dlat_changed=self._on_fsect_diagram_dlat_changed
         )
+        self._xsect_altitude_units_combo = QtWidgets.QComboBox()
+        self._xsect_altitude_units_combo.addItem("Feet", "feet")
+        self._xsect_altitude_units_combo.addItem("500ths", "500ths")
+        self._xsect_altitude_units_combo.setCurrentIndex(0)
+        self._xsect_elevation_table = QtWidgets.QTableWidget(0, 3)
+        self._update_xsect_table_headers()
+        self._xsect_elevation_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
+        self._xsect_elevation_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self._xsect_elevation_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._xsect_elevation_table.verticalHeader().setVisible(False)
+        self._xsect_elevation_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents
+        )
+        self._xsect_elevation_table.horizontalHeader().setStretchLastSection(True)
+        self._xsect_elevation_table.setSizeAdjustPolicy(
+            QtWidgets.QAbstractScrollArea.AdjustToContents
+        )
+        self._xsect_elevation_table.setMinimumHeight(140)
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
         max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
@@ -304,6 +331,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         grade_container.setLayout(grade_layout)
         elevation_layout.addRow("Grade (xsect):", grade_container)
         sidebar_layout.addLayout(elevation_layout)
+        sidebar_layout.addWidget(QtWidgets.QLabel("X-Section Elevations"))
+        xsect_units_layout = QtWidgets.QHBoxLayout()
+        xsect_units_layout.addWidget(QtWidgets.QLabel("Elevation units:"))
+        xsect_units_layout.addWidget(self._xsect_altitude_units_combo)
+        xsect_units_layout.addStretch()
+        sidebar_layout.addLayout(xsect_units_layout)
+        sidebar_layout.addWidget(self._xsect_elevation_table)
         sidebar_layout.addStretch()
         self._sidebar.setLayout(sidebar_layout)
         self._sidebar.setFixedWidth(self._sidebar.sizeHint().width())
@@ -439,6 +473,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._fsect_table
 
     @property
+    def xsect_elevation_table(self) -> QtWidgets.QTableWidget:
+        return self._xsect_elevation_table
+
+    @property
     def section_table_button(self) -> QtWidgets.QPushButton:
         return self._section_table_button
 
@@ -449,6 +487,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_table_button(self) -> QtWidgets.QPushButton:
         return self._xsect_table_button
+
+    @property
+    def xsect_altitude_units_combo(self) -> QtWidgets.QComboBox:
+        return self._xsect_altitude_units_combo
 
     @property
     def profile_widget(self) -> ElevationProfileWidget:
@@ -490,8 +532,59 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def grade_spin(self) -> QtWidgets.QSlider:
         return self._grade_slider
 
+    @property
+    def is_updating_xsect_table(self) -> bool:
+        return self._updating_xsect_table
+
     def show_status_message(self, message: str) -> None:
         self._preview.set_status_text(message)
+
+    def update_xsect_elevation_table(
+        self,
+        altitudes: list[int | None],
+        grades: list[int | None],
+        selected_index: int | None,
+        *,
+        enabled: bool,
+    ) -> None:
+        self._updating_xsect_table = True
+        self._xsect_elevation_table.blockSignals(True)
+        try:
+            row_count = min(len(altitudes), len(grades))
+            self._xsect_elevation_table.setRowCount(row_count)
+            for row in range(row_count):
+                xsect_item = QtWidgets.QTableWidgetItem(str(row))
+                xsect_item.setFlags(
+                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                )
+                altitude_value = altitudes[row]
+                altitude_text = (
+                    self._format_xsect_altitude(altitude_value)
+                    if altitude_value is not None
+                    else ""
+                )
+                altitude_item = QtWidgets.QTableWidgetItem(altitude_text)
+                altitude_item.setTextAlignment(
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+                )
+                grade_value = grades[row]
+                grade_text = f"{grade_value}" if grade_value is not None else ""
+                grade_item = QtWidgets.QTableWidgetItem(grade_text)
+                grade_item.setTextAlignment(
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+                )
+                self._xsect_elevation_table.setItem(row, 0, xsect_item)
+                self._xsect_elevation_table.setItem(row, 1, altitude_item)
+                self._xsect_elevation_table.setItem(row, 2, grade_item)
+            if (
+                selected_index is not None
+                and 0 <= selected_index < self._xsect_elevation_table.rowCount()
+            ):
+                self._xsect_elevation_table.setCurrentCell(selected_index, 0)
+            self._xsect_elevation_table.setEnabled(enabled)
+        finally:
+            self._xsect_elevation_table.blockSignals(False)
+            self._updating_xsect_table = False
 
     def update_scale_label(self, scale: float | None) -> None:
         if scale is None or scale <= 0:
@@ -519,6 +612,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_slider.setEnabled(enabled)
         self._altitude_slider.blockSignals(False)
         self._grade_slider.blockSignals(False)
+
+    def update_xsect_table_headers(self) -> None:
+        unit_label = self._xsect_altitude_units_label()
+        self._xsect_elevation_table.setHorizontalHeaderLabels(
+            ["Xsect", f"Altitude ({unit_label})", "Grade"]
+        )
+
+    def _xsect_altitude_units_label(self) -> str:
+        unit = self._xsect_altitude_units_combo.currentData()
+        return "ft" if unit == "feet" else "500ths"
+
+    def xsect_altitude_to_display_units(self, value: int) -> float:
+        if self._xsect_altitude_units_combo.currentData() == "feet":
+            return feet_from_500ths(value)
+        return float(value)
+
+    def xsect_altitude_from_display_units(self, value: float) -> int:
+        if self._xsect_altitude_units_combo.currentData() == "feet":
+            return feet_to_500ths(value)
+        return int(round(value))
+
+    def _format_xsect_altitude(self, value: int) -> str:
+        display_value = self.xsect_altitude_to_display_units(value)
+        if self._xsect_altitude_units_combo.currentData() == "feet":
+            return f"{display_value:.1f}"
+        return f"{int(round(display_value))}"
 
     def update_grade_display(self, value: int) -> None:
         self._grade_value_label.setText(str(value))
