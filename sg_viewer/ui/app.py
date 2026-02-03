@@ -208,7 +208,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_altitude_units_combo.addItem("500ths", "500ths")
         self._xsect_altitude_units_combo.setCurrentIndex(0)
         self._xsect_elevation_table = QtWidgets.QTableWidget(0, 3)
-        self._update_xsect_table_headers()
+        self.update_xsect_table_headers()
         self._xsect_elevation_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.SelectedClicked
