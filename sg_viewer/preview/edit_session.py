@@ -157,6 +157,9 @@ def apply_preview_to_sgfile(
         if source_index is not None and 0 <= source_index < len(alt_grade_snapshot):
             sg_section.alt = list(alt_grade_snapshot[source_index][0])
             sg_section.grade = list(alt_grade_snapshot[source_index][1])
+        else:
+            sg_section.alt = []
+            sg_section.grade = []
 
         if fsects_by_section is not None and index < len(fsects_by_section):
             _apply_fsects(sg_section, fsects_by_section[index])
