@@ -276,6 +276,7 @@ class _RuntimeEditPreviewOpsMixin:
             sections, changed_indices=changed_indices
         )
         self._realign_fsects_after_recalc(old_sections, old_fsects)
+        self._realign_section_elevations_after_reorder(sections)
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
@@ -304,6 +305,47 @@ class _RuntimeEditPreviewOpsMixin:
             self._emit_sections_changed()
         self._context.request_repaint()
         self._bump_sg_version()
+
+    def _realign_section_elevations_after_reorder(
+        self, sections: list[SectionPreview]
+    ) -> None:
+        sg_data = self._document.sg_data
+        if sg_data is None or len(sg_data.sects) != len(sections):
+            return
+
+        alt_grade_snapshot: list[tuple[list[int], list[int]]] = []
+        for section in sg_data.sects:
+            alt_grade_snapshot.append(
+                (
+                    list(getattr(section, "alt", [])),
+                    list(getattr(section, "grade", [])),
+                )
+            )
+
+        updated = False
+        for index, section in enumerate(sections):
+            source_index = getattr(section, "source_section_id", -1)
+            if source_index is None or source_index < 0:
+                continue
+            if source_index >= len(alt_grade_snapshot):
+                continue
+            source_altitudes, source_grades = alt_grade_snapshot[source_index]
+            current = sg_data.sects[index]
+            if list(getattr(current, "alt", [])) != source_altitudes:
+                current.alt = list(source_altitudes)
+                updated = True
+            if list(getattr(current, "grade", [])) != source_grades:
+                current.grade = list(source_grades)
+                updated = True
+
+        if not updated:
+            return
+
+        self._elevation_profile_cache.clear()
+        self._elevation_profile_alt_cache.clear()
+        self._elevation_profile_dirty.clear()
+        for section_id in range(len(sg_data.sects)):
+            self._document.elevation_changed.emit(section_id)
 
     def _normalize_section_dlongs(
         self, sections: list[SectionPreview]
