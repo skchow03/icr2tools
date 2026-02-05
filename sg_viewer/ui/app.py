@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import List
 
 from PyQt5 import QtCore, QtWidgets
@@ -64,7 +63,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview: PreviewContext = PreviewWidgetQt(
             show_status=self.show_status_message
         )
-        self._sidebar = QtWidgets.QWidget()
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
@@ -124,36 +122,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._add_fsect_button.setEnabled(False)
         self._delete_fsect_button = QtWidgets.QPushButton("Delete Fsect")
         self._delete_fsect_button.setEnabled(False)
-        self._section_table_button = QtWidgets.QPushButton("Section Table")
-        self._section_table_button.setEnabled(False)
-        self._heading_table_button = QtWidgets.QPushButton("Heading Table")
-        self._heading_table_button.setEnabled(False)
-        self._xsect_table_button = QtWidgets.QPushButton("X-Section Table")
-        self._xsect_table_button.setEnabled(False)
+        self._section_table_action: QtWidgets.QAction | None = None
+        self._heading_table_action: QtWidgets.QAction | None = None
+        self._xsect_table_action: QtWidgets.QAction | None = None
         self._profile_widget = ElevationProfileWidget()
         self._xsect_elevation_widget = XsectElevationWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
         self._copy_xsect_button.setEnabled(False)
-        self._scale_label = QtWidgets.QLabel("Scale: –")
-        self._track_length_label = QtWidgets.QLabel("Track length: –")
-        self._section_label = QtWidgets.QLabel("Section: None")
-        self._type_label = QtWidgets.QLabel("Type: –")
-        self._dlong_label = QtWidgets.QLabel("DLONG: –")
-        self._length_label = QtWidgets.QLabel("Length: –")
-        self._center_label = QtWidgets.QLabel("Center: –")
-        self._radius_label = QtWidgets.QLabel("Radius: –")
-        self._sang_label = QtWidgets.QLabel("Sang: –")
-        self._eang_label = QtWidgets.QLabel("Eang: –")
+        self._track_stats_label = QtWidgets.QLabel("Track Length: –")
+        self._section_index_label = QtWidgets.QLabel("Current Section: –")
         self._previous_label = QtWidgets.QLabel("Previous Section: –")
         self._next_label = QtWidgets.QLabel("Next Section: –")
-        self._start_heading_label = QtWidgets.QLabel("Start Heading (SG): –")
-        self._end_heading_label = QtWidgets.QLabel("End Heading (SG): –")
-        self._start_compass_heading_label = QtWidgets.QLabel("Start Heading (Compass): –")
-        self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
-        self._start_point_label = QtWidgets.QLabel("Start Point: –")
-        self._end_point_label = QtWidgets.QLabel("End Point: –")
+        self._section_length_label = QtWidgets.QLabel("Section Length: –")
+        self._radius_label = QtWidgets.QLabel("Radius: –")
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
         self._measurement_units_combo.addItem("Meter", "meter")
@@ -257,7 +240,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_value_label.setMinimumWidth(40)
         self._grade_value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
-        sidebar_layout = QtWidgets.QVBoxLayout()
         navigation_layout = QtWidgets.QHBoxLayout()
         #navigation_layout.addWidget(self._new_track_button)
         navigation_layout.addWidget(self._prev_button)
@@ -267,28 +249,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._split_section_button)
         navigation_layout.addWidget(self._delete_section_button)
         navigation_layout.addWidget(self._set_start_finish_button)
-        sidebar_layout.addWidget(self._section_table_button)
-        sidebar_layout.addWidget(self._heading_table_button)
-        sidebar_layout.addWidget(self._xsect_table_button)
-        sidebar_layout.addWidget(QtWidgets.QLabel("Selection"))
-        sidebar_layout.addWidget(self._scale_label)
-        sidebar_layout.addWidget(self._track_length_label)
-        sidebar_layout.addWidget(self._section_label)
-        sidebar_layout.addWidget(self._type_label)
-        sidebar_layout.addWidget(self._dlong_label)
-        sidebar_layout.addWidget(self._length_label)
-        sidebar_layout.addWidget(self._center_label)
-        sidebar_layout.addWidget(self._radius_label)
-        sidebar_layout.addWidget(self._sang_label)
-        sidebar_layout.addWidget(self._eang_label)
-        sidebar_layout.addWidget(self._previous_label)
-        sidebar_layout.addWidget(self._next_label)
-        sidebar_layout.addWidget(self._start_heading_label)
-        sidebar_layout.addWidget(self._end_heading_label)
-        sidebar_layout.addWidget(self._start_compass_heading_label)
-        sidebar_layout.addWidget(self._end_compass_heading_label)
-        sidebar_layout.addWidget(self._start_point_label)
-        sidebar_layout.addWidget(self._end_point_label)
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
         altitude_layout = QtWidgets.QHBoxLayout()
@@ -312,10 +272,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         grade_layout.addWidget(self._grade_value_label)
         grade_container.setLayout(grade_layout)
         elevation_layout.addRow("Grade (xsect):", grade_container)
-        sidebar_layout.addStretch()
-        self._sidebar.setLayout(sidebar_layout)
-        self._sidebar.setFixedWidth(self._sidebar.sizeHint().width())
-
         altitude_grade_sidebar = QtWidgets.QWidget()
         altitude_grade_sidebar_layout = QtWidgets.QVBoxLayout()
         altitude_grade_sidebar_layout.addLayout(elevation_layout)
@@ -376,16 +332,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addLayout(navigation_layout)
         preview_column_layout.addWidget(self._preview, stretch=5)
+        selection_summary_group = QtWidgets.QGroupBox("Track / Section")
+        selection_summary_layout = QtWidgets.QVBoxLayout()
+        selection_summary_layout.addWidget(self._track_stats_label)
+        selection_summary_layout.addWidget(self._section_index_label)
+        selection_summary_layout.addWidget(self._previous_label)
+        selection_summary_layout.addWidget(self._next_label)
+        selection_summary_layout.addWidget(self._section_length_label)
+        selection_summary_layout.addWidget(self._radius_label)
+        selection_summary_group.setLayout(selection_summary_layout)
+        preview_column_layout.addWidget(selection_summary_group)
         preview_column.setLayout(preview_column_layout)
 
         container = QtWidgets.QWidget()
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(self._sidebar)
         splitter.addWidget(preview_column)
         splitter.addWidget(self._right_sidebar_tabs)
-        splitter.setStretchFactor(1, 1)
-        splitter.setCollapsible(0, False)
-        splitter.setCollapsible(2, False)
+        splitter.setStretchFactor(0, 1)
+        splitter.setCollapsible(1, False)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(splitter)
         container.setLayout(layout)
@@ -473,17 +437,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def xsect_elevation_table(self) -> QtWidgets.QTableWidget:
         return self._xsect_elevation_table
 
-    @property
-    def section_table_button(self) -> QtWidgets.QPushButton:
-        return self._section_table_button
+    def set_section_table_action(self, action: QtWidgets.QAction) -> None:
+        self._section_table_action = action
 
-    @property
-    def heading_table_button(self) -> QtWidgets.QPushButton:
-        return self._heading_table_button
+    def set_heading_table_action(self, action: QtWidgets.QAction) -> None:
+        self._heading_table_action = action
 
-    @property
-    def xsect_table_button(self) -> QtWidgets.QPushButton:
-        return self._xsect_table_button
+    def set_xsect_table_action(self, action: QtWidgets.QAction) -> None:
+        self._xsect_table_action = action
+
+    def set_table_actions_enabled(self, enabled: bool) -> None:
+        if self._section_table_action is not None:
+            self._section_table_action.setEnabled(enabled)
+        if self._heading_table_action is not None:
+            self._heading_table_action.setEnabled(enabled)
+        if self._xsect_table_action is not None:
+            self._xsect_table_action.setEnabled(enabled)
 
     @property
     def measurement_units_combo(self) -> QtWidgets.QComboBox:
@@ -576,15 +545,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._xsect_elevation_table.blockSignals(False)
             self._updating_xsect_table = False
 
-    def update_scale_label(self, scale: float | None) -> None:
-        if scale is None or scale <= 0:
-            self._scale_label.setText("Scale: –")
-            return
-
-        self._scale_label.setText(f"Scale: 1px = {1 / scale:.1f} 500ths")
-
     def update_track_length_label(self, text: str) -> None:
-        self._track_length_label.setText(text)
+        self._track_stats_label.setText(text)
 
     def update_elevation_inputs(
         self, altitude: int | None, grade: int | None, enabled: bool
@@ -656,92 +618,37 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 return "–"
             return f"{int(round(value))}"
 
-        def _fmt_point(point: tuple[float, float] | None) -> str:
-            if point is None:
+        def _fmt_length(value: float | int | None) -> str:
+            if value is None:
                 return "–"
-            return f"({_fmt_int(point[0])}, {_fmt_int(point[1])})"
-
-        def _fmt_heading(heading: tuple[int, int] | None) -> str:
-            if heading is None:
-                return "–"
-            return f"({_fmt_int(heading[0])}, {_fmt_int(heading[1])})"
-
-        def _fmt_compass_heading(heading: tuple[float, float] | None) -> str:
-            if heading is None:
-                return "–"
-            hx, hy = heading
-            length = math.hypot(hx, hy)
-            if length <= 0:
-                return "–"
-            angle_deg = math.degrees(math.atan2(hy, hx))
-            compass_deg = (90.0 - angle_deg) % 360.0
-            return f"{compass_deg:.1f}°"
+            display = units_from_500ths(value, self._current_measurement_unit())
+            decimals = self._measurement_unit_decimals(self._current_measurement_unit())
+            unit = self._measurement_unit_label(self._current_measurement_unit())
+            if decimals == 0:
+                return f"{int(round(display))} {unit}"
+            return f"{display:.{decimals}f} {unit}"
 
         if selection is None:
             self._selected_section_index = None
-            self._section_label.setText("Section: None")
-            self._type_label.setText("Type: –")
-            self._dlong_label.setText("DLONG: –")
-            self._length_label.setText("Length: –")
-            self._center_label.setText("Center: –")
+            self._section_index_label.setText("Current Section: –")
             self._radius_label.setText("Radius: –")
-            self._sang_label.setText("Sang: –")
-            self._eang_label.setText("Eang: –")
             self._previous_label.setText("Previous Section: –")
             self._next_label.setText("Next Section: –")
-            self._start_heading_label.setText("Start Heading (SG): –")
-            self._end_heading_label.setText("End Heading (SG): –")
-            self._start_compass_heading_label.setText("Start Heading (Compass): –")
-            self._end_compass_heading_label.setText("End Heading (Compass): –")
-            self._start_point_label.setText("Start Point: –")
-            self._end_point_label.setText("End Point: –")
+            self._section_length_label.setText("Section Length: –")
             self._profile_widget.set_selected_range(None)
             self._update_fsect_table(None)
             return
 
         self._selected_section_index = selection.index
-        self._section_label.setText(f"Section: {selection.index}")
-        self._type_label.setText(f"Type: {selection.type_name}")
-        self._dlong_label.setText(
-            f"DLONG: {_fmt_int(selection.start_dlong)} → {_fmt_int(selection.end_dlong)}"
-        )
-        self._length_label.setText(f"Length: {_fmt_int(selection.length)}")
-
-        self._center_label.setText(f"Center: {_fmt_point(selection.center)}")
+        self._section_index_label.setText(f"Current Section: {selection.index}")
+        self._section_length_label.setText(f"Section Length: {_fmt_length(selection.length)}")
 
         radius_value = selection.sg_radius
         if radius_value is None:
             radius_value = selection.radius
-        self._radius_label.setText(f"Radius: {_fmt_int(radius_value)}")
-        self._sang_label.setText(
-            f"Sang: ({_fmt_int(selection.sg_sang1)}, {_fmt_int(selection.sg_sang2)})"
-        )
-        self._eang_label.setText(
-            f"Eang: ({_fmt_int(selection.sg_eang1)}, {_fmt_int(selection.sg_eang2)})"
-        )
-
+        self._radius_label.setText(f"Radius: {_fmt_length(radius_value)}")
         self._previous_label.setText(self._format_section_link("Previous", selection.previous_id))
         self._next_label.setText(self._format_section_link("Next", selection.next_id))
-
-        self._start_heading_label.setText(
-            f"Start Heading (SG): {_fmt_heading(selection.sg_start_heading)}"
-        )
-
-        self._end_heading_label.setText(
-            f"End Heading (SG): {_fmt_heading(selection.sg_end_heading)}"
-        )
-
-        self._start_compass_heading_label.setText(
-            f"Start Heading (Compass): {_fmt_compass_heading(selection.start_heading)}"
-        )
-        self._end_compass_heading_label.setText(
-            f"End Heading (Compass): {_fmt_compass_heading(selection.end_heading)}"
-        )
-
-        self._start_point_label.setText(
-            f"Start Point: {_fmt_point(selection.start_point)}"
-        )
-        self._end_point_label.setText(f"End Point: {_fmt_point(selection.end_point)}")
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
@@ -749,7 +656,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     @staticmethod
     def _format_section_link(prefix: str, section_id: int) -> str:
-        connection = "Not connected" if section_id == -1 else str(section_id)
+        connection = "Not connected" if section_id == -1 else f"{section_id}"
         return f"{prefix} Section: {connection}"
 
     def _update_fsect_table(self, section_index: int | None) -> None:
