@@ -112,11 +112,7 @@ def apply_preview_to_sgfile(
         dest_start: tuple[int, int],
         dest_end: tuple[int, int],
     ) -> bool:
-        same_score = abs(source_start[0] - dest_start[0]) + abs(source_start[1] - dest_start[1])
-        same_score += abs(source_end[0] - dest_end[0]) + abs(source_end[1] - dest_end[1])
-        reversed_score = abs(source_start[0] - dest_end[0]) + abs(source_start[1] - dest_end[1])
-        reversed_score += abs(source_end[0] - dest_start[0]) + abs(source_end[1] - dest_start[1])
-        return reversed_score < same_score
+        return source_start == dest_end and source_end == dest_start
 
     for index, (sg_section, preview_section) in enumerate(
         zip(sgfile.sects, sections_list)
