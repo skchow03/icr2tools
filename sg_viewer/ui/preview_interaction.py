@@ -62,6 +62,7 @@ class PreviewInteraction:
             [tuple[int, str], tuple[int, str]], None
         ]
         | None = None,
+        apply_preview_to_sgfile: Callable[[], object] | None = None,
         recalculate_elevations: Callable[[list[int] | None], None] | None = None,
     ) -> None:
         self._context = context
@@ -76,6 +77,7 @@ class PreviewInteraction:
         self._show_status = show_status
         self._emit_drag_state_changed = emit_drag_state_changed
         self._sync_fsects_on_connection = sync_fsects_on_connection
+        self._apply_preview_to_sgfile = apply_preview_to_sgfile
         self._recalculate_elevations = recalculate_elevations
 
         self._is_dragging_node = False
@@ -834,6 +836,12 @@ class PreviewInteraction:
             )
 
             self._set_sections(sections, changed_indices=changed_indices)
+
+            # Closing by endpoint connection can reorder/reverse sections. Persist
+            # the canonicalized preview ordering back into SG immediately so
+            # altitude/grade arrays stay aligned with preview indices.
+            if self._apply_preview_to_sgfile is not None:
+                self._apply_preview_to_sgfile()
 
             self._show_status("Closed loop detected — track direction fixed")
         else:
