@@ -1107,13 +1107,9 @@ class SGViewerController:
             self._window.update_track_length_label("Track Length: Not a closed loop")
             return
 
-        length_value = units_from_500ths(
-            total_length,
-            self._window.measurement_units_combo.currentData(),
-        )
-        unit_label = self._window.measurement_units_combo.currentText()
+        length_value = self._window.format_length_with_secondary(total_length)
         self._window.update_track_length_label(
-            f"Track Length: {length_value:.1f} {unit_label}"
+            f"Track Length: {length_value}"
         )
 
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
