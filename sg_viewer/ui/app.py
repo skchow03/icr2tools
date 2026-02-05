@@ -133,6 +133,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._copy_xsect_button.setEnabled(False)
         self._track_stats_label = QtWidgets.QLabel("Track Length: –")
         self._section_index_label = QtWidgets.QLabel("Current Section: –")
+        self._section_start_dlong_label = QtWidgets.QLabel("Starting DLONG: –")
+        self._section_end_dlong_label = QtWidgets.QLabel("Ending DLONG: –")
         self._previous_label = QtWidgets.QLabel("Previous Section: –")
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._section_length_label = QtWidgets.QLabel("Section Length: –")
@@ -336,6 +338,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selection_summary_layout = QtWidgets.QVBoxLayout()
         selection_summary_layout.addWidget(self._track_stats_label)
         selection_summary_layout.addWidget(self._section_index_label)
+        selection_summary_layout.addWidget(self._section_start_dlong_label)
+        selection_summary_layout.addWidget(self._section_end_dlong_label)
         selection_summary_layout.addWidget(self._previous_label)
         selection_summary_layout.addWidget(self._next_label)
         selection_summary_layout.addWidget(self._section_length_label)
@@ -548,6 +552,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def update_track_length_label(self, text: str) -> None:
         self._track_stats_label.setText(text)
 
+    def format_length(self, value: float | int | None) -> str:
+        if value is None:
+            return "–"
+        display = units_from_500ths(value, self._current_measurement_unit())
+        decimals = self._measurement_unit_decimals(self._current_measurement_unit())
+        unit = self._measurement_unit_label(self._current_measurement_unit())
+        if decimals == 0:
+            return f"{int(round(display))} {unit}"
+        return f"{display:.{decimals}f} {unit}"
+
+    def format_length_with_secondary(self, value: float | int | None) -> str:
+        primary = self.format_length(value)
+        if value is None:
+            return primary
+
+        unit = self._current_measurement_unit()
+        feet_value = units_from_500ths(value, "feet")
+        if unit == "feet":
+            miles = feet_value / 5280.0
+            return f"{primary} ({miles:.3f} miles)"
+        if unit == "meter":
+            kilometers = feet_value * 0.3048 / 1000.0
+            return f"{primary} ({kilometers:.3f} km)"
+        return primary
+
     def update_elevation_inputs(
         self, altitude: int | None, grade: int | None, enabled: bool
     ) -> None:
@@ -613,24 +642,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_value_label.setText(self._format_altitude_for_units(altitude))
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
-        def _fmt_int(value: float | int | None) -> str:
-            if value is None:
-                return "–"
-            return f"{int(round(value))}"
-
-        def _fmt_length(value: float | int | None) -> str:
-            if value is None:
-                return "–"
-            display = units_from_500ths(value, self._current_measurement_unit())
-            decimals = self._measurement_unit_decimals(self._current_measurement_unit())
-            unit = self._measurement_unit_label(self._current_measurement_unit())
-            if decimals == 0:
-                return f"{int(round(display))} {unit}"
-            return f"{display:.{decimals}f} {unit}"
-
         if selection is None:
             self._selected_section_index = None
             self._section_index_label.setText("Current Section: –")
+            self._section_start_dlong_label.setText("Starting DLONG: –")
+            self._section_end_dlong_label.setText("Ending DLONG: –")
             self._radius_label.setText("Radius: –")
             self._previous_label.setText("Previous Section: –")
             self._next_label.setText("Next Section: –")
@@ -641,12 +657,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._selected_section_index = selection.index
         self._section_index_label.setText(f"Current Section: {selection.index}")
-        self._section_length_label.setText(f"Section Length: {_fmt_length(selection.length)}")
+        self._section_start_dlong_label.setText(
+            f"Starting DLONG: {self.format_length(selection.start_dlong)}"
+        )
+        self._section_end_dlong_label.setText(
+            f"Ending DLONG: {self.format_length(selection.end_dlong)}"
+        )
+        self._section_length_label.setText(
+            f"Section Length: {self.format_length_with_secondary(selection.length)}"
+        )
 
         radius_value = selection.sg_radius
         if radius_value is None:
             radius_value = selection.radius
-        self._radius_label.setText(f"Radius: {_fmt_length(radius_value)}")
+        self._radius_label.setText(f"Radius: {self.format_length(radius_value)}")
         self._previous_label.setText(self._format_section_link("Previous", selection.previous_id))
         self._next_label.setText(self._format_section_link("Next", selection.next_id))
 

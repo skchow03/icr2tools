@@ -3,6 +3,7 @@ import pytest
 try:
     from PyQt5 import QtWidgets
     from sg_viewer.ui.app import SGViewerWindow
+    from sg_viewer.models.selection import SectionSelection
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
@@ -48,5 +49,49 @@ def test_measurement_units_are_global(qapp):
 
         window.update_elevation_inputs(6000, 0, True)
         assert window._altitude_value_label.text() == "1.0"
+    finally:
+        window.close()
+
+
+def test_selection_and_track_length_show_secondary_units(qapp):
+    window = SGViewerWindow()
+    try:
+        selection = SectionSelection(
+            index=3,
+            type_name="Straight",
+            start_dlong=500.0 * 5280.0,
+            end_dlong=500.0 * 6000.0,
+            length=500.0 * 7200.0,
+            previous_id=2,
+            next_id=4,
+        )
+
+        window.measurement_units_combo.setCurrentIndex(0)
+        window.update_selection_sidebar(selection)
+        window.update_track_length_label(
+            f"Track Length: {window.format_length_with_secondary(selection.length)}"
+        )
+
+        assert window._section_start_dlong_label.text() == "Starting DLONG: 5280.0 ft"
+        assert window._section_end_dlong_label.text() == "Ending DLONG: 6000.0 ft"
+        assert (
+            window._section_length_label.text()
+            == "Section Length: 7200.0 ft (1.364 miles)"
+        )
+        assert window._track_stats_label.text() == "Track Length: 7200.0 ft (1.364 miles)"
+
+        window.measurement_units_combo.setCurrentIndex(1)
+        window.update_selection_sidebar(selection)
+        window.update_track_length_label(
+            f"Track Length: {window.format_length_with_secondary(selection.length)}"
+        )
+
+        assert window._section_start_dlong_label.text() == "Starting DLONG: 1609.344 m"
+        assert window._section_end_dlong_label.text() == "Ending DLONG: 1828.800 m"
+        assert (
+            window._section_length_label.text()
+            == "Section Length: 2194.560 m (2.195 km)"
+        )
+        assert window._track_stats_label.text() == "Track Length: 2194.560 m (2.195 km)"
     finally:
         window.close()
