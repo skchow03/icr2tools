@@ -87,9 +87,7 @@ class SGViewerController:
             is_dirty=False,
         )
 
-        self._window.section_table_button.setEnabled(True)
-        self._window.heading_table_button.setEnabled(True)
-        self._window.xsect_table_button.setEnabled(True)
+        self._window.set_table_actions_enabled(True)
         self._window.refresh_fsects_button.setEnabled(True)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
@@ -170,6 +168,18 @@ class SGViewerController:
         #     self._launch_background_calibrator
         # )
 
+        self._section_table_action = QtWidgets.QAction("Section Table", self._window)
+        self._section_table_action.setEnabled(False)
+        self._section_table_action.triggered.connect(self._show_section_table)
+
+        self._heading_table_action = QtWidgets.QAction("Heading Table", self._window)
+        self._heading_table_action.setEnabled(False)
+        self._heading_table_action.triggered.connect(self._show_heading_table)
+
+        self._xsect_table_action = QtWidgets.QAction("X-Section Table", self._window)
+        self._xsect_table_action.setEnabled(False)
+        self._xsect_table_action.triggered.connect(self._show_xsect_table)
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -191,6 +201,14 @@ class SGViewerController:
         tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._convert_trk_action)
+        tools_menu.addSeparator()
+        tools_menu.addAction(self._section_table_action)
+        tools_menu.addAction(self._heading_table_action)
+        tools_menu.addAction(self._xsect_table_action)
+
+        self._window.set_section_table_action(self._section_table_action)
+        self._window.set_heading_table_action(self._heading_table_action)
+        self._window.set_xsect_table_action(self._xsect_table_action)
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -243,9 +261,6 @@ class SGViewerController:
         self._window.delete_fsect_button.clicked.connect(
             self._delete_selected_fsect
         )
-        self._window.section_table_button.clicked.connect(self._show_section_table)
-        self._window.heading_table_button.clicked.connect(self._show_heading_table)
-        self._window.xsect_table_button.clicked.connect(self._show_xsect_table)
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
@@ -323,7 +338,7 @@ class SGViewerController:
             button.setStyleSheet(self._split_default_style)
 
     def _on_scale_changed(self, scale: float) -> None:
-        self._window.update_scale_label(scale)
+        _ = scale
 
     def _on_preview_drag_state_changed(self, dragging: bool) -> None:
         if dragging:
@@ -437,9 +452,8 @@ class SGViewerController:
         self._window.preview.start_new_track()
         self._active_selection = None
         self._window.update_selection_sidebar(None)
-        self._window.section_table_button.setEnabled(False)
-        self._window.heading_table_button.setEnabled(False)
-        self._window.xsect_table_button.setEnabled(True)
+        self._window.set_table_actions_enabled(False)
+        self._xsect_table_action.setEnabled(True)
         self._window.refresh_fsects_button.setEnabled(False)
         self._window.delete_section_button.setEnabled(False)
         self._window.split_section_button.setChecked(False)
@@ -775,8 +789,8 @@ class SGViewerController:
         if not has_sections:
             self._window.split_section_button.setChecked(False)
         self._window.set_start_finish_button.setEnabled(has_sections)
-        self._window.section_table_button.setEnabled(has_sections)
-        self._window.heading_table_button.setEnabled(has_sections)
+        self._section_table_action.setEnabled(has_sections)
+        self._heading_table_action.setEnabled(has_sections)
         self._window.refresh_fsects_button.setEnabled(
             has_sections and self._window.preview.sgfile is not None
         )
@@ -1078,8 +1092,29 @@ class SGViewerController:
         self._history.set_background(self._current_path, background_path, scale, origin)
 
     def _update_track_length_display(self) -> None:
-        text = self._window.preview.track_length_message()
-        self._window.update_track_length_label(text)
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            self._window.update_track_length_label("Track Length: –")
+            return
+
+        if not is_closed_loop(sections):
+            self._window.update_track_length_label("Track Length: Not a closed loop")
+            return
+
+        try:
+            total_length = loop_length(sections)
+        except ValueError:
+            self._window.update_track_length_label("Track Length: Not a closed loop")
+            return
+
+        length_value = units_from_500ths(
+            total_length,
+            self._window.measurement_units_combo.currentData(),
+        )
+        unit_label = self._window.measurement_units_combo.currentText()
+        self._window.update_track_length_label(
+            f"Track Length: {length_value:.1f} {unit_label}"
+        )
 
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
         self._active_selection = selection
@@ -1465,6 +1500,8 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._window.update_xsect_table_headers()
         self._refresh_xsect_elevation_table()
+        self._update_track_length_display()
+        self._window.update_selection_sidebar(self._active_selection)
 
     def _on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._window.is_updating_xsect_table:
