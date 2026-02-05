@@ -43,6 +43,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._selected_section_index: int | None = None
         self._updating_fsect_table = False
         self._updating_xsect_table = False
+        self._measurement_unit_data = "feet"
 
         shortcut_labels = {
             "new_straight": "Ctrl+Alt+S",
@@ -100,11 +101,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Set Start/Finish",
             shortcut_labels["set_start_finish"],
         )
-        self._radii_button = QtWidgets.QPushButton("Radii")
-        self._radii_button.setCheckable(True)
+        self._radii_button = QtWidgets.QCheckBox("Show Radii")
         self._radii_button.setChecked(True)
-        self._axes_button = QtWidgets.QPushButton("Axes")
-        self._axes_button.setCheckable(True)
+        self._axes_button = QtWidgets.QCheckBox("Show Axes")
         self._axes_button.setChecked(False)
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("Show SG Fsects (preview)")
         self._sg_fsects_checkbox.setChecked(False)
@@ -154,12 +153,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_compass_heading_label = QtWidgets.QLabel("End Heading (Compass): –")
         self._start_point_label = QtWidgets.QLabel("Start Point: –")
         self._end_point_label = QtWidgets.QLabel("End Point: –")
-        self._fsect_dlat_units_combo = QtWidgets.QComboBox()
-        self._fsect_dlat_units_combo.addItem("Feet", "feet")
-        self._fsect_dlat_units_combo.addItem("500ths", "500ths")
-        self._fsect_dlat_units_combo.setCurrentIndex(0)
-        self._fsect_dlat_units_combo.currentIndexChanged.connect(
-            self._on_fsect_dlat_units_changed
+        self._measurement_units_combo = QtWidgets.QComboBox()
+        self._measurement_units_combo.addItem("Feet", "feet")
+        self._measurement_units_combo.addItem("500ths", "500ths")
+        self._measurement_units_combo.setCurrentIndex(0)
+        self._measurement_units_combo.currentIndexChanged.connect(
+            self._on_measurement_units_changed
         )
         self._fsect_table = QtWidgets.QTableWidget(0, 4)
         self._update_fsect_table_headers()
@@ -184,10 +183,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_diagram = FsectDiagramWidget(
             on_dlat_changed=self._on_fsect_diagram_dlat_changed
         )
-        self._xsect_altitude_units_combo = QtWidgets.QComboBox()
-        self._xsect_altitude_units_combo.addItem("Feet", "feet")
-        self._xsect_altitude_units_combo.addItem("500ths", "500ths")
-        self._xsect_altitude_units_combo.setCurrentIndex(0)
         self._xsect_elevation_table = QtWidgets.QTableWidget(0, 3)
         self.update_xsect_table_headers()
         self._xsect_elevation_table.setEditTriggers(
@@ -246,6 +241,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_max_spin.setSingleStep(0.1)
         self._altitude_max_spin.setValue(DEFAULT_ALTITUDE_MAX_FEET)
         self._altitude_max_spin.setKeyboardTracking(False)
+        self._altitude_min_spin.setSuffix(" ft")
+        self._altitude_max_spin.setSuffix(" ft")
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._grade_slider.setRange(-1000, 1000)
         self._grade_slider.setSingleStep(1)
@@ -267,8 +264,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._split_section_button)
         navigation_layout.addWidget(self._delete_section_button)
         navigation_layout.addWidget(self._set_start_finish_button)
-        sidebar_layout.addWidget(self._radii_button)
-        sidebar_layout.addWidget(self._axes_button)
         sidebar_layout.addWidget(self._section_table_button)
         sidebar_layout.addWidget(self._heading_table_button)
         sidebar_layout.addWidget(self._xsect_table_button)
@@ -322,11 +317,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         altitude_grade_sidebar_layout = QtWidgets.QVBoxLayout()
         altitude_grade_sidebar_layout.addLayout(elevation_layout)
         altitude_grade_sidebar_layout.addWidget(QtWidgets.QLabel("X-Section Elevations"))
-        xsect_units_layout = QtWidgets.QHBoxLayout()
-        xsect_units_layout.addWidget(QtWidgets.QLabel("Elevation units:"))
-        xsect_units_layout.addWidget(self._xsect_altitude_units_combo)
-        xsect_units_layout.addStretch()
-        altitude_grade_sidebar_layout.addLayout(xsect_units_layout)
         altitude_grade_sidebar_layout.addWidget(self._xsect_elevation_table)
         altitude_profile_controls = QtWidgets.QHBoxLayout()
         altitude_profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
@@ -351,19 +341,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         fsect_sidebar_layout.addWidget(self._add_fsect_button)
         fsect_sidebar_layout.addWidget(self._delete_fsect_button)
         fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
-        fsect_units_layout = QtWidgets.QHBoxLayout()
-        fsect_units_layout.addWidget(QtWidgets.QLabel("DLAT units:"))
-        fsect_units_layout.addWidget(self._fsect_dlat_units_combo)
-        fsect_units_layout.addStretch()
-        fsect_sidebar_layout.addLayout(fsect_units_layout)
         fsect_sidebar_layout.addWidget(self._fsect_table)
         fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsect Diagram"))
         fsect_sidebar_layout.addWidget(self._fsect_diagram)
         fsect_sidebar_layout.addStretch()
         fsect_sidebar.setLayout(fsect_sidebar_layout)
 
+        view_options_sidebar = QtWidgets.QWidget()
+        view_options_layout = QtWidgets.QVBoxLayout()
+        view_options_layout.addWidget(self._radii_button)
+        view_options_layout.addWidget(self._axes_button)
+        unit_layout = QtWidgets.QHBoxLayout()
+        unit_layout.addWidget(QtWidgets.QLabel("Unit of Measurement:"))
+        unit_layout.addWidget(self._measurement_units_combo)
+        view_options_layout.addLayout(unit_layout)
+        view_options_layout.addStretch()
+        view_options_sidebar.setLayout(view_options_layout)
+
         self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Altitude/Grade")
         self._right_sidebar_tabs.addTab(fsect_sidebar, "Fsects")
+        self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)
@@ -430,11 +427,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._set_start_finish_button
 
     @property
-    def radii_button(self) -> QtWidgets.QPushButton:
+    def radii_button(self) -> QtWidgets.QCheckBox:
         return self._radii_button
 
     @property
-    def axes_button(self) -> QtWidgets.QPushButton:
+    def axes_button(self) -> QtWidgets.QCheckBox:
         return self._axes_button
 
     @property
@@ -486,8 +483,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._xsect_table_button
 
     @property
-    def xsect_altitude_units_combo(self) -> QtWidgets.QComboBox:
-        return self._xsect_altitude_units_combo
+    def measurement_units_combo(self) -> QtWidgets.QComboBox:
+        return self._measurement_units_combo
 
     @property
     def profile_widget(self) -> ElevationProfileWidget:
@@ -594,7 +591,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         altitude_value = altitude if altitude is not None else 0
         altitude_feet = feet_from_500ths(altitude_value)
         self._altitude_slider.setValue(feet_to_slider_units(altitude_feet))
-        self._altitude_value_label.setText(f"{altitude_feet:.1f}")
+        self._altitude_value_label.setText(
+            self._format_altitude_for_units(altitude_value)
+        )
         grade_value = grade if grade is not None else 0
         self._grade_slider.setValue(grade_value)
         self._grade_value_label.setText(str(grade_value))
@@ -610,22 +609,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _xsect_altitude_units_label(self) -> str:
-        unit = self._xsect_altitude_units_combo.currentData()
+        unit = self._measurement_units_combo.currentData()
         return "ft" if unit == "feet" else "500ths"
 
     def xsect_altitude_to_display_units(self, value: int) -> float:
-        if self._xsect_altitude_units_combo.currentData() == "feet":
+        if self._measurement_units_combo.currentData() == "feet":
             return feet_from_500ths(value)
         return float(value)
 
     def xsect_altitude_from_display_units(self, value: float) -> int:
-        if self._xsect_altitude_units_combo.currentData() == "feet":
+        if self._measurement_units_combo.currentData() == "feet":
             return feet_to_500ths(value)
         return int(round(value))
 
     def _format_xsect_altitude(self, value: int) -> str:
         display_value = self.xsect_altitude_to_display_units(value)
-        if self._xsect_altitude_units_combo.currentData() == "feet":
+        if self._measurement_units_combo.currentData() == "feet":
             return f"{display_value:.1f}"
         return f"{int(round(display_value))}"
 
@@ -634,7 +633,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def update_altitude_display(self, value: int) -> None:
         altitude_feet = feet_from_slider_units(value)
-        self._altitude_value_label.setText(f"{altitude_feet:.1f}")
+        altitude = feet_to_500ths(altitude_feet)
+        self._altitude_value_label.setText(self._format_altitude_for_units(altitude))
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:
@@ -838,7 +838,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         item.setText(self._format_fsect_dlat(value))
         self._updating_fsect_table = False
 
-    def _on_fsect_dlat_units_changed(self) -> None:
+    def _on_measurement_units_changed(self) -> None:
+        previous_unit = self._measurement_unit_data
+        self._measurement_unit_data = str(self._measurement_units_combo.currentData())
+        self._sync_altitude_range_spin_units(previous_unit)
+        self.update_xsect_table_headers()
         self._update_fsect_table_headers()
         self._update_fsect_table(self._selected_section_index)
 
@@ -854,24 +858,80 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _fsect_dlat_units_label(self) -> str:
-        unit = self._fsect_dlat_units_combo.currentData()
+        unit = self._measurement_units_combo.currentData()
         return "ft" if unit == "feet" else "500ths"
 
     def _fsect_dlat_to_display_units(self, value: float) -> float:
-        if self._fsect_dlat_units_combo.currentData() == "feet":
+        if self._measurement_units_combo.currentData() == "feet":
             return value / 6000.0
         return value
 
     def _fsect_dlat_from_display_units(self, value: float) -> float:
-        if self._fsect_dlat_units_combo.currentData() == "feet":
+        if self._measurement_units_combo.currentData() == "feet":
             return value * 6000.0
         return value
 
     def _format_fsect_dlat(self, value: float) -> str:
         display_value = self._fsect_dlat_to_display_units(value)
-        if self._fsect_dlat_units_combo.currentData() == "feet":
+        if self._measurement_units_combo.currentData() == "feet":
             return f"{display_value:.3f}".rstrip("0").rstrip(".")
         return f"{int(round(display_value))}"
+
+    def altitude_display_to_feet(self, value: float) -> float:
+        if self._measurement_units_combo.currentData() == "feet":
+            return value
+        return feet_from_500ths(int(round(value)))
+
+    def feet_to_altitude_display(self, value_feet: float) -> float:
+        if self._measurement_units_combo.currentData() == "feet":
+            return value_feet
+        return float(feet_to_500ths(value_feet))
+
+    def altitude_display_step(self) -> float:
+        return 0.1 if self._measurement_units_combo.currentData() == "feet" else 50.0
+
+    def _format_altitude_for_units(self, altitude_500ths: int) -> str:
+        if self._measurement_units_combo.currentData() == "feet":
+            return f"{feet_from_500ths(altitude_500ths):.1f}"
+        return f"{int(round(altitude_500ths))}"
+
+    def _sync_altitude_range_spin_units(self, previous_unit: str) -> None:
+        is_feet = self._measurement_units_combo.currentData() == "feet"
+        min_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
+        max_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
+
+        current_min_value = self._altitude_min_spin.value()
+        current_max_value = self._altitude_max_spin.value()
+        if previous_unit == "feet":
+            current_min_feet = current_min_value
+            current_max_feet = current_max_value
+        else:
+            current_min_feet = feet_from_500ths(int(round(current_min_value)))
+            current_max_feet = feet_from_500ths(int(round(current_max_value)))
+
+        current_min_display = (
+            current_min_feet if is_feet else float(feet_to_500ths(current_min_feet))
+        )
+        current_max_display = (
+            current_max_feet if is_feet else float(feet_to_500ths(current_max_feet))
+        )
+        spin_decimals = 1 if is_feet else 0
+        spin_step = 0.1 if is_feet else 50.0
+        spin_min = min_feet if is_feet else float(SGDocument.ELEVATION_MIN)
+        spin_max = max_feet if is_feet else float(SGDocument.ELEVATION_MAX)
+        suffix = " ft" if is_feet else " 500ths"
+
+        for spin in (self._altitude_min_spin, self._altitude_max_spin):
+            spin.blockSignals(True)
+            spin.setDecimals(spin_decimals)
+            spin.setSingleStep(spin_step)
+            spin.setSuffix(suffix)
+            spin.blockSignals(False)
+
+        self._altitude_min_spin.setRange(spin_min, spin_max - spin_step)
+        self._altitude_max_spin.setRange(spin_min + spin_step, spin_max)
+        self._altitude_min_spin.setValue(min(max(current_min_display, spin_min), spin_max - spin_step))
+        self._altitude_max_spin.setValue(max(min(current_max_display, spin_max), spin_min + spin_step))
 
     def _on_fsect_type_changed(
         self, row_index: int, widget: QtWidgets.QComboBox
