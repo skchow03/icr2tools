@@ -97,7 +97,6 @@ class SGViewerController:
         sections, _ = self._window.preview.get_section_set()
         self._window.set_start_finish_button.setEnabled(bool(sections))
         self._window.split_section_button.setEnabled(bool(sections))
-        self._window.recalc_elevation_button.setEnabled(bool(sections))
         self._window.split_section_button.setChecked(False)
         self._save_action.setEnabled(True)
         self._apply_saved_background(path)
@@ -250,12 +249,6 @@ class SGViewerController:
             self._refresh_elevation_profile
         )
         self._window.copy_xsect_button.clicked.connect(self._copy_xsect_to_all)
-        self._window.recalc_elevation_button.clicked.connect(
-            self._recalculate_elevations
-        )
-        self._window.elevation_samples_slider.valueChanged.connect(
-            self._on_elevation_samples_changed
-        )
         self._window.altitude_slider.valueChanged.connect(
             self._on_altitude_slider_changed
         )
@@ -451,7 +444,6 @@ class SGViewerController:
         self._window.split_section_button.setChecked(False)
         self._window.split_section_button.setEnabled(False)
         self._window.set_start_finish_button.setEnabled(False)
-        self._window.recalc_elevation_button.setEnabled(False)
         self._scale_track_action.setEnabled(False)
         self._update_xsect_table()
         self._populate_xsect_choices()
@@ -782,7 +774,6 @@ class SGViewerController:
         if not has_sections:
             self._window.split_section_button.setChecked(False)
         self._window.set_start_finish_button.setEnabled(has_sections)
-        self._window.recalc_elevation_button.setEnabled(has_sections)
         self._window.section_table_button.setEnabled(has_sections)
         self._window.heading_table_button.setEnabled(has_sections)
         self._window.refresh_fsects_button.setEnabled(
@@ -1028,11 +1019,7 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
 
     def _current_samples_per_section(self) -> int:
-        return int(self._window.elevation_samples_slider.value())
-
-    def _on_elevation_samples_changed(self, value: int) -> None:
-        self._window.update_elevation_samples_display(value)
-        self._refresh_elevation_profile()
+        return 10
 
     def _clear_background_state(self) -> None:
         self._window.preview.clear_background_image()

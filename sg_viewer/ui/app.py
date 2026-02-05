@@ -136,26 +136,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_combo.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
         self._copy_xsect_button.setEnabled(False)
-        self._elevation_samples_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._elevation_samples_slider.setRange(10, 32)
-        self._elevation_samples_slider.setSingleStep(1)
-        self._elevation_samples_slider.setPageStep(2)
-        self._elevation_samples_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self._elevation_samples_slider.setTickInterval(2)
-        self._elevation_samples_slider.setValue(10)
-        self._elevation_samples_slider.setToolTip(
-            "Number of elevation samples per track section."
-        )
-        self._elevation_samples_value_label = QtWidgets.QLabel("10")
-        self._elevation_samples_value_label.setMinimumWidth(24)
-        self._elevation_samples_value_label.setAlignment(
-            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
-        )
-        self._recalc_elevation_button = QtWidgets.QPushButton("Recalc Elevations")
-        self._recalc_elevation_button.setEnabled(False)
-        self._recalc_elevation_button.setToolTip(
-            "Recalculate elevation values for the entire track."
-        )
         self._scale_label = QtWidgets.QLabel("Scale: –")
         self._track_length_label = QtWidgets.QLabel("Track length: –")
         self._section_label = QtWidgets.QLabel("Section: None")
@@ -181,7 +161,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_dlat_units_combo.currentIndexChanged.connect(
             self._on_fsect_dlat_units_changed
         )
-        self._fsect_table = QtWidgets.QTableWidget(0, 5)
+        self._fsect_table = QtWidgets.QTableWidget(0, 4)
         self._update_fsect_table_headers()
         self._fsect_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
@@ -353,10 +333,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         altitude_profile_controls.addWidget(self._xsect_combo)
         altitude_profile_controls.addWidget(self._copy_xsect_button)
         altitude_profile_controls.addWidget(self._xsect_dlat_line_checkbox)
-        altitude_profile_controls.addWidget(QtWidgets.QLabel("Samples/Section:"))
-        altitude_profile_controls.addWidget(self._elevation_samples_slider, stretch=1)
-        altitude_profile_controls.addWidget(self._elevation_samples_value_label)
-        altitude_profile_controls.addWidget(self._recalc_elevation_button)
         altitude_grade_sidebar_layout.addLayout(altitude_profile_controls)
         altitude_grade_sidebar_layout.addWidget(self._profile_widget, stretch=2)
         altitude_grade_sidebar_layout.addWidget(
@@ -524,14 +500,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._copy_xsect_button
 
     @property
-    def elevation_samples_slider(self) -> QtWidgets.QSlider:
-        return self._elevation_samples_slider
-
-    @property
-    def recalc_elevation_button(self) -> QtWidgets.QPushButton:
-        return self._recalc_elevation_button
-
-    @property
     def altitude_slider(self) -> QtWidgets.QSlider:
         return self._altitude_slider
 
@@ -662,9 +630,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         altitude_feet = feet_from_slider_units(value)
         self._altitude_value_label.setText(f"{altitude_feet:.1f}")
 
-    def update_elevation_samples_display(self, value: int) -> None:
-        self._elevation_samples_value_label.setText(str(value))
-
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         def _fmt_int(value: float | int | None) -> str:
             if value is None:
@@ -778,9 +743,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             end_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.end_dlat)
             )
-            type_item = QtWidgets.QTableWidgetItem(
-                self._fsect_type_description(fsect.surface_type, fsect.type2)
-            )
             for editable_item in (start_item, end_item):
                 editable_item.setFlags(
                     editable_item.flags()
@@ -792,7 +754,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
             self._fsect_table.setItem(row_index, 1, start_item)
             self._fsect_table.setItem(row_index, 2, end_item)
-            self._fsect_table.setItem(row_index, 3, type_item)
             combo = QtWidgets.QComboBox()
             for label, surface_type, type2 in self._fsect_type_options():
                 combo.addItem(label, (surface_type, type2))
@@ -804,7 +765,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     row, widget
                 )
             )
-            self._fsect_table.setCellWidget(row_index, 4, combo)
+            self._fsect_table.setCellWidget(row_index, 3, combo)
         if not fsects:
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
@@ -882,7 +843,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Index",
                 f"Start DLAT ({unit_label})",
                 f"End DLAT ({unit_label})",
-                "Type Description",
                 "Type Selection",
             ]
         )
@@ -919,9 +879,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if selection is None:
             return
         surface_type, type2 = selection
-        type_item = self._fsect_table.item(row_index, 3)
-        if type_item is not None:
-            type_item.setText(self._fsect_type_description(surface_type, type2))
         self._preview.update_fsection_type(
             section_index,
             row_index,
