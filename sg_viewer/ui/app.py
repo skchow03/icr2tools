@@ -225,9 +225,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_elevation_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
-        self._xsect_elevation_table.horizontalHeader().setStretchLastSection(True)
+        self._xsect_elevation_table.horizontalHeader().setStretchLastSection(False)
         self._xsect_elevation_table.setSizeAdjustPolicy(
             QtWidgets.QAbstractScrollArea.AdjustToContents
+        )
+        self._xsect_elevation_table.setSizePolicy(
+            QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Preferred
         )
         self._xsect_elevation_table.setMinimumHeight(140)
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -582,6 +585,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 and 0 <= selected_index < self._xsect_elevation_table.rowCount()
             ):
                 self._xsect_elevation_table.setCurrentCell(selected_index, 0)
+            self._xsect_elevation_table.resizeColumnsToContents()
             self._xsect_elevation_table.setEnabled(enabled)
         finally:
             self._xsect_elevation_table.blockSignals(False)
