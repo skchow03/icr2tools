@@ -281,8 +281,8 @@ class SGViewerController:
         self._window.xsect_elevation_table.cellChanged.connect(
             self._on_xsect_table_cell_changed
         )
-        self._window.xsect_altitude_units_combo.currentIndexChanged.connect(
-            self._on_xsect_altitude_units_changed
+        self._window.measurement_units_combo.currentIndexChanged.connect(
+            self._on_measurement_units_changed
         )
 
     def _should_confirm_reset(self) -> bool:
@@ -1184,18 +1184,26 @@ class SGViewerController:
     def _on_altitude_range_changed(self) -> None:
         min_spin = self._window.altitude_min_spin
         max_spin = self._window.altitude_max_spin
-        min_value = min_spin.value()
-        max_value = max_spin.value()
+        min_value = self._window.altitude_display_to_feet(min_spin.value())
+        max_value = self._window.altitude_display_to_feet(max_spin.value())
+        min_gap = self._window.altitude_display_step()
+        min_gap_feet = self._window.altitude_display_to_feet(min_gap)
         if min_value >= max_value:
             if self.sender() is min_spin:
-                max_value = min(min_value + 0.1, max_spin.maximum())
+                max_value = min(
+                    min_value + min_gap_feet,
+                    self._window.altitude_display_to_feet(max_spin.maximum()),
+                )
                 max_spin.blockSignals(True)
-                max_spin.setValue(max_value)
+                max_spin.setValue(self._window.feet_to_altitude_display(max_value))
                 max_spin.blockSignals(False)
             else:
-                min_value = max(max_value - 0.1, min_spin.minimum())
+                min_value = max(
+                    max_value - min_gap_feet,
+                    self._window.altitude_display_to_feet(min_spin.minimum()),
+                )
                 min_spin.blockSignals(True)
-                min_spin.setValue(min_value)
+                min_spin.setValue(self._window.feet_to_altitude_display(min_value))
                 min_spin.blockSignals(False)
 
         min_slider = feet_to_slider_units(min_value)
@@ -1441,7 +1449,8 @@ class SGViewerController:
             enabled=enabled,
         )
 
-    def _on_xsect_altitude_units_changed(self) -> None:
+    def _on_measurement_units_changed(self) -> None:
+        self._refresh_elevation_inputs()
         self._window.update_xsect_table_headers()
         self._refresh_xsect_elevation_table()
 
