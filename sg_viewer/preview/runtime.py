@@ -179,6 +179,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._node_radius_px,
             self._stop_panning,
             show_status=self._show_status,
+            emit_command=self._execute_ux_command,
             emit_drag_state_changed=self._emit_interaction_drag_changed,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
             apply_preview_to_sgfile=self.sync_preview_to_sgfile_if_loaded,

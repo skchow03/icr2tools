@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Callable
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry.derived_geometry import DerivedGeometry
+from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
+from sg_viewer.geometry.connect_curve_to_straight import (
+    solve_curve_end_to_straight_start,
+    solve_straight_end_to_curve_endpoint,
+)
+from sg_viewer.geometry.sg_geometry import update_section_geometry
+from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.models import preview_state, selection
 from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.models.preview_state_utils import is_disconnected_endpoint
 from sg_viewer.models.sg_model import PreviewData
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.creation_controller import CreationController
@@ -21,6 +30,12 @@ from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_viewport import PreviewViewport
+from sg_viewer.ui.ux.commands import (
+    ConnectSectionsCommand,
+    DisconnectSectionEndCommand,
+    DragNodeCommand,
+    UXCommand,
+)
 from sg_viewer.preview.runtime_ops.base_context import Point, Transform
 
 
@@ -140,6 +155,7 @@ class _RuntimeCoreBaseMixin:
             self._node_radius_px,
             self._stop_panning,
             show_status=self._show_status,
+            emit_command=self._execute_ux_command,
             emit_drag_state_changed=self._emit_interaction_drag_changed,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
             apply_preview_to_sgfile=self.sync_preview_to_sgfile_if_loaded,
@@ -185,6 +201,178 @@ class _RuntimeCoreBaseMixin:
     def _stop_panning(self) -> None:
         self._interaction_state.stop_panning()
         self._transform_controller.end_pan()
+
+    def _execute_ux_command(self, command: UXCommand) -> None:
+        if isinstance(command, DisconnectSectionEndCommand):
+            self._disconnect_section_end(command)
+            return
+        if isinstance(command, ConnectSectionsCommand):
+            self._connect_sections(command)
+            return
+        if isinstance(command, DragNodeCommand):
+            self._commit_dragged_node(command)
+
+    def _commit_dragged_node(self, command: DragNodeCommand) -> None:
+        sections = list(self._section_manager.sections)
+        if not (0 <= command.section < len(sections)):
+            return
+        self.set_sections(sections, changed_indices=[command.section])
+
+    def _disconnect_section_end(self, command: DisconnectSectionEndCommand) -> None:
+        sections = self._section_manager.sections
+        sect_index = command.section
+        endtype = command.end
+        if not (0 <= sect_index < len(sections)):
+            return
+
+        neighbor_index = (
+            sections[sect_index].previous_id if endtype == "start" else sections[sect_index].next_id
+        )
+        updated_sections = self._editor.disconnect_neighboring_section(
+            list(sections), sect_index, endtype
+        )
+        self.set_sections(updated_sections)
+
+        affected_indices = [sect_index]
+        if (
+            neighbor_index is not None
+            and 0 <= neighbor_index < len(sections)
+            and neighbor_index != sect_index
+        ):
+            affected_indices.append(neighbor_index)
+        self.recalculate_elevations(affected_indices)
+
+    def _connect_sections(self, command: ConnectSectionsCommand) -> None:
+        sections = list(self._section_manager.sections)
+        if not sections:
+            return
+
+        src_index, src_end = command.from_section, command.from_end
+        tgt_index, tgt_end = command.to_section, command.to_end
+        if src_index == tgt_index:
+            return
+        if src_index < 0 or src_index >= len(sections) or tgt_index < 0 or tgt_index >= len(sections):
+            return
+
+        src_section = sections[src_index]
+        tgt_section = sections[tgt_index]
+        if not is_disconnected_endpoint(sections, src_section, src_end):
+            return
+        if not is_disconnected_endpoint(sections, tgt_section, tgt_end):
+            return
+
+        if (
+            src_section.type_name == "curve"
+            and src_end == "end"
+            and tgt_section.type_name == "straight"
+            and tgt_end == "start"
+        ):
+            result = solve_curve_end_to_straight_start(src_section, tgt_section)
+            if result is None:
+                return
+            new_curve, new_straight = result
+            self._sync_fsects_on_connection((src_index, src_end), (tgt_index, tgt_end))
+            self._apply_curve_straight_connection(
+                curve_idx=src_index,
+                curve_end=src_end,
+                straight_idx=tgt_index,
+                straight_end=tgt_end,
+                curve=new_curve,
+                straight=new_straight,
+            )
+            return
+
+        if src_section.type_name == "straight" and tgt_section.type_name == "curve":
+            result = solve_straight_end_to_curve_endpoint(
+                src_section,
+                src_end,
+                tgt_section,
+                tgt_end,
+            )
+            if result is None:
+                return
+            new_straight, new_curve = result
+            self._sync_fsects_on_connection((src_index, src_end), (tgt_index, tgt_end))
+            self._apply_curve_straight_connection(
+                curve_idx=tgt_index,
+                curve_end=tgt_end,
+                straight_idx=src_index,
+                straight_end=src_end,
+                curve=new_curve,
+                straight=new_straight,
+            )
+            return
+
+        if src_end == "start":
+            src_section = replace(src_section, previous_id=tgt_index)
+        else:
+            src_section = replace(src_section, next_id=tgt_index)
+
+        if tgt_end == "start":
+            tgt_section = replace(tgt_section, previous_id=src_index)
+        else:
+            tgt_section = replace(tgt_section, next_id=src_index)
+
+        sections[src_index] = update_section_geometry(src_section)
+        sections[tgt_index] = update_section_geometry(tgt_section)
+
+        self._sync_fsects_on_connection((src_index, src_end), (tgt_index, tgt_end))
+        self._finalize_connection_updates(
+            old_sections=list(self._section_manager.sections),
+            updated_sections=sections,
+            changed_indices=[src_index, tgt_index],
+        )
+
+    def _apply_curve_straight_connection(
+        self,
+        *,
+        curve_idx: int,
+        curve_end: str,
+        straight_idx: int,
+        straight_end: str,
+        curve,
+        straight,
+    ) -> None:
+        old_sections = list(self._section_manager.sections)
+        sections = list(self._section_manager.sections)
+
+        if curve_end == "start":
+            curve = replace(curve, previous_id=straight_idx)
+        else:
+            curve = replace(curve, next_id=straight_idx)
+
+        if straight_end == "start":
+            straight = replace(straight, previous_id=curve_idx)
+        else:
+            straight = replace(straight, next_id=curve_idx)
+
+        sections[curve_idx] = update_section_geometry(curve)
+        sections[straight_idx] = update_section_geometry(straight)
+
+        self._finalize_connection_updates(
+            old_sections=old_sections,
+            updated_sections=sections,
+            changed_indices=[curve_idx, straight_idx],
+        )
+
+    def _finalize_connection_updates(
+        self,
+        *,
+        old_sections: list,
+        updated_sections: list,
+        changed_indices: list[int],
+    ) -> None:
+        old_closed = is_closed_loop(old_sections)
+        new_closed = is_closed_loop(updated_sections)
+        sections = updated_sections
+
+        if not old_closed and new_closed:
+            sections = canonicalize_closed_loop(sections, start_idx=0)
+            self.set_sections(sections, changed_indices=changed_indices)
+            self.sync_preview_to_sgfile_if_loaded()
+            self._show_status("Closed loop detected — track direction fixed")
+        else:
+            self.set_sections(sections, changed_indices=changed_indices)
 
     # ------------------------------------------------------------------
     # State delegation

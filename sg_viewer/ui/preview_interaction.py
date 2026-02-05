@@ -28,9 +28,14 @@ from sg_viewer.preview.preview_mutations import (
     translate_section,
     update_straight_endpoints,
 )
+from sg_viewer.ui.ux.commands import (
+    ConnectSectionsCommand,
+    DisconnectSectionEndCommand,
+    DragNodeCommand,
+    UXCommand,
+)
 
 from sg_viewer.geometry.topology import is_closed_loop
-from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
 
 
 if TYPE_CHECKING:
@@ -41,7 +46,6 @@ if TYPE_CHECKING:
 
 
 Point = tuple[float, float]
-DEBUG_LOOP_DETECTION = True
 
 
 class PreviewInteraction:
@@ -57,6 +61,7 @@ class PreviewInteraction:
         node_radius_px: int,
         stop_panning: Callable[[], None],
         show_status: Callable[[str], None],
+        emit_command: Callable[[UXCommand], None],
         emit_drag_state_changed: Callable[[bool], None] | None = None,
         sync_fsects_on_connection: Callable[
             [tuple[int, str], tuple[int, str]], None
@@ -75,10 +80,8 @@ class PreviewInteraction:
         self._node_radius_px = node_radius_px
         self._stop_panning = stop_panning
         self._show_status = show_status
+        self._emit_command = emit_command
         self._emit_drag_state_changed = emit_drag_state_changed
-        self._sync_fsects_on_connection = sync_fsects_on_connection
-        self._apply_preview_to_sgfile = apply_preview_to_sgfile
-        self._recalculate_elevations = recalculate_elevations
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -163,7 +166,9 @@ class PreviewInteraction:
             if selected_section is None or selected_section != hit[0]:
                 return False
 
-            self._disconnect_node(hit)
+            self._emit_command(
+                DisconnectSectionEndCommand(section=hit[0], end=hit[1])
+            )
             event.accept()
             return True
 
@@ -276,18 +281,13 @@ class PreviewInteraction:
                             return True
 
                         new_curve, new_straight = result
-                        if self._sync_fsects_on_connection is not None:
-                            self._sync_fsects_on_connection(
-                                (dragged_idx, dragged_end),
-                                (target_idx, target_end),
+                        self._emit_command(
+                            ConnectSectionsCommand(
+                                from_section=dragged_idx,
+                                from_end=dragged_end,
+                                to_section=target_idx,
+                                to_end=target_end,
                             )
-                        self._apply_curve_straight_connection(
-                            curve_idx=dragged_idx,
-                            curve_end=dragged_end,
-                            straight_idx=target_idx,
-                            straight_end=target_end,
-                            curve=new_curve,
-                            straight=new_straight,
                         )
 
                         self._show_status("Curve → straight connected")
@@ -311,19 +311,13 @@ class PreviewInteraction:
                             return True
 
                         new_straight, new_curve = result
-                        if self._sync_fsects_on_connection is not None:
-                            self._sync_fsects_on_connection(
-                                (dragged_idx, dragged_end),
-                                (target_idx, target_end),
+                        self._emit_command(
+                            ConnectSectionsCommand(
+                                from_section=dragged_idx,
+                                from_end=dragged_end,
+                                to_section=target_idx,
+                                to_end=target_end,
                             )
-
-                        self._apply_curve_straight_connection(
-                            curve_idx=target_idx,
-                            curve_end=target_end,
-                            straight_idx=dragged_idx,
-                            straight_end=dragged_end,
-                            curve=new_curve,
-                            straight=new_straight,
                         )
 
                         self._show_status("Straight → curve connected")
@@ -338,7 +332,14 @@ class PreviewInteraction:
             connection_target = self._connection_target
             self._end_node_drag()
             if active_node is not None and connection_target is not None:
-                self._connect_nodes(active_node, connection_target)
+                self._emit_command(
+                    ConnectSectionsCommand(
+                        from_section=active_node[0],
+                        from_end=active_node[1],
+                        to_section=connection_target[0],
+                        to_end=connection_target[1],
+                    )
+                )
             event.accept()
             return True
         if self._is_dragging_section:
@@ -455,32 +456,12 @@ class PreviewInteraction:
             return True
 
         if allow_disconnect:
-            self._disconnect_node(node)
+            self._emit_command(
+                DisconnectSectionEndCommand(section=node[0], end=node[1])
+            )
             return True
 
         return False
-
-    def _disconnect_node(self, node: tuple[int, str]) -> None:
-        sect_index, endtype = node
-        sections = self._section_manager.sections
-        neighbor_index: int | None
-        if endtype == "start":
-            neighbor_index = sections[sect_index].previous_id
-        else:
-            neighbor_index = sections[sect_index].next_id
-        updated_sections = self._editor.disconnect_neighboring_section(
-            list(sections), sect_index, endtype
-        )
-        self._apply_section_updates(updated_sections)
-        if self._recalculate_elevations is not None:
-            affected_indices = [sect_index]
-            if (
-                neighbor_index is not None
-                and 0 <= neighbor_index < len(sections)
-                and neighbor_index != sect_index
-            ):
-                affected_indices.append(neighbor_index)
-            self._recalculate_elevations(affected_indices)
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
         widget_size = self._context.widget_size()
@@ -608,9 +589,22 @@ class PreviewInteraction:
         self._context.request_repaint()
 
     def _end_node_drag(self) -> None:
+        if self._active_node is not None:
+            section_index, endtype = self._active_node
+            sections = self._section_manager.sections
+            if 0 <= section_index < len(sections):
+                section = sections[section_index]
+                new_position = section.start if endtype == "start" else section.end
+                self._emit_command(
+                    DragNodeCommand(
+                        section=section_index,
+                        end=endtype,
+                        new_position=new_position,
+                    )
+                )
         if self._drag_state_active:
             self._section_manager.set_preview_mode(False)
-            self._set_sections(list(self._section_manager.sections))
+            self._section_manager.clear_drag_preview()
         self._clear_drag_state()
 
     def _clear_drag_state(self) -> None:
@@ -619,51 +613,6 @@ class PreviewInteraction:
         self._connection_target = None
         self._set_drag_state(False)
         self._context.end_drag_transform()
-
-    def _connect_nodes(
-        self, source: tuple[int, str], target: tuple[int, str]
-    ) -> None:
-        sections = list(self._section_manager.sections)
-
-        if not sections:
-            return
-
-        src_index, src_end = source
-        tgt_index, tgt_end = target
-
-        if src_index == tgt_index:
-            return
-
-        if src_index < 0 or src_index >= len(sections):
-            return
-        if tgt_index < 0 or tgt_index >= len(sections):
-            return
-
-        src_section = sections[src_index]
-        tgt_section = sections[tgt_index]
-
-        if not is_disconnected_endpoint(sections, src_section, src_end):
-            return
-        if not is_disconnected_endpoint(sections, tgt_section, tgt_end):
-            return
-
-        if src_end == "start":
-            src_section = replace(src_section, previous_id=tgt_index)
-        else:
-            src_section = replace(src_section, next_id=tgt_index)
-
-        if tgt_end == "start":
-            tgt_section = replace(tgt_section, previous_id=src_index)
-        else:
-            tgt_section = replace(tgt_section, next_id=src_index)
-
-        sections[src_index] = update_section_geometry(src_section)
-        sections[tgt_index] = update_section_geometry(tgt_section)
-
-        if self._sync_fsects_on_connection is not None:
-            self._sync_fsects_on_connection(source, target)
-
-        self._apply_section_updates(sections, changed_indices=[src_index, tgt_index])
 
     # ------------------------------------------------------------------
     # Section dragging
@@ -768,96 +717,6 @@ class PreviewInteraction:
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
-    def _apply_curve_straight_connection(
-        self,
-        *,
-        curve_idx: int,
-        curve_end: str,
-        straight_idx: int,
-        straight_end: str,
-        curve: "SectionPreview",
-        straight: "SectionPreview",
-    ) -> None:
-        old_sections = list(self._section_manager.sections)
-        sections = list(self._section_manager.sections)
-
-        if curve_end == "start":
-            curve = replace(curve, previous_id=straight_idx)
-        else:
-            curve = replace(curve, next_id=straight_idx)
-
-        if straight_end == "start":
-            straight = replace(straight, previous_id=curve_idx)
-        else:
-            straight = replace(straight, next_id=curve_idx)
-
-        sections[curve_idx] = update_section_geometry(curve)
-        sections[straight_idx] = update_section_geometry(straight)
-
-        self._finalize_connection_updates(
-            old_sections,
-            sections,
-            start_idx=curve_idx,
-            changed_indices=[curve_idx, straight_idx],
-        )
-
-    def _finalize_connection_updates(
-        self,
-        old_sections: list["SectionPreview"],
-        updated_sections: list["SectionPreview"],
-        *,
-        start_idx: int,
-        changed_indices: list[int],
-    ) -> None:
-        if self._drag_state_active:
-            self._section_manager.set_preview_mode(False)
-            self._section_manager.clear_drag_preview()
-
-        old_closed = is_closed_loop(old_sections)
-        new_closed = is_closed_loop(updated_sections)
-
-        sections = updated_sections
-
-        if DEBUG_LOOP_DETECTION:
-            print("=== LOOP DETECTION CHECK ===")
-            print(f"Old closed: {old_closed}")
-            print(f"New closed: {new_closed}")
-            print(f"Sections: {len(sections)}")
-            for i, s in enumerate(sections):
-                print(f"  [{i}] prev={s.previous_id} next={s.next_id}")
-
-        if not old_closed and new_closed:
-            # Preserve Section 0 as the canonical start so the start/finish marker
-            # always remains anchored to the beginning of the first section.
-            canonical_start_idx = 0
-            sections = canonicalize_closed_loop(
-                sections,
-                start_idx=canonical_start_idx,
-            )
-
-            self._set_sections(sections, changed_indices=changed_indices)
-
-            # Closing by endpoint connection can reorder/reverse sections. Persist
-            # the canonicalized preview ordering back into SG immediately so
-            # altitude/grade arrays stay aligned with preview indices.
-            if self._apply_preview_to_sgfile is not None:
-                self._apply_preview_to_sgfile()
-
-            self._show_status("Closed loop detected — track direction fixed")
-        else:
-            self._set_sections(sections, changed_indices=changed_indices)
-
-        sections = self._section_manager.sections
-
-        if DEBUG_LOOP_DETECTION and not new_closed:
-            disconnected = []
-            for i, s in enumerate(sections):
-                if s.previous_id is None or s.next_id is None:
-                    disconnected.append(i)
-
-            if disconnected:
-                print("Not closed — disconnected sections:", disconnected)
-
     def _apply_section_updates(
         self,
         sections: list["SectionPreview"],
