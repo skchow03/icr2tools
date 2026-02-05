@@ -94,6 +94,13 @@ class _RuntimePersistenceMixin:
     def has_unsaved_changes(self) -> bool:
         return self._has_unsaved_changes
 
+
+    def sync_preview_to_sgfile_if_loaded(self) -> bool:
+        if self._sgfile is None:
+            return False
+        self.apply_preview_to_sgfile()
+        return True
+
     def apply_preview_to_sgfile(self) -> SGFile:
         if self._sgfile is None:
             raise ValueError("No SG file loaded.")
