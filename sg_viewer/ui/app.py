@@ -364,7 +364,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Altitude/Grade")
         self._right_sidebar_tabs.addTab(fsect_sidebar, "Fsects")
-        self._right_sidebar_tabs.setMinimumWidth(self._right_sidebar_tabs.sizeHint().width())
+        # Avoid locking the splitter to the tabs' initial size hint (which can become
+        # very wide due to table content) so users can shrink the right sidebar.
+        self._right_sidebar_tabs.setMinimumWidth(260)
+        self._right_sidebar_tabs.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Expanding,
+        )
 
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
