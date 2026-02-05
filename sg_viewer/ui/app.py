@@ -13,8 +13,9 @@ from sg_viewer.ui.altitude_units import (
     DEFAULT_ALTITUDE_MIN_FEET,
     feet_from_500ths,
     feet_from_slider_units,
-    feet_to_500ths,
     feet_to_slider_units,
+    units_from_500ths,
+    units_to_500ths,
 )
 from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.fsect_diagram_widget import FsectDiagramWidget
@@ -155,6 +156,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._end_point_label = QtWidgets.QLabel("End Point: –")
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
+        self._measurement_units_combo.addItem("Meter", "meter")
+        self._measurement_units_combo.addItem("Inch", "inch")
         self._measurement_units_combo.addItem("500ths", "500ths")
         self._measurement_units_combo.setCurrentIndex(0)
         self._measurement_units_combo.currentIndexChanged.connect(
@@ -602,6 +605,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_slider.blockSignals(False)
         self._grade_slider.blockSignals(False)
 
+    def _current_measurement_unit(self) -> str:
+        return str(self._measurement_units_combo.currentData())
+
+    @staticmethod
+    def _measurement_unit_label(unit: str) -> str:
+        return {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}.get(unit, "500ths")
+
+    @staticmethod
+    def _measurement_unit_decimals(unit: str) -> int:
+        return {"feet": 1, "meter": 3, "inch": 1, "500ths": 0}.get(unit, 0)
+
+    @staticmethod
+    def _measurement_unit_step(unit: str) -> float:
+        return {"feet": 0.1, "meter": 0.05, "inch": 1.0, "500ths": 50.0}.get(unit, 50.0)
+
     def update_xsect_table_headers(self) -> None:
         unit_label = self._xsect_altitude_units_label()
         self._xsect_elevation_table.setHorizontalHeaderLabels(
@@ -609,31 +627,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _xsect_altitude_units_label(self) -> str:
-        unit = self._measurement_units_combo.currentData()
-        return "ft" if unit == "feet" else "500ths"
+        return self._measurement_unit_label(self._current_measurement_unit())
 
     def xsect_altitude_to_display_units(self, value: int) -> float:
-        if self._measurement_units_combo.currentData() == "feet":
-            return feet_from_500ths(value)
-        return float(value)
+        return units_from_500ths(value, self._current_measurement_unit())
 
     def xsect_altitude_from_display_units(self, value: float) -> int:
-        if self._measurement_units_combo.currentData() == "feet":
-            return feet_to_500ths(value)
-        return int(round(value))
+        return units_to_500ths(value, self._current_measurement_unit())
 
     def _format_xsect_altitude(self, value: int) -> str:
         display_value = self.xsect_altitude_to_display_units(value)
-        if self._measurement_units_combo.currentData() == "feet":
-            return f"{display_value:.1f}"
-        return f"{int(round(display_value))}"
+        decimals = self._measurement_unit_decimals(self._current_measurement_unit())
+        if decimals == 0:
+            return f"{int(round(display_value))}"
+        return f"{display_value:.{decimals}f}"
 
     def update_grade_display(self, value: int) -> None:
         self._grade_value_label.setText(str(value))
 
     def update_altitude_display(self, value: int) -> None:
         altitude_feet = feet_from_slider_units(value)
-        altitude = feet_to_500ths(altitude_feet)
+        altitude = units_to_500ths(altitude_feet, "feet")
         self._altitude_value_label.setText(self._format_altitude_for_units(altitude))
 
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
@@ -858,68 +872,54 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _fsect_dlat_units_label(self) -> str:
-        unit = self._measurement_units_combo.currentData()
-        return "ft" if unit == "feet" else "500ths"
+        return self._measurement_unit_label(self._current_measurement_unit())
 
     def _fsect_dlat_to_display_units(self, value: float) -> float:
-        if self._measurement_units_combo.currentData() == "feet":
-            return value / 6000.0
-        return value
+        return units_from_500ths(value, self._current_measurement_unit())
 
     def _fsect_dlat_from_display_units(self, value: float) -> float:
-        if self._measurement_units_combo.currentData() == "feet":
-            return value * 6000.0
-        return value
+        return float(units_to_500ths(value, self._current_measurement_unit()))
 
     def _format_fsect_dlat(self, value: float) -> str:
         display_value = self._fsect_dlat_to_display_units(value)
-        if self._measurement_units_combo.currentData() == "feet":
-            return f"{display_value:.3f}".rstrip("0").rstrip(".")
-        return f"{int(round(display_value))}"
+        decimals = self._measurement_unit_decimals(self._current_measurement_unit())
+        if decimals == 0:
+            return f"{int(round(display_value))}"
+        return f"{display_value:.{decimals}f}".rstrip("0").rstrip(".")
 
     def altitude_display_to_feet(self, value: float) -> float:
-        if self._measurement_units_combo.currentData() == "feet":
-            return value
-        return feet_from_500ths(int(round(value)))
+        altitude_500ths = units_to_500ths(value, self._current_measurement_unit())
+        return feet_from_500ths(altitude_500ths)
 
     def feet_to_altitude_display(self, value_feet: float) -> float:
-        if self._measurement_units_combo.currentData() == "feet":
-            return value_feet
-        return float(feet_to_500ths(value_feet))
+        altitude_500ths = units_to_500ths(value_feet, "feet")
+        return units_from_500ths(altitude_500ths, self._current_measurement_unit())
 
     def altitude_display_step(self) -> float:
-        return 0.1 if self._measurement_units_combo.currentData() == "feet" else 50.0
+        return self._measurement_unit_step(self._current_measurement_unit())
 
     def _format_altitude_for_units(self, altitude_500ths: int) -> str:
-        if self._measurement_units_combo.currentData() == "feet":
-            return f"{feet_from_500ths(altitude_500ths):.1f}"
-        return f"{int(round(altitude_500ths))}"
+        unit = self._current_measurement_unit()
+        value = units_from_500ths(altitude_500ths, unit)
+        decimals = self._measurement_unit_decimals(unit)
+        if decimals == 0:
+            return f"{int(round(value))}"
+        return f"{value:.{decimals}f}"
 
     def _sync_altitude_range_spin_units(self, previous_unit: str) -> None:
-        is_feet = self._measurement_units_combo.currentData() == "feet"
-        min_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
-        max_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
+        current_unit = self._current_measurement_unit()
 
-        current_min_value = self._altitude_min_spin.value()
-        current_max_value = self._altitude_max_spin.value()
-        if previous_unit == "feet":
-            current_min_feet = current_min_value
-            current_max_feet = current_max_value
-        else:
-            current_min_feet = feet_from_500ths(int(round(current_min_value)))
-            current_max_feet = feet_from_500ths(int(round(current_max_value)))
+        current_min_500ths = units_to_500ths(self._altitude_min_spin.value(), previous_unit)
+        current_max_500ths = units_to_500ths(self._altitude_max_spin.value(), previous_unit)
 
-        current_min_display = (
-            current_min_feet if is_feet else float(feet_to_500ths(current_min_feet))
-        )
-        current_max_display = (
-            current_max_feet if is_feet else float(feet_to_500ths(current_max_feet))
-        )
-        spin_decimals = 1 if is_feet else 0
-        spin_step = 0.1 if is_feet else 50.0
-        spin_min = min_feet if is_feet else float(SGDocument.ELEVATION_MIN)
-        spin_max = max_feet if is_feet else float(SGDocument.ELEVATION_MAX)
-        suffix = " ft" if is_feet else " 500ths"
+        current_min_display = units_from_500ths(current_min_500ths, current_unit)
+        current_max_display = units_from_500ths(current_max_500ths, current_unit)
+
+        spin_decimals = self._measurement_unit_decimals(current_unit)
+        spin_step = self._measurement_unit_step(current_unit)
+        spin_min = units_from_500ths(SGDocument.ELEVATION_MIN, current_unit)
+        spin_max = units_from_500ths(SGDocument.ELEVATION_MAX, current_unit)
+        suffix = f" {self._measurement_unit_label(current_unit)}"
 
         for spin in (self._altitude_min_spin, self._altitude_max_spin):
             spin.blockSignals(True)

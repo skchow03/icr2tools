@@ -18,6 +18,7 @@ from sg_viewer.ui.altitude_units import (
     feet_from_slider_units,
     feet_to_500ths,
     feet_to_slider_units,
+    units_from_500ths,
 )
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
@@ -966,10 +967,19 @@ class SGViewerController:
     def _populate_xsect_choices(self, preferred_index: int | None = None) -> None:
         metadata = self._window.preview.get_xsect_metadata()
         combo = self._window.xsect_combo
+        unit = str(self._window.measurement_units_combo.currentData())
+        unit_label = {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}.get(unit, "500ths")
+        decimals = {"feet": 1, "meter": 3, "inch": 1, "500ths": 0}.get(unit, 0)
+
         combo.blockSignals(True)
         combo.clear()
         for idx, dlat in metadata:
-            combo.addItem(f"{idx} (DLAT {dlat:.0f})", idx)
+            display_dlat = units_from_500ths(dlat, unit)
+            if decimals == 0:
+                formatted_dlat = f"{int(round(display_dlat))}"
+            else:
+                formatted_dlat = f"{display_dlat:.{decimals}f}".rstrip("0").rstrip(".")
+            combo.addItem(f"{idx} (DLAT {formatted_dlat} {unit_label})", idx)
         combo.setEnabled(bool(metadata))
         if metadata:
             target_index = 0
@@ -1450,6 +1460,8 @@ class SGViewerController:
         )
 
     def _on_measurement_units_changed(self) -> None:
+        selected_xsect = self._current_xsect_index()
+        self._populate_xsect_choices(preferred_index=selected_xsect)
         self._refresh_elevation_inputs()
         self._window.update_xsect_table_headers()
         self._refresh_xsect_elevation_table()
