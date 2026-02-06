@@ -10,8 +10,8 @@ from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.creation_controller import CreationController, CreationUpdate
 from sg_viewer.preview.preview_defaults import create_empty_sgfile
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.sg_preview.transform import ViewTransform
-from sg_viewer.sg_preview.view_state import SgPreviewViewState
+from sg_viewer.preview.transform import ViewTransform
+from sg_viewer.models.preview_state import SgPreviewViewState
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.preview.runtime_ops.base_context import Point, logger

@@ -3,17 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_sg_preview_independence() -> None:
+def test_sg_preview_removed() -> None:
     preview_root = Path(__file__).resolve().parents[1] / "sg_viewer" / "sg_preview"
-    assert preview_root.is_dir(), "sg_preview package is missing"
+    assert not preview_root.exists(), "sg_preview package should be removed"
 
-    forbidden = ["track_viewer", "trk", "TrackPreview"]
+
+def test_no_sg_preview_imports() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    forbidden = "sg_viewer.sg_preview"
     hits: list[str] = []
 
-    for path in preview_root.rglob("*.py"):
+    for path in repo_root.rglob("*.py"):
+        if path == Path(__file__):
+            continue
         content = path.read_text(encoding="utf-8")
-        for token in forbidden:
-            if token in content:
-                hits.append(f"{path}: {token}")
+        if forbidden in content:
+            hits.append(str(path))
 
-    assert not hits, "Forbidden preview dependencies found:\n" + "\n".join(hits)
+    assert not hits, "Found imports referencing sg_preview:\n" + "\n".join(hits)

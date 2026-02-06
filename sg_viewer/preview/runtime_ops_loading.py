@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from sg_viewer.sg_preview.builder import build_sg_preview_model
+from sg_viewer.preview.sg_overlay_builder import build_sg_preview_model
 from sg_viewer.services import preview_loader_service
 
 

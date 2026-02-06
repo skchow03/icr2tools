@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -13,6 +13,45 @@ class TransformState:
     current_scale: float | None = None
     view_center: Point | None = None
     user_transform_active: bool = False
+
+
+@dataclass(frozen=True)
+class SgBoundaryGeom:
+    id: int
+    points: List[Point]
+    is_closed: bool
+    attrs: dict
+
+
+@dataclass(frozen=True)
+class SgSurfaceGeom:
+    id: int
+    outline: List[Point]
+    holes: List[List[Point]]
+    attrs: dict
+
+
+@dataclass(frozen=True)
+class SgFsectGeom:
+    id: int
+    surfaces: List[SgSurfaceGeom]
+    boundaries: List[SgBoundaryGeom]
+    attrs: dict
+
+
+@dataclass(frozen=True)
+class SgPreviewModel:
+    fsects: List[SgFsectGeom]
+    bounds: Optional[Tuple[float, float, float, float]]
+
+
+@dataclass
+class SgPreviewViewState:
+    selected_fsect_id: Optional[int] = None
+    selected_surface_id: Optional[int] = None
+    selected_boundary_id: Optional[int] = None
+    show_surfaces: bool = True
+    show_boundaries: bool = True
 
 
 def default_center(sampled_bounds: tuple[float, float, float, float] | None) -> Point | None:

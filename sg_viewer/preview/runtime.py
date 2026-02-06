@@ -21,7 +21,7 @@ from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.sg_preview.view_state import SgPreviewViewState
+from sg_viewer.models.preview_state import SgPreviewViewState
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
     compute_start_finish_mapping_from_centerline,
