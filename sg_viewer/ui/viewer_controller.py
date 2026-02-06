@@ -72,6 +72,7 @@ class SGViewerController:
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
         self._clear_background_state()
+        logger.info("Loading SG file %s", path)
         try:
             self._window.preview.load_sg_file(path)
         except Exception as exc:

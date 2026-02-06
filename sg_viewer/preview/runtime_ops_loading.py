@@ -76,6 +76,12 @@ class _RuntimeLoadingMixin:
             self.clear()
             return
 
+        if data.sgfile is not None:
+            logger.debug(
+                "Loaded SG preview: sections=%d num_xsects=%s",
+                len(data.sgfile.sects),
+                getattr(data.sgfile, "num_xsects", None),
+            )
         self._preview_data = data
         self._fsects_by_section = preview_loader_service.build_fsects_by_section(
             data.sgfile

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Iterable
 
 from PyQt5 import QtCore
@@ -13,6 +14,8 @@ from sg_viewer.sg_document_fsects import (
     replace_fsections,
     update_fsection,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SGDocument(QtCore.QObject):
@@ -258,6 +261,12 @@ class SGDocument(QtCore.QObject):
         if sg_data is None:
             return
 
+        logger.debug(
+            "Validating SG data: header_sects=%s actual_sects=%s num_xsects=%s",
+            getattr(sg_data, "num_sects", None),
+            len(sg_data.sects),
+            getattr(sg_data, "num_xsects", None),
+        )
         if sg_data.num_sects != len(sg_data.sects):
             raise ValueError("Section count does not match SG header.")
 
@@ -270,6 +279,8 @@ class SGDocument(QtCore.QObject):
         total = len(sections_list)
         if total == 0:
             return
+
+        logger.debug("Validating section links: total=%d", total)
 
         for idx, section in enumerate(sections_list):
             sec_prev = int(getattr(section, "sec_prev", -1))
@@ -291,8 +302,44 @@ class SGDocument(QtCore.QObject):
                     valid_next.add(total)
 
             if sec_prev not in valid_prev:
+                logger.error(
+                    "Section link validation failed (prev): idx=%d total=%d sec_prev=%s "
+                    "sec_next=%s expected_prev=%s expected_next=%s valid_prev=%s valid_next=%s",
+                    idx,
+                    total,
+                    sec_prev,
+                    sec_next,
+                    expected_prev,
+                    expected_next,
+                    sorted(valid_prev),
+                    sorted(valid_next),
+                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    link_snapshot = [
+                        (i, int(getattr(sec, "sec_prev", -1)), int(getattr(sec, "sec_next", -1)))
+                        for i, sec in enumerate(sections_list)
+                    ]
+                    logger.debug("Section link snapshot: %s", link_snapshot)
                 raise ValueError(f"Section {idx} has invalid previous index {sec_prev}.")
             if sec_next not in valid_next:
+                logger.error(
+                    "Section link validation failed (next): idx=%d total=%d sec_prev=%s "
+                    "sec_next=%s expected_prev=%s expected_next=%s valid_prev=%s valid_next=%s",
+                    idx,
+                    total,
+                    sec_prev,
+                    sec_next,
+                    expected_prev,
+                    expected_next,
+                    sorted(valid_prev),
+                    sorted(valid_next),
+                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    link_snapshot = [
+                        (i, int(getattr(sec, "sec_prev", -1)), int(getattr(sec, "sec_next", -1)))
+                        for i, sec in enumerate(sections_list)
+                    ]
+                    logger.debug("Section link snapshot: %s", link_snapshot)
                 raise ValueError(f"Section {idx} has invalid next index {sec_next}.")
 
     def _validate_dlongs(self, sections: Iterable[object]) -> None:
