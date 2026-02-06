@@ -231,6 +231,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_max_spin.setKeyboardTracking(False)
         self._altitude_min_spin.setSuffix(" ft")
         self._altitude_max_spin.setSuffix(" ft")
+        self._altitude_set_range_button = QtWidgets.QPushButton("Set Range...")
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._grade_slider.setRange(-1000, 1000)
         self._grade_slider.setSingleStep(1)
@@ -241,6 +242,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_value_label = QtWidgets.QLabel("0")
         self._grade_value_label.setMinimumWidth(40)
         self._grade_value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self._grade_set_range_button = QtWidgets.QPushButton("Set Range...")
 
         navigation_layout = QtWidgets.QHBoxLayout()
         #navigation_layout.addWidget(self._new_track_button)
@@ -257,21 +259,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         altitude_layout.setContentsMargins(0, 0, 0, 0)
         altitude_layout.addWidget(self._altitude_slider, stretch=1)
         altitude_layout.addWidget(self._altitude_value_label)
+        altitude_layout.addWidget(self._altitude_set_range_button)
         altitude_container.setLayout(altitude_layout)
         elevation_layout.addRow("Altitude (xsect):", altitude_container)
-        altitude_range_container = QtWidgets.QWidget()
-        altitude_range_layout = QtWidgets.QHBoxLayout()
-        altitude_range_layout.setContentsMargins(0, 0, 0, 0)
-        altitude_range_layout.addWidget(self._altitude_min_spin)
-        altitude_range_layout.addWidget(QtWidgets.QLabel("to"))
-        altitude_range_layout.addWidget(self._altitude_max_spin)
-        altitude_range_container.setLayout(altitude_range_layout)
-        elevation_layout.addRow("Altitude range:", altitude_range_container)
         grade_container = QtWidgets.QWidget()
         grade_layout = QtWidgets.QHBoxLayout()
         grade_layout.setContentsMargins(0, 0, 0, 0)
         grade_layout.addWidget(self._grade_slider, stretch=1)
         grade_layout.addWidget(self._grade_value_label)
+        grade_layout.addWidget(self._grade_set_range_button)
         grade_container.setLayout(grade_layout)
         elevation_layout.addRow("Grade (xsect):", grade_container)
         altitude_grade_sidebar = QtWidgets.QWidget()
@@ -493,6 +489,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def grade_spin(self) -> QtWidgets.QSlider:
         return self._grade_slider
+
+    @property
+    def altitude_set_range_button(self) -> QtWidgets.QPushButton:
+        return self._altitude_set_range_button
+
+    @property
+    def grade_set_range_button(self) -> QtWidgets.QPushButton:
+        return self._grade_set_range_button
 
     @property
     def is_updating_xsect_table(self) -> bool:
