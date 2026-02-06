@@ -1,17 +1,32 @@
 from __future__ import annotations
 
 import json
+import sys
 from configparser import ConfigParser
 from pathlib import Path
+
+
+def _default_ini_path() -> Path:
+    """
+    Resolve the default INI path for SG Viewer.
+
+    - Frozen / EXE build: place ini next to the executable
+    - Source run: place ini next to this module
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "sg_viewer.ini"
+
+    return Path(__file__).resolve().parent / "sg_viewer.ini"
 
 
 class FileHistory:
     """Persistent history for SG viewer activity and background settings."""
 
-    DEFAULT_PATH = Path(__file__).resolve().parent / ".icr2tools_sg_viewer.ini"
+    DEFAULT_PATH = _default_ini_path()
     MAX_RECENT = 10
 
     def __init__(self, path: Path | None = None) -> None:
+        # Path resolves differently for source vs frozen executable
         self._path = path or self.DEFAULT_PATH
         self._config = ConfigParser(strict=False, delimiters=("=",))
         self._config.optionxform = str
