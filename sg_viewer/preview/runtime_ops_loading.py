@@ -71,6 +71,7 @@ class _RuntimeLoadingMixin:
     # ------------------------------------------------------------------
     def load_sg_file(self, path: Path) -> None:
         self.cancel_split_section()
+        self._last_load_warnings = []
         data = self._controller.load_sg_file(path)
         if data is None:
             self.clear()
@@ -99,11 +100,15 @@ class _RuntimeLoadingMixin:
         self._start_finish_dlong = None
         self._suppress_document_dirty = True
         self._document.set_sg_data(data.sgfile)
+        self._last_load_warnings = self._document.last_validation_warnings()
         self._suppress_document_dirty = False
         self._bump_sg_version()
         self._update_fit_scale()
         self._has_unsaved_changes = False
         self._context.request_repaint()
+
+    def last_load_warnings(self) -> list[str]:
+        return list(self._last_load_warnings)
 
     def refresh_geometry(self) -> None:
         self._refresh_from_document(mark_unsaved=True)
