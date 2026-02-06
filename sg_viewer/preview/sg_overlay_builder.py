@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Iterable, List, Optional, Tuple
 
-from sg_viewer.sg_preview.model import (
+from sg_viewer.models.preview_state import (
     Point,
     SgBoundaryGeom,
     SgFsectGeom,

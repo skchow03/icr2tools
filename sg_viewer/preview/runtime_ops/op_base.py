@@ -15,7 +15,7 @@ from sg_viewer.preview.interaction_state import InteractionState
 from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.sg_preview.view_state import SgPreviewViewState
+from sg_viewer.models.preview_state import SgPreviewViewState
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
