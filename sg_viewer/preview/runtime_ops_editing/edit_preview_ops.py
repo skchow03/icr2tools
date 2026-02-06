@@ -489,3 +489,35 @@ class _RuntimeEditPreviewOpsMixin:
 
         self.rebuild_after_start_finish(new_sections)
         self._show_status("Start/finish set to selected section (now section 0)")
+
+    def reindex_closed_loop_sections(self) -> tuple[list[tuple[int, int]] | None, str]:
+        sections = self._section_manager.sections
+        if not sections:
+            return None, "No sections loaded to reindex."
+
+        if not is_closed_loop(sections):
+            return None, "Track must be closed to reindex sections."
+
+        order = self._closed_loop_order(sections)
+        if not order or len(order) != len(sections):
+            return None, "Invalid loop topology; cannot reindex sections."
+
+        mapping = [(old_idx, new_idx) for new_idx, old_idx in enumerate(order)]
+        if len(order) == len(self._fsects_by_section):
+            self._fsects_by_section = [self._fsects_by_section[i] for i in order]
+
+        try:
+            new_sections = set_start_finish(sections, 0)
+        except (ValueError, RuntimeError):
+            return None, "Invalid loop topology; cannot reindex sections."
+
+        self.rebuild_after_start_finish(new_sections)
+        self._validate_section_fsects_alignment()
+        if self._sgfile is not None:
+            self.apply_preview_to_sgfile()
+
+        if order == list(range(len(sections))):
+            message = "Sections already follow loop order; indices refreshed."
+        else:
+            message = "Reindexed closed loop sections."
+        return mapping, message

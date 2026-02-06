@@ -172,6 +172,13 @@ class SGViewerController:
         self._scale_track_action.setEnabled(False)
         self._scale_track_action.triggered.connect(self._scale_track)
 
+        self._reindex_loop_action = QtWidgets.QAction(
+            "Reindex Closed Loop Sections",
+            self._window,
+        )
+        self._reindex_loop_action.setEnabled(False)
+        self._reindex_loop_action.triggered.connect(self._reindex_closed_loop_sections)
+
         self._convert_trk_action = QtWidgets.QAction(
             "Convert SG to TRK…",
             self._window,
@@ -236,6 +243,7 @@ class SGViewerController:
         tools_menu = self._window.menuBar().addMenu("Tools")
         tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
+        tools_menu.addAction(self._reindex_loop_action)
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._section_table_action)
@@ -909,6 +917,9 @@ class SGViewerController:
         self._scale_track_action.setEnabled(
             has_sections and is_closed_loop(sections)
         )
+        self._reindex_loop_action.setEnabled(
+            has_sections and is_closed_loop(sections)
+        )
 
         # Save is allowed once anything exists or changes
         self._save_action.setEnabled(True)
@@ -979,6 +990,26 @@ class SGViewerController:
         self._heading_table_window.show()
         self._heading_table_window.raise_()
         self._heading_table_window.activateWindow()
+
+    def _reindex_closed_loop_sections(self) -> None:
+        mapping, message = self._window.preview.reindex_closed_loop_sections()
+        if mapping is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Reindex Closed Loop",
+                message,
+            )
+            return
+
+        mapping_lines = "\n".join(f"{old} → {new}" for old, new in mapping)
+        details = (
+            f"{message}\n\nReindexed sections (old → new):\n{mapping_lines}"
+        )
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Reindex Closed Loop",
+            details,
+        )
 
     def _update_heading_table(self) -> None:
         if self._heading_table_window is None:
