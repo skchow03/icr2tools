@@ -18,6 +18,24 @@ Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
 BASE_WIDTH = 3.0
 
+@dataclass
+class PreviewColors:
+    background: QtGui.QColor
+    centerline: QtGui.QColor
+    nodes_connected: QtGui.QColor
+    nodes_disconnected: QtGui.QColor
+    radii: QtGui.QColor
+
+
+def default_preview_colors() -> PreviewColors:
+    return PreviewColors(
+        background=QtGui.QColor("black"),
+        centerline=QtGui.QColor("lightgray"),
+        nodes_connected=QtGui.QColor("limegreen"),
+        nodes_disconnected=QtGui.QColor("orange"),
+        radii=QtGui.QColor(140, 140, 140),
+    )
+
 
 @dataclass
 class BasePreviewState:
@@ -41,6 +59,9 @@ class BasePreviewState:
     split_hover_point: Point | None
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
+    centerline_color: QtGui.QColor
+    radii_color: QtGui.QColor
+    fsection_surface_colors: dict[int, QtGui.QColor]
 
 
 @dataclass
@@ -48,6 +69,8 @@ class NodeOverlayState:
     node_positions: dict[tuple[int, str], Point]
     node_status: dict[tuple[int, str], str]
     node_radius_px: float
+    nodes_connected_color: QtGui.QColor
+    nodes_disconnected_color: QtGui.QColor
     hovered_node: tuple[int, str] | None = None
     connection_target: tuple[int, str] | None = None
 
@@ -118,6 +141,7 @@ def paint_preview(
                 base_state.xsect_dlat,
                 transform,
                 widget_height,
+                base_state.radii_color,
             )
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
@@ -133,6 +157,8 @@ def paint_preview(
             base_state.fsections,
             transform,
             widget_height,
+            centerline_color=base_state.centerline_color,
+            fsection_surface_colors=base_state.fsection_surface_colors,
         )
 
         if base_state.show_curve_markers:
@@ -146,6 +172,7 @@ def paint_preview(
                 base_state.selected_curve_index,
                 transform,
                 widget_height,
+                base_state.radii_color,
             )
 
         _draw_start_finish_line(
@@ -287,6 +314,9 @@ def _draw_centerlines(
     fsections: list[PreviewFSection],
     transform: Transform,
     widget_height: int,
+    *,
+    centerline_color: QtGui.QColor,
+    fsection_surface_colors: dict[int, QtGui.QColor],
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -308,7 +338,7 @@ def _draw_centerlines(
         )
 
         for surface, pts in segments:
-            color = sg_rendering.SURFACE_COLORS.get(
+            color = fsection_surface_colors.get(
                 surface, sg_rendering.DEFAULT_SURFACE_COLOR
             )
             pen = QtGui.QPen(color)
@@ -323,7 +353,7 @@ def _draw_centerlines(
         for point in selected_section_points
     ]
     if len(selected_points) >= 2:
-        pen = QtGui.QPen(QtGui.QColor("yellow"))
+        pen = QtGui.QPen(centerline_color)
         pen.setWidthF(BASE_WIDTH + 1)
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
@@ -394,9 +424,15 @@ def _draw_curve_markers(
     selected_curve_index: int | None,
     transform: Transform,
     widget_height: int,
+    default_color: QtGui.QColor,
 ) -> None:
     sg_rendering.draw_curve_markers(
-        painter, sections, selected_curve_index, transform, widget_height
+        painter,
+        sections,
+        selected_curve_index,
+        transform,
+        widget_height,
+        default_color=default_color,
     )
 
 
@@ -515,13 +551,13 @@ def _draw_nodes(
 
     for _, (x, y) in green_nodes:
         point = _map_point((x, y), transform, widget_height)
-        painter.setBrush(QtGui.QColor("limegreen"))
+        painter.setBrush(node_state.nodes_connected_color)
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawEllipse(point, node_state.node_radius_px, node_state.node_radius_px)
 
     for _, (x, y) in orange_nodes:
         point = _map_point((x, y), transform, widget_height)
-        painter.setBrush(QtGui.QColor("orange"))
+        painter.setBrush(node_state.nodes_disconnected_color)
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawEllipse(point, node_state.node_radius_px, node_state.node_radius_px)
 
