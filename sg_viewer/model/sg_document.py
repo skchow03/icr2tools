@@ -282,9 +282,17 @@ class SGDocument(QtCore.QObject):
             if idx == total - 1 and total > 1:
                 expected_next = 0
 
-            if sec_prev not in (-1, expected_prev):
+            valid_prev = {-1, expected_prev}
+            valid_next = {-1, expected_next}
+            if total > 0:
+                if idx == 0:
+                    valid_prev.add(total)
+                if idx == total - 1:
+                    valid_next.add(total)
+
+            if sec_prev not in valid_prev:
                 raise ValueError(f"Section {idx} has invalid previous index {sec_prev}.")
-            if sec_next not in (-1, expected_next):
+            if sec_next not in valid_next:
                 raise ValueError(f"Section {idx} has invalid next index {sec_next}.")
 
     def _validate_dlongs(self, sections: Iterable[object]) -> None:
