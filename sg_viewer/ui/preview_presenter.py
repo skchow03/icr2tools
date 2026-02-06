@@ -4,7 +4,7 @@ from PyQt5 import QtGui
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.runtime import PreviewRuntime
-from sg_viewer.services import preview_painter, sg_rendering
+from sg_viewer.services import preview_painter
 
 
 class PreviewPresenter:
@@ -84,7 +84,6 @@ class PreviewPresenter:
                 show_curve_markers=self._runtime.show_curve_markers,
                 show_axes=self._runtime.show_axes,
                 sections=section_manager.sections,
-                fsections=self._runtime.preview_fsections,
                 selected_curve_index=selection.selected_curve_index,
                 start_finish_mapping=self._runtime.start_finish_mapping,
                 status_message=self._runtime.status_message,
@@ -97,12 +96,10 @@ class PreviewPresenter:
                     self._runtime.show_xsect_dlat_line
                     and self._runtime.show_sg_fsects
                 ),
-                centerline_color=self._colors.centerline,
-                radii_color=self._colors.radii,
-                fsection_surface_colors={
-                    int(key): QtGui.QColor(value)
-                    for key, value in sg_rendering.SURFACE_COLORS.items()
-                },
+                centerline_unselected_color=self._colors.centerline_unselected,
+                centerline_selected_color=self._colors.centerline_selected,
+                radii_unselected_color=self._colors.radii_unselected,
+                radii_selected_color=self._colors.radii_selected,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,

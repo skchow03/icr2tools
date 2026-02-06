@@ -153,10 +153,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         ] = {}
         self._preview_color_labels = {
             "background": "Background",
-            "centerline": "Centerline",
+            "centerline_unselected": "Centerline (Not Selected)",
+            "centerline_selected": "Centerline (Selected)",
             "nodes_connected": "Nodes (Connected)",
             "nodes_disconnected": "Nodes (Disconnected)",
-            "radii": "Radii",
+            "radii_unselected": "Radii (Not Selected)",
+            "radii_selected": "Radii (Selected)",
             "fsect_0": "Fsect: Grass",
             "fsect_1": "Fsect: Dry grass",
             "fsect_2": "Fsect: Dirt",

@@ -135,10 +135,12 @@ def test_view_options_expose_color_controls(qapp):
     try:
         controls = window.preview_color_controls
         assert "background" in controls
-        assert "centerline" in controls
+        assert "centerline_unselected" in controls
+        assert "centerline_selected" in controls
         assert "nodes_connected" in controls
         assert "nodes_disconnected" in controls
-        assert "radii" in controls
+        assert "radii_unselected" in controls
+        assert "radii_selected" in controls
         assert "fsect_5" in controls
 
         background_edit, _ = controls["background"]
