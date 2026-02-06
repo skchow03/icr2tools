@@ -128,3 +128,25 @@ def test_elevation_labels_and_help_about(qapp, monkeypatch):
         ]
     finally:
         window.close()
+
+
+def test_view_options_expose_color_controls(qapp):
+    window = SGViewerWindow()
+    try:
+        controls = window.preview_color_controls
+        assert "background" in controls
+        assert "centerline" in controls
+        assert "nodes_connected" in controls
+        assert "nodes_disconnected" in controls
+        assert "radii" in controls
+        assert "fsect_5" in controls
+
+        background_edit, _ = controls["background"]
+        assert background_edit.text().startswith("#")
+
+        background_edit.setText("#123456")
+        background_edit.editingFinished.emit()
+
+        assert window.preview.preview_color("background").name().upper() == "#123456"
+    finally:
+        window.close()

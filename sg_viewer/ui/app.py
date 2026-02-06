@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
@@ -148,6 +148,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
+        self._preview_color_controls: dict[str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]] = {}
+        self._preview_color_labels = {
+            "background": "Background",
+            "centerline": "Centerline",
+            "nodes_connected": "Nodes (Connected)",
+            "nodes_disconnected": "Nodes (Disconnected)",
+            "radii": "Radii",
+            "fsect_0": "Fsect: Grass",
+            "fsect_1": "Fsect: Dry grass",
+            "fsect_2": "Fsect: Dirt",
+            "fsect_3": "Fsect: Sand",
+            "fsect_4": "Fsect: Concrete",
+            "fsect_5": "Fsect: Asphalt",
+            "fsect_6": "Fsect: Paint",
+            "fsect_7": "Fsect: Wall",
+            "fsect_8": "Fsect: Armco",
+        }
         self._fsect_table = QtWidgets.QTableWidget(0, 4)
         self._update_fsect_table_headers()
         self._fsect_table.setEditTriggers(
@@ -312,6 +329,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         unit_layout.addWidget(QtWidgets.QLabel("Unit of Measurement:"))
         unit_layout.addWidget(self._measurement_units_combo)
         view_options_layout.addLayout(unit_layout)
+        color_group = QtWidgets.QGroupBox("Preview Colors")
+        color_form = QtWidgets.QFormLayout()
+        for key, label in self._preview_color_labels.items():
+            row = QtWidgets.QWidget()
+            row_layout = QtWidgets.QHBoxLayout()
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            hex_edit = QtWidgets.QLineEdit()
+            hex_edit.setPlaceholderText("#RRGGBB")
+            picker_button = QtWidgets.QPushButton("Pick…")
+            row_layout.addWidget(hex_edit, stretch=1)
+            row_layout.addWidget(picker_button)
+            row.setLayout(row_layout)
+            color_form.addRow(label + ":", row)
+            self._preview_color_controls[key] = (hex_edit, picker_button)
+        color_group.setLayout(color_form)
+        view_options_layout.addWidget(color_group)
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
@@ -453,6 +486,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._heading_table_action.setEnabled(enabled)
         if self._xsect_table_action is not None:
             self._xsect_table_action.setEnabled(enabled)
+
+    @property
+    def preview_color_controls(self) -> dict[str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]]:
+        return self._preview_color_controls
 
     @property
     def measurement_units_combo(self) -> QtWidgets.QComboBox:
@@ -948,6 +985,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 return f"{base} (Fence)"
             return base
         return "Unknown"
+
+
+    def set_preview_color_text(self, key: str, color: QtGui.QColor) -> None:
+        controls = self._preview_color_controls.get(key)
+        if controls is None:
+            return
+        hex_edit, _ = controls
+        value = color.name().upper()
+        hex_edit.blockSignals(True)
+        hex_edit.setText(value)
+        hex_edit.blockSignals(False)
+
+    @staticmethod
+    def parse_hex_color(value: str) -> QtGui.QColor | None:
+        text = value.strip()
+        if not text:
+            return None
+        if not text.startswith("#"):
+            text = f"#{text}"
+        color = QtGui.QColor(text)
+        if not color.isValid():
+            return None
+        return color
 
     def update_window_title(
         self,

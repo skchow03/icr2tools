@@ -113,3 +113,10 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
         self._runtime.on_leave(event)
         super().leaveEvent(event)
+
+    def set_preview_color(self, key: str, color: QtGui.QColor) -> None:
+        self._presenter.set_preview_color(key, color)
+        self.update()
+
+    def preview_color(self, key: str) -> QtGui.QColor:
+        return self._presenter.preview_color(key)

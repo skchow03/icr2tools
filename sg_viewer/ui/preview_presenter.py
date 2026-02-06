@@ -4,7 +4,7 @@ from PyQt5 import QtGui
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.runtime import PreviewRuntime
-from sg_viewer.services import preview_painter
+from sg_viewer.services import preview_painter, sg_rendering
 
 
 class PreviewPresenter:
@@ -16,7 +16,18 @@ class PreviewPresenter:
     ) -> None:
         self._context = context
         self._runtime = runtime
-        self._background_color = background_color
+        self._colors = preview_painter.default_preview_colors()
+        self._colors.background = QtGui.QColor(background_color)
+
+    def set_preview_color(self, key: str, color: QtGui.QColor) -> None:
+        if not hasattr(self._colors, key):
+            raise ValueError(f"Unknown preview color key: {key}")
+        setattr(self._colors, key, QtGui.QColor(color))
+
+    def preview_color(self, key: str) -> QtGui.QColor:
+        if not hasattr(self._colors, key):
+            raise ValueError(f"Unknown preview color key: {key}")
+        return QtGui.QColor(getattr(self._colors, key))
 
     def paint(self, painter: QtGui.QPainter) -> None:
         widget_size = self._context.widget_size()
@@ -28,6 +39,8 @@ class PreviewPresenter:
                 node_positions=self._runtime.build_node_positions(),
                 node_status=self._runtime.node_status,
                 node_radius_px=self._runtime.node_radius_px,
+                nodes_connected_color=self._colors.nodes_connected,
+                nodes_disconnected_color=self._colors.nodes_disconnected,
                 hovered_node=self._runtime.hovered_endpoint,
                 connection_target=self._runtime.interaction.connection_target,
             )
@@ -60,7 +73,7 @@ class PreviewPresenter:
             painter,
             preview_painter.BasePreviewState(
                 rect=painter.viewport(),
-                background_color=self._background_color,
+                background_color=self._colors.background,
                 background_image=background.image,
                 background_scale_500ths_per_px=background.scale_500ths_per_px,
                 background_origin=background.world_xy_at_image_uv_00,
@@ -84,6 +97,12 @@ class PreviewPresenter:
                     self._runtime.show_xsect_dlat_line
                     and self._runtime.show_sg_fsects
                 ),
+                centerline_color=self._colors.centerline,
+                radii_color=self._colors.radii,
+                fsection_surface_colors={
+                    int(key): QtGui.QColor(value)
+                    for key, value in sg_rendering.SURFACE_COLORS.items()
+                },
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,

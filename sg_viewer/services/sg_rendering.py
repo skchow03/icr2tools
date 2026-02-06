@@ -255,13 +255,15 @@ def draw_curve_markers(
     selected_curve_index: int | None,
     transform: Transform,
     widget_height: int,
+    *,
+    default_color: QtGui.QColor | None = None,
 ) -> None:
     if not sections:
         return
 
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    default_color = QtGui.QColor(140, 140, 140)
+    default = QtGui.QColor(140, 140, 140) if default_color is None else QtGui.QColor(default_color)
     highlight_color = QtGui.QColor("magenta")
 
     for section in sections:
@@ -270,7 +272,7 @@ def draw_curve_markers(
             continue
 
         is_selected = getattr(section, "section_id", None) == selected_curve_index
-        color = highlight_color if is_selected else default_color
+        color = highlight_color if is_selected else default
         width = 2 if is_selected else 1
 
         painter.setPen(QtGui.QPen(color, width))

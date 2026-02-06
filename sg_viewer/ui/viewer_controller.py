@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtGui, QtWidgets
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
@@ -30,6 +30,7 @@ from sg_viewer.ui.elevation_profile import (
     elevation_profile_alt_bounds,
 )
 from sg_viewer.ui.xsect_elevation import XsectElevationData
+from sg_viewer.services import sg_rendering
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class SGViewerController:
         self._create_actions()
         self._create_menus()
         self._connect_signals()
+        self._initialize_preview_color_controls()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._refresh_recent_menu()
         self._start_new_track(confirm=False)
@@ -319,6 +321,57 @@ class SGViewerController:
         self._window.measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
+        for key, (hex_edit, picker_button) in self._window.preview_color_controls.items():
+            hex_edit.editingFinished.connect(
+                lambda color_key=key, widget=hex_edit: self._on_preview_color_text_changed(
+                    color_key, widget
+                )
+            )
+            picker_button.clicked.connect(
+                lambda _checked=False, color_key=key: self._on_pick_preview_color(color_key)
+            )
+
+
+    def _initialize_preview_color_controls(self) -> None:
+        for key in self._window.preview_color_controls:
+            color = self._current_preview_color_for_key(key)
+            self._window.set_preview_color_text(key, color)
+
+    def _current_preview_color_for_key(self, key: str) -> QtGui.QColor:
+        if key.startswith("fsect_"):
+            surface_id = int(key.split("_", maxsplit=1)[1])
+            return QtGui.QColor(sg_rendering.SURFACE_COLORS.get(surface_id, sg_rendering.DEFAULT_SURFACE_COLOR))
+        return self._window.preview.preview_color(key)
+
+    def _apply_preview_color(self, key: str, color: QtGui.QColor) -> None:
+        if key.startswith("fsect_"):
+            surface_id = int(key.split("_", maxsplit=1)[1])
+            sg_rendering.SURFACE_COLORS[surface_id] = QtGui.QColor(color)
+            if surface_id == 7:
+                sg_rendering.WALL_COLOR = QtGui.QColor(color)
+            elif surface_id == 8:
+                sg_rendering.ARMCO_COLOR = QtGui.QColor(color)
+            self._window.preview.update()
+        else:
+            self._window.preview.set_preview_color(key, color)
+        self._window.set_preview_color_text(key, color)
+
+    def _on_preview_color_text_changed(
+        self, key: str, widget: QtWidgets.QLineEdit
+    ) -> None:
+        color = self._window.parse_hex_color(widget.text())
+        if color is None:
+            current = self._current_preview_color_for_key(key)
+            self._window.set_preview_color_text(key, current)
+            return
+        self._apply_preview_color(key, color)
+
+    def _on_pick_preview_color(self, key: str) -> None:
+        initial = self._current_preview_color_for_key(key)
+        color = QtWidgets.QColorDialog.getColor(initial, self._window, "Choose Color")
+        if not color.isValid():
+            return
+        self._apply_preview_color(key, color)
 
     def _should_confirm_reset(self) -> bool:
         sections, _ = self._window.preview.get_section_set()

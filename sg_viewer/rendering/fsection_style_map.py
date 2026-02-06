@@ -24,10 +24,14 @@ def resolve_fsection_style(
 ) -> FSectionStyle | None:
     if surface_type is None:
         return None
+    style_map = {
+        **_build_surface_styles(),
+        **_build_boundary_styles(),
+    }
     key = (int(surface_type), int(type2) if type2 is not None else None)
-    style = _FSECTION_STYLE_MAP.get(key)
+    style = style_map.get(key)
     if style is None:
-        style = _FSECTION_STYLE_MAP.get((int(surface_type), None))
+        style = style_map.get((int(surface_type), None))
     return style
 
 
@@ -60,9 +64,3 @@ def _build_boundary_styles() -> dict[tuple[int, int | None], FSectionStyle]:
                 is_fence=True,
             )
     return styles
-
-
-_FSECTION_STYLE_MAP: dict[tuple[int, int | None], FSectionStyle] = {
-    **_build_surface_styles(),
-    **_build_boundary_styles(),
-}
