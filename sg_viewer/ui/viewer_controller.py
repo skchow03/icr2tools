@@ -321,13 +321,13 @@ class SGViewerController:
         self._window.measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
-        for key, (hex_edit, picker_button, _color_swatch) in self._window.preview_color_controls.items():
+        for key, (hex_edit, color_swatch) in self._window.preview_color_controls.items():
             hex_edit.editingFinished.connect(
                 lambda color_key=key, widget=hex_edit: self._on_preview_color_text_changed(
                     color_key, widget
                 )
             )
-            picker_button.clicked.connect(
+            color_swatch.clicked.connect(
                 lambda _checked=False, color_key=key: self._on_pick_preview_color(color_key)
             )
 
