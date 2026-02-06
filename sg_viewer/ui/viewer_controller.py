@@ -95,6 +95,21 @@ class SGViewerController:
             loading_logger.removeHandler(log_handler)
             log_handler.close()
 
+        warnings = self._window.preview.last_load_warnings()
+        if warnings:
+            display_warnings = warnings[:5]
+            extra_count = max(0, len(warnings) - len(display_warnings))
+            details = "\n".join(f"• {warning}" for warning in display_warnings)
+            if extra_count:
+                details = f"{details}\n• ...and {extra_count} more"
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "SG loaded with warnings",
+                "This SG file has disconnected or invalid section links. "
+                "The track has been loaded, but some sections may be unlinked.\n\n"
+                f"{details}",
+            )
+
         self._window.show_status_message(f"Loaded {path}")
         self._current_path = path
         self._is_untitled = False

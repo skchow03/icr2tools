@@ -30,12 +30,16 @@ class SGDocument(QtCore.QObject):
     def __init__(self, sg_data: SGFile | None = None, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._sg_data = sg_data
+        self._last_validation_warnings: list[str] = []
         if self._sg_data is not None:
             self.validate()
 
     @property
     def sg_data(self) -> SGFile | None:
         return self._sg_data
+
+    def last_validation_warnings(self) -> list[str]:
+        return list(self._last_validation_warnings)
 
     def set_sg_data(self, sg_data: SGFile | None, *, validate: bool = True) -> None:
         self._sg_data = sg_data
@@ -261,6 +265,7 @@ class SGDocument(QtCore.QObject):
         if sg_data is None:
             return
 
+        self._last_validation_warnings = []
         logger.debug(
             "Validating SG data: header_sects=%s actual_sects=%s num_xsects=%s",
             getattr(sg_data, "num_sects", None),
@@ -270,11 +275,13 @@ class SGDocument(QtCore.QObject):
         if sg_data.num_sects != len(sg_data.sects):
             raise ValueError("Section count does not match SG header.")
 
-        self._validate_section_links(sg_data.sects)
+        self._validate_section_links(sg_data.sects, self._last_validation_warnings)
         self._validate_dlongs(sg_data.sects)
         self._validate_elevations(sg_data)
 
-    def _validate_section_links(self, sections: Iterable[object]) -> None:
+    def _validate_section_links(
+        self, sections: Iterable[object], warnings: list[str] | None = None
+    ) -> None:
         sections_list = list(sections)
         total = len(sections_list)
         if total == 0:
@@ -302,7 +309,11 @@ class SGDocument(QtCore.QObject):
                     valid_next.add(total)
 
             if sec_prev not in valid_prev:
-                logger.error(
+                message = (
+                    f"Section {idx} has invalid previous index {sec_prev} "
+                    f"(expected one of {sorted(valid_prev)})."
+                )
+                logger.warning(
                     "Section link validation failed (prev): idx=%d total=%d sec_prev=%s "
                     "sec_next=%s expected_prev=%s expected_next=%s valid_prev=%s valid_next=%s",
                     idx,
@@ -320,9 +331,14 @@ class SGDocument(QtCore.QObject):
                         for i, sec in enumerate(sections_list)
                     ]
                     logger.debug("Section link snapshot: %s", link_snapshot)
-                raise ValueError(f"Section {idx} has invalid previous index {sec_prev}.")
+                if warnings is not None:
+                    warnings.append(message)
             if sec_next not in valid_next:
-                logger.error(
+                message = (
+                    f"Section {idx} has invalid next index {sec_next} "
+                    f"(expected one of {sorted(valid_next)})."
+                )
+                logger.warning(
                     "Section link validation failed (next): idx=%d total=%d sec_prev=%s "
                     "sec_next=%s expected_prev=%s expected_next=%s valid_prev=%s valid_next=%s",
                     idx,
@@ -340,7 +356,8 @@ class SGDocument(QtCore.QObject):
                         for i, sec in enumerate(sections_list)
                     ]
                     logger.debug("Section link snapshot: %s", link_snapshot)
-                raise ValueError(f"Section {idx} has invalid next index {sec_next}.")
+                if warnings is not None:
+                    warnings.append(message)
 
     def _validate_dlongs(self, sections: Iterable[object]) -> None:
         last_start = None
