@@ -366,11 +366,6 @@ class SGDocument(QtCore.QObject):
                 raise ValueError(
                     f"Section {idx} elevation count {len(altitudes)} does not match {num_xsects}."
                 )
-            for altitude in altitudes:
-                if altitude < self.ELEVATION_MIN or altitude > self.ELEVATION_MAX:
-                    raise ValueError(
-                        f"Section {idx} elevation {altitude} outside bounds."
-                    )
             grades = list(getattr(section, "grade", []))
             if len(grades) != num_xsects:
                 raise ValueError(
