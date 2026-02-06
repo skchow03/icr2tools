@@ -258,6 +258,9 @@ class SGViewerController:
         self._window.sg_fsects_checkbox.toggled.connect(
             self._window.preview.set_show_sg_fsects
         )
+        self._window.right_sidebar_tabs.currentChanged.connect(
+            self._on_right_sidebar_tab_changed
+        )
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -330,6 +333,12 @@ class SGViewerController:
             color_swatch.clicked.connect(
                 lambda _checked=False, color_key=key: self._on_pick_preview_color(color_key)
             )
+
+    def _on_right_sidebar_tab_changed(self, index: int) -> None:
+        if self._window.right_sidebar_tabs.tabText(index) != "Fsects":
+            return
+        if not self._window.sg_fsects_checkbox.isChecked():
+            self._window.sg_fsects_checkbox.setChecked(True)
 
 
     def _initialize_preview_color_controls(self) -> None:

@@ -477,6 +477,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def xsect_elevation_table(self) -> QtWidgets.QTableWidget:
         return self._xsect_elevation_table
 
+    @property
+    def right_sidebar_tabs(self) -> QtWidgets.QTabWidget:
+        return self._right_sidebar_tabs
+
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action
 
