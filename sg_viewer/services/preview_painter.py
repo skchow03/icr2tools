@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
-from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.preview.render_state import split_nodes_by_status
 from sg_viewer.sg_preview.model import SgPreviewModel
@@ -21,19 +20,23 @@ BASE_WIDTH = 3.0
 @dataclass
 class PreviewColors:
     background: QtGui.QColor
-    centerline: QtGui.QColor
+    centerline_unselected: QtGui.QColor
+    centerline_selected: QtGui.QColor
     nodes_connected: QtGui.QColor
     nodes_disconnected: QtGui.QColor
-    radii: QtGui.QColor
+    radii_unselected: QtGui.QColor
+    radii_selected: QtGui.QColor
 
 
 def default_preview_colors() -> PreviewColors:
     return PreviewColors(
         background=QtGui.QColor("black"),
-        centerline=QtGui.QColor("lightgray"),
+        centerline_unselected=QtGui.QColor("lightgray"),
+        centerline_selected=QtGui.QColor("yellow"),
         nodes_connected=QtGui.QColor("limegreen"),
         nodes_disconnected=QtGui.QColor("orange"),
-        radii=QtGui.QColor(140, 140, 140),
+        radii_unselected=QtGui.QColor(140, 140, 140),
+        radii_selected=QtGui.QColor("magenta"),
     )
 
 
@@ -51,7 +54,6 @@ class BasePreviewState:
     show_curve_markers: bool
     show_axes: bool
     sections: Iterable
-    fsections: list[PreviewFSection]
     selected_curve_index: int | None
     start_finish_mapping: tuple[Point, Point, Point] | None
     status_message: str
@@ -59,9 +61,10 @@ class BasePreviewState:
     split_hover_point: Point | None
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
-    centerline_color: QtGui.QColor
-    radii_color: QtGui.QColor
-    fsection_surface_colors: dict[int, QtGui.QColor]
+    centerline_unselected_color: QtGui.QColor
+    centerline_selected_color: QtGui.QColor
+    radii_unselected_color: QtGui.QColor
+    radii_selected_color: QtGui.QColor
 
 
 @dataclass
@@ -141,7 +144,6 @@ def paint_preview(
                 base_state.xsect_dlat,
                 transform,
                 widget_height,
-                base_state.radii_color,
             )
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
@@ -154,11 +156,10 @@ def paint_preview(
             painter,
             base_state.sections,
             base_state.selected_section_points,
-            base_state.fsections,
             transform,
             widget_height,
-            centerline_color=base_state.centerline_color,
-            fsection_surface_colors=base_state.fsection_surface_colors,
+            centerline_unselected_color=base_state.centerline_unselected_color,
+            centerline_selected_color=base_state.centerline_selected_color,
         )
 
         if base_state.show_curve_markers:
@@ -172,7 +173,8 @@ def paint_preview(
                 base_state.selected_curve_index,
                 transform,
                 widget_height,
-                base_state.radii_color,
+                base_state.radii_unselected_color,
+                base_state.radii_selected_color,
             )
 
         _draw_start_finish_line(
@@ -311,12 +313,11 @@ def _draw_centerlines(
     painter: QtGui.QPainter,
     sections: Iterable[SectionPreview],
     selected_section_points: Iterable[Point],
-    fsections: list[PreviewFSection],
     transform: Transform,
     widget_height: int,
     *,
-    centerline_color: QtGui.QColor,
-    fsection_surface_colors: dict[int, QtGui.QColor],
+    centerline_unselected_color: QtGui.QColor,
+    centerline_selected_color: QtGui.QColor,
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -330,30 +331,19 @@ def _draw_centerlines(
             sg_rendering.map_point(point[0], point[1], transform, widget_height)
             for point in polyline
         ]
-        segments = sg_rendering.split_polyline_by_surface(
-            mapped,
-            section.start_dlat,
-            section.end_dlat,
-            fsections,
-        )
-
-        for surface, pts in segments:
-            color = fsection_surface_colors.get(
-                surface, sg_rendering.DEFAULT_SURFACE_COLOR
-            )
-            pen = QtGui.QPen(color)
-            pen.setWidthF(BASE_WIDTH)
-            pen.setCapStyle(QtCore.Qt.RoundCap)
-            pen.setJoinStyle(QtCore.Qt.RoundJoin)
-            painter.setPen(pen)
-            painter.drawPolyline(QtGui.QPolygonF(pts))
+        pen = QtGui.QPen(centerline_unselected_color)
+        pen.setWidthF(BASE_WIDTH)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawPolyline(QtGui.QPolygonF(mapped))
 
     selected_points = [
         sg_rendering.map_point(point[0], point[1], transform, widget_height)
         for point in selected_section_points
     ]
     if len(selected_points) >= 2:
-        pen = QtGui.QPen(centerline_color)
+        pen = QtGui.QPen(centerline_selected_color)
         pen.setWidthF(BASE_WIDTH + 1)
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
@@ -425,6 +415,7 @@ def _draw_curve_markers(
     transform: Transform,
     widget_height: int,
     default_color: QtGui.QColor,
+    selected_color: QtGui.QColor,
 ) -> None:
     sg_rendering.draw_curve_markers(
         painter,
@@ -433,6 +424,7 @@ def _draw_curve_markers(
         transform,
         widget_height,
         default_color=default_color,
+        selected_color=selected_color,
     )
 
 

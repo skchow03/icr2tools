@@ -257,6 +257,7 @@ def draw_curve_markers(
     widget_height: int,
     *,
     default_color: QtGui.QColor | None = None,
+    selected_color: QtGui.QColor | None = None,
 ) -> None:
     if not sections:
         return
@@ -264,7 +265,11 @@ def draw_curve_markers(
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     default = QtGui.QColor(140, 140, 140) if default_color is None else QtGui.QColor(default_color)
-    highlight_color = QtGui.QColor("magenta")
+    highlight_color = (
+        QtGui.QColor("magenta")
+        if selected_color is None
+        else QtGui.QColor(selected_color)
+    )
 
     for section in sections:
         center = getattr(section, "center", None)
