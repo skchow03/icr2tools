@@ -287,10 +287,10 @@ class SGViewerController:
             self._on_altitude_slider_released
         )
         self._window.altitude_min_spin.valueChanged.connect(
-            self._on_altitude_range_changed
+            lambda _value: self._on_altitude_range_changed("min")
         )
         self._window.altitude_max_spin.valueChanged.connect(
-            self._on_altitude_range_changed
+            lambda _value: self._on_altitude_range_changed("max")
         )
         self._window.altitude_set_range_button.clicked.connect(
             self._open_altitude_range_dialog
@@ -1294,7 +1294,7 @@ class SGViewerController:
             self._profile_editing = False
             self._refresh_elevation_profile()
 
-    def _on_altitude_range_changed(self) -> None:
+    def _on_altitude_range_changed(self, changed: str | None = None) -> None:
         min_spin = self._window.altitude_min_spin
         max_spin = self._window.altitude_max_spin
         min_value = self._window.altitude_display_to_feet(min_spin.value())
@@ -1302,7 +1302,7 @@ class SGViewerController:
         min_gap = self._window.altitude_display_step()
         min_gap_feet = self._window.altitude_display_to_feet(min_gap)
         if min_value >= max_value:
-            if self.sender() is min_spin:
+            if changed == "min":
                 max_value = min(
                     min_value + min_gap_feet,
                     self._window.altitude_display_to_feet(max_spin.maximum()),
