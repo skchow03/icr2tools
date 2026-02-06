@@ -277,9 +277,15 @@ class SGViewerController:
         self._window.altitude_max_spin.valueChanged.connect(
             self._on_altitude_range_changed
         )
+        self._window.altitude_set_range_button.clicked.connect(
+            self._open_altitude_range_dialog
+        )
         self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
         self._window.grade_spin.sliderReleased.connect(
             self._on_grade_edit_finished
+        )
+        self._window.grade_set_range_button.clicked.connect(
+            self._open_grade_range_dialog
         )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
         self._window.profile_widget.sectionClicked.connect(
@@ -1255,6 +1261,95 @@ class SGViewerController:
             self._window.altitude_slider.setValue(min_slider)
         elif slider_value > max_slider:
             self._window.altitude_slider.setValue(max_slider)
+
+    def _open_altitude_range_dialog(self) -> None:
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Set Altitude Range")
+        layout = QtWidgets.QFormLayout(dialog)
+        min_spin = QtWidgets.QDoubleSpinBox(dialog)
+        max_spin = QtWidgets.QDoubleSpinBox(dialog)
+        source_min = self._window.altitude_min_spin
+        source_max = self._window.altitude_max_spin
+        min_spin.setDecimals(source_min.decimals())
+        max_spin.setDecimals(source_max.decimals())
+        min_spin.setSingleStep(source_min.singleStep())
+        max_spin.setSingleStep(source_max.singleStep())
+        min_spin.setSuffix(source_min.suffix())
+        max_spin.setSuffix(source_max.suffix())
+        min_spin.setRange(source_min.minimum(), source_min.maximum())
+        max_spin.setRange(source_max.minimum(), source_max.maximum())
+        min_spin.setValue(source_min.value())
+        max_spin.setValue(source_max.value())
+        layout.addRow("Minimum:", min_spin)
+        layout.addRow("Maximum:", max_spin)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        min_value = min_spin.value()
+        max_value = max_spin.value()
+        min_gap = source_min.singleStep()
+        if min_value >= max_value:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Altitude Range",
+                "Minimum altitude must be less than maximum altitude.",
+            )
+            return
+        if max_value - min_value < min_gap:
+            max_value = min_value + min_gap
+
+        source_min.setValue(min_value)
+        source_max.setValue(max_value)
+
+    def _open_grade_range_dialog(self) -> None:
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Set Grade Range")
+        layout = QtWidgets.QFormLayout(dialog)
+        min_spin = QtWidgets.QSpinBox(dialog)
+        max_spin = QtWidgets.QSpinBox(dialog)
+        min_spin.setRange(-5000, 4999)
+        max_spin.setRange(-4999, 5000)
+        min_spin.setValue(self._window.grade_spin.minimum())
+        max_spin.setValue(self._window.grade_spin.maximum())
+        layout.addRow("Minimum:", min_spin)
+        layout.addRow("Maximum:", max_spin)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        min_value = min_spin.value()
+        max_value = max_spin.value()
+        if min_value >= max_value:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Grade Range",
+                "Minimum grade must be less than maximum grade.",
+            )
+            return
+
+        self._window.grade_spin.setRange(min_value, max_value)
+        current_value = self._window.grade_spin.value()
+        if current_value < min_value:
+            self._window.grade_spin.setValue(min_value)
+        elif current_value > max_value:
+            self._window.grade_spin.setValue(max_value)
 
     def _apply_altitude_edit(self) -> None:
         selection = self._active_selection
