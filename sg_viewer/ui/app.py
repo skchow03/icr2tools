@@ -261,7 +261,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         altitude_layout.addWidget(self._altitude_value_label)
         altitude_layout.addWidget(self._altitude_set_range_button)
         altitude_container.setLayout(altitude_layout)
-        elevation_layout.addRow("Altitude (xsect):", altitude_container)
+        elevation_layout.addRow("Elevation (xsect):", altitude_container)
         grade_container = QtWidgets.QWidget()
         grade_layout = QtWidgets.QHBoxLayout()
         grade_layout.setContentsMargins(0, 0, 0, 0)
@@ -315,7 +315,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
-        self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Altitude/Grade")
+        self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_sidebar, "Fsects")
         self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
@@ -618,7 +618,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def update_xsect_table_headers(self) -> None:
         unit_label = self._xsect_altitude_units_label()
         self._xsect_elevation_table.setHorizontalHeaderLabels(
-            ["Xsect", f"Altitude ({unit_label})", "Grade"]
+            ["Xsect", f"Elevation ({unit_label})", "Grade"]
         )
 
     def _xsect_altitude_units_label(self) -> str:
