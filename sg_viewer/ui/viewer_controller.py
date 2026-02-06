@@ -73,12 +73,27 @@ class SGViewerController:
         path = path.resolve()
         self._clear_background_state()
         logger.info("Loading SG file %s", path)
+        loading_logger = logging.getLogger("sg_viewer.sg_loading")
+        loading_logger.setLevel(logging.INFO)
+        loading_logger.propagate = False
+        log_path = path.with_name("sg_loading_log.txt")
+        log_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+        log_handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        )
+        loading_logger.addHandler(log_handler)
+        loading_logger.info("Starting SG load log for %s", path)
         try:
             self._window.preview.load_sg_file(path)
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self._window, "Failed to load SG", str(exc))
             logger.exception("Failed to load SG file")
+            loading_logger.exception("Failed to load SG file")
             return
+        finally:
+            loading_logger.info("Finished SG load log for %s", path)
+            loading_logger.removeHandler(log_handler)
+            log_handler.close()
 
         self._window.show_status_message(f"Loaded {path}")
         self._current_path = path

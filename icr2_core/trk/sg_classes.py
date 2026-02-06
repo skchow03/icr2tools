@@ -1,8 +1,10 @@
+import logging
 import math
 import numpy as np
 import csv
 
 FP_SCALE = 32768.0
+logger = logging.getLogger("sg_viewer.sg_loading")
 
 class SGFile:
     """
@@ -62,7 +64,8 @@ class SGFile:
             SGFile: A new SGFile instance with attributes populated from the SG file.
         """
 
-        print ('Opening SG file {}'.format(file_name))
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Opening SG file %s", file_name)
 
         a = np.fromfile(file_name, dtype=np.int32)
 
@@ -72,6 +75,15 @@ class SGFile:
         xsect_dlats = a[6:num_xsects + 6]
         sections_start = num_xsects + 6
         sections_length = 58 + 2 * num_xsects
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Header values: %s", header.tolist())
+            logger.info("num_sects=%s num_xsects=%s", int(num_sects), int(num_xsects))
+            logger.info("xsect_dlats=%s", xsect_dlats.tolist())
+            logger.info(
+                "sections_start=%s sections_length=%s",
+                int(sections_start),
+                int(sections_length),
+            )
 
         # Read each section and store each section object into the sects list.
         sects = []
@@ -79,6 +91,41 @@ class SGFile:
             sec_data = a[sections_start + i * sections_length: \
                          sections_start + (i + 1) * sections_length]
             sects.append(cls.Section(sec_data, num_xsects))
+            if logger.isEnabledFor(logging.INFO):
+                section = sects[-1]
+                logger.info("Section %d raw data: %s", i, sec_data.tolist())
+                logger.info(
+                    "Section %d parsed: type=%s sec_next=%s sec_prev=%s "
+                    "start=(%s,%s) end=(%s,%s) start_dlong=%s length=%s "
+                    "center=(%s,%s) sang=(%s,%s) eang=(%s,%s) radius=%s num1=%s "
+                    "alt=%s grade=%s num_fsects=%s ftype1=%s ftype2=%s "
+                    "fstart=%s fend=%s",
+                    i,
+                    int(section.type),
+                    int(section.sec_next),
+                    int(section.sec_prev),
+                    int(section.start_x),
+                    int(section.start_y),
+                    int(section.end_x),
+                    int(section.end_y),
+                    int(section.start_dlong),
+                    int(section.length),
+                    int(section.center_x),
+                    int(section.center_y),
+                    int(section.sang1),
+                    int(section.sang2),
+                    int(section.eang1),
+                    int(section.eang2),
+                    int(section.radius),
+                    int(section.num1),
+                    section.alt,
+                    section.grade,
+                    int(section.num_fsects),
+                    section.ftype1,
+                    section.ftype2,
+                    section.fstart,
+                    section.fend,
+                )
 
         for s in sects:
             if s.type == 2:
