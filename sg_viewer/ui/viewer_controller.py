@@ -184,6 +184,9 @@ class SGViewerController:
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
 
+        self._about_action = QtWidgets.QAction("About SG Viewer", self._window)
+        self._about_action.triggered.connect(self._show_about_dialog)
+
     def _create_menus(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._new_action)
@@ -209,6 +212,16 @@ class SGViewerController:
         self._window.set_section_table_action(self._section_table_action)
         self._window.set_heading_table_action(self._heading_table_action)
         self._window.set_xsect_table_action(self._xsect_table_action)
+
+        help_menu = self._window.menuBar().addMenu("Help")
+        help_menu.addAction(self._about_action)
+
+    def _show_about_dialog(self) -> None:
+        QtWidgets.QMessageBox.about(
+            self._window,
+            "About SG Viewer",
+            "This is SG Viewer version 0.1.0.",
+        )
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -1264,7 +1277,7 @@ class SGViewerController:
 
     def _open_altitude_range_dialog(self) -> None:
         dialog = QtWidgets.QDialog(self._window)
-        dialog.setWindowTitle("Set Altitude Range")
+        dialog.setWindowTitle("Set Elevation Range")
         layout = QtWidgets.QFormLayout(dialog)
         min_spin = QtWidgets.QDoubleSpinBox(dialog)
         max_spin = QtWidgets.QDoubleSpinBox(dialog)
@@ -1300,8 +1313,8 @@ class SGViewerController:
         if min_value >= max_value:
             QtWidgets.QMessageBox.warning(
                 self._window,
-                "Invalid Altitude Range",
-                "Minimum altitude must be less than maximum altitude.",
+                "Invalid Elevation Range",
+                "Minimum elevation must be less than maximum elevation.",
             )
             return
         if max_value - min_value < min_gap:

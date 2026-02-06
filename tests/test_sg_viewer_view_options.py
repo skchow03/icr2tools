@@ -95,3 +95,36 @@ def test_selection_and_track_length_show_secondary_units(qapp):
         assert window._track_stats_label.text() == "Track Length: 2194.560 m (2.195 km)"
     finally:
         window.close()
+
+
+def test_elevation_labels_and_help_about(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        assert window._right_sidebar_tabs.tabText(0) == "Elevation/Grade"
+        assert window.xsect_elevation_table.horizontalHeaderItem(1).text().startswith(
+            "Elevation ("
+        )
+
+        menu_titles = [action.text().replace("&", "") for action in window.menuBar().actions()]
+        assert "Help" in menu_titles
+
+        about_calls: list[tuple[str, str]] = []
+
+        def _fake_about(_parent, title, text):
+            about_calls.append((title, text))
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "about", _fake_about)
+
+        help_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Help"
+        )
+        about_action = next(
+            action for action in help_menu.actions() if action.text() == "About SG Viewer"
+        )
+        about_action.trigger()
+
+        assert about_calls == [
+            ("About SG Viewer", "This is SG Viewer version 0.1.0.")
+        ]
+    finally:
+        window.close()
