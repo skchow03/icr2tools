@@ -148,7 +148,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
-        self._preview_color_controls: dict[str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]] = {}
+        self._preview_color_controls: dict[
+            str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton, QtWidgets.QFrame]
+        ] = {}
         self._preview_color_labels = {
             "background": "Background",
             "centerline": "Centerline",
@@ -338,11 +340,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             hex_edit = QtWidgets.QLineEdit()
             hex_edit.setPlaceholderText("#RRGGBB")
             picker_button = QtWidgets.QPushButton("Pick…")
+            color_swatch = QtWidgets.QFrame()
+            color_swatch.setFixedSize(16, 16)
+            color_swatch.setFrameShape(QtWidgets.QFrame.Box)
+            color_swatch.setLineWidth(1)
+            color_swatch.setToolTip("Current color preview")
             row_layout.addWidget(hex_edit, stretch=1)
             row_layout.addWidget(picker_button)
+            row_layout.addWidget(color_swatch)
             row.setLayout(row_layout)
             color_form.addRow(label + ":", row)
-            self._preview_color_controls[key] = (hex_edit, picker_button)
+            self._preview_color_controls[key] = (hex_edit, picker_button, color_swatch)
         color_group.setLayout(color_form)
         view_options_layout.addWidget(color_group)
         view_options_layout.addStretch()
@@ -488,7 +496,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._xsect_table_action.setEnabled(enabled)
 
     @property
-    def preview_color_controls(self) -> dict[str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]]:
+    def preview_color_controls(
+        self,
+    ) -> dict[str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton, QtWidgets.QFrame]]:
         return self._preview_color_controls
 
     @property
@@ -991,11 +1001,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         controls = self._preview_color_controls.get(key)
         if controls is None:
             return
-        hex_edit, _ = controls
+        hex_edit, _picker_button, color_swatch = controls
         value = color.name().upper()
         hex_edit.blockSignals(True)
         hex_edit.setText(value)
         hex_edit.blockSignals(False)
+        color_swatch.setStyleSheet(
+            f"background-color: {value}; border: 1px solid palette(mid);"
+        )
 
     @staticmethod
     def parse_hex_color(value: str) -> QtGui.QColor | None:
