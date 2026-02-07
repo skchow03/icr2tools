@@ -50,6 +50,7 @@ class BasePreviewState:
     background_image: QtGui.QImage | None
     background_scale_500ths_per_px: float | None
     background_origin: Point | None
+    track_opacity: float
     sampled_centerline: list[Point]
     selected_section_points: list[Point]
     section_endpoints: list[tuple[Point, Point]]
@@ -136,6 +137,9 @@ def paint_preview(
     if not base_state.sampled_centerline:
         _draw_placeholder(painter, base_state.rect, base_state.status_message)
     else:
+        track_opacity = max(0.0, min(1.0, float(base_state.track_opacity)))
+        painter.save()
+        painter.setOpacity(track_opacity)
         _draw_axes(
             painter, base_state.rect, base_state.show_axes, transform, widget_height
         )
@@ -186,6 +190,7 @@ def paint_preview(
             transform,
             widget_height,
         )
+        painter.restore()
 
         if base_state.split_section_mode and base_state.split_hover_point is not None:
             _draw_split_hover_node(

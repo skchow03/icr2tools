@@ -113,6 +113,8 @@ class _RuntimeCoreBaseMixin:
 
         self._show_curve_markers = True
         self._show_axes = False
+        self._show_background_image = True
+        self._track_opacity = 1.0
 
         self._node_status = {}  # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()

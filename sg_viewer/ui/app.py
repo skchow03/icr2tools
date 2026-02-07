@@ -104,6 +104,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button.setChecked(True)
         self._axes_button = QtWidgets.QCheckBox("Show Axes")
         self._axes_button.setChecked(False)
+        self._background_image_checkbox = QtWidgets.QCheckBox("Show Background Image")
+        self._background_image_checkbox.setChecked(True)
+        self._track_opacity_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._track_opacity_slider.setRange(0, 100)
+        self._track_opacity_slider.setValue(100)
+        self._track_opacity_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._track_opacity_slider.setTickInterval(10)
+        self._track_opacity_value_label = QtWidgets.QLabel("100")
+        self._track_opacity_value_label.setMinimumWidth(32)
+        self._track_opacity_value_label.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("Show SG Fsects (preview)")
         self._sg_fsects_checkbox.setChecked(False)
         self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox(
@@ -327,8 +339,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         view_options_sidebar = QtWidgets.QWidget()
         view_options_layout = QtWidgets.QVBoxLayout()
+        view_options_layout.addWidget(self._background_image_checkbox)
         view_options_layout.addWidget(self._radii_button)
         view_options_layout.addWidget(self._axes_button)
+        track_opacity_layout = QtWidgets.QHBoxLayout()
+        track_opacity_layout.addWidget(QtWidgets.QLabel("Track Opacity:"))
+        track_opacity_layout.addWidget(self._track_opacity_slider, stretch=1)
+        track_opacity_layout.addWidget(self._track_opacity_value_label)
+        view_options_layout.addLayout(track_opacity_layout)
         unit_layout = QtWidgets.QHBoxLayout()
         unit_layout.addWidget(QtWidgets.QLabel("Unit of Measurement:"))
         unit_layout.addWidget(self._measurement_units_combo)
@@ -440,6 +458,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def axes_button(self) -> QtWidgets.QCheckBox:
         return self._axes_button
+
+    @property
+    def background_image_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._background_image_checkbox
+
+    @property
+    def track_opacity_slider(self) -> QtWidgets.QSlider:
+        return self._track_opacity_slider
+
+    @property
+    def track_opacity_value_label(self) -> QtWidgets.QLabel:
+        return self._track_opacity_value_label
 
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
