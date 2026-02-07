@@ -125,6 +125,23 @@ class _RuntimeCoreCommitMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
+    def replace_all_fsects(
+        self,
+        fsects_by_section: list[list[PreviewFSection]],
+    ) -> bool:
+        section_count = len(self._section_manager.sections)
+        if section_count != len(fsects_by_section):
+            return False
+        self._fsects_by_section = [list(fsects) for fsects in fsects_by_section]
+        self._validate_section_fsects_alignment()
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+            return False
+        return True
+
     def copy_section_fsects(
         self,
         source_index: int,

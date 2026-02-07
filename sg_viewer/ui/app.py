@@ -569,6 +569,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def measurement_units_combo(self) -> QtWidgets.QComboBox:
         return self._measurement_units_combo
 
+    def fsect_display_unit_label(self) -> str:
+        return self._fsect_dlat_units_label()
+
+    def fsect_display_decimals(self) -> int:
+        return self._measurement_unit_decimals(self._current_measurement_unit())
+
+    def fsect_display_step(self) -> float:
+        return self._measurement_unit_step(self._current_measurement_unit())
+
+    def fsect_dlat_from_display_units(self, value: float) -> float:
+        return self._fsect_dlat_from_display_units(value)
+
     @property
     def profile_widget(self) -> ElevationProfileWidget:
         return self._profile_widget

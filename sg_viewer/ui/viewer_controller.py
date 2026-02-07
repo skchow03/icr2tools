@@ -21,6 +21,7 @@ from sg_viewer.ui.altitude_units import (
     units_from_500ths,
 )
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
+from sg_viewer.ui.generate_fsects_dialog import GenerateFsectsDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
@@ -30,6 +31,7 @@ from sg_viewer.ui.elevation_profile import (
     elevation_profile_alt_bounds,
 )
 from sg_viewer.ui.xsect_elevation import XsectElevationData
+from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.services import sg_rendering
 
 logger = logging.getLogger(__name__)
@@ -182,6 +184,12 @@ class SGViewerController:
         )
         self._convert_trk_action.triggered.connect(self._convert_sg_to_trk)
 
+        self._generate_fsects_action = QtWidgets.QAction(
+            "Generate Fsects…",
+            self._window,
+        )
+        self._generate_fsects_action.triggered.connect(self._open_generate_fsects_dialog)
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -241,6 +249,7 @@ class SGViewerController:
         tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._convert_trk_action)
+        tools_menu.addAction(self._generate_fsects_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._section_table_action)
         tools_menu.addAction(self._heading_table_action)
@@ -1064,6 +1073,7 @@ class SGViewerController:
 
         self._populate_xsect_choices(preferred_index=new_selected)
         self._refresh_elevation_profile()
+
     def _scale_track(self) -> None:
         sections, _ = self._window.preview.get_section_set()
         if not sections or not is_closed_loop(sections):
@@ -1112,6 +1122,138 @@ class SGViewerController:
 
         self._window.show_status_message(status)
         self._update_track_length_display()
+
+    def _open_generate_fsects_dialog(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No Sections",
+                "There are no track sections available for fsect generation.",
+            )
+            return
+
+        dialog = GenerateFsectsDialog(
+            self._window,
+            unit_label=self._window.fsect_display_unit_label(),
+            decimals=self._window.fsect_display_decimals(),
+            step=self._window.fsect_display_step(),
+            track_width=30.0,
+            left_grass_width=10.0,
+            right_grass_width=10.0,
+            fence_enabled=False,
+        )
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        track_width = self._window.fsect_dlat_from_display_units(dialog.track_width())
+        left_grass = self._window.fsect_dlat_from_display_units(
+            dialog.left_grass_width()
+        )
+        right_grass = self._window.fsect_dlat_from_display_units(
+            dialog.right_grass_width()
+        )
+        if track_width <= 0:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Track Width",
+                "Track width must be greater than zero.",
+            )
+            return
+        if left_grass < 0 or right_grass < 0:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Grass Width",
+                "Grass widths must be zero or greater.",
+            )
+            return
+
+        wall_width = self._window.fsect_dlat_from_display_units(
+            self._window.fsect_display_step()
+        )
+        if wall_width <= 0:
+            wall_width = 1.0
+
+        base_fsects = self._build_generated_fsects(
+            template=dialog.template(),
+            track_width=track_width,
+            left_grass=left_grass,
+            right_grass=right_grass,
+            wall_width=wall_width,
+            fence_enabled=dialog.fence_enabled(),
+        )
+        fsects_by_section = [list(base_fsects) for _ in sections]
+        if not self._window.preview.replace_all_fsects(fsects_by_section):
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Generate Fsects Failed",
+                "Unable to apply generated fsects to the current track.",
+            )
+            return
+
+        if not self._window.sg_fsects_checkbox.isChecked():
+            self._window.sg_fsects_checkbox.setChecked(True)
+        self._window.show_status_message("Generated fsects for all sections.")
+
+    @staticmethod
+    def _build_generated_fsects(
+        *,
+        template: str,
+        track_width: float,
+        left_grass: float,
+        right_grass: float,
+        wall_width: float,
+        fence_enabled: bool,
+    ) -> list[PreviewFSection]:
+        fence_type2 = min(FENCE_TYPE2) if fence_enabled and FENCE_TYPE2 else 0
+
+        def wall(start: float, end: float) -> PreviewFSection:
+            return PreviewFSection(
+                start_dlat=start,
+                end_dlat=end,
+                surface_type=7,
+                type2=fence_type2,
+            )
+
+        def surface(start: float, end: float, surface_type: int) -> PreviewFSection:
+            return PreviewFSection(
+                start_dlat=start,
+                end_dlat=end,
+                surface_type=surface_type,
+                type2=0,
+            )
+
+        fsects: list[PreviewFSection] = []
+        half_track = track_width * 0.5
+
+        if template == "street":
+            fsects.append(wall(-half_track - wall_width, -half_track))
+            fsects.append(surface(-half_track, half_track, 5))
+            fsects.append(wall(half_track, half_track + wall_width))
+            return fsects
+
+        if template == "oval":
+            fsects.append(wall(-half_track - wall_width, -half_track))
+            fsects.append(surface(-half_track, half_track, 5))
+            if right_grass > 0:
+                fsects.append(surface(half_track, half_track + right_grass, 0))
+            fsects.append(
+                wall(half_track + right_grass, half_track + right_grass + wall_width)
+            )
+            return fsects
+
+        fsects.append(
+            wall(-half_track - left_grass - wall_width, -half_track - left_grass)
+        )
+        if left_grass > 0:
+            fsects.append(surface(-half_track - left_grass, -half_track, 0))
+        fsects.append(surface(-half_track, half_track, 5))
+        if right_grass > 0:
+            fsects.append(surface(half_track, half_track + right_grass, 0))
+        fsects.append(
+            wall(half_track + right_grass, half_track + right_grass + wall_width)
+        )
+        return fsects
 
     def _populate_xsect_choices(self, preferred_index: int | None = None) -> None:
         metadata = self._window.preview.get_xsect_metadata()
