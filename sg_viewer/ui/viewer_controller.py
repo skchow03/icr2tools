@@ -1144,6 +1144,7 @@ class SGViewerController:
             grass_surface_type=0,
             wall_surface_type=7,
             fence_enabled=False,
+            section_count=len(sections),
         )
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
@@ -1188,7 +1189,15 @@ class SGViewerController:
             wall_width=wall_width,
             fence_enabled=dialog.fence_enabled(),
         )
-        fsects_by_section = [list(base_fsects) for _ in sections]
+        start_section, end_section = dialog.section_range()
+        start_index = max(0, start_section - 1)
+        end_index = min(len(sections) - 1, end_section - 1)
+        fsects_by_section = [
+            self._window.preview.get_section_fsects(index)
+            for index in range(len(sections))
+        ]
+        for index in range(start_index, end_index + 1):
+            fsects_by_section[index] = list(base_fsects)
         if not self._window.preview.replace_all_fsects(fsects_by_section):
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -1199,7 +1208,13 @@ class SGViewerController:
 
         if not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
-        self._window.show_status_message("Generated fsects for all sections.")
+        if start_index == 0 and end_index == len(sections) - 1:
+            status_message = "Generated fsects for all sections."
+        else:
+            status_message = (
+                f"Generated fsects for sections {start_index + 1}-{end_index + 1}."
+            )
+        self._window.show_status_message(status_message)
 
     @staticmethod
     def _build_generated_fsects(
@@ -1218,7 +1233,7 @@ class SGViewerController:
         def wall(start: float, end: float) -> PreviewFSection:
             return PreviewFSection(
                 start_dlat=start,
-                end_dlat=start,
+                end_dlat=end,
                 surface_type=wall_surface_type,
                 type2=fence_type2,
             )
@@ -1226,7 +1241,7 @@ class SGViewerController:
         def surface(start: float, end: float, surface_type: int) -> PreviewFSection:
             return PreviewFSection(
                 start_dlat=start,
-                end_dlat=start,
+                end_dlat=end,
                 surface_type=surface_type,
                 type2=0,
             )
