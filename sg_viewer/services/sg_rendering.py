@@ -164,6 +164,7 @@ def draw_background_image(
     scale_500ths_per_px: float,
     transform: Transform,
     widget_height: int,
+    brightness_pct: float = 0.0,
 ) -> None:
     if scale_500ths_per_px <= 0:
         return
@@ -179,9 +180,18 @@ def draw_background_image(
         widget_height,
     )
 
+    image_rect = QtCore.QRectF(top_left, bottom_right).normalized()
+
     painter.save()
     painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
-    painter.drawImage(QtCore.QRectF(top_left, bottom_right).normalized(), image)
+    painter.drawImage(image_rect, image)
+    brightness_pct = float(brightness_pct)
+    if brightness_pct != 0:
+        overlay_color = QtGui.QColor("white") if brightness_pct > 0 else QtGui.QColor("black")
+        overlay_opacity = min(1.0, abs(brightness_pct) / 100.0)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
+        painter.setOpacity(overlay_opacity)
+        painter.fillRect(image_rect, overlay_color)
     painter.restore()
 
 

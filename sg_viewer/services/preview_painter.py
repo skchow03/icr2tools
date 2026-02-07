@@ -48,6 +48,7 @@ class BasePreviewState:
     rect: QtCore.QRect
     background_color: QtGui.QColor
     background_image: QtGui.QImage | None
+    background_brightness: float
     background_scale_500ths_per_px: float | None
     background_origin: Point | None
     track_opacity: float
@@ -124,6 +125,7 @@ def paint_preview(
         base_state.rect,
         base_state.background_color,
         base_state.background_image,
+        base_state.background_brightness,
         base_state.background_scale_500ths_per_px,
         base_state.background_origin,
         transform,
@@ -361,6 +363,7 @@ def _draw_background(
     rect: QtCore.QRect,
     background_color: QtGui.QColor,
     background_image: QtGui.QImage | None,
+    background_brightness: float,
     background_scale_500ths_per_px: float | None,
     background_origin: Point | None,
     transform: Transform | None,
@@ -381,6 +384,7 @@ def _draw_background(
             background_scale_500ths_per_px,
             transform,
             widget_height,
+            brightness_pct=background_brightness,
         )
 
 

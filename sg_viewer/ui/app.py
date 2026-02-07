@@ -106,6 +106,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._axes_button.setChecked(False)
         self._background_image_checkbox = QtWidgets.QCheckBox("Show Background Image")
         self._background_image_checkbox.setChecked(True)
+        self._background_brightness_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._background_brightness_slider.setRange(-100, 100)
+        self._background_brightness_slider.setValue(0)
+        self._background_brightness_slider.setTickPosition(
+            QtWidgets.QSlider.TicksBelow
+        )
+        self._background_brightness_slider.setTickInterval(20)
+        self._background_brightness_value_label = QtWidgets.QLabel("0")
+        self._background_brightness_value_label.setMinimumWidth(36)
+        self._background_brightness_value_label.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
         self._track_opacity_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._track_opacity_slider.setRange(0, 100)
         self._track_opacity_slider.setValue(100)
@@ -340,6 +352,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_sidebar = QtWidgets.QWidget()
         view_options_layout = QtWidgets.QVBoxLayout()
         view_options_layout.addWidget(self._background_image_checkbox)
+        background_brightness_layout = QtWidgets.QHBoxLayout()
+        background_brightness_layout.addWidget(
+            QtWidgets.QLabel("Background Brightness:")
+        )
+        background_brightness_layout.addWidget(
+            self._background_brightness_slider, stretch=1
+        )
+        background_brightness_layout.addWidget(
+            self._background_brightness_value_label
+        )
+        view_options_layout.addLayout(background_brightness_layout)
         view_options_layout.addWidget(self._radii_button)
         view_options_layout.addWidget(self._axes_button)
         track_opacity_layout = QtWidgets.QHBoxLayout()
@@ -462,6 +485,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def background_image_checkbox(self) -> QtWidgets.QCheckBox:
         return self._background_image_checkbox
+
+    @property
+    def background_brightness_slider(self) -> QtWidgets.QSlider:
+        return self._background_brightness_slider
+
+    @property
+    def background_brightness_value_label(self) -> QtWidgets.QLabel:
+        return self._background_brightness_value_label
 
     @property
     def track_opacity_slider(self) -> QtWidgets.QSlider:

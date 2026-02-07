@@ -177,6 +177,10 @@ class _RuntimeCorePreviewMixin:
         return self._track_opacity
 
     @property
+    def background_brightness(self) -> float:
+        return self._background.brightness_pct
+
+    @property
     def selected_xsect_dlat(self) -> float | None:
         if self._selected_xsect_index is None or self._sgfile is None:
             return None
@@ -302,6 +306,10 @@ class _RuntimeCorePreviewMixin:
 
     def set_track_opacity(self, opacity: float) -> None:
         self._track_opacity = max(0.0, min(1.0, float(opacity)))
+        self._context.request_repaint()
+
+    def set_background_brightness(self, brightness_pct: float) -> None:
+        self._background.brightness_pct = max(-100.0, min(100.0, float(brightness_pct)))
         self._context.request_repaint()
 
     def set_selected_xsect_index(self, index: int | None) -> None:
