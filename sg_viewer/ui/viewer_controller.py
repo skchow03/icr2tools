@@ -1210,7 +1210,7 @@ class SGViewerController:
         def wall(start: float, end: float) -> PreviewFSection:
             return PreviewFSection(
                 start_dlat=start,
-                end_dlat=end,
+                end_dlat=start,
                 surface_type=7,
                 type2=fence_type2,
             )
@@ -1218,7 +1218,7 @@ class SGViewerController:
         def surface(start: float, end: float, surface_type: int) -> PreviewFSection:
             return PreviewFSection(
                 start_dlat=start,
-                end_dlat=end,
+                end_dlat=start,
                 surface_type=surface_type,
                 type2=0,
             )
