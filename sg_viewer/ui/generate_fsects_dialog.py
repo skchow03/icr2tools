@@ -17,6 +17,7 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         grass_surface_type: int,
         wall_surface_type: int,
         fence_enabled: bool,
+        section_count: int,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Generate Fsects")
@@ -77,6 +78,20 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         self._fence_checkbox.setChecked(fence_enabled)
         layout.addRow(self._fence_checkbox)
 
+        self._section_start_spin = QtWidgets.QSpinBox(self)
+        self._section_end_spin = QtWidgets.QSpinBox(self)
+        for spin in (self._section_start_spin, self._section_end_spin):
+            spin.setRange(1, max(1, section_count))
+        self._section_start_spin.setValue(1)
+        self._section_end_spin.setValue(max(1, section_count))
+
+        range_layout = QtWidgets.QHBoxLayout()
+        range_layout.addWidget(QtWidgets.QLabel("Start", self))
+        range_layout.addWidget(self._section_start_spin)
+        range_layout.addWidget(QtWidgets.QLabel("End", self))
+        range_layout.addWidget(self._section_end_spin)
+        layout.addRow("Section range:", range_layout)
+
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
             parent=self,
@@ -88,6 +103,8 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         self._template_combo.currentIndexChanged.connect(
             self._update_grass_width_availability
         )
+        self._section_start_spin.valueChanged.connect(self._update_section_range)
+        self._section_end_spin.valueChanged.connect(self._update_section_range)
         self._update_grass_width_availability()
 
     def template(self) -> str:
@@ -111,6 +128,12 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
     def fence_enabled(self) -> bool:
         return bool(self._fence_checkbox.isChecked())
 
+    def section_range(self) -> tuple[int, int]:
+        return (
+            int(self._section_start_spin.value()),
+            int(self._section_end_spin.value()),
+        )
+
     def _update_grass_width_availability(self) -> None:
         template = self.template()
         right_enabled = template != "oval" and template != "street"
@@ -123,3 +146,12 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
             self._right_grass_spin.setValue(0.0)
         if not left_enabled:
             self._left_grass_spin.setValue(0.0)
+
+    def _update_section_range(self) -> None:
+        start = self._section_start_spin.value()
+        end = self._section_end_spin.value()
+        if start > end:
+            if self.sender() is self._section_start_spin:
+                self._section_end_spin.setValue(start)
+            else:
+                self._section_start_spin.setValue(end)
