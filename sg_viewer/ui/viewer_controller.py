@@ -1235,13 +1235,13 @@ class SGViewerController:
         half_track = track_width * 0.5
 
         if template == "street":
-            fsects.append(wall(-half_track - wall_width, -half_track))
+            fsects.append(wall(-half_track, -half_track))
             fsects.append(surface(-half_track, half_track, 5))
             fsects.append(wall(half_track, half_track + wall_width))
             return fsects
 
         if template == "oval":
-            fsects.append(wall(-half_track - wall_width, -half_track))
+            fsects.append(wall(-half_track, -half_track))
             fsects.append(surface(-half_track, half_track, 5))
             if left_grass > 0:
                 fsects.append(
@@ -1253,7 +1253,7 @@ class SGViewerController:
             return fsects
 
         fsects.append(
-            wall(-half_track - right_grass - wall_width, -half_track - right_grass)
+            wall(-half_track - right_grass, -half_track - right_grass)
         )
         if right_grass > 0:
             fsects.append(
