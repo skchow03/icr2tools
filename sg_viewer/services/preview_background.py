@@ -16,6 +16,7 @@ class PreviewBackground:
         self.image_path: Path | None = None
         self.scale_500ths_per_px: float = 1.0
         self.world_xy_at_image_uv_00: Point = (0.0, 0.0)
+        self.brightness_pct: float = 0.0
 
     # ------------------------------------------------------------------
     # State management
@@ -33,6 +34,7 @@ class PreviewBackground:
         self.image_path = None
         self.scale_500ths_per_px = 1.0
         self.world_xy_at_image_uv_00 = (0.0, 0.0)
+        self.brightness_pct = 0.0
 
     # ------------------------------------------------------------------
     # Helpers
@@ -72,4 +74,3 @@ class PreviewBackground:
         self, sampled_bounds: tuple[float, float, float, float] | None, widget_size: tuple[int, int]
     ) -> tuple[float, Point, tuple[float, float, float, float]] | None:
         return preview_transform.fit_view(sampled_bounds, self.bounds(), widget_size)
-

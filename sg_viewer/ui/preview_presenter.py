@@ -77,6 +77,7 @@ class PreviewPresenter:
                 background_image=(
                     background.image if self._runtime.show_background_image else None
                 ),
+                background_brightness=background.brightness_pct,
                 background_scale_500ths_per_px=background.scale_500ths_per_px,
                 background_origin=background.world_xy_at_image_uv_00,
                 track_opacity=self._runtime.track_opacity,
