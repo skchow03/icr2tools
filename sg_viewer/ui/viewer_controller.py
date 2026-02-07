@@ -1173,12 +1173,6 @@ class SGViewerController:
             )
             return
 
-        wall_width = self._window.fsect_dlat_from_display_units(
-            self._window.fsect_display_step()
-        )
-        if wall_width <= 0:
-            wall_width = 1.0
-
         base_fsects = self._build_generated_fsects(
             template=dialog.template(),
             track_width=track_width,
@@ -1186,7 +1180,6 @@ class SGViewerController:
             right_grass=right_grass,
             grass_surface_type=grass_surface_type,
             wall_surface_type=wall_surface_type,
-            wall_width=wall_width,
             fence_enabled=dialog.fence_enabled(),
         )
         start_section, end_section = dialog.section_range()
@@ -1225,15 +1218,14 @@ class SGViewerController:
         right_grass: float,
         grass_surface_type: int,
         wall_surface_type: int,
-        wall_width: float,
         fence_enabled: bool,
     ) -> list[PreviewFSection]:
         fence_type2 = min(FENCE_TYPE2) if fence_enabled and FENCE_TYPE2 else 0
 
-        def wall(start: float, end: float) -> PreviewFSection:
+        def wall_at(edge: float) -> PreviewFSection:
             return PreviewFSection(
-                start_dlat=start,
-                end_dlat=end,
+                start_dlat=edge,
+                end_dlat=edge,
                 surface_type=wall_surface_type,
                 type2=fence_type2,
             )
@@ -1248,40 +1240,39 @@ class SGViewerController:
 
         fsects: list[PreviewFSection] = []
         half_track = track_width * 0.5
+        left_edge = -half_track
+        right_edge = half_track
 
         if template == "street":
-            fsects.append(wall(-half_track - wall_width, -half_track))
-            fsects.append(surface(-half_track, half_track, 5))
-            fsects.append(wall(half_track, half_track + wall_width))
+            fsects.append(wall_at(left_edge))
+            fsects.append(surface(left_edge, right_edge, 5))
+            fsects.append(wall_at(right_edge))
             return fsects
 
         if template == "oval":
-            fsects.append(wall(-half_track - wall_width, -half_track))
-            fsects.append(surface(-half_track, half_track, 5))
+            fsects.append(wall_at(left_edge))
+            fsects.append(surface(left_edge, right_edge, 5))
             if left_grass > 0:
                 fsects.append(
-                    surface(half_track, half_track + left_grass, grass_surface_type)
+                    surface(right_edge, right_edge + left_grass, grass_surface_type)
                 )
-            fsects.append(
-                wall(half_track + left_grass, half_track + left_grass + wall_width)
-            )
+            fsects.append(wall_at(right_edge + left_grass))
             return fsects
 
-        fsects.append(
-            wall(-half_track - right_grass - wall_width, -half_track - right_grass)
-        )
+        left_boundary = left_edge - right_grass
+        right_boundary = right_edge + left_grass
+
+        fsects.append(wall_at(left_boundary))
         if right_grass > 0:
             fsects.append(
-                surface(-half_track - right_grass, -half_track, grass_surface_type)
+                surface(left_boundary, left_edge, grass_surface_type)
             )
-        fsects.append(surface(-half_track, half_track, 5))
+        fsects.append(surface(left_edge, right_edge, 5))
         if left_grass > 0:
             fsects.append(
-                surface(half_track, half_track + left_grass, grass_surface_type)
+                surface(right_edge, right_boundary, grass_surface_type)
             )
-        fsects.append(
-            wall(half_track + left_grass, half_track + left_grass + wall_width)
-        )
+        fsects.append(wall_at(right_boundary))
         return fsects
 
     def _populate_xsect_choices(self, preferred_index: int | None = None) -> None:
