@@ -14,6 +14,8 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         track_width: float,
         left_grass_width: float,
         right_grass_width: float,
+        grass_surface_type: int,
+        wall_surface_type: int,
         fence_enabled: bool,
     ) -> None:
         super().__init__(parent)
@@ -36,6 +38,18 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         self._track_width_spin.setSuffix(suffix)
         layout.addRow("Track width:", self._track_width_spin)
 
+        self._grass_type_combo = QtWidgets.QComboBox(self)
+        self._grass_type_combo.addItem("Grass", 0)
+        self._grass_type_combo.addItem("Dry Grass", 1)
+        self._grass_type_combo.addItem("Sand", 3)
+        self._grass_type_combo.addItem("Dirt", 2)
+        grass_index = max(
+            0,
+            self._grass_type_combo.findData(grass_surface_type),
+        )
+        self._grass_type_combo.setCurrentIndex(grass_index)
+        layout.addRow("Grass type:", self._grass_type_combo)
+
         self._right_grass_spin = QtWidgets.QDoubleSpinBox(self)
         self._right_grass_spin.setDecimals(decimals)
         self._right_grass_spin.setSingleStep(step)
@@ -52,6 +66,13 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         self._left_grass_spin.setSuffix(suffix)
         layout.addRow("Left grass width:", self._left_grass_spin)
 
+        self._wall_type_combo = QtWidgets.QComboBox(self)
+        self._wall_type_combo.addItem("Wall", 7)
+        self._wall_type_combo.addItem("Armco", 8)
+        wall_index = max(0, self._wall_type_combo.findData(wall_surface_type))
+        self._wall_type_combo.setCurrentIndex(wall_index)
+        layout.addRow("Wall type:", self._wall_type_combo)
+
         self._fence_checkbox = QtWidgets.QCheckBox("Add fence to walls", self)
         self._fence_checkbox.setChecked(fence_enabled)
         layout.addRow(self._fence_checkbox)
@@ -64,11 +85,19 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
 
+        self._template_combo.currentIndexChanged.connect(
+            self._update_grass_width_availability
+        )
+        self._update_grass_width_availability()
+
     def template(self) -> str:
         return str(self._template_combo.currentData())
 
     def track_width(self) -> float:
         return float(self._track_width_spin.value())
+
+    def grass_surface_type(self) -> int:
+        return int(self._grass_type_combo.currentData())
 
     def left_grass_width(self) -> float:
         return float(self._left_grass_spin.value())
@@ -76,6 +105,21 @@ class GenerateFsectsDialog(QtWidgets.QDialog):
     def right_grass_width(self) -> float:
         return float(self._right_grass_spin.value())
 
+    def wall_surface_type(self) -> int:
+        return int(self._wall_type_combo.currentData())
+
     def fence_enabled(self) -> bool:
         return bool(self._fence_checkbox.isChecked())
 
+    def _update_grass_width_availability(self) -> None:
+        template = self.template()
+        right_enabled = template != "oval" and template != "street"
+        left_enabled = template != "street"
+
+        self._right_grass_spin.setEnabled(right_enabled)
+        self._left_grass_spin.setEnabled(left_enabled)
+
+        if not right_enabled:
+            self._right_grass_spin.setValue(0.0)
+        if not left_enabled:
+            self._left_grass_spin.setValue(0.0)

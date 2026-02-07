@@ -1141,6 +1141,8 @@ class SGViewerController:
             track_width=30.0,
             left_grass_width=10.0,
             right_grass_width=10.0,
+            grass_surface_type=0,
+            wall_surface_type=7,
             fence_enabled=False,
         )
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
@@ -1153,6 +1155,8 @@ class SGViewerController:
         right_grass = self._window.fsect_dlat_from_display_units(
             dialog.right_grass_width()
         )
+        grass_surface_type = dialog.grass_surface_type()
+        wall_surface_type = dialog.wall_surface_type()
         if track_width <= 0:
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -1179,6 +1183,8 @@ class SGViewerController:
             track_width=track_width,
             left_grass=left_grass,
             right_grass=right_grass,
+            grass_surface_type=grass_surface_type,
+            wall_surface_type=wall_surface_type,
             wall_width=wall_width,
             fence_enabled=dialog.fence_enabled(),
         )
@@ -1202,6 +1208,8 @@ class SGViewerController:
         track_width: float,
         left_grass: float,
         right_grass: float,
+        grass_surface_type: int,
+        wall_surface_type: int,
         wall_width: float,
         fence_enabled: bool,
     ) -> list[PreviewFSection]:
@@ -1211,7 +1219,7 @@ class SGViewerController:
             return PreviewFSection(
                 start_dlat=start,
                 end_dlat=start,
-                surface_type=7,
+                surface_type=wall_surface_type,
                 type2=fence_type2,
             )
 
@@ -1235,23 +1243,29 @@ class SGViewerController:
         if template == "oval":
             fsects.append(wall(-half_track - wall_width, -half_track))
             fsects.append(surface(-half_track, half_track, 5))
-            if right_grass > 0:
-                fsects.append(surface(half_track, half_track + right_grass, 0))
+            if left_grass > 0:
+                fsects.append(
+                    surface(half_track, half_track + left_grass, grass_surface_type)
+                )
             fsects.append(
-                wall(half_track + right_grass, half_track + right_grass + wall_width)
+                wall(half_track + left_grass, half_track + left_grass + wall_width)
             )
             return fsects
 
         fsects.append(
-            wall(-half_track - left_grass - wall_width, -half_track - left_grass)
+            wall(-half_track - right_grass - wall_width, -half_track - right_grass)
         )
-        if left_grass > 0:
-            fsects.append(surface(-half_track - left_grass, -half_track, 0))
-        fsects.append(surface(-half_track, half_track, 5))
         if right_grass > 0:
-            fsects.append(surface(half_track, half_track + right_grass, 0))
+            fsects.append(
+                surface(-half_track - right_grass, -half_track, grass_surface_type)
+            )
+        fsects.append(surface(-half_track, half_track, 5))
+        if left_grass > 0:
+            fsects.append(
+                surface(half_track, half_track + left_grass, grass_surface_type)
+            )
         fsects.append(
-            wall(half_track + right_grass, half_track + right_grass + wall_width)
+            wall(half_track + left_grass, half_track + left_grass + wall_width)
         )
         return fsects
 
