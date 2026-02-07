@@ -169,6 +169,14 @@ class _RuntimeCorePreviewMixin:
         return self._show_xsect_dlat_line
 
     @property
+    def show_background_image(self) -> bool:
+        return self._show_background_image
+
+    @property
+    def track_opacity(self) -> float:
+        return self._track_opacity
+
+    @property
     def selected_xsect_dlat(self) -> float | None:
         if self._selected_xsect_index is None or self._sgfile is None:
             return None
@@ -280,12 +288,20 @@ class _RuntimeCorePreviewMixin:
         self._show_axes = visible
         self._context.request_repaint()
 
+    def set_show_background_image(self, visible: bool) -> None:
+        self._show_background_image = visible
+        self._context.request_repaint()
+
     def set_show_sg_fsects(self, visible: bool) -> None:
         self._show_sg_fsects = visible
         self._context.request_repaint()
 
     def set_show_xsect_dlat_line(self, visible: bool) -> None:
         self._show_xsect_dlat_line = visible
+        self._context.request_repaint()
+
+    def set_track_opacity(self, opacity: float) -> None:
+        self._track_opacity = max(0.0, min(1.0, float(opacity)))
         self._context.request_repaint()
 
     def set_selected_xsect_index(self, index: int | None) -> None:

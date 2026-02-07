@@ -60,6 +60,7 @@ class SGViewerController:
         self._create_actions()
         self._create_menus()
         self._connect_signals()
+        self._on_track_opacity_changed(self._window.track_opacity_slider.value())
         self._initialize_preview_color_controls()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._refresh_recent_menu()
@@ -286,6 +287,12 @@ class SGViewerController:
         )
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
+        self._window.background_image_checkbox.toggled.connect(
+            self._window.preview.set_show_background_image
+        )
+        self._window.track_opacity_slider.valueChanged.connect(
+            self._on_track_opacity_changed
+        )
         self._window.sg_fsects_checkbox.toggled.connect(
             self._window.preview.set_show_sg_fsects
         )
@@ -370,6 +377,11 @@ class SGViewerController:
             return
         if not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
+
+    def _on_track_opacity_changed(self, value: int) -> None:
+        clamped_value = max(0, min(100, int(value)))
+        self._window.track_opacity_value_label.setText(str(clamped_value))
+        self._window.preview.set_track_opacity(clamped_value / 100.0)
 
 
     def _initialize_preview_color_controls(self) -> None:
