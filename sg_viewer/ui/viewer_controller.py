@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
@@ -1738,9 +1738,7 @@ class SGViewerController:
             amount_spin.setDecimals(unit_decimals.get(unit, 0))
             amount_spin.setSingleStep(unit_steps.get(unit, 1.0))
             amount_spin.setSuffix(f" {unit_labels.get(unit, unit)}")
-            min_value = units_from_500ths(SGDocument.ELEVATION_MIN, unit)
-            max_value = units_from_500ths(SGDocument.ELEVATION_MAX, unit)
-            amount_spin.setRange(min_value, max_value)
+            amount_spin.setRange(-1_000_000_000, 1_000_000_000)
 
         unit_combo.currentIndexChanged.connect(_sync_spin_for_unit)
         _sync_spin_for_unit()
@@ -1764,15 +1762,23 @@ class SGViewerController:
         delta = units_to_500ths(delta_display, unit)
         if delta == 0:
             return
-        if not self._window.preview.offset_all_elevations(delta):
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Elevation Update Failed",
-                "Unable to update elevations. Ensure elevation data is available.",
-            )
-            return
-
-        self._refresh_elevation_profile()
+        self._window.show_status_message("Updating elevations…")
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        update_successful = False
+        try:
+            if not self._window.preview.offset_all_elevations(delta):
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Elevation Update Failed",
+                    "Unable to update elevations. Ensure elevation data is available.",
+                )
+                return
+            self._refresh_elevation_profile()
+            update_successful = True
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            if update_successful:
+                self._window.show_status_message("Elevations updated.")
 
     def _apply_altitude_edit(self) -> None:
         selection = self._active_selection
