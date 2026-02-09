@@ -44,6 +44,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._updating_fsect_table = False
         self._updating_xsect_table = False
         self._measurement_unit_data = "feet"
+        self._fsect_drag_active = False
+        self._fsect_drag_dirty = False
+        self._fsect_drag_timer = QtCore.QTimer(self)
+        self._fsect_drag_timer.setSingleShot(True)
+        self._fsect_drag_timer.setInterval(50)
+        self._fsect_drag_timer.timeout.connect(self._on_fsect_drag_timer)
 
         shortcut_labels = {
             "new_straight": "Ctrl+Alt+S",
@@ -218,7 +224,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_table.setMinimumHeight(160)
         self._fsect_table.cellChanged.connect(self._on_fsect_cell_changed)
         self._fsect_diagram = FsectDiagramWidget(
-            on_dlat_changed=self._on_fsect_diagram_dlat_changed
+            on_dlat_changed=self._on_fsect_diagram_dlat_changed,
+            on_drag_started=self._on_fsect_diagram_drag_started,
+            on_drag_ended=self._on_fsect_diagram_drag_ended,
         )
         self._xsect_elevation_table = QtWidgets.QTableWidget(0, 3)
         self.update_xsect_table_headers()
@@ -1031,15 +1039,85 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_fsect_diagram_dlat_changed(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
     ) -> None:
+        if self._fsect_drag_active:
+            self._update_fsect_preview_dlat(
+                section_index,
+                row_index,
+                endpoint,
+                new_dlat,
+                refresh_preview=False,
+            )
+            self._fsect_drag_dirty = True
+            self._schedule_fsect_drag_refresh()
+            return
+        self._update_fsect_preview_dlat(
+            section_index,
+            row_index,
+            endpoint,
+            new_dlat,
+            refresh_preview=True,
+        )
+        self._update_fsect_table(section_index)
+
+    def _on_fsect_diagram_drag_started(
+        self, section_index: int, row_index: int, endpoint: str, new_dlat: float
+    ) -> None:
+        _ = section_index, row_index, endpoint, new_dlat
+        self._fsect_drag_active = True
+        self._fsect_drag_dirty = False
+        if self._fsect_drag_timer.isActive():
+            self._fsect_drag_timer.stop()
+
+    def _on_fsect_diagram_drag_ended(
+        self, section_index: int, row_index: int, endpoint: str, new_dlat: float
+    ) -> None:
+        self._fsect_drag_active = False
+        if self._fsect_drag_timer.isActive():
+            self._fsect_drag_timer.stop()
+        if self._fsect_drag_dirty:
+            self._update_fsect_preview_dlat(
+                section_index,
+                row_index,
+                endpoint,
+                new_dlat,
+                refresh_preview=False,
+            )
+            self._preview.refresh_fsections_preview()
+            self._update_fsect_table(section_index)
+        self._fsect_drag_dirty = False
+
+    def _schedule_fsect_drag_refresh(self) -> None:
+        if not self._fsect_drag_timer.isActive():
+            self._fsect_drag_timer.start()
+
+    def _on_fsect_drag_timer(self) -> None:
+        if not self._fsect_drag_active or not self._fsect_drag_dirty:
+            return
+        self._preview.refresh_fsections_preview()
+
+    def _update_fsect_preview_dlat(
+        self,
+        section_index: int,
+        row_index: int,
+        endpoint: str,
+        new_dlat: float,
+        *,
+        refresh_preview: bool,
+    ) -> None:
         if endpoint == "start":
             self._preview.update_fsection_dlat(
-                section_index, row_index, start_dlat=new_dlat
+                section_index,
+                row_index,
+                start_dlat=new_dlat,
+                refresh_preview=refresh_preview,
             )
         else:
             self._preview.update_fsection_dlat(
-                section_index, row_index, end_dlat=new_dlat
+                section_index,
+                row_index,
+                end_dlat=new_dlat,
+                refresh_preview=refresh_preview,
             )
-        self._update_fsect_table(section_index)
 
     @staticmethod
     def _fsect_type_options() -> list[tuple[str, int, int]]:
