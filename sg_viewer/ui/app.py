@@ -87,7 +87,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._move_section_button = QtWidgets.QPushButton("Move Section")
         self._move_section_button.setCheckable(True)
-        self._move_section_button.setChecked(True)
+        self._move_section_button.setChecked(False)
         self._move_section_button.setEnabled(False)
         self._delete_section_button = QtWidgets.QPushButton("Delete Section")
         self._delete_section_button.setCheckable(True)
