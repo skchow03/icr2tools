@@ -932,9 +932,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         item = self._fsect_table.item(row_index, column_index)
         if item is None:
             return
-        self._updating_fsect_table = True
+        self._fsect_table.blockSignals(True)
         item.setText(self._format_fsect_dlat(value))
-        self._updating_fsect_table = False
+        self._fsect_table.blockSignals(False)
+
+    def _update_fsect_dlat_cell(
+        self, section_index: int, row_index: int, endpoint: str, new_dlat: float
+    ) -> None:
+        if section_index != self._selected_section_index:
+            return
+        if row_index < 0 or row_index >= self._fsect_table.rowCount():
+            return
+        column_index = 1 if endpoint == "start" else 2
+        item = self._fsect_table.item(row_index, column_index)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            item.setFlags(
+                item.flags()
+                | QtCore.Qt.ItemIsEditable
+                | QtCore.Qt.ItemIsSelectable
+            )
+            self._fsect_table.setItem(row_index, column_index, item)
+        self._fsect_table.blockSignals(True)
+        item.setText(self._format_fsect_dlat(new_dlat))
+        self._fsect_table.blockSignals(False)
 
     def _on_measurement_units_changed(self) -> None:
         previous_unit = self._measurement_unit_data
@@ -1049,6 +1070,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
             self._fsect_drag_dirty = True
             self._schedule_fsect_drag_refresh()
+            self._update_fsect_dlat_cell(section_index, row_index, endpoint, new_dlat)
             return
         self._update_fsect_preview_dlat(
             section_index,
@@ -1057,7 +1079,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             new_dlat,
             refresh_preview=True,
         )
-        self._update_fsect_table(section_index)
+        self._update_fsect_dlat_cell(section_index, row_index, endpoint, new_dlat)
 
     def _on_fsect_diagram_drag_started(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
