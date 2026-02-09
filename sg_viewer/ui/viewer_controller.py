@@ -1900,6 +1900,9 @@ class SGViewerController:
                 xsect_dlats=xsect_dlats,
                 selected_xsect_index=self._current_xsect_index(),
                 y_range=y_range,
+                unit=self._window.xsect_altitude_unit(),
+                unit_label=self._window.xsect_altitude_unit_label(),
+                decimals=self._window.xsect_altitude_display_decimals(),
             )
         )
         self._refresh_xsect_elevation_table()
@@ -1928,6 +1931,7 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._window.update_xsect_table_headers()
         self._refresh_xsect_elevation_table()
+        self._refresh_xsect_elevation_panel()
         self._update_track_length_display()
         self._window.update_selection_sidebar(self._active_selection)
 

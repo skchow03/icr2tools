@@ -769,6 +769,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return f"{int(round(display_value))}"
         return f"{display_value:.{decimals}f}"
 
+    def xsect_altitude_unit(self) -> str:
+        return self._current_measurement_unit()
+
+    def xsect_altitude_unit_label(self) -> str:
+        return self._xsect_altitude_units_label()
+
+    def xsect_altitude_display_decimals(self) -> int:
+        return self._measurement_unit_decimals(self._current_measurement_unit())
+
     def update_grade_display(self, value: int) -> None:
         self._grade_value_label.setText(str(value))
 
