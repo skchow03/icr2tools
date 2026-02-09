@@ -62,6 +62,7 @@ class _RuntimeCoreCommitMixin:
         *,
         start_dlat: float | None = None,
         end_dlat: float | None = None,
+        refresh_preview: bool = True,
     ) -> None:
         if section_index < 0 or section_index >= len(self._fsects_by_section):
             return
@@ -83,8 +84,9 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
-        if not self.refresh_fsections_preview():
-            self._context.request_repaint()
+        if refresh_preview:
+            if not self.refresh_fsections_preview():
+                self._context.request_repaint()
 
     def insert_fsection(
         self,

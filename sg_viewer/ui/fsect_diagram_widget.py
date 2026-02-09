@@ -20,6 +20,8 @@ class _FsectNode:
 
 class FsectDiagramWidget(QtWidgets.QWidget):
     dlatChanged = QtCore.pyqtSignal(int, int, str, float)
+    dragStarted = QtCore.pyqtSignal(int, int, str, float)
+    dragEnded = QtCore.pyqtSignal(int, int, str, float)
     _SNAP_DISTANCE_PX = 8.0
 
     def __init__(
@@ -27,6 +29,8 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         parent: QtWidgets.QWidget | None = None,
         *,
         on_dlat_changed: Callable[[int, int, str, float], None] | None = None,
+        on_drag_started: Callable[[int, int, str, float], None] | None = None,
+        on_drag_ended: Callable[[int, int, str, float], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setMinimumHeight(140)
@@ -37,11 +41,17 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._next_fsects: list[PreviewFSection] = []
         self._nodes: list[_FsectNode] = []
         self._dragged_node: _FsectNode | None = None
+        self._dragging = False
+        self._last_drag_dlat: float | None = None
         self._panning = False
         self._pan_last_pos: QtCore.QPoint | None = None
         self._range: tuple[float, float] = (-300000.0, 300000.0)
         if on_dlat_changed is not None:
             self.dlatChanged.connect(on_dlat_changed)
+        if on_drag_started is not None:
+            self.dragStarted.connect(on_drag_started)
+        if on_drag_ended is not None:
+            self.dragEnded.connect(on_drag_ended)
 
     def set_fsects(
         self,
@@ -110,7 +120,16 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         node = self._find_node_at(event.pos())
         if node is not None:
             self._dragged_node = node
+            self._dragging = True
+            self._last_drag_dlat = node.dlat
             self.setCursor(QtCore.Qt.ClosedHandCursor)
+            if self._section_index is not None:
+                self.dragStarted.emit(
+                    self._section_index,
+                    node.fsect_index,
+                    node.endpoint,
+                    node.dlat,
+                )
             return
         self._panning = True
         self._pan_last_pos = event.pos()
@@ -156,6 +175,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         if snapped_dlat is not None:
             new_dlat = snapped_dlat
         self._update_local_dlat(self._dragged_node, new_dlat)
+        self._last_drag_dlat = new_dlat
         self.dlatChanged.emit(
             self._section_index,
             self._dragged_node.fsect_index,
@@ -167,7 +187,25 @@ class FsectDiagramWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() != QtCore.Qt.LeftButton:
             return
+        if (
+            self._dragging
+            and self._section_index is not None
+            and self._dragged_node is not None
+        ):
+            final_dlat = (
+                self._last_drag_dlat
+                if self._last_drag_dlat is not None
+                else self._dragged_node.dlat
+            )
+            self.dragEnded.emit(
+                self._section_index,
+                self._dragged_node.fsect_index,
+                self._dragged_node.endpoint,
+                final_dlat,
+            )
         self._dragged_node = None
+        self._dragging = False
+        self._last_drag_dlat = None
         self._panning = False
         self._pan_last_pos = None
         self.setCursor(QtCore.Qt.ArrowCursor)
