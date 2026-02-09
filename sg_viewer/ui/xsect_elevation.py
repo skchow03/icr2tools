@@ -5,6 +5,7 @@ import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from sg_viewer.ui.altitude_units import units_from_500ths
 
 @dataclass
 class XsectElevationData:
@@ -13,6 +14,9 @@ class XsectElevationData:
     xsect_dlats: list[float] | None = None
     selected_xsect_index: int | None = None
     y_range: tuple[float, float] | None = None
+    unit: str = "500ths"
+    unit_label: str = "500ths"
+    decimals: int = 0
 
 
 class XsectElevationWidget(QtWidgets.QWidget):
@@ -116,6 +120,7 @@ class XsectElevationWidget(QtWidgets.QWidget):
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
         painter.setPen(QtGui.QPen(QtGui.QColor("#4caf50"), 2.0))
+        painter.setClipRect(rect)
 
         path = QtGui.QPainterPath()
         started = False
@@ -178,20 +183,21 @@ class XsectElevationWidget(QtWidgets.QWidget):
         font.setPointSize(max(font.pointSize() - 1, 7))
         painter.setFont(font)
 
-        painter.drawText(
-            rect.adjusted(-36, 0, 0, 0),
-            QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-            f"Section {self._data.section_index}",
-        )
-        painter.drawText(
-            rect.adjusted(0, 0, 0, 18),
-            QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
-            "DLAT (min → right)",
-        )
+        min_display = units_from_500ths(min_alt, self._data.unit)
+        max_display = units_from_500ths(max_alt, self._data.unit)
+        decimals = max(self._data.decimals, 0)
+        if decimals == 0:
+            min_text = f"{int(round(min_display))}"
+            max_text = f"{int(round(max_display))}"
+        else:
+            min_text = f"{min_display:.{decimals}f}"
+            max_text = f"{max_display:.{decimals}f}"
+        unit_label = self._data.unit_label
+        unit_suffix = f" {unit_label}" if unit_label else ""
         painter.drawText(
             rect.adjusted(0, -18, 0, 0),
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-            f"Alt: {min_alt:.0f}–{max_alt:.0f}",
+            f"Alt: {min_text}–{max_text}{unit_suffix}",
         )
         bank_angles = self._banking_angles_degrees()
         if bank_angles is not None:
