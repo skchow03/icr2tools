@@ -85,6 +85,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         _set_button_shortcut(
             self._split_section_button, "Split", shortcut_labels["split_section"]
         )
+        self._move_section_button = QtWidgets.QPushButton("Move Section")
+        self._move_section_button.setCheckable(True)
+        self._move_section_button.setChecked(True)
+        self._move_section_button.setEnabled(False)
         self._delete_section_button = QtWidgets.QPushButton("Delete Section")
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
@@ -296,6 +300,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         navigation_layout.addWidget(self._new_straight_button)
         navigation_layout.addWidget(self._new_curve_button)
         navigation_layout.addWidget(self._split_section_button)
+        navigation_layout.addWidget(self._move_section_button)
         navigation_layout.addWidget(self._delete_section_button)
         navigation_layout.addWidget(self._set_start_finish_button)
         elevation_layout = QtWidgets.QFormLayout()
@@ -465,6 +470,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def split_section_button(self) -> QtWidgets.QPushButton:
         return self._split_section_button
+
+    @property
+    def move_section_button(self) -> QtWidgets.QPushButton:
+        return self._move_section_button
 
     @property
     def delete_section_button(self) -> QtWidgets.QPushButton:
