@@ -13,12 +13,14 @@ from sg_viewer.models.history import FileHistory
 from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
 from sg_viewer.models.selection import SectionSelection
+from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.ui.altitude_units import (
     feet_from_500ths,
     feet_from_slider_units,
     feet_to_500ths,
     feet_to_slider_units,
     units_from_500ths,
+    units_to_500ths,
 )
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.generate_fsects_dialog import GenerateFsectsDialog
@@ -197,6 +199,15 @@ class SGViewerController:
         )
         self._generate_fsects_action.triggered.connect(self._open_generate_fsects_dialog)
 
+        self._raise_lower_elevations_action = QtWidgets.QAction(
+            "Raise/lower all elevations…",
+            self._window,
+        )
+        self._raise_lower_elevations_action.setEnabled(False)
+        self._raise_lower_elevations_action.triggered.connect(
+            self._open_raise_lower_elevations_dialog
+        )
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -257,6 +268,7 @@ class SGViewerController:
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addAction(self._generate_fsects_action)
+        tools_menu.addAction(self._raise_lower_elevations_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._section_table_action)
         tools_menu.addAction(self._heading_table_action)
@@ -626,6 +638,7 @@ class SGViewerController:
         self._window.split_section_button.setEnabled(False)
         self._window.set_start_finish_button.setEnabled(False)
         self._scale_track_action.setEnabled(False)
+        self._raise_lower_elevations_action.setEnabled(False)
         self._update_xsect_table()
         self._populate_xsect_choices()
         self._refresh_elevation_profile()
@@ -993,6 +1006,7 @@ class SGViewerController:
         self._scale_track_action.setEnabled(
             has_sections and is_closed_loop(sections)
         )
+        self._raise_lower_elevations_action.setEnabled(has_sections)
 
         # Save is allowed once anything exists or changes
         self._save_action.setEnabled(True)
@@ -1690,6 +1704,75 @@ class SGViewerController:
             self._window.grade_spin.setValue(min_value)
         elif current_value > max_value:
             self._window.grade_spin.setValue(max_value)
+
+    def _open_raise_lower_elevations_dialog(self) -> None:
+        if self._window.preview.sgfile is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No SG Loaded",
+                "Load an SG file before adjusting elevations.",
+            )
+            return
+
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Raise/Lower All Elevations")
+        layout = QtWidgets.QFormLayout(dialog)
+
+        amount_spin = QtWidgets.QDoubleSpinBox(dialog)
+        unit_combo = QtWidgets.QComboBox(dialog)
+        unit_combo.addItem("Feet", "feet")
+        unit_combo.addItem("Meter", "meter")
+        unit_combo.addItem("Inch", "inch")
+        unit_combo.addItem("500ths", "500ths")
+        current_unit = str(self._window.measurement_units_combo.currentData())
+        current_index = unit_combo.findData(current_unit)
+        if current_index >= 0:
+            unit_combo.setCurrentIndex(current_index)
+
+        unit_decimals = {"feet": 1, "meter": 3, "inch": 1, "500ths": 0}
+        unit_steps = {"feet": 0.1, "meter": 0.05, "inch": 1.0, "500ths": 50.0}
+        unit_labels = {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}
+
+        def _sync_spin_for_unit() -> None:
+            unit = str(unit_combo.currentData())
+            amount_spin.setDecimals(unit_decimals.get(unit, 0))
+            amount_spin.setSingleStep(unit_steps.get(unit, 1.0))
+            amount_spin.setSuffix(f" {unit_labels.get(unit, unit)}")
+            min_value = units_from_500ths(SGDocument.ELEVATION_MIN, unit)
+            max_value = units_from_500ths(SGDocument.ELEVATION_MAX, unit)
+            amount_spin.setRange(min_value, max_value)
+
+        unit_combo.currentIndexChanged.connect(_sync_spin_for_unit)
+        _sync_spin_for_unit()
+
+        layout.addRow("Change by:", amount_spin)
+        layout.addRow("Unit of Measurement:", unit_combo)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        delta_display = amount_spin.value()
+        unit = str(unit_combo.currentData())
+        delta = units_to_500ths(delta_display, unit)
+        if delta == 0:
+            return
+        if not self._window.preview.offset_all_elevations(delta):
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Elevation Update Failed",
+                "Unable to update elevations. Ensure elevation data is available.",
+            )
+            return
+
+        self._refresh_elevation_profile()
 
     def _apply_altitude_edit(self) -> None:
         selection = self._active_selection
