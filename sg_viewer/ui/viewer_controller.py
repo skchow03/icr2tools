@@ -1367,6 +1367,9 @@ class SGViewerController:
             samples_per_section=samples_per_section,
         )
         if profile is not None:
+            profile.unit = self._window.xsect_altitude_unit()
+            profile.unit_label = self._window.xsect_altitude_unit_label()
+            profile.decimals = self._window.xsect_altitude_display_decimals()
             global_bounds: tuple[float, float] | None = None
             if (
                 (self._profile_dragging or self._profile_editing)

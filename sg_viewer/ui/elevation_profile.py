@@ -6,6 +6,8 @@ import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from sg_viewer.ui.altitude_units import units_from_500ths
+
 
 class ElevationSource(Enum):
     SG = "sg"
@@ -24,6 +26,9 @@ class ElevationProfileData:
     xsect_label: str
     sources: tuple[ElevationSource, ...] = (ElevationSource.SG,)
     y_range: tuple[float, float] | None = None
+    unit: str = "500ths"
+    unit_label: str = "500ths"
+    decimals: int = 0
 
 
 def elevation_profile_alt_bounds(data: ElevationProfileData) -> tuple[float, float]:
@@ -175,6 +180,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.setClipRect(rect)
 
         painter.setPen(QtGui.QPen(QtGui.QColor("#03a9f4"), 2.0))
         painter.drawPath(sg_path)
@@ -260,16 +266,26 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         font.setPointSize(max(font.pointSize() - 1, 7))
         painter.setFont(font)
 
-        painter.drawText(rect.adjusted(-36, 0, 0, 0), QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self._data.xsect_label)
         painter.drawText(
             rect.adjusted(0, 0, 0, 18),
             QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
             "DLONG",
         )
+        min_display = units_from_500ths(min_alt, self._data.unit)
+        max_display = units_from_500ths(max_alt, self._data.unit)
+        decimals = max(self._data.decimals, 0)
+        if decimals == 0:
+            min_text = f"{int(round(min_display))}"
+            max_text = f"{int(round(max_display))}"
+        else:
+            min_text = f"{min_display:.{decimals}f}"
+            max_text = f"{max_display:.{decimals}f}"
+        unit_label = self._data.unit_label
+        unit_suffix = f" {unit_label}" if unit_label else ""
         painter.drawText(
             rect.adjusted(0, -18, 0, 0),
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-            f"Alt: {min_alt:.0f}–{max_alt:.0f}",
+            f"Alt: {min_text}–{max_text}{unit_suffix}",
         )
         painter.restore()
 
