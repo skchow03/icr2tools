@@ -224,6 +224,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._on_fsect_table_refresh_timeout
         )
         self._pending_fsect_table_section: int | None = None
+        self._fsect_diagram_dragging = False
         self._fsect_diagram = FsectDiagramWidget(
             on_dlat_changed=self._on_fsect_diagram_dlat_changed
         )
@@ -1069,6 +1070,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_fsect_diagram_dlat_changed(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
     ) -> None:
+        self._fsect_diagram_dragging = True
         if endpoint == "start":
             self._preview.update_fsection_dlat(
                 section_index, row_index, start_dlat=new_dlat
@@ -1092,16 +1094,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
             self._update_fsect_end_delta_cells(fsects, row_index)
         self._updating_fsect_table = False
-        self._schedule_fsect_table_refresh(section_index)
 
     def _on_fsect_diagram_dlat_finished(self, section_index: int) -> None:
         self._fsect_table_refresh_timer.stop()
         self._pending_fsect_table_section = None
+        self._fsect_diagram_dragging = False
         if section_index != self._selected_section_index:
             return
         self._update_fsect_table(section_index)
 
     def _schedule_fsect_table_refresh(self, section_index: int) -> None:
+        if self._fsect_diagram_dragging:
+            self._pending_fsect_table_section = section_index
+            return
         self._pending_fsect_table_section = section_index
         self._fsect_table_refresh_timer.start()
 
