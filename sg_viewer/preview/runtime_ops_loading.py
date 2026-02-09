@@ -167,6 +167,6 @@ class _RuntimeLoadingMixin:
         self._validate_section_fsects_alignment()
         if mark_unsaved:
             self._has_unsaved_changes = True
-            if self._emit_sections_changed is not None:
-                self._emit_sections_changed()
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
         self._context.request_repaint()
