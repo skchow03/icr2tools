@@ -20,6 +20,7 @@ class _FsectNode:
 
 class FsectDiagramWidget(QtWidgets.QWidget):
     dlatChanged = QtCore.pyqtSignal(int, int, str, float)
+    dlatChangeFinished = QtCore.pyqtSignal(int)
     _SNAP_DISTANCE_PX = 8.0
 
     def __init__(
@@ -167,10 +168,13 @@ class FsectDiagramWidget(QtWidgets.QWidget):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() != QtCore.Qt.LeftButton:
             return
+        was_dragging = self._dragged_node is not None
         self._dragged_node = None
         self._panning = False
         self._pan_last_pos = None
         self.setCursor(QtCore.Qt.ArrowCursor)
+        if was_dragging and self._section_index is not None:
+            self.dlatChangeFinished.emit(self._section_index)
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
         _ = event

@@ -217,8 +217,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._fsect_table.setMinimumHeight(160)
         self._fsect_table.cellChanged.connect(self._on_fsect_cell_changed)
+        self._fsect_table_refresh_timer = QtCore.QTimer(self)
+        self._fsect_table_refresh_timer.setSingleShot(True)
+        self._fsect_table_refresh_timer.setInterval(150)
+        self._fsect_table_refresh_timer.timeout.connect(
+            self._on_fsect_table_refresh_timeout
+        )
+        self._pending_fsect_table_section: int | None = None
         self._fsect_diagram = FsectDiagramWidget(
             on_dlat_changed=self._on_fsect_diagram_dlat_changed
+        )
+        self._fsect_diagram.dlatChangeFinished.connect(
+            self._on_fsect_diagram_dlat_finished
         )
         self._xsect_elevation_table = QtWidgets.QTableWidget(0, 3)
         self.update_xsect_table_headers()
@@ -901,6 +911,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             next_fsects=next_fsects,
         )
 
+    def _on_fsect_table_refresh_timeout(self) -> None:
+        if self._pending_fsect_table_section is None:
+            return
+        section_index = self._pending_fsect_table_section
+        if section_index != self._selected_section_index:
+            return
+        self._update_fsect_table(section_index)
+
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._updating_fsect_table:
             return
@@ -1059,7 +1077,75 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._preview.update_fsection_dlat(
                 section_index, row_index, end_dlat=new_dlat
             )
+        fsects = self._preview.get_section_fsects(section_index)
+        if row_index < 0 or row_index >= len(fsects):
+            return
+        self._updating_fsect_table = True
+        if endpoint == "start":
+            self._update_fsect_table_cell(
+                row_index, 1, self._format_fsect_dlat(fsects[row_index].start_dlat)
+            )
+            self._update_fsect_start_delta_cells(fsects, row_index)
+        else:
+            self._update_fsect_table_cell(
+                row_index, 2, self._format_fsect_dlat(fsects[row_index].end_dlat)
+            )
+            self._update_fsect_end_delta_cells(fsects, row_index)
+        self._updating_fsect_table = False
+        self._schedule_fsect_table_refresh(section_index)
+
+    def _on_fsect_diagram_dlat_finished(self, section_index: int) -> None:
+        self._fsect_table_refresh_timer.stop()
+        self._pending_fsect_table_section = None
+        if section_index != self._selected_section_index:
+            return
         self._update_fsect_table(section_index)
+
+    def _schedule_fsect_table_refresh(self, section_index: int) -> None:
+        self._pending_fsect_table_section = section_index
+        self._fsect_table_refresh_timer.start()
+
+    def _update_fsect_table_cell(self, row_index: int, column_index: int, value: str) -> None:
+        item = self._fsect_table.item(row_index, column_index)
+        if item is None:
+            return
+        item.setText(value)
+
+    def _update_fsect_start_delta_cells(
+        self, fsects, row_index: int
+    ) -> None:
+        if row_index < 0 or row_index >= len(fsects):
+            return
+        next_delta = ""
+        if row_index + 1 < len(fsects):
+            next_delta = self._format_fsect_dlat(
+                fsects[row_index + 1].start_dlat - fsects[row_index].start_dlat
+            )
+        self._update_fsect_table_cell(row_index, 3, next_delta)
+        prev_index = row_index - 1
+        if prev_index >= 0:
+            prev_delta = self._format_fsect_dlat(
+                fsects[row_index].start_dlat - fsects[prev_index].start_dlat
+            )
+            self._update_fsect_table_cell(prev_index, 3, prev_delta)
+
+    def _update_fsect_end_delta_cells(
+        self, fsects, row_index: int
+    ) -> None:
+        if row_index < 0 or row_index >= len(fsects):
+            return
+        next_delta = ""
+        if row_index + 1 < len(fsects):
+            next_delta = self._format_fsect_dlat(
+                fsects[row_index + 1].end_dlat - fsects[row_index].end_dlat
+            )
+        self._update_fsect_table_cell(row_index, 4, next_delta)
+        prev_index = row_index - 1
+        if prev_index >= 0:
+            prev_delta = self._format_fsect_dlat(
+                fsects[row_index].end_dlat - fsects[prev_index].end_dlat
+            )
+            self._update_fsect_table_cell(prev_index, 4, prev_delta)
 
     @staticmethod
     def _fsect_type_options() -> list[tuple[str, int, int]]:
