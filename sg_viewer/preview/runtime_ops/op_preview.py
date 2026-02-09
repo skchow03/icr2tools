@@ -92,6 +92,11 @@ class _RuntimeCorePreviewMixin:
         self._apply_creation_update(update)
         return update.handled
 
+    def cancel_creation(self) -> None:
+        update = self._creation_controller.deactivate_creation()
+        update.repaint = True
+        self._apply_creation_update(update)
+
     def set_background_settings(
         self, scale_500ths_per_px: float, origin: Point
     ) -> None:
