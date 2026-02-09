@@ -271,7 +271,14 @@ class PreviewInteraction:
                         )
 
                         if result is None:
-                            self._show_status("Curve → straight connection failed")
+                            self._show_status(
+                                self._connection_failure_reason(
+                                    dragged_section,
+                                    dragged_end,
+                                    target_section,
+                                    target_end,
+                                )
+                            )
                             self._clear_drag_state()
                             return True
 
@@ -306,7 +313,14 @@ class PreviewInteraction:
                         )
 
                         if result is None:
-                            self._show_status("Straight → curve connection failed")
+                            self._show_status(
+                                self._connection_failure_reason(
+                                    dragged_section,
+                                    dragged_end,
+                                    target_section,
+                                    target_end,
+                                )
+                            )
                             self._clear_drag_state()
                             return True
 
@@ -330,6 +344,14 @@ class PreviewInteraction:
                         self._clear_drag_state()
                         return True
 
+                    self._show_status(
+                        self._connection_failure_reason(
+                            dragged_section,
+                            dragged_end,
+                            target_section,
+                            target_end,
+                        )
+                    )
                     self._clear_drag_state()
                     event.accept()
                     return True
@@ -664,6 +686,65 @@ class PreviewInteraction:
             self._sync_fsects_on_connection(source, target)
 
         self._apply_section_updates(sections, changed_indices=[src_index, tgt_index])
+
+    def _straight_heading(self, section: "SectionPreview") -> Point | None:
+        heading = section.start_heading
+        if heading is None:
+            heading = (
+                section.end[0] - section.start[0],
+                section.end[1] - section.start[1],
+            )
+        length = math.hypot(heading[0], heading[1])
+        if length <= 0:
+            return None
+        return (heading[0] / length, heading[1] / length)
+
+    def _connection_failure_reason(
+        self,
+        dragged_section: "SectionPreview",
+        dragged_end: str,
+        target_section: "SectionPreview",
+        target_end: str,
+    ) -> str:
+        if dragged_section.type_name == "straight" and target_section.type_name == "straight":
+            return "Cannot connect straight → straight; drag a straight onto a curve instead."
+        if dragged_section.type_name == "curve" and target_section.type_name == "curve":
+            return "Cannot connect curve → curve; drag a straight onto a curve or a curve end onto a straight."
+
+        if dragged_section.type_name == "curve" and target_section.type_name == "straight":
+            if dragged_end != "end" or target_end != "start":
+                return "Curve → straight requires dragging the curve end onto the straight start."
+            if dragged_section.start_heading is None:
+                return "Curve start heading is undefined; cannot solve a tangential connection."
+            if self._straight_heading(target_section) is None:
+                return "Straight heading is undefined (zero-length straight); cannot solve a tangential connection."
+            return (
+                "Unable to fit the curve to the straight while preserving the curve start and straight end. "
+                "Try lengthening the straight or moving the endpoints."
+            )
+
+        if dragged_section.type_name == "straight" and target_section.type_name == "curve":
+            if self._straight_heading(dragged_section) is None:
+                return "Straight heading is undefined (zero-length straight); cannot connect to curve."
+
+            if dragged_end == "end" and target_end == "start":
+                if target_section.end_heading is None:
+                    return "Curve end heading is undefined; cannot solve a tangential connection."
+            else:
+                heading = target_section.start_heading if target_end == "start" else target_section.end_heading
+                if heading is None:
+                    endpoint = "start" if target_end == "start" else "end"
+                    return f"Curve {endpoint} heading is undefined; cannot project straight endpoint."
+
+            if dragged_section.length <= 0:
+                return "Straight length is zero; cannot adjust the endpoint."
+
+            return (
+                "Unable to adjust the straight/curve endpoints to meet tangentially. "
+                "Try moving the curve endpoint or increasing straight length."
+            )
+
+        return "Connection failed; unsupported section types."
 
     # ------------------------------------------------------------------
     # Section dragging
