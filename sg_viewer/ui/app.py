@@ -197,7 +197,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "fsect_7": "Fsect: Wall",
             "fsect_8": "Fsect: Armco",
         }
-        self._fsect_table = QtWidgets.QTableWidget(0, 4)
+        self._fsect_table = QtWidgets.QTableWidget(0, 6)
         self._update_fsect_table_headers()
         self._fsect_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
@@ -833,23 +833,41 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
         for row_index, fsect in enumerate(fsects):
+            next_fsect = fsects[row_index + 1] if row_index + 1 < len(fsects) else None
             start_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.start_dlat)
             )
             end_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.end_dlat)
             )
+            start_delta_value = (
+                self._format_fsect_dlat(next_fsect.start_dlat - fsect.start_dlat)
+                if next_fsect is not None
+                else ""
+            )
+            start_delta_item = QtWidgets.QTableWidgetItem(start_delta_value)
+            end_delta_value = (
+                self._format_fsect_dlat(next_fsect.end_dlat - fsect.end_dlat)
+                if next_fsect is not None
+                else ""
+            )
+            end_delta_item = QtWidgets.QTableWidgetItem(end_delta_value)
             for editable_item in (start_item, end_item):
                 editable_item.setFlags(
                     editable_item.flags()
                     | QtCore.Qt.ItemIsEditable
                     | QtCore.Qt.ItemIsSelectable
                 )
-            self._fsect_table.setItem(
-                row_index, 0, QtWidgets.QTableWidgetItem(str(row_index))
-            )
+            index_item = QtWidgets.QTableWidgetItem(str(row_index))
+            for readonly_item in (index_item, start_delta_item, end_delta_item):
+                readonly_item.setFlags(
+                    readonly_item.flags() & ~QtCore.Qt.ItemIsEditable
+                )
+            self._fsect_table.setItem(row_index, 0, index_item)
             self._fsect_table.setItem(row_index, 1, start_item)
             self._fsect_table.setItem(row_index, 2, end_item)
+            self._fsect_table.setItem(row_index, 3, start_delta_item)
+            self._fsect_table.setItem(row_index, 4, end_delta_item)
             combo = QtWidgets.QComboBox()
             for label, surface_type, type2 in self._fsect_type_options():
                 combo.addItem(label, (surface_type, type2))
@@ -861,7 +879,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     row, widget
                 )
             )
-            self._fsect_table.setCellWidget(row_index, 3, combo)
+            self._fsect_table.setCellWidget(row_index, 5, combo)
         if not fsects:
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
@@ -943,6 +961,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Index",
                 f"Start DLAT ({unit_label})",
                 f"End DLAT ({unit_label})",
+                f"Start ΔDLAT ({unit_label})",
+                f"End ΔDLAT ({unit_label})",
                 "Type Selection",
             ]
         )
