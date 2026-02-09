@@ -412,13 +412,8 @@ class CurveCreationInteraction:
         if self._controller._curve_start is None:
             constrained_start = context.find_unconnected_node(event.pos)
             if constrained_start is None:
-                self._controller._status_text = (
+                return self._controller.finish_curve(
                     "New curve must start from an unconnected node."
-                )
-                return CreationUpdate(
-                    handled=True,
-                    repaint=True,
-                    status_changed=prev_status != self._controller._status_text,
                 )
 
             section_index, endtype, start_point, heading = constrained_start

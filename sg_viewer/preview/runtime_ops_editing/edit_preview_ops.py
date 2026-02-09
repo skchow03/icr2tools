@@ -164,7 +164,8 @@ class _RuntimeEditPreviewOpsMixin:
             transform,
         )
         if selection_index is None:
-            self._status_message = "Click a section to delete it."
+            self._status_message = "No section selected; delete mode canceled."
+            self._set_delete_section_active(False)
             self._context.request_repaint()
             return False
 
