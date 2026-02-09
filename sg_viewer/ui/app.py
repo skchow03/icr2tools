@@ -208,10 +208,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.SingleSelection
         )
         self._fsect_table.verticalHeader().setVisible(False)
-        self._fsect_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.ResizeToContents
-        )
-        self._fsect_table.horizontalHeader().setStretchLastSection(True)
+        fsect_header = self._fsect_table.horizontalHeader()
+        fsect_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        fsect_header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        fsect_header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        fsect_header.setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)
+        fsect_header.setSectionResizeMode(4, QtWidgets.QHeaderView.Interactive)
+        fsect_header.setSectionResizeMode(5, QtWidgets.QHeaderView.Stretch)
+        fsect_header.setStretchLastSection(True)
         self._fsect_table.setSizeAdjustPolicy(
             QtWidgets.QAbstractScrollArea.AdjustToContents
         )
@@ -832,14 +836,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
-        self._update_fsect_table(selection.index)
+        self._update_fsect_table(selection.index, resize_columns=True)
 
     @staticmethod
     def _format_section_link(prefix: str, section_id: int) -> str:
         connection = "Not connected" if section_id == -1 else f"{section_id}"
         return f"{prefix} Section: {connection}"
 
-    def _update_fsect_table(self, section_index: int | None) -> None:
+    def _update_fsect_table(
+        self, section_index: int | None, resize_columns: bool = False
+    ) -> None:
         fsects = self._preview.get_section_fsects(section_index)
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
@@ -894,7 +900,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if not fsects:
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
-        self._fsect_table.resizeColumnsToContents()
+        if resize_columns:
+            self._resize_fsect_table_columns()
         prev_fsects = (
             self._preview.get_section_fsects(section_index - 1)
             if section_index is not None
@@ -971,7 +978,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_altitude_range_spin_units(previous_unit)
         self.update_xsect_table_headers()
         self._update_fsect_table_headers()
-        self._update_fsect_table(self._selected_section_index)
+        self._update_fsect_table(self._selected_section_index, resize_columns=True)
 
     def _update_fsect_table_headers(self) -> None:
         unit_label = self._fsect_dlat_units_label()
@@ -985,6 +992,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Type Selection",
             ]
         )
+
+    def _resize_fsect_table_columns(self) -> None:
+        self._fsect_table.resizeColumnsToContents()
+        for column_index in (3, 4):
+            self._fsect_table.resizeColumnToContents(column_index)
 
     def _fsect_dlat_units_label(self) -> str:
         return self._measurement_unit_label(self._current_measurement_unit())
@@ -1070,6 +1082,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_fsect_diagram_dlat_changed(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
     ) -> None:
+        if not self._fsect_diagram_dragging:
+            self._fsect_table.setSizeAdjustPolicy(
+                QtWidgets.QAbstractScrollArea.AdjustIgnored
+            )
         self._fsect_diagram_dragging = True
         if endpoint == "start":
             self._preview.update_fsection_dlat(
@@ -1099,6 +1115,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_table_refresh_timer.stop()
         self._pending_fsect_table_section = None
         self._fsect_diagram_dragging = False
+        self._fsect_table.setSizeAdjustPolicy(
+            QtWidgets.QAbstractScrollArea.AdjustToContents
+        )
         if section_index != self._selected_section_index:
             return
         self._update_fsect_table(section_index)
