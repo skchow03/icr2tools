@@ -213,6 +213,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
         painter.setPen(pen)
+        painter.setClipRect(rect)
 
         for _, end in self._data.section_ranges:
             altitude = self._altitude_at_dlong(end)
