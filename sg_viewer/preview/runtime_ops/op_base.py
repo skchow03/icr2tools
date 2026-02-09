@@ -159,6 +159,9 @@ class _RuntimeCoreBaseMixin:
             or self._interaction.is_dragging_section
         )
 
+    def set_section_drag_enabled(self, enabled: bool) -> None:
+        self._interaction.set_section_drag_enabled(enabled)
+
     def _widget_size(self) -> tuple[int, int]:
         return self._context.widget_size()
 

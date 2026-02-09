@@ -91,6 +91,7 @@ class PreviewInteraction:
         self._set_start_finish_mode = False
         self._drag_state_active = False
         self._last_dragged_indices: list[int] | None = None
+        self._section_drag_enabled = True
 
     # ------------------------------------------------------------------
     # State helpers
@@ -149,6 +150,11 @@ class PreviewInteraction:
     def set_set_start_finish_mode(self, active: bool) -> None:
         self._set_start_finish_mode = active
 
+    def set_section_drag_enabled(self, enabled: bool) -> None:
+        self._section_drag_enabled = enabled
+        if not enabled and self._is_dragging_section:
+            self._end_section_drag()
+
     # ------------------------------------------------------------------
     # Mouse interaction entry points
     # ------------------------------------------------------------------
@@ -181,7 +187,7 @@ class PreviewInteraction:
             return False
 
         drag_origin = self._hit_test_selected_section_line(event.pos())
-        if drag_origin is not None:
+        if drag_origin is not None and self._section_drag_enabled:
             self._start_section_drag(event.pos())
             event.accept()
             return True

@@ -51,6 +51,7 @@ class SGViewerController:
         self._new_curve_default_style = window.new_curve_button.styleSheet()
         self._delete_default_style = window.delete_section_button.styleSheet()
         self._split_default_style = window.split_section_button.styleSheet()
+        self._move_section_default_style = window.move_section_button.styleSheet()
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
         self._current_profile: ElevationProfileData | None = None
@@ -68,6 +69,12 @@ class SGViewerController:
         )
         self._initialize_preview_color_controls()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
+        self._window.preview.set_section_drag_enabled(
+            self._window.move_section_button.isChecked()
+        )
+        self._on_move_section_mode_changed(
+            self._window.move_section_button.isChecked()
+        )
         self._refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.show_status_message(
@@ -294,6 +301,9 @@ class SGViewerController:
         self._window.split_section_button.toggled.connect(
             self._toggle_split_section_mode
         )
+        self._window.move_section_button.toggled.connect(
+            self._toggle_move_section_mode
+        )
         self._window.preview.deleteModeChanged.connect(self._on_delete_mode_changed)
         self._window.preview.splitSectionModeChanged.connect(self._on_split_mode_changed)
         self._window.preview.interactionDragChanged.connect(
@@ -482,6 +492,14 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3fb5b5; color: white;")
         else:
             button.setStyleSheet(self._split_default_style)
+
+    def _on_move_section_mode_changed(self, active: bool) -> None:
+        button = self._window.move_section_button
+        button.setChecked(active)
+        if active:
+            button.setStyleSheet("background-color: #4caf50; color: white;")
+        else:
+            button.setStyleSheet(self._move_section_default_style)
 
     def _on_scale_changed(self, scale: float) -> None:
         _ = scale
@@ -934,6 +952,10 @@ class SGViewerController:
         else:
             self._window.preview.cancel_split_section()
 
+    def _toggle_move_section_mode(self, checked: bool) -> None:
+        self._window.preview.set_section_drag_enabled(checked)
+        self._on_move_section_mode_changed(checked)
+
     def _refresh_recent_menu(self) -> None:
         self._open_recent_menu.clear()
         recent_paths = self._history.get_recent_paths()
@@ -954,6 +976,7 @@ class SGViewerController:
 
         self._window.delete_section_button.setEnabled(has_sections)
         self._window.split_section_button.setEnabled(has_sections)
+        self._window.move_section_button.setEnabled(has_sections)
         if not has_sections:
             self._window.delete_section_button.setChecked(False)
             self._window.delete_section_button.setStyleSheet(
