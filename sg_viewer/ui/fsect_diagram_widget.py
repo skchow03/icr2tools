@@ -22,6 +22,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
     dlatChanged = QtCore.pyqtSignal(int, int, str, float)
     dlatChangeFinished = QtCore.pyqtSignal(int)
     _SNAP_DISTANCE_PX = 8.0
+    _DRAG_EMIT_INTERVAL_MS = 33
 
     def __init__(
         self,
@@ -41,6 +42,11 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._panning = False
         self._pan_last_pos: QtCore.QPoint | None = None
         self._range: tuple[float, float] = (-300000.0, 300000.0)
+        self._pending_drag_emit: tuple[int, int, str, float] | None = None
+        self._drag_emit_timer = QtCore.QTimer(self)
+        self._drag_emit_timer.setInterval(self._DRAG_EMIT_INTERVAL_MS)
+        self._drag_emit_timer.setSingleShot(True)
+        self._drag_emit_timer.timeout.connect(self._on_drag_emit_timeout)
         if on_dlat_changed is not None:
             self.dlatChanged.connect(on_dlat_changed)
 
@@ -157,12 +163,13 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         if snapped_dlat is not None:
             new_dlat = snapped_dlat
         self._update_local_dlat(self._dragged_node, new_dlat)
-        self.dlatChanged.emit(
+        self._pending_drag_emit = (
             self._section_index,
             self._dragged_node.fsect_index,
             self._dragged_node.endpoint,
             new_dlat,
         )
+        self._schedule_drag_emit()
         self.update()
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
@@ -174,6 +181,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._pan_last_pos = None
         self.setCursor(QtCore.Qt.ArrowCursor)
         if was_dragging and self._section_index is not None:
+            self._flush_pending_drag_emit()
             self.dlatChangeFinished.emit(self._section_index)
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
@@ -364,3 +372,25 @@ class FsectDiagramWidget(QtWidgets.QWidget):
                 surface_type=current.surface_type,
                 type2=current.type2,
             )
+
+    def _schedule_drag_emit(self) -> None:
+        if not self._drag_emit_timer.isActive():
+            self._drag_emit_timer.start()
+
+    def _on_drag_emit_timeout(self) -> None:
+        if self._pending_drag_emit is None:
+            return
+        section_index, fsect_index, endpoint, dlat = self._pending_drag_emit
+        self._pending_drag_emit = None
+        self.dlatChanged.emit(section_index, fsect_index, endpoint, dlat)
+        if self._pending_drag_emit is not None and self._dragged_node is not None:
+            self._drag_emit_timer.start()
+
+    def _flush_pending_drag_emit(self) -> None:
+        if self._drag_emit_timer.isActive():
+            self._drag_emit_timer.stop()
+        if self._pending_drag_emit is None:
+            return
+        section_index, fsect_index, endpoint, dlat = self._pending_drag_emit
+        self._pending_drag_emit = None
+        self.dlatChanged.emit(section_index, fsect_index, endpoint, dlat)
