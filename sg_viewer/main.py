@@ -27,8 +27,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--log-file",
         default=os.getenv("SG_VIEWER_LOG_PATH"),
         help=(
-            "Optional log file path. Defaults to sg_viewer_log.txt next to the "
-            "executable."
+            "Deprecated. SG viewer no longer writes logs to file and this "
+            "option is ignored."
         ),
     )
     parser.add_argument(
@@ -39,31 +39,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def configure_logging(log_level_name: str, log_path: str | None) -> str:
+def configure_logging(log_level_name: str, log_path: str | None) -> None:
     resolved_level_name = log_level_name.upper()
     log_level = getattr(logging, resolved_level_name, logging.INFO)
 
-    if not log_path:
-        base_dir = os.path.dirname(sys.argv[0])
-        log_path = os.path.join(base_dir, "sg_viewer_log.txt")
+    if log_path:
+        logger.warning("Ignoring --log-file; SG viewer no longer writes a log file")
 
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler(log_path, mode="a", encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
-
-    return log_path
 
 
 def main() -> None:
     args = parse_args()
     log_level_name = "DEBUG" if args.debug else args.log_level
-    log_path = configure_logging(log_level_name, args.log_file)
-    logger.info("Starting SG Viewer (log level %s, log file %s)", log_level_name.upper(), log_path)
+    configure_logging(log_level_name, args.log_file)
+    logger.info("Starting SG Viewer (log level %s)", log_level_name.upper())
 
     app = SGViewerApp(sys.argv)
     window = SGViewerWindow()
