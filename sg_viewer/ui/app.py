@@ -1116,7 +1116,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_fsect_drag_timer(self) -> None:
         if not self._fsect_drag_active or not self._fsect_drag_dirty:
             return
-        self._preview.refresh_fsections_preview()
+        self._preview.refresh_fsections_preview_lightweight()
 
     def _update_fsect_preview_dlat(
         self,
