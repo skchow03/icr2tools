@@ -140,6 +140,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("Show SG Fsects (preview)")
         self._sg_fsects_checkbox.setChecked(False)
+        self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
+            "Live drag preview"
+        )
+        self._live_fsect_drag_preview_checkbox.setChecked(False)
+        self._live_fsect_drag_preview_checkbox.setToolTip(
+            "When enabled, dragging Fsect endpoints updates the track diagram in real time."
+        )
         self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox(
             "Show X-Section DLAT Line"
         )
@@ -349,7 +356,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         fsect_sidebar = QtWidgets.QWidget()
         fsect_sidebar_layout = QtWidgets.QVBoxLayout()
-        fsect_sidebar_layout.addWidget(self._sg_fsects_checkbox)
+        fsect_preview_options_layout = QtWidgets.QHBoxLayout()
+        fsect_preview_options_layout.addWidget(self._sg_fsects_checkbox)
+        fsect_preview_options_layout.addWidget(self._live_fsect_drag_preview_checkbox)
+        fsect_sidebar_layout.addLayout(fsect_preview_options_layout)
         fsect_sidebar_layout.addWidget(self._refresh_fsects_button)
         fsect_sidebar_layout.addWidget(self._copy_fsects_prev_button)
         fsect_sidebar_layout.addWidget(self._copy_fsects_next_button)
@@ -522,6 +532,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
         return self._sg_fsects_checkbox
+
+    @property
+    def live_fsect_drag_preview_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._live_fsect_drag_preview_checkbox
 
     @property
     def xsect_dlat_line_checkbox(self) -> QtWidgets.QCheckBox:
@@ -1061,6 +1075,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
     ) -> None:
         if self._fsect_drag_active:
+            live_drag_preview = self._live_fsect_drag_preview_checkbox.isChecked()
             self._update_fsect_preview_dlat(
                 section_index,
                 row_index,
@@ -1070,7 +1085,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 emit_sections_changed=False,
             )
             self._fsect_drag_dirty = True
-            self._schedule_fsect_drag_refresh()
+            if live_drag_preview:
+                self._schedule_fsect_drag_refresh()
             self._update_fsect_dlat_cell(section_index, row_index, endpoint, new_dlat)
             return
         self._update_fsect_preview_dlat(
@@ -1097,7 +1113,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_drag_active = False
         if self._fsect_drag_timer.isActive():
             self._fsect_drag_timer.stop()
-        if self._fsect_drag_dirty:
+
+        live_drag_preview = self._live_fsect_drag_preview_checkbox.isChecked()
+        if live_drag_preview or self._fsect_drag_dirty:
             self._update_fsect_preview_dlat(
                 section_index,
                 row_index,
