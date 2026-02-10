@@ -35,6 +35,7 @@ from sg_viewer.ui.elevation_profile import (
 from sg_viewer.ui.xsect_elevation import XsectElevationData
 from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.services import sg_rendering
+from sg_viewer.version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +287,7 @@ class SGViewerController:
         QtWidgets.QMessageBox.about(
             self._window,
             "About SG Viewer",
-            "This is SG Viewer version 0.1.0.",
+            f"This is SG Viewer version v{__version__}.",
         )
 
     def _connect_signals(self) -> None:
