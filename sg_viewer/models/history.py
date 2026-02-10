@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from configparser import ConfigParser
 from pathlib import Path
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _normalize_hex_color(value: str) -> str | None:
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if not candidate.startswith("#"):
+        candidate = f"#{candidate}"
+    if not _HEX_COLOR_RE.fullmatch(candidate):
+        return None
+    return candidate.upper()
 
 
 def _default_ini_path() -> Path:
@@ -24,6 +39,7 @@ class FileHistory:
 
     DEFAULT_PATH = _default_ini_path()
     MAX_RECENT = 10
+    PREVIEW_COLORS_SECTION = "preview_colors"
 
     def __init__(self, path: Path | None = None) -> None:
         # Path resolves differently for source vs frozen executable
@@ -31,6 +47,46 @@ class FileHistory:
         self._config = ConfigParser(strict=False, delimiters=("=",))
         self._config.optionxform = str
         self._load()
+
+    def ensure_preview_colors(self, defaults: dict[str, str]) -> dict[str, str]:
+        """Ensure preview colors exist in config, writing defaults when missing."""
+        if not self._config.has_section(self.PREVIEW_COLORS_SECTION):
+            self._config.add_section(self.PREVIEW_COLORS_SECTION)
+
+        changed = False
+        resolved: dict[str, str] = {}
+        section = self._config[self.PREVIEW_COLORS_SECTION]
+        for key, fallback in defaults.items():
+            raw = section.get(key, "").strip()
+            normalized = _normalize_hex_color(raw)
+            if normalized is not None:
+                resolved[key] = normalized
+                if raw != resolved[key]:
+                    section[key] = resolved[key]
+                    changed = True
+                continue
+
+            default_color = _normalize_hex_color(fallback) or "#000000"
+            resolved[key] = default_color
+            section[key] = resolved[key]
+            changed = True
+
+        if changed:
+            self._save()
+        return resolved
+
+    def set_preview_color(self, key: str, color: str) -> None:
+        """Persist one preview color in ``#RRGGBB`` form."""
+        normalized = _normalize_hex_color(color)
+        if normalized is None:
+            return
+        if not self._config.has_section(self.PREVIEW_COLORS_SECTION):
+            self._config.add_section(self.PREVIEW_COLORS_SECTION)
+        section = self._config[self.PREVIEW_COLORS_SECTION]
+        if section.get(key) == normalized:
+            return
+        section[key] = normalized
+        self._save()
 
     # ------------------------------------------------------------------
     # Public API

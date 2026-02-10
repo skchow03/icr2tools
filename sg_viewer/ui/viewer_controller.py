@@ -61,7 +61,6 @@ class SGViewerController:
         self._profile_dragging = False
         self._profile_editing = False
 
-
         self._create_actions()
         self._create_menus()
         self._connect_signals()
@@ -69,6 +68,7 @@ class SGViewerController:
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
         )
+        self._load_preview_colors_from_history()
         self._initialize_preview_color_controls()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._window.preview.set_section_drag_enabled(
@@ -433,13 +433,29 @@ class SGViewerController:
             color = self._current_preview_color_for_key(key)
             self._window.set_preview_color_text(key, color)
 
+    def _load_preview_colors_from_history(self) -> None:
+        defaults: dict[str, str] = {}
+        for key in self._window.preview_color_controls:
+            defaults[key] = self._current_preview_color_for_key(key).name().upper()
+        resolved = self._history.ensure_preview_colors(defaults)
+        for key, value in resolved.items():
+            parsed = QtGui.QColor(value)
+            if parsed.isValid():
+                self._apply_preview_color(key, parsed, save=False)
+
     def _current_preview_color_for_key(self, key: str) -> QtGui.QColor:
         if key.startswith("fsect_"):
             surface_id = int(key.split("_", maxsplit=1)[1])
             return QtGui.QColor(sg_rendering.SURFACE_COLORS.get(surface_id, sg_rendering.DEFAULT_SURFACE_COLOR))
         return self._window.preview.preview_color(key)
 
-    def _apply_preview_color(self, key: str, color: QtGui.QColor) -> None:
+    def _apply_preview_color(
+        self,
+        key: str,
+        color: QtGui.QColor,
+        *,
+        save: bool = True,
+    ) -> None:
         if key.startswith("fsect_"):
             surface_id = int(key.split("_", maxsplit=1)[1])
             sg_rendering.SURFACE_COLORS[surface_id] = QtGui.QColor(color)
@@ -451,6 +467,8 @@ class SGViewerController:
         else:
             self._window.preview.set_preview_color(key, color)
         self._window.set_preview_color_text(key, color)
+        if save:
+            self._history.set_preview_color(key, color.name().upper())
 
     def _on_preview_color_text_changed(
         self, key: str, widget: QtWidgets.QLineEdit
