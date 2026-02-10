@@ -169,6 +169,7 @@ def test_view_options_expose_color_controls(qapp):
         assert "background" in controls
         assert "centerline_unselected" in controls
         assert "centerline_selected" in controls
+        assert "centerline_long_curve" in controls
         assert "nodes_connected" in controls
         assert "nodes_disconnected" in controls
         assert "radii_unselected" in controls
