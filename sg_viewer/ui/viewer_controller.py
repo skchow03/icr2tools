@@ -996,6 +996,11 @@ class SGViewerController:
                 self._delete_default_style
             )
         if not has_sections:
+            self._window.delete_section_button.setChecked(False)
+            self._window.delete_section_button.setStyleSheet(
+                self._delete_default_style
+            )
+        if not has_sections:
             self._window.split_section_button.setChecked(False)
         self._window.set_start_finish_button.setEnabled(has_sections)
         self._section_table_action.setEnabled(has_sections)
