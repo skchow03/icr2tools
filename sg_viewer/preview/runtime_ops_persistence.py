@@ -181,6 +181,18 @@ class _RuntimePersistenceMixin:
         self._context.request_repaint()
         return True
 
+    def refresh_fsections_preview_lightweight(self) -> bool:
+        if self._preview_data is None:
+            return self.refresh_fsections_preview()
+
+        fsections: list[PreviewFSection] = []
+        for section_fsections in self._fsects_by_section:
+            fsections.extend(section_fsections)
+
+        object.__setattr__(self._preview_data, "fsections", fsections)
+        self._context.request_repaint()
+        return True
+
     def _refresh_profile_altitudes_for_sections(
         self,
         sgfile: SGFile,
