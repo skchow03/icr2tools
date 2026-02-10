@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.sg_elevation import (
@@ -11,6 +12,7 @@ from icr2_core.sg_elevation import (
     sample_sg_elevation_with_dlats,
 )
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
+from sg_viewer.preview.sg_overlay_builder import build_sg_preview_model
 from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.models.preview_fsection import PreviewFSection
@@ -178,12 +180,21 @@ class _RuntimePersistenceMixin:
         else:
             fsections = preview_loader_service.build_fsections(sgfile)
             object.__setattr__(self._preview_data, "fsections", fsections)
+
+        self._sg_preview_model = build_sg_preview_model(self._document)
         self._context.request_repaint()
         return True
 
     def refresh_fsections_preview_lightweight(self) -> bool:
         if self._preview_data is None:
             return self.refresh_fsections_preview()
+
+        try:
+            sgfile = self.apply_preview_to_sgfile()
+        except ValueError:
+            return False
+
+        self._sg_preview_model = build_sg_preview_model(SimpleNamespace(sg_data=sgfile))
 
         fsections: list[PreviewFSection] = []
         for section_fsections in self._fsects_by_section:
