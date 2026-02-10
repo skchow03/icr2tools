@@ -1067,6 +1067,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 endpoint,
                 new_dlat,
                 refresh_preview=False,
+                emit_sections_changed=False,
             )
             self._fsect_drag_dirty = True
             self._schedule_fsect_drag_refresh()
@@ -1125,6 +1126,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         new_dlat: float,
         *,
         refresh_preview: bool,
+        emit_sections_changed: bool = True,
     ) -> None:
         if endpoint == "start":
             self._preview.update_fsection_dlat(
@@ -1132,6 +1134,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 row_index,
                 start_dlat=new_dlat,
                 refresh_preview=refresh_preview,
+                emit_sections_changed=emit_sections_changed,
             )
         else:
             self._preview.update_fsection_dlat(
@@ -1139,6 +1142,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 row_index,
                 end_dlat=new_dlat,
                 refresh_preview=refresh_preview,
+                emit_sections_changed=emit_sections_changed,
             )
 
     @staticmethod
