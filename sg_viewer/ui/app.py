@@ -196,6 +196,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "background": "Background",
             "centerline_unselected": "Centerline (Not Selected)",
             "centerline_selected": "Centerline (Selected)",
+            "centerline_long_curve": "Centerline (Curve > 120° Arc)",
             "nodes_connected": "Nodes (Connected)",
             "nodes_disconnected": "Nodes (Disconnected)",
             "radii_unselected": "Radii (Not Selected)",

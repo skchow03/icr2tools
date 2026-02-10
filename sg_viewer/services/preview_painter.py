@@ -25,6 +25,7 @@ class PreviewColors:
     background: QtGui.QColor
     centerline_unselected: QtGui.QColor
     centerline_selected: QtGui.QColor
+    centerline_long_curve: QtGui.QColor
     nodes_connected: QtGui.QColor
     nodes_disconnected: QtGui.QColor
     radii_unselected: QtGui.QColor
@@ -36,6 +37,7 @@ def default_preview_colors() -> PreviewColors:
         background=QtGui.QColor("black"),
         centerline_unselected=QtGui.QColor("lightgray"),
         centerline_selected=QtGui.QColor("yellow"),
+        centerline_long_curve=QtGui.QColor("red"),
         nodes_connected=QtGui.QColor("limegreen"),
         nodes_disconnected=QtGui.QColor("orange"),
         radii_unselected=QtGui.QColor(140, 140, 140),
@@ -68,6 +70,7 @@ class BasePreviewState:
     show_xsect_dlat_line: bool
     centerline_unselected_color: QtGui.QColor
     centerline_selected_color: QtGui.QColor
+    centerline_long_curve_color: QtGui.QColor
     radii_unselected_color: QtGui.QColor
     radii_selected_color: QtGui.QColor
 
@@ -169,6 +172,7 @@ def paint_preview(
             widget_height,
             centerline_unselected_color=base_state.centerline_unselected_color,
             centerline_selected_color=base_state.centerline_selected_color,
+            centerline_long_curve_color=base_state.centerline_long_curve_color,
         )
 
         if base_state.show_curve_markers:
@@ -440,6 +444,7 @@ def _draw_centerlines(
     *,
     centerline_unselected_color: QtGui.QColor,
     centerline_selected_color: QtGui.QColor,
+    centerline_long_curve_color: QtGui.QColor,
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -453,7 +458,12 @@ def _draw_centerlines(
             sg_rendering.map_point(point[0], point[1], transform, widget_height)
             for point in polyline
         ]
-        pen = QtGui.QPen(centerline_unselected_color)
+        line_color = (
+            centerline_long_curve_color
+            if _is_long_curve_section(section)
+            else centerline_unselected_color
+        )
+        pen = QtGui.QPen(line_color)
         pen.setWidthF(BASE_WIDTH)
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
@@ -473,6 +483,13 @@ def _draw_centerlines(
         painter.drawPolyline(QtGui.QPolygonF(selected_points))
 
     painter.restore()
+
+
+def _is_long_curve_section(section: SectionPreview) -> bool:
+    if section.center is None or section.radius is None or section.length <= 0:
+        return False
+    arc_degrees = math.degrees(section.length / abs(section.radius))
+    return arc_degrees > 120.0
 
 
 def _draw_xsect_dlat_line(

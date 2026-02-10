@@ -102,6 +102,7 @@ class PreviewPresenter:
                 ),
                 centerline_unselected_color=self._colors.centerline_unselected,
                 centerline_selected_color=self._colors.centerline_selected,
+                centerline_long_curve_color=self._colors.centerline_long_curve,
                 radii_unselected_color=self._colors.radii_unselected,
                 radii_selected_color=self._colors.radii_selected,
             ),

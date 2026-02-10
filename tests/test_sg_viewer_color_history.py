@@ -80,6 +80,16 @@ def test_preview_fsect_colors_use_descriptive_storage_keys(tmp_path):
     assert "fsect_8" not in content
 
 
+
+def test_set_preview_color_persists_long_curve_color(tmp_path):
+    ini_path = tmp_path / "sg_viewer.ini"
+    history = FileHistory(ini_path)
+
+    history.set_preview_color("centerline_long_curve", "#AA0000")
+
+    content = ini_path.read_text(encoding="utf-8")
+    assert "centerline_long_curve = #AA0000" in content
+
 def test_measurement_unit_round_trip(tmp_path):
     ini_path = tmp_path / "sg_viewer.ini"
     history = FileHistory(ini_path)
