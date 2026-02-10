@@ -62,3 +62,36 @@ def test_set_preview_color_persists_single_color(tmp_path):
     content = ini_path.read_text(encoding="utf-8")
     assert "[preview_colors]" in content
     assert "background = #123456" in content
+
+
+def test_preview_fsect_colors_use_descriptive_storage_keys(tmp_path):
+    ini_path = tmp_path / "sg_viewer.ini"
+    history = FileHistory(ini_path)
+
+    resolved = history.ensure_preview_colors({"fsect_0": "#00AA00", "fsect_8": "#B0B0B0"})
+
+    assert resolved["fsect_0"] == "#00AA00"
+    assert resolved["fsect_8"] == "#B0B0B0"
+
+    content = ini_path.read_text(encoding="utf-8")
+    assert "fsect_grass = #00AA00" in content
+    assert "fsect_armco = #B0B0B0" in content
+    assert "fsect_0" not in content
+    assert "fsect_8" not in content
+
+
+def test_measurement_unit_round_trip(tmp_path):
+    ini_path = tmp_path / "sg_viewer.ini"
+    history = FileHistory(ini_path)
+
+    assert history.get_measurement_unit() is None
+
+    history.set_measurement_unit("meter")
+    assert history.get_measurement_unit() == "meter"
+
+    content = ini_path.read_text(encoding="utf-8")
+    assert "[view]" in content
+    assert "uom = meter" in content
+
+    history.set_measurement_unit("invalid")
+    assert history.get_measurement_unit() == "meter"

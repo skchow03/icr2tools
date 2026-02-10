@@ -8,6 +8,18 @@ from pathlib import Path
 
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_ALLOWED_MEASUREMENT_UNITS = {"feet", "meter", "inch", "500ths"}
+_PREVIEW_COLOR_STORAGE_KEYS = {
+    "fsect_0": "fsect_grass",
+    "fsect_1": "fsect_dry_grass",
+    "fsect_2": "fsect_dirt",
+    "fsect_3": "fsect_sand",
+    "fsect_4": "fsect_concrete",
+    "fsect_5": "fsect_asphalt",
+    "fsect_6": "fsect_paint",
+    "fsect_7": "fsect_wall",
+    "fsect_8": "fsect_armco",
+}
 
 
 def _normalize_hex_color(value: str) -> str | None:
@@ -40,6 +52,7 @@ class FileHistory:
     DEFAULT_PATH = _default_ini_path()
     MAX_RECENT = 10
     PREVIEW_COLORS_SECTION = "preview_colors"
+    VIEW_SECTION = "view"
 
     def __init__(self, path: Path | None = None) -> None:
         # Path resolves differently for source vs frozen executable
@@ -57,18 +70,26 @@ class FileHistory:
         resolved: dict[str, str] = {}
         section = self._config[self.PREVIEW_COLORS_SECTION]
         for key, fallback in defaults.items():
-            raw = section.get(key, "").strip()
+            storage_key = self._preview_color_storage_key(key)
+            raw = section.get(storage_key, "").strip()
+            if not raw and storage_key != key:
+                raw = section.get(key, "").strip()
             normalized = _normalize_hex_color(raw)
             if normalized is not None:
                 resolved[key] = normalized
-                if raw != resolved[key]:
-                    section[key] = resolved[key]
+                if raw != resolved[key] or section.get(storage_key) != resolved[key]:
+                    section[storage_key] = resolved[key]
+                    changed = True
+                if storage_key != key and key in section:
+                    del section[key]
                     changed = True
                 continue
 
             default_color = _normalize_hex_color(fallback) or "#000000"
             resolved[key] = default_color
-            section[key] = resolved[key]
+            section[storage_key] = resolved[key]
+            if storage_key != key and key in section:
+                del section[key]
             changed = True
 
         if changed:
@@ -83,9 +104,33 @@ class FileHistory:
         if not self._config.has_section(self.PREVIEW_COLORS_SECTION):
             self._config.add_section(self.PREVIEW_COLORS_SECTION)
         section = self._config[self.PREVIEW_COLORS_SECTION]
-        if section.get(key) == normalized:
+        storage_key = self._preview_color_storage_key(key)
+        if section.get(storage_key) == normalized and (
+            storage_key == key or key not in section
+        ):
             return
-        section[key] = normalized
+        section[storage_key] = normalized
+        if storage_key != key and key in section:
+            del section[key]
+        self._save()
+
+    def get_measurement_unit(self) -> str | None:
+        if not self._config.has_section(self.VIEW_SECTION):
+            return None
+        candidate = self._config[self.VIEW_SECTION].get("uom", "").strip().lower()
+        if candidate not in _ALLOWED_MEASUREMENT_UNITS:
+            return None
+        return candidate
+
+    def set_measurement_unit(self, unit: str) -> None:
+        normalized = str(unit).strip().lower()
+        if normalized not in _ALLOWED_MEASUREMENT_UNITS:
+            return
+        if not self._config.has_section(self.VIEW_SECTION):
+            self._config.add_section(self.VIEW_SECTION)
+        if self._config[self.VIEW_SECTION].get("uom") == normalized:
+            return
+        self._config[self.VIEW_SECTION]["uom"] = normalized
         self._save()
 
     # ------------------------------------------------------------------
@@ -179,3 +224,7 @@ class FileHistory:
             self._config.add_section("files")
         self._config["files"][str(sg_path.resolve())] = json.dumps(data)
         self._save()
+
+    @staticmethod
+    def _preview_color_storage_key(key: str) -> str:
+        return _PREVIEW_COLOR_STORAGE_KEYS.get(key, key)

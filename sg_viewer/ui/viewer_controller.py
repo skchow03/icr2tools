@@ -68,6 +68,7 @@ class SGViewerController:
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
         )
+        self._load_measurement_unit_from_history()
         self._load_preview_colors_from_history()
         self._initialize_preview_color_controls()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
@@ -427,6 +428,15 @@ class SGViewerController:
         self._window.background_brightness_value_label.setText(str(clamped_value))
         self._window.preview.set_background_brightness(clamped_value)
 
+
+    def _load_measurement_unit_from_history(self) -> None:
+        unit = self._history.get_measurement_unit()
+        if unit is None:
+            return
+        combo = self._window.measurement_units_combo
+        index = combo.findData(unit)
+        if index >= 0:
+            combo.setCurrentIndex(index)
 
     def _initialize_preview_color_controls(self) -> None:
         for key in self._window.preview_color_controls:
@@ -2036,6 +2046,9 @@ class SGViewerController:
         )
 
     def _on_measurement_units_changed(self) -> None:
+        self._history.set_measurement_unit(
+            str(self._window.measurement_units_combo.currentData())
+        )
         selected_xsect = self._current_xsect_index()
         self._populate_xsect_choices(preferred_index=selected_xsect)
         self._refresh_elevation_inputs()
