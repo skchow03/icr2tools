@@ -63,6 +63,7 @@ class _RuntimeCoreCommitMixin:
         start_dlat: float | None = None,
         end_dlat: float | None = None,
         refresh_preview: bool = True,
+        emit_sections_changed: bool = True,
     ) -> None:
         if section_index < 0 or section_index >= len(self._fsects_by_section):
             return
@@ -82,7 +83,7 @@ class _RuntimeCoreCommitMixin:
         )
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
-        if self._emit_sections_changed is not None:
+        if emit_sections_changed and self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if refresh_preview:
             if not self.refresh_fsections_preview():
