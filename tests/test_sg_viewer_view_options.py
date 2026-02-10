@@ -3,6 +3,7 @@ import pytest
 try:
     from PyQt5 import QtWidgets
     from sg_viewer.ui.app import SGViewerWindow
+    from sg_viewer.models.preview_fsection import PreviewFSection
     from sg_viewer.models.selection import SectionSelection
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -23,6 +24,7 @@ def test_measurement_units_are_global(qapp):
 
         assert "m" in window.xsect_elevation_table.horizontalHeaderItem(1).text()
         assert "m" in window.fsect_table.horizontalHeaderItem(1).text()
+        assert "m" in window.fsect_table.horizontalHeaderItem(3).text()
 
         window.update_elevation_inputs(6000, 0, True)
         assert window._altitude_value_label.text() == "0.305"
@@ -31,6 +33,7 @@ def test_measurement_units_are_global(qapp):
 
         assert "in" in window.xsect_elevation_table.horizontalHeaderItem(1).text()
         assert "in" in window.fsect_table.horizontalHeaderItem(1).text()
+        assert "in" in window.fsect_table.horizontalHeaderItem(3).text()
 
         window.update_elevation_inputs(6000, 0, True)
         assert window._altitude_value_label.text() == "12.0"
@@ -39,6 +42,7 @@ def test_measurement_units_are_global(qapp):
 
         assert "500ths" in window.xsect_elevation_table.horizontalHeaderItem(1).text()
         assert "500ths" in window.fsect_table.horizontalHeaderItem(1).text()
+        assert "500ths" in window.fsect_table.horizontalHeaderItem(3).text()
 
         window.update_elevation_inputs(6000, 0, True)
         assert window._altitude_value_label.text() == "6000"
@@ -46,9 +50,37 @@ def test_measurement_units_are_global(qapp):
         window.measurement_units_combo.setCurrentIndex(0)
         assert "ft" in window.xsect_elevation_table.horizontalHeaderItem(1).text()
         assert "ft" in window.fsect_table.horizontalHeaderItem(1).text()
+        assert "ft" in window.fsect_table.horizontalHeaderItem(3).text()
 
         window.update_elevation_inputs(6000, 0, True)
         assert window._altitude_value_label.text() == "1.0"
+    finally:
+        window.close()
+
+
+def test_fsect_delta_columns_follow_and_edit_next_fsect(qapp):
+    window = SGViewerWindow()
+    try:
+        window._selected_section_index = 0
+        window.preview._fsects_by_section = [
+            [
+                PreviewFSection(start_dlat=500.0, end_dlat=1500.0, surface_type=0, type2=0),
+                PreviewFSection(start_dlat=750.0, end_dlat=1800.0, surface_type=0, type2=0),
+            ]
+        ]
+
+        window._update_fsect_table(0)
+
+        assert window.fsect_table.item(0, 3).text() == "0.1"
+        assert window.fsect_table.item(0, 4).text() == "0.1"
+        assert window.fsect_table.item(1, 3).text() == ""
+        assert window.fsect_table.item(1, 4).text() == ""
+
+        window.fsect_table.item(0, 3).setText("0.2")
+        window._on_fsect_cell_changed(0, 3)
+
+        assert window.preview.get_section_fsects(0)[1].start_dlat == 1500.0
+        assert window.fsect_table.item(0, 3).text() == "0.2"
     finally:
         window.close()
 
