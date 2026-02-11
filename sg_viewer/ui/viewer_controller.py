@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import math
+import json
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.models.history import FileHistory
@@ -61,6 +63,13 @@ class SGViewerController:
         self._deferred_profile_refresh = False
         self._profile_dragging = False
         self._profile_editing = False
+        self._calibrator_server_name = f"sg_viewer_calibrator_{uuid.uuid4().hex}"
+        self._calibrator_server = QtNetwork.QLocalServer(self._window)
+        self._calibrator_server.newConnection.connect(
+            self._on_calibrator_values_received
+        )
+        QtNetwork.QLocalServer.removeServer(self._calibrator_server_name)
+        self._calibrator_server.listen(self._calibrator_server_name)
 
         self._create_actions()
         self._create_menus()
@@ -606,6 +615,7 @@ class SGViewerController:
             background_image_path = self._window.preview.get_background_image_path()
             if background_image_path is not None:
                 command.append(str(background_image_path))
+            command.extend(["--send-endpoint", self._calibrator_server_name])
             subprocess.Popen(command)
         except FileNotFoundError:
             QtWidgets.QMessageBox.critical(
@@ -619,6 +629,42 @@ class SGViewerController:
         self._window.show_status_message(
             "Opened background calibrator in a separate window"
         )
+
+    def _on_calibrator_values_received(self) -> None:
+        while self._calibrator_server.hasPendingConnections():
+            socket = self._calibrator_server.nextPendingConnection()
+            if socket is None:
+                return
+            if not socket.waitForReadyRead(1500):
+                socket.disconnectFromServer()
+                continue
+
+            payload = bytes(socket.readAll()).decode("utf-8", errors="replace")
+            socket.disconnectFromServer()
+            try:
+                data = json.loads(payload)
+                scale = float(data["units_per_pixel"])
+                upper_left = data["upper_left"]
+                origin_u = float(upper_left[0])
+                origin_v = float(upper_left[1])
+            except (ValueError, TypeError, KeyError, IndexError, json.JSONDecodeError):
+                logger.warning("Invalid background calibration payload: %s", payload)
+                self._window.show_status_message(
+                    "Ignored invalid calibration values from calibrator"
+                )
+                continue
+
+            if scale <= 0:
+                self._window.show_status_message(
+                    "Ignored calibration values with non-positive scale"
+                )
+                continue
+
+            self._window.preview.set_background_settings(scale, (origin_u, origin_v))
+            self._persist_background_state()
+            self._window.show_status_message(
+                "Applied calibration values from background calibrator"
+            )
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()

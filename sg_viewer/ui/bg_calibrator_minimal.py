@@ -20,14 +20,14 @@ World math:
 from __future__ import annotations
 
 import math
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple, List
 import json
+import argparse
 
 import numpy as np
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
 
 # -------------------------------------------------
 # Constants
@@ -159,7 +159,11 @@ class ImageView(QtWidgets.QGraphicsView):
 # -------------------------------------------------
 
 class Calibrator(QtWidgets.QMainWindow):
-    def __init__(self, initial_image_path: Optional[str] = None):
+    def __init__(
+        self,
+        initial_image_path: Optional[str] = None,
+        send_endpoint: Optional[str] = None,
+    ):
         super().__init__()
         self.setWindowTitle("ICR2 Background Calibrator")
         self.resize(1200, 800)
@@ -173,6 +177,7 @@ class Calibrator(QtWidgets.QMainWindow):
         self.image_size: Optional[Tuple[int, int]] = None
         self.current_image_path: Optional[str] = None
         self._suppress_table_edit = False
+        self._send_endpoint = send_endpoint
 
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["#", "px", "py", "lat, lon"])
@@ -192,12 +197,18 @@ class Calibrator(QtWidgets.QMainWindow):
         save_btn.clicked.connect(self.save_settings)
         load_btn = QtWidgets.QPushButton("Load Settings…")
         load_btn.clicked.connect(self.load_settings)
+        send_btn = QtWidgets.QPushButton("Send values to SG Viewer")
+        send_btn.clicked.connect(self.send_values_to_main_app)
+        send_btn.setEnabled(bool(send_endpoint))
+        if not send_endpoint:
+            send_btn.setToolTip("Launch this calibrator from SG Viewer to enable sending")
 
         right = QtWidgets.QVBoxLayout()
         right.addWidget(open_btn)
         right.addWidget(add_point_btn)
         right.addWidget(save_btn)
         right.addWidget(load_btn)
+        right.addWidget(send_btn)
         right.addWidget(self.table)
         right.addWidget(QtWidgets.QLabel("500ths per pixel"))
         right.addWidget(self.out_scale)
@@ -421,12 +432,71 @@ class Calibrator(QtWidgets.QMainWindow):
         except Exception:
             return None
 
+    def send_values_to_main_app(self):
+        if not self._send_endpoint:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Send Disabled",
+                "No SG Viewer endpoint was provided. Open this calibrator from SG Viewer to send values.",
+            )
+            return
+
+        self.recompute()
+        scale = self._parse_float(self.out_scale.text())
+        upper_left = self._parse_pair(self.out_ul.text())
+        if scale is None or upper_left is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Calibration",
+                "Compute a valid calibration before sending values.",
+            )
+            return
+
+        payload = {
+            "units_per_pixel": scale,
+            "upper_left": [upper_left[0], upper_left[1]],
+        }
+        socket = QtNetwork.QLocalSocket(self)
+        socket.connectToServer(self._send_endpoint)
+        if not socket.waitForConnected(1500):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Send Failed",
+                "Could not connect to SG Viewer."
+            )
+            return
+
+        socket.write(json.dumps(payload).encode("utf-8"))
+        socket.flush()
+        if not socket.waitForBytesWritten(1500):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Send Failed",
+                "Failed to send calibration values to SG Viewer.",
+            )
+            socket.disconnectFromServer()
+            return
+
+        socket.disconnectFromServer()
+        QtWidgets.QMessageBox.information(
+            self,
+            "Sent",
+            "Sent calibration values to SG Viewer.",
+        )
+
 # -------------------------------------------------
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("image_path", nargs="?", default=None)
+    parser.add_argument("--send-endpoint", dest="send_endpoint", default=None)
+    args = parser.parse_args()
+
     app = QtWidgets.QApplication([])
-    initial_image_path = sys.argv[1] if len(sys.argv) > 1 else None
-    win = Calibrator(initial_image_path=initial_image_path)
+    win = Calibrator(
+        initial_image_path=args.image_path,
+        send_endpoint=args.send_endpoint,
+    )
     win.show()
     app.exec_()
 
