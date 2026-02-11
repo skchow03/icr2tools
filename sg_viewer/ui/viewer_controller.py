@@ -11,6 +11,7 @@ from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
+from sg_viewer.geometry.sg_geometry import rotate_section
 from sg_viewer.models.history import FileHistory
 from sg_viewer.models.preview_fsection import PreviewFSection
 from sg_viewer.models.sg_model import SectionPreview
@@ -28,6 +29,7 @@ from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
 from sg_viewer.ui.generate_fsects_dialog import GenerateFsectsDialog
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
+from sg_viewer.ui.rotate_track_dialog import RotateTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
 from sg_viewer.ui.elevation_profile import (
@@ -183,6 +185,13 @@ class SGViewerController:
         self._scale_track_action.setEnabled(False)
         self._scale_track_action.triggered.connect(self._scale_track)
 
+        self._rotate_track_action = QtWidgets.QAction(
+            "Rotate Track…",
+            self._window,
+        )
+        self._rotate_track_action.setEnabled(False)
+        self._rotate_track_action.triggered.connect(self._open_rotate_track_dialog)
+
         self._convert_trk_action = QtWidgets.QAction(
             "Convert SG to TRK…",
             self._window,
@@ -262,6 +271,7 @@ class SGViewerController:
         tools_menu = self._window.menuBar().addMenu("Tools")
         tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
+        tools_menu.addAction(self._rotate_track_action)
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addAction(self._generate_fsects_action)
         tools_menu.addAction(self._raise_lower_elevations_action)
@@ -722,6 +732,7 @@ class SGViewerController:
         self._window.split_section_button.setEnabled(False)
         self._window.set_start_finish_button.setEnabled(False)
         self._scale_track_action.setEnabled(False)
+        self._rotate_track_action.setEnabled(False)
         self._raise_lower_elevations_action.setEnabled(False)
         self._update_xsect_table()
         self._populate_xsect_choices()
@@ -1090,6 +1101,7 @@ class SGViewerController:
         self._scale_track_action.setEnabled(
             has_sections and is_closed_loop(sections)
         )
+        self._rotate_track_action.setEnabled(has_sections)
         self._raise_lower_elevations_action.setEnabled(has_sections)
 
         # Save is allowed once anything exists or changes
@@ -1272,6 +1284,42 @@ class SGViewerController:
 
         self._window.show_status_message(status)
         self._update_track_length_display()
+
+    def _open_rotate_track_dialog(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Rotate Track",
+                "There are no track sections available to rotate.",
+            )
+            return
+
+        original_sections = list(sections)
+        dialog = RotateTrackDialog(self._window)
+        dialog.angleChanged.connect(
+            lambda angle_deg: self._apply_track_rotation_preview(
+                original_sections,
+                angle_deg,
+            )
+        )
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            self._window.preview.set_sections(original_sections)
+            return
+
+        self._window.show_status_message(
+            f"Rotated track by {dialog.angle_degrees():+.1f}° around origin."
+        )
+
+    def _apply_track_rotation_preview(
+        self,
+        base_sections: list[SectionPreview],
+        angle_degrees: float,
+    ) -> None:
+        angle_radians = math.radians(angle_degrees)
+        rotated_sections = [rotate_section(section, angle_radians) for section in base_sections]
+        self._window.preview.set_sections(rotated_sections)
 
     def _open_generate_fsects_dialog(self) -> None:
         sections, _ = self._window.preview.get_section_set()
