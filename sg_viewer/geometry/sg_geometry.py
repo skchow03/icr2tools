@@ -271,6 +271,52 @@ def scale_section(section: SectionPreview, factor: float) -> SectionPreview:
     )
 
 
+def rotate_section(section: SectionPreview, angle_radians: float) -> SectionPreview:
+    """Return a copy of ``section`` rotated by ``angle_radians`` around origin."""
+
+    cos_angle = math.cos(angle_radians)
+    sin_angle = math.sin(angle_radians)
+
+    def _rotate_point(point: Point | None) -> Point | None:
+        if point is None:
+            return None
+        x, y = point
+        return (x * cos_angle - y * sin_angle, x * sin_angle + y * cos_angle)
+
+    def _rotate_vec(x_value: float | None, y_value: float | None) -> tuple[float | None, float | None]:
+        if x_value is None or y_value is None:
+            return None, None
+        return (
+            x_value * cos_angle - y_value * sin_angle,
+            x_value * sin_angle + y_value * cos_angle,
+        )
+
+    sang1, sang2 = _rotate_vec(section.sang1, section.sang2)
+    eang1, eang2 = _rotate_vec(section.eang1, section.eang2)
+
+    rotated_polyline = []
+    if section.polyline:
+        for point in section.polyline:
+            rotated_point = _rotate_point(point)
+            if rotated_point is None:
+                continue
+            rotated_polyline.append(rotated_point)
+
+    return replace(
+        section,
+        start=_rotate_point(section.start) or section.start,
+        end=_rotate_point(section.end) or section.end,
+        center=_rotate_point(section.center),
+        sang1=sang1,
+        sang2=sang2,
+        eang1=eang1,
+        eang2=eang2,
+        start_heading=_rotate_point(section.start_heading),
+        end_heading=_rotate_point(section.end_heading),
+        polyline=rotated_polyline,
+    )
+
+
 def rebuild_centerline_from_sections(
     sections: list[SectionPreview],
 ) -> tuple[list[Point], list[float], tuple[float, float, float, float] | None, CenterlineIndex | None]:
