@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 try:
@@ -251,5 +253,70 @@ def test_background_calibrator_receives_loaded_background_image_path(qapp, monke
         assert popen_calls[0][0]
         assert popen_calls[0][1].endswith("bg_calibrator_minimal.py")
         assert popen_calls[0][2] == str(image_path)
+    finally:
+        window.close()
+
+
+def test_calibrator_receiver_loads_background_from_payload(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        image_path = tmp_path / "sent_background.png"
+        image_path.write_bytes(b"placeholder")
+
+        payload = {
+            "units_per_pixel": 123.0,
+            "upper_left": [10.0, 20.0],
+            "image_path": str(image_path),
+        }
+
+        class _FakeSocket:
+            def __init__(self, data):
+                self._data = data
+
+            def waitForReadyRead(self, _timeout):
+                return True
+
+            def readAll(self):
+                return self._data
+
+            def disconnectFromServer(self):
+                return None
+
+        class _FakeServer:
+            def __init__(self, socket):
+                self._socket = socket
+                self._used = False
+
+            def hasPendingConnections(self):
+                return not self._used
+
+            def nextPendingConnection(self):
+                if self._used:
+                    return None
+                self._used = True
+                return self._socket
+
+        load_calls = []
+        settings_calls = []
+
+        def _load_background(path):
+            load_calls.append(path)
+
+        def _set_settings(scale, origin):
+            settings_calls.append((scale, origin))
+
+        monkeypatch.setattr(window.preview, "load_background_image", _load_background)
+        monkeypatch.setattr(window.preview, "set_background_settings", _set_settings)
+        monkeypatch.setattr(window.preview, "has_background_image", lambda: True)
+        monkeypatch.setattr(window.controller, "_persist_background_state", lambda: None)
+        monkeypatch.setattr(window, "show_status_message", lambda _msg: None)
+        window.controller._calibrator_server = _FakeServer(
+            _FakeSocket(json.dumps(payload).encode("utf-8"))
+        )
+
+        window.controller._on_calibrator_values_received()
+
+        assert load_calls == [image_path]
+        assert settings_calls == [(123.0, (10.0, 20.0))]
     finally:
         window.close()
