@@ -210,5 +210,46 @@ def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
         assert len(popen_calls) == 1
         assert popen_calls[0][0]
         assert popen_calls[0][1].endswith("bg_calibrator_minimal.py")
+        assert len(popen_calls[0]) == 2
+    finally:
+        window.close()
+
+
+def test_background_calibrator_receives_loaded_background_image_path(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        popen_calls: list[list[str]] = []
+
+        class _DummyPopen:
+            def __init__(self, args):
+                popen_calls.append(args)
+
+        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+
+        image_path = tmp_path / "background.png"
+        image_path.write_bytes(
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+            b"\x90wS\xde"
+            b"\x00\x00\x00\x0cIDATx\x9cc``\x00\x00\x00\x04\x00\x01"
+            b"\x0b\xe7\x02\x9d"
+            b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        window.preview.load_background_image(image_path)
+
+        tools_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+        )
+        calibrator_action = next(
+            action for action in tools_menu.actions() if action.text() == "Open Background Calibrator"
+        )
+
+        calibrator_action.trigger()
+
+        assert len(popen_calls) == 1
+        assert popen_calls[0][0]
+        assert popen_calls[0][1].endswith("bg_calibrator_minimal.py")
+        assert popen_calls[0][2] == str(image_path)
     finally:
         window.close()

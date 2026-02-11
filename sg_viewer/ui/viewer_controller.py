@@ -602,7 +602,11 @@ class SGViewerController:
             return
 
         try:
-            subprocess.Popen([sys.executable, str(calibrator_path)])
+            command = [sys.executable, str(calibrator_path)]
+            background_image_path = self._window.preview.get_background_image_path()
+            if background_image_path is not None:
+                command.append(str(background_image_path))
+            subprocess.Popen(command)
         except FileNotFoundError:
             QtWidgets.QMessageBox.critical(
                 self._window,
