@@ -456,6 +456,8 @@ class Calibrator(QtWidgets.QMainWindow):
             "units_per_pixel": scale,
             "upper_left": [upper_left[0], upper_left[1]],
         }
+        if self.current_image_path:
+            payload["image_path"] = self.current_image_path
         socket = QtNetwork.QLocalSocket(self)
         socket.connectToServer(self._send_endpoint)
         if not socket.waitForConnected(1500):

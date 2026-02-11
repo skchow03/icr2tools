@@ -647,6 +647,12 @@ class SGViewerController:
                 upper_left = data["upper_left"]
                 origin_u = float(upper_left[0])
                 origin_v = float(upper_left[1])
+                image_path_value = data.get("image_path")
+                image_path = (
+                    Path(image_path_value)
+                    if isinstance(image_path_value, str) and image_path_value
+                    else None
+                )
             except (ValueError, TypeError, KeyError, IndexError, json.JSONDecodeError):
                 logger.warning("Invalid background calibration payload: %s", payload)
                 self._window.show_status_message(
@@ -660,7 +666,20 @@ class SGViewerController:
                 )
                 continue
 
+            if image_path is not None:
+                try:
+                    self._window.preview.load_background_image(image_path)
+                except Exception:
+                    logger.warning(
+                        "Failed to load calibrator background image %s",
+                        image_path,
+                        exc_info=True,
+                    )
+
             self._window.preview.set_background_settings(scale, (origin_u, origin_v))
+            self._background_settings_action.setEnabled(
+                self._window.preview.has_background_image()
+            )
             self._persist_background_state()
             self._window.show_status_message(
                 "Applied calibration values from background calibrator"
