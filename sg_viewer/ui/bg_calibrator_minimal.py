@@ -468,9 +468,19 @@ class Calibrator(QtWidgets.QMainWindow):
             )
             return
 
-        socket.write(json.dumps(payload).encode("utf-8"))
+        encoded_payload = json.dumps(payload).encode("utf-8")
+        bytes_enqueued = socket.write(encoded_payload)
+        if bytes_enqueued < 0:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Send Failed",
+                "Failed to send calibration values to SG Viewer.",
+            )
+            socket.disconnectFromServer()
+            return
+
         socket.flush()
-        if not socket.waitForBytesWritten(1500):
+        if not socket.waitForBytesWritten(1500) and socket.bytesToWrite() > 0:
             QtWidgets.QMessageBox.warning(
                 self,
                 "Send Failed",

@@ -32,12 +32,17 @@ def test_send_values_includes_current_image_path(qapp, monkeypatch, tmp_path):
 
         def write(self, payload):
             sent["payload"] = payload
+            self._bytes_pending = 0
+            return len(payload)
 
         def flush(self):
             return None
 
         def waitForBytesWritten(self, _timeout):
             return True
+
+        def bytesToWrite(self):
+            return getattr(self, "_bytes_pending", 0)
 
         def disconnectFromServer(self):
             return None
