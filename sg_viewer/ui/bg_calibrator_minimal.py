@@ -20,6 +20,7 @@ World math:
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -158,7 +159,7 @@ class ImageView(QtWidgets.QGraphicsView):
 # -------------------------------------------------
 
 class Calibrator(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, initial_image_path: Optional[str] = None):
         super().__init__()
         self.setWindowTitle("ICR2 Background Calibrator")
         self.resize(1200, 800)
@@ -212,6 +213,9 @@ class Calibrator(QtWidgets.QMainWindow):
         splitter.addWidget(right_w)
         splitter.setStretchFactor(0, 3)
         self.setCentralWidget(splitter)
+
+        if initial_image_path:
+            self._load_image(initial_image_path)
 
     # -------------------------------------------------
 
@@ -421,7 +425,8 @@ class Calibrator(QtWidgets.QMainWindow):
 
 def main():
     app = QtWidgets.QApplication([])
-    win = Calibrator()
+    initial_image_path = sys.argv[1] if len(sys.argv) > 1 else None
+    win = Calibrator(initial_image_path=initial_image_path)
     win.show()
     app.exec_()
 
