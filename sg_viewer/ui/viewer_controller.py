@@ -211,12 +211,12 @@ class SGViewerController:
             self._show_background_settings_dialog
         )
 
-        # self._calibrate_background_action = QtWidgets.QAction(
-        #     "Open Background Calibrator", self._window
-        # )
-        # self._calibrate_background_action.triggered.connect(
-        #     self._launch_background_calibrator
-        # )
+        self._calibrate_background_action = QtWidgets.QAction(
+            "Open Background Calibrator", self._window
+        )
+        self._calibrate_background_action.triggered.connect(
+            self._launch_background_calibrator
+        )
 
         self._section_table_action = QtWidgets.QAction("Section Table", self._window)
         self._section_table_action.setEnabled(False)
@@ -256,6 +256,7 @@ class SGViewerController:
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addAction(self._generate_fsects_action)
         tools_menu.addAction(self._raise_lower_elevations_action)
+        tools_menu.addAction(self._calibrate_background_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._section_table_action)
         tools_menu.addAction(self._heading_table_action)
@@ -589,31 +590,31 @@ class SGViewerController:
             self._window.show_status_message("Updated background image settings")
             self._persist_background_state()
 
-    # def _launch_background_calibrator(self) -> None:
-    #     calibrator_path = Path(__file__).with_name("bg_calibrator_minimal.py")
-    #     if not calibrator_path.exists():
-    #         QtWidgets.QMessageBox.critical(
-    #             self._window,
-    #             "Calibrator Not Found",
-    #             f"{calibrator_path} could not be located.",
-    #         )
-    #         logger.error("Background calibrator script missing at %s", calibrator_path)
-    #         return
+    def _launch_background_calibrator(self) -> None:
+        calibrator_path = Path(__file__).with_name("bg_calibrator_minimal.py")
+        if not calibrator_path.exists():
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Calibrator Not Found",
+                f"{calibrator_path} could not be located.",
+            )
+            logger.error("Background calibrator script missing at %s", calibrator_path)
+            return
 
-    #     try:
-    #         subprocess.Popen([sys.executable, str(calibrator_path)])
-    #     except FileNotFoundError:
-    #         QtWidgets.QMessageBox.critical(
-    #             self._window,
-    #             "Calibrator Not Found",
-    #             f"{calibrator_path} could not be located.",
-    #         )
-    #         logger.exception("Failed to launch background calibrator")
-    #         return
+        try:
+            subprocess.Popen([sys.executable, str(calibrator_path)])
+        except FileNotFoundError:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Calibrator Not Found",
+                f"{calibrator_path} could not be located.",
+            )
+            logger.exception("Failed to launch background calibrator")
+            return
 
-    #     self._window.show_status_message(
-    #         "Opened background calibrator in a separate window"
-    #     )
+        self._window.show_status_message(
+            "Opened background calibrator in a separate window"
+        )
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()

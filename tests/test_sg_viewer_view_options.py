@@ -185,3 +185,30 @@ def test_view_options_expose_color_controls(qapp):
         assert window.preview.preview_color("background").name().upper() == "#123456"
     finally:
         window.close()
+
+
+def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        popen_calls: list[list[str]] = []
+
+        class _DummyPopen:
+            def __init__(self, args):
+                popen_calls.append(args)
+
+        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+
+        tools_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+        )
+        calibrator_action = next(
+            action for action in tools_menu.actions() if action.text() == "Open Background Calibrator"
+        )
+
+        calibrator_action.trigger()
+
+        assert len(popen_calls) == 1
+        assert popen_calls[0][0]
+        assert popen_calls[0][1].endswith("bg_calibrator_minimal.py")
+    finally:
+        window.close()
