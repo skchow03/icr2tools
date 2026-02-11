@@ -28,6 +28,7 @@ class PreviewWidgetQt(QtWidgets.QWidget):
         super().__init__(parent)
         self.setMinimumSize(640, 480)
         self.setMouseTracking(True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
         palette = self.palette()
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor("black"))
