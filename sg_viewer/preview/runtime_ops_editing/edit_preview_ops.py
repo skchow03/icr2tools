@@ -34,6 +34,16 @@ class _RuntimeEditPreviewOpsMixin:
     def cancel_delete_section(self) -> None:
         self._set_delete_section_active(False)
 
+    def delete_selected_section(self) -> bool:
+        selected_index = self._selection.selected_section_index
+        if selected_index is None:
+            self._status_message = "Select a section to delete."
+            self._show_status(self._status_message)
+            return False
+
+        self._delete_section(selected_index)
+        return True
+
     def _set_delete_section_active(self, active: bool) -> None:
         if active:
             changed = self._editor.begin_delete_section(self._section_manager.sections)

@@ -72,6 +72,11 @@ class SGViewerController:
         )
         QtNetwork.QLocalServer.removeServer(self._calibrator_server_name)
         self._calibrator_server.listen(self._calibrator_server_name)
+        self._delete_shortcut = QtWidgets.QShortcut(
+            QtGui.QKeySequence(QtCore.Qt.Key_Delete),
+            self._window,
+        )
+        self._delete_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
 
         self._create_actions()
         self._create_menus()
@@ -328,6 +333,7 @@ class SGViewerController:
         self._window.preview.interactionDragChanged.connect(
             self._on_preview_drag_state_changed
         )
+        self._delete_shortcut.activated.connect(self._handle_delete_shortcut)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
         self._window.background_image_checkbox.toggled.connect(
@@ -1025,6 +1031,48 @@ class SGViewerController:
             self._window.show_status_message("Click a section to delete it.")
         else:
             self._window.preview.cancel_delete_section()
+
+    def _handle_delete_shortcut(self) -> None:
+        if not self._window.delete_section_button.isEnabled():
+            return
+        if self._should_skip_delete_shortcut_for_focus():
+            return
+
+        selected_index = self._window.preview.selection_manager.selected_section_index
+        if selected_index is None:
+            self._window.show_status_message("Select a section to delete.")
+            return
+
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            "Delete Section",
+            f"Delete selected section #{selected_index}?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            return
+
+        self._window.preview.delete_selected_section()
+
+    def _should_skip_delete_shortcut_for_focus(self) -> bool:
+        focused = QtWidgets.QApplication.focusWidget()
+        if focused is None:
+            return False
+
+        editable_types = (
+            QtWidgets.QLineEdit,
+            QtWidgets.QTextEdit,
+            QtWidgets.QPlainTextEdit,
+            QtWidgets.QAbstractSpinBox,
+        )
+        if isinstance(focused, editable_types):
+            return True
+
+        if isinstance(focused, QtWidgets.QAbstractItemView):
+            return focused.state() == QtWidgets.QAbstractItemView.EditingState
+
+        return False
 
     def _toggle_new_straight_mode(self, checked: bool) -> None:
         if checked:
