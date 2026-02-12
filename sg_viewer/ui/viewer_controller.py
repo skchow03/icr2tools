@@ -263,7 +263,7 @@ class SGViewerController:
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
 
-        self._about_action = QtWidgets.QAction("About SG Viewer", self._window)
+        self._about_action = QtWidgets.QAction("About SG CREATE", self._window)
         self._about_action.triggered.connect(self._show_about_dialog)
 
     def _create_menus(self) -> None:
