@@ -175,6 +175,7 @@ def test_view_options_expose_color_controls(qapp):
         assert "nodes_disconnected" in controls
         assert "radii_unselected" in controls
         assert "radii_selected" in controls
+        assert "xsect_dlat_line" in controls
         assert "fsect_5" in controls
 
         background_edit, _ = controls["background"]
@@ -184,6 +185,12 @@ def test_view_options_expose_color_controls(qapp):
         background_edit.editingFinished.emit()
 
         assert window.preview.preview_color("background").name().upper() == "#123456"
+
+        xsect_edit, _ = controls["xsect_dlat_line"]
+        xsect_edit.setText("#00AA11")
+        xsect_edit.editingFinished.emit()
+
+        assert window.preview.preview_color("xsect_dlat_line").name().upper() == "#00AA11"
     finally:
         window.close()
 

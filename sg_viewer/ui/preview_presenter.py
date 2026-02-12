@@ -105,6 +105,7 @@ class PreviewPresenter:
                 centerline_long_curve_color=self._colors.centerline_long_curve,
                 radii_unselected_color=self._colors.radii_unselected,
                 radii_selected_color=self._colors.radii_selected,
+                xsect_dlat_line_color=self._colors.xsect_dlat_line,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,

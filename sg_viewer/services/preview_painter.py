@@ -30,6 +30,7 @@ class PreviewColors:
     nodes_disconnected: QtGui.QColor
     radii_unselected: QtGui.QColor
     radii_selected: QtGui.QColor
+    xsect_dlat_line: QtGui.QColor
 
 
 def default_preview_colors() -> PreviewColors:
@@ -42,6 +43,7 @@ def default_preview_colors() -> PreviewColors:
         nodes_disconnected=QtGui.QColor("orange"),
         radii_unselected=QtGui.QColor(140, 140, 140),
         radii_selected=QtGui.QColor("magenta"),
+        xsect_dlat_line=QtGui.QColor("limegreen"),
     )
 
 
@@ -73,6 +75,7 @@ class BasePreviewState:
     centerline_long_curve_color: QtGui.QColor
     radii_unselected_color: QtGui.QColor
     radii_selected_color: QtGui.QColor
+    xsect_dlat_line_color: QtGui.QColor
 
 
 @dataclass
@@ -193,6 +196,7 @@ def paint_preview(
                 painter,
                 base_state.sections,
                 base_state.xsect_dlat,
+                base_state.xsect_dlat_line_color,
                 transform,
                 widget_height,
             )
@@ -496,12 +500,13 @@ def _draw_xsect_dlat_line(
     painter: QtGui.QPainter,
     sections: Iterable[SectionPreview],
     dlat: float,
+    line_color: QtGui.QColor,
     transform: Transform,
     widget_height: int,
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    pen = QtGui.QPen(QtGui.QColor("limegreen"))
+    pen = QtGui.QPen(line_color)
     pen.setWidthF(BASE_WIDTH)
     pen.setStyle(QtCore.Qt.DotLine)
     pen.setCapStyle(QtCore.Qt.RoundCap)
