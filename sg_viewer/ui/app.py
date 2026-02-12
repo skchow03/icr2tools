@@ -143,7 +143,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
             "Live drag preview"
         )
-        self._live_fsect_drag_preview_checkbox.setChecked(False)
+        self._live_fsect_drag_preview_checkbox.setChecked(True)
         self._live_fsect_drag_preview_checkbox.setToolTip(
             "When enabled, dragging Fsect endpoints updates the track diagram in real time."
         )
