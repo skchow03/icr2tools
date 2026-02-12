@@ -326,3 +326,41 @@ def test_calibrator_receiver_loads_background_from_payload(qapp, monkeypatch, tm
         assert settings_calls == [(123.0, (10.0, 20.0))]
     finally:
         window.close()
+
+
+def test_file_menu_exposes_save_action(qapp):
+    window = SGViewerWindow()
+    try:
+        file_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+        )
+        save_action = next(
+            action for action in file_menu.actions() if action.text() == "Save"
+        )
+
+        assert save_action.shortcut().toString() == "Ctrl+S"
+    finally:
+        window.close()
+
+
+def test_save_action_saves_to_current_path(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        target_path = tmp_path / "loaded.sg"
+        controller._current_path = target_path
+        controller._save_current_action.setEnabled(True)
+
+        saved_paths = []
+
+        def _fake_save(path):
+            saved_paths.append(path)
+
+        monkeypatch.setattr(window.preview, "save_sg", _fake_save)
+        monkeypatch.setattr(controller, "_convert_sg_to_csv", lambda _path: None)
+
+        controller._save_current_action.trigger()
+
+        assert saved_paths == [target_path]
+    finally:
+        window.close()

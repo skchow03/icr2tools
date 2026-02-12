@@ -149,6 +149,7 @@ class SGViewerController:
         self._window.split_section_button.setEnabled(bool(sections))
         self._window.split_section_button.setChecked(False)
         self._save_action.setEnabled(True)
+        self._save_current_action.setEnabled(True)
         self._apply_saved_background(path)
         self._refresh_recent_menu()
         self._update_section_table()
@@ -171,6 +172,11 @@ class SGViewerController:
         self._open_action.triggered.connect(self._open_file_dialog)
 
         self._open_recent_menu = QtWidgets.QMenu("Open Recent", self._window)
+
+        self._save_current_action = QtWidgets.QAction("Save", self._window)
+        self._save_current_action.setShortcut("Ctrl+S")
+        self._save_current_action.setEnabled(False)
+        self._save_current_action.triggered.connect(self._save_current_file)
 
         self._save_action = QtWidgets.QAction("Save SG As…", self._window)
         self._save_action.setShortcut("Ctrl+Shift+S")
@@ -266,6 +272,7 @@ class SGViewerController:
         file_menu.addSeparator()
         file_menu.addAction(self._open_action)
         file_menu.addMenu(self._open_recent_menu)
+        file_menu.addAction(self._save_current_action)
         file_menu.addAction(self._save_action)
         file_menu.addAction(self._open_background_action)
         file_menu.addAction(self._background_settings_action)
@@ -741,6 +748,7 @@ class SGViewerController:
         self._refresh_elevation_profile()
         self._reset_altitude_range(0.0, 50.0)
         self._save_action.setEnabled(True)
+        self._save_current_action.setEnabled(False)
         self._window.new_straight_button.setEnabled(True)
         self._window.new_curve_button.setEnabled(True)
         self._window.preview.set_trk_comparison(None)
@@ -813,6 +821,15 @@ class SGViewerController:
         if path.suffix.lower() != ".sg":
             path = path.with_suffix(".sg")
 
+        self._save_to_path(path)
+
+    def _save_current_file(self) -> None:
+        if self._current_path is None:
+            self._save_file_dialog()
+            return
+        self._save_to_path(self._current_path)
+
+    def _save_to_path(self, path: Path) -> None:
         try:
             self._window.preview.save_sg(path)
         except Exception as exc:  # pragma: no cover - UI feedback only
@@ -828,6 +845,7 @@ class SGViewerController:
         self._refresh_recent_menu()
         self._persist_background_state()
         self._convert_sg_to_csv(path)
+        self._save_current_action.setEnabled(True)
 
         self._window.update_window_title(
             path=self._current_path,
