@@ -38,7 +38,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SG Viewer")
+        self.setWindowTitle("SG CREATE")
         self.resize(960, 720)
         self._selected_section_index: int | None = None
         self._updating_fsect_table = False
