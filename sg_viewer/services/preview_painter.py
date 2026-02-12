@@ -149,14 +149,6 @@ def paint_preview(
             painter, base_state.rect, base_state.show_axes, transform, widget_height
         )
 
-        if base_state.show_xsect_dlat_line and base_state.xsect_dlat is not None:
-            _draw_xsect_dlat_line(
-                painter,
-                base_state.sections,
-                base_state.xsect_dlat,
-                transform,
-                widget_height,
-            )
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
                 painter,
@@ -196,6 +188,14 @@ def paint_preview(
             transform,
             widget_height,
         )
+        if base_state.show_xsect_dlat_line and base_state.xsect_dlat is not None:
+            _draw_xsect_dlat_line(
+                painter,
+                base_state.sections,
+                base_state.xsect_dlat,
+                transform,
+                widget_height,
+            )
         painter.restore()
 
         if base_state.split_section_mode and base_state.split_hover_point is not None:
