@@ -201,6 +201,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "nodes_disconnected": "Nodes (Disconnected)",
             "radii_unselected": "Radii (Not Selected)",
             "radii_selected": "Radii (Selected)",
+            "xsect_dlat_line": "X-Section DLAT Line",
             "fsect_0": "Fsect: Grass",
             "fsect_1": "Fsect: Dry grass",
             "fsect_2": "Fsect: Dirt",
