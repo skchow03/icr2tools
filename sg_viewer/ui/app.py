@@ -1356,8 +1356,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         elif path is not None:
             name = path.name
         else:
-            self.setWindowTitle("SG Viewer")
+            self.setWindowTitle("SG CREATE")
             return
 
         dirty_marker = "*" if is_dirty else ""
-        self.setWindowTitle(f"{name}{dirty_marker} — SG Viewer")
+        self.setWindowTitle(f"{name}{dirty_marker} — SG CREATE")
