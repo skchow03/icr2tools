@@ -856,12 +856,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
         for row_index, fsect in enumerate(fsects):
+            next_fsect = fsects[row_index + 1] if row_index < len(fsects) - 1 else None
             start_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.start_dlat)
             )
             end_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.end_dlat)
             )
+            if next_fsect is not None and fsect.start_dlat > next_fsect.start_dlat:
+                start_item.setBackground(QtGui.QColor("salmon"))
+            if next_fsect is not None and fsect.end_dlat > next_fsect.end_dlat:
+                end_item.setBackground(QtGui.QColor("salmon"))
             for editable_item in (start_item, end_item):
                 editable_item.setFlags(
                     editable_item.flags()
