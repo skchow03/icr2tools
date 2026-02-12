@@ -220,7 +220,6 @@ class PreviewEditor:
             new_sections.append(update_section_geometry(updated_section))
             cursor += float(updated_section.length)
 
-        self._delete_section_active = False
         self._assert_sections_consistent(new_sections)
         return new_sections, (cursor if new_sections else None), f"Deleted section #{index}."
 
