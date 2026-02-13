@@ -8,7 +8,7 @@ import sys
 # ensure repo root on path for local runs
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from sg_viewer.ui.app import SGViewerApp, SGViewerWindow  # noqa: E402
+from sg_viewer.ui.app_bootstrap import SGViewerApp, bootstrap_window  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def main() -> None:
     logger.info("Starting SG Viewer (log level %s)", log_level_name.upper())
 
     app = SGViewerApp(sys.argv)
-    window = SGViewerWindow()
+    window = bootstrap_window()
     app.window = window
     window.show()
 
