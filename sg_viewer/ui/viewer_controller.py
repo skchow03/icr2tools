@@ -39,6 +39,8 @@ from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
+from sg_viewer.ui.controllers import InteractionController
+from sg_viewer.model.track_model import TrackModel
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ class SGViewerController:
             self._window,
         )
         self._delete_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self.interaction_controller = InteractionController(TrackModel([]))
 
         self._create_actions()
         self._create_menus()
