@@ -493,10 +493,7 @@ class SGViewerController:
         _ = scale
 
     def _on_preview_drag_state_changed(self, dragging: bool) -> None:
-        if dragging:
-            return
-
-        if self._elevation_controller.consume_deferred_refresh():
+        if not dragging:
             self._refresh_elevation_profile()
 
     def _open_background_file_dialog(self) -> None:
@@ -694,6 +691,7 @@ class SGViewerController:
 
     def _on_sections_changed(self) -> None:
         self._sections_controller.on_sections_changed()
+        self._sync_after_section_mutation()
 
     def _show_section_table(self) -> None:
         sections, track_length = self._window.preview.get_section_set()
@@ -859,11 +857,7 @@ class SGViewerController:
 
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
         self._active_selection = selection
-        self._window.update_selection_sidebar(selection)
-        self._refresh_elevation_inputs()
-        self._refresh_xsect_elevation_panel()
-        self._update_copy_fsects_buttons()
-        self._update_fsect_edit_buttons()
+        self._sync_after_selection_change()
 
     def _on_profile_section_clicked(self, section_index: int) -> None:
         self._window.preview.selection_manager.set_selected_section(section_index)
@@ -975,9 +969,7 @@ class SGViewerController:
         if self._window.preview.set_section_xsect_altitude(
             selection.index, xsect_index, altitude, validate=False
         ):
-            self._refresh_elevation_profile()
-            self._refresh_xsect_elevation_panel()
-            self._refresh_xsect_elevation_table()
+            self._sync_after_xsect_value_change()
 
     def _apply_grade_edit(self) -> None:
         selection = self._active_selection
@@ -989,12 +981,11 @@ class SGViewerController:
         if self._window.preview.set_section_xsect_grade(
             selection.index, xsect_index, grade, validate=False
         ):
-            self._refresh_elevation_profile()
-            self._refresh_xsect_elevation_panel()
-            self._refresh_xsect_elevation_table()
+            self._sync_after_xsect_value_change()
 
     def _copy_xsect_to_all(self) -> None:
-        self._elevation_panel_controller.copy_xsect_to_all()
+        if self._elevation_panel_controller.copy_xsect_to_all():
+            self._sync_after_xsect_value_change()
 
     def _copy_fsects_to_previous(self) -> None:
         self._sections_controller.copy_fsects_to_previous()
@@ -1023,10 +1014,32 @@ class SGViewerController:
     def _refresh_xsect_elevation_table(self) -> None:
         self._elevation_panel_controller.refresh_xsect_elevation_table()
 
-    def _on_measurement_units_changed(self) -> None:
-        self._history.set_measurement_unit(
-            str(self._window.measurement_units_combo.currentData())
-        )
+    def _sync_after_section_mutation(self) -> None:
+        """Sync UI after section list/data changes in a stable update order."""
+        if not self._window.preview.is_interaction_dragging:
+            self._refresh_elevation_profile()
+        self._refresh_elevation_inputs()
+        self._update_track_length_display()
+        self._update_copy_xsect_button()
+        self._update_copy_fsects_buttons()
+        self._update_fsect_edit_buttons()
+
+    def _sync_after_xsect_value_change(self) -> None:
+        """Sync profile and x-section views after altitude/grade data changes."""
+        self._refresh_elevation_profile()
+        self._refresh_xsect_elevation_panel()
+        self._refresh_xsect_elevation_table()
+
+    def _sync_after_selection_change(self) -> None:
+        """Sync selection-bound controls and panels after selected section changes."""
+        self._window.update_selection_sidebar(self._active_selection)
+        self._refresh_elevation_inputs()
+        self._refresh_xsect_elevation_panel()
+        self._update_copy_fsects_buttons()
+        self._update_fsect_edit_buttons()
+
+    def _sync_after_measurement_unit_change(self) -> None:
+        """Sync unit-sensitive controls and displays after unit selection changes."""
         selected_xsect = self._current_xsect_index()
         self._populate_xsect_choices(preferred_index=selected_xsect)
         self._refresh_elevation_inputs()
@@ -1035,6 +1048,12 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
         self._update_track_length_display()
         self._window.update_selection_sidebar(self._active_selection)
+
+    def _on_measurement_units_changed(self) -> None:
+        self._history.set_measurement_unit(
+            str(self._window.measurement_units_combo.currentData())
+        )
+        self._sync_after_measurement_unit_change()
 
     def _on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
         self._elevation_panel_controller.on_xsect_table_cell_changed(row_index, column_index)
