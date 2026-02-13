@@ -20,6 +20,7 @@ class ElevationPanelHost(Protocol):
     def _apply_altitude_edit(self) -> None: ...
     def _apply_grade_edit(self) -> None: ...
     def _refresh_elevation_inputs(self) -> None: ...
+    def _sync_after_xsect_value_change(self) -> None: ...
 
 
 class ElevationPanelController:
@@ -125,21 +126,21 @@ class ElevationPanelController:
     def open_raise_lower_elevations_dialog(self) -> None:
         self._host._window.show_raise_lower_elevations_dialog()
 
-    def copy_xsect_to_all(self) -> None:
+    def copy_xsect_to_all(self) -> bool:
         xsect_index = self._host._current_xsect_index()
         if xsect_index is None:
-            return
+            return False
         response = QtWidgets.QMessageBox.question(
             self._host._window, "Copy X-Section", f"Copy X-section {xsect_index} altitude and grade data to all x-sections?",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No,
         )
         if response != QtWidgets.QMessageBox.Yes:
-            return
+            return False
         if not self._host._window.preview.copy_xsect_data_to_all(xsect_index):
             QtWidgets.QMessageBox.warning(self._host._window, "Copy Failed", "Unable to copy x-section data. Ensure all sections have elevation data.")
-            return
-        self.refresh_elevation_profile(); self.refresh_xsect_elevation_panel()
+            return False
         self._host._window.show_status_message(f"Copied x-section {xsect_index} data to all x-sections.")
+        return True
 
     def refresh_xsect_elevation_panel(self) -> None:
         selection = self._host._active_selection
@@ -180,11 +181,11 @@ class ElevationPanelController:
             except ValueError: self.refresh_xsect_elevation_table(); return
             altitude = self._host._window.xsect_altitude_from_display_units(display_value)
             if self._host._window.preview.set_section_xsect_altitude(selection.index, row_index, altitude, validate=False):
-                self.refresh_elevation_profile(); self.refresh_xsect_elevation_panel(); self.refresh_xsect_elevation_table()
+                self._host._sync_after_xsect_value_change()
         else:
             try: grade = int(text)
             except ValueError: self.refresh_xsect_elevation_table(); return
             if self._host._window.preview.set_section_xsect_grade(selection.index, row_index, grade, validate=False):
-                self.refresh_elevation_profile(); self.refresh_xsect_elevation_panel(); self.refresh_xsect_elevation_table()
+                self._host._sync_after_xsect_value_change()
         if row_index == self._host._current_xsect_index():
             self._host._refresh_elevation_inputs()

@@ -4,25 +4,12 @@ from sg_viewer.ui.elevation_profile import ElevationProfileData
 
 
 class ElevationController:
-    """Tracks elevation profile UI state and dirty/refresh coordination."""
+    """Tracks elevation profile UI state for drag/edit bound locking."""
 
     def __init__(self) -> None:
         self.current_profile: ElevationProfileData | None = None
-        self.deferred_profile_refresh = False
         self.profile_dragging = False
         self.profile_editing = False
-
-    def defer_refresh_if_dragging(self, *, is_interaction_dragging: bool) -> bool:
-        if is_interaction_dragging:
-            self.deferred_profile_refresh = True
-            return True
-        return False
-
-    def consume_deferred_refresh(self) -> bool:
-        if not self.deferred_profile_refresh:
-            return False
-        self.deferred_profile_refresh = False
-        return True
 
     def begin_drag(self) -> None:
         self.profile_dragging = True
