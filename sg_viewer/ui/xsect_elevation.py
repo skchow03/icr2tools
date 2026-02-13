@@ -29,7 +29,7 @@ class XsectElevationWidget(QtWidgets.QWidget):
         self.setMinimumHeight(140)
         self._data: XsectElevationData | None = None
         self._y_view_range: tuple[float, float] | None = None
-        self._data_signature: tuple[int, int, float, float] | None = None
+        self._data_signature: tuple[int, int, float, float, float, float, float, float] | None = None
 
     def set_xsect_data(self, data: XsectElevationData | None) -> None:
         signature = self._signature_for(data)
@@ -42,13 +42,29 @@ class XsectElevationWidget(QtWidgets.QWidget):
         self.update()
 
     @staticmethod
-    def _signature_for(data: XsectElevationData | None) -> tuple[int, int, float, float] | None:
+    def _signature_for(
+        data: XsectElevationData | None,
+    ) -> tuple[int, int, float, float, float, float, float, float] | None:
         if data is None:
             return None
+        valid_alts = [alt for alt in data.altitudes if alt is not None]
         dlats = data.xsect_dlats if data.xsect_dlats else []
         min_dlat = float(min(dlats)) if dlats else 0.0
         max_dlat = float(max(dlats)) if dlats else 0.0
-        return (len(data.altitudes), data.section_index, min_dlat, max_dlat)
+        min_alt = float(min(valid_alts)) if valid_alts else 0.0
+        max_alt = float(max(valid_alts)) if valid_alts else 0.0
+        y_min = float(data.y_range[0]) if data.y_range is not None else 0.0
+        y_max = float(data.y_range[1]) if data.y_range is not None else 0.0
+        return (
+            len(data.altitudes),
+            data.section_index,
+            min_dlat,
+            max_dlat,
+            min_alt,
+            max_alt,
+            y_min,
+            y_max,
+        )
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if self._data is None:
