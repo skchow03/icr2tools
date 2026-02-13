@@ -1,239 +1,253 @@
-# SG Viewer Architecture
+# SG CREATE (sg_viewer) Architecture
 
 ## Overview
 
-`sg_viewer` is an interactive editor and viewer for Papyrus IndyCar Racing II `.SG` track geometry files.  
-The application is structured around a strict separation between:
+`sg_viewer` (“SG CREATE” in the UI) is an interactive editor/viewer for Papyrus IndyCar Racing II `.SG` track geometry files.
 
-- **Authoritative SG data** (what will be saved to disk)
-- **Derived preview geometry** (recomputed, disposable)
-- **User interaction logic** (selection, dragging, creation)
-- **Rendering and coordinate transforms**
-- **Qt UI plumbing**
+The app is organized around strict separation of:
+- **Authoritative SG data** (the only truth that is saved to disk)
+- **Derived preview geometry** (recomputed and disposable)
+- **Interaction logic** (selection, dragging, creation modes)
+- **Transforms + mapping** (screen ↔ world, fit/zoom/pan)
+- **Rendering** (pure drawing from current state)
+- **Qt UI plumbing** (widgets, dialogs, menu actions)
 
-Preview state is intentionally *lossy and recomputable*. Only SG-backed values are considered canonical.
-
----
-
-## High-Level Data Flow
-
-.SG file
-↓
-SG parsing / model creation
-↓
-SectionPreview objects
-↓
-Geometry derivation (polylines, headings, bounds)
-↓
-Preview transform + view state
-↓
-Interaction controllers (selection, dragging, creation)
-↓
-Rendering services
-↓
-Qt widgets
-
+Key principle:
+> Preview state is intentionally lossy and recomputable. Only SG-backed values are canonical.
 
 ---
 
-## Core Domains
+## Package Map (where to look)
 
-### 1. SG / Track Data (Authoritative)
+- `model/`
+  - Authoritative document wrapper: `SGDocument`
+  - Preview/derived state structs (e.g., `PreviewData`, `SectionPreview`, `PreviewFSection`, view/transform state)
+  - Undo/redo command framework
+- `preview/`
+  - `PreviewRuntime`: orchestrates preview data, geometry derivation, interaction, creation, overlays, transforms
+  - `preview/runtime_ops/` + `preview/runtime_ops_editing/`: mixin “ops” layers used by `PreviewRuntime`
+- `geometry/`
+  - Pure geometry/topology math (dlong/topology/centerline/picking/transforms/derived geometry)
+- `rendering/`
+  - Style maps and rendering helpers (surface/boundary/fence styles, colors)
+- `services/`
+  - Background image model + calibration helpers
+  - Export helpers (SG→CSV, SG→TRK subprocess wrappers)
+  - Simple generators (e.g., f-section templates)
+- `ui/`
+  - Main window, dialogs, widgets
+  - Feature controllers (“Document”, “Sections”, “Elevation panel”, “Background”)
+  - Preview widget wrapper (`PreviewWidgetQt`) that owns a `PreviewRuntime`
 
-**Purpose:** Represent real `.SG` semantics and values.
+---
 
-**Primary module:**
-- `model/sg_model.py`
+## Data Ownership and Canonical State
 
-**Key type:**
-- `SectionPreview`
+### 1) Authoritative SG: `SGDocument` (canonical)
 
-`SectionPreview` contains:
-- SG-backed values:  
-  `section_id`, `type_name`, `previous_id`, `next_id`,  
-  `start_dlong`, `length`,  
-  `sang1/sang2`, `eang1/eang2`, `radius`
-- World-space endpoints: `start`, `end`
-- Derived values: `polyline`, `start_heading`, `end_heading`
+**Canonical SG state is owned by `SGDocument`**, which holds an `icr2_core.trk.sg_classes.SGFile` instance and emits signals when it changes.
+
+Responsibilities:
+- Own the loaded `.SG` data (`SGFile`) and validate it
+- Apply edits that should persist (section elevation/grade, x-sections, f-sections, metadata)
+- Emit signals so the preview/runtime and UI can refresh
+
+Key signals:
+- `section_changed(section_id)`
+- `geometry_changed()`
+- `elevation_changed(section_id)`
+- `metadata_changed()`
+
+Rule:
+- Anything that must survive save/load belongs here (or must be committed here).
+
+### 2) Preview model: `SectionPreview`, `PreviewFSection`, `PreviewData` (disposable)
+
+The preview/runtime layer works with lightweight preview objects:
+- `SectionPreview`: a preview-friendly representation of a section (including endpoints and derived headings/polyline)
+- `PreviewFSection`: preview representation of f-section spans/types used by the diagram/editor
+- `PreviewData`: “current snapshot” used by rendering (sections + derived geometry + overlays + messages)
 
 Rules:
-- `start_dlong`, `length`, connectivity IDs are authoritative
-- Angles and radius follow SG conventions
-- Derived geometry may temporarily diverge during editing
+- Preview structures can be rebuilt from `SGDocument.sg_data` at any time.
+- During active editing, preview may be temporarily “invalid” (non-closed loop, inconsistent headings, etc.).
+- “Commit” operations translate from preview edits back into `SGDocument` / `SGFile`.
 
 ---
 
-### 2. Geometry Derivation (Pure, Stateless)
+## High-Level Runtime Flow
 
-**Purpose:** Convert SG-style parameters into drawable geometry.
+### App bootstrap → window wiring
 
-**Modules:**
-- `geometry/sg_geometry.py`
-- `geometry/curve_solver.py`
-- `geometry/connect.py`
+Entry points:
+- `python -m sg_viewer` calls `main()`
+- `ui/app_bootstrap.py` builds the main window and wires a `SGViewerController` to attach feature controllers.
 
-Responsibilities:
-- Build section polylines from SG parameters
-- Infer headings when not explicitly stored
-- Solve curve geometry from constraints (dragging, fixed heading)
-- Flatten sections into a centerline representation
+### Preview widget owns the runtime
 
-Design constraints:
-- No Qt dependencies
-- No persistent state
-- Safe to recompute at any time
-- Deterministic given inputs
+`PreviewWidgetQt` owns:
+- an `SGDocument` instance
+- a `PreviewRuntime` instance (constructed with the widget as context)
+- Qt signals that reflect runtime state (selection changes, mode toggles, scale changes, etc.)
 
----
-
-### 3. Preview State & Coordinate Transforms
-
-**Purpose:** Maintain view state independent of SG data.
-
-**Modules:**
-- `model/preview_state.py`
-- `geometry/preview_transform.py`
-- `preview/transform.py`
-
-Key concepts:
-- **World coordinates:** SG space (x right, y up)
-- **Screen coordinates:** Qt space (x right, y down)
-- **Transform:** `(scale, (offset_x, offset_y))`
-
-`TransformState` tracks:
-- `fit_scale` – auto-fit scale from bounds
-- `current_scale` – user-modified scale
-- `view_center` – world-space center
-- `user_transform_active` – disables auto-fit when true
-
-Notes:
-- Background image bounds participate in fit calculations
-- Auto-fit is suppressed once the user pans or zooms
+The widget delegates:
+- mouse/keyboard events → runtime interaction
+- paint events → runtime rendering/presenter
+- UI actions/modes → runtime ops/state
 
 ---
 
-### 4. Selection & Interaction Logic
+## PreviewRuntime: the “orchestrator”
 
-**Purpose:** Interpret user intent and manage live editing state.
+`PreviewRuntime` is the center of the interactive editor:
+- Pulls data from `SGDocument` and constructs preview sections/fsections
+- Computes derived geometry via `geometry/*` utilities
+- Maintains view state + transforms (fit/zoom/pan)
+- Coordinates selection/hit-testing and drag logic
+- Handles creation modes (new straight/curve, split, delete, connect)
+- Integrates optional TRK overlay logic
+- Produces `PreviewData` used by rendering/painter/presenter
 
-**Modules:**
-- `model/selection.py`
-- `model/preview_state_utils.py`
-- `preview/selection.py`
-- `preview/edit_interactions.py`
-- `preview/creation_controller.py`
-- `preview/connection_detection.py`
-
-Responsibilities:
-- Hit-testing against section polylines or centerline
-- Mapping screen clicks to world coordinates and DLONGs
-- Tracking selected sections and endpoints
-- Enforcing connectivity rules (disconnected endpoints only)
-- Producing speculative previews during drag or creation
-
-Rules:
-- Interaction logic never writes SG values directly
-- All edits operate on preview representations first
-- Commit happens explicitly after interaction completes
+Important collaborators commonly held/used by `PreviewRuntime`:
+- `PreviewStateController` (tracks view + selection + mode-ish state)
+- `PreviewSectionManager` (current list of `SectionPreview`, selection index)
+- `PreviewEditor` (edit rules/constraints, higher-level operations)
+- `PreviewInteraction` (mouse intent, drag state, hit testing)
+- `CreationController` (new-straight/new-curve workflows)
+- `TransformController` + `PreviewViewport` (view transform state)
+- `TrkOverlayController` (TRK overlay, centerline sampling/indexing)
+- `DerivedGeometry` (cached/recomputed centerline/bounds, etc.)
 
 ---
 
-### 5. Rendering Services
+## Runtime Ops Layer (mixin-based)
 
-**Purpose:** Convert preview state into drawing commands.
+`PreviewRuntime` subclasses an ops bundle (`PreviewRuntimeOps`) that is split into multiple mixins under:
+- `preview/runtime_ops/`
+- `preview/runtime_ops_editing/`
 
-**Modules:**
-- `services/preview_painter.py`
-- `services/sg_rendering.py`
-- `services/rendering_service.py`
-- `services/preview_background.py`
+Intent:
+- Keep `PreviewRuntime` readable by pushing “verbs” into cohesive mixins:
+  - commit/finalize creation
+  - connect/disconnect endpoints
+  - edit transforms / dragging rules
+  - snap/project operations
+  - constraints shared by editing actions
 
-Responsibilities:
-- Draw sections, nodes, centerline
-- Apply transforms
-- Manage draw order and styling
-- Render calibrated background images
-
-Rendering is intentionally passive:
-- No geometry inference
-- No SG mutation
-- No interaction decisions
+Guideline:
+- If you are adding a new runtime feature that is an “operation” (not a persistent state field), it usually belongs in `runtime_ops_*`.
 
 ---
 
-### 6. UI Layer (Qt)
+## Editing Model and Undo/Redo
 
-**Purpose:** User-facing widgets and application wiring.
+### Sections: command-based undo/redo
 
-**Modules:**
-- `ui/preview_widget.py`
-- `ui/preview_editor.py`
-- `ui/preview_viewport.py`
-- `ui/preview_state_controller.py`
-- `ui/app.py`
-- `ui/*_dialog.py`
+For section edits, the codebase uses:
+- `model/edit_commands.py` (command objects)
+- `model/edit_manager.py` (undo/redo stacks, invariants validation)
 
-Responsibilities:
-- Wire mouse/keyboard events to controllers
-- Own widgets and layouts
-- Display dialogs and status text
-- Manage application lifecycle
+Typical pattern:
+1. Capture “before”
+2. Build “after”
+3. Execute via `EditManager` (push undo stack)
+4. Update preview sections
+5. Optionally commit to SG on save/export
 
-UI code does **not**:
-- Solve geometry
-- Interpret SG semantics
-- Perform coordinate math beyond delegation
+### F-sections: edit sessions
 
----
+F-section editing uses an explicit session object:
+- `runtime_ops/fsection_edit_session.py`
 
-## Background Image System
+Pattern:
+- `begin()` → snapshot original f-sections into preview form
+- mutate the preview list during UI edits
+- `commit()` → apply normalized f-sections into `SGDocument` for persistence
+- `cancel()` → revert to original snapshot
 
-**Modules:**
-- `services/preview_background.py`
-- `ui/bg_calibrator_minimal.py`
-- `model/history.py`
-
-Concepts:
-- Images exist in world coordinates
-- Scale stored as *500ths per pixel*
-- Image origin corresponds to UV (0,0)
-- Image bounds are included in auto-fit calculations
-
-Persistence:
-- Stored per SG file in history INI
-- Relative paths resolved against SG location
+Rule:
+- F-sections are SG-owned; preview f-sections are a temporary working copy.
 
 ---
 
-## Preview vs SG Truth
+## Geometry Layer (pure math)
 
-The following are allowed to diverge temporarily during editing:
-- Polylines
-- Headings
-- Curve center and radius
-- Section continuity
+The `geometry/` package is intentionally UI-free and runtime-free.
 
-The following are always authoritative:
-- Section order
-- Connectivity (`previous_id`, `next_id`)
-- `start_dlong` and `length` once committed
+Common responsibilities:
+- Centerline rebuild/sample utilities
+- Track topology checks (closed loop, length)
+- DLONG and start/finish normalization
+- Picking/projection to polylines/segments
+- Transform helpers (world bounds, fit scale, view center)
 
-Preview state must always be regenerable from SG data.
+Rule:
+- Geometry utilities should accept plain data (tuples, lists, preview objects) and return plain results.
+- No Qt, no widget assumptions.
 
 ---
 
-## Extension Guidelines
+## Rendering Layer
 
-Safe extension areas:
-- New interaction modes → `preview/*`
-- New geometry constraints → `geometry/*`
-- New rendering styles → `services/*`
-- New dialogs → `ui/*`
+Rendering is split between:
+- “Style resolution” (what color/width/type to use) in `rendering/`
+- “Painter/presenter” style drawing code in UI/preview components
 
-Avoid:
-- Qt dependencies in `geometry`
-- Writing SG values from rendering code
-- Treating preview state as authoritative
+Goal:
+- The renderer consumes the current `PreviewData` snapshot and draws without mutating model state.
+
+---
+
+## Services Layer (I/O and side effects)
+
+### Background image support
+- `services/preview_background.py` holds the background image model, scale, and world↔image mapping.
+- UI feature controller(s) manage dialogs and calibration flows.
+
+### Export helpers
+- `services/export_service.py` builds subprocess commands and wraps results for:
+  - SG→CSV
+  - SG→TRK
+
+Rule:
+- Services are allowed to touch filesystem/subprocess.
+- Runtime/model layers should call services, not embed subprocess logic.
+
+### Generators
+- `services/fsect_generation_service.py` builds common template f-section layouts (“street”, “oval”, etc.) as `PreviewFSection` lists.
+
+---
+
+## UI Layer (Qt)
+
+### Main window and feature controllers
+
+The UI is organized with:
+- `ui/main_window.py` (menus, docks, widgets)
+- `ui/viewer_controller.py` + `ui/controllers/features/*` (feature-specific controllers)
+
+Feature controllers typically:
+- own menu actions / dialogs for a feature
+- call into runtime/document/services to do the work
+- keep Qt wiring isolated from core logic
+
+### Preview widget
+
+`ui/preview_widget_qt.py` is the key widget binding:
+- constructs `SGDocument`
+- constructs `PreviewRuntime`
+- forwards input events to runtime
+- emits UI-friendly signals for selection/mode/scale changes
+
+---
+
+## Design Rules (guardrails)
+
+- **SGDocument is canonical**: anything saved must be reflected into `SGDocument.sg_data`.
+- **Preview is disposable**: if a preview structure is hard to keep consistent, recompute it.
+- **Geometry is pure**: no Qt dependencies in `geometry/`.
+- **Ops are verbs**: prefer placing complex “actions” in `runtime_ops_*` rather than bloating the runtime or UI.
+- **UI calls, doesn’t decide**: controllers/widgets should delegate policy-heavy logic to runtime/editor/geometry.
 
 ---
 
