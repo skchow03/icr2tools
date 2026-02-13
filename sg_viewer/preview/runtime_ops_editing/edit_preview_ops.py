@@ -266,6 +266,7 @@ class _RuntimeEditPreviewOpsMixin:
         sections = self._normalize_section_dlongs(sections)
 
         old_sections = list(self._section_manager.sections)
+        old_centerline = list(self._section_manager.sampled_centerline)
         old_fsects = list(self._fsects_by_section)
 
         edit_context = capture_edit_context(
@@ -315,6 +316,23 @@ class _RuntimeEditPreviewOpsMixin:
             self._emit_sections_changed()
         self._context.request_repaint()
         self._bump_sg_version()
+
+        if self._should_refresh_fsects_preview(old_sections, old_centerline, sections):
+            self.refresh_fsections_preview_lightweight()
+
+    def _should_refresh_fsects_preview(
+        self,
+        old_sections: list[SectionPreview],
+        old_centerline: list[Point],
+        new_sections: list[SectionPreview],
+    ) -> bool:
+        if self._sgfile is None:
+            return False
+
+        if len(old_sections) != len(new_sections):
+            return True
+
+        return old_centerline != list(self._section_manager.sampled_centerline)
 
     def _normalize_section_dlongs(
         self, sections: list[SectionPreview]
