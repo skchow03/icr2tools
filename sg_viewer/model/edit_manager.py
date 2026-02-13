@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sg_viewer.model.edit_commands import EditCommand
+from sg_viewer.model.invariants import InvariantError, validate_sections
 
 if TYPE_CHECKING:
     from sg_viewer.model.sg_model import SectionPreview
@@ -18,8 +19,13 @@ class EditManager:
         self._redo_stack: list[EditCommand] = []
 
     def execute(self, command: EditCommand) -> list["SectionPreview"]:
-        """Execute a command, push it to undo history, and clear redo history."""
+        """Execute a command, validate invariants, and record undo history."""
         result = command.apply()
+        try:
+            validate_sections(result)
+        except InvariantError:
+            command.revert()
+            raise
         self._undo_stack.append(command)
         self._redo_stack.clear()
         return result
