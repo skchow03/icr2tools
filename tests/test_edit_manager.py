@@ -131,3 +131,21 @@ def test_failed_edit_is_rolled_back() -> None:
 
     assert state == _valid_sections()
     assert manager.undo() is None
+def test_canonicalize_closed_loop_reindexes_section_ids() -> None:
+    pytest.importorskip("numpy")
+    from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
+    from sg_viewer.model.invariants import validate_sections
+
+    # Simulate a valid closed loop topology where section_id values no longer
+    # match list indices after section insertion/reordering.
+    sections = [
+        _make_section(0, 2, 1),
+        _make_section(1, 0, 2),
+        _make_section(3, 1, 0),
+    ]
+
+    canonical = canonicalize_closed_loop(sections, start_idx=0)
+
+    assert [s.section_id for s in canonical] == [0, 1, 2]
+    validate_sections(canonical)
+

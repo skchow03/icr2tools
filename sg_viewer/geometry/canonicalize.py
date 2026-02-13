@@ -104,6 +104,7 @@ def canonicalize_closed_loop(
     for idx, s in enumerate(new_sections):
         s = replace(
             s,
+            section_id=idx,
             previous_id=(idx - 1) % n,
             next_id=(idx + 1) % n,
         )
