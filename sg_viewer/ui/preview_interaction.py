@@ -5,6 +5,9 @@ import copy
 from dataclasses import replace
 from typing import TYPE_CHECKING, Callable
 
+from sg_viewer.model.edit_commands import ReplaceSectionsCommand
+from sg_viewer.model.edit_manager import EditManager
+
 from PyQt5 import QtCore, QtGui
 
 from sg_viewer.geometry.connect_curve_to_straight import (
@@ -64,6 +67,7 @@ class PreviewInteraction:
         | None = None,
         apply_preview_to_sgfile: Callable[[], object] | None = None,
         recalculate_elevations: Callable[[list[int] | None], None] | None = None,
+        edit_manager: EditManager | None = None,
     ) -> None:
         self._context = context
         self._selection = selection
@@ -79,6 +83,7 @@ class PreviewInteraction:
         self._sync_fsects_on_connection = sync_fsects_on_connection
         self._apply_preview_to_sgfile = apply_preview_to_sgfile
         self._recalculate_elevations = recalculate_elevations
+        self._edit_manager = edit_manager or EditManager()
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -87,6 +92,7 @@ class PreviewInteraction:
         self._active_section_index: int | None = None
         self._section_drag_start_mouse_screen: QtCore.QPointF | None = None
         self._section_drag_start_sections: list["SectionPreview"] | None = None
+        self._node_drag_start_sections: list["SectionPreview"] | None = None
         self._active_chain_indices: list[int] | None = None
         self._set_start_finish_mode = False
         self._drag_state_active = False
@@ -140,10 +146,12 @@ class PreviewInteraction:
         self._active_section_index = None
         self._section_drag_start_mouse_screen = None
         self._section_drag_start_sections = None
+        self._node_drag_start_sections = None
         self._active_chain_indices = None
         self._set_start_finish_mode = False
         self._set_drag_state(False)
         self._section_manager.set_preview_mode(False)
+        self._node_drag_start_sections = None
         self._context.end_drag_transform()
         self._last_dragged_indices = None
 
@@ -523,6 +531,7 @@ class PreviewInteraction:
             self._context.end_drag_transform()
             return
         self._active_node = node
+        self._node_drag_start_sections = copy.deepcopy(self._section_manager.sections)
         self._is_dragging_node = True
         self._set_drag_state(True)
         self._connection_target = None
@@ -638,7 +647,8 @@ class PreviewInteraction:
     def _end_node_drag(self) -> None:
         if self._drag_state_active:
             self._section_manager.set_preview_mode(False)
-            self._set_sections(list(self._section_manager.sections))
+            before = self._node_drag_start_sections or list(self._section_manager.sections)
+            self._commit_section_edit(before=before, after=list(self._section_manager.sections))
         self._clear_drag_state()
 
     def _clear_drag_state(self) -> None:
@@ -646,6 +656,7 @@ class PreviewInteraction:
         self._active_node = None
         self._connection_target = None
         self._set_drag_state(False)
+        self._node_drag_start_sections = None
         self._context.end_drag_transform()
 
     def _connect_nodes(
@@ -835,11 +846,13 @@ class PreviewInteraction:
     def _end_section_drag(self) -> None:
         if self._drag_state_active:
             self._section_manager.set_preview_mode(False)
-            self._set_sections(list(self._section_manager.sections))
+            before = self._section_drag_start_sections or list(self._section_manager.sections)
+            self._commit_section_edit(before=before, after=list(self._section_manager.sections))
         self._is_dragging_section = False
         self._active_section_index = None
         self._section_drag_start_mouse_screen = None
         self._section_drag_start_sections = None
+        self._node_drag_start_sections = None
         self._active_chain_indices = None
         self._set_drag_state(False)
         self._context.end_drag_transform()
@@ -922,7 +935,11 @@ class PreviewInteraction:
                 start_idx=canonical_start_idx,
             )
 
-            self._set_sections(sections, changed_indices=changed_indices)
+            self._commit_section_edit(
+                before=old_sections,
+                after=sections,
+                changed_indices=changed_indices,
+            )
 
             # Closing by endpoint connection can reorder/reverse sections. Persist
             # the canonicalized preview ordering back into SG immediately so
@@ -932,7 +949,11 @@ class PreviewInteraction:
 
             self._show_status("Closed loop detected — track direction fixed")
         else:
-            self._set_sections(sections, changed_indices=changed_indices)
+            self._commit_section_edit(
+                before=old_sections,
+                after=sections,
+                changed_indices=changed_indices,
+            )
 
         sections = self._section_manager.sections
 
@@ -956,7 +977,38 @@ class PreviewInteraction:
         if self._drag_state_active:
             self._update_drag_preview(sections)
         else:
-            self._set_sections(sections, changed_indices=changed_indices)
+            self._commit_section_edit(
+                before=list(self._section_manager.sections),
+                after=sections,
+                changed_indices=changed_indices,
+            )
+
+    def _commit_section_edit(
+        self,
+        *,
+        before: list["SectionPreview"],
+        after: list["SectionPreview"],
+        changed_indices: list[int] | None = None,
+    ) -> None:
+        command = ReplaceSectionsCommand(before=before, after=after)
+        updated_sections = self._edit_manager.execute(command)
+        self._set_sections(updated_sections, changed_indices=changed_indices)
+
+    def undo(self) -> bool:
+        """Undo the most recent committed section edit."""
+        sections = self._edit_manager.undo()
+        if sections is None:
+            return False
+        self._set_sections(sections)
+        return True
+
+    def redo(self) -> bool:
+        """Redo the most recent undone section edit."""
+        sections = self._edit_manager.redo()
+        if sections is None:
+            return False
+        self._set_sections(sections)
+        return True
 
     def _shared_straight_pair(
         self, dragged_key: tuple[int, str]
