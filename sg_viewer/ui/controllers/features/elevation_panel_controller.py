@@ -80,6 +80,14 @@ class ElevationPanelController:
         selected = self._host._active_selection
         xsect_index = self._host._current_xsect_index()
         has_selection = selected is not None and xsect_index is not None
+        altitude: int | None = None
+        grade: int | None = None
+        if has_selection and selected is not None and xsect_index is not None:
+            altitude, grade = self._host._window.preview.get_section_xsect_values(
+                selected.index, xsect_index
+            )
+
+        self._host._window.update_elevation_inputs(altitude, grade, has_selection)
         self._host._window.set_altitude_inputs_enabled(has_selection)
         self._host._window.set_grade_inputs_enabled(has_selection)
 

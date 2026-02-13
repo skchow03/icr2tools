@@ -824,29 +824,37 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return True
 
     def show_grade_range_dialog(self) -> None:
-        minimum, ok_min = QtWidgets.QInputDialog.getInt(
-            self,
-            "Grade Range",
-            "Minimum grade:",
-            self._grade_slider.minimum(),
-            -10000,
-            10000,
-            1,
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Grade Range")
+        layout = QtWidgets.QFormLayout(dialog)
+
+        min_spin = QtWidgets.QSpinBox(dialog)
+        min_spin.setRange(-10000, 10000)
+        min_spin.setSingleStep(1)
+        min_spin.setValue(self._grade_slider.minimum())
+
+        max_spin = QtWidgets.QSpinBox(dialog)
+        max_spin.setRange(-10000, 10000)
+        max_spin.setSingleStep(1)
+        max_spin.setValue(self._grade_slider.maximum())
+
+        layout.addRow("Minimum grade:", min_spin)
+        layout.addRow("Maximum grade:", max_spin)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal,
+            dialog,
         )
-        if not ok_min:
-            return
-        maximum, ok_max = QtWidgets.QInputDialog.getInt(
-            self,
-            "Grade Range",
-            "Maximum grade:",
-            self._grade_slider.maximum(),
-            -10000,
-            10000,
-            1,
-        )
-        if not ok_max:
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
 
+        minimum = min_spin.value()
+        maximum = max_spin.value()
         if minimum >= maximum:
             QtWidgets.QMessageBox.warning(
                 self, "Invalid Range", "Maximum grade must be greater than minimum grade."
@@ -854,7 +862,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
 
         self._grade_slider.setRange(minimum, maximum)
-        self._grade_slider.setValue(min(max(self._grade_slider.value(), minimum), maximum))
+        self._grade_slider.setValue(
+            min(max(self._grade_slider.value(), minimum), maximum)
+        )
 
     def show_raise_lower_elevations_dialog(self) -> None:
         delta, ok = QtWidgets.QInputDialog.getDouble(
