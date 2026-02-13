@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import logging
 import math
-import json
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 
-from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.geometry.sg_geometry import rotate_section
@@ -40,6 +38,7 @@ from sg_viewer.ui.xsect_elevation import XsectElevationData
 from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
+from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +64,7 @@ class SGViewerController:
         self._deferred_profile_refresh = False
         self._profile_dragging = False
         self._profile_editing = False
-        self._calibrator_server_name = f"sg_viewer_calibrator_{uuid.uuid4().hex}"
-        self._calibrator_server = QtNetwork.QLocalServer(self._window)
-        self._calibrator_server.newConnection.connect(
-            self._on_calibrator_values_received
-        )
-        QtNetwork.QLocalServer.removeServer(self._calibrator_server_name)
-        self._calibrator_server.listen(self._calibrator_server_name)
+        self._calibrator_window: Calibrator | None = None
         self._delete_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence(QtCore.Qt.Key_Delete),
             self._window,
@@ -619,90 +612,62 @@ class SGViewerController:
             self._persist_background_state()
 
     def _launch_background_calibrator(self) -> None:
-        calibrator_path = Path(__file__).with_name("bg_calibrator_minimal.py")
-        if not calibrator_path.exists():
-            QtWidgets.QMessageBox.critical(
-                self._window,
-                "Calibrator Not Found",
-                f"{calibrator_path} could not be located.",
-            )
-            logger.error("Background calibrator script missing at %s", calibrator_path)
-            return
-
-        try:
-            command = [sys.executable, str(calibrator_path)]
-            background_image_path = self._window.preview.get_background_image_path()
-            if background_image_path is not None:
-                command.append(str(background_image_path))
-            command.extend(["--send-endpoint", self._calibrator_server_name])
-            subprocess.Popen(command)
-        except FileNotFoundError:
-            QtWidgets.QMessageBox.critical(
-                self._window,
-                "Calibrator Not Found",
-                f"{calibrator_path} could not be located.",
-            )
-            logger.exception("Failed to launch background calibrator")
-            return
-
+        background_image_path = self._window.preview.get_background_image_path()
+        self._calibrator_window = Calibrator(
+            initial_image_path=(
+                str(background_image_path) if background_image_path is not None else None
+            ),
+            send_callback=self._apply_calibrator_values,
+            parent=self._window,
+        )
+        self._calibrator_window.show()
         self._window.show_status_message(
-            "Opened background calibrator in a separate window"
+            "Opened background calibrator"
         )
 
-    def _on_calibrator_values_received(self) -> None:
-        while self._calibrator_server.hasPendingConnections():
-            socket = self._calibrator_server.nextPendingConnection()
-            if socket is None:
-                return
-            if not socket.waitForReadyRead(1500):
-                socket.disconnectFromServer()
-                continue
-
-            payload = bytes(socket.readAll()).decode("utf-8", errors="replace")
-            socket.disconnectFromServer()
-            try:
-                data = json.loads(payload)
-                scale = float(data["units_per_pixel"])
-                upper_left = data["upper_left"]
-                origin_u = float(upper_left[0])
-                origin_v = float(upper_left[1])
-                image_path_value = data.get("image_path")
-                image_path = (
-                    Path(image_path_value)
-                    if isinstance(image_path_value, str) and image_path_value
-                    else None
-                )
-            except (ValueError, TypeError, KeyError, IndexError, json.JSONDecodeError):
-                logger.warning("Invalid background calibration payload: %s", payload)
-                self._window.show_status_message(
-                    "Ignored invalid calibration values from calibrator"
-                )
-                continue
-
-            if scale <= 0:
-                self._window.show_status_message(
-                    "Ignored calibration values with non-positive scale"
-                )
-                continue
-
-            if image_path is not None:
-                try:
-                    self._window.preview.load_background_image(image_path)
-                except Exception:
-                    logger.warning(
-                        "Failed to load calibrator background image %s",
-                        image_path,
-                        exc_info=True,
-                    )
-
-            self._window.preview.set_background_settings(scale, (origin_u, origin_v))
-            self._background_settings_action.setEnabled(
-                self._window.preview.has_background_image()
+    def _apply_calibrator_values(self, data: dict) -> None:
+        try:
+            scale = float(data["units_per_pixel"])
+            upper_left = data["upper_left"]
+            origin_u = float(upper_left[0])
+            origin_v = float(upper_left[1])
+            image_path_value = data.get("image_path")
+            image_path = (
+                Path(image_path_value)
+                if isinstance(image_path_value, str) and image_path_value
+                else None
             )
-            self._persist_background_state()
+        except (ValueError, TypeError, KeyError, IndexError):
+            logger.warning("Invalid background calibration payload: %s", data)
             self._window.show_status_message(
-                "Applied calibration values from background calibrator"
+                "Ignored invalid calibration values from calibrator"
             )
+            return
+
+        if scale <= 0:
+            self._window.show_status_message(
+                "Ignored calibration values with non-positive scale"
+            )
+            return
+
+        if image_path is not None:
+            try:
+                self._window.preview.load_background_image(image_path)
+            except Exception:
+                logger.warning(
+                    "Failed to load calibrator background image %s",
+                    image_path,
+                    exc_info=True,
+                )
+
+        self._window.preview.set_background_settings(scale, (origin_u, origin_v))
+        self._background_settings_action.setEnabled(
+            self._window.preview.has_background_image()
+        )
+        self._persist_background_state()
+        self._window.show_status_message(
+            "Applied calibration values from background calibrator"
+        )
 
     def _open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()

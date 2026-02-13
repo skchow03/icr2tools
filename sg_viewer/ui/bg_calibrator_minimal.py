@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Callable, Optional, Tuple, List
 import json
 import argparse
 
@@ -159,12 +159,16 @@ class ImageView(QtWidgets.QGraphicsView):
 # -------------------------------------------------
 
 class Calibrator(QtWidgets.QMainWindow):
+    calibrationSubmitted = QtCore.pyqtSignal(dict)
+
     def __init__(
         self,
         initial_image_path: Optional[str] = None,
         send_endpoint: Optional[str] = None,
+        send_callback: Optional[Callable[[dict], None]] = None,
+        parent: Optional[QtWidgets.QWidget] = None,
     ):
-        super().__init__()
+        super().__init__(parent)
         self.setWindowTitle("ICR2 Background Calibrator")
         self.resize(1200, 800)
 
@@ -178,6 +182,7 @@ class Calibrator(QtWidgets.QMainWindow):
         self.current_image_path: Optional[str] = None
         self._suppress_table_edit = False
         self._send_endpoint = send_endpoint
+        self._send_callback = send_callback
 
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["#", "px", "py", "lat, lon"])
@@ -199,8 +204,8 @@ class Calibrator(QtWidgets.QMainWindow):
         load_btn.clicked.connect(self.load_settings)
         send_btn = QtWidgets.QPushButton("Send values to SG Viewer")
         send_btn.clicked.connect(self.send_values_to_main_app)
-        send_btn.setEnabled(bool(send_endpoint))
-        if not send_endpoint:
+        send_btn.setEnabled(bool(send_endpoint or send_callback))
+        if not send_endpoint and send_callback is None:
             send_btn.setToolTip("Launch this calibrator from SG Viewer to enable sending")
 
         right = QtWidgets.QVBoxLayout()
@@ -433,7 +438,7 @@ class Calibrator(QtWidgets.QMainWindow):
             return None
 
     def send_values_to_main_app(self):
-        if not self._send_endpoint:
+        if not self._send_endpoint and self._send_callback is None:
             QtWidgets.QMessageBox.information(
                 self,
                 "Send Disabled",
@@ -458,6 +463,17 @@ class Calibrator(QtWidgets.QMainWindow):
         }
         if self.current_image_path:
             payload["image_path"] = self.current_image_path
+
+        if self._send_callback is not None:
+            self._send_callback(payload)
+            self.calibrationSubmitted.emit(payload)
+            QtWidgets.QMessageBox.information(
+                self,
+                "Applied",
+                "Applied calibration values in SG Viewer.",
+            )
+            return
+
         socket = QtNetwork.QLocalSocket(self)
         socket.connectToServer(self._send_endpoint)
         if not socket.waitForConnected(1500):
