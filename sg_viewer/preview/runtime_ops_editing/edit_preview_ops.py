@@ -362,6 +362,9 @@ class _RuntimeEditPreviewOpsMixin:
         self._context.request_repaint()
 
     def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
+        old_sections = list(self._section_manager.sections)
+        old_fsects = list(self._fsects_by_section)
+
         (
             cline,
             sampled_dlongs,
@@ -382,6 +385,7 @@ class _RuntimeEditPreviewOpsMixin:
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
         self._track_length = track_length
+        self._realign_fsects_after_recalc(old_sections, old_fsects)
         self._start_finish_mapping = None
         self._start_finish_dlong = 0.0 if track_length > 0 else None
 
