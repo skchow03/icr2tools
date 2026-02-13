@@ -46,6 +46,7 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._panning = False
         self._pan_last_pos: QtCore.QPoint | None = None
         self._range: tuple[float, float] = (-300000.0, 300000.0)
+        self._fsect_signature: tuple[int | None, int, float, float] | None = None
         if on_dlat_changed is not None:
             self.dlatChanged.connect(on_dlat_changed)
         if on_drag_started is not None:
@@ -65,6 +66,13 @@ class FsectDiagramWidget(QtWidgets.QWidget):
         self._fsects = list(fsects)
         self._prev_fsects = list(prev_fsects or [])
         self._next_fsects = list(next_fsects or [])
+        values = [fs.start_dlat for fs in self._fsects] + [fs.end_dlat for fs in self._fsects]
+        min_dlat = float(min(values)) if values else 0.0
+        max_dlat = float(max(values)) if values else 0.0
+        signature = (section_index, len(self._fsects), min_dlat, max_dlat)
+        if signature != self._fsect_signature:
+            self._range = self._calculate_dlat_range(self._fsects)
+        self._fsect_signature = signature
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
