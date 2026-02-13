@@ -28,10 +28,59 @@ class XsectElevationWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.setMinimumHeight(140)
         self._data: XsectElevationData | None = None
+        self._y_view_range: tuple[float, float] | None = None
+        self._data_signature: tuple[int, int, float, float] | None = None
 
     def set_xsect_data(self, data: XsectElevationData | None) -> None:
+        signature = self._signature_for(data)
+        if signature is None:
+            self._y_view_range = None
+        elif self._data_signature != signature:
+            self._y_view_range = None
         self._data = data
+        self._data_signature = signature
         self.update()
+
+    @staticmethod
+    def _signature_for(data: XsectElevationData | None) -> tuple[int, int, float, float] | None:
+        if data is None:
+            return None
+        dlats = data.xsect_dlats if data.xsect_dlats else []
+        min_dlat = float(min(dlats)) if dlats else 0.0
+        max_dlat = float(max(dlats)) if dlats else 0.0
+        return (len(data.altitudes), data.section_index, min_dlat, max_dlat)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
+        if self._data is None:
+            return
+        if not (event.modifiers() & QtCore.Qt.ControlModifier):
+            return
+
+        plot_context = self._plot_context()
+        if plot_context is None:
+            return
+        plot_rect, min_alt, max_alt = plot_context
+        if not plot_rect.contains(event.position().toPoint()):
+            return
+
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        span = max_alt - min_alt
+        if span <= 0:
+            return
+
+        zoom_factor = 0.9 if delta > 0 else 1.1
+        new_span = max(span * zoom_factor, 1.0)
+        cursor_y = min(max(event.position().y(), plot_rect.top()), plot_rect.bottom())
+        ratio = (plot_rect.bottom() - cursor_y) / plot_rect.height()
+        focus = min_alt + ratio * span
+        new_min = focus - ratio * new_span
+        new_max = new_min + new_span
+
+        self._y_view_range = (new_min, new_max)
+        self.update()
+        event.accept()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: D401
         painter = QtGui.QPainter(self)
@@ -263,7 +312,9 @@ class XsectElevationWidget(QtWidgets.QWidget):
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return None
 
-        if self._data.y_range is not None:
+        if self._y_view_range is not None:
+            min_alt, max_alt = self._y_view_range
+        elif self._data.y_range is not None:
             min_alt, max_alt = self._data.y_range
         else:
             min_alt = min(valid)
