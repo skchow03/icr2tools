@@ -8,8 +8,8 @@ from PyQt5 import QtWidgets
 from sg_viewer.geometry.sg_geometry import rotate_section
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.model.sg_model import SectionPreview
-from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.ui.generate_fsects_dialog import GenerateFsectsDialog
 from sg_viewer.ui.rotate_track_dialog import RotateTrackDialog
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
@@ -193,7 +193,7 @@ class SectionsController:
         wall_width = self._host._window.fsect_dlat_from_display_units(self._host._window.fsect_display_step())
         if wall_width <= 0:
             wall_width = 1.0
-        base_fsects = self.build_generated_fsects(template=dialog.template(), track_width=track_width, left_grass=left_grass, right_grass=right_grass, grass_surface_type=grass_surface_type, wall_surface_type=wall_surface_type, wall_width=wall_width, fence_enabled=dialog.fence_enabled())
+        base_fsects = build_generated_fsects(template=dialog.template(), track_width=track_width, left_grass=left_grass, right_grass=right_grass, grass_surface_type=grass_surface_type, wall_surface_type=wall_surface_type, wall_width=wall_width, fence_enabled=dialog.fence_enabled())
         fsects_by_section = [list(base_fsects) for _ in sections]
         if not self._host._window.preview.replace_all_fsects(fsects_by_section):
             QtWidgets.QMessageBox.warning(self._host._window, "Generate Fsects Failed", "Unable to apply generated fsects to the current track.")
@@ -202,27 +202,6 @@ class SectionsController:
             self._host._window.sg_fsects_checkbox.setChecked(True)
         self._host._window.show_status_message("Generated fsects for all sections.")
 
-    @staticmethod
-    def build_generated_fsects(*, template: str, track_width: float, left_grass: float, right_grass: float, grass_surface_type: int, wall_surface_type: int, wall_width: float, fence_enabled: bool) -> list[PreviewFSection]:
-        fence_type2 = min(FENCE_TYPE2) if fence_enabled and FENCE_TYPE2 else 0
-        def wall(start: float, end: float) -> PreviewFSection:
-            return PreviewFSection(start_dlat=start, end_dlat=start, surface_type=wall_surface_type, type2=fence_type2)
-        def surface(start: float, end: float, surface_type: int) -> PreviewFSection:
-            return PreviewFSection(start_dlat=start, end_dlat=start, surface_type=surface_type, type2=0)
-        fsects: list[PreviewFSection] = []
-        half_track = track_width * 0.5
-        if template == "street":
-            fsects.append(wall(-half_track, -half_track)); fsects.append(surface(-half_track, half_track, 5)); fsects.append(wall(half_track, half_track + wall_width)); return fsects
-        if template == "oval":
-            fsects.append(wall(-half_track, -half_track)); fsects.append(surface(-half_track, half_track, 5))
-            if left_grass > 0: fsects.append(surface(half_track, half_track + left_grass, grass_surface_type))
-            fsects.append(wall(half_track + left_grass, half_track + left_grass + wall_width)); return fsects
-        fsects.append(wall(-half_track - right_grass, -half_track - right_grass))
-        if right_grass > 0: fsects.append(surface(-half_track - right_grass, -half_track, grass_surface_type))
-        fsects.append(surface(-half_track, half_track, 5))
-        if left_grass > 0: fsects.append(surface(half_track, half_track + left_grass, grass_surface_type))
-        fsects.append(wall(half_track + left_grass, half_track + left_grass + wall_width))
-        return fsects
 
     def copy_fsects_to_previous(self) -> None:
         self.copy_fsects_to_neighbor(direction="previous")
