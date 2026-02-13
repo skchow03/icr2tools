@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.model.sg_document import SGDocument
-from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.preview.context import PreviewContext
+from sg_viewer.ui.color_utils import parse_hex_color
+from sg_viewer.ui.fsection_type_utils import (
+    fsect_type_description,
+    fsect_type_index,
+    fsect_type_options,
+)
+from sg_viewer.ui.window_title import build_window_title
 from sg_viewer.ui.altitude_units import (
     DEFAULT_ALTITUDE_MAX_FEET,
     DEFAULT_ALTITUDE_MIN_FEET,
@@ -898,10 +905,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._fsect_table.setItem(row_index, 3, start_delta_item)
             self._fsect_table.setItem(row_index, 4, end_delta_item)
             combo = QtWidgets.QComboBox()
-            for label, surface_type, type2 in self._fsect_type_options():
+            for label, surface_type, type2 in fsect_type_options():
                 combo.addItem(label, (surface_type, type2))
             combo.setCurrentIndex(
-                self._fsect_type_index(fsect.surface_type, fsect.type2)
+                fsect_type_index(fsect.surface_type, fsect.type2)
             )
             combo.currentIndexChanged.connect(
                 lambda _idx, row=row_index, widget=combo: self._on_fsect_type_changed(
@@ -1269,56 +1276,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 emit_sections_changed=emit_sections_changed,
             )
 
-    @staticmethod
-    def _fsect_type_options() -> list[tuple[str, int, int]]:
-        fence_type = min(FENCE_TYPE2) if FENCE_TYPE2 else 0
-        return [
-            ("Grass", 0, 0),
-            ("Dry grass", 1, 0),
-            ("Dirt", 2, 0),
-            ("Sand", 3, 0),
-            ("Concrete", 4, 0),
-            ("Asphalt", 5, 0),
-            ("Paint (Curbing)", 6, 0),
-            ("Wall", 7, 0),
-            ("Wall (Fence)", 7, fence_type),
-            ("Armco", 8, 0),
-            ("Armco (Fence)", 8, fence_type),
-        ]
-
-    @staticmethod
-    def _fsect_type_index(surface_type: int, type2: int) -> int:
-        is_fence = surface_type in {7, 8} and type2 in FENCE_TYPE2
-        options = SGViewerWindow._fsect_type_options()
-        for index, (_label, option_surface, option_type2) in enumerate(options):
-            option_fence = (
-                option_surface in {7, 8} and option_type2 in FENCE_TYPE2
-            )
-            if option_surface == surface_type and option_fence == is_fence:
-                return index
-        return 0
-
-    @staticmethod
-    def _fsect_type_description(surface_type: int, type2: int) -> str:
-        ground_map = {
-            0: "Grass",
-            1: "Dry grass",
-            2: "Dirt",
-            3: "Sand",
-            4: "Concrete",
-            5: "Asphalt",
-            6: "Paint (Curbing)",
-        }
-        if surface_type in ground_map:
-            return ground_map[surface_type]
-        if surface_type in {7, 8}:
-            base = "Wall" if surface_type == 7 else "Armco"
-            if type2 in FENCE_TYPE2:
-                return f"{base} (Fence)"
-            return base
-        return "Unknown"
-
-
     def set_preview_color_text(self, key: str, color: QtGui.QColor) -> None:
         controls = self._preview_color_controls.get(key)
         if controls is None:
@@ -1334,15 +1291,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     @staticmethod
     def parse_hex_color(value: str) -> QtGui.QColor | None:
-        text = value.strip()
-        if not text:
-            return None
-        if not text.startswith("#"):
-            text = f"#{text}"
-        color = QtGui.QColor(text)
-        if not color.isValid():
-            return None
-        return color
+        return parse_hex_color(value)
 
     def update_window_title(
         self,
@@ -1351,13 +1300,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         is_dirty: bool,
         is_untitled: bool = False,
     ) -> None:
-        if is_untitled:
-            name = "Untitled"
-        elif path is not None:
-            name = path.name
-        else:
-            self.setWindowTitle("SG CREATE")
-            return
-
-        dirty_marker = "*" if is_dirty else ""
-        self.setWindowTitle(f"{name}{dirty_marker} — SG CREATE")
+        self.setWindowTitle(
+            build_window_title(path=path, is_dirty=is_dirty, is_untitled=is_untitled)
+        )

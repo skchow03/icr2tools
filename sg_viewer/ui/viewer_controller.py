@@ -30,16 +30,14 @@ from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 from sg_viewer.ui.rotate_track_dialog import RotateTrackDialog
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
-from sg_viewer.ui.elevation_profile import (
-    ElevationProfileData,
-    elevation_profile_alt_bounds,
-)
+from sg_viewer.ui.elevation_profile import elevation_profile_alt_bounds
 from sg_viewer.ui.xsect_elevation import XsectElevationData
 from sg_viewer.rendering.fsection_style_map import FENCE_TYPE2
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
-from sg_viewer.ui.controllers import InteractionController
+from sg_viewer.ui.color_utils import parse_hex_color
+from sg_viewer.ui.controllers import ElevationController, InteractionController
 from sg_viewer.model.track_model import TrackModel
 
 logger = logging.getLogger(__name__)
@@ -62,10 +60,7 @@ class SGViewerController:
         self._move_section_default_style = window.move_section_button.styleSheet()
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
-        self._current_profile: ElevationProfileData | None = None
-        self._deferred_profile_refresh = False
-        self._profile_dragging = False
-        self._profile_editing = False
+        self._elevation_controller = ElevationController()
         self._calibrator_window: Calibrator | None = None
         self._delete_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence(QtCore.Qt.Key_Delete),
@@ -494,7 +489,7 @@ class SGViewerController:
     def _on_preview_color_text_changed(
         self, key: str, widget: QtWidgets.QLineEdit
     ) -> None:
-        color = self._window.parse_hex_color(widget.text())
+        color = parse_hex_color(widget.text())
         if color is None:
             current = self._current_preview_color_for_key(key)
             self._window.set_preview_color_text(key, current)
@@ -559,8 +554,7 @@ class SGViewerController:
         if dragging:
             return
 
-        if self._deferred_profile_refresh:
-            self._deferred_profile_refresh = False
+        if self._elevation_controller.consume_deferred_refresh():
             self._refresh_elevation_profile()
 
     def _open_background_file_dialog(self) -> None:
@@ -1150,9 +1144,9 @@ class SGViewerController:
                 is_dirty=True,
             )
 
-        if self._window.preview.is_interaction_dragging:
-            self._deferred_profile_refresh = True
-        else:
+        if not self._elevation_controller.defer_refresh_if_dragging(
+            is_interaction_dragging=self._window.preview.is_interaction_dragging
+        ):
             self._refresh_elevation_profile()
         self._refresh_elevation_inputs()
         self._update_track_length_display()
@@ -1527,7 +1521,7 @@ class SGViewerController:
         if not combo.isEnabled():
             self._window.preview.set_selected_xsect_index(None)
             self._window.profile_widget.set_profile_data(None)
-            self._current_profile = None
+            self._elevation_controller.current_profile = None
             self._refresh_elevation_inputs()
             self._refresh_xsect_elevation_panel()
             return
@@ -1548,10 +1542,9 @@ class SGViewerController:
             profile.decimals = self._window.xsect_altitude_display_decimals()
             global_bounds: tuple[float, float] | None = None
             if (
-                (self._profile_dragging or self._profile_editing)
-                and self._current_profile is not None
+                self._elevation_controller.should_lock_bounds()
             ):
-                global_bounds = self._current_profile.y_range
+                global_bounds = self._elevation_controller.current_profile.y_range
             else:
                 global_bounds = self._window.preview.get_elevation_profile_bounds(
                     samples_per_section=samples_per_section
@@ -1559,7 +1552,7 @@ class SGViewerController:
             if global_bounds is not None:
                 profile.y_range = global_bounds
         self._window.profile_widget.set_profile_data(profile)
-        self._current_profile = profile
+        self._elevation_controller.current_profile = profile
         self._refresh_elevation_inputs()
         self._update_copy_xsect_button()
         self._refresh_xsect_elevation_panel()
@@ -1650,7 +1643,7 @@ class SGViewerController:
         if xsect_index is None:
             return
 
-        self._profile_dragging = True
+        self._elevation_controller.begin_drag()
         try:
             if self._window.preview.set_section_xsect_altitude(
                 section_index, xsect_index, altitude, validate=False
@@ -1663,7 +1656,7 @@ class SGViewerController:
                 ):
                     self._refresh_elevation_inputs()
         finally:
-            self._profile_dragging = False
+            self._elevation_controller.end_drag()
 
     def _on_profile_altitude_drag_finished(self, section_index: int) -> None:
         _ = section_index
@@ -1735,13 +1728,12 @@ class SGViewerController:
 
     def _on_altitude_slider_changed(self, value: int) -> None:
         self._window.update_altitude_display(value)
-        self._profile_editing = True
+        self._elevation_controller.begin_edit()
         self._apply_altitude_edit()
 
     def _on_altitude_slider_released(self) -> None:
         self._window.preview.validate_document()
-        if self._profile_editing:
-            self._profile_editing = False
+        if self._elevation_controller.end_edit():
             self._refresh_elevation_profile()
 
     def _on_altitude_range_changed(self, changed: str | None = None) -> None:
@@ -2121,13 +2113,12 @@ class SGViewerController:
 
     def _on_grade_slider_changed(self, value: int) -> None:
         self._window.update_grade_display(value)
-        self._profile_editing = True
+        self._elevation_controller.begin_edit()
         self._apply_grade_edit()
 
     def _on_grade_edit_finished(self) -> None:
         self._window.preview.validate_document()
-        if self._profile_editing:
-            self._profile_editing = False
+        if self._elevation_controller.end_edit():
             self._refresh_elevation_profile()
 
     def _refresh_xsect_elevation_panel(self) -> None:
@@ -2141,8 +2132,8 @@ class SGViewerController:
         metadata = self._window.preview.get_xsect_metadata()
         xsect_dlats = [dlat for _, dlat in metadata] if metadata else None
         y_range = (
-            elevation_profile_alt_bounds(self._current_profile)
-            if self._current_profile is not None
+            elevation_profile_alt_bounds(self._elevation_controller.current_profile)
+            if self._elevation_controller.current_profile is not None
             else None
         )
         self._window.xsect_elevation_widget.set_xsect_data(
