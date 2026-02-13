@@ -9,6 +9,7 @@ from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
 )
+from sg_viewer.model.invariants import validate_sections
 from sg_viewer.model.preview_state_utils import (
     compute_section_signatures,
     section_signature,
@@ -188,6 +189,11 @@ class PreviewSectionManager:
             self.centerline_index = index
 
         return needs_rebuild
+
+
+    def validate(self) -> None:
+        """Validate invariants for the currently active section list."""
+        validate_sections(self.sections)
 
     def _compute_centerline_offsets(
         self, polylines: list[list[Point]]
