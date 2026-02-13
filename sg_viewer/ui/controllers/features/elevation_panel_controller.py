@@ -92,6 +92,16 @@ class ElevationPanelController:
         if self._host._elevation_controller.end_edit():
             self.refresh_elevation_profile()
 
+    def on_grade_slider_changed(self, value: int) -> None:
+        _ = value
+        self._host._elevation_controller.begin_edit()
+        self._host._apply_grade_edit()
+
+    def on_grade_edit_finished(self) -> None:
+        self._host._window.preview.validate_document()
+        if self._host._elevation_controller.end_edit():
+            self.refresh_elevation_profile()
+
     def on_altitude_range_changed(self, changed: str | None = None) -> None:
         _ = changed
         min_value = self._host._window.altitude_min_spin.value()
