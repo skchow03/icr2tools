@@ -4,7 +4,7 @@ from typing import Protocol
 
 from PyQt5 import QtWidgets
 
-from sg_viewer.ui.altitude_units import feet_from_slider_units, feet_to_slider_units, units_from_500ths
+from sg_viewer.ui.altitude_units import feet_to_slider_units, units_from_500ths
 from sg_viewer.ui.elevation_profile import elevation_profile_alt_bounds
 from sg_viewer.ui.xsect_elevation import XsectElevationData
 
@@ -84,7 +84,7 @@ class ElevationPanelController:
         self._host._window.set_grade_inputs_enabled(has_selection)
 
     def on_altitude_slider_changed(self, value: int) -> None:
-        self._host._window.update_altitude_display(feet_from_slider_units(value))
+        self._host._window.update_altitude_display(value)
         self._host._elevation_controller.begin_edit()
         self._host._apply_altitude_edit()
 
