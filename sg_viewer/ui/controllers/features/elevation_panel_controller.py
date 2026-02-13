@@ -104,21 +104,27 @@ class ElevationPanelController:
             self.refresh_elevation_profile()
 
     def on_altitude_range_changed(self, changed: str | None = None) -> None:
-        _ = changed
         min_value = self._host._window.altitude_min_spin.value()
         max_value = self._host._window.altitude_max_spin.value()
         if min_value >= max_value:
-            max_value = min_value + 0.1
-            self._host._window.altitude_max_spin.blockSignals(True)
-            self._host._window.altitude_max_spin.setValue(max_value)
-            self._host._window.altitude_max_spin.blockSignals(False)
+            if changed == "max":
+                min_value = max_value - 0.1
+                self._host._window.altitude_min_spin.blockSignals(True)
+                self._host._window.altitude_min_spin.setValue(min_value)
+                self._host._window.altitude_min_spin.blockSignals(False)
+            else:
+                max_value = min_value + 0.1
+                self._host._window.altitude_max_spin.blockSignals(True)
+                self._host._window.altitude_max_spin.setValue(max_value)
+                self._host._window.altitude_max_spin.blockSignals(False)
         slider_min = feet_to_slider_units(min_value)
         slider_max = feet_to_slider_units(max_value)
         self._host._window.set_altitude_slider_bounds(slider_min, slider_max)
         self.refresh_elevation_profile()
 
     def open_altitude_range_dialog(self) -> None:
-        self._host._window.show_altitude_range_dialog()
+        if self._host._window.show_altitude_range_dialog():
+            self.on_altitude_range_changed()
 
     def open_grade_range_dialog(self) -> None:
         self._host._window.show_grade_range_dialog()

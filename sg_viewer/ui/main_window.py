@@ -769,7 +769,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_slider.setRange(minimum, maximum)
         self._altitude_slider.setValue(min(max(self._altitude_slider.value(), minimum), maximum))
 
-    def show_altitude_range_dialog(self) -> None:
+    def show_altitude_range_dialog(self) -> bool:
         min_value, ok_min = QtWidgets.QInputDialog.getDouble(
             self,
             "Altitude Range",
@@ -780,7 +780,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._altitude_min_spin.decimals(),
         )
         if not ok_min:
-            return
+            return False
         max_value, ok_max = QtWidgets.QInputDialog.getDouble(
             self,
             "Altitude Range",
@@ -791,7 +791,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._altitude_max_spin.decimals(),
         )
         if not ok_max:
-            return
+            return False
 
         if min_value >= max_value:
             QtWidgets.QMessageBox.warning(
@@ -799,10 +799,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Invalid Range",
                 "Maximum altitude must be greater than minimum altitude.",
             )
-            return
+            return False
 
         self._altitude_min_spin.setValue(min_value)
         self._altitude_max_spin.setValue(max_value)
+        return True
 
     def show_grade_range_dialog(self) -> None:
         minimum, ok_min = QtWidgets.QInputDialog.getInt(
