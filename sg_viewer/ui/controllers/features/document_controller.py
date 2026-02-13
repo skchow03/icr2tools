@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-import subprocess
-import sys
 from pathlib import Path
 from typing import Protocol
 
 from PyQt5 import QtWidgets
+
+from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
 
 
 class DocumentControllerHost(Protocol):
@@ -199,17 +199,12 @@ class DocumentController:
         return self._host._current_path
 
     def convert_sg_to_csv(self, sg_path: Path) -> None:
-        sg2csv_path = Path(__file__).resolve().parents[3] / "icr2_core" / "trk" / "sg2csv.py"
-        try:
-            result = subprocess.run([sys.executable, str(sg2csv_path), str(sg_path)], cwd=sg2csv_path.parent, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as exc:
-            error_output = exc.stderr or exc.stdout or str(exc)
-            QtWidgets.QMessageBox.warning(self._host._window, "CSV Export Failed", f"SG saved but CSV export failed:\n{error_output}")
-            self._logger.exception("Failed to convert SG to CSV")
-            return
-        if result.stdout:
-            self._logger.info(result.stdout)
-        self._host._window.show_status_message(f"Saved {sg_path} and exported CSVs next to it")
+        result = export_sg_to_csv(sg_path=sg_path)
+        self._handle_export_result(
+            result,
+            title="CSV Export Failed",
+            error_log="Failed to convert SG to CSV",
+        )
 
     def convert_sg_to_trk(self) -> None:
         sg_path = self.ensure_saved_sg()
@@ -229,17 +224,22 @@ class DocumentController:
         trk_path = Path(output_path)
         if trk_path.suffix.lower() != '.trk':
             trk_path = trk_path.with_suffix('.trk')
-        sg2trk_path = Path(__file__).resolve().parents[3] / "icr2_core" / "trk" / "sg2trk.py"
-        try:
-            subprocess.run([
-                sys.executable, str(sg2trk_path), str(sg_path), "--format", "trk", "--output", str(trk_path.with_suffix(""))
-            ], cwd=sg2trk_path.parent, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as exc:
-            error_output = exc.stderr or exc.stdout or str(exc)
-            QtWidgets.QMessageBox.warning(self._host._window, "TRK Export Failed", f"SG saved but TRK export failed:\n{error_output}")
-            self._logger.exception("Failed to convert SG to TRK")
+        result = export_sg_to_trk(sg_path=sg_path, trk_path=trk_path)
+        self._handle_export_result(
+            result,
+            title="TRK Export Failed",
+            error_log="Failed to convert SG to TRK",
+        )
+
+    def _handle_export_result(self, result: ExportResult, *, title: str, error_log: str) -> None:
+        if result.stdout:
+            self._logger.info(result.stdout)
+        if result.stderr:
+            self._logger.warning(result.stderr)
+
+        if result.success:
+            self._host._window.show_status_message(result.message)
             return
-        if trk_path.exists():
-            self._host._window.show_status_message(f"Saved TRK to {trk_path}")
-        else:
-            self._host._window.show_status_message("TRK export completed.")
+
+        QtWidgets.QMessageBox.warning(self._host._window, title, result.message)
+        self._logger.error(error_log)

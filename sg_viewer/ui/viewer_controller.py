@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -813,7 +814,7 @@ class SGViewerController:
 
     @staticmethod
     def _build_generated_fsects(*, template: str, track_width: float, left_grass: float, right_grass: float, grass_surface_type: int, wall_surface_type: int, wall_width: float, fence_enabled: bool) -> list[PreviewFSection]:
-        return SectionsController.build_generated_fsects(template=template, track_width=track_width, left_grass=left_grass, right_grass=right_grass, grass_surface_type=grass_surface_type, wall_surface_type=wall_surface_type, wall_width=wall_width, fence_enabled=fence_enabled)
+        return build_generated_fsects(template=template, track_width=track_width, left_grass=left_grass, right_grass=right_grass, grass_surface_type=grass_surface_type, wall_surface_type=wall_surface_type, wall_width=wall_width, fence_enabled=fence_enabled)
 
     def _populate_xsect_choices(self, preferred_index: int | None = None) -> None:
         self._elevation_panel_controller.populate_xsect_choices(preferred_index=preferred_index)
