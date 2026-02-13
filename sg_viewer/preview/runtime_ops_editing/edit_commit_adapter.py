@@ -5,7 +5,7 @@ import math
 from dataclasses import replace
 
 from icr2_core.sg_elevation import sg_xsect_altitude_grade_at
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 
 

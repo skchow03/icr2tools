@@ -4,7 +4,7 @@ import math
 from dataclasses import replace
 from typing import Iterable
 
-from sg_viewer.models.sg_model import Point, SectionPreview
+from sg_viewer.model.sg_model import Point, SectionPreview
 
 
 def _curve_orientation_hint(section: SectionPreview) -> float:

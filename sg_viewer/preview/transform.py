@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Callable, Tuple
 
-from sg_viewer.models import preview_state
+from sg_viewer.model import preview_state
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]

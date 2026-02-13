@@ -5,8 +5,8 @@ import pytest
 try:
     from PyQt5 import QtWidgets
     from sg_viewer.ui.app import SGViewerWindow
-    from sg_viewer.models.preview_fsection import PreviewFSection
-    from sg_viewer.models.selection import SectionSelection
+    from sg_viewer.model.preview_fsection import PreviewFSection
+    from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)

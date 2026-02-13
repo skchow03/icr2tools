@@ -7,7 +7,7 @@ from typing import Tuple
 from sg_viewer.geometry.curve_solver import _project_point_along_heading
 from sg_viewer.geometry.curve_solver import _solve_curve_drag as _solve_curve_drag_util
 from sg_viewer.geometry.picking import project_point_to_segment
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 Point = Tuple[float, float]
 

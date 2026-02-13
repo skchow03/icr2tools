@@ -20,7 +20,7 @@ from sg_viewer.ui.elevation_profile import ElevationProfileWidget
 from sg_viewer.ui.fsect_diagram_widget import FsectDiagramWidget
 from sg_viewer.ui.xsect_elevation import XsectElevationWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
-from sg_viewer.models.selection import SectionSelection
+from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.viewer_controller import SGViewerController
 
 

@@ -4,8 +4,8 @@ from typing import Iterable, Sequence
 
 from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.preview.geometry import curve_angles
-from sg_viewer.models.sg_model import SectionPreview
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.model.preview_fsection import PreviewFSection
 
 def apply_preview_to_sgfile(
     sgfile: SGFile,

@@ -6,16 +6,16 @@ from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry.derived_geometry import DerivedGeometry
 from sg_viewer.model.sg_document import SGDocument
-from sg_viewer.models import preview_state, selection
-from sg_viewer.models.preview_fsection import PreviewFSection
-from sg_viewer.models.sg_model import PreviewData
+from sg_viewer.model import preview_state, selection
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import PreviewData
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.creation_controller import CreationController
 from sg_viewer.preview.interaction_state import InteractionState
 from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.models.preview_state import SgPreviewViewState
+from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager

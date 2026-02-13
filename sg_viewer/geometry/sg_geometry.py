@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 from track_viewer.geometry import CenterlineIndex, build_centerline_index
 
-from sg_viewer.models.sg_model import SectionPreview, Point
+from sg_viewer.model.sg_model import SectionPreview, Point
 
 
 def normalize_heading(vec: tuple[float, float] | None) -> tuple[float, float] | None:

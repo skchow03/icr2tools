@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 
-from sg_viewer.models.preview_fsection import PreviewFSection
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.geometry.topology import is_closed_loop
 
 

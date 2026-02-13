@@ -2,7 +2,7 @@ import pytest
 import math
 
 from sg_viewer.geometry.sg_geometry import rotate_section
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 
 def _section() -> SectionPreview:

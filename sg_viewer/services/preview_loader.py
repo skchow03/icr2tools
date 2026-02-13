@@ -17,8 +17,8 @@ from sg_viewer.geometry.sg_geometry import (
     derive_heading_vectors,
     rebuild_centerline_from_sections,
 )
-from sg_viewer.models.preview_fsection import PreviewFSection
-from sg_viewer.models.sg_model import Point, PreviewData, SectionPreview
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import Point, PreviewData, SectionPreview
 
 def load_preview(path: Path) -> PreviewData:
     sgfile = SGFile.from_sg(str(path))

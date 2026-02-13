@@ -15,7 +15,7 @@ from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.preview.sg_overlay_builder import build_sg_preview_model
 from sg_viewer.services import preview_loader_service
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_fsection import PreviewFSection
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from typing import Callable, Tuple
 
 from sg_viewer.geometry import preview_transform
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.models import preview_state
+from sg_viewer.model import preview_state
 
 Point = Tuple[float, float]
 

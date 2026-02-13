@@ -9,11 +9,11 @@ from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
 )
-from sg_viewer.models.preview_state_utils import (
+from sg_viewer.model.preview_state_utils import (
     compute_section_signatures,
     section_signature,
 )
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 Point = Tuple[float, float]
 

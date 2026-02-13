@@ -4,14 +4,14 @@ from pathlib import Path
 
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
-from sg_viewer.models import selection
-from sg_viewer.models.preview_fsection import PreviewFSection
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model import selection
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.creation_controller import CreationController, CreationUpdate
 from sg_viewer.preview.preview_defaults import create_empty_sgfile
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.preview.transform import ViewTransform
-from sg_viewer.models.preview_state import SgPreviewViewState
+from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.preview.runtime_ops.base_context import Point, logger

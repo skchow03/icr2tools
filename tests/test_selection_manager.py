@@ -49,9 +49,9 @@ if "PyQt5" not in sys.modules:
 
 from PyQt5 import QtCore
 
-from sg_viewer.models import preview_state
-from sg_viewer.models.selection import SelectionManager
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model import preview_state
+from sg_viewer.model.selection import SelectionManager
+from sg_viewer.model.sg_model import SectionPreview
 
 
 def _make_section(

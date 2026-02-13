@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Tuple
 
-from sg_viewer.models.preview_state_utils import is_disconnected_endpoint
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.preview_state_utils import is_disconnected_endpoint
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.geometry import heading_for_endpoint
 
 Point = Tuple[float, float]

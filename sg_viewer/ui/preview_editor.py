@@ -8,14 +8,14 @@ from sg_viewer.preview.creation_controller import (
     CurveCreationInteraction,
     StraightCreationInteraction,
 )
-from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
+from sg_viewer.model.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.ui.preview_state_controller import PreviewStateController
-from sg_viewer.models.selection import SelectionManager
+from sg_viewer.model.selection import SelectionManager
 from sg_viewer.geometry.sg_geometry import (
     assert_section_geometry_consistent,
     update_section_geometry,
 )
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 Point = tuple[float, float]
 

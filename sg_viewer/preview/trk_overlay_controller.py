@@ -5,7 +5,7 @@ from icr2_core.trk.trk_utils import get_cline_pos
 from track_viewer.geometry import project_point_to_centerline
 
 from sg_viewer.geometry.centerline_utils import compute_centerline_normal_and_tangent
-from sg_viewer.models.sg_model import PreviewData
+from sg_viewer.model.sg_model import PreviewData
 from sg_viewer.services import preview_loader_service
 
 Point = tuple[float, float]

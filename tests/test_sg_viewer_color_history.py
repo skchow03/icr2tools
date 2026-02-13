@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sg_viewer.models.history import FileHistory
+from sg_viewer.model.history import FileHistory
 
 
 def test_ensure_preview_colors_writes_defaults_for_missing_file(tmp_path):

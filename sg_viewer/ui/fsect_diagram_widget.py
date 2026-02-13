@@ -5,7 +5,7 @@ from typing import Callable, Iterable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
 from sg_viewer.services import sg_rendering
 

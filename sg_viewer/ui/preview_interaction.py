@@ -18,7 +18,7 @@ from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
     update_section_geometry,
 )
-from sg_viewer.models.preview_state_utils import is_disconnected_endpoint, is_invalid_id
+from sg_viewer.model.preview_state_utils import is_disconnected_endpoint, is_invalid_id
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.preview_mutations import (
@@ -34,8 +34,8 @@ from sg_viewer.geometry.canonicalize import canonicalize_closed_loop
 
 
 if TYPE_CHECKING:
-    from sg_viewer.models.selection import SelectionManager
-    from sg_viewer.models.sg_model import SectionPreview
+    from sg_viewer.model.selection import SelectionManager
+    from sg_viewer.model.sg_model import SectionPreview
     from sg_viewer.ui.preview_editor import PreviewEditor
     from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 
