@@ -10,10 +10,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.geometry.sg_geometry import rotate_section
-from sg_viewer.models.history import FileHistory
-from sg_viewer.models.preview_fsection import PreviewFSection
-from sg_viewer.models.sg_model import SectionPreview
-from sg_viewer.models.selection import SectionSelection
+from sg_viewer.model.history import FileHistory
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.model.selection import SectionSelection
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.ui.altitude_units import (
     feet_from_500ths,

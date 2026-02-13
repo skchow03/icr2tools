@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import List, Tuple
 
-from sg_viewer.models.sg_model import SectionPreview, Point
-from sg_viewer.models.preview_state_utils import heading_delta
+from sg_viewer.model.sg_model import SectionPreview, Point
+from sg_viewer.model.preview_state_utils import heading_delta
 
 EndpointKey = tuple[int, str]  # (section_index, "start"|"end")
 

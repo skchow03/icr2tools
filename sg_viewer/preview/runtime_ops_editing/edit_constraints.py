@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 
 class _RuntimeEditConstraintsMixin:

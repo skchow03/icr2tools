@@ -3,7 +3,7 @@ from typing import List
 
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.topology import is_closed_loop
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 
 def set_start_finish(

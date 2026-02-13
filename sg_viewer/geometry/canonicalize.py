@@ -2,7 +2,7 @@ from dataclasses import replace
 from typing import List
 import math
 
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.geometry.sg_geometry import signed_radius_from_heading
 

@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 from sg_viewer.geometry.curve_solver import _solve_curve_with_fixed_heading
 from sg_viewer.geometry.sg_geometry import signed_radius_from_heading, update_section_geometry
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.geometry import apply_heading_constraint
 
 Point = tuple[float, float]

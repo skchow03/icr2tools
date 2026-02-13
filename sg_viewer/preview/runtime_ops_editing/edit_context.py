@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.runtime_ops_core import Point
 
 

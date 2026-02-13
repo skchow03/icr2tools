@@ -6,8 +6,8 @@ from typing import Iterable, Tuple
 
 from PyQt5 import QtCore, QtGui
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
-from sg_viewer.models.sg_model import SectionPreview
-from sg_viewer.models.preview_state import SgPreviewModel, SgPreviewViewState
+from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.model.preview_state import SgPreviewModel, SgPreviewViewState
 from sg_viewer.preview.render_state import split_nodes_by_status
 from sg_viewer.preview.transform import ViewTransform
 from sg_viewer.services import sg_rendering

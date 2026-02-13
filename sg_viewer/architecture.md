@@ -43,7 +43,7 @@ Qt widgets
 **Purpose:** Represent real `.SG` semantics and values.
 
 **Primary module:**
-- `models/sg_model.py`
+- `model/sg_model.py`
 
 **Key type:**
 - `SectionPreview`
@@ -91,7 +91,7 @@ Design constraints:
 **Purpose:** Maintain view state independent of SG data.
 
 **Modules:**
-- `models/preview_state.py`
+- `model/preview_state.py`
 - `geometry/preview_transform.py`
 - `preview/transform.py`
 
@@ -117,8 +117,8 @@ Notes:
 **Purpose:** Interpret user intent and manage live editing state.
 
 **Modules:**
-- `models/selection.py`
-- `models/preview_state_utils.py`
+- `model/selection.py`
+- `model/preview_state_utils.py`
 - `preview/selection.py`
 - `preview/edit_interactions.py`
 - `preview/creation_controller.py`
@@ -191,7 +191,7 @@ UI code does **not**:
 **Modules:**
 - `services/preview_background.py`
 - `ui/bg_calibrator_minimal.py`
-- `models/history.py`
+- `model/history.py`
 
 Concepts:
 - Images exist in world coordinates

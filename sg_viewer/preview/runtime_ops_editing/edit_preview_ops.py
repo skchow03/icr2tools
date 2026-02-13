@@ -12,7 +12,7 @@ from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.picking import project_point_to_segment
 from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, scale_section
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.preview_mutations import project_point_to_polyline
 from sg_viewer.preview.runtime_ops_core import Point
 from sg_viewer.preview.runtime_ops_editing.edit_context import capture_edit_context

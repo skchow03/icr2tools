@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from icr2_core.trk.sg_classes import SGFile
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 
 

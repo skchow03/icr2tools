@@ -1,5 +1,5 @@
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 
 def _make_section(idx: int, start, end) -> SectionPreview:

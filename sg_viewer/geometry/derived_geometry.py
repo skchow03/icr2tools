@@ -7,7 +7,7 @@ from sg_viewer.geometry.sg_geometry import (
     rebuild_centerline_from_sections,
 )
 from sg_viewer.model.sg_document import SGDocument
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 
 class DerivedGeometry:

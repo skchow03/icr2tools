@@ -4,7 +4,7 @@ import copy
 from dataclasses import replace
 
 from sg_viewer.model.sg_document import SGDocument
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.preview.fsection_preview_builder import build_fsection_preview
 from sg_viewer.sg_document_fsects import FSection
 

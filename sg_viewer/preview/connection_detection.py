@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 
 from sg_viewer.geometry.picking import find_connection_target
 from sg_viewer.preview.selection import build_node_positions
-from sg_viewer.models.preview_state_utils import is_disconnected_endpoint
+from sg_viewer.model.preview_state_utils import is_disconnected_endpoint
 
 Point = Tuple[float, float]
 

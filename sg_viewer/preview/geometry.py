@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from typing import Tuple
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 
 Point = Tuple[float, float]
 

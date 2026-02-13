@@ -9,8 +9,8 @@ from PyQt5 import QtCore
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry import preview_transform
-from sg_viewer.models import preview_state
-from sg_viewer.models.sg_model import PreviewData
+from sg_viewer.model import preview_state
+from sg_viewer.model.sg_model import PreviewData
 from sg_viewer.services import preview_loader_service
 
 Point = Tuple[float, float]

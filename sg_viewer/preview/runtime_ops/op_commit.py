@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_fsection import PreviewFSection
 
 
 class _RuntimeCoreCommitMixin:

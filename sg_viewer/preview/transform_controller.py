@@ -6,7 +6,7 @@ from typing import Callable
 from PyQt5 import QtGui
 
 from sg_viewer.geometry import preview_transform
-from sg_viewer.models import preview_state
+from sg_viewer.model import preview_state
 from sg_viewer.preview.transform import pan_transform_state, zoom_transform_state
 from sg_viewer.ui.preview_viewport import PreviewViewport
 

@@ -34,7 +34,7 @@ if "PyQt5" not in sys.modules:
     sys.modules["PyQt5.QtCore"] = qtcore
     sys.modules["PyQt5.QtGui"] = qtgui
 
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 

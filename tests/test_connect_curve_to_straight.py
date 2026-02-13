@@ -40,7 +40,7 @@ from sg_viewer.geometry.connect_curve_to_straight import (
     solve_straight_end_to_curve_endpoint,
 )
 from sg_viewer.geometry.sg_geometry import update_section_geometry
-from sg_viewer.models.sg_model import SectionPreview
+from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 
 

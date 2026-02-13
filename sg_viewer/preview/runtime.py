@@ -10,7 +10,7 @@ from PyQt5 import QtCore, QtGui
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.sg_elevation import sample_sg_elevation
-from sg_viewer.models import preview_state, selection
+from sg_viewer.model import preview_state, selection
 from sg_viewer.preview.geometry import (
     CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
 )
@@ -21,7 +21,7 @@ from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.models.preview_state import SgPreviewViewState
+from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
     compute_start_finish_mapping_from_centerline,
@@ -39,9 +39,9 @@ from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
-from sg_viewer.models.preview_state_utils import update_node_status
-from sg_viewer.models.sg_model import PreviewData, SectionPreview
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_state_utils import update_node_status
+from sg_viewer.model.sg_model import PreviewData, SectionPreview
+from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.preview.interaction_state import InteractionInputs, InteractionState, MouseIntent

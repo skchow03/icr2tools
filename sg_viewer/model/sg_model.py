@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_fsection import PreviewFSection
 
 Point = Tuple[float, float]
 

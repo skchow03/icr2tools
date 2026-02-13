@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.models.preview_state_utils import update_node_status
+from sg_viewer.model.preview_state_utils import update_node_status
 from sg_viewer.preview.creation_controller import (
     CreationEvent,
     CreationEventContext,

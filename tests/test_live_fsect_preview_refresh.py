@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("numpy")
 
 from icr2_core.trk.sg_classes import SGFile
-from sg_viewer.models.preview_fsection import PreviewFSection
+from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.preview.runtime_ops_persistence import _RuntimePersistenceMixin
 
 
