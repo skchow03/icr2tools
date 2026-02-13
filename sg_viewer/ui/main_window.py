@@ -770,29 +770,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_slider.setValue(min(max(self._altitude_slider.value(), minimum), maximum))
 
     def show_altitude_range_dialog(self) -> bool:
-        min_value, ok_min = QtWidgets.QInputDialog.getDouble(
-            self,
-            "Altitude Range",
-            f"Minimum altitude ({self._measurement_unit_label(self._current_measurement_unit())}):",
-            self._altitude_min_spin.value(),
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Altitude Range")
+        layout = QtWidgets.QFormLayout(dialog)
+
+        unit_label = self._measurement_unit_label(self._current_measurement_unit())
+
+        min_spin = QtWidgets.QDoubleSpinBox(dialog)
+        min_spin.setDecimals(self._altitude_min_spin.decimals())
+        min_spin.setRange(
             self._altitude_min_spin.minimum(),
             self._altitude_min_spin.maximum(),
-            self._altitude_min_spin.decimals(),
         )
-        if not ok_min:
-            return False
-        max_value, ok_max = QtWidgets.QInputDialog.getDouble(
-            self,
-            "Altitude Range",
-            f"Maximum altitude ({self._measurement_unit_label(self._current_measurement_unit())}):",
-            self._altitude_max_spin.value(),
+        min_spin.setSingleStep(self._altitude_min_spin.singleStep())
+        min_spin.setValue(self._altitude_min_spin.value())
+
+        max_spin = QtWidgets.QDoubleSpinBox(dialog)
+        max_spin.setDecimals(self._altitude_max_spin.decimals())
+        max_spin.setRange(
             self._altitude_max_spin.minimum(),
             self._altitude_max_spin.maximum(),
-            self._altitude_max_spin.decimals(),
         )
-        if not ok_max:
+        max_spin.setSingleStep(self._altitude_max_spin.singleStep())
+        max_spin.setValue(self._altitude_max_spin.value())
+
+        layout.addRow(f"Minimum altitude ({unit_label}):", min_spin)
+        layout.addRow(f"Maximum altitude ({unit_label}):", max_spin)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal,
+            dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return False
 
+        min_value = min_spin.value()
+        max_value = max_spin.value()
         if min_value >= max_value:
             QtWidgets.QMessageBox.warning(
                 self,
