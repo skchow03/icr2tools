@@ -755,6 +755,114 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_slider.blockSignals(False)
         self._grade_slider.blockSignals(False)
 
+    def set_altitude_inputs_enabled(self, enabled: bool) -> None:
+        self._altitude_slider.setEnabled(enabled)
+        self._altitude_set_range_button.setEnabled(enabled)
+
+    def set_grade_inputs_enabled(self, enabled: bool) -> None:
+        self._grade_slider.setEnabled(enabled)
+        self._grade_set_range_button.setEnabled(enabled)
+
+    def set_altitude_slider_bounds(self, minimum: int, maximum: int) -> None:
+        if minimum >= maximum:
+            maximum = minimum + 1
+        self._altitude_slider.setRange(minimum, maximum)
+        self._altitude_slider.setValue(min(max(self._altitude_slider.value(), minimum), maximum))
+
+    def show_altitude_range_dialog(self) -> None:
+        min_value, ok_min = QtWidgets.QInputDialog.getDouble(
+            self,
+            "Altitude Range",
+            f"Minimum altitude ({self._measurement_unit_label(self._current_measurement_unit())}):",
+            self._altitude_min_spin.value(),
+            self._altitude_min_spin.minimum(),
+            self._altitude_min_spin.maximum(),
+            self._altitude_min_spin.decimals(),
+        )
+        if not ok_min:
+            return
+        max_value, ok_max = QtWidgets.QInputDialog.getDouble(
+            self,
+            "Altitude Range",
+            f"Maximum altitude ({self._measurement_unit_label(self._current_measurement_unit())}):",
+            self._altitude_max_spin.value(),
+            self._altitude_max_spin.minimum(),
+            self._altitude_max_spin.maximum(),
+            self._altitude_max_spin.decimals(),
+        )
+        if not ok_max:
+            return
+
+        if min_value >= max_value:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Range",
+                "Maximum altitude must be greater than minimum altitude.",
+            )
+            return
+
+        self._altitude_min_spin.setValue(min_value)
+        self._altitude_max_spin.setValue(max_value)
+
+    def show_grade_range_dialog(self) -> None:
+        minimum, ok_min = QtWidgets.QInputDialog.getInt(
+            self,
+            "Grade Range",
+            "Minimum grade:",
+            self._grade_slider.minimum(),
+            -10000,
+            10000,
+            1,
+        )
+        if not ok_min:
+            return
+        maximum, ok_max = QtWidgets.QInputDialog.getInt(
+            self,
+            "Grade Range",
+            "Maximum grade:",
+            self._grade_slider.maximum(),
+            -10000,
+            10000,
+            1,
+        )
+        if not ok_max:
+            return
+
+        if minimum >= maximum:
+            QtWidgets.QMessageBox.warning(
+                self, "Invalid Range", "Maximum grade must be greater than minimum grade."
+            )
+            return
+
+        self._grade_slider.setRange(minimum, maximum)
+        self._grade_slider.setValue(min(max(self._grade_slider.value(), minimum), maximum))
+
+    def show_raise_lower_elevations_dialog(self) -> None:
+        delta, ok = QtWidgets.QInputDialog.getDouble(
+            self,
+            "Raise/Lower Elevations",
+            f"Elevation offset ({self._measurement_unit_label(self._current_measurement_unit())}):",
+            0.0,
+            -1000000.0,
+            1000000.0,
+            self._measurement_unit_decimals(self._current_measurement_unit()),
+        )
+        if not ok:
+            return
+
+        delta_500ths = units_to_500ths(delta, self._current_measurement_unit())
+        if self._preview.offset_all_elevations(delta_500ths, validate=False):
+            self._preview.validate_document()
+            self.show_status_message(
+                f"Adjusted all elevations by {delta:g} {self._measurement_unit_label(self._current_measurement_unit())}."
+            )
+        else:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Raise/Lower Elevations",
+                "Unable to update elevations.",
+            )
+
     def _current_measurement_unit(self) -> str:
         return str(self._measurement_units_combo.currentData())
 
