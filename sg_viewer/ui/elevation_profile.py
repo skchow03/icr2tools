@@ -58,6 +58,8 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._data: ElevationProfileData | None = None
         self._selected_range: tuple[float, float] | None = None
         self._x_view_range: tuple[float, float] | None = None
+        self._y_view_range: tuple[float, float] | None = None
+        self._data_signature: tuple[float, int, str] | None = None
         self._is_panning = False
         self._is_dragging_marker = False
         self._dragged_section: int | None = None
@@ -69,13 +71,18 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         if data is None:
             self._data = None
             self._x_view_range = None
+            self._y_view_range = None
+            self._data_signature = None
             self.update()
             return
 
-        if self._data is None:
+        signature = self._signature_for(data)
+        if self._data is None or self._data_signature != signature:
             self._x_view_range = None
+            self._y_view_range = None
 
         self._data = data
+        self._data_signature = signature
         self.update()
 
     def set_selected_range(self, dlong_range: tuple[float, float] | None) -> None:
@@ -323,7 +330,13 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         return rect.bottom() - relative * rect.height()
 
     def _alt_bounds(self) -> tuple[float, float]:
+        if self._y_view_range is not None:
+            return self._y_view_range
         return elevation_profile_alt_bounds(self._data)
+
+    @staticmethod
+    def _signature_for(data: ElevationProfileData) -> tuple[float, int, str]:
+        return (float(data.track_length), len(data.dlongs), data.xsect_label)
 
     def _max_dlong(self) -> float:
         return max(max(self._data.dlongs), self._data.track_length)
@@ -369,7 +382,28 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
         margins = QtCore.QMargins(48, 20, 16, 32)
         plot_rect = self.rect().marginsRemoved(margins)
-        if plot_rect.width() <= 0:
+        if plot_rect.width() <= 0 or plot_rect.height() <= 0:
+            return
+
+        modifiers = event.modifiers()
+        if modifiers & QtCore.Qt.ControlModifier:
+            min_alt, max_alt = self._alt_bounds()
+            span = max_alt - min_alt
+            if span <= 0:
+                return
+            zoom_in = delta > 0
+            zoom_factor = 0.9 if zoom_in else 1.1
+            new_span = max(span * zoom_factor, 1.0)
+
+            cursor_y = min(max(event.position().y(), plot_rect.top()), plot_rect.bottom())
+            ratio = (plot_rect.bottom() - cursor_y) / plot_rect.height()
+            focus = min_alt + ratio * span
+
+            new_min = focus - ratio * new_span
+            new_max = new_min + new_span
+            self._y_view_range = (new_min, new_max)
+            self.update()
+            event.accept()
             return
 
         max_dlong = self._max_dlong()
