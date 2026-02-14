@@ -99,6 +99,11 @@ class _RuntimeLoadingMixin:
                 getattr(data.sgfile, "num_xsects", None),
             )
         self._preview_data = data
+        self._sgfile = data.sgfile
+        self._trk = data.trk
+        self._sampled_centerline = list(data.sampled_centerline)
+        self._sampled_bounds = data.sampled_bounds
+        self._track_length = data.track_length
         self._fsects_by_section = preview_loader_service.build_fsects_by_section(
             data.sgfile
         )
