@@ -105,6 +105,9 @@ class SGViewerController:
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
 
+        self._import_trk_action = QtWidgets.QAction("Import TRK…", self._window)
+        self._import_trk_action.triggered.connect(self._import_trk_file_dialog)
+
         self._open_recent_menu = QtWidgets.QMenu("Open Recent", self._window)
 
         self._save_current_action = QtWidgets.QAction("Save", self._window)
@@ -199,6 +202,7 @@ class SGViewerController:
         file_menu.addAction(self._new_action)
         file_menu.addSeparator()
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._import_trk_action)
         file_menu.addMenu(self._open_recent_menu)
         file_menu.addAction(self._save_current_action)
         file_menu.addAction(self._save_action)
@@ -501,6 +505,9 @@ class SGViewerController:
 
     def _open_file_dialog(self) -> None:
         self._document_controller.open_file_dialog()
+
+    def _import_trk_file_dialog(self) -> None:
+        self._document_controller.import_trk_file_dialog()
 
     def _start_new_track(self, *, confirm: bool = True) -> None:
         self._document_controller.start_new_track(confirm=confirm)
