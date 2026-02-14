@@ -140,6 +140,13 @@ class SGViewerController:
         self._rotate_track_action.setEnabled(False)
         self._rotate_track_action.triggered.connect(self._open_rotate_track_dialog)
 
+        self._reverse_track_action = QtWidgets.QAction(
+            "Reverse Track",
+            self._window,
+        )
+        self._reverse_track_action.setEnabled(False)
+        self._reverse_track_action.triggered.connect(self._reverse_track)
+
         self._convert_trk_action = QtWidgets.QAction(
             "Convert SG to TRK…",
             self._window,
@@ -231,6 +238,7 @@ class SGViewerController:
         tools_menu = self._window.menuBar().addMenu("Tools")
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._rotate_track_action)
+        tools_menu.addAction(self._reverse_track_action)
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addAction(self._generate_fsects_action)
         tools_menu.addAction(self._raise_lower_elevations_action)
@@ -806,6 +814,9 @@ class SGViewerController:
 
     def _open_generate_fsects_dialog(self) -> None:
         self._sections_controller.open_generate_fsects_dialog()
+
+    def _reverse_track(self) -> None:
+        self._sections_controller.reverse_track()
 
     @staticmethod
     def _build_generated_fsects(*, template: str, track_width: float, left_grass: float, right_grass: float, grass_surface_type: int, wall_surface_type: int, wall_width: float, fence_enabled: bool) -> list[PreviewFSection]:

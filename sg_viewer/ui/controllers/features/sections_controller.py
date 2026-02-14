@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import Protocol
 
 from PyQt5 import QtWidgets
@@ -25,6 +26,7 @@ class SectionsControllerHost(Protocol):
     _save_action: QtWidgets.QAction
     _scale_track_action: QtWidgets.QAction
     _rotate_track_action: QtWidgets.QAction
+    _reverse_track_action: QtWidgets.QAction
     _raise_lower_elevations_action: QtWidgets.QAction
     _flatten_all_elevations_and_grade_action: QtWidgets.QAction
     _delete_default_style: str
@@ -119,6 +121,7 @@ class SectionsController:
         self._host._heading_table_action.setEnabled(has_sections)
         self._host._scale_track_action.setEnabled(has_sections and is_closed_loop(sections))
         self._host._rotate_track_action.setEnabled(has_sections)
+        self._host._reverse_track_action.setEnabled(has_sections)
         self._host._raise_lower_elevations_action.setEnabled(has_sections)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(has_sections)
         self._host._save_action.setEnabled(True)
@@ -166,6 +169,75 @@ class SectionsController:
             self._host._window.preview.set_sections(original_sections)
             return
         self._host._window.show_status_message(f"Rotated track by {dialog.angle_degrees():+.1f}° around origin.")
+
+    def reverse_track(self) -> None:
+        sections, _ = self._host._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Reverse Track",
+                "There are no track sections available to reverse.",
+            )
+            return
+
+        section_count = len(sections)
+        old_to_new = {old_idx: section_count - 1 - old_idx for old_idx in range(section_count)}
+
+        reversed_sections: list[SectionPreview] = []
+        reversed_fsects: list[list[PreviewFSection]] = []
+        for new_idx, old_idx in enumerate(range(section_count - 1, -1, -1)):
+            section = sections[old_idx]
+
+            previous_id = old_to_new.get(section.next_id, -1)
+            next_id = old_to_new.get(section.previous_id, -1)
+
+            reversed_sections.append(
+                replace(
+                    section,
+                    section_id=new_idx,
+                    source_section_id=old_idx,
+                    previous_id=previous_id,
+                    next_id=next_id,
+                    start=section.end,
+                    end=section.start,
+                    start_heading=section.end_heading,
+                    end_heading=section.start_heading,
+                    sang1=section.eang1,
+                    sang2=section.eang2,
+                    eang1=section.sang1,
+                    eang2=section.sang2,
+                )
+            )
+
+            mirrored_fsects = [
+                PreviewFSection(
+                    start_dlat=-float(fsect.end_dlat),
+                    end_dlat=-float(fsect.start_dlat),
+                    surface_type=int(fsect.surface_type),
+                    type2=int(fsect.type2),
+                )
+                for fsect in self._host._window.preview.get_section_fsects(old_idx)
+            ]
+            mirrored_fsects.sort(key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+            reversed_fsects.append(mirrored_fsects)
+
+        self._host._window.preview.set_sections(reversed_sections)
+        if not self._host._window.preview.replace_all_fsects(reversed_fsects):
+            QtWidgets.QMessageBox.warning(
+                self._host._window,
+                "Reverse Track",
+                "Unable to reverse fsect data for the reversed track.",
+            )
+            return
+
+        try:
+            self._host._window.preview.apply_preview_to_sgfile()
+        except ValueError:
+            pass
+
+        self._host._window.show_status_message(
+            "Reversed section order, start/finish direction, fsects, and elevation/grade mapping."
+        )
 
     def apply_track_rotation_preview(self, base_sections: list[SectionPreview], angle_degrees: float) -> None:
         angle_radians = math.radians(angle_degrees)
