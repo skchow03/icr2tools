@@ -5,7 +5,7 @@ import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.ui.altitude_units import units_from_500ths
+from sg_viewer.ui.altitude_units import MIN_ELEVATION_Y_RANGE_UNITS, units_from_500ths
 
 @dataclass
 class XsectElevationData:
@@ -94,7 +94,7 @@ class XsectElevationWidget(QtWidgets.QWidget):
         new_min = focus - ratio * new_span
         new_max = new_min + new_span
 
-        self._y_view_range = (new_min, new_max)
+        self._y_view_range = self._enforce_min_y_range((new_min, new_max))
         self.update()
         event.accept()
 
@@ -329,9 +329,9 @@ class XsectElevationWidget(QtWidgets.QWidget):
             return None
 
         if self._y_view_range is not None:
-            min_alt, max_alt = self._y_view_range
+            min_alt, max_alt = self._enforce_min_y_range(self._y_view_range)
         elif self._data.y_range is not None:
-            min_alt, max_alt = self._data.y_range
+            min_alt, max_alt = self._enforce_min_y_range(self._data.y_range)
         else:
             min_alt = min(valid)
             max_alt = max(valid)
@@ -341,11 +341,22 @@ class XsectElevationWidget(QtWidgets.QWidget):
             padding = max(1.0, (max_alt - min_alt) * 0.05)
             min_alt -= padding
             max_alt += padding
+            min_alt, max_alt = self._enforce_min_y_range((min_alt, max_alt))
 
         min_alt, max_alt = self._adjust_y_range_for_aspect(
             min_alt, max_alt, plot_rect, altitudes, self._data.xsect_dlats
         )
         return plot_rect, min_alt, max_alt
+
+    @staticmethod
+    def _enforce_min_y_range(y_range: tuple[float, float]) -> tuple[float, float]:
+        min_alt, max_alt = y_range
+        span = max_alt - min_alt
+        if span >= MIN_ELEVATION_Y_RANGE_UNITS:
+            return min_alt, max_alt
+        center = (min_alt + max_alt) / 2.0
+        half_span = MIN_ELEVATION_Y_RANGE_UNITS / 2.0
+        return center - half_span, center + half_span
 
     @staticmethod
     def _adjust_y_range_for_aspect(
