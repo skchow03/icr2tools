@@ -6,6 +6,8 @@ from typing import Protocol
 
 from PyQt5 import QtWidgets
 
+from icr2_core.trk.trk2sg import trk_to_sg
+from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
 
 
@@ -87,6 +89,61 @@ class DocumentController:
         self._host._save_current_action.setEnabled(True)
         self._host._apply_saved_background(path)
         self._host._refresh_recent_menu()
+        self._host._update_section_table()
+        self._host._update_heading_table()
+        self._host._update_xsect_table()
+        self._host._populate_xsect_choices()
+        self._host._refresh_elevation_profile()
+        self._host._reset_altitude_range_for_track()
+        self._host._update_track_length_display()
+
+    def import_trk_file_dialog(self) -> None:
+        options = QtWidgets.QFileDialog.Options()
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self._host._window,
+            "Import TRK file",
+            "",
+            "TRK files (*.trk *.TRK);;All files (*)",
+            options=options,
+        )
+        if not file_path:
+            return
+
+        path = Path(file_path).resolve()
+        try:
+            trk = TRKFile.from_trk(str(path))
+            sgfile = trk_to_sg(trk)
+            sgfile.rebuild_dlongs(start_index=0, start_dlong=0)
+            self._host._window.preview.load_sg_data(
+                sgfile,
+                status_message=f"Imported {path.name} as a new SG track",
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self._host._window,
+                "Failed to import TRK",
+                str(exc),
+            )
+            self._logger.exception("Failed to import TRK file")
+            return
+
+        self._host._window.show_status_message(f"Imported {path}")
+        self._host._current_path = None
+        self._host._is_untitled = True
+
+        self._host._window.update_window_title(path=None, is_dirty=False, is_untitled=True)
+        self._host._window.set_table_actions_enabled(True)
+        self._host._window.new_straight_button.setEnabled(True)
+        self._host._window.new_curve_button.setEnabled(True)
+        self._host._window.delete_section_button.setEnabled(True)
+        self._host._window.preview.set_trk_comparison(None)
+        sections, _ = self._host._window.preview.get_section_set()
+        self._host._window.set_start_finish_button.setEnabled(bool(sections))
+        self._host._window.split_section_button.setEnabled(bool(sections))
+        self._host._window.split_section_button.setChecked(False)
+        self._host._save_action.setEnabled(True)
+        self._host._save_current_action.setEnabled(False)
+        self._host._clear_background_state()
         self._host._update_section_table()
         self._host._update_heading_table()
         self._host._update_xsect_table()

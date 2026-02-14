@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.preview.sg_overlay_builder import build_sg_preview_model
+from sg_viewer.model.sg_model import PreviewData
 from sg_viewer.services import preview_loader_service
 
 
@@ -76,6 +78,19 @@ class _RuntimeLoadingMixin:
         if data is None:
             self.clear()
             return
+
+        self._load_preview_data(data)
+
+    def load_sg_data(self, sgfile: SGFile, *, status_message: str) -> None:
+        self.cancel_split_section()
+        self._last_load_warnings = []
+        data = preview_loader_service.load_preview_from_sgfile(
+            sgfile,
+            status_message=status_message,
+        )
+        self._load_preview_data(data)
+
+    def _load_preview_data(self, data: PreviewData) -> None:
 
         if data.sgfile is not None:
             logger.debug(
