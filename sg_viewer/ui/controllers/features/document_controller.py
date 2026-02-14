@@ -21,6 +21,7 @@ class DocumentControllerHost(Protocol):
     _xsect_table_action: QtWidgets.QAction
     _scale_track_action: QtWidgets.QAction
     _rotate_track_action: QtWidgets.QAction
+    _reverse_track_action: QtWidgets.QAction
     _raise_lower_elevations_action: QtWidgets.QAction
     _flatten_all_elevations_and_grade_action: QtWidgets.QAction
     _delete_default_style: str
@@ -242,6 +243,7 @@ class DocumentController:
         self._host._window.set_start_finish_button.setEnabled(False)
         self._host._scale_track_action.setEnabled(False)
         self._host._rotate_track_action.setEnabled(False)
+        self._host._reverse_track_action.setEnabled(False)
         self._host._raise_lower_elevations_action.setEnabled(False)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(False)
         self._host._update_xsect_table()
