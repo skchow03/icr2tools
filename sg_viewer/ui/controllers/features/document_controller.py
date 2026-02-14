@@ -75,7 +75,6 @@ class DocumentController:
 
         self._host._window.update_window_title(path=path, is_dirty=False)
         self._host._window.set_table_actions_enabled(True)
-        self._host._window.refresh_fsects_button.setEnabled(True)
         self._host._window.new_straight_button.setEnabled(True)
         self._host._window.new_curve_button.setEnabled(True)
         self._host._window.delete_section_button.setEnabled(True)
@@ -125,7 +124,6 @@ class DocumentController:
         self._host._window.update_selection_sidebar(None)
         self._host._window.set_table_actions_enabled(False)
         self._host._xsect_table_action.setEnabled(True)
-        self._host._window.refresh_fsects_button.setEnabled(False)
         self._host._window.delete_section_button.setEnabled(False)
         self._host._window.delete_section_button.setChecked(False)
         self._host._window.delete_section_button.setStyleSheet(self._host._delete_default_style)

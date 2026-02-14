@@ -116,7 +116,6 @@ class SectionsController:
         self._host._window.set_start_finish_button.setEnabled(has_sections)
         self._host._section_table_action.setEnabled(has_sections)
         self._host._heading_table_action.setEnabled(has_sections)
-        self._host._window.refresh_fsects_button.setEnabled(has_sections and self._host._window.preview.sgfile is not None)
         self._host._scale_track_action.setEnabled(has_sections and is_closed_loop(sections))
         self._host._rotate_track_action.setEnabled(has_sections)
         self._host._raise_lower_elevations_action.setEnabled(has_sections)
