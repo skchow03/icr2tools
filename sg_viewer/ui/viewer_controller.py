@@ -161,6 +161,15 @@ class SGViewerController:
             self._open_raise_lower_elevations_dialog
         )
 
+        self._flatten_all_elevations_and_grade_action = QtWidgets.QAction(
+            "Flatten all elevations + grade…",
+            self._window,
+        )
+        self._flatten_all_elevations_and_grade_action.setEnabled(False)
+        self._flatten_all_elevations_and_grade_action.triggered.connect(
+            self._open_flatten_all_elevations_and_grade_dialog
+        )
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -225,6 +234,7 @@ class SGViewerController:
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addAction(self._generate_fsects_action)
         tools_menu.addAction(self._raise_lower_elevations_action)
+        tools_menu.addAction(self._flatten_all_elevations_and_grade_action)
         tools_menu.addAction(self._calibrate_background_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._section_table_action)
@@ -943,6 +953,13 @@ class SGViewerController:
 
     def _open_raise_lower_elevations_dialog(self) -> None:
         self._elevation_panel_controller.open_raise_lower_elevations_dialog()
+
+    def _open_flatten_all_elevations_and_grade_dialog(self) -> None:
+        if self._elevation_panel_controller.open_flatten_all_elevations_and_grade_dialog():
+            self._reset_altitude_range_for_track()
+            self._refresh_elevation_profile()
+            self._refresh_xsect_elevation_panel()
+            self._refresh_xsect_elevation_table()
 
     def _apply_altitude_edit(self) -> None:
         selection = self._active_selection

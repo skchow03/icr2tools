@@ -26,6 +26,7 @@ class SectionsControllerHost(Protocol):
     _scale_track_action: QtWidgets.QAction
     _rotate_track_action: QtWidgets.QAction
     _raise_lower_elevations_action: QtWidgets.QAction
+    _flatten_all_elevations_and_grade_action: QtWidgets.QAction
     _delete_default_style: str
 
     def _start_new_straight(self) -> None: ...
@@ -119,6 +120,7 @@ class SectionsController:
         self._host._scale_track_action.setEnabled(has_sections and is_closed_loop(sections))
         self._host._rotate_track_action.setEnabled(has_sections)
         self._host._raise_lower_elevations_action.setEnabled(has_sections)
+        self._host._flatten_all_elevations_and_grade_action.setEnabled(has_sections)
         self._host._save_action.setEnabled(True)
         if self._host._is_untitled:
             self._host._window.update_window_title(path=None, is_dirty=True, is_untitled=True)
