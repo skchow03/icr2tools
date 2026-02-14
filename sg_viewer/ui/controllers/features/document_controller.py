@@ -124,6 +124,9 @@ class DocumentController:
             return
 
         self._host._window.show_status_message(f"Imported {path}")
+        self._finalize_imported_trk_state()
+
+    def _finalize_imported_trk_state(self) -> None:
         self._host._current_path = None
         self._host._is_untitled = True
 
@@ -184,6 +187,7 @@ class DocumentController:
         try:
             trk = TRKFile.from_bytes(trk_bytes)
             self._import_trk_data(trk, trk_entry_name)
+            self._finalize_imported_trk_state()
         except Exception as exc:
             QtWidgets.QMessageBox.critical(
                 self._host._window,
