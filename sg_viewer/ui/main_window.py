@@ -885,6 +885,39 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Unable to update elevations.",
             )
 
+    def show_flatten_all_elevations_and_grade_dialog(self) -> bool:
+        elevation, ok = QtWidgets.QInputDialog.getDouble(
+            self,
+            "Flatten All Elevations + Grade",
+            f"Set all elevations to ({self._measurement_unit_label(self._current_measurement_unit())}):",
+            0.0,
+            -1000000.0,
+            1000000.0,
+            self._measurement_unit_decimals(self._current_measurement_unit()),
+        )
+        if not ok:
+            return False
+
+        elevation_500ths = units_to_500ths(elevation, self._current_measurement_unit())
+        if self._preview.flatten_all_elevations_and_grade(
+            elevation_500ths,
+            grade=0,
+            validate=False,
+        ):
+            self._preview.validate_document()
+            self.show_status_message(
+                f"Flattened all elevations to {elevation:g} {self._measurement_unit_label(self._current_measurement_unit())} and set all grades to 0."
+            )
+            return True
+
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Flatten All Elevations + Grade",
+            "Unable to flatten elevations and grade.",
+        )
+        return False
+
+
     def _current_measurement_unit(self) -> str:
         return str(self._measurement_units_combo.currentData())
 

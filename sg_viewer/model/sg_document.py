@@ -175,6 +175,35 @@ class SGDocument(QtCore.QObject):
         for section_id in range(len(self._sg_data.sects)):
             self.elevation_changed.emit(section_id)
 
+    def flatten_all_elevations_and_grade(
+        self,
+        elevation: float,
+        *,
+        grade: float = 0.0,
+        validate: bool = True,
+    ) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if not self._sg_data.sects:
+            raise ValueError("No sections available to update.")
+
+        target_altitude = int(round(elevation))
+        target_grade = int(round(grade))
+        for idx, section in enumerate(self._sg_data.sects):
+            if not section.alt:
+                raise ValueError(f"Section {idx} has no elevation data.")
+            if not section.grade:
+                raise ValueError(f"Section {idx} has no grade data.")
+            section.alt = [target_altitude for _ in section.alt]
+            section.grade = [target_grade for _ in section.grade]
+
+        if __debug__ and validate:
+            self.validate()
+
+        for section_id in range(len(self._sg_data.sects)):
+            self.elevation_changed.emit(section_id)
+
     def set_xsect_definitions(self, entries: list[tuple[int | None, float]]) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")

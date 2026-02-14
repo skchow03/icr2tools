@@ -140,6 +140,9 @@ class ElevationPanelController:
     def open_raise_lower_elevations_dialog(self) -> None:
         self._host._window.show_raise_lower_elevations_dialog()
 
+    def open_flatten_all_elevations_and_grade_dialog(self) -> bool:
+        return self._host._window.show_flatten_all_elevations_and_grade_dialog()
+
     def copy_xsect_to_all(self) -> bool:
         xsect_index = self._host._current_xsect_index()
         if xsect_index is None:

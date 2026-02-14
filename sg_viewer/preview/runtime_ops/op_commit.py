@@ -232,3 +232,21 @@ class _RuntimeCoreCommitMixin:
             return False
         self._bump_sg_version()
         return True
+
+    def flatten_all_elevations_and_grade(
+        self,
+        elevation: float,
+        *,
+        grade: float = 0.0,
+        validate: bool = True,
+    ) -> bool:
+        try:
+            self._document.flatten_all_elevations_and_grade(
+                elevation,
+                grade=grade,
+                validate=validate,
+            )
+        except (ValueError, IndexError):
+            return False
+        self._bump_sg_version()
+        return True
