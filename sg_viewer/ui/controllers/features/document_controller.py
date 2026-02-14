@@ -6,6 +6,7 @@ from typing import Protocol
 
 from PyQt5 import QtWidgets
 
+from icr2_core.dat.unpackdat import extract_file_bytes, list_dat_entries
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
@@ -112,12 +113,7 @@ class DocumentController:
         path = Path(file_path).resolve()
         try:
             trk = TRKFile.from_trk(str(path))
-            sgfile = trk_to_sg(trk)
-            sgfile.rebuild_dlongs(start_index=0, start_dlong=0)
-            self._host._window.preview.load_sg_data(
-                sgfile,
-                status_message=f"Imported {path.name} as a new SG track",
-            )
+            self._import_trk_data(trk, path.name)
         except Exception as exc:
             QtWidgets.QMessageBox.critical(
                 self._host._window,
@@ -151,6 +147,58 @@ class DocumentController:
         self._host._refresh_elevation_profile()
         self._host._reset_altitude_range_for_track()
         self._host._update_track_length_display()
+
+    def import_trk_from_dat_file_dialog(self) -> None:
+        options = QtWidgets.QFileDialog.Options()
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self._host._window,
+            "Import TRK from DAT file",
+            "",
+            "DAT files (*.dat *.DAT);;All files (*)",
+            options=options,
+        )
+        if not file_path:
+            return
+
+        path = Path(file_path).resolve()
+        expected_trk_name = f"{path.stem}.trk"
+        try:
+            trk_bytes = extract_file_bytes(str(path), expected_trk_name)
+            trk_entry_name = expected_trk_name
+        except FileNotFoundError:
+            trk_entries = [
+                name
+                for name, _, _ in list_dat_entries(str(path))
+                if name.lower().endswith(".trk")
+            ]
+            if not trk_entries:
+                QtWidgets.QMessageBox.critical(
+                    self._host._window,
+                    "Failed to import TRK from DAT",
+                    f"No TRK file found inside {path.name}.",
+                )
+                return
+            trk_entry_name = trk_entries[0]
+            trk_bytes = extract_file_bytes(str(path), trk_entry_name)
+
+        try:
+            trk = TRKFile.from_bytes(trk_bytes)
+            self._import_trk_data(trk, trk_entry_name)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self._host._window,
+                "Failed to import TRK from DAT",
+                str(exc),
+            )
+            self._logger.exception("Failed to import TRK from DAT file")
+
+    def _import_trk_data(self, trk: TRKFile, source_name: str) -> None:
+        sgfile = trk_to_sg(trk)
+        sgfile.rebuild_dlongs(start_index=0, start_dlong=0)
+        self._host._window.preview.load_sg_data(
+            sgfile,
+            status_message=f"Imported {source_name} as a new SG track",
+        )
 
     def open_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
