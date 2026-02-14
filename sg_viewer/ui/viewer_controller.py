@@ -117,12 +117,6 @@ class SGViewerController:
         self._save_action.setEnabled(True)
         self._save_action.triggered.connect(self._save_file_dialog)
 
-        self._recalc_action = QtWidgets.QAction(
-            "Recalculate Lengths && DLONGs",
-            self._window,
-        )
-        self._recalc_action.triggered.connect(self._recalculate_dlongs)
-
         self._scale_track_action = QtWidgets.QAction(
             "Scale Track to Length…",
             self._window,
@@ -215,7 +209,6 @@ class SGViewerController:
         file_menu.addAction(self._quit_action)
 
         tools_menu = self._window.menuBar().addMenu("Tools")
-        tools_menu.addAction(self._recalc_action)
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._rotate_track_action)
         tools_menu.addAction(self._convert_trk_action)
@@ -290,9 +283,6 @@ class SGViewerController:
         )
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
-        )
-        self._window.refresh_fsects_button.clicked.connect(
-            self._refresh_fsects_preview
         )
         self._window.copy_fsects_prev_button.clicked.connect(
             self._copy_fsects_to_previous
@@ -559,15 +549,6 @@ class SGViewerController:
     def _save_to_path(self, path: Path) -> None:
         self._document_controller.save_to_path(path)
 
-    def _recalculate_dlongs(self) -> None:
-        preview = self._window.preview
-        if not preview.recalculate_dlongs():
-            return
-
-        self._window.show_status_message(
-            "Recalculated all curve lengths and DLONGs"
-        )
-
     def _recalculate_elevations(self) -> None:
         preview = self._window.preview
         if preview.recalculate_elevations():
@@ -588,19 +569,6 @@ class SGViewerController:
 
         self._window.show_status_message(
             "Unable to recalculate elevations for this track."
-        )
-
-    def _refresh_fsects_preview(self) -> None:
-        if self._window.preview.refresh_fsections_preview():
-            self._window.show_status_message(
-                "Refreshed Fsects preview from current geometry."
-            )
-            if self._active_selection is not None:
-                self._window.update_selection_sidebar(self._active_selection)
-            return
-
-        self._window.show_status_message(
-            "Load an SG file with sections before refreshing Fsects preview."
         )
 
 

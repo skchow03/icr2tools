@@ -146,8 +146,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Show X-Section DLAT Line"
         )
         self._xsect_dlat_line_checkbox.setChecked(False)
-        self._refresh_fsects_button = QtWidgets.QPushButton("Refresh Fsects Preview")
-        self._refresh_fsects_button.setEnabled(False)
         self._copy_fsects_prev_button = QtWidgets.QPushButton(
             "Copy Fsects to Previous"
         )
@@ -357,7 +355,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         fsect_preview_options_layout.addWidget(self._sg_fsects_checkbox)
         fsect_preview_options_layout.addWidget(self._live_fsect_drag_preview_checkbox)
         fsect_sidebar_layout.addLayout(fsect_preview_options_layout)
-        fsect_sidebar_layout.addWidget(self._refresh_fsects_button)
         fsect_sidebar_layout.addWidget(self._copy_fsects_prev_button)
         fsect_sidebar_layout.addWidget(self._copy_fsects_next_button)
         fsect_sidebar_layout.addWidget(self._add_fsect_button)
@@ -541,10 +538,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_dlat_line_checkbox(self) -> QtWidgets.QCheckBox:
         return self._xsect_dlat_line_checkbox
-
-    @property
-    def refresh_fsects_button(self) -> QtWidgets.QPushButton:
-        return self._refresh_fsects_button
 
     @property
     def copy_fsects_prev_button(self) -> QtWidgets.QPushButton:
