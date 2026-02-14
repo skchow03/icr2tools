@@ -6,7 +6,10 @@ import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.ui.altitude_units import units_from_500ths
+from sg_viewer.ui.altitude_units import (
+    MIN_ELEVATION_Y_RANGE_UNITS,
+    units_from_500ths,
+)
 
 
 class ElevationSource(Enum):
@@ -33,16 +36,26 @@ class ElevationProfileData:
 
 def elevation_profile_alt_bounds(data: ElevationProfileData) -> tuple[float, float]:
     if data.y_range is not None:
-        return data.y_range
+        return enforce_min_y_range(data.y_range)
     alts = list(data.sg_altitudes)
     if data.trk_altitudes is not None and ElevationSource.TRK in data.sources:
         alts.extend(data.trk_altitudes)
     if not alts:
-        return (0.0, 1.0)
+        return enforce_min_y_range((0.0, 1.0))
     min_alt = min(alts)
     max_alt = max(alts)
     padding = max(1.0, (max_alt - min_alt) * 0.05)
-    return min_alt - padding, max_alt + padding
+    return enforce_min_y_range((min_alt - padding, max_alt + padding))
+
+
+def enforce_min_y_range(y_range: tuple[float, float]) -> tuple[float, float]:
+    min_alt, max_alt = y_range
+    span = max_alt - min_alt
+    if span >= MIN_ELEVATION_Y_RANGE_UNITS:
+        return min_alt, max_alt
+    center = (min_alt + max_alt) / 2.0
+    half_span = MIN_ELEVATION_Y_RANGE_UNITS / 2.0
+    return center - half_span, center + half_span
 
 
 class ElevationProfileWidget(QtWidgets.QWidget):
@@ -331,7 +344,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
     def _alt_bounds(self) -> tuple[float, float]:
         if self._y_view_range is not None:
-            return self._y_view_range
+            return enforce_min_y_range(self._y_view_range)
         return elevation_profile_alt_bounds(self._data)
 
     @staticmethod
@@ -401,7 +414,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
 
             new_min = focus - ratio * new_span
             new_max = new_min + new_span
-            self._y_view_range = (new_min, new_max)
+            self._y_view_range = enforce_min_y_range((new_min, new_max))
             self.update()
             event.accept()
             return

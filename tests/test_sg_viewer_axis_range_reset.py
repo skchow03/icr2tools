@@ -4,6 +4,7 @@ from PyQt5 import QtWidgets
 
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.ui.fsect_diagram_widget import FsectDiagramWidget
+from sg_viewer.ui.elevation_profile import ElevationProfileData, elevation_profile_alt_bounds
 from sg_viewer.ui.xsect_elevation import XsectElevationData, XsectElevationWidget
 
 
@@ -52,3 +53,37 @@ def test_fsect_diagram_resets_range_when_data_changes() -> None:
     )
 
     assert widget._range != (-10.0, 10.0)
+
+
+def test_xsect_elevation_enforces_minimum_one_foot_range() -> None:
+    _ = qapp()
+    widget = XsectElevationWidget()
+    widget.resize(600, 200)
+    widget.set_xsect_data(
+        XsectElevationData(
+            section_index=0,
+            altitudes=[100.0, 100.0, 100.0],
+            xsect_dlats=[-1.0, 0.0, 1.0],
+            y_range=(100.0, 101.0),
+        )
+    )
+
+    _, min_alt, max_alt = widget._plot_context()
+
+    assert (max_alt - min_alt) >= 6000
+
+
+def test_elevation_profile_bounds_enforce_minimum_one_foot_range() -> None:
+    data = ElevationProfileData(
+        dlongs=[0.0, 1.0],
+        sg_altitudes=[10.0, 10.0],
+        trk_altitudes=None,
+        section_ranges=[(0.0, 1.0)],
+        track_length=1.0,
+        xsect_label="X0",
+        y_range=(10.0, 20.0),
+    )
+
+    min_alt, max_alt = elevation_profile_alt_bounds(data)
+
+    assert (max_alt - min_alt) >= 6000
