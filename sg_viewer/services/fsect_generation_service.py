@@ -28,7 +28,7 @@ def build_generated_fsects(
     def surface(start: float, end: float, surface_type: int) -> PreviewFSection:
         return PreviewFSection(
             start_dlat=start,
-            end_dlat=end,
+            end_dlat=start,
             surface_type=surface_type,
             type2=0,
         )
