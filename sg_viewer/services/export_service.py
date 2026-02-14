@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
 import sys
 
 
@@ -38,66 +37,42 @@ def build_sg_to_trk_command(*, sg_path: Path, trk_path: Path) -> list[str]:
     ]
 
 
-def export_sg_to_csv(*, sg_path: Path) -> ExportResult:
-    script_path = sg2csv_script_path()
-    command = build_sg_to_csv_command(sg_path=sg_path)
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=script_path.parent,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        error_output = stderr or stdout or str(exc)
-        return ExportResult(
-            success=False,
-            message=f"SG saved but CSV export failed:\n{error_output}",
-            stdout=stdout,
-            stderr=stderr,
-        )
+def _load_sg_class():
+    from icr2_core.trk.sg_classes import SGFile
 
-    return ExportResult(
-        success=True,
-        message=f"Saved {sg_path} and exported CSVs next to it",
-        stdout=completed.stdout or "",
-        stderr=completed.stderr or "",
-    )
+    return SGFile
+
+
+def _load_trk_export_dependencies():
+    from icr2_core.trk.trk_classes import TRKFile
+    from icr2_core.trk.trk_exporter import write_trk
+
+    return TRKFile, write_trk
+
+
+def export_sg_to_csv(*, sg_path: Path) -> ExportResult:
+    try:
+        sg_class = _load_sg_class()
+        sgfile = sg_class.from_sg(str(sg_path))
+        sgfile.output_sg_sections(str(sg_path) + "_sects.csv")
+        sgfile.output_sg_header_xsects(str(sg_path) + "_header_xsects.csv")
+    except Exception as exc:
+        return ExportResult(success=False, message=f"SG saved but CSV export failed:\n{exc}")
+
+    return ExportResult(success=True, message=f"Saved {sg_path} and exported CSVs next to it")
 
 
 def export_sg_to_trk(*, sg_path: Path, trk_path: Path) -> ExportResult:
-    script_path = sg2trk_script_path()
-    command = build_sg_to_trk_command(sg_path=sg_path, trk_path=trk_path)
     try:
-        completed = subprocess.run(
-            command,
-            cwd=script_path.parent,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        error_output = stderr or stdout or str(exc)
-        return ExportResult(
-            success=False,
-            message=f"SG saved but TRK export failed:\n{error_output}",
-            stdout=stdout,
-            stderr=stderr,
-        )
+        trk_class, write_trk = _load_trk_export_dependencies()
+        trk_file = trk_class.from_sg(str(sg_path))
+        write_trk(trk_file, str(trk_path))
+    except Exception as exc:
+        return ExportResult(success=False, message=f"SG saved but TRK export failed:\n{exc}")
 
     if trk_path.exists():
         message = f"Saved TRK to {trk_path}"
     else:
         message = "TRK export completed."
 
-    return ExportResult(
-        success=True,
-        message=message,
-        stdout=completed.stdout or "",
-        stderr=completed.stderr or "",
-    )
+    return ExportResult(success=True, message=message)
