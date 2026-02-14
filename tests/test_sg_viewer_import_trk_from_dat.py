@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 try:
@@ -63,5 +65,39 @@ def test_import_trk_from_dat_uses_matching_trk_name(qapp, monkeypatch):
 
         assert calls == [("/tmp/example.dat", "example.trk")]
         assert imported == [("trk-object", "example.trk")]
+    finally:
+        window.close()
+
+
+def test_import_trk_from_dat_resets_to_untitled(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        controller._current_path = Path("/tmp/previous.sg")
+        controller._is_untitled = False
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: ("/tmp/example.dat", "DAT files (*.dat *.DAT)"),
+        )
+        monkeypatch.setattr(
+            "sg_viewer.ui.controllers.features.document_controller.extract_file_bytes",
+            lambda *_args, **_kwargs: b"dummy-trk-bytes",
+        )
+        monkeypatch.setattr(
+            "sg_viewer.ui.controllers.features.document_controller.TRKFile.from_bytes",
+            lambda _raw: "trk-object",
+        )
+        monkeypatch.setattr(
+            controller._document_controller,
+            "_import_trk_data",
+            lambda *_args, **_kwargs: None,
+        )
+
+        controller._import_trk_from_dat_file_dialog()
+
+        assert controller._current_path is None
+        assert controller._is_untitled is True
     finally:
         window.close()
