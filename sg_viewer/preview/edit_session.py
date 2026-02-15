@@ -16,7 +16,9 @@ def apply_preview_to_sgfile(
     if not sections_list:
         raise ValueError("No sections available to save.")
 
-    alt_grade_snapshot: list[tuple[list[int], list[int], tuple[int, int], tuple[int, int]]] = []
+    alt_grade_snapshot: list[
+        tuple[list[int], list[int], tuple[int, int], tuple[int, int], int]
+    ] = []
     for sect in sgfile.sects:
         alt_grade_snapshot.append(
             (
@@ -30,6 +32,7 @@ def apply_preview_to_sgfile(
                     int(round(getattr(sect, "end_x", 0))),
                     int(round(getattr(sect, "end_y", 0))),
                 ),
+                int(getattr(sect, "sec_next", -1)),
             )
         )
 
@@ -114,6 +117,27 @@ def apply_preview_to_sgfile(
     ) -> bool:
         return source_start == dest_end and source_end == dest_start
 
+    reverse_track_mode = bool(sections_list)
+    for preview_section in sections_list:
+        source_index = getattr(preview_section, "source_section_id", -1)
+        if source_index is None or not (0 <= source_index < len(alt_grade_snapshot)):
+            reverse_track_mode = False
+            break
+
+        source_start = alt_grade_snapshot[source_index][2]
+        source_end = alt_grade_snapshot[source_index][3]
+        dest_start = (
+            _as_int(preview_section.start[0]),
+            _as_int(preview_section.start[1]),
+        )
+        dest_end = (
+            _as_int(preview_section.end[0]),
+            _as_int(preview_section.end[1]),
+        )
+        if not _is_reversed_orientation(source_start, source_end, dest_start, dest_end):
+            reverse_track_mode = False
+            break
+
     for index, (sg_section, preview_section) in enumerate(
         zip(sgfile.sects, sections_list)
     ):
@@ -171,14 +195,28 @@ def apply_preview_to_sgfile(
 
         source_index = getattr(preview_section, "source_section_id", -1)
         if source_index is not None and 0 <= source_index < len(alt_grade_snapshot):
-            source_alt = list(alt_grade_snapshot[source_index][0])
-            source_grade = list(alt_grade_snapshot[source_index][1])
+            altitude_source_index = source_index
+
+            if reverse_track_mode:
+                next_index = alt_grade_snapshot[source_index][4]
+                if 0 <= next_index < len(alt_grade_snapshot):
+                    altitude_source_index = next_index
+
+            source_alt = list(alt_grade_snapshot[altitude_source_index][0])
+            source_grade = list(alt_grade_snapshot[altitude_source_index][1])
             source_start = alt_grade_snapshot[source_index][2]
             source_end = alt_grade_snapshot[source_index][3]
             dest_start = (sg_section.start_x, sg_section.start_y)
             dest_end = (sg_section.end_x, sg_section.end_y)
 
-            if _is_reversed_orientation(source_start, source_end, dest_start, dest_end):
+            should_reverse_orientation = _is_reversed_orientation(
+                source_start,
+                source_end,
+                dest_start,
+                dest_end,
+            ) or reverse_track_mode
+
+            if should_reverse_orientation:
                 # Canonicalization can reverse traversal. Mirror altitude samples,
                 # and mirror+negate grades so slope direction stays correct.
                 source_alt = list(reversed(source_alt))
