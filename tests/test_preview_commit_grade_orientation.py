@@ -157,3 +157,102 @@ def test_apply_preview_to_sgfile_reverse_track_shifts_elevation_source_and_negat
     assert sgfile.sects[0].grade == [-30, -20, -10]
     assert sgfile.sects[1].alt == [600, 500, 400]
     assert sgfile.sects[1].grade == [-60, -50, -40]
+
+def test_apply_preview_to_sgfile_reverse_track_uses_previous_section_elevation_source() -> None:
+    num_xsects = 2
+    record_length = 58 + 2 * num_xsects
+
+    def _section_data(prev_idx: int, next_idx: int, start_x: int, end_x: int, alt0: int, grade0: int, alt1: int, grade1: int) -> list[int]:
+        data = [0] * record_length
+        data[0] = 1
+        data[1] = prev_idx
+        data[2] = next_idx
+        data[3] = start_x
+        data[4] = 0
+        data[5] = end_x
+        data[6] = 0
+        data[17] = alt0
+        data[18] = grade0
+        data[19] = alt1
+        data[20] = grade1
+        return data
+
+    sections = [
+        SGFile.Section(_section_data(2, 1, 0, 10, 101, 11, 102, 12), num_xsects),
+        SGFile.Section(_section_data(0, 2, 10, 20, 201, 21, 202, 22), num_xsects),
+        SGFile.Section(_section_data(1, 0, 20, 0, 301, 31, 302, 32), num_xsects),
+    ]
+
+    sgfile = SGFile([0, 0, 0, 0, 3, num_xsects], 3, num_xsects, [0] * num_xsects, sections)
+
+    reversed_preview = [
+        SectionPreview(
+            section_id=0,
+            source_section_id=2,
+            type_name="straight",
+            previous_id=1,
+            next_id=2,
+            start=(0.0, 0.0),
+            end=(20.0, 0.0),
+            start_dlong=0.0,
+            length=100.0,
+            center=None,
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=None,
+            start_heading=None,
+            end_heading=None,
+            polyline=[],
+        ),
+        SectionPreview(
+            section_id=1,
+            source_section_id=1,
+            type_name="straight",
+            previous_id=0,
+            next_id=2,
+            start=(20.0, 0.0),
+            end=(10.0, 0.0),
+            start_dlong=100.0,
+            length=100.0,
+            center=None,
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=None,
+            start_heading=None,
+            end_heading=None,
+            polyline=[],
+        ),
+        SectionPreview(
+            section_id=2,
+            source_section_id=0,
+            type_name="straight",
+            previous_id=1,
+            next_id=0,
+            start=(10.0, 0.0),
+            end=(0.0, 0.0),
+            start_dlong=200.0,
+            length=100.0,
+            center=None,
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=None,
+            start_heading=None,
+            end_heading=None,
+            polyline=[],
+        ),
+    ]
+
+    apply_preview_to_sgfile(sgfile, reversed_preview)
+
+    assert sgfile.sects[0].alt == [202, 201]
+    assert sgfile.sects[0].grade == [-22, -21]
+    assert sgfile.sects[1].alt == [102, 101]
+    assert sgfile.sects[1].grade == [-12, -11]
+    assert sgfile.sects[2].alt == [302, 301]
+    assert sgfile.sects[2].grade == [-32, -31]
