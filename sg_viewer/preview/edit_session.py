@@ -198,9 +198,9 @@ def apply_preview_to_sgfile(
             altitude_source_index = source_index
 
             if reverse_track_mode:
-                next_index = alt_grade_snapshot[source_index][4]
-                if 0 <= next_index < len(alt_grade_snapshot):
-                    altitude_source_index = next_index
+                previous_index = _as_int(getattr(sgfile.sects[source_index], "sec_prev", -1), -1)
+                if 0 <= previous_index < len(alt_grade_snapshot):
+                    altitude_source_index = previous_index
 
             source_alt = list(alt_grade_snapshot[altitude_source_index][0])
             source_grade = list(alt_grade_snapshot[altitude_source_index][1])
