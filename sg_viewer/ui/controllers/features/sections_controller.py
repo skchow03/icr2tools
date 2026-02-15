@@ -206,6 +206,11 @@ class SectionsController:
                     sang2=section.eang2,
                     eang1=section.sang1,
                     eang2=section.sang2,
+                    radius=(
+                        -section.radius
+                        if section.type_name == "curve" and section.radius is not None
+                        else section.radius
+                    ),
                 )
             )
 

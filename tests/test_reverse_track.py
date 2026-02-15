@@ -129,3 +129,24 @@ def test_reverse_track_reverses_sections_fsects_and_orientation() -> None:
         type2=0,
     )
     assert "Reversed section order" in (controller._host._window.status or "")
+
+
+def test_reverse_track_flips_curve_turn_direction_via_radius_sign() -> None:
+    sections = [
+        replace(
+            _section(0, 0, 0, (0.0, 0.0), (10.0, 10.0)),
+            type_name="curve",
+            center=(5.0, 5.0),
+            radius=250.0,
+        )
+    ]
+    fsects = [[PreviewFSection(start_dlat=-3.0, end_dlat=3.0, surface_type=5, type2=0)]]
+
+    preview = _FakePreview(sections, fsects)
+    controller = SectionsController(_Host(preview))
+
+    controller.reverse_track()
+
+    assert preview.received_sections is not None
+    assert preview.received_sections[0].type_name == "curve"
+    assert preview.received_sections[0].radius == -250.0
