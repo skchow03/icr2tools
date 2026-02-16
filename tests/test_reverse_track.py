@@ -180,3 +180,35 @@ def test_reverse_track_reanchors_ground_fsects_to_new_rightmost_boundary() -> No
     assert reversed_fsects[1] == PreviewFSection(
         start_dlat=-30.0, end_dlat=-20.0, surface_type=2, type2=0
     )
+
+
+def test_reverse_track_reorders_ground_fsects_in_reverse_sequence() -> None:
+    sections = [_section(0, 0, 0, (0.0, 0.0), (10.0, 0.0))]
+    # Three ground strips separated by walls. On reverse, the three ground strips
+    # must appear in opposite order and be packed contiguously from the new
+    # rightmost boundary (ignoring wall fsects for the chaining math).
+    fsects = [
+        [
+            PreviewFSection(start_dlat=-30.0, end_dlat=-30.0, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=-30.0, end_dlat=-20.0, surface_type=0, type2=10),
+            PreviewFSection(start_dlat=-10.0, end_dlat=-10.0, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=-20.0, end_dlat=-5.0, surface_type=1, type2=11),
+            PreviewFSection(start_dlat=0.0, end_dlat=20.0, surface_type=2, type2=12),
+            PreviewFSection(start_dlat=30.0, end_dlat=30.0, surface_type=8, type2=0),
+        ]
+    ]
+
+    preview = _FakePreview(sections, fsects)
+    controller = SectionsController(_Host(preview))
+
+    controller.reverse_track()
+
+    assert preview.received_fsects is not None
+    reversed_fsects = preview.received_fsects[0]
+
+    ground = [f for f in reversed_fsects if f.surface_type in {0, 1, 2, 3, 4, 5, 6}]
+    assert ground == [
+        PreviewFSection(start_dlat=-30.0, end_dlat=-10.0, surface_type=2, type2=12),
+        PreviewFSection(start_dlat=-10.0, end_dlat=5.0, surface_type=1, type2=11),
+        PreviewFSection(start_dlat=5.0, end_dlat=15.0, surface_type=0, type2=10),
+    ]
