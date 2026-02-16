@@ -262,30 +262,33 @@ class SectionsController:
             grounds, key=lambda fsect: (fsect.start_dlat + fsect.end_dlat) * 0.5
         )
 
+        # Reversing a section swaps start/end stations. Ground strips are stored as
+        # right-edge DLATs per station, so mirror computations must consume the
+        # opposite station when rebuilding the new right edges.
         left_boundary_start = max(
-            (float(boundary.start_dlat) for boundary in boundaries),
-            default=float(grounds_sorted[-1].start_dlat),
-        )
-        left_boundary_end = max(
             (float(boundary.end_dlat) for boundary in boundaries),
             default=float(grounds_sorted[-1].end_dlat),
+        )
+        left_boundary_end = max(
+            (float(boundary.start_dlat) for boundary in boundaries),
+            default=float(grounds_sorted[-1].start_dlat),
         )
 
         start_widths: list[float] = []
         end_widths: list[float] = []
         for idx, ground in enumerate(grounds_sorted):
             next_start = (
-                float(grounds_sorted[idx + 1].start_dlat)
+                float(grounds_sorted[idx + 1].end_dlat)
                 if idx + 1 < len(grounds_sorted)
                 else left_boundary_start
             )
             next_end = (
-                float(grounds_sorted[idx + 1].end_dlat)
+                float(grounds_sorted[idx + 1].start_dlat)
                 if idx + 1 < len(grounds_sorted)
                 else left_boundary_end
             )
-            start_widths.append(next_start - float(ground.start_dlat))
-            end_widths.append(next_end - float(ground.end_dlat))
+            start_widths.append(next_start - float(ground.end_dlat))
+            end_widths.append(next_end - float(ground.start_dlat))
 
         mirrored_grounds: list[PreviewFSection] = []
         current_start = -left_boundary_start
