@@ -77,6 +77,7 @@ class DocumentController:
         self._host._current_path = path
         self._host._is_untitled = False
         self._host._history.record_open(path)
+        self._host._elevation_controller.reset()
 
         self._host._window.update_window_title(path=path, is_dirty=False)
         self._host._window.set_table_actions_enabled(True)
@@ -96,8 +97,8 @@ class DocumentController:
         self._host._update_heading_table()
         self._host._update_xsect_table()
         self._host._populate_xsect_choices()
-        self._host._refresh_elevation_profile()
         self._host._reset_altitude_range_for_track()
+        self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
 
     def import_trk_file_dialog(self) -> None:
@@ -131,6 +132,7 @@ class DocumentController:
     def _finalize_imported_trk_state(self) -> None:
         self._host._current_path = None
         self._host._is_untitled = True
+        self._host._elevation_controller.reset()
 
         self._host._window.update_window_title(path=None, is_dirty=False, is_untitled=True)
         self._host._window.set_table_actions_enabled(True)
@@ -149,8 +151,8 @@ class DocumentController:
         self._host._update_heading_table()
         self._host._update_xsect_table()
         self._host._populate_xsect_choices()
-        self._host._refresh_elevation_profile()
         self._host._reset_altitude_range_for_track()
+        self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
 
     def import_trk_from_dat_file_dialog(self) -> None:
