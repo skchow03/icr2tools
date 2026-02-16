@@ -16,6 +16,10 @@ from sg_viewer.ui.rotate_track_dialog import RotateTrackDialog
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
 
 
+GROUND_SURFACE_TYPES = {0, 1, 2, 3, 4, 5, 6}
+FSECT_EPSILON = 1e-6
+
+
 class SectionsControllerHost(Protocol):
     _window: QtWidgets.QMainWindow
     _active_selection: object | None
@@ -223,7 +227,9 @@ class SectionsController:
                 )
                 for fsect in self._host._window.preview.get_section_fsects(old_idx)
             ]
-            mirrored_fsects.sort(key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+            mirrored_fsects = self._recalculate_ground_fsects_for_reversed_track(
+                mirrored_fsects
+            )
             reversed_fsects.append(mirrored_fsects)
 
         self._host._window.preview.set_sections(reversed_sections)
@@ -243,6 +249,56 @@ class SectionsController:
         self._host._window.show_status_message(
             "Reversed section order, start/finish direction, fsects, and elevation/grade mapping."
         )
+
+    def _recalculate_ground_fsects_for_reversed_track(
+        self, mirrored_fsects: list[PreviewFSection]
+    ) -> list[PreviewFSection]:
+        ordered = sorted(mirrored_fsects, key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+        ground_fsects = [fsect for fsect in ordered if int(fsect.surface_type) in GROUND_SURFACE_TYPES]
+        boundary_fsects = [fsect for fsect in ordered if int(fsect.surface_type) not in GROUND_SURFACE_TYPES]
+
+        if not ground_fsects:
+            return ordered
+
+        rightmost_boundary = self._rightmost_boundary_fsect(boundary_fsects)
+        if rightmost_boundary is None:
+            return ordered
+
+        if not self._has_ground_at_boundary(ground_fsects, rightmost_boundary):
+            first_ground = ground_fsects[0]
+            ground_fsects.insert(
+                0,
+                PreviewFSection(
+                    start_dlat=rightmost_boundary.start_dlat,
+                    end_dlat=rightmost_boundary.end_dlat,
+                    surface_type=first_ground.surface_type,
+                    type2=first_ground.type2,
+                ),
+            )
+
+        merged = [*boundary_fsects, *ground_fsects]
+        merged.sort(key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+        return merged
+
+    def _rightmost_boundary_fsect(
+        self, boundaries: list[PreviewFSection]
+    ) -> PreviewFSection | None:
+        if not boundaries:
+            return None
+        return min(boundaries, key=lambda fsect: (fsect.start_dlat + fsect.end_dlat) * 0.5)
+
+    def _has_ground_at_boundary(
+        self,
+        ground_fsects: list[PreviewFSection],
+        boundary: PreviewFSection,
+    ) -> bool:
+        for fsect in ground_fsects:
+            if (
+                abs(float(fsect.start_dlat) - float(boundary.start_dlat)) <= FSECT_EPSILON
+                and abs(float(fsect.end_dlat) - float(boundary.end_dlat)) <= FSECT_EPSILON
+            ):
+                return True
+        return False
 
     def apply_track_rotation_preview(self, base_sections: list[SectionPreview], angle_degrees: float) -> None:
         angle_radians = math.radians(angle_degrees)
