@@ -11,6 +11,11 @@ class ElevationController:
         self.profile_dragging = False
         self.profile_editing = False
 
+    def reset(self) -> None:
+        self.current_profile = None
+        self.profile_dragging = False
+        self.profile_editing = False
+
     def begin_drag(self) -> None:
         self.profile_dragging = True
 
