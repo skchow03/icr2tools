@@ -150,3 +150,33 @@ def test_reverse_track_flips_curve_turn_direction_via_radius_sign() -> None:
     assert preview.received_sections is not None
     assert preview.received_sections[0].type_name == "curve"
     assert preview.received_sections[0].radius == -250.0
+
+
+def test_reverse_track_reanchors_ground_fsects_to_new_rightmost_boundary() -> None:
+    sections = [_section(0, 0, 0, (0.0, 0.0), (10.0, 0.0))]
+    # Boundary/right-wall only at +30 before reverse. After mirroring it becomes -30,
+    # and we should create a ground segment starting at that new rightmost wall.
+    fsects = [
+        [
+            PreviewFSection(start_dlat=-30.0, end_dlat=-30.0, surface_type=8, type2=0),
+            PreviewFSection(start_dlat=-20.0, end_dlat=0.0, surface_type=5, type2=0),
+            PreviewFSection(start_dlat=0.0, end_dlat=20.0, surface_type=2, type2=0),
+            PreviewFSection(start_dlat=30.0, end_dlat=30.0, surface_type=7, type2=0),
+        ]
+    ]
+
+    preview = _FakePreview(sections, fsects)
+    controller = SectionsController(_Host(preview))
+
+    controller.reverse_track()
+
+    assert preview.received_fsects is not None
+    reversed_fsects = preview.received_fsects[0]
+
+    # Rightmost boundary after reverse should be -30 and ground must start there.
+    assert reversed_fsects[0] == PreviewFSection(
+        start_dlat=-30.0, end_dlat=-30.0, surface_type=7, type2=0
+    )
+    assert reversed_fsects[1] == PreviewFSection(
+        start_dlat=-30.0, end_dlat=-20.0, surface_type=2, type2=0
+    )
