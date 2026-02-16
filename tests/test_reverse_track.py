@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.model.sg_model import SectionPreview
@@ -37,11 +38,21 @@ def _section(
 
 
 class _FakePreview:
-    def __init__(self, sections: list[SectionPreview], fsects: list[list[PreviewFSection]]) -> None:
+    def __init__(
+        self,
+        sections: list[SectionPreview],
+        fsects: list[list[PreviewFSection]],
+        *,
+        replace_all_fsects_result: bool = True,
+    ) -> None:
         self.sections = sections
         self.fsects = fsects
         self.received_sections: list[SectionPreview] | None = None
         self.received_fsects: list[list[PreviewFSection]] | None = None
+        self._replace_all_fsects_result = replace_all_fsects_result
+        self.transform_state = object()
+        self.controller = SimpleNamespace(transform_state=None)
+        self.repaint_requested = False
 
     def get_section_set(self):
         return self.sections, None
@@ -54,10 +65,13 @@ class _FakePreview:
 
     def replace_all_fsects(self, fsects_by_section: list[list[PreviewFSection]]):
         self.received_fsects = fsects_by_section
-        return True
+        return self._replace_all_fsects_result
 
     def apply_preview_to_sgfile(self):
         return None
+
+    def request_repaint(self):
+        self.repaint_requested = True
 
 
 class _FakeWindow:
@@ -129,6 +143,23 @@ def test_reverse_track_reverses_sections_fsects_and_orientation() -> None:
         type2=0,
     )
     assert "Reversed section order" in (controller._host._window.status or "")
+    assert preview.controller.transform_state is preview.transform_state
+    assert preview.repaint_requested
+
+
+def test_reverse_track_restores_zoom_even_when_fsect_replace_fails() -> None:
+    preview = _FakePreview(
+        [_section(0, 0, 0, (0.0, 0.0), (10.0, 0.0))],
+        [[PreviewFSection(start_dlat=-3.0, end_dlat=3.0, surface_type=5, type2=0)]],
+        replace_all_fsects_result=False,
+    )
+    original_transform_state = preview.transform_state
+    controller = SectionsController(_Host(preview))
+
+    controller.reverse_track()
+
+    assert preview.controller.transform_state is original_transform_state
+    assert preview.repaint_requested
 
 
 def test_reverse_track_flips_curve_turn_direction_via_radius_sign() -> None:
