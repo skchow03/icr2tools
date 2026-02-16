@@ -150,3 +150,31 @@ def test_reverse_track_flips_curve_turn_direction_via_radius_sign() -> None:
     assert preview.received_sections is not None
     assert preview.received_sections[0].type_name == "curve"
     assert preview.received_sections[0].radius == -250.0
+
+
+def test_reverse_track_recomputes_ground_fsects_from_new_right_side() -> None:
+    sections = [_section(0, 0, 0, (0.0, 0.0), (10.0, 0.0))]
+    # Ground strips are encoded by their right-side DLAT. In reverse mode we
+    # rebuild right edges from the new right wall and preserve strip widths.
+    fsects = [
+        [
+            PreviewFSection(start_dlat=-20.0, end_dlat=-18.0, surface_type=0, type2=0),
+            PreviewFSection(start_dlat=-12.0, end_dlat=-10.0, surface_type=1, type2=0),
+            PreviewFSection(start_dlat=-4.0, end_dlat=-2.0, surface_type=2, type2=0),
+            PreviewFSection(start_dlat=0.0, end_dlat=0.0, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=6.0, end_dlat=8.0, surface_type=9, type2=1),
+        ]
+    ]
+
+    preview = _FakePreview(sections, fsects)
+    controller = SectionsController(_Host(preview))
+
+    controller.reverse_track()
+
+    assert preview.received_fsects is not None
+    ground = [f for f in preview.received_fsects[0] if f.surface_type in {0, 1, 2, 3, 4, 5, 6}]
+    assert ground == [
+        PreviewFSection(start_dlat=-8.0, end_dlat=-6.0, surface_type=2, type2=0),
+        PreviewFSection(start_dlat=0.0, end_dlat=2.0, surface_type=1, type2=0),
+        PreviewFSection(start_dlat=8.0, end_dlat=10.0, surface_type=0, type2=0),
+    ]
