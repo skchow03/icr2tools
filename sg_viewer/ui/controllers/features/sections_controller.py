@@ -172,6 +172,9 @@ class SectionsController:
         self._host._window.show_status_message(f"Rotated track by {dialog.angle_degrees():+.1f}° around origin.")
 
     def reverse_track(self) -> None:
+        preview = self._host._window.preview
+        original_transform_state = getattr(preview, "transform_state", None)
+
         sections, _ = self._host._window.preview.get_section_set()
         if not sections:
             QtWidgets.QMessageBox.information(
@@ -220,23 +223,30 @@ class SectionsController:
             )
             reversed_fsects.append(mirrored_fsects)
 
-        self._host._window.preview.set_sections(reversed_sections)
-        if not self._host._window.preview.replace_all_fsects(reversed_fsects):
-            QtWidgets.QMessageBox.warning(
-                self._host._window,
-                "Reverse Track",
-                "Unable to reverse fsect data for the reversed track.",
-            )
-            return
-
         try:
-            self._host._window.preview.apply_preview_to_sgfile()
-        except ValueError:
-            pass
+            self._host._window.preview.set_sections(reversed_sections)
+            if not self._host._window.preview.replace_all_fsects(reversed_fsects):
+                QtWidgets.QMessageBox.warning(
+                    self._host._window,
+                    "Reverse Track",
+                    "Unable to reverse fsect data for the reversed track.",
+                )
+                return
 
-        self._host._window.show_status_message(
-            "Reversed section order, start/finish direction, fsects, and elevation/grade mapping."
-        )
+            try:
+                self._host._window.preview.apply_preview_to_sgfile()
+            except ValueError:
+                pass
+
+            self._host._window.show_status_message(
+                "Reversed section order, start/finish direction, fsects, and elevation/grade mapping."
+            )
+        finally:
+            preview_controller = getattr(preview, "controller", None)
+            if preview_controller is not None and original_transform_state is not None:
+                preview_controller.transform_state = original_transform_state
+                if hasattr(preview, "request_repaint"):
+                    preview.request_repaint()
 
     def _mirror_section_fsects(
         self, fsects: list[PreviewFSection]
