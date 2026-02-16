@@ -9,6 +9,7 @@ from PyQt5 import QtWidgets
 from sg_viewer.geometry.sg_geometry import rotate_section
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.sg_document_fsects import GROUND_TYPES
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.ui.generate_fsects_dialog import GenerateFsectsDialog
@@ -214,16 +215,9 @@ class SectionsController:
                 )
             )
 
-            mirrored_fsects = [
-                PreviewFSection(
-                    start_dlat=-float(fsect.end_dlat),
-                    end_dlat=-float(fsect.start_dlat),
-                    surface_type=int(fsect.surface_type),
-                    type2=int(fsect.type2),
-                )
-                for fsect in self._host._window.preview.get_section_fsects(old_idx)
-            ]
-            mirrored_fsects.sort(key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+            mirrored_fsects = self._mirror_section_fsects(
+                self._host._window.preview.get_section_fsects(old_idx)
+            )
             reversed_fsects.append(mirrored_fsects)
 
         self._host._window.preview.set_sections(reversed_sections)
@@ -243,6 +237,75 @@ class SectionsController:
         self._host._window.show_status_message(
             "Reversed section order, start/finish direction, fsects, and elevation/grade mapping."
         )
+
+    def _mirror_section_fsects(
+        self, fsects: list[PreviewFSection]
+    ) -> list[PreviewFSection]:
+        grounds = [fsect for fsect in fsects if int(fsect.surface_type) in GROUND_TYPES]
+        boundaries = [fsect for fsect in fsects if int(fsect.surface_type) not in GROUND_TYPES]
+
+        mirrored_boundaries = [
+            PreviewFSection(
+                start_dlat=-float(fsect.end_dlat),
+                end_dlat=-float(fsect.start_dlat),
+                surface_type=int(fsect.surface_type),
+                type2=int(fsect.type2),
+            )
+            for fsect in boundaries
+        ]
+
+        if not grounds:
+            mirrored_boundaries.sort(key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+            return mirrored_boundaries
+
+        grounds_sorted = sorted(
+            grounds, key=lambda fsect: (fsect.start_dlat + fsect.end_dlat) * 0.5
+        )
+
+        left_boundary_start = max(
+            (float(boundary.start_dlat) for boundary in boundaries),
+            default=float(grounds_sorted[-1].start_dlat),
+        )
+        left_boundary_end = max(
+            (float(boundary.end_dlat) for boundary in boundaries),
+            default=float(grounds_sorted[-1].end_dlat),
+        )
+
+        start_widths: list[float] = []
+        end_widths: list[float] = []
+        for idx, ground in enumerate(grounds_sorted):
+            next_start = (
+                float(grounds_sorted[idx + 1].start_dlat)
+                if idx + 1 < len(grounds_sorted)
+                else left_boundary_start
+            )
+            next_end = (
+                float(grounds_sorted[idx + 1].end_dlat)
+                if idx + 1 < len(grounds_sorted)
+                else left_boundary_end
+            )
+            start_widths.append(next_start - float(ground.start_dlat))
+            end_widths.append(next_end - float(ground.end_dlat))
+
+        mirrored_grounds: list[PreviewFSection] = []
+        current_start = -left_boundary_start
+        current_end = -left_boundary_end
+        for original_idx in range(len(grounds_sorted) - 1, -1, -1):
+            original = grounds_sorted[original_idx]
+            mirrored_grounds.append(
+                PreviewFSection(
+                    start_dlat=current_start,
+                    end_dlat=current_end,
+                    surface_type=int(original.surface_type),
+                    type2=int(original.type2),
+                )
+            )
+            current_start += start_widths[original_idx]
+            current_end += end_widths[original_idx]
+
+        mirrored_fsects = mirrored_grounds + mirrored_boundaries
+        mirrored_fsects.sort(key=lambda fsect: (fsect.start_dlat, fsect.end_dlat))
+        return mirrored_fsects
 
     def apply_track_rotation_preview(self, base_sections: list[SectionPreview], angle_degrees: float) -> None:
         angle_radians = math.radians(angle_degrees)
