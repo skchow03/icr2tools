@@ -136,6 +136,14 @@ class SGViewerController:
         self._save_action.setEnabled(True)
         self._save_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
 
+        self._undo_action = QtWidgets.QAction("Undo", self._window)
+        self._undo_action.setShortcut("Ctrl+Z")
+        self._undo_action.triggered.connect(self._undo)
+
+        self._redo_action = QtWidgets.QAction("Redo", self._window)
+        self._redo_action.setShortcut("Ctrl+Y")
+        self._redo_action.triggered.connect(self._redo)
+
         self._scale_track_action = QtWidgets.QAction(
             "Scale Track to Length…",
             self._window,
@@ -252,6 +260,10 @@ class SGViewerController:
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
+        edit_menu = self._window.menuBar().addMenu("&Edit")
+        edit_menu.addAction(self._undo_action)
+        edit_menu.addAction(self._redo_action)
+
         tools_menu = self._window.menuBar().addMenu("Tools")
         tools_menu.addAction(self._scale_track_action)
         tools_menu.addAction(self._rotate_track_action)
@@ -273,6 +285,14 @@ class SGViewerController:
 
         help_menu = self._window.menuBar().addMenu("Help")
         help_menu.addAction(self._about_action)
+
+    def _undo(self) -> None:
+        if self._window.preview.interaction.undo():
+            self._window.show_status_message("Undo applied.")
+
+    def _redo(self) -> None:
+        if self._window.preview.interaction.redo():
+            self._window.show_status_message("Redo applied.")
 
     def _show_about_dialog(self) -> None:
         show_about_dialog(self._window)
