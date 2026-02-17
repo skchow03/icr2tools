@@ -616,6 +616,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def fsect_display_step(self) -> float:
         return self._measurement_unit_step(self._current_measurement_unit())
 
+    def fsect_dlat_to_display_units(self, value: float) -> float:
+        return self._fsect_dlat_to_display_units(value)
+
     def fsect_dlat_from_display_units(self, value: float) -> float:
         return self._fsect_dlat_from_display_units(value)
 
