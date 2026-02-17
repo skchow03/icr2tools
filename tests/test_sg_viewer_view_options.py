@@ -367,14 +367,9 @@ def test_save_action_saves_to_current_path(qapp, monkeypatch, tmp_path):
         window.close()
 
 
-def test_3d_prep_tab_and_trk_dlong_toggle_updates_adjusted_labels(qapp):
+def test_adjusted_dlong_labels_auto_update_without_toggle(qapp):
     window = SGViewerWindow()
     try:
-        assert any(
-            window._right_sidebar_tabs.tabText(i) == "3D prep"
-            for i in range(window._right_sidebar_tabs.count())
-        )
-
         num_xsects = 2
         data = [0] * (58 + 2 * num_xsects)
         section = SGFile.Section(data, num_xsects)
@@ -395,12 +390,6 @@ def test_3d_prep_tab_and_trk_dlong_toggle_updates_adjusted_labels(qapp):
         )
 
         window.update_selection_sidebar(selection)
-        assert window._adjusted_section_start_dlong_label.text() == "Adjusted Starting DLONG: –"
-        assert window._adjusted_section_end_dlong_label.text() == "Adjusted Ending DLONG: –"
-        assert window._adjusted_section_length_label.text() == "Adjusted Section Length: –"
-
-        window.trk_dlongs_checkbox.setChecked(True)
-
         assert window._adjusted_section_start_dlong_label.text() == "Adjusted Starting DLONG: 0.0 ft"
         assert window._adjusted_section_end_dlong_label.text() == "Adjusted Ending DLONG: 1001.2 ft"
         assert (
