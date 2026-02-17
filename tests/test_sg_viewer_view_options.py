@@ -329,6 +329,37 @@ def test_calibrator_receiver_loads_background_from_payload(qapp, monkeypatch, tm
         window.close()
 
 
+
+def test_edit_menu_exposes_undo_redo_actions(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        edit_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&Edit"
+        )
+        undo_action = next(
+            action for action in edit_menu.actions() if action.text() == "Undo"
+        )
+        redo_action = next(
+            action for action in edit_menu.actions() if action.text() == "Redo"
+        )
+
+        assert undo_action.shortcut().toString() == "Ctrl+Z"
+        assert redo_action.shortcut().toString() == "Ctrl+Y"
+
+        undo_calls: list[bool] = []
+        redo_calls: list[bool] = []
+
+        monkeypatch.setattr(window.preview.interaction, "undo", lambda: undo_calls.append(True) or True)
+        monkeypatch.setattr(window.preview.interaction, "redo", lambda: redo_calls.append(True) or True)
+
+        undo_action.trigger()
+        redo_action.trigger()
+
+        assert undo_calls == [True]
+        assert redo_calls == [True]
+    finally:
+        window.close()
+
 def test_file_menu_exposes_save_action(qapp):
     window = SGViewerWindow()
     try:
