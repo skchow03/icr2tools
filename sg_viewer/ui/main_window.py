@@ -27,10 +27,44 @@ from sg_viewer.ui.fsect_diagram_widget import FsectDiagramWidget
 from sg_viewer.ui.xsect_elevation import XsectElevationWidget
 from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
 from sg_viewer.model.selection import SectionSelection
+from sg_viewer.ui.presentation.fsect_table_presenter import (
+    boundary_numbers_for_fsects,
+    format_fsect_delta,
+    reset_fsect_delta_cell,
+    reset_fsect_dlat_cell,
+    set_fsect_delta_cell_text,
+)
+from sg_viewer.ui.presentation.units_presenter import (
+    altitude_display_to_feet,
+    feet_to_altitude_display,
+    format_altitude_for_units,
+    format_fsect_dlat,
+    format_length,
+    format_length_with_secondary,
+    format_xsect_altitude,
+    fsect_dlat_from_display_units,
+    fsect_dlat_to_display_units,
+    fsect_dlat_units_label,
+    measurement_unit_decimals,
+    measurement_unit_label,
+    measurement_unit_step,
+    xsect_altitude_from_display_units,
+    xsect_altitude_to_display_units,
+)
+from sg_viewer.ui.presentation.window_panels import (
+    create_elevation_panel,
+    create_fsect_panel,
+    create_stats_sidebar_panel,
+    create_toolbar_navigation_panel,
+)
 
 
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
+
+    fsectDiagramDlatChangeRequested = QtCore.pyqtSignal(int, int, str, float, bool, bool)
+    fsectDiagramDragRefreshRequested = QtCore.pyqtSignal()
+    fsectDiagramDragCommitRequested = QtCore.pyqtSignal(int, int, str, float)
 
     def __init__(self, *, wire_features: bool = True) -> None:
         super().__init__()
@@ -313,16 +347,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self._grade_set_range_button = QtWidgets.QPushButton("Set Range...")
 
-        navigation_layout = QtWidgets.QHBoxLayout()
-        #navigation_layout.addWidget(self._new_track_button)
-        navigation_layout.addWidget(self._prev_button)
-        navigation_layout.addWidget(self._next_button)
-        navigation_layout.addWidget(self._new_straight_button)
-        navigation_layout.addWidget(self._new_curve_button)
-        navigation_layout.addWidget(self._split_section_button)
-        navigation_layout.addWidget(self._move_section_button)
-        navigation_layout.addWidget(self._delete_section_button)
-        navigation_layout.addWidget(self._set_start_finish_button)
+        toolbar_panel = create_toolbar_navigation_panel(
+            self._prev_button,
+            self._next_button,
+            self._new_straight_button,
+            self._new_curve_button,
+            self._split_section_button,
+            self._move_section_button,
+            self._delete_section_button,
+            self._set_start_finish_button,
+        )
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
         altitude_layout = QtWidgets.QHBoxLayout()
@@ -340,41 +374,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         grade_layout.addWidget(self._grade_set_range_button)
         grade_container.setLayout(grade_layout)
         elevation_layout.addRow("Grade (xsect):", grade_container)
-        altitude_grade_sidebar = QtWidgets.QWidget()
-        altitude_grade_sidebar_layout = QtWidgets.QVBoxLayout()
-        altitude_grade_sidebar_layout.addLayout(elevation_layout)
-        altitude_grade_sidebar_layout.addWidget(QtWidgets.QLabel("X-Section Elevations"))
-        altitude_grade_sidebar_layout.addWidget(self._xsect_elevation_table)
-        altitude_profile_controls = QtWidgets.QHBoxLayout()
-        altitude_profile_controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
-        altitude_profile_controls.addWidget(self._xsect_combo)
-        altitude_profile_controls.addWidget(self._copy_xsect_button)
-        altitude_profile_controls.addWidget(self._xsect_dlat_line_checkbox)
-        altitude_grade_sidebar_layout.addLayout(altitude_profile_controls)
-        altitude_grade_sidebar_layout.addWidget(self._profile_widget, stretch=2)
-        altitude_grade_sidebar_layout.addWidget(
-            QtWidgets.QLabel("Section X-Section Elevation")
+        elevation_panel = create_elevation_panel(
+            elevation_layout=elevation_layout,
+            xsect_table=self._xsect_elevation_table,
+            xsect_combo=self._xsect_combo,
+            copy_xsect_button=self._copy_xsect_button,
+            xsect_dlat_line_checkbox=self._xsect_dlat_line_checkbox,
+            profile_widget=self._profile_widget,
+            xsect_elevation_widget=self._xsect_elevation_widget,
         )
-        altitude_grade_sidebar_layout.addWidget(self._xsect_elevation_widget, stretch=1)
-        altitude_grade_sidebar_layout.addStretch()
-        altitude_grade_sidebar.setLayout(altitude_grade_sidebar_layout)
 
-        fsect_sidebar = QtWidgets.QWidget()
-        fsect_sidebar_layout = QtWidgets.QVBoxLayout()
-        fsect_preview_options_layout = QtWidgets.QHBoxLayout()
-        fsect_preview_options_layout.addWidget(self._sg_fsects_checkbox)
-        fsect_preview_options_layout.addWidget(self._live_fsect_drag_preview_checkbox)
-        fsect_sidebar_layout.addLayout(fsect_preview_options_layout)
-        fsect_sidebar_layout.addWidget(self._copy_fsects_prev_button)
-        fsect_sidebar_layout.addWidget(self._copy_fsects_next_button)
-        fsect_sidebar_layout.addWidget(self._add_fsect_button)
-        fsect_sidebar_layout.addWidget(self._delete_fsect_button)
-        fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsects"))
-        fsect_sidebar_layout.addWidget(self._fsect_table)
-        fsect_sidebar_layout.addWidget(QtWidgets.QLabel("Fsect Diagram"))
-        fsect_sidebar_layout.addWidget(self._fsect_diagram)
-        fsect_sidebar_layout.addStretch()
-        fsect_sidebar.setLayout(fsect_sidebar_layout)
+        fsect_panel = create_fsect_panel(
+            sg_fsects_checkbox=self._sg_fsects_checkbox,
+            live_preview_checkbox=self._live_fsect_drag_preview_checkbox,
+            copy_prev_button=self._copy_fsects_prev_button,
+            copy_next_button=self._copy_fsects_next_button,
+            add_button=self._add_fsect_button,
+            delete_button=self._delete_fsect_button,
+            table=self._fsect_table,
+            diagram=self._fsect_diagram,
+        )
 
         view_options_sidebar = QtWidgets.QWidget()
         view_options_layout = QtWidgets.QVBoxLayout()
@@ -423,8 +442,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
-        self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Elevation/Grade")
-        self._right_sidebar_tabs.addTab(fsect_sidebar, "Fsects")
+        self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
+        self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
         self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
@@ -436,23 +455,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
-        preview_column_layout.addLayout(navigation_layout)
+        preview_column_layout.addWidget(toolbar_panel.widget)
         preview_column_layout.addWidget(self._preview, stretch=5)
-        selection_summary_group = QtWidgets.QGroupBox("Track / Section")
-        selection_summary_layout = QtWidgets.QVBoxLayout()
-        selection_summary_layout.addWidget(self._track_stats_label)
-        selection_summary_layout.addWidget(self._section_index_label)
-        selection_summary_layout.addWidget(self._section_start_dlong_label)
-        selection_summary_layout.addWidget(self._section_end_dlong_label)
-        selection_summary_layout.addWidget(self._previous_label)
-        selection_summary_layout.addWidget(self._next_label)
-        selection_summary_layout.addWidget(self._section_length_label)
-        selection_summary_layout.addWidget(self._adjusted_section_start_dlong_label)
-        selection_summary_layout.addWidget(self._adjusted_section_end_dlong_label)
-        selection_summary_layout.addWidget(self._adjusted_section_length_label)
-        selection_summary_layout.addWidget(self._radius_label)
-        selection_summary_group.setLayout(selection_summary_layout)
-        preview_column_layout.addWidget(selection_summary_group)
+        stats_panel = create_stats_sidebar_panel(
+            self._track_stats_label,
+            self._section_index_label,
+            self._section_start_dlong_label,
+            self._section_end_dlong_label,
+            self._previous_label,
+            self._next_label,
+            self._section_length_label,
+            self._adjusted_section_start_dlong_label,
+            self._adjusted_section_end_dlong_label,
+            self._adjusted_section_length_label,
+            self._radius_label,
+        )
+        preview_column_layout.addWidget(stats_panel.widget)
         preview_column.setLayout(preview_column_layout)
 
         container = QtWidgets.QWidget()
@@ -721,29 +739,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._track_stats_label.setText(text)
 
     def format_length(self, value: float | int | None) -> str:
-        if value is None:
-            return "–"
-        display = units_from_500ths(value, self._current_measurement_unit())
-        decimals = self._measurement_unit_decimals(self._current_measurement_unit())
-        unit = self._measurement_unit_label(self._current_measurement_unit())
-        if decimals == 0:
-            return f"{int(round(display))} {unit}"
-        return f"{display:.{decimals}f} {unit}"
+        return format_length(value, unit=self._current_measurement_unit())
 
     def format_length_with_secondary(self, value: float | int | None) -> str:
-        primary = self.format_length(value)
-        if value is None:
-            return primary
-
-        unit = self._current_measurement_unit()
-        feet_value = units_from_500ths(value, "feet")
-        if unit == "feet":
-            miles = feet_value / 5280.0
-            return f"{primary} ({miles:.3f} miles)"
-        if unit == "meter":
-            kilometers = feet_value * 0.3048 / 1000.0
-            return f"{primary} ({kilometers:.3f} km)"
-        return primary
+        return format_length_with_secondary(value, unit=self._current_measurement_unit())
 
     def update_elevation_inputs(
         self, altitude: int | None, grade: int | None, enabled: bool
@@ -939,15 +938,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     @staticmethod
     def _measurement_unit_label(unit: str) -> str:
-        return {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}.get(unit, "500ths")
+        return measurement_unit_label(unit)
 
     @staticmethod
     def _measurement_unit_decimals(unit: str) -> int:
-        return {"feet": 1, "meter": 3, "inch": 1, "500ths": 0}.get(unit, 0)
+        return measurement_unit_decimals(unit)
 
     @staticmethod
     def _measurement_unit_step(unit: str) -> float:
-        return {"feet": 0.1, "meter": 0.05, "inch": 1.0, "500ths": 50.0}.get(unit, 50.0)
+        return measurement_unit_step(unit)
 
     def update_xsect_table_headers(self) -> None:
         unit_label = self._xsect_altitude_units_label()
@@ -956,20 +955,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _xsect_altitude_units_label(self) -> str:
-        return self._measurement_unit_label(self._current_measurement_unit())
+        return fsect_dlat_units_label(unit=self._current_measurement_unit())
 
     def xsect_altitude_to_display_units(self, value: int) -> float:
-        return units_from_500ths(value, self._current_measurement_unit())
+        return xsect_altitude_to_display_units(value, unit=self._current_measurement_unit())
 
     def xsect_altitude_from_display_units(self, value: float) -> int:
-        return units_to_500ths(value, self._current_measurement_unit())
+        return xsect_altitude_from_display_units(value, unit=self._current_measurement_unit())
 
     def _format_xsect_altitude(self, value: int) -> str:
-        display_value = self.xsect_altitude_to_display_units(value)
-        decimals = self._measurement_unit_decimals(self._current_measurement_unit())
-        if decimals == 0:
-            return f"{int(round(display_value))}"
-        return f"{display_value:.{decimals}f}"
+        return format_xsect_altitude(value, unit=self._current_measurement_unit())
 
     def xsect_altitude_unit(self) -> str:
         return self._current_measurement_unit()
@@ -1178,7 +1173,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _update_fsect_table(self, section_index: int | None) -> None:
         fsects = self._preview.get_section_fsects(section_index)
-        boundary_number_by_row = self._boundary_numbers_for_fsects(fsects)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
         for row_index, fsect in enumerate(fsects):
@@ -1200,10 +1195,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     | QtCore.Qt.ItemIsSelectable
                 )
             start_delta_item = QtWidgets.QTableWidgetItem(
-                self._format_fsect_delta(fsects, row_index, "start")
+                format_fsect_delta(fsects, row_index, "start", unit=self._current_measurement_unit())
             )
             end_delta_item = QtWidgets.QTableWidgetItem(
-                self._format_fsect_delta(fsects, row_index, "end")
+                format_fsect_delta(fsects, row_index, "end", unit=self._current_measurement_unit())
             )
             if row_index < len(fsects) - 1:
                 for delta_item in (start_delta_item, end_delta_item):
@@ -1281,7 +1276,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         try:
             new_value = float(text)
         except ValueError:
-            self._reset_fsect_dlat_cell(row_index, column_index, fsects[row_index])
+            reset_fsect_dlat_cell(self._fsect_table, row_index, column_index, fsects[row_index], unit=self._current_measurement_unit())
             return
         new_value = self._fsect_dlat_from_display_units(new_value)
         if column_index in (2, 3):
@@ -1296,7 +1291,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             next_row_index = row_index + 1
             if next_row_index >= len(fsects):
-                self._reset_fsect_delta_cell(row_index, column_index, fsects)
+                reset_fsect_delta_cell(self._fsect_table, row_index, column_index, fsects, unit=self._current_measurement_unit())
                 return
             base_value = fsects[row_index].start_dlat if column_index == 4 else fsects[row_index].end_dlat
             if column_index == 4:
@@ -1312,35 +1307,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     end_dlat=base_value + new_value,
                 )
         self._update_fsect_table(section_index)
-
-    def _reset_fsect_dlat_cell(
-        self,
-        row_index: int,
-        column_index: int,
-        fsect,
-    ) -> None:
-        value = fsect.start_dlat if column_index == 2 else fsect.end_dlat
-        item = self._fsect_table.item(row_index, column_index)
-        if item is None:
-            return
-        self._fsect_table.blockSignals(True)
-        item.setText(self._format_fsect_dlat(value))
-        self._fsect_table.blockSignals(False)
-
-    def _reset_fsect_delta_cell(
-        self,
-        row_index: int,
-        column_index: int,
-        fsects,
-    ) -> None:
-        endpoint = "start" if column_index == 4 else "end"
-        value = self._format_fsect_delta(fsects, row_index, endpoint)
-        item = self._fsect_table.item(row_index, column_index)
-        if item is None:
-            return
-        self._fsect_table.blockSignals(True)
-        item.setText(value)
-        self._fsect_table.blockSignals(False)
 
     def _update_fsect_dlat_cell(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
@@ -1371,30 +1337,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for delta_row in (row_index - 1, row_index):
             if delta_row < 0 or delta_row >= self._fsect_table.rowCount():
                 continue
-            self._set_fsect_delta_cell_text(
+            set_fsect_delta_cell_text(self._fsect_table, 
                 delta_row,
                 4,
-                self._format_fsect_delta(fsects, delta_row, "start"),
+                format_fsect_delta(fsects, delta_row, "start", unit=self._current_measurement_unit()),
             )
-            self._set_fsect_delta_cell_text(
+            set_fsect_delta_cell_text(self._fsect_table, 
                 delta_row,
                 5,
-                self._format_fsect_delta(fsects, delta_row, "end"),
+                format_fsect_delta(fsects, delta_row, "end", unit=self._current_measurement_unit()),
             )
 
-    def _set_fsect_delta_cell_text(
-        self,
-        row_index: int,
-        column_index: int,
-        value: str,
-    ) -> None:
-        item = self._fsect_table.item(row_index, column_index)
-        if item is None:
-            item = QtWidgets.QTableWidgetItem("")
-            self._fsect_table.setItem(row_index, column_index, item)
-        self._fsect_table.blockSignals(True)
-        item.setText(value)
-        self._fsect_table.blockSignals(False)
+    def update_selected_section_fsect_table(self) -> None:
+        self._update_fsect_table(self._selected_section_index)
 
     def _on_measurement_units_changed(self) -> None:
         previous_unit = self._measurement_unit_data
@@ -1418,71 +1373,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ]
         )
 
-    @staticmethod
-    def _boundary_numbers_for_fsects(fsects) -> dict[int, str]:
-        boundary_rows = [
-            (row_index, fsect)
-            for row_index, fsect in enumerate(fsects)
-            if fsect.surface_type in {7, 8}
-        ]
-        boundary_rows.sort(
-            key=lambda row_fsect: (
-                min(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
-                max(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
-                row_fsect[0],
-            )
-        )
-        boundary_number_by_row: dict[int, str] = {}
-        for boundary_number, (row_index, _fsect) in enumerate(boundary_rows):
-            boundary_number_by_row[row_index] = str(boundary_number)
-        return boundary_number_by_row
-
-    def _format_fsect_delta(self, fsects, row_index: int, endpoint: str) -> str:
-        next_row_index = row_index + 1
-        if row_index < 0 or next_row_index >= len(fsects):
-            return ""
-        current = fsects[row_index]
-        following = fsects[next_row_index]
-        if endpoint == "start":
-            delta = following.start_dlat - current.start_dlat
-        else:
-            delta = following.end_dlat - current.end_dlat
-        return self._format_fsect_dlat(delta)
-
     def _fsect_dlat_units_label(self) -> str:
         return self._measurement_unit_label(self._current_measurement_unit())
 
     def _fsect_dlat_to_display_units(self, value: float) -> float:
-        return units_from_500ths(value, self._current_measurement_unit())
+        return xsect_altitude_to_display_units(value, unit=self._current_measurement_unit())
 
     def _fsect_dlat_from_display_units(self, value: float) -> float:
-        return float(units_to_500ths(value, self._current_measurement_unit()))
+        return fsect_dlat_from_display_units(value, unit=self._current_measurement_unit())
 
     def _format_fsect_dlat(self, value: float) -> str:
-        display_value = self._fsect_dlat_to_display_units(value)
-        decimals = self._measurement_unit_decimals(self._current_measurement_unit())
-        if decimals == 0:
-            return f"{int(round(display_value))}"
-        return f"{display_value:.{decimals}f}".rstrip("0").rstrip(".")
+        return format_fsect_dlat(value, unit=self._current_measurement_unit())
 
     def altitude_display_to_feet(self, value: float) -> float:
-        altitude_500ths = units_to_500ths(value, self._current_measurement_unit())
-        return feet_from_500ths(altitude_500ths)
+        return altitude_display_to_feet(value, unit=self._current_measurement_unit())
 
     def feet_to_altitude_display(self, value_feet: float) -> float:
-        altitude_500ths = units_to_500ths(value_feet, "feet")
-        return units_from_500ths(altitude_500ths, self._current_measurement_unit())
+        return feet_to_altitude_display(value_feet, unit=self._current_measurement_unit())
 
     def altitude_display_step(self) -> float:
         return self._measurement_unit_step(self._current_measurement_unit())
 
     def _format_altitude_for_units(self, altitude_500ths: int) -> str:
-        unit = self._current_measurement_unit()
-        value = units_from_500ths(altitude_500ths, unit)
-        decimals = self._measurement_unit_decimals(unit)
-        if decimals == 0:
-            return f"{int(round(value))}"
-        return f"{value:.{decimals}f}"
+        return format_altitude_for_units(altitude_500ths, unit=self._current_measurement_unit())
 
     def _sync_altitude_range_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()
@@ -1535,25 +1448,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         if self._fsect_drag_active:
             live_drag_preview = self._live_fsect_drag_preview_checkbox.isChecked()
-            self._update_fsect_preview_dlat(
+            self.fsectDiagramDlatChangeRequested.emit(
                 section_index,
                 row_index,
                 endpoint,
                 new_dlat,
-                refresh_preview=False,
-                emit_sections_changed=False,
+                False,
+                False,
             )
             self._fsect_drag_dirty = True
             if live_drag_preview:
                 self._schedule_fsect_drag_refresh()
             self._update_fsect_dlat_cell(section_index, row_index, endpoint, new_dlat)
             return
-        self._update_fsect_preview_dlat(
+        self.fsectDiagramDlatChangeRequested.emit(
             section_index,
             row_index,
             endpoint,
             new_dlat,
-            refresh_preview=True,
+            True,
+            True,
         )
         self._update_fsect_dlat_cell(section_index, row_index, endpoint, new_dlat)
 
@@ -1575,15 +1489,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         live_drag_preview = self._live_fsect_drag_preview_checkbox.isChecked()
         if live_drag_preview or self._fsect_drag_dirty:
-            self._update_fsect_preview_dlat(
+            self.fsectDiagramDragCommitRequested.emit(
                 section_index,
                 row_index,
                 endpoint,
                 new_dlat,
-                refresh_preview=False,
             )
-            self._preview.refresh_fsections_preview()
-            self._update_fsect_table(section_index)
         self._fsect_drag_dirty = False
 
     def _schedule_fsect_drag_refresh(self) -> None:
@@ -1593,34 +1504,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_fsect_drag_timer(self) -> None:
         if not self._fsect_drag_active or not self._fsect_drag_dirty:
             return
-        self._preview.refresh_fsections_preview_lightweight()
-
-    def _update_fsect_preview_dlat(
-        self,
-        section_index: int,
-        row_index: int,
-        endpoint: str,
-        new_dlat: float,
-        *,
-        refresh_preview: bool,
-        emit_sections_changed: bool = True,
-    ) -> None:
-        if endpoint == "start":
-            self._preview.update_fsection_dlat(
-                section_index,
-                row_index,
-                start_dlat=new_dlat,
-                refresh_preview=refresh_preview,
-                emit_sections_changed=emit_sections_changed,
-            )
-        else:
-            self._preview.update_fsection_dlat(
-                section_index,
-                row_index,
-                end_dlat=new_dlat,
-                refresh_preview=refresh_preview,
-                emit_sections_changed=emit_sections_changed,
-            )
+        self.fsectDiagramDragRefreshRequested.emit()
 
     def set_preview_color_text(self, key: str, color: QtGui.QColor) -> None:
         controls = self._preview_color_controls.get(key)
