@@ -1136,6 +1136,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         adjusted_end = adjusted_start + adjusted_length
         return adjusted_start, adjusted_end, adjusted_length
 
+    def adjusted_section_range_500ths(self, section_index: int) -> tuple[int, int] | None:
+        adjusted = self._adjusted_section_dlongs(section_index)
+        if adjusted is None:
+            return None
+        return adjusted[0], adjusted[1]
+
     @staticmethod
     def _centerline_xsect_pair(
         xsect_dlats: list[int],
