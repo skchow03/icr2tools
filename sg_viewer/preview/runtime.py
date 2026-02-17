@@ -36,7 +36,7 @@ from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
 from sg_viewer.ui.preview_interaction import PreviewInteraction
-from sg_viewer.runtime.preview_geometry_service import PreviewGeometryService
+from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
@@ -186,7 +186,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             emit_drag_state_changed=self._emit_interaction_drag_changed,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
             apply_preview_to_sgfile=self.sync_preview_to_sgfile_if_loaded,
-            geometry_service=PreviewGeometryService(),
+            runtime_api=ViewerRuntimeApi(preview_context=self._context),
         )
 
 

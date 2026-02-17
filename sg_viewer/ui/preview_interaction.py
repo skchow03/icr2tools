@@ -1,29 +1,16 @@
 from __future__ import annotations
 
-import math
 import copy
 from typing import TYPE_CHECKING, Callable
 
-from sg_viewer.model.edit_commands import ReplaceSectionsCommand
-from sg_viewer.model.edit_manager import EditManager
-
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.model.preview_state_utils import is_invalid_id
 from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.preview_mutations import (
     distance_to_polyline,
-    translate_section,
 )
-from sg_viewer.runtime.preview_geometry_service import (
-    ConnectNodesRequest,
-    ConnectionSolveRequest,
-    NodeDisconnectRequest,
-    NodeDragRequest,
-    PreviewGeometryService,
-    StartFinishRequest,
-)
+from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 
 
 if TYPE_CHECKING:
@@ -57,8 +44,7 @@ class PreviewInteraction:
         | None = None,
         apply_preview_to_sgfile: Callable[[], object] | None = None,
         recalculate_elevations: Callable[[list[int] | None], None] | None = None,
-        edit_manager: EditManager | None = None,
-        geometry_service: PreviewGeometryService | None = None,
+        runtime_api: ViewerRuntimeApi | None = None,
     ) -> None:
         self._context = context
         self._selection = selection
@@ -74,8 +60,7 @@ class PreviewInteraction:
         self._sync_fsects_on_connection = sync_fsects_on_connection
         self._apply_preview_to_sgfile = apply_preview_to_sgfile
         self._recalculate_elevations = recalculate_elevations
-        self._edit_manager = edit_manager or EditManager()
-        self._geometry_service = geometry_service or PreviewGeometryService()
+        self._runtime_api = runtime_api or ViewerRuntimeApi(preview_context=context)
 
         self._is_dragging_node = False
         self._active_node: tuple[int, str] | None = None
@@ -228,34 +213,33 @@ class PreviewInteraction:
         if self._set_start_finish_mode:
             hit = self._hit_test_node(event.pos(), None)
             if hit is not None:
-                response = self._geometry_service.set_start_finish(
-                    StartFinishRequest(sections=self._section_manager.sections, hit=hit)
+                payload = self._runtime_api.set_start_finish_intent(
+                    sections=self._section_manager.sections, hit=hit
                 )
-                if response.sections is not None:
-                    self._rebuild_after_start_finish(response.sections)
-                self._show_status(response.status_message)
+                if payload.updated_sections is not None:
+                    self._rebuild_after_start_finish(payload.updated_sections)
+                for message in payload.status_messages:
+                    self._show_status(message)
                 self._set_start_finish_mode = False
                 return True
 
         if self._is_dragging_node:
             if self._connection_target is not None and self._active_node is not None:
-                response = self._geometry_service.solve_connection(
-                    ConnectionSolveRequest(
-                        sections=self._section_manager.sections,
-                        source=self._active_node,
-                        target=self._connection_target,
-                    )
+                payload = self._runtime_api.solve_connection_intent(
+                    sections=self._section_manager.sections,
+                    source=self._active_node,
+                    target=self._connection_target,
                 )
-                if response.sections is not None:
+                if payload.updated_sections is not None:
                     if self._sync_fsects_on_connection is not None:
                         self._sync_fsects_on_connection(self._active_node, self._connection_target)
                     self._finalize_connection_updates(
                         old_sections=list(self._section_manager.sections),
-                        updated_sections=response.sections,
-                        changed_indices=response.changed_indices or [],
+                        updated_sections=payload.updated_sections,
+                        changed_indices=payload.changed_indices,
                     )
-                if response.status_message is not None:
-                    self._show_status(response.status_message)
+                for message in payload.status_messages:
+                    self._show_status(message)
                 self._clear_drag_state()
                 event.accept()
                 return True
@@ -372,7 +356,7 @@ class PreviewInteraction:
             self._start_node_drag(node, pos)
             return True
 
-        if self._geometry_service.can_start_shared_node_drag(node, self._section_manager.sections):
+        if self._runtime_api.can_start_shared_node_drag(node, self._section_manager.sections):
             self._start_node_drag(node, pos)
             return True
 
@@ -383,14 +367,16 @@ class PreviewInteraction:
         return False
 
     def _disconnect_node(self, node: tuple[int, str]) -> None:
-        response = self._geometry_service.disconnect_node(
-            NodeDisconnectRequest(sections=self._section_manager.sections, node=node)
+        payload = self._runtime_api.disconnect_node_intent(
+            sections=self._section_manager.sections, node=node
         )
-        if response.sections is None:
+        if payload.updated_sections is None:
             return
-        self._apply_section_updates(response.sections, changed_indices=response.changed_indices)
-        if self._recalculate_elevations is not None:
-            self._recalculate_elevations(response.changed_indices)
+        self._apply_section_updates(payload.updated_sections, changed_indices=payload.changed_indices)
+        self._runtime_api.recalculate_elevations_intent(
+            changed_indices=payload.changed_indices,
+            recalculate=self._recalculate_elevations,
+        )
 
     def _start_node_drag(self, node: tuple[int, str], pos: QtCore.QPoint) -> None:
         widget_size = self._context.widget_size()
@@ -421,18 +407,16 @@ class PreviewInteraction:
         if sect_index < 0 or sect_index >= len(sections):
             return
         can_drag = self._editor.can_drag_node(sections, sections[sect_index], endtype)
-        response = self._geometry_service.update_dragged_section(
-            NodeDragRequest(
-                sections=sections,
-                active_node=self._active_node,
-                track_point=track_point,
-                can_drag_node=can_drag,
-            )
+        payload = self._runtime_api.drag_node_intent(
+            sections=sections,
+            active_node=self._active_node,
+            track_point=track_point,
+            can_drag_node=can_drag,
         )
-        if response.sections is None:
+        if payload.updated_sections is None:
             return
-        self._last_dragged_indices = response.last_dragged_indices
-        self._apply_section_updates(response.sections, changed_indices=response.changed_indices)
+        self._last_dragged_indices = payload.last_dragged_indices or [self._active_node[0]]
+        self._apply_section_updates(payload.updated_sections, changed_indices=payload.changed_indices)
 
     def _update_connection_target(
         self,
@@ -495,21 +479,19 @@ class PreviewInteraction:
     def _connect_nodes(
         self, source: tuple[int, str], target: tuple[int, str]
     ) -> None:
-        response = self._geometry_service.connect_nodes(
-            ConnectNodesRequest(
-                sections=self._section_manager.sections,
-                source=source,
-                target=target,
-            )
+        payload = self._runtime_api.connect_nodes_intent(
+            sections=self._section_manager.sections,
+            source=source,
+            target=target,
         )
-        if response.sections is None:
+        if payload.updated_sections is None:
             return
         if self._sync_fsects_on_connection is not None:
             self._sync_fsects_on_connection(source, target)
         self._finalize_connection_updates(
             old_sections=list(self._section_manager.sections),
-            updated_sections=response.sections,
-            changed_indices=response.changed_indices or [],
+            updated_sections=payload.updated_sections,
+            changed_indices=payload.changed_indices,
         )
 
     # ------------------------------------------------------------------
@@ -579,18 +561,21 @@ class PreviewInteraction:
         epsilon = 1e-6
 
         original_sections = self._section_drag_start_sections
-        sections = list(original_sections)
-
+        payload = self._runtime_api.move_sections_intent(
+            sections=original_sections,
+            chain_indices=self._active_chain_indices,
+            dx=dx,
+            dy=dy,
+        )
+        moved_sections = payload.updated_sections or original_sections
         for chain_index in self._active_chain_indices:
-            if chain_index < 0 or chain_index >= len(sections):
+            if chain_index < 0 or chain_index >= len(original_sections) or chain_index >= len(moved_sections):
                 continue
-            updated_section = translate_section(original_sections[chain_index], dx, dy)
-            sections[chain_index] = self._geometry_service.refresh_section_geometry(updated_section)
-            applied_dx = updated_section.start[0] - original_sections[chain_index].start[0]
-            applied_dy = updated_section.start[1] - original_sections[chain_index].start[1]
+            applied_dx = moved_sections[chain_index].start[0] - original_sections[chain_index].start[0]
+            applied_dy = moved_sections[chain_index].start[1] - original_sections[chain_index].start[1]
             assert abs(applied_dx - dx) < epsilon and abs(applied_dy - dy) < epsilon
 
-        self._apply_section_updates(sections, changed_indices=self._active_chain_indices)
+        self._apply_section_updates(moved_sections, changed_indices=payload.changed_indices)
 
     def _end_section_drag(self) -> None:
         if self._drag_state_active:
@@ -627,27 +612,27 @@ class PreviewInteraction:
             self._section_manager.set_preview_mode(False)
             self._section_manager.clear_drag_preview()
 
-        transition = self._geometry_service.apply_closure_transition(
+        transition = self._runtime_api.apply_closure_transition_intent(
             old_sections=old_sections,
             updated_sections=updated_sections,
             changed_indices=changed_indices,
         )
         self._commit_section_edit(
             before=old_sections,
-            after=transition.sections,
+            after=transition.updated_sections or updated_sections,
             changed_indices=transition.changed_indices,
         )
         if transition.closed_loop_transition and self._apply_preview_to_sgfile is not None:
             self._apply_preview_to_sgfile()
-        if transition.status_message is not None:
-            self._show_status(transition.status_message)
+        for message in transition.status_messages:
+            self._show_status(message)
 
     def _apply_section_updates(
         self,
         sections: list["SectionPreview"],
         changed_indices: list[int] | None = None,
     ) -> None:
-        self._geometry_service.validate_sections(sections)
+        self._runtime_api.validate_sections(sections)
         if self._drag_state_active:
             self._update_drag_preview(sections)
         else:
@@ -664,22 +649,26 @@ class PreviewInteraction:
         after: list["SectionPreview"],
         changed_indices: list[int] | None = None,
     ) -> None:
-        command = ReplaceSectionsCommand(before=before, after=after)
-        updated_sections = self._edit_manager.execute(command)
-        self._set_sections(updated_sections, changed_indices=changed_indices)
+        payload = self._runtime_api.commit_sections(
+            before=before,
+            after=after,
+            changed_indices=changed_indices,
+        )
+        if payload.updated_sections is not None:
+            self._set_sections(payload.updated_sections, changed_indices=payload.changed_indices)
 
     def undo(self) -> bool:
         """Undo the most recent committed section edit."""
-        sections = self._edit_manager.undo()
-        if sections is None:
+        payload = self._runtime_api.undo()
+        if payload.updated_sections is None:
             return False
-        self._set_sections(sections)
+        self._set_sections(payload.updated_sections)
         return True
 
     def redo(self) -> bool:
         """Redo the most recent undone section edit."""
-        sections = self._edit_manager.redo()
-        if sections is None:
+        payload = self._runtime_api.redo()
+        if payload.updated_sections is None:
             return False
-        self._set_sections(sections)
+        self._set_sections(payload.updated_sections)
         return True
