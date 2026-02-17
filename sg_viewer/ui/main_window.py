@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from icr2_core.trk.utils import approx_curve_length
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.color_utils import parse_hex_color
@@ -172,7 +173,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._previous_label = QtWidgets.QLabel("Previous Section: –")
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._section_length_label = QtWidgets.QLabel("Section Length: –")
+        self._adjusted_section_start_dlong_label = QtWidgets.QLabel(
+            "Adjusted Starting DLONG: –"
+        )
+        self._adjusted_section_end_dlong_label = QtWidgets.QLabel(
+            "Adjusted Ending DLONG: –"
+        )
+        self._adjusted_section_length_label = QtWidgets.QLabel(
+            "Adjusted Section Length: –"
+        )
         self._radius_label = QtWidgets.QLabel("Radius: –")
+        self._trk_dlongs_checkbox = QtWidgets.QCheckBox("Toggle .TRK DLONGs")
+        self._trk_dlongs_checkbox.setChecked(False)
+        self._trk_dlongs_checkbox.toggled.connect(self._on_trk_dlongs_toggled)
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
         self._measurement_units_combo.addItem("Meter", "meter")
@@ -413,9 +426,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
+        prep_3d_sidebar = QtWidgets.QWidget()
+        prep_3d_layout = QtWidgets.QVBoxLayout()
+        prep_3d_layout.addWidget(self._trk_dlongs_checkbox)
+        prep_3d_layout.addStretch()
+        prep_3d_sidebar.setLayout(prep_3d_layout)
+
         self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_sidebar, "Fsects")
         self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
+        self._right_sidebar_tabs.addTab(prep_3d_sidebar, "3D prep")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)
@@ -437,6 +457,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selection_summary_layout.addWidget(self._previous_label)
         selection_summary_layout.addWidget(self._next_label)
         selection_summary_layout.addWidget(self._section_length_label)
+        selection_summary_layout.addWidget(self._adjusted_section_start_dlong_label)
+        selection_summary_layout.addWidget(self._adjusted_section_end_dlong_label)
+        selection_summary_layout.addWidget(self._adjusted_section_length_label)
         selection_summary_layout.addWidget(self._radius_label)
         selection_summary_group.setLayout(selection_summary_layout)
         preview_column_layout.addWidget(selection_summary_group)
@@ -593,6 +616,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def measurement_units_combo(self) -> QtWidgets.QComboBox:
         return self._measurement_units_combo
+
+    @property
+    def trk_dlongs_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._trk_dlongs_checkbox
 
     def fsect_display_unit_label(self) -> str:
         return self._fsect_dlat_units_label()
@@ -982,6 +1009,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._previous_label.setText("Previous Section: –")
             self._next_label.setText("Next Section: –")
             self._section_length_label.setText("Section Length: –")
+            self._set_adjusted_dlong_labels(None)
             self._profile_widget.set_selected_range(None)
             self._update_fsect_table(None)
             return
@@ -997,6 +1025,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_length_label.setText(
             f"Section Length: {self.format_length_with_secondary(selection.length)}"
         )
+        self._update_adjusted_dlong_labels(selection)
 
         radius_value = selection.sg_radius
         if radius_value is None:
@@ -1013,6 +1042,152 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _format_section_link(prefix: str, section_id: int) -> str:
         connection = "Not connected" if section_id == -1 else f"{section_id}"
         return f"{prefix} Section: {connection}"
+
+    def _on_trk_dlongs_toggled(self, _checked: bool) -> None:
+        self._update_adjusted_dlong_labels_for_current_selection()
+
+    def _update_adjusted_dlong_labels_for_current_selection(self) -> None:
+        if self._selected_section_index is None:
+            self._set_adjusted_dlong_labels(None)
+            return
+        self._set_adjusted_dlong_labels(
+            self._adjusted_section_dlongs(self._selected_section_index)
+            if self._trk_dlongs_checkbox.isChecked()
+            else None
+        )
+
+    def _update_adjusted_dlong_labels(self, selection: SectionSelection) -> None:
+        if not self._trk_dlongs_checkbox.isChecked():
+            self._set_adjusted_dlong_labels(None)
+            return
+        adjusted = self._adjusted_section_dlongs(selection.index)
+        self._set_adjusted_dlong_labels(adjusted)
+
+    def _set_adjusted_dlong_labels(
+        self, adjusted: tuple[int, int, int] | None
+    ) -> None:
+        if adjusted is None:
+            self._adjusted_section_start_dlong_label.setText("Adjusted Starting DLONG: –")
+            self._adjusted_section_end_dlong_label.setText("Adjusted Ending DLONG: –")
+            self._adjusted_section_length_label.setText("Adjusted Section Length: –")
+            return
+        start_dlong, end_dlong, length = adjusted
+        self._adjusted_section_start_dlong_label.setText(
+            f"Adjusted Starting DLONG: {self.format_length(start_dlong)}"
+        )
+        self._adjusted_section_end_dlong_label.setText(
+            f"Adjusted Ending DLONG: {self.format_length(end_dlong)}"
+        )
+        self._adjusted_section_length_label.setText(
+            f"Adjusted Section Length: {self.format_length_with_secondary(length)}"
+        )
+
+    def _adjusted_section_dlongs(self, section_index: int) -> tuple[int, int, int] | None:
+        sgfile = self._preview.sgfile
+        if sgfile is None:
+            return None
+        if section_index < 0 or section_index >= len(sgfile.sects):
+            return None
+        if sgfile.num_xsects <= 0 or len(sgfile.xsect_dlats) == 0:
+            return None
+
+        xsect_pair = self._centerline_xsect_pair(list(sgfile.xsect_dlats))
+        if xsect_pair is None:
+            return None
+        right_idx, left_idx, centerline_pct = xsect_pair
+
+        centerline_altitudes: list[float] = []
+        centerline_grades: list[float] = []
+        for section in sgfile.sects:
+            if right_idx >= len(section.alt) or left_idx >= len(section.alt):
+                return None
+            if right_idx >= len(section.grade) or left_idx >= len(section.grade):
+                return None
+            centerline_altitudes.append(
+                section.alt[right_idx]
+                + centerline_pct * (section.alt[left_idx] - section.alt[right_idx])
+            )
+            centerline_grades.append(
+                section.grade[right_idx]
+                + centerline_pct * (section.grade[left_idx] - section.grade[right_idx])
+            )
+
+        adjusted_lengths: list[int] = []
+        for index, section in enumerate(sgfile.sects):
+            previous_index = len(sgfile.sects) - 1 if index == 0 else index - 1
+            begin_alt = centerline_altitudes[previous_index]
+            end_alt = centerline_altitudes[index]
+            section_length = section.length
+            if section_length == 0:
+                return None
+            current_slope = centerline_grades[previous_index] / 8192
+            next_slope = centerline_grades[index] / 8192
+            grade1 = round(
+                (
+                    2 * begin_alt / section_length
+                    + current_slope
+                    + next_slope
+                    - 2 * end_alt / section_length
+                )
+                * section_length
+            )
+            grade2 = round(
+                (
+                    3 * end_alt / section_length
+                    - 3 * begin_alt / section_length
+                    - 2 * current_slope
+                    - next_slope
+                )
+                * section_length
+            )
+            grade3 = round(current_slope * section_length)
+            adjusted_lengths.append(
+                round(
+                    approx_curve_length(
+                        grade1, grade2, grade3, centerline_altitudes[index], section_length
+                    )
+                )
+            )
+
+        adjusted_starts = [0]
+        for index in range(1, len(adjusted_lengths)):
+            adjusted_starts.append(adjusted_starts[index - 1] + adjusted_lengths[index - 1])
+
+        adjusted_start = adjusted_starts[section_index]
+        adjusted_length = adjusted_lengths[section_index]
+        adjusted_end = adjusted_start + adjusted_length
+        return adjusted_start, adjusted_end, adjusted_length
+
+    @staticmethod
+    def _centerline_xsect_pair(
+        xsect_dlats: list[int],
+    ) -> tuple[int, int, float] | None:
+        if not xsect_dlats:
+            return None
+
+        for xsect_index in range(0, len(xsect_dlats) - 1):
+            right = xsect_dlats[xsect_index]
+            left = xsect_dlats[xsect_index + 1]
+            if right < 0 <= left:
+                denom = left - right
+                centerline_pct = 0.0 if denom == 0 else (-right / denom)
+                return xsect_index, xsect_index + 1, centerline_pct
+
+        right_candidates = [idx for idx, value in enumerate(xsect_dlats) if value <= 0]
+        left_candidates = [idx for idx, value in enumerate(xsect_dlats) if value >= 0]
+        if not right_candidates or not left_candidates:
+            closest = min(range(len(xsect_dlats)), key=lambda idx: abs(xsect_dlats[idx]))
+            return closest, closest, 0.0
+
+        right_idx = max(right_candidates, key=lambda idx: xsect_dlats[idx])
+        left_idx = min(left_candidates, key=lambda idx: xsect_dlats[idx])
+        if right_idx == left_idx:
+            return right_idx, left_idx, 0.0
+        right = xsect_dlats[right_idx]
+        left = xsect_dlats[left_idx]
+        denom = left - right
+        centerline_pct = 0.0 if denom == 0 else (-right / denom)
+        return right_idx, left_idx, centerline_pct
 
     def _update_fsect_table(self, section_index: int | None) -> None:
         fsects = self._preview.get_section_fsects(section_index)
