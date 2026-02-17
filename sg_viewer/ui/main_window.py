@@ -215,7 +215,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "fsect_7": "Fsect: Wall",
             "fsect_8": "Fsect: Armco",
         }
-        self._fsect_table = QtWidgets.QTableWidget(0, 6)
+        self._fsect_table = QtWidgets.QTableWidget(0, 7)
         self._update_fsect_table_headers()
         self._fsect_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
@@ -1169,6 +1169,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _update_fsect_table(self, section_index: int | None) -> None:
         fsects = self._preview.get_section_fsects(section_index)
+        boundary_number_by_row = self._boundary_numbers_for_fsects(fsects)
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
         for row_index, fsect in enumerate(fsects):
@@ -1208,10 +1209,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._fsect_table.setItem(
                 row_index, 0, QtWidgets.QTableWidgetItem(str(row_index))
             )
-            self._fsect_table.setItem(row_index, 1, start_item)
-            self._fsect_table.setItem(row_index, 2, end_item)
-            self._fsect_table.setItem(row_index, 3, start_delta_item)
-            self._fsect_table.setItem(row_index, 4, end_delta_item)
+            boundary_item = QtWidgets.QTableWidgetItem(
+                boundary_number_by_row.get(row_index, "")
+            )
+            boundary_item.setFlags(
+                boundary_item.flags()
+                & ~QtCore.Qt.ItemIsEditable
+            )
+            self._fsect_table.setItem(row_index, 1, boundary_item)
+            self._fsect_table.setItem(row_index, 2, start_item)
+            self._fsect_table.setItem(row_index, 3, end_item)
+            self._fsect_table.setItem(row_index, 4, start_delta_item)
+            self._fsect_table.setItem(row_index, 5, end_delta_item)
             combo = QtWidgets.QComboBox()
             for label, surface_type, type2 in fsect_type_options():
                 combo.addItem(label, (surface_type, type2))
@@ -1223,7 +1232,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     row, widget
                 )
             )
-            self._fsect_table.setCellWidget(row_index, 5, combo)
+            self._fsect_table.setCellWidget(row_index, 6, combo)
         if not fsects:
             self._fsect_table.setRowCount(0)
         self._updating_fsect_table = False
@@ -1248,7 +1257,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._updating_fsect_table:
             return
-        if column_index not in (1, 2, 3, 4):
+        if column_index not in (2, 3, 4, 5):
             return
         section_index = self._selected_section_index
         if section_index is None:
@@ -1266,8 +1275,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._reset_fsect_dlat_cell(row_index, column_index, fsects[row_index])
             return
         new_value = self._fsect_dlat_from_display_units(new_value)
-        if column_index in (1, 2):
-            if column_index == 1:
+        if column_index in (2, 3):
+            if column_index == 2:
                 self._preview.update_fsection_dlat(
                     section_index, row_index, start_dlat=new_value
                 )
@@ -1280,8 +1289,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if next_row_index >= len(fsects):
                 self._reset_fsect_delta_cell(row_index, column_index, fsects)
                 return
-            base_value = fsects[row_index].start_dlat if column_index == 3 else fsects[row_index].end_dlat
-            if column_index == 3:
+            base_value = fsects[row_index].start_dlat if column_index == 4 else fsects[row_index].end_dlat
+            if column_index == 4:
                 self._preview.update_fsection_dlat(
                     section_index,
                     next_row_index,
@@ -1301,7 +1310,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         column_index: int,
         fsect,
     ) -> None:
-        value = fsect.start_dlat if column_index == 1 else fsect.end_dlat
+        value = fsect.start_dlat if column_index == 2 else fsect.end_dlat
         item = self._fsect_table.item(row_index, column_index)
         if item is None:
             return
@@ -1315,7 +1324,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         column_index: int,
         fsects,
     ) -> None:
-        endpoint = "start" if column_index == 3 else "end"
+        endpoint = "start" if column_index == 4 else "end"
         value = self._format_fsect_delta(fsects, row_index, endpoint)
         item = self._fsect_table.item(row_index, column_index)
         if item is None:
@@ -1331,7 +1340,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         if row_index < 0 or row_index >= self._fsect_table.rowCount():
             return
-        column_index = 1 if endpoint == "start" else 2
+        column_index = 2 if endpoint == "start" else 3
         item = self._fsect_table.item(row_index, column_index)
         if item is None:
             item = QtWidgets.QTableWidgetItem("")
@@ -1355,12 +1364,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
             self._set_fsect_delta_cell_text(
                 delta_row,
-                3,
+                4,
                 self._format_fsect_delta(fsects, delta_row, "start"),
             )
             self._set_fsect_delta_cell_text(
                 delta_row,
-                4,
+                5,
                 self._format_fsect_delta(fsects, delta_row, "end"),
             )
 
@@ -1391,6 +1400,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_table.setHorizontalHeaderLabels(
             [
                 "Index",
+                "Boundary #",
                 f"Start DLAT ({unit_label})",
                 f"End DLAT ({unit_label})",
                 f"Δ Start→Next ({unit_label})",
@@ -1398,6 +1408,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Type Selection",
             ]
         )
+
+    @staticmethod
+    def _boundary_numbers_for_fsects(fsects) -> dict[int, str]:
+        boundary_rows = [
+            (row_index, fsect)
+            for row_index, fsect in enumerate(fsects)
+            if fsect.surface_type in {7, 8}
+        ]
+        boundary_rows.sort(
+            key=lambda row_fsect: (
+                min(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
+                max(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
+                row_fsect[0],
+            )
+        )
+        boundary_number_by_row: dict[int, str] = {}
+        for boundary_number, (row_index, _fsect) in enumerate(boundary_rows):
+            boundary_number_by_row[row_index] = str(boundary_number)
+        return boundary_number_by_row
 
     def _format_fsect_delta(self, fsects, row_index: int, endpoint: str) -> str:
         next_row_index = row_index + 1
