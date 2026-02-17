@@ -515,6 +515,15 @@ class SGViewerController:
         self._window.xsect_elevation_table.cellChanged.connect(
             self._on_xsect_table_cell_changed
         )
+        self._window.fsectDiagramDlatChangeRequested.connect(
+            self._on_fsect_diagram_dlat_change_requested
+        )
+        self._window.fsectDiagramDragRefreshRequested.connect(
+            self._window.preview.refresh_fsections_preview_lightweight
+        )
+        self._window.fsectDiagramDragCommitRequested.connect(
+            self._on_fsect_diagram_drag_commit_requested
+        )
         self._window.measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
@@ -543,6 +552,52 @@ class SGViewerController:
         clamped_value = max(-100, min(100, int(value)))
         self._window.background_brightness_value_label.setText(str(clamped_value))
         self._window.preview.set_background_brightness(clamped_value)
+
+    def _on_fsect_diagram_dlat_change_requested(
+        self,
+        section_index: int,
+        row_index: int,
+        endpoint: str,
+        new_dlat: float,
+        refresh_preview: bool,
+        emit_sections_changed: bool,
+    ) -> None:
+        kwargs = {
+            "refresh_preview": refresh_preview,
+            "emit_sections_changed": emit_sections_changed,
+        }
+        if endpoint == "start":
+            self._window.preview.update_fsection_dlat(
+                section_index,
+                row_index,
+                start_dlat=new_dlat,
+                **kwargs,
+            )
+            return
+        self._window.preview.update_fsection_dlat(
+            section_index,
+            row_index,
+            end_dlat=new_dlat,
+            **kwargs,
+        )
+
+    def _on_fsect_diagram_drag_commit_requested(
+        self,
+        section_index: int,
+        row_index: int,
+        endpoint: str,
+        new_dlat: float,
+    ) -> None:
+        self._on_fsect_diagram_dlat_change_requested(
+            section_index,
+            row_index,
+            endpoint,
+            new_dlat,
+            False,
+            True,
+        )
+        self._window.preview.refresh_fsections_preview()
+        self._window.update_selected_section_fsect_table()
 
 
     def _load_measurement_unit_from_history(self) -> None:
