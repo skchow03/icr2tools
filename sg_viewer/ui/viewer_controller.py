@@ -177,6 +177,13 @@ class SGViewerController:
             self._open_flatten_all_elevations_and_grade_dialog
         )
 
+        self._generate_pitwall_action = QtWidgets.QAction(
+            "Generate pitwall.txt…",
+            self._window,
+        )
+        self._generate_pitwall_action.setEnabled(False)
+        self._generate_pitwall_action.triggered.connect(self._generate_pitwall_txt)
+
         self._open_background_action = QtWidgets.QAction(
             "Load Background Image…", self._window
         )
@@ -241,6 +248,7 @@ class SGViewerController:
         tools_menu.addAction(self._reverse_track_action)
         tools_menu.addAction(self._convert_trk_action)
         tools_menu.addAction(self._generate_fsects_action)
+        tools_menu.addAction(self._generate_pitwall_action)
         tools_menu.addAction(self._raise_lower_elevations_action)
         tools_menu.addAction(self._flatten_all_elevations_and_grade_action)
         tools_menu.addAction(self._calibrate_background_action)
@@ -258,6 +266,105 @@ class SGViewerController:
 
     def _show_about_dialog(self) -> None:
         show_about_dialog(self._window)
+
+    def _generate_pitwall_txt(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Generate pitwall.txt",
+                "There are no track sections available.",
+            )
+            return
+
+        wall_height, accepted = QtWidgets.QInputDialog.getInt(
+            self._window,
+            "Generate pitwall.txt",
+            "Wall height (in 500ths):",
+            21000,
+            0,
+            999999999,
+            1,
+        )
+        if not accepted:
+            return
+
+        armco_height, accepted = QtWidgets.QInputDialog.getInt(
+            self._window,
+            "Generate pitwall.txt",
+            "Armco height (in 500ths):",
+            18000,
+            0,
+            999999999,
+            1,
+        )
+        if not accepted:
+            return
+
+        output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Save pitwall.txt",
+            "pitwall.txt",
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not output_path:
+            return
+
+        path = Path(output_path)
+        if not path.suffix:
+            path = path.with_suffix(".txt")
+
+        lines: list[str] = []
+        for section_index, _section in enumerate(sections):
+            section_range = self._window.preview.get_section_range(section_index)
+            if section_range is None:
+                continue
+            start_dlong, end_dlong = section_range
+            fsects = self._window.preview.get_section_fsects(section_index)
+            boundary_rows = [
+                (row_index, fsect)
+                for row_index, fsect in enumerate(fsects)
+                if fsect.surface_type in {7, 8}
+            ]
+            boundary_rows.sort(
+                key=lambda row_fsect: (
+                    min(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
+                    max(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
+                    row_fsect[0],
+                )
+            )
+            for boundary_number, (_row_index, fsect) in enumerate(boundary_rows):
+                height = wall_height if fsect.surface_type == 7 else armco_height
+                lines.append(
+                    "BOUNDARY "
+                    f"{boundary_number}: "
+                    f"{int(round(start_dlong))} "
+                    f"{int(round(end_dlong))} "
+                    f"HEIGHT {height}"
+                )
+
+        try:
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Generate pitwall.txt",
+                f"Could not save pitwall file:\n{exc}",
+            )
+            return
+
+        opened = QtGui.QDesktopServices.openUrl(
+            QtCore.QUrl.fromLocalFile(str(path.resolve()))
+        )
+        if not opened:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Generate pitwall.txt",
+                f"Saved file, but could not open it automatically:\n{path}",
+            )
+            return
+
+        self._window.show_status_message(f"Generated and opened {path.name}.")
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(

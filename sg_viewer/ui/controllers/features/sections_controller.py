@@ -28,6 +28,7 @@ class SectionsControllerHost(Protocol):
     _scale_track_action: QtWidgets.QAction
     _rotate_track_action: QtWidgets.QAction
     _reverse_track_action: QtWidgets.QAction
+    _generate_pitwall_action: QtWidgets.QAction
     _raise_lower_elevations_action: QtWidgets.QAction
     _flatten_all_elevations_and_grade_action: QtWidgets.QAction
     _delete_default_style: str
@@ -123,6 +124,7 @@ class SectionsController:
         self._host._scale_track_action.setEnabled(has_sections and is_closed_loop(sections))
         self._host._rotate_track_action.setEnabled(has_sections)
         self._host._reverse_track_action.setEnabled(has_sections)
+        self._host._generate_pitwall_action.setEnabled(has_sections)
         self._host._raise_lower_elevations_action.setEnabled(has_sections)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(has_sections)
         self._host._save_action.setEnabled(True)
