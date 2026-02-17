@@ -27,10 +27,14 @@ from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.controllers import (
     BackgroundController,
+    BackgroundUiCoordinator,
     DocumentController,
     ElevationController,
     ElevationPanelController,
+    ElevationUiCoordinator,
+    FileMenuCoordinator,
     InteractionController,
+    SectionEditingCoordinator,
     SectionsController,
 )
 from sg_viewer.model.track_model import TrackModel
@@ -67,6 +71,10 @@ class SGViewerController:
         self._background_controller = BackgroundController(self, logger)
         self._elevation_panel_controller = ElevationPanelController(self)
         self._sections_controller = SectionsController(self)
+        self._file_menu_coordinator = FileMenuCoordinator(self, self._document_controller)
+        self._section_editing_coordinator = SectionEditingCoordinator(self, self._sections_controller)
+        self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
+        self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
 
         self._create_actions()
         self._create_menus()
@@ -85,7 +93,7 @@ class SGViewerController:
         self._on_move_section_mode_changed(
             self._window.move_section_button.isChecked()
         )
-        self._refresh_recent_menu()
+        self._file_menu_coordinator.refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.show_status_message(
             "Click New Straight to begin drawing or File → Open SG."
@@ -104,28 +112,28 @@ class SGViewerController:
 
         self._open_action = QtWidgets.QAction("Open SG…", self._window)
         self._open_action.setShortcut("Ctrl+O")
-        self._open_action.triggered.connect(self._open_file_dialog)
+        self._open_action.triggered.connect(self._file_menu_coordinator.open_file_dialog)
 
         self._import_trk_action = QtWidgets.QAction("Import TRK…", self._window)
-        self._import_trk_action.triggered.connect(self._import_trk_file_dialog)
+        self._import_trk_action.triggered.connect(self._file_menu_coordinator.import_trk_file_dialog)
 
         self._import_trk_from_dat_action = QtWidgets.QAction(
             "Import TRK from DAT…",
             self._window,
         )
-        self._import_trk_from_dat_action.triggered.connect(self._import_trk_from_dat_file_dialog)
+        self._import_trk_from_dat_action.triggered.connect(self._file_menu_coordinator.import_trk_from_dat_file_dialog)
 
         self._open_recent_menu = QtWidgets.QMenu("Open Recent", self._window)
 
         self._save_current_action = QtWidgets.QAction("Save", self._window)
         self._save_current_action.setShortcut("Ctrl+S")
         self._save_current_action.setEnabled(False)
-        self._save_current_action.triggered.connect(self._save_current_file)
+        self._save_current_action.triggered.connect(self._file_menu_coordinator.save_current_file)
 
         self._save_action = QtWidgets.QAction("Save SG As…", self._window)
         self._save_action.setShortcut("Ctrl+Shift+S")
         self._save_action.setEnabled(True)
-        self._save_action.triggered.connect(self._save_file_dialog)
+        self._save_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
 
         self._scale_track_action = QtWidgets.QAction(
             "Scale Track to Length…",
@@ -210,15 +218,15 @@ class SGViewerController:
 
         self._section_table_action = QtWidgets.QAction("Section Table", self._window)
         self._section_table_action.setEnabled(False)
-        self._section_table_action.triggered.connect(self._show_section_table)
+        self._section_table_action.triggered.connect(self._section_editing_coordinator.show_section_table)
 
         self._heading_table_action = QtWidgets.QAction("Heading Table", self._window)
         self._heading_table_action.setEnabled(False)
-        self._heading_table_action.triggered.connect(self._show_heading_table)
+        self._heading_table_action.triggered.connect(self._section_editing_coordinator.show_heading_table)
 
         self._xsect_table_action = QtWidgets.QAction("X-Section Table", self._window)
         self._xsect_table_action.setEnabled(False)
-        self._xsect_table_action.triggered.connect(self._show_xsect_table)
+        self._xsect_table_action.triggered.connect(self._section_editing_coordinator.show_xsect_table)
 
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
@@ -454,10 +462,10 @@ class SGViewerController:
             self._window.preview.set_show_xsect_dlat_line
         )
         self._window.copy_fsects_prev_button.clicked.connect(
-            self._copy_fsects_to_previous
+            self._section_editing_coordinator.copy_fsects_to_previous
         )
         self._window.copy_fsects_next_button.clicked.connect(
-            self._copy_fsects_to_next
+            self._section_editing_coordinator.copy_fsects_to_next
         )
         self._window.add_fsect_button.clicked.connect(
             self._add_fsect_below_selected
@@ -468,7 +476,7 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
-        self._window.copy_xsect_button.clicked.connect(self._copy_xsect_to_all)
+        self._window.copy_xsect_button.clicked.connect(self._elevation_ui_coordinator.copy_xsect_to_all)
         self._window.altitude_slider.valueChanged.connect(
             self._on_altitude_slider_changed
         )
@@ -476,10 +484,10 @@ class SGViewerController:
             self._on_altitude_slider_released
         )
         self._window.altitude_min_spin.valueChanged.connect(
-            lambda _value: self._on_altitude_range_changed("min")
+            lambda _value: self._elevation_ui_coordinator.on_altitude_range_changed("min")
         )
         self._window.altitude_max_spin.valueChanged.connect(
-            lambda _value: self._on_altitude_range_changed("max")
+            lambda _value: self._elevation_ui_coordinator.on_altitude_range_changed("max")
         )
         self._window.altitude_set_range_button.clicked.connect(
             self._open_altitude_range_dialog
@@ -493,13 +501,13 @@ class SGViewerController:
         )
         self._window.preview.scaleChanged.connect(self._on_scale_changed)
         self._window.profile_widget.sectionClicked.connect(
-            self._on_profile_section_clicked
+            self._elevation_ui_coordinator.on_profile_section_clicked
         )
         self._window.profile_widget.altitudeDragged.connect(
-            self._on_profile_altitude_dragged
+            self._elevation_ui_coordinator.on_profile_altitude_dragged
         )
         self._window.profile_widget.altitudeDragFinished.connect(
-            self._on_profile_altitude_drag_finished
+            self._elevation_ui_coordinator.on_profile_altitude_drag_finished
         )
         self._window.xsect_elevation_widget.xsectClicked.connect(
             self._on_xsect_node_clicked
@@ -658,25 +666,16 @@ class SGViewerController:
             self._window.update_selection_sidebar(self._active_selection)
 
     def _open_background_file_dialog(self) -> None:
-        self._background_controller.open_background_file_dialog()
+        self._background_ui_coordinator.open_background_file_dialog()
 
     def _show_background_settings_dialog(self) -> None:
-        self._background_controller.show_background_settings_dialog()
+        self._background_ui_coordinator.show_background_settings_dialog()
 
     def _launch_background_calibrator(self) -> None:
-        self._background_controller.launch_background_calibrator()
+        self._background_ui_coordinator.launch_background_calibrator()
 
     def _apply_calibrator_values(self, data: dict) -> None:
-        self._background_controller.apply_calibrator_values(data)
-
-    def _open_file_dialog(self) -> None:
-        self._document_controller.open_file_dialog()
-
-    def _import_trk_file_dialog(self) -> None:
-        self._document_controller.import_trk_file_dialog()
-
-    def _import_trk_from_dat_file_dialog(self) -> None:
-        self._document_controller.import_trk_from_dat_file_dialog()
+        self._background_ui_coordinator.apply_calibrator_values(data)
 
     def _start_new_track(self, *, confirm: bool = True) -> None:
         self._document_controller.start_new_track(confirm=confirm)
@@ -712,18 +711,12 @@ class SGViewerController:
         max_spin.setValue(max_value)
         min_spin.blockSignals(False)
         max_spin.blockSignals(False)
-        self._on_altitude_range_changed()
+        self._elevation_ui_coordinator.on_altitude_range_changed()
 
 
-
-    def _save_file_dialog(self) -> None:
-        self._document_controller.save_file_dialog()
-
-    def _save_current_file(self) -> None:
-        self._document_controller.save_current_file()
 
     def _save_to_path(self, path: Path) -> None:
-        self._document_controller.save_to_path(path)
+        self._file_menu_coordinator.save_to_path(path)
 
     def _recalculate_elevations(self) -> None:
         preview = self._window.preview
@@ -752,10 +745,10 @@ class SGViewerController:
         self._document_controller.convert_sg_to_csv(sg_path)
 
     def _convert_sg_to_trk(self) -> None:
-        self._document_controller.convert_sg_to_trk()
+        self._file_menu_coordinator.convert_sg_to_trk()
 
     def _ensure_saved_sg(self) -> Path | None:
-        return self._document_controller.ensure_saved_sg()
+        return self._file_menu_coordinator.ensure_saved_sg()
 
     def _start_new_straight(self) -> None:
         self._sections_controller.start_new_straight()
@@ -821,128 +814,26 @@ class SGViewerController:
         self._sections_controller.toggle_move_section_mode(checked)
 
     def _refresh_recent_menu(self) -> None:
-        self._open_recent_menu.clear()
-        recent_paths = self._history.get_recent_paths()
-        if not recent_paths:
-            empty_action = QtWidgets.QAction("No recent files", self._open_recent_menu)
-            empty_action.setEnabled(False)
-            self._open_recent_menu.addAction(empty_action)
-            return
-
-        for path in recent_paths:
-            action = QtWidgets.QAction(str(path), self._open_recent_menu)
-            action.triggered.connect(lambda checked=False, p=path: self.load_sg(p))
-            self._open_recent_menu.addAction(action)
+        self._file_menu_coordinator.refresh_recent_menu()
 
     def _on_sections_changed(self) -> None:
         self._sections_controller.on_sections_changed()
         self._sync_after_section_mutation()
 
-    def _show_section_table(self) -> None:
-        sections, track_length = self._window.preview.get_section_set()
-        if not sections:
-            QtWidgets.QMessageBox.information(
-                self._window, "No Sections", "Load an SG file to view sections."
-            )
-            return
-
-        if self._section_table_window is None:
-            self._section_table_window = SectionTableWindow(self._window)
-            self._section_table_window.on_sections_edited(self._apply_section_table_edits)
-
-        self._section_table_window.set_sections(sections, track_length)
-        self._section_table_window.show()
-        self._section_table_window.raise_()
-        self._section_table_window.activateWindow()
-
     def _update_section_table(self) -> None:
-        if self._section_table_window is None:
-            return
-
-        sections, track_length = self._window.preview.get_section_set()
-        self._section_table_window.set_sections(sections, track_length)
+        self._section_editing_coordinator.update_section_table()
 
     def _apply_section_table_edits(self, sections: list[SectionPreview]) -> None:
-        self._window.preview.set_sections(sections)
-        self._update_heading_table()
-
-    def _show_heading_table(self) -> None:
-        headings = self._window.preview.get_section_headings()
-        if not headings:
-            QtWidgets.QMessageBox.information(
-                self._window, "No Headings", "Load an SG file to view headings."
-            )
-            return
-
-        if self._heading_table_window is None:
-            self._heading_table_window = HeadingTableWindow(self._window)
-
-        self._heading_table_window.set_headings(headings)
-        self._heading_table_window.show()
-        self._heading_table_window.raise_()
-        self._heading_table_window.activateWindow()
+        self._section_editing_coordinator.apply_section_table_edits(sections)
 
     def _update_heading_table(self) -> None:
-        if self._heading_table_window is None:
-            return
-
-        headings = self._window.preview.get_section_headings()
-        self._heading_table_window.set_headings(headings)
-
-    def _show_xsect_table(self) -> None:
-        metadata = self._window.preview.get_xsect_metadata()
-        if not metadata:
-            QtWidgets.QMessageBox.information(
-                self._window,
-                "No X-Sections",
-                "Load an SG file to view X-section DLAT values.",
-            )
-            return
-
-        if self._xsect_table_window is None:
-            self._xsect_table_window = XsectTableWindow(self._window)
-            self._xsect_table_window.on_xsects_edited(self._apply_xsect_table_edits)
-
-        self._xsect_table_window.set_xsects(metadata)
-        self._xsect_table_window.show()
-        self._xsect_table_window.raise_()
-        self._xsect_table_window.activateWindow()
+        self._section_editing_coordinator.update_heading_table()
 
     def _update_xsect_table(self) -> None:
-        if self._xsect_table_window is None:
-            return
-
-        metadata = self._window.preview.get_xsect_metadata()
-        self._xsect_table_window.set_xsects(metadata)
+        self._section_editing_coordinator.update_xsect_table()
 
     def _apply_xsect_table_edits(self, entries: list[XsectEntry]) -> None:
-        if not entries:
-            return
-        sorted_entries = sorted(entries, key=lambda entry: entry.dlat)
-        if len(sorted_entries) < 2:
-            return
-        payload = [
-            (entry.key if entry.key is not None and entry.key >= 0 else None, entry.dlat)
-            for entry in sorted_entries
-        ]
-        old_selected = self._current_xsect_index()
-        if not self._window.preview.set_xsect_definitions(payload):
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "X-Section Table",
-                "Unable to update X-section DLAT values.",
-            )
-            return
-
-        new_selected = None
-        if old_selected is not None:
-            for idx, (key, _) in enumerate(payload):
-                if key == old_selected:
-                    new_selected = idx
-                    break
-
-        self._populate_xsect_choices(preferred_index=new_selected)
-        self._refresh_elevation_profile()
+        self._section_editing_coordinator.apply_xsect_table_edits(entries)
 
     def _scale_track(self) -> None:
         self._sections_controller.scale_track()
@@ -973,14 +864,14 @@ class SGViewerController:
         return 10
 
     def _clear_background_state(self) -> None:
-        self._background_controller.clear_background_state()
+        self._background_ui_coordinator.clear_background_state()
 #        self._calibrate_background_action.setEnabled(False)
 
     def _apply_saved_background(self, sg_path: Path | None = None) -> None:
-        self._background_controller.apply_saved_background(sg_path)
+        self._background_ui_coordinator.apply_saved_background(sg_path)
 
     def _persist_background_state(self) -> None:
-        self._background_controller.persist_background_state()
+        self._background_ui_coordinator.persist_background_state()
 
     def _update_track_length_display(self) -> None:
         sections, _ = self._window.preview.get_section_set()
@@ -1006,33 +897,6 @@ class SGViewerController:
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
         self._active_selection = selection
         self._sync_after_selection_change()
-
-    def _on_profile_section_clicked(self, section_index: int) -> None:
-        self._window.preview.selection_manager.set_selected_section(section_index)
-
-    def _on_profile_altitude_dragged(self, section_index: int, altitude: float) -> None:
-        xsect_index = self._current_xsect_index()
-        if xsect_index is None:
-            return
-
-        self._elevation_controller.begin_drag()
-        try:
-            if self._window.preview.set_section_xsect_altitude(
-                section_index, xsect_index, altitude, validate=False
-            ):
-                self._refresh_elevation_profile()
-                self._refresh_xsect_elevation_panel()
-                if (
-                    self._active_selection is not None
-                    and self._active_selection.index == section_index
-                ):
-                    self._refresh_elevation_inputs()
-        finally:
-            self._elevation_controller.end_drag()
-
-    def _on_profile_altitude_drag_finished(self, section_index: int) -> None:
-        _ = section_index
-        self._window.preview.validate_document()
 
     def _on_xsect_node_clicked(self, xsect_index: int) -> None:
         combo = self._window.xsect_combo
@@ -1094,9 +958,6 @@ class SGViewerController:
     def _on_altitude_slider_released(self) -> None:
         self._elevation_panel_controller.on_altitude_slider_released()
 
-    def _on_altitude_range_changed(self, changed: str | None = None) -> None:
-        self._elevation_panel_controller.on_altitude_range_changed(changed)
-
     def _open_altitude_range_dialog(self) -> None:
         self._elevation_panel_controller.open_altitude_range_dialog()
 
@@ -1137,19 +998,6 @@ class SGViewerController:
             selection.index, xsect_index, grade, validate=False
         ):
             self._sync_after_xsect_value_change()
-
-    def _copy_xsect_to_all(self) -> None:
-        if self._elevation_panel_controller.copy_xsect_to_all():
-            self._sync_after_xsect_value_change()
-
-    def _copy_fsects_to_previous(self) -> None:
-        self._sections_controller.copy_fsects_to_previous()
-
-    def _copy_fsects_to_next(self) -> None:
-        self._sections_controller.copy_fsects_to_next()
-
-    def _copy_fsects_to_neighbor(self, *, direction: str) -> None:
-        self._sections_controller.copy_fsects_to_neighbor(direction=direction)
 
     def _add_fsect_below_selected(self) -> None:
         self._sections_controller.add_fsect_below_selected()
@@ -1206,9 +1054,7 @@ class SGViewerController:
         self._window.update_selection_sidebar(self._active_selection)
 
     def _on_measurement_units_changed(self) -> None:
-        self._history.set_measurement_unit(
-            str(self._window.measurement_units_combo.currentData())
-        )
+        self._elevation_ui_coordinator.on_measurement_units_changed()
         self._sync_after_measurement_unit_change()
 
     def _on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
