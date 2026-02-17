@@ -16,6 +16,7 @@ from sg_viewer.ui.altitude_units import (
     feet_from_500ths,
     feet_from_slider_units,
     feet_to_500ths,
+    units_to_500ths,
 )
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
@@ -277,29 +278,10 @@ class SGViewerController:
             )
             return
 
-        wall_height, accepted = QtWidgets.QInputDialog.getInt(
-            self._window,
-            "Generate pitwall.txt",
-            "Wall height (in 500ths):",
-            21000,
-            0,
-            999999999,
-            1,
-        )
-        if not accepted:
+        heights = self._prompt_pitwall_heights()
+        if heights is None:
             return
-
-        armco_height, accepted = QtWidgets.QInputDialog.getInt(
-            self._window,
-            "Generate pitwall.txt",
-            "Armco height (in 500ths):",
-            18000,
-            0,
-            999999999,
-            1,
-        )
-        if not accepted:
-            return
+        wall_height, armco_height = heights
 
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
@@ -316,10 +298,16 @@ class SGViewerController:
 
         lines: list[str] = []
         for section_index, _section in enumerate(sections):
-            section_range = self._window.preview.get_section_range(section_index)
+            section_range = self._window.adjusted_section_range_500ths(section_index)
             if section_range is None:
-                continue
-            start_dlong, end_dlong = section_range
+                fallback_range = self._window.preview.get_section_range(section_index)
+                if fallback_range is None:
+                    continue
+                start_dlong = int(round(fallback_range[0]))
+                end_dlong = int(round(fallback_range[1]))
+            else:
+                start_dlong, end_dlong = section_range
+
             fsects = self._window.preview.get_section_fsects(section_index)
             boundary_rows = [
                 (row_index, fsect)
@@ -338,8 +326,8 @@ class SGViewerController:
                 lines.append(
                     "BOUNDARY "
                     f"{boundary_number}: "
-                    f"{int(round(start_dlong))} "
-                    f"{int(round(end_dlong))} "
+                    f"{start_dlong} "
+                    f"{end_dlong} "
                     f"HEIGHT {height}"
                 )
 
@@ -365,6 +353,51 @@ class SGViewerController:
             return
 
         self._window.show_status_message(f"Generated and opened {path.name}.")
+
+    def _prompt_pitwall_heights(self) -> tuple[int, int] | None:
+        unit = str(self._window.measurement_units_combo.currentData())
+        unit_label = self._window.fsect_display_unit_label()
+        decimals = self._window.fsect_display_decimals()
+        step = self._window.fsect_display_step()
+
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Generate pitwall.txt")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        form = QtWidgets.QFormLayout()
+
+        wall_spin = QtWidgets.QDoubleSpinBox(dialog)
+        wall_spin.setDecimals(decimals)
+        wall_spin.setSingleStep(step)
+        wall_spin.setRange(0.0, 999999999.0)
+        wall_spin.setValue(self._window.fsect_dlat_to_display_units(21000.0))
+        wall_spin.setSuffix(f" {unit_label}")
+
+        armco_spin = QtWidgets.QDoubleSpinBox(dialog)
+        armco_spin.setDecimals(decimals)
+        armco_spin.setSingleStep(step)
+        armco_spin.setRange(0.0, 999999999.0)
+        armco_spin.setValue(self._window.fsect_dlat_to_display_units(18000.0))
+        armco_spin.setSuffix(f" {unit_label}")
+
+        form.addRow("Wall height:", wall_spin)
+        form.addRow("Armco height:", armco_spin)
+        layout.addLayout(form)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal,
+            dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return None
+
+        wall_height = int(units_to_500ths(wall_spin.value(), unit))
+        armco_height = int(units_to_500ths(armco_spin.value(), unit))
+        return wall_height, armco_height
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
