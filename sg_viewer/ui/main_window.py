@@ -183,9 +183,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Adjusted Section Length: –"
         )
         self._radius_label = QtWidgets.QLabel("Radius: –")
-        self._trk_dlongs_checkbox = QtWidgets.QCheckBox("Toggle .TRK DLONGs")
-        self._trk_dlongs_checkbox.setChecked(False)
-        self._trk_dlongs_checkbox.toggled.connect(self._on_trk_dlongs_toggled)
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
         self._measurement_units_combo.addItem("Meter", "meter")
@@ -426,16 +423,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
-        prep_3d_sidebar = QtWidgets.QWidget()
-        prep_3d_layout = QtWidgets.QVBoxLayout()
-        prep_3d_layout.addWidget(self._trk_dlongs_checkbox)
-        prep_3d_layout.addStretch()
-        prep_3d_sidebar.setLayout(prep_3d_layout)
-
         self._right_sidebar_tabs.addTab(altitude_grade_sidebar, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_sidebar, "Fsects")
         self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
-        self._right_sidebar_tabs.addTab(prep_3d_sidebar, "3D prep")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)
@@ -616,10 +606,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def measurement_units_combo(self) -> QtWidgets.QComboBox:
         return self._measurement_units_combo
-
-    @property
-    def trk_dlongs_checkbox(self) -> QtWidgets.QCheckBox:
-        return self._trk_dlongs_checkbox
 
     def fsect_display_unit_label(self) -> str:
         return self._fsect_dlat_units_label()
@@ -1043,23 +1029,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         connection = "Not connected" if section_id == -1 else f"{section_id}"
         return f"{prefix} Section: {connection}"
 
-    def _on_trk_dlongs_toggled(self, _checked: bool) -> None:
-        self._update_adjusted_dlong_labels_for_current_selection()
-
     def _update_adjusted_dlong_labels_for_current_selection(self) -> None:
         if self._selected_section_index is None:
             self._set_adjusted_dlong_labels(None)
             return
         self._set_adjusted_dlong_labels(
             self._adjusted_section_dlongs(self._selected_section_index)
-            if self._trk_dlongs_checkbox.isChecked()
-            else None
         )
 
     def _update_adjusted_dlong_labels(self, selection: SectionSelection) -> None:
-        if not self._trk_dlongs_checkbox.isChecked():
-            self._set_adjusted_dlong_labels(None)
-            return
         adjusted = self._adjusted_section_dlongs(selection.index)
         self._set_adjusted_dlong_labels(adjusted)
 

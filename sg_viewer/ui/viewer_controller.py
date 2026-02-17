@@ -515,6 +515,7 @@ class SGViewerController:
     def _on_preview_drag_state_changed(self, dragging: bool) -> None:
         if not dragging:
             self._refresh_elevation_profile()
+            self._window.update_selection_sidebar(self._active_selection)
 
     def _open_background_file_dialog(self) -> None:
         self._background_controller.open_background_file_dialog()
@@ -1032,6 +1033,7 @@ class SGViewerController:
         """Sync UI after section list/data changes in a stable update order."""
         if not self._window.preview.is_interaction_dragging:
             self._refresh_elevation_profile()
+            self._window.update_selection_sidebar(self._active_selection)
         self._refresh_elevation_inputs()
         self._update_track_length_display()
         self._update_copy_xsect_button()
