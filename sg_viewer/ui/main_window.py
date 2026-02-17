@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from icr2_core.trk.utils import approx_curve_length
 from sg_viewer.model.sg_document import SGDocument
+from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.fsection_type_utils import (
@@ -99,6 +99,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview: PreviewContext = PreviewWidgetQt(
             show_status=self.show_status_message
         )
+        self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
@@ -1119,7 +1120,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             grade3 = round(current_slope * section_length)
             adjusted_lengths.append(
                 round(
-                    approx_curve_length(
+                    self._runtime_api.approx_curve_length_intent(
                         grade1, grade2, grade3, centerline_altitudes[index], section_length
                     )
                 )

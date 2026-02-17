@@ -6,7 +6,6 @@ from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
@@ -38,6 +37,7 @@ from sg_viewer.ui.controllers import (
     SectionsController,
 )
 from sg_viewer.model.track_model import TrackModel
+from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ class SGViewerController:
         )
         self._delete_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
         self.interaction_controller = InteractionController(TrackModel([]))
+        self._runtime_api = ViewerRuntimeApi(preview_context=self._window.preview)
         self._document_controller = DocumentController(self, logger)
         self._background_controller = BackgroundController(self, logger)
         self._elevation_panel_controller = ElevationPanelController(self)
@@ -934,15 +935,16 @@ class SGViewerController:
             self._window.update_track_length_label("Track Length: –")
             return
 
-        if not is_closed_loop(sections):
+        metrics = self._runtime_api.track_metrics_intent(sections)
+        if metrics.status_messages and metrics.status_messages[0] == "Track Length: Not a closed loop":
             self._window.update_track_length_label("Track Length: Not a closed loop")
             return
 
-        try:
-            total_length = loop_length(sections)
-        except ValueError:
+        if not metrics.status_messages:
             self._window.update_track_length_label("Track Length: Not a closed loop")
             return
+
+        total_length = float(metrics.status_messages[0])
 
         length_value = self._window.format_length_with_secondary(total_length)
         self._window.update_track_length_label(
