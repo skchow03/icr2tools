@@ -8,6 +8,7 @@ try:
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
+    from icr2_core.trk.sg_classes import SGFile
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
@@ -362,5 +363,49 @@ def test_save_action_saves_to_current_path(qapp, monkeypatch, tmp_path):
         controller._save_current_action.trigger()
 
         assert saved_paths == [target_path]
+    finally:
+        window.close()
+
+
+def test_3d_prep_tab_and_trk_dlong_toggle_updates_adjusted_labels(qapp):
+    window = SGViewerWindow()
+    try:
+        assert any(
+            window._right_sidebar_tabs.tabText(i) == "3D prep"
+            for i in range(window._right_sidebar_tabs.count())
+        )
+
+        num_xsects = 2
+        data = [0] * (58 + 2 * num_xsects)
+        section = SGFile.Section(data, num_xsects)
+        section.length = 1000
+        section.alt = [0, 100]
+        section.grade = [0, 0]
+        sgfile = SGFile([0, 0, 0, 0, 1, num_xsects], 1, num_xsects, [-100, 100], [section])
+        window.preview._sgfile = sgfile
+
+        selection = SectionSelection(
+            index=0,
+            type_name="Straight",
+            start_dlong=0,
+            end_dlong=1000,
+            length=1000,
+            previous_id=-1,
+            next_id=-1,
+        )
+
+        window.update_selection_sidebar(selection)
+        assert window._adjusted_section_start_dlong_label.text() == "Adjusted Starting DLONG: –"
+        assert window._adjusted_section_end_dlong_label.text() == "Adjusted Ending DLONG: –"
+        assert window._adjusted_section_length_label.text() == "Adjusted Section Length: –"
+
+        window.trk_dlongs_checkbox.setChecked(True)
+
+        assert window._adjusted_section_start_dlong_label.text() == "Adjusted Starting DLONG: 0.0 ft"
+        assert window._adjusted_section_end_dlong_label.text() == "Adjusted Ending DLONG: 1001.2 ft"
+        assert (
+            window._adjusted_section_length_label.text()
+            == "Adjusted Section Length: 1001.2 ft (0.190 miles)"
+        )
     finally:
         window.close()
