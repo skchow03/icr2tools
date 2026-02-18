@@ -288,7 +288,6 @@ class _RuntimeEditPreviewOpsMixin:
             sections, changed_indices=changed_indices
         )
         self._realign_fsects_after_recalc(old_sections, old_fsects)
-        self.clear_fsect_history()
 
         self._sampled_bounds = self._section_manager.sampled_bounds
         self._sampled_centerline = self._section_manager.sampled_centerline
