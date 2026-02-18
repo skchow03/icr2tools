@@ -198,6 +198,8 @@ class _RuntimeEditCommitAdapterMixin:
         updated = False
         missing_locations = 0
         processed_sections = 0
+        min_touched_index: int | None = None
+        max_touched_index: int | None = None
         if sections_to_update is None:
             indices = range(len(self._sgfile.sects))
         else:
@@ -215,6 +217,7 @@ class _RuntimeEditCommitAdapterMixin:
                 missing_locations += 1
                 continue
             old_index, subsect = location
+            section_updated = False
             for xsect_idx in range(num_xsects):
                 altitude, grade = sg_xsect_altitude_grade_at(
                     old_sg, old_index, subsect, xsect_idx
@@ -225,18 +228,26 @@ class _RuntimeEditCommitAdapterMixin:
                     section.alt[xsect_idx] != updated_altitude
                     or section.grade[xsect_idx] != updated_grade
                 ):
-                    updated = True
+                    section_updated = True
                 section.alt[xsect_idx] = updated_altitude
                 section.grade[xsect_idx] = updated_grade
 
+            if section_updated:
+                updated = True
+                if min_touched_index is None or index < min_touched_index:
+                    min_touched_index = index
+                if max_touched_index is None or index > max_touched_index:
+                    max_touched_index = index
+
         if updated:
-            geometry_changed = self._section_geometry_changed(old_sg, self._sgfile)
-            if geometry_changed:
-                self._elevation_profile_cache.clear()
-                self._elevation_profile_alt_cache.clear()
-                self._elevation_profile_dirty.clear()
             for xsect_idx in range(num_xsects):
                 self._mark_xsect_bounds_dirty(xsect_idx)
+                if min_touched_index is not None and max_touched_index is not None:
+                    self._mark_elevation_profile_span_dirty(
+                        start_section=min_touched_index,
+                        end_section=max_touched_index,
+                        xsect_index=xsect_idx,
+                    )
         if updated and self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if updated:

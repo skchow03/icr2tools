@@ -23,14 +23,38 @@ class _RuntimeCoreValidationMixin:
     def _mark_elevation_profile_sections_dirty(
         self, section_index: int, xsect_index: int
     ) -> None:
+        self._mark_elevation_profile_span_dirty(
+            start_section=section_index,
+            end_section=section_index,
+            xsect_index=xsect_index,
+        )
+
+    def _mark_elevation_profile_span_dirty(
+        self,
+        *,
+        start_section: int,
+        end_section: int,
+        xsect_index: int,
+    ) -> None:
         sg_data = self._document.sg_data
         if sg_data is None:
             return
         total_sections = len(sg_data.sects)
         if total_sections <= 0:
             return
-        next_index = (section_index + 1) % total_sections
-        dirty_sections = {section_index, next_index}
+
+        start = max(0, min(int(start_section), total_sections - 1))
+        end = max(0, min(int(end_section), total_sections - 1))
+        if start > end:
+            start, end = end, start
+
+        # Each section contributes both endpoints to the profile samples; include
+        # the boundary section immediately after the span so endpoint values stay
+        # coherent without invalidating the entire profile.
+        dirty_sections = set(range(start, end + 1))
+        if end + 1 < total_sections:
+            dirty_sections.add(end + 1)
+
         for cache_key, dirty in self._elevation_profile_dirty.items():
             if cache_key[1] == self._sg_version and cache_key[2] == xsect_index:
                 dirty.update(dirty_sections)
