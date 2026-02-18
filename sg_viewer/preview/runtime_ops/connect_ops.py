@@ -69,13 +69,10 @@ class _RuntimeCoreConnectOpsMixin:
     def _sync_fsects_on_connection(
         self, source: tuple[int, str], target: tuple[int, str]
     ) -> None:
-        source_index, source_end = source
-        target_index, target_end = target
-        if source_end not in {"start", "end"} or target_end not in {"start", "end"}:
-            return
-
-        edge_profile = self._fsect_edge_profile(target_index, target_end)
-        self._apply_fsect_edge_profile(source_index, source_end, edge_profile)
+        _ = (source, target)
+        # Keep each section's fsects independent when changing connectivity.
+        # Connections should only update topology/geometry relationships.
+        return
 
     def _insert_fsects_by_section(
         self,
