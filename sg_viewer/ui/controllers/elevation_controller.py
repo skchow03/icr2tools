@@ -16,14 +16,23 @@ class ElevationController:
         self.profile_dragging = False
         self.profile_editing = False
 
-    def begin_drag(self) -> None:
+    def begin_drag(self) -> bool:
+        if self.profile_dragging:
+            return False
         self.profile_dragging = True
+        return True
 
-    def end_drag(self) -> None:
+    def end_drag(self) -> bool:
+        if not self.profile_dragging:
+            return False
         self.profile_dragging = False
+        return True
 
-    def begin_edit(self) -> None:
+    def begin_edit(self) -> bool:
+        if self.profile_editing:
+            return False
         self.profile_editing = True
+        return True
 
     def end_edit(self) -> bool:
         if not self.profile_editing:

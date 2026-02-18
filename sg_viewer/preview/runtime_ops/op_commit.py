@@ -31,17 +31,71 @@ class _RuntimeCoreCommitMixin:
 
     def _snapshot_track_state(
         self,
-    ) -> tuple[list[list[PreviewFSection]], dict[str, object] | None]:
-        return self._snapshot_fsects(), self._snapshot_elevation_state()
+    ) -> tuple[
+        list[list[PreviewFSection]],
+        dict[str, object] | None,
+        dict[str, object] | None,
+    ]:
+        return (
+            self._snapshot_fsects(),
+            self._snapshot_elevation_state(),
+            self._snapshot_topology_state(),
+        )
+
+    def _snapshot_topology_state(self) -> dict[str, object] | None:
+        return {
+            "sections": copy.deepcopy(list(self._section_manager.sections)),
+            "start_finish_dlong": self._start_finish_dlong,
+        }
 
     def _restore_track_state(
         self,
-        snapshot: tuple[list[list[PreviewFSection]], dict[str, object] | None],
+        snapshot: tuple[
+            list[list[PreviewFSection]],
+            dict[str, object] | None,
+            dict[str, object] | None,
+        ]
+        | tuple[list[list[PreviewFSection]], dict[str, object] | None],
     ) -> None:
-        fsects, elevation_state = snapshot
+        if len(snapshot) == 2:
+            fsects, elevation_state = snapshot
+            topology_state = None
+        else:
+            fsects, elevation_state, topology_state = snapshot
         self._fsects_by_section = fsects
+        self._restore_topology_state(topology_state)
         self._validate_section_fsects_alignment()
         self._restore_elevation_state(elevation_state)
+
+    def _restore_topology_state(self, state: dict[str, object] | None) -> None:
+        if not isinstance(state, dict):
+            return
+
+        sections = state.get("sections")
+        if not isinstance(sections, list):
+            return
+
+        self._clear_split_hover()
+        self._section_manager.set_sections(copy.deepcopy(sections))
+        self._sampled_bounds = self._section_manager.sampled_bounds
+        self._sampled_centerline = self._section_manager.sampled_centerline
+        if self._section_manager.sampled_dlongs:
+            self._track_length = self._section_manager.sampled_dlongs[-1]
+        self._update_start_finish_mapping(state.get("start_finish_dlong"))
+        self._update_node_status()
+        self._selection.update_context(
+            self._section_manager.sections,
+            self._track_length,
+            self._section_manager.centerline_index,
+            self._section_manager.sampled_dlongs,
+        )
+
+        if self._sgfile is not None:
+            try:
+                self.apply_preview_to_sgfile()
+                self._document.set_sg_data(self._sgfile, validate=False)
+            except Exception:
+                pass
 
     def _restore_elevation_state(self, state: dict[str, object] | None) -> None:
         if state is None:
@@ -105,11 +159,11 @@ class _RuntimeCoreCommitMixin:
         if before is None:
             return
         after = self._snapshot_fsects()
-        if before == after:
+        if before == after and elevation_before == self._snapshot_elevation_state():
             return
         if self._suspend_fsect_history:
             return
-        self._fsect_undo_stack.append((before, elevation_before))
+        self._fsect_undo_stack.append((before, elevation_before, self._snapshot_topology_state()))
         self._fsect_redo_stack.clear()
 
     def clear_fsect_history(self) -> None:
@@ -346,7 +400,8 @@ class _RuntimeCoreCommitMixin:
         *,
         validate: bool = True,
     ) -> bool:
-        self._record_fsect_history()
+        if not self._fsect_edit_session_active:
+            self._record_fsect_history()
         try:
             self._document.set_section_xsect_altitude(
                 section_id, xsect_index, altitude, validate=validate
@@ -367,7 +422,8 @@ class _RuntimeCoreCommitMixin:
         *,
         validate: bool = True,
     ) -> bool:
-        self._record_fsect_history()
+        if not self._fsect_edit_session_active:
+            self._record_fsect_history()
         try:
             self._document.set_section_xsect_grade(
                 section_id, xsect_index, grade, validate=validate
