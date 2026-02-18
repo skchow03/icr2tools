@@ -55,9 +55,9 @@ def test_runtime_api_connection_solver_contract_payloads():
     sections = [_straight(0, (0.0, 0.0), (100.0, 0.0)), _straight(1, (300.0, 0.0), (400.0, 0.0))]
 
     solved = api.solve_connection_intent(sections=sections, source=(0, "end"), target=(1, "start"))
-    assert solved.updated_sections is None
-    assert solved.changed_indices == []
-    assert solved.status_messages
+    assert solved.updated_sections is not None
+    assert solved.changed_indices == [0, 1]
+    assert solved.status_messages == ["Straight → straight connected"]
 
 
 def test_runtime_api_move_and_drag_payloads_include_changed_and_last_dragged_indices():
