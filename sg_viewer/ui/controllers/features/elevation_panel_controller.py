@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 from PyQt5 import QtCore, QtWidgets
@@ -7,6 +8,8 @@ from PyQt5 import QtCore, QtWidgets
 from sg_viewer.ui.altitude_units import feet_to_slider_units, units_from_500ths
 from sg_viewer.ui.elevation_profile import elevation_profile_alt_bounds
 from sg_viewer.ui.xsect_elevation import XsectElevationData
+
+logger = logging.getLogger(__name__)
 
 
 class ElevationPanelHost(Protocol):
@@ -17,8 +20,8 @@ class ElevationPanelHost(Protocol):
     def _current_xsect_index(self) -> int | None: ...
     def _current_samples_per_section(self) -> int: ...
     def _update_copy_xsect_button(self) -> None: ...
-    def _apply_altitude_edit(self, live: bool = False) -> None: ...
-    def _apply_grade_edit(self, live: bool = False) -> None: ...
+    def _apply_altitude_edit(self, live: bool = False, slider_value: int | None = None) -> None: ...
+    def _apply_grade_edit(self, live: bool = False, grade_value: int | None = None) -> None: ...
     def _refresh_elevation_inputs(self) -> None: ...
     def _sync_after_xsect_value_change(self) -> None: ...
     def _sync_after_xsect_value_change_lightweight(self) -> None: ...
@@ -31,6 +34,7 @@ class ElevationPanelController:
         self._host = host
         self._pending_altitude_value: int | None = None
         self._pending_grade_value: int | None = None
+        self._live_slider_signals_suspended = False
         self._altitude_live_timer = QtCore.QTimer(self._host._window)
         self._altitude_live_timer.setSingleShot(True)
         self._altitude_live_timer.timeout.connect(self._apply_pending_altitude_live_edit)
@@ -105,6 +109,7 @@ class ElevationPanelController:
     def on_altitude_slider_changed(self, value: int) -> None:
         self._host._window.update_altitude_display(value)
         self._host._elevation_controller.begin_edit()
+        self._begin_live_slider_edit()
         self._pending_altitude_value = value
         # Before: every valueChanged tick did a full sync (profile/table rebuild).
         # After: throttle live updates so dragging stays responsive.
@@ -112,46 +117,86 @@ class ElevationPanelController:
             self._altitude_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def on_altitude_slider_released(self) -> None:
-        self._flush_pending_altitude_live_edit()
+        self._flush_pending_altitude_live_edit(clear_pending=False)
+        self._host._apply_altitude_edit(
+            live=False, slider_value=self._host._window.altitude_slider.value()
+        )
+        self._pending_altitude_value = None
+        self._pending_grade_value = None
+        self._end_live_slider_edit()
         self._host._window.preview.validate_document()
-        self._host._apply_altitude_edit(live=False)
         if self._host._elevation_controller.end_edit():
             self._host._sync_after_xsect_value_change()
 
     def on_grade_slider_changed(self, value: int) -> None:
+        self._host._window.update_grade_display(value)
         self._pending_grade_value = value
         self._host._elevation_controller.begin_edit()
+        self._begin_live_slider_edit()
         if not self._grade_live_timer.isActive():
             self._grade_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def on_grade_edit_finished(self) -> None:
-        self._flush_pending_grade_live_edit()
+        self._flush_pending_grade_live_edit(clear_pending=False)
+        self._host._apply_grade_edit(
+            live=False, grade_value=self._host._window.grade_spin.value()
+        )
+        self._end_live_slider_edit()
         self._host._window.preview.validate_document()
-        self._host._apply_grade_edit(live=False)
         if self._host._elevation_controller.end_edit():
             self._host._sync_after_xsect_value_change()
 
     def _apply_pending_altitude_live_edit(self) -> None:
         if self._pending_altitude_value is None:
             return
+        value = self._pending_altitude_value
         self._pending_altitude_value = None
-        self._host._apply_altitude_edit(live=True)
+        self._host._apply_altitude_edit(live=True, slider_value=value)
+        if self._pending_altitude_value is not None and not self._altitude_live_timer.isActive():
+            self._altitude_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def _apply_pending_grade_live_edit(self) -> None:
         if self._pending_grade_value is None:
             return
+        value = self._pending_grade_value
         self._pending_grade_value = None
-        self._host._apply_grade_edit(live=True)
+        self._host._apply_grade_edit(live=True, grade_value=value)
+        if self._pending_grade_value is not None and not self._grade_live_timer.isActive():
+            self._grade_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
-    def _flush_pending_altitude_live_edit(self) -> None:
+    def _flush_pending_altitude_live_edit(self, *, clear_pending: bool = True) -> None:
         if self._altitude_live_timer.isActive():
             self._altitude_live_timer.stop()
-        self._pending_altitude_value = None
+        if clear_pending:
+            self._pending_altitude_value = None
 
-    def _flush_pending_grade_live_edit(self) -> None:
+    def _flush_pending_grade_live_edit(self, *, clear_pending: bool = True) -> None:
         if self._grade_live_timer.isActive():
             self._grade_live_timer.stop()
-        self._pending_grade_value = None
+        if clear_pending:
+            self._pending_grade_value = None
+
+    def _begin_live_slider_edit(self) -> None:
+        if self._live_slider_signals_suspended:
+            return
+        document = self._host._window.preview.document
+        document.set_elevation_signals_suspended(True)
+        self._live_slider_signals_suspended = True
+        logger.debug(
+            "Live x-section slider edit began; elevation signals suspended=%s",
+            document.elevation_signals_suspended,
+        )
+
+    def _end_live_slider_edit(self) -> None:
+        if not self._live_slider_signals_suspended:
+            return
+        self._live_slider_signals_suspended = False
+        document = self._host._window.preview.document
+        document.set_elevation_signals_suspended(False)
+        logger.debug(
+            "Live x-section slider edit ended; elevation signals suspended=%s; performing full sync",
+            document.elevation_signals_suspended,
+        )
 
     def on_altitude_range_changed(self, changed: str | None = None) -> None:
         min_value = self._host._window.altitude_min_spin.value()

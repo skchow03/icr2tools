@@ -1031,13 +1031,16 @@ class SGViewerController:
             self._refresh_xsect_elevation_panel()
             self._refresh_xsect_elevation_table()
 
-    def _apply_altitude_edit(self, live: bool = False) -> None:
+    def _apply_altitude_edit(self, live: bool = False, slider_value: int | None = None) -> None:
         selection = self._active_selection
         xsect_index = self._current_xsect_index()
         if selection is None or xsect_index is None:
             return
 
-        altitude_feet = feet_from_slider_units(self._window.altitude_slider.value())
+        altitude_slider_value = (
+            self._window.altitude_slider.value() if slider_value is None else slider_value
+        )
+        altitude_feet = feet_from_slider_units(altitude_slider_value)
         altitude = feet_to_500ths(altitude_feet)
         if self._window.preview.set_section_xsect_altitude(
             selection.index, xsect_index, altitude, validate=False
@@ -1047,13 +1050,13 @@ class SGViewerController:
             else:
                 self._sync_after_xsect_value_change()
 
-    def _apply_grade_edit(self, live: bool = False) -> None:
+    def _apply_grade_edit(self, live: bool = False, grade_value: int | None = None) -> None:
         selection = self._active_selection
         xsect_index = self._current_xsect_index()
         if selection is None or xsect_index is None:
             return
 
-        grade = self._window.grade_spin.value()
+        grade = self._window.grade_spin.value() if grade_value is None else grade_value
         if self._window.preview.set_section_xsect_grade(
             selection.index, xsect_index, grade, validate=False
         ):
@@ -1099,9 +1102,8 @@ class SGViewerController:
 
     def _sync_after_xsect_value_change_lightweight(self) -> None:
         """Keep live slider edits responsive by avoiding expensive profile/table rebuilds."""
-        self._refresh_elevation_inputs()
         if hasattr(self._window.preview, "request_repaint"):
-            self._window.preview.request_repaint()
+            self._window.preview.request_repaint_throttled(min_interval_ms=33)
 
     def _sync_after_selection_change(self) -> None:
         """Sync selection-bound controls and panels after selected section changes."""
