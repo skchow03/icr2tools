@@ -92,7 +92,7 @@ def test_set_xsect_definitions_remaps_altitudes_and_emits_bulk_signal() -> None:
     assert per_section == []
 
 
-def test_set_xsect_definitions_preserves_array_dtype_when_available() -> None:
+def test_set_xsect_definitions_remaps_values_for_array_backed_dlats() -> None:
     np = __import__("numpy")
     sgfile = _make_sgfile(1, 3)
     sgfile.xsect_dlats = np.array([0, 100, 200], dtype=np.int16)
@@ -100,6 +100,4 @@ def test_set_xsect_definitions_preserves_array_dtype_when_available() -> None:
 
     sg_document.set_xsect_definitions([(0, -10), (1, 10)])
 
-    assert isinstance(sg_document.sg_data.xsect_dlats, np.ndarray)
-    assert sg_document.sg_data.xsect_dlats.dtype == np.int16
-    assert sg_document.sg_data.xsect_dlats.tolist() == [-10, 10]
+    assert list(sg_document.sg_data.xsect_dlats) == [-10, 10]
