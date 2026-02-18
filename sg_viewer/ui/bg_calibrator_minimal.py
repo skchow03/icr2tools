@@ -26,7 +26,6 @@ from typing import Callable, Optional, Tuple, List
 import json
 import argparse
 
-import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
 
 # -------------------------------------------------
@@ -81,20 +80,56 @@ def meters_to_units(m):
 # Math
 # -------------------------------------------------
 
+def vec_add(a, b):
+    return (a[0] + b[0], a[1] + b[1])
+
+
+def vec_sub(a, b):
+    return (a[0] - b[0], a[1] - b[1])
+
+
+def vec_dot(a, b):
+    return a[0] * b[0] + a[1] * b[1]
+
+
+def vec_scale(v, s):
+    return (v[0] * s, v[1] * s)
+
+
+def mat2_mul_vec(R, v):
+    return (
+        R[0][0] * v[0] + R[0][1] * v[1],
+        R[1][0] * v[0] + R[1][1] * v[1],
+    )
+
+
 def similarity_fit(P, Q):
-    p_mean = P.mean(axis=0)
-    q_mean = Q.mean(axis=0)
-    P0 = P - p_mean
-    Q0 = Q - q_mean
+    n = len(P)
+    if n != len(Q) or n < 2:
+        raise ValueError("similarity_fit requires at least two paired points")
 
-    H = P0.T @ Q0
-    U, S, Vt = np.linalg.svd(H)
-    R = Vt.T @ U.T
-    if np.linalg.det(R) < 0:
-        Vt[-1] *= -1
-        R = Vt.T @ U.T
+    p_mean = (sum(p[0] for p in P) / n, sum(p[1] for p in P) / n)
+    q_mean = (sum(q[0] for q in Q) / n, sum(q[1] for q in Q) / n)
 
-    s = S.sum() / (P0 * P0).sum()
+    a = 0.0
+    b = 0.0
+    p_norm_sq = 0.0
+    for p, q in zip(P, Q):
+        px, py = vec_sub(p, p_mean)
+        qx, qy = vec_sub(q, q_mean)
+        a += px * qx + py * qy
+        b += px * qy - py * qx
+        p_norm_sq += px * px + py * py
+
+    if p_norm_sq <= 0.0:
+        return 0.0, ((1.0, 0.0), (0.0, 1.0))
+
+    theta = math.atan2(b, a)
+    c = math.cos(theta)
+    s_theta = math.sin(theta)
+    R = ((c, -s_theta), (s_theta, c))
+
+    s = math.hypot(a, b) / p_norm_sq
     return s, R
 
 # -------------------------------------------------
@@ -322,19 +357,20 @@ class Calibrator(QtWidgets.QMainWindow):
         cx = (w - 1) / 2.0
         cy = (h - 1) / 2.0
 
-        P = np.array([[p.px - cx, cy - p.py] for p in usable])
+        P = [(p.px - cx, cy - p.py) for p in usable]
 
-        Qm = np.array([
+        Qm = [
             latlon_to_local_meters(p.lat, p.lon, lat0, lon0)
             for p in usable
-        ])
-        Q = meters_to_units(1.0) * Qm
+        ]
+        unit_scale = meters_to_units(1.0)
+        Q = [vec_scale(qm, unit_scale) for qm in Qm]
 
         s, R = similarity_fit(P, Q)
 
         # Upper-left pixel (0,0) relative to center
-        ul_vec = np.array([-cx, +cy])
-        world_ul = s * (R @ ul_vec)
+        ul_vec = (-cx, +cy)
+        world_ul = vec_scale(mat2_mul_vec(R, ul_vec), s)
 
         self.out_scale.setText(f"{s:.9f}")
         self.out_ul.setText(f"{world_ul[0]:.3f}, {world_ul[1]:.3f}")
