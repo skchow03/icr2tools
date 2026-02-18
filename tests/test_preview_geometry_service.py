@@ -173,7 +173,10 @@ def test_solve_connection_allows_straight_to_straight_by_rotating_disconnected_t
     assert solved.sections is not None
     assert solved.sections[0].next_id == 1
     assert solved.sections[1].previous_id == 0
-    assert solved.sections[0].end == (20.0, 20.0)
-    assert solved.sections[1].start == (20.0, 20.0)
-    assert solved.sections[1].end == (30.0, 20.0)
+    assert solved.sections[0].start == (0.0, 0.0)
+    assert solved.sections[0].end == (10.0, 0.0)
+    assert solved.sections[1].start == (10.0, 0.0)
+    assert solved.sections[1].end == (20.0, 0.0)
+    assert solved.sections[1].start_heading == solved.sections[0].end_heading
+    assert solved.sections[1].end_heading == solved.sections[0].end_heading
     assert solved.status_message == "Straight → straight connected"

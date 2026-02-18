@@ -306,7 +306,7 @@ class PreviewGeometryService:
             and is_disconnected_endpoint(sections, target, "end")
         )
         if target_disconnected_both_ends:
-            join_point = target.start if target_end == "start" else target.end
+            join_point = dragged.start if dragged_end == "start" else dragged.end
             segment_length = math.hypot(target.end[0] - target.start[0], target.end[1] - target.start[1])
             if segment_length <= 0:
                 return None
@@ -317,11 +317,7 @@ class PreviewGeometryService:
                 if target_end == "start"
                 else replace(target, start=(join_point[0] - dx, join_point[1] - dy), end=join_point)
             )
-            updated_dragged = (
-                replace(dragged, start=join_point)
-                if dragged_end == "start"
-                else replace(dragged, end=join_point)
-            )
+            updated_dragged = dragged
             return updated_dragged, updated_target
 
         if target_heading is None:
