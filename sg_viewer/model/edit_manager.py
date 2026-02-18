@@ -47,3 +47,8 @@ class EditManager:
         result = command.apply()
         self._undo_stack.append(command)
         return result
+
+    def clear(self) -> None:
+        """Clear all undo/redo history."""
+        self._undo_stack.clear()
+        self._redo_stack.clear()

@@ -1,5 +1,6 @@
 import sys
 import types
+import copy
 
 if "numpy" not in sys.modules:
     sys.modules["numpy"] = types.ModuleType("numpy")
@@ -7,6 +8,7 @@ if "numpy" not in sys.modules:
 import math
 
 from sg_viewer.geometry.sg_geometry import update_section_geometry
+from sg_viewer.model.edit_commands import TrackEditSnapshot
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 
@@ -93,3 +95,58 @@ def test_runtime_api_track_metrics_payload():
     closed_metrics = api.track_metrics_intent(closed_sections)
     assert len(closed_metrics.status_messages) == 1
     assert float(closed_metrics.status_messages[0]) > 0.0
+
+
+def test_runtime_api_unified_history_reverses_mixed_edits_by_time():
+    state: dict[str, object] = {
+        "sections": [_straight(0, (0.0, 0.0), (100.0, 0.0))],
+        "start_finish_dlong": 0.0,
+        "fsects": [[{"start": 100.0}]],
+        "elevation": {"num_xsects": 1, "xsect_dlats": [0], "header": [0, 0, 0, 0, 1, 1], "sections": [{"alt": [1000], "grade": [100]}]},
+    }
+
+    def _snapshot() -> TrackEditSnapshot:
+        return TrackEditSnapshot(
+            sections=copy.deepcopy(list(state["sections"])),
+            start_finish_dlong=state["start_finish_dlong"],
+            fsects_by_section=copy.deepcopy(list(state["fsects"])),
+            elevation_state=copy.deepcopy(dict(state["elevation"])),
+        )
+
+    def _restore(snapshot: TrackEditSnapshot) -> list[SectionPreview]:
+        state["sections"] = copy.deepcopy(list(snapshot.sections))
+        state["start_finish_dlong"] = snapshot.start_finish_dlong
+        state["fsects"] = copy.deepcopy(list(snapshot.fsects_by_section))
+        state["elevation"] = copy.deepcopy(dict(snapshot.elevation_state or {}))
+        return copy.deepcopy(list(snapshot.sections))
+
+    api = ViewerRuntimeApi(snapshot_provider=_snapshot, restore_snapshot=_restore)
+
+    # geometry commit
+    before = list(state["sections"])
+    after = [_straight(0, (10.0, 0.0), (110.0, 0.0))]
+    payload = api.commit_sections(before=before, after=after)
+    state["sections"] = list(payload.updated_sections or after)
+
+    # elevation commit
+    elev_before = _snapshot()
+    state["elevation"] = {"num_xsects": 1, "xsect_dlats": [0], "header": [0, 0, 0, 0, 1, 1], "sections": [{"alt": [2000], "grade": [100]}]}
+    api.commit_snapshot(before=elev_before, after=_snapshot(), restore_snapshot=_restore)
+
+    # fsect commit
+    fsect_before = _snapshot()
+    state["fsects"] = [[{"start": 150.0}]]
+    api.commit_snapshot(before=fsect_before, after=_snapshot(), restore_snapshot=_restore)
+
+    assert state["fsects"][0][0]["start"] == 150.0
+    assert state["elevation"]["sections"][0]["alt"][0] == 2000
+    assert state["sections"][0].start == (10.0, 0.0)
+
+    assert api.undo().updated_sections is not None
+    assert state["fsects"][0][0]["start"] == 100.0
+
+    assert api.undo().updated_sections is not None
+    assert state["elevation"]["sections"][0]["alt"][0] == 1000
+
+    assert api.undo().updated_sections is not None
+    assert state["sections"][0].start == (0.0, 0.0)

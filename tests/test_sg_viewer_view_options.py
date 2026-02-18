@@ -349,8 +349,8 @@ def test_edit_menu_exposes_undo_redo_actions(qapp, monkeypatch):
         undo_calls: list[bool] = []
         redo_calls: list[bool] = []
 
-        monkeypatch.setattr(window.preview.interaction, "undo", lambda: undo_calls.append(True) or True)
-        monkeypatch.setattr(window.preview.interaction, "redo", lambda: redo_calls.append(True) or True)
+        monkeypatch.setattr(window.preview, "undo_fsect_edit", lambda: undo_calls.append(True) or True)
+        monkeypatch.setattr(window.preview, "redo_fsect_edit", lambda: redo_calls.append(True) or True)
 
         undo_action.trigger()
         redo_action.trigger()
@@ -407,7 +407,7 @@ def test_fsect_edit_session_groups_drag_updates_into_single_undo(qapp, monkeypat
         window.close()
 
 
-def test_edit_menu_undo_redo_fallback_to_fsect_history(qapp, monkeypatch):
+def test_edit_menu_undo_redo_uses_single_history_path(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
         edit_menu = next(
@@ -423,8 +423,6 @@ def test_edit_menu_undo_redo_fallback_to_fsect_history(qapp, monkeypatch):
         undo_calls: list[bool] = []
         redo_calls: list[bool] = []
 
-        monkeypatch.setattr(window.preview.interaction, "undo", lambda: False)
-        monkeypatch.setattr(window.preview.interaction, "redo", lambda: False)
         monkeypatch.setattr(window.preview, "undo_fsect_edit", lambda: undo_calls.append(True) or True)
         monkeypatch.setattr(window.preview, "redo_fsect_edit", lambda: redo_calls.append(True) or True)
 
@@ -433,6 +431,60 @@ def test_edit_menu_undo_redo_fallback_to_fsect_history(qapp, monkeypatch):
 
         assert undo_calls == [True]
         assert redo_calls == [True]
+    finally:
+        window.close()
+
+
+def test_preview_undo_mixed_geometry_elevation_fsect_order(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._document.set_sg_data(_make_single_section_sgfile(), validate=False)
+        window.preview._fsects_by_section = [
+            [PreviewFSection(start_dlat=100.0, end_dlat=200.0, surface_type=0, type2=0)]
+        ]
+
+        before = list(window.preview._section_manager.sections)
+        if not before:
+            pytest.skip("No initial sections available in preview runtime.")
+        edited = list(before)
+        first = edited[0]
+        edited[0] = first.__class__(
+            section_id=first.section_id,
+            source_section_id=first.source_section_id,
+            type_name=first.type_name,
+            previous_id=first.previous_id,
+            next_id=first.next_id,
+            start=(first.start[0] + 10.0, first.start[1]),
+            end=first.end,
+            start_dlong=first.start_dlong,
+            length=first.length,
+            center=first.center,
+            sang1=first.sang1,
+            sang2=first.sang2,
+            eang1=first.eang1,
+            eang2=first.eang2,
+            radius=first.radius,
+            start_heading=first.start_heading,
+            end_heading=first.end_heading,
+            polyline=list(first.polyline),
+            start_dlat=first.start_dlat,
+            end_dlat=first.end_dlat,
+        )
+        window.preview._runtime_api.commit_sections(before=before, after=edited)
+        window.preview.set_sections(edited)
+
+        assert window.preview.set_section_xsect_altitude(0, 0, 2000, validate=False) is True
+        window.preview.update_fsection_dlat(0, 0, start_dlat=150.0)
+
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 100.0
+
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview._document.sg_data.sects[0].alt[0] == 1000
+
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview._section_manager.sections[0].start == before[0].start
     finally:
         window.close()
 

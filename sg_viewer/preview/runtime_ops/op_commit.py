@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 
+from sg_viewer.model.edit_commands import TrackEditSnapshot
 from sg_viewer.model.preview_fsection import PreviewFSection
 
 
@@ -29,17 +30,18 @@ class _RuntimeCoreCommitMixin:
             ],
         }
 
-    def _snapshot_track_state(
-        self,
-    ) -> tuple[
-        list[list[PreviewFSection]],
-        dict[str, object] | None,
-        dict[str, object] | None,
-    ]:
-        return (
-            self._snapshot_fsects(),
-            self._snapshot_elevation_state(),
-            self._snapshot_topology_state(),
+    def _snapshot_track_state(self) -> TrackEditSnapshot:
+        topology = self._snapshot_topology_state()
+        sections: list = []
+        start_finish_dlong = None
+        if isinstance(topology, dict):
+            sections = copy.deepcopy(list(topology.get("sections", [])))
+            start_finish_dlong = topology.get("start_finish_dlong")
+        return TrackEditSnapshot(
+            sections=sections,
+            start_finish_dlong=start_finish_dlong,
+            fsects_by_section=self._snapshot_fsects(),
+            elevation_state=self._snapshot_elevation_state(),
         )
 
     def _snapshot_topology_state(self) -> dict[str, object] | None:
@@ -48,24 +50,41 @@ class _RuntimeCoreCommitMixin:
             "start_finish_dlong": self._start_finish_dlong,
         }
 
-    def _restore_track_state(
-        self,
-        snapshot: tuple[
-            list[list[PreviewFSection]],
-            dict[str, object] | None,
-            dict[str, object] | None,
-        ]
-        | tuple[list[list[PreviewFSection]], dict[str, object] | None],
-    ) -> None:
-        if len(snapshot) == 2:
-            fsects, elevation_state = snapshot
-            topology_state = None
-        else:
-            fsects, elevation_state, topology_state = snapshot
-        self._fsects_by_section = fsects
-        self._restore_topology_state(topology_state)
+    def restore_snapshot(self, snapshot: TrackEditSnapshot) -> list:
+        self._fsects_by_section = copy.deepcopy(snapshot.fsects_by_section)
+        self._restore_topology_state(
+            {
+                "sections": copy.deepcopy(snapshot.sections),
+                "start_finish_dlong": snapshot.start_finish_dlong,
+            }
+        )
         self._validate_section_fsects_alignment()
-        self._restore_elevation_state(elevation_state)
+        self._restore_elevation_state(snapshot.elevation_state)
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+        return copy.deepcopy(self._section_manager.sections)
+
+    def _commit_track_snapshot(
+        self,
+        before: TrackEditSnapshot,
+        *,
+        changed_indices: list[int] | None = None,
+    ) -> None:
+        if self._suspend_fsect_history:
+            return
+        after = self._snapshot_track_state()
+        if before == after:
+            return
+        payload = self._runtime_api.commit_snapshot(
+            before=before,
+            after=after,
+            restore_snapshot=self.restore_snapshot,
+        )
+        if changed_indices and payload.updated_sections is not None:
+            self.set_sections(payload.updated_sections, changed_indices=changed_indices)
 
     def _restore_topology_state(self, state: dict[str, object] | None) -> None:
         if not isinstance(state, dict):
@@ -135,78 +154,41 @@ class _RuntimeCoreCommitMixin:
             section.alt = list(snapshot_section.get("alt", []))
             section.grade = list(snapshot_section.get("grade", []))
 
-    def _record_fsect_history(self) -> None:
-        if self._suspend_fsect_history:
-            return
-        self._fsect_undo_stack.append(self._snapshot_track_state())
-        self._fsect_redo_stack.clear()
-
     def begin_fsect_edit_session(self) -> None:
         if self._fsect_edit_session_active:
             return
         self._fsect_edit_session_active = True
-        self._fsect_edit_session_snapshot = self._snapshot_fsects()
-        self._fsect_edit_session_elevation_snapshot = self._snapshot_elevation_state()
+        self._fsect_edit_session_snapshot = self._snapshot_track_state()
+        self._fsect_edit_session_elevation_snapshot = None
 
     def commit_fsect_edit_session(self) -> None:
         if not self._fsect_edit_session_active:
             return
         before = self._fsect_edit_session_snapshot
-        elevation_before = self._fsect_edit_session_elevation_snapshot
         self._fsect_edit_session_active = False
         self._fsect_edit_session_snapshot = None
         self._fsect_edit_session_elevation_snapshot = None
         if before is None:
             return
-        after = self._snapshot_fsects()
-        if before == after and elevation_before == self._snapshot_elevation_state():
-            return
-        if self._suspend_fsect_history:
-            return
-        self._fsect_undo_stack.append((before, elevation_before, self._snapshot_topology_state()))
-        self._fsect_redo_stack.clear()
+        self._commit_track_snapshot(before)
 
     def clear_fsect_history(self) -> None:
-        if self._suspend_fsect_history:
-            return
-        self._fsect_undo_stack.clear()
-        self._fsect_redo_stack.clear()
+        self._runtime_api.clear_history()
         self._fsect_edit_session_snapshot = None
-        self._fsect_edit_session_elevation_snapshot = None
         self._fsect_edit_session_active = False
 
     def undo_fsect_edit(self) -> bool:
-        if not self._fsect_undo_stack:
+        payload = self._runtime_api.undo()
+        if payload.updated_sections is None:
             return False
-        self._fsect_redo_stack.append(self._snapshot_track_state())
-        restored = self._fsect_undo_stack.pop()
-        self._suspend_fsect_history = True
-        try:
-            self._restore_track_state(restored)
-            self._has_unsaved_changes = True
-            if self._emit_sections_changed is not None:
-                self._emit_sections_changed()
-            if not self.refresh_fsections_preview():
-                self._context.request_repaint()
-        finally:
-            self._suspend_fsect_history = False
+        self.set_sections(payload.updated_sections)
         return True
 
     def redo_fsect_edit(self) -> bool:
-        if not self._fsect_redo_stack:
+        payload = self._runtime_api.redo()
+        if payload.updated_sections is None:
             return False
-        self._fsect_undo_stack.append(self._snapshot_track_state())
-        restored = self._fsect_redo_stack.pop()
-        self._suspend_fsect_history = True
-        try:
-            self._restore_track_state(restored)
-            self._has_unsaved_changes = True
-            if self._emit_sections_changed is not None:
-                self._emit_sections_changed()
-            if not self.refresh_fsections_preview():
-                self._context.request_repaint()
-        finally:
-            self._suspend_fsect_history = False
+        self.set_sections(payload.updated_sections)
         return True
 
     def _bump_sg_version(self) -> None:
@@ -251,13 +233,14 @@ class _RuntimeCoreCommitMixin:
             surface_type=surface_type,
             type2=type2,
         )
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
+        self._commit_track_snapshot(before)
 
     def update_fsection_dlat(
         self,
@@ -285,8 +268,7 @@ class _RuntimeCoreCommitMixin:
             surface_type=current.surface_type,
             type2=current.type2,
         )
-        if not self._fsect_edit_session_active:
-            self._record_fsect_history()
+        before = None if self._fsect_edit_session_active else self._snapshot_track_state()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if emit_sections_changed and self._emit_sections_changed is not None:
@@ -294,6 +276,8 @@ class _RuntimeCoreCommitMixin:
         if refresh_preview:
             if not self.refresh_fsections_preview():
                 self._context.request_repaint()
+        if before is not None:
+            self._commit_track_snapshot(before)
 
     def insert_fsection(
         self,
@@ -309,13 +293,14 @@ class _RuntimeCoreCommitMixin:
         if insert_index > len(fsects):
             insert_index = len(fsects)
         fsects.insert(insert_index, fsect)
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
+        self._commit_track_snapshot(before)
 
     def delete_fsection(
         self,
@@ -328,13 +313,14 @@ class _RuntimeCoreCommitMixin:
         if fsect_index < 0 or fsect_index >= len(fsects):
             return
         fsects.pop(fsect_index)
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
+        self._commit_track_snapshot(before)
 
     def replace_all_fsects(
         self,
@@ -343,7 +329,7 @@ class _RuntimeCoreCommitMixin:
         section_count = len(self._section_manager.sections)
         if section_count != len(fsects_by_section):
             return False
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         self._fsects_by_section = [list(fsects) for fsects in fsects_by_section]
         self._validate_section_fsects_alignment()
         self._has_unsaved_changes = True
@@ -352,6 +338,7 @@ class _RuntimeCoreCommitMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
             return False
+        self._commit_track_snapshot(before)
         return True
 
     def copy_section_fsects(
@@ -372,24 +359,27 @@ class _RuntimeCoreCommitMixin:
 
         if edge in {"start", "end"}:
             edge_profile = self._fsect_edge_profile(source_index, edge)
-            self._record_fsect_history()
+            before = self._snapshot_track_state()
             self._fsects_by_section[target_index] = copy.deepcopy(edge_profile)
         else:
             source_fsects = self._fsects_by_section[source_index]
-            self._record_fsect_history()
+            before = self._snapshot_track_state()
             self._fsects_by_section[target_index] = copy.deepcopy(source_fsects)
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
+        self._commit_track_snapshot(before)
         return True
 
     def set_xsect_definitions(self, entries: list[tuple[int | None, float]]) -> bool:
+        before = self._snapshot_track_state()
         try:
             self._document.set_xsect_definitions(entries)
         except (ValueError, IndexError):
             return False
+        self._commit_track_snapshot(before)
         return True
 
     def set_section_xsect_altitude(
@@ -400,18 +390,17 @@ class _RuntimeCoreCommitMixin:
         *,
         validate: bool = True,
     ) -> bool:
-        if not self._fsect_edit_session_active:
-            self._record_fsect_history()
+        before = None if self._fsect_edit_session_active else self._snapshot_track_state()
         try:
             self._document.set_section_xsect_altitude(
                 section_id, xsect_index, altitude, validate=validate
             )
         except (ValueError, IndexError):
-            if self._fsect_undo_stack:
-                self._fsect_undo_stack.pop()
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
         self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
+        if before is not None:
+            self._commit_track_snapshot(before)
         return True
 
     def set_section_xsect_grade(
@@ -422,40 +411,37 @@ class _RuntimeCoreCommitMixin:
         *,
         validate: bool = True,
     ) -> bool:
-        if not self._fsect_edit_session_active:
-            self._record_fsect_history()
+        before = None if self._fsect_edit_session_active else self._snapshot_track_state()
         try:
             self._document.set_section_xsect_grade(
                 section_id, xsect_index, grade, validate=validate
             )
         except (ValueError, IndexError):
-            if self._fsect_undo_stack:
-                self._fsect_undo_stack.pop()
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
         self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
+        if before is not None:
+            self._commit_track_snapshot(before)
         return True
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> bool:
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         try:
             self._document.copy_xsect_data_to_all(xsect_index)
         except (ValueError, IndexError):
-            if self._fsect_undo_stack:
-                self._fsect_undo_stack.pop()
             return False
         self._bump_sg_version()
+        self._commit_track_snapshot(before)
         return True
 
     def offset_all_elevations(self, delta: float, *, validate: bool = True) -> bool:
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         try:
             self._document.offset_all_elevations(delta, validate=validate)
         except (ValueError, IndexError):
-            if self._fsect_undo_stack:
-                self._fsect_undo_stack.pop()
             return False
         self._bump_sg_version()
+        self._commit_track_snapshot(before)
         return True
 
     def flatten_all_elevations_and_grade(
@@ -465,7 +451,7 @@ class _RuntimeCoreCommitMixin:
         grade: float = 0.0,
         validate: bool = True,
     ) -> bool:
-        self._record_fsect_history()
+        before = self._snapshot_track_state()
         try:
             self._document.flatten_all_elevations_and_grade(
                 elevation,
@@ -473,8 +459,7 @@ class _RuntimeCoreCommitMixin:
                 validate=validate,
             )
         except (ValueError, IndexError):
-            if self._fsect_undo_stack:
-                self._fsect_undo_stack.pop()
             return False
         self._bump_sg_version()
+        self._commit_track_snapshot(before)
         return True
