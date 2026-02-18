@@ -9,6 +9,7 @@ from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.model import preview_state, selection
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.model.sg_model import PreviewData
+from sg_viewer.model.edit_commands import TrackEditSnapshot
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.creation_controller import CreationController
 from sg_viewer.preview.interaction_state import InteractionState
@@ -86,11 +87,9 @@ class _RuntimeCoreBaseMixin:
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
-        self._fsect_undo_stack: list[tuple[list[list[PreviewFSection]], dict[str, object] | None, dict[str, object] | None] | tuple[list[list[PreviewFSection]], dict[str, object] | None]] = []
-        self._fsect_redo_stack: list[tuple[list[list[PreviewFSection]], dict[str, object] | None, dict[str, object] | None] | tuple[list[list[PreviewFSection]], dict[str, object] | None]] = []
         self._suspend_fsect_history = False
         self._fsect_edit_session_active = False
-        self._fsect_edit_session_snapshot: list[list[PreviewFSection]] | None = None
+        self._fsect_edit_session_snapshot: TrackEditSnapshot | None = None
         self._fsect_edit_session_elevation_snapshot: dict[str, object] | None = None
         self._last_elevation_recalc_message: str | None = None
 
@@ -138,6 +137,11 @@ class _RuntimeCoreBaseMixin:
             tuple[int, int], tuple[list[float], list[tuple[float, float]]]
         ] = {}
 
+        self._runtime_api = ViewerRuntimeApi(
+            preview_context=self._context,
+            snapshot_provider=self._snapshot_track_state,
+            restore_snapshot=self.restore_snapshot,
+        )
         self._interaction = PreviewInteraction(
             self._context,
             self._selection,
@@ -152,7 +156,7 @@ class _RuntimeCoreBaseMixin:
             emit_drag_state_changed=self._emit_interaction_drag_changed,
             sync_fsects_on_connection=self._sync_fsects_on_connection,
             apply_preview_to_sgfile=self.sync_preview_to_sgfile_if_loaded,
-            runtime_api=ViewerRuntimeApi(preview_context=self._context),
+            runtime_api=self._runtime_api,
             recalculate_elevations=self.recalculate_elevations,
         )
 

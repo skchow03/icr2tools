@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from icr2_core.trk.utils import approx_curve_length
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
-from sg_viewer.model.edit_commands import ReplaceSectionsCommand
+from sg_viewer.model.edit_commands import (
+    ReplaceSectionsCommand,
+    ReplaceTrackSnapshotCommand,
+    TrackEditSnapshot,
+)
 from sg_viewer.model.edit_manager import EditManager
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.context import PreviewContext
@@ -46,10 +50,17 @@ class ViewerRuntimeApi:
         preview_context: PreviewContext | None = None,
         geometry_service: PreviewGeometryService | None = None,
         edit_manager: EditManager | None = None,
+        snapshot_provider: Callable[[], TrackEditSnapshot] | None = None,
+        restore_snapshot: Callable[[TrackEditSnapshot], list[SectionPreview]] | None = None,
     ) -> None:
         self._preview_context = preview_context
         self._geometry_service = geometry_service or PreviewGeometryService()
         self._edit_manager = edit_manager or EditManager()
+        self._snapshot_provider = snapshot_provider
+        self._restore_snapshot = restore_snapshot
+
+    def _commit_track_edit(self, command: ReplaceSectionsCommand | ReplaceTrackSnapshotCommand) -> list[SectionPreview]:
+        return self._edit_manager.execute(command)
 
     def commit_sections(
         self,
@@ -58,12 +69,37 @@ class ViewerRuntimeApi:
         after: list[SectionPreview],
         changed_indices: list[int] | None = None,
     ) -> RuntimeUpdatePayload:
-        command = ReplaceSectionsCommand(before=before, after=after)
-        updated = self._edit_manager.execute(command)
+        if self._snapshot_provider is not None and self._restore_snapshot is not None:
+            before_snapshot = self._snapshot_provider()
+            before_snapshot = replace(before_snapshot, sections=list(before))
+            after_snapshot = replace(before_snapshot, sections=list(after))
+            command = ReplaceTrackSnapshotCommand(
+                before=before_snapshot,
+                after=after_snapshot,
+                restore_snapshot=self._restore_snapshot,
+            )
+        else:
+            command = ReplaceSectionsCommand(before=before, after=after)
+        updated = self._commit_track_edit(command)
         return RuntimeUpdatePayload(
             updated_sections=updated,
             changed_indices=list(changed_indices or []),
         )
+
+    def commit_snapshot(
+        self,
+        *,
+        before: TrackEditSnapshot,
+        after: TrackEditSnapshot,
+        restore_snapshot: Callable[[TrackEditSnapshot], list[SectionPreview]],
+    ) -> RuntimeUpdatePayload:
+        command = ReplaceTrackSnapshotCommand(
+            before=before,
+            after=after,
+            restore_snapshot=restore_snapshot,
+        )
+        updated = self._commit_track_edit(command)
+        return RuntimeUpdatePayload(updated_sections=updated)
 
     def undo(self) -> RuntimeUpdatePayload:
         updated = self._edit_manager.undo()
@@ -72,6 +108,9 @@ class ViewerRuntimeApi:
     def redo(self) -> RuntimeUpdatePayload:
         updated = self._edit_manager.redo()
         return RuntimeUpdatePayload(updated_sections=updated)
+
+    def clear_history(self) -> None:
+        self._edit_manager.clear()
 
     def set_start_finish_intent(
         self,
