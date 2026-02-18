@@ -1,5 +1,41 @@
 from __future__ import annotations
 
+"""
+Purpose:
+    Solve tangential connections between curve and straight preview sections in
+    SG Viewer without mutating editor topology.
+
+Mental Model:
+    - A connection is valid when the shared endpoint coincides and the section
+      headings are tangent-continuous.
+    - Depending on which endpoints are being connected, either the curve is
+      refit while the straight slides, or the straight is projected along an
+      existing curve tangent while preserving the curve.
+    - Solvers search over admissible straight lengths and accept only solutions
+      that satisfy heading/radius consistency tolerances.
+
+Key Invariants:
+    - Section type contracts are respected (straight vs curve solvers are not
+      mixed).
+    - Returned headings are normalized by geometry recomputation helpers.
+    - For preserved-curve branches, curve radius and arc length remain
+      unchanged.
+    - For refit-curve branches, the join tangent is continuous within the
+      configured heading tolerance.
+
+Failure Modes:
+    - Returns None when required headings are missing, vectors are degenerate,
+      or no geometric solution satisfies tolerance.
+    - Returns None when a solved straight would violate minimum length guards.
+
+Design Notes:
+    - This module performs geometry solving only; it does not manipulate UI
+      state.
+    - It operates on SectionPreview snapshots and returns updated copies.
+    - Topology linkage (previous_id/next_id ordering) is handled by higher
+      layers after geometry is accepted.
+"""
+
 import logging
 import math
 from dataclasses import replace
@@ -56,10 +92,12 @@ def _signed_angle_deg(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.degrees(math.atan2(cross, dot))
 
 def _deg_between(a, b):
+    """Return the unsigned angle between two vectors in degrees."""
     dot = max(-1.0, min(1.0, a[0] * b[0] + a[1] * b[1]))
     return math.degrees(math.acos(dot))
 
 def _fmt(v):
+    """Format a 2D point/vector for debug logging."""
     return f"({v[0]:.1f}, {v[1]:.1f})"
 
 def _angle_between(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -68,6 +106,7 @@ def _angle_between(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.acos(dot)
 
 def _normalize(v):
+    """Return a unit vector, or (0, 0) for degenerate input."""
     l = math.hypot(v[0], v[1])
     if l == 0:
         return (0.0, 0.0)
@@ -75,6 +114,20 @@ def _normalize(v):
 
 
 def _straight_forward_heading(straight: SectionPreview) -> Optional[tuple[float, float]]:
+    """
+    Compute the straight's forward unit heading used for tangent matching.
+
+    Preconditions:
+        - ``straight`` represents a straight-like section with valid endpoints
+          or an explicit ``start_heading``.
+
+    Postconditions:
+        - Returns a normalized heading when measurable.
+
+    Returns:
+        Unit heading tuple when derivable.
+        None when heading data is missing/degenerate.
+    """
     heading = straight.start_heading
     if heading is None:
         heading = (
@@ -95,15 +148,32 @@ def solve_curve_end_to_straight_start(
     heading_tolerance_deg: float = 1e-4,
 ) -> Optional[Tuple[SectionPreview, SectionPreview]]:
     """
-    Attempt to refit a curve so that:
-      - curve start + start heading are preserved
-      - curve end meets straight start
-      - curve end heading matches straight heading
-      - straight end is fixed
-      - straight start slides along heading (length changes as needed)
+    Refit a curve end onto a straight start while enforcing tangent continuity.
 
+    The solver keeps the curve start anchor/heading and the straight end fixed,
+    then searches along the straight heading for a join point whose solved
+    curve end heading matches the straight direction within tolerance.
 
-    Returns (new_curve, new_straight) or None on failure.
+    Preconditions:
+        - ``curve`` must be a curve with a valid start heading.
+        - ``straight`` must be a straight with measurable forward heading.
+
+    Postconditions:
+        - Returned curve starts at the original curve start.
+        - Returned straight ends at the original straight end.
+        - Returned join point is shared: ``curve.end == straight.start``.
+        - Join headings are tangent-continuous within
+          ``heading_tolerance_deg``.
+
+    Returns:
+        Tuple[new_curve, new_straight] when a tolerance-compliant join is
+        found.
+        None when geometric constraints cannot be solved.
+    
+    Test-derived rules surfaced here:
+        - Missing required headings make the solve fail fast.
+        - Candidate solutions are rejected when heading mismatch remains above
+          tolerance after refinement.
     """
 
 
@@ -125,7 +195,7 @@ def solve_curve_end_to_straight_start(
     if straight_heading is None:
         return None
 
-    # Normalize straight heading
+    # Normalize heading so angular comparisons are stable across all scans.
     sh_len = math.hypot(straight_heading[0], straight_heading[1])
     if sh_len <= 0:
         return None
@@ -150,9 +220,8 @@ def solve_curve_end_to_straight_start(
         logger.debug("Curve start heading angle: %.2f°", curve_angle)
 
 
-    # ------------------------
-    # Scan + refine along straight heading
-    # ------------------------
+    # Search over straight length values: this moves the join point along the
+    # straight axis without changing the straight's fixed endpoint.
 
     heading_tol = heading_tolerance_deg
 
@@ -216,6 +285,8 @@ def solve_curve_end_to_straight_start(
             solve_cache[L] = None
             return None
 
+        # Preserve the straight end as an anchor; only slide start backwards
+        # along the straight heading by L.
         P = (
             E[0] - hx * L,
             E[1] - hy * L,
@@ -296,9 +367,8 @@ def solve_curve_end_to_straight_start(
         return result[1]
 
 
-    # ------------------------
-    # Phase 1: adaptive scan
-    # ------------------------
+    # Phase 1 performs broad sampling to find either a sign-change bracket for
+    # root finding or at least the closest heading candidate.
     bracket = None
     scan_min_mult = 0.01
     scan_max_mult = 20.0
@@ -339,9 +409,8 @@ def solve_curve_end_to_straight_start(
         return None
 
 
-    # ------------------------
-    # Phase 2: local refinement
-    # ------------------------
+    # Phase 2 tightens around the best coarse sample to improve tangent match
+    # without changing endpoint anchoring assumptions.
 
     span = L0 * 0.05   # refine ±5% of straight length
     steps = 80
@@ -374,9 +443,8 @@ def solve_curve_end_to_straight_start(
         best_L = 0.5 * (lo + hi)
         try_L(best_L)
 
-    # ------------------------
-    # Final Newton-style micro refinement
-    # ------------------------
+    # Final micro-step improves precision near the best L when derivative is
+    # numerically usable.
     if best_L is not None:
         eps = max(1.0, best_L * 1e-6)
 
@@ -389,9 +457,7 @@ def solve_curve_end_to_straight_start(
                 L_new = best_L - d0 / deriv
                 try_L(L_new)
 
-    # ------------------------
-    # Accept or reject
-    # ------------------------
+    # Reject candidates that still violate tangent continuity tolerance.
 
     if best_solution is None or best_abs_delta > heading_tol:
         if DEBUG_CURVE_STRAIGHT and logger.isEnabledFor(logging.DEBUG):
@@ -404,7 +470,8 @@ def solve_curve_end_to_straight_start(
 
     best_solution = update_section_geometry(best_solution)
 
-    # after you decide best_solution is the curve you will use:
+    # Recompute signed radius from heading/center orientation so downstream
+    # curvature direction logic remains consistent.
     signed_r = signed_radius_from_heading(
         curve_start_heading,      # (hx, hy) at curve start
         curve_start,              # curve start point
@@ -418,9 +485,8 @@ def solve_curve_end_to_straight_start(
 
 
 
-    # ------------------------
-    # Rebuild straight
-    # ------------------------
+    # Rebuild the straight from solved join -> fixed end, preserving the fixed
+    # endpoint invariant used during search.
     new_straight_start = best_solution.end
     new_straight_end = straight.end
 
@@ -520,18 +586,39 @@ def solve_straight_end_to_curve_endpoint(
     min_straight_length: float = 1.0,
 ) -> Optional[Tuple[SectionPreview, SectionPreview]]:
     """
-    Connect a straight's ``straight_end`` to a curve's ``curve_end``.
+    Connect one straight endpoint to one curve endpoint.
 
-    Special cases:
-      - straight_end == "end" and curve_end == "start":
-        * preserve straight start position + heading
-        * preserve curve end position + heading
-        * slide straight end along its heading and refit curve radius/start
-          heading to meet tangentially
-      - all other combinations preserve curve geometry and slide the straight
-        endpoint along the curve tangent (maintaining straight length)
+    Two solver modes are used:
+        - ``straight_end == "end"`` and ``curve_end == "start"``:
+          solve a free-end case where straight start + curve end are anchored
+          and curve start geometry may be refit.
+        - all other endpoint pairings:
+          preserve curve geometry and slide/rebuild the straight along the
+          target curve tangent.
 
-    Returns (new_straight, new_curve) or None on failure.
+    Preconditions:
+        - Input section types must be straight/curve as named.
+        - ``straight_end`` and ``curve_end`` must be "start" or "end".
+        - Preserved-curve mode requires a valid heading at the targeted curve
+          endpoint.
+
+    Postconditions:
+        - Returned sections share the requested connection endpoint.
+        - In preserved-curve mode, curve start/end, radius, and arc length are
+          unchanged (validated by tests).
+        - In all modes, output geometry is canonicalized via
+          ``update_section_geometry``.
+        - No topology fields (IDs or linkage) are mutated here.
+
+    Returns:
+        Tuple[new_straight, new_curve] when constraints are satisfiable.
+        None for invalid inputs, missing/degenerate heading data, unsolved
+        geometry, or when solved straight length is below
+        ``min_straight_length``.
+
+    Test-derived rules surfaced here:
+        - Connection must fail if the targeted curve heading is unavailable.
+        - Connection must fail when minimum straight length guard is violated.
     """
 
     if curve.type_name != "curve":
@@ -566,6 +653,8 @@ def solve_straight_end_to_curve_endpoint(
         hx /= mag
         hy /= mag
 
+        # Preserve straight length in this branch by projecting from target
+        # endpoint along the curve tangent direction.
         L = straight.length
         if L <= 0:
             return None
