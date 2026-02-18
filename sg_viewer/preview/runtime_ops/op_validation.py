@@ -29,6 +29,16 @@ class _RuntimeCoreValidationMixin:
             xsect_index=xsect_index,
         )
 
+    def _mark_elevation_profile_all_sections_dirty(self, xsect_index: int) -> None:
+        sg_data = self._document.sg_data
+        if sg_data is None or not sg_data.sects:
+            return
+        self._mark_elevation_profile_span_dirty(
+            start_section=0,
+            end_section=len(sg_data.sects) - 1,
+            xsect_index=xsect_index,
+        )
+
     def _mark_elevation_profile_span_dirty(
         self,
         *,

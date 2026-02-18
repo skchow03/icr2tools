@@ -56,6 +56,7 @@ class _RuntimeCoreBaseMixin:
         self._document.section_changed.connect(self._on_section_changed)
         self._document.geometry_changed.connect(self._on_geometry_changed)
         self._document.elevation_changed.connect(self._on_elevation_changed)
+        self._document.elevations_bulk_changed.connect(self._on_elevations_bulk_changed)
 
         self._controller = PreviewStateController()
 

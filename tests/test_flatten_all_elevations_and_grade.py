@@ -4,6 +4,7 @@ from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.model.sg_document import SGDocument
 
 
+
 def _make_sgfile(num_sections: int, num_xsects: int = 3) -> SGFile:
     sections = []
     record_length = 58 + 2 * num_xsects
@@ -33,3 +34,38 @@ def test_flatten_all_elevations_and_grade() -> None:
     for section in sg_document.sg_data.sects:
         assert list(section.alt) == [321, 321, 321]
         assert list(section.grade) == [0, 0, 0]
+
+
+def test_flatten_emits_single_bulk_signal() -> None:
+    sg_document = SGDocument(_make_sgfile(5, 3))
+    emitted: list[None] = []
+    per_section: list[int] = []
+
+    sg_document.elevations_bulk_changed.connect(lambda: emitted.append(None))
+    sg_document.elevation_changed.connect(lambda section_id: per_section.append(section_id))
+
+    sg_document.flatten_all_elevations_and_grade(111, grade=7)
+
+    assert emitted == [None]
+    assert per_section == []
+
+
+def test_suspended_drag_updates_emit_one_bulk_signal_on_commit() -> None:
+    sg_document = SGDocument(_make_sgfile(4, 2))
+    emitted: list[None] = []
+    per_section: list[int] = []
+
+    sg_document.elevations_bulk_changed.connect(lambda: emitted.append(None))
+    sg_document.elevation_changed.connect(lambda section_id: per_section.append(section_id))
+
+    sg_document.set_elevation_signals_suspended(True)
+    sg_document.set_section_xsect_altitude(0, 0, 1000, validate=False)
+    sg_document.set_section_xsect_altitude(1, 0, 1200, validate=False)
+
+    assert emitted == []
+    assert per_section == []
+
+    sg_document.set_elevation_signals_suspended(False)
+
+    assert emitted == [None]
+    assert per_section == []

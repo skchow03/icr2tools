@@ -22,6 +22,7 @@ class SGDocument(QtCore.QObject):
     section_changed = QtCore.pyqtSignal(int)
     geometry_changed = QtCore.pyqtSignal()
     elevation_changed = QtCore.pyqtSignal(int)
+    elevations_bulk_changed = QtCore.pyqtSignal()
     metadata_changed = QtCore.pyqtSignal()
 
     ELEVATION_MIN = -1_000_000
@@ -31,8 +32,35 @@ class SGDocument(QtCore.QObject):
         super().__init__(parent)
         self._sg_data = sg_data
         self._last_validation_warnings: list[str] = []
+        self._suspend_elevation_signals = False
+        self._pending_bulk_elevation_signal = False
         if self._sg_data is not None:
             self.validate()
+
+    @property
+    def elevation_signals_suspended(self) -> bool:
+        return self._suspend_elevation_signals
+
+    def set_elevation_signals_suspended(self, suspended: bool) -> None:
+        next_state = bool(suspended)
+        if self._suspend_elevation_signals == next_state:
+            return
+        self._suspend_elevation_signals = next_state
+        if not self._suspend_elevation_signals and self._pending_bulk_elevation_signal:
+            self._pending_bulk_elevation_signal = False
+            self.elevations_bulk_changed.emit()
+
+    def _emit_elevation_changed(self, section_id: int) -> None:
+        if self._suspend_elevation_signals:
+            self._pending_bulk_elevation_signal = True
+            return
+        self.elevation_changed.emit(section_id)
+
+    def _emit_bulk_elevation_changed(self) -> None:
+        if self._suspend_elevation_signals:
+            self._pending_bulk_elevation_signal = True
+            return
+        self.elevations_bulk_changed.emit()
 
     @property
     def sg_data(self) -> SGFile | None:
@@ -67,7 +95,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        self.elevation_changed.emit(section_id)
+        self._emit_elevation_changed(section_id)
 
     def set_section_xsect_altitude(
         self,
@@ -96,7 +124,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        self.elevation_changed.emit(section_id)
+        self._emit_elevation_changed(section_id)
 
     def set_section_xsect_grade(
         self,
@@ -125,7 +153,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        self.elevation_changed.emit(section_id)
+        self._emit_elevation_changed(section_id)
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> None:
         if self._sg_data is None:
@@ -153,8 +181,7 @@ class SGDocument(QtCore.QObject):
         if __debug__:
             self.validate()
 
-        for section_id in range(len(self._sg_data.sects)):
-            self.elevation_changed.emit(section_id)
+        self._emit_bulk_elevation_changed()
 
     def offset_all_elevations(self, delta: float, *, validate: bool = True) -> None:
         if self._sg_data is None:
@@ -172,8 +199,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        for section_id in range(len(self._sg_data.sects)):
-            self.elevation_changed.emit(section_id)
+        self._emit_bulk_elevation_changed()
 
     def flatten_all_elevations_and_grade(
         self,
@@ -201,8 +227,7 @@ class SGDocument(QtCore.QObject):
         if __debug__ and validate:
             self.validate()
 
-        for section_id in range(len(self._sg_data.sects)):
-            self.elevation_changed.emit(section_id)
+        self._emit_bulk_elevation_changed()
 
     def set_xsect_definitions(self, entries: list[tuple[int | None, float]]) -> None:
         if self._sg_data is None:
@@ -258,8 +283,7 @@ class SGDocument(QtCore.QObject):
             self.validate()
 
         self.metadata_changed.emit()
-        for section_id in range(len(self._sg_data.sects)):
-            self.elevation_changed.emit(section_id)
+        self._emit_bulk_elevation_changed()
 
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
         if self._sg_data is None:
