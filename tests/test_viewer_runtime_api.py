@@ -150,3 +150,57 @@ def test_runtime_api_unified_history_reverses_mixed_edits_by_time():
 
     assert api.undo().updated_sections is not None
     assert state["sections"][0].start == (0.0, 0.0)
+
+
+def test_runtime_api_geometry_undo_restores_latest_non_geometry_snapshot_state():
+    state: dict[str, object] = {
+        "sections": [_straight(0, (0.0, 0.0), (100.0, 0.0))],
+        "start_finish_dlong": 0.0,
+        "fsects": [[{"start": 100.0}]],
+        "elevation": {"num_xsects": 1, "xsect_dlats": [0], "header": [0, 0, 0, 0, 1, 1], "sections": [{"alt": [1000], "grade": [100]}]},
+    }
+
+    def _snapshot() -> TrackEditSnapshot:
+        return TrackEditSnapshot(
+            sections=copy.deepcopy(list(state["sections"])),
+            start_finish_dlong=state["start_finish_dlong"],
+            fsects_by_section=copy.deepcopy(list(state["fsects"])),
+            elevation_state=copy.deepcopy(dict(state["elevation"])),
+        )
+
+    def _restore(snapshot: TrackEditSnapshot) -> list[SectionPreview]:
+        state["sections"] = copy.deepcopy(list(snapshot.sections))
+        state["start_finish_dlong"] = snapshot.start_finish_dlong
+        state["fsects"] = copy.deepcopy(list(snapshot.fsects_by_section))
+        state["elevation"] = copy.deepcopy(dict(snapshot.elevation_state or {}))
+        return copy.deepcopy(list(snapshot.sections))
+
+    api = ViewerRuntimeApi(snapshot_provider=_snapshot, restore_snapshot=_restore)
+
+    # geometry commit 1
+    g1_before = list(state["sections"])
+    g1_after = [_straight(0, (10.0, 0.0), (110.0, 0.0))]
+    payload = api.commit_sections(before=g1_before, after=g1_after)
+    state["sections"] = list(payload.updated_sections or g1_after)
+
+    # non-geometry edits between geometry commits
+    mixed_before = _snapshot()
+    state["fsects"] = [[{"start": 150.0}]]
+    state["elevation"] = {"num_xsects": 1, "xsect_dlats": [0], "header": [0, 0, 0, 0, 1, 1], "sections": [{"alt": [2500], "grade": [120]}]}
+    api.commit_snapshot(before=mixed_before, after=_snapshot(), restore_snapshot=_restore)
+
+    # geometry commit 2
+    g2_before = list(state["sections"])
+    g2_after = [_straight(0, (20.0, 0.0), (120.0, 0.0))]
+    payload = api.commit_sections(before=g2_before, after=g2_after)
+    state["sections"] = list(payload.updated_sections or g2_after)
+
+    assert state["sections"][0].start == (20.0, 0.0)
+    assert state["fsects"][0][0]["start"] == 150.0
+    assert state["elevation"]["sections"][0]["alt"][0] == 2500
+
+    assert api.undo().updated_sections is not None
+    # undoing geometry 2 should retain latest non-geometry state from before geometry 2
+    assert state["sections"][0].start == (10.0, 0.0)
+    assert state["fsects"][0][0]["start"] == 150.0
+    assert state["elevation"]["sections"][0]["alt"][0] == 2500
