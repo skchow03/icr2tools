@@ -360,6 +360,58 @@ def test_edit_menu_exposes_undo_redo_actions(qapp, monkeypatch):
     finally:
         window.close()
 
+
+
+
+
+def test_preview_undo_redo_fsect_edits_restores_previous_values(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._fsects_by_section = [
+            [PreviewFSection(start_dlat=100.0, end_dlat=200.0, surface_type=0, type2=0)]
+        ]
+
+        window.preview.update_fsection_dlat(0, 0, start_dlat=150.0)
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 150.0
+
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 100.0
+
+        assert window.preview.redo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 150.0
+    finally:
+        window.close()
+
+def test_edit_menu_undo_redo_fallback_to_fsect_history(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        edit_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&Edit"
+        )
+        undo_action = next(
+            action for action in edit_menu.actions() if action.text() == "Undo"
+        )
+        redo_action = next(
+            action for action in edit_menu.actions() if action.text() == "Redo"
+        )
+
+        undo_calls: list[bool] = []
+        redo_calls: list[bool] = []
+
+        monkeypatch.setattr(window.preview.interaction, "undo", lambda: False)
+        monkeypatch.setattr(window.preview.interaction, "redo", lambda: False)
+        monkeypatch.setattr(window.preview, "undo_fsect_edit", lambda: undo_calls.append(True) or True)
+        monkeypatch.setattr(window.preview, "redo_fsect_edit", lambda: redo_calls.append(True) or True)
+
+        undo_action.trigger()
+        redo_action.trigger()
+
+        assert undo_calls == [True]
+        assert redo_calls == [True]
+    finally:
+        window.close()
+
 def test_file_menu_exposes_save_action(qapp):
     window = SGViewerWindow()
     try:

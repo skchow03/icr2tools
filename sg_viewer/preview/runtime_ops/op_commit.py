@@ -6,6 +6,56 @@ from sg_viewer.model.preview_fsection import PreviewFSection
 
 
 class _RuntimeCoreCommitMixin:
+
+
+    def _snapshot_fsects(self) -> list[list[PreviewFSection]]:
+        return [copy.deepcopy(fsects) for fsects in self._fsects_by_section]
+
+    def _record_fsect_history(self) -> None:
+        if self._suspend_fsect_history:
+            return
+        self._fsect_undo_stack.append(self._snapshot_fsects())
+        self._fsect_redo_stack.clear()
+
+    def clear_fsect_history(self) -> None:
+        self._fsect_undo_stack.clear()
+        self._fsect_redo_stack.clear()
+
+    def undo_fsect_edit(self) -> bool:
+        if not self._fsect_undo_stack:
+            return False
+        self._fsect_redo_stack.append(self._snapshot_fsects())
+        restored = self._fsect_undo_stack.pop()
+        self._suspend_fsect_history = True
+        try:
+            self._fsects_by_section = restored
+            self._validate_section_fsects_alignment()
+            self._has_unsaved_changes = True
+            if self._emit_sections_changed is not None:
+                self._emit_sections_changed()
+            if not self.refresh_fsections_preview():
+                self._context.request_repaint()
+        finally:
+            self._suspend_fsect_history = False
+        return True
+
+    def redo_fsect_edit(self) -> bool:
+        if not self._fsect_redo_stack:
+            return False
+        self._fsect_undo_stack.append(self._snapshot_fsects())
+        restored = self._fsect_redo_stack.pop()
+        self._suspend_fsect_history = True
+        try:
+            self._fsects_by_section = restored
+            self._validate_section_fsects_alignment()
+            self._has_unsaved_changes = True
+            if self._emit_sections_changed is not None:
+                self._emit_sections_changed()
+            if not self.refresh_fsections_preview():
+                self._context.request_repaint()
+        finally:
+            self._suspend_fsect_history = False
+        return True
     def _bump_sg_version(self) -> None:
         self._sg_version += 1
         self._elevation_bounds_cache.clear()
@@ -48,6 +98,7 @@ class _RuntimeCoreCommitMixin:
             surface_type=surface_type,
             type2=type2,
         )
+        self._record_fsect_history()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
@@ -81,6 +132,7 @@ class _RuntimeCoreCommitMixin:
             surface_type=current.surface_type,
             type2=current.type2,
         )
+        self._record_fsect_history()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if emit_sections_changed and self._emit_sections_changed is not None:
@@ -103,6 +155,7 @@ class _RuntimeCoreCommitMixin:
         if insert_index > len(fsects):
             insert_index = len(fsects)
         fsects.insert(insert_index, fsect)
+        self._record_fsect_history()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
@@ -121,6 +174,7 @@ class _RuntimeCoreCommitMixin:
         if fsect_index < 0 or fsect_index >= len(fsects):
             return
         fsects.pop(fsect_index)
+        self._record_fsect_history()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
@@ -135,6 +189,7 @@ class _RuntimeCoreCommitMixin:
         section_count = len(self._section_manager.sections)
         if section_count != len(fsects_by_section):
             return False
+        self._record_fsect_history()
         self._fsects_by_section = [list(fsects) for fsects in fsects_by_section]
         self._validate_section_fsects_alignment()
         self._has_unsaved_changes = True
@@ -163,9 +218,11 @@ class _RuntimeCoreCommitMixin:
 
         if edge in {"start", "end"}:
             edge_profile = self._fsect_edge_profile(source_index, edge)
+            self._record_fsect_history()
             self._fsects_by_section[target_index] = copy.deepcopy(edge_profile)
         else:
             source_fsects = self._fsects_by_section[source_index]
+            self._record_fsect_history()
             self._fsects_by_section[target_index] = copy.deepcopy(source_fsects)
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:

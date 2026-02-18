@@ -19,6 +19,7 @@ class _RuntimeLoadingMixin:
         self._trk_overlay.disable(None)
         self._suppress_document_dirty = True
         self._fsects_by_section = []
+        self.clear_fsect_history()
         self._document.set_sg_data(None)
         self._suppress_document_dirty = False
         self._bump_sg_version()
@@ -107,6 +108,7 @@ class _RuntimeLoadingMixin:
         self._fsects_by_section = preview_loader_service.build_fsects_by_section(
             data.sgfile
         )
+        self.clear_fsect_history()
         self._trk_overlay.sync_from_preview(data)
         self._disconnected_nodes = set()
         self._apply_creation_update(self._creation_controller.reset())
@@ -184,6 +186,7 @@ class _RuntimeLoadingMixin:
                     self._fsects_by_section.extend(
                         [[] for _ in range(desired_count - len(self._fsects_by_section))]
                     )
+        self.clear_fsect_history()
         self._validate_section_fsects_alignment()
         if mark_unsaved:
             self._has_unsaved_changes = True

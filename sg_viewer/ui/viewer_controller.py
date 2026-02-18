@@ -287,11 +287,11 @@ class SGViewerController:
         help_menu.addAction(self._about_action)
 
     def _undo(self) -> None:
-        if self._window.preview.interaction.undo():
+        if self._window.preview.interaction.undo() or self._window.preview.undo_fsect_edit():
             self._window.show_status_message("Undo applied.")
 
     def _redo(self) -> None:
-        if self._window.preview.interaction.redo():
+        if self._window.preview.interaction.redo() or self._window.preview.redo_fsect_edit():
             self._window.show_status_message("Redo applied.")
 
     def _show_about_dialog(self) -> None:
