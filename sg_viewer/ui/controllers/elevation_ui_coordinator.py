@@ -31,22 +31,22 @@ class ElevationUiCoordinator:
             return
 
         self._host._elevation_controller.begin_drag()
-        try:
-            if self._host._window.preview.set_section_xsect_altitude(
-                section_index, xsect_index, altitude, validate=False
+        self._host._window.preview.document.set_elevation_signals_suspended(True)
+        if self._host._window.preview.set_section_xsect_altitude(
+            section_index, xsect_index, altitude, validate=False
+        ):
+            self._host._refresh_elevation_profile()
+            self._host._refresh_xsect_elevation_panel()
+            if (
+                self._host._active_selection is not None
+                and self._host._active_selection.index == section_index
             ):
-                self._host._refresh_elevation_profile()
-                self._host._refresh_xsect_elevation_panel()
-                if (
-                    self._host._active_selection is not None
-                    and self._host._active_selection.index == section_index
-                ):
-                    self._host._refresh_elevation_inputs()
-        finally:
-            self._host._elevation_controller.end_drag()
+                self._host._refresh_elevation_inputs()
 
     def on_profile_altitude_drag_finished(self, section_index: int) -> None:
         _ = section_index
+        self._host._window.preview.document.set_elevation_signals_suspended(False)
+        self._host._elevation_controller.end_drag()
         self._host._window.preview.validate_document()
 
     def on_altitude_range_changed(self, changed: str | None = None) -> None:

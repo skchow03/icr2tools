@@ -68,6 +68,19 @@ class _RuntimeLoadingMixin:
                 self._emit_sections_changed()
         self._context.request_repaint()
 
+    def _on_elevations_bulk_changed(self) -> None:
+        sg_data = self._document.sg_data
+        if sg_data is None:
+            return
+        for xsect_index in range(int(sg_data.num_xsects)):
+            self._mark_xsect_bounds_dirty(xsect_index)
+            self._mark_elevation_profile_all_sections_dirty(xsect_index)
+        if not self._suppress_document_dirty:
+            self._has_unsaved_changes = True
+            if self._emit_sections_changed is not None:
+                self._emit_sections_changed()
+        self._context.request_repaint()
+
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
