@@ -383,6 +383,30 @@ def test_preview_undo_redo_fsect_edits_restores_previous_values(qapp, monkeypatc
     finally:
         window.close()
 
+
+
+def test_fsect_edit_session_groups_drag_updates_into_single_undo(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._fsects_by_section = [
+            [PreviewFSection(start_dlat=100.0, end_dlat=200.0, surface_type=0, type2=0)]
+        ]
+
+        window.preview.begin_fsect_edit_session()
+        window.preview.update_fsection_dlat(0, 0, start_dlat=120.0)
+        window.preview.update_fsection_dlat(0, 0, start_dlat=140.0)
+        window.preview.commit_fsect_edit_session()
+
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 140.0
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 100.0
+        assert window.preview.redo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 140.0
+    finally:
+        window.close()
+
+
 def test_edit_menu_undo_redo_fallback_to_fsect_history(qapp, monkeypatch):
     window = SGViewerWindow()
     try:

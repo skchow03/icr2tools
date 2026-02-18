@@ -17,6 +17,28 @@ class _RuntimeCoreCommitMixin:
         self._fsect_undo_stack.append(self._snapshot_fsects())
         self._fsect_redo_stack.clear()
 
+    def begin_fsect_edit_session(self) -> None:
+        if self._fsect_edit_session_active:
+            return
+        self._fsect_edit_session_active = True
+        self._fsect_edit_session_snapshot = self._snapshot_fsects()
+
+    def commit_fsect_edit_session(self) -> None:
+        if not self._fsect_edit_session_active:
+            return
+        before = self._fsect_edit_session_snapshot
+        self._fsect_edit_session_active = False
+        self._fsect_edit_session_snapshot = None
+        if before is None:
+            return
+        after = self._snapshot_fsects()
+        if before == after:
+            return
+        if self._suspend_fsect_history:
+            return
+        self._fsect_undo_stack.append(before)
+        self._fsect_redo_stack.clear()
+
     def clear_fsect_history(self) -> None:
         self._fsect_undo_stack.clear()
         self._fsect_redo_stack.clear()
@@ -132,7 +154,8 @@ class _RuntimeCoreCommitMixin:
             surface_type=current.surface_type,
             type2=current.type2,
         )
-        self._record_fsect_history()
+        if not self._fsect_edit_session_active:
+            self._record_fsect_history()
         self._fsects_by_section[section_index] = fsects
         self._has_unsaved_changes = True
         if emit_sections_changed and self._emit_sections_changed is not None:

@@ -1476,6 +1476,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
     ) -> None:
         _ = section_index, row_index, endpoint, new_dlat
+        self._preview.begin_fsect_edit_session()
         self._fsect_drag_active = True
         self._fsect_drag_dirty = False
         if self._fsect_drag_timer.isActive():
@@ -1496,6 +1497,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 endpoint,
                 new_dlat,
             )
+        self._preview.commit_fsect_edit_session()
         self._fsect_drag_dirty = False
 
     def _schedule_fsect_drag_refresh(self) -> None:
