@@ -503,6 +503,48 @@ def test_preview_undo_redo_restores_elevation_and_grade_edits(qapp, monkeypatch)
     finally:
         window.close()
 
+
+def test_preview_undo_groups_elevation_drag_updates_into_single_step(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._fsects_by_section = [[]]
+        window.preview._document.set_sg_data(_make_single_section_sgfile(), validate=False)
+
+        section = window.preview._document.sg_data.sects[0]
+
+        window.preview.begin_fsect_edit_session()
+        assert window.preview.set_section_xsect_altitude(0, 0, 2000, validate=False) is True
+        assert window.preview.set_section_xsect_altitude(0, 0, 3000, validate=False) is True
+        window.preview.commit_fsect_edit_session()
+
+        assert section.alt[0] == 3000
+        assert window.preview.undo_fsect_edit() is True
+        assert section.alt[0] == 1000
+        assert window.preview.redo_fsect_edit() is True
+        assert section.alt[0] == 3000
+    finally:
+        window.close()
+
+
+def test_preview_undo_restores_topology_snapshot(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._fsects_by_section = [[PreviewFSection(start_dlat=0.0, end_dlat=0.0, surface_type=0, type2=0)]]
+
+        restored: list[dict[str, object] | None] = []
+        monkeypatch.setattr(window.preview, "_restore_topology_state", lambda state: restored.append(state))
+
+        window.preview.update_fsection_dlat(0, 0, start_dlat=100.0)
+
+        assert window.preview.undo_fsect_edit() is True
+        assert restored
+        assert isinstance(restored[0], dict)
+        assert "sections" in restored[0]
+    finally:
+        window.close()
+
 def test_file_menu_exposes_save_action(qapp):
     window = SGViewerWindow()
     try:

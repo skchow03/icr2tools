@@ -86,8 +86,8 @@ class _RuntimeCoreBaseMixin:
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
-        self._fsect_undo_stack: list[tuple[list[list[PreviewFSection]], dict[str, object] | None]] = []
-        self._fsect_redo_stack: list[tuple[list[list[PreviewFSection]], dict[str, object] | None]] = []
+        self._fsect_undo_stack: list[tuple[list[list[PreviewFSection]], dict[str, object] | None, dict[str, object] | None] | tuple[list[list[PreviewFSection]], dict[str, object] | None]] = []
+        self._fsect_redo_stack: list[tuple[list[list[PreviewFSection]], dict[str, object] | None, dict[str, object] | None] | tuple[list[list[PreviewFSection]], dict[str, object] | None]] = []
         self._suspend_fsect_history = False
         self._fsect_edit_session_active = False
         self._fsect_edit_session_snapshot: list[list[PreviewFSection]] | None = None
