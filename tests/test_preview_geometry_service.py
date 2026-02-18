@@ -9,6 +9,7 @@ import math
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.runtime.preview_geometry_service import (
+    ConnectionSolveRequest,
     ConnectNodesRequest,
     NodeDisconnectRequest,
     NodeDragRequest,
@@ -115,3 +116,41 @@ def test_closed_loop_transition_canonicalizes_when_loop_is_completed():
     assert response.status_message == "Closed loop detected — track direction fixed"
     assert response.sections[0].section_id == 0
     assert response.sections[0].next_id == 1
+
+
+def test_solve_connection_allows_straight_to_straight_when_headings_match_and_join_is_straight():
+    service = PreviewGeometryService()
+    dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
+    target = _straight(1, (20.0, 0.0), (30.0, 0.0))
+
+    solved = service.solve_connection(
+        ConnectionSolveRequest(
+            sections=[dragged, target],
+            source=(0, "end"),
+            target=(1, "start"),
+        )
+    )
+
+    assert solved.sections is not None
+    assert solved.sections[0].next_id == 1
+    assert solved.sections[1].previous_id == 0
+    assert solved.status_message == "Straight → straight connected"
+
+
+def test_solve_connection_rejects_straight_to_straight_when_join_would_not_be_straight():
+    service = PreviewGeometryService()
+    dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
+    target = _straight(1, (20.0, 1.0), (30.0, 1.0))
+
+    solved = service.solve_connection(
+        ConnectionSolveRequest(
+            sections=[dragged, target],
+            source=(0, "end"),
+            target=(1, "start"),
+        )
+    )
+
+    assert solved.sections is None
+    assert solved.status_message == (
+        "Cannot connect straight → straight unless endpoint headings match and the connection is perfectly straight."
+    )

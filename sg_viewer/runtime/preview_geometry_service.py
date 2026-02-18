@@ -166,6 +166,27 @@ class PreviewGeometryService:
             new_straight, new_curve = result
             return self._apply_curve_straight_connection(sections, target_idx, target_end, dragged_idx, dragged_end, new_curve, new_straight, "Straight → curve connected")
 
+        if dragged_section.type_name == "straight" and target_section.type_name == "straight":
+            result = self._solve_straight_to_straight_connection(
+                dragged_section,
+                dragged_end,
+                target_section,
+                target_end,
+            )
+            if result is None:
+                return ConnectionSolveResponse(None, None, self.connection_failure_reason(dragged_section, dragged_end, target_section, target_end))
+            new_dragged, new_target = result
+            return self._apply_straight_straight_connection(
+                sections,
+                dragged_idx,
+                dragged_end,
+                target_idx,
+                target_end,
+                new_dragged,
+                new_target,
+                "Straight → straight connected",
+            )
+
         return ConnectionSolveResponse(None, None, self.connection_failure_reason(dragged_section, dragged_end, target_section, target_end))
 
     def apply_closure_transition(self, old_sections: list[SectionPreview], updated_sections: list[SectionPreview], changed_indices: list[int] | None = None) -> ClosureTransitionResponse:
@@ -238,6 +259,58 @@ class PreviewGeometryService:
         sections[curve_idx] = update_section_geometry(curve)
         sections[straight_idx] = update_section_geometry(straight)
         return ConnectionSolveResponse(sections, [curve_idx, straight_idx], msg)
+
+    def _apply_straight_straight_connection(
+        self,
+        sections: list[SectionPreview],
+        dragged_idx: int,
+        dragged_end: EndType,
+        target_idx: int,
+        target_end: EndType,
+        dragged: SectionPreview,
+        target: SectionPreview,
+        msg: str,
+    ) -> ConnectionSolveResponse:
+        if dragged_end == "start":
+            dragged = replace(dragged, previous_id=target_idx)
+        else:
+            dragged = replace(dragged, next_id=target_idx)
+        if target_end == "start":
+            target = replace(target, previous_id=dragged_idx)
+        else:
+            target = replace(target, next_id=dragged_idx)
+        sections[dragged_idx] = update_section_geometry(dragged)
+        sections[target_idx] = update_section_geometry(target)
+        return ConnectionSolveResponse(sections, [dragged_idx, target_idx], msg)
+
+    def _solve_straight_to_straight_connection(
+        self,
+        dragged: SectionPreview,
+        dragged_end: EndType,
+        target: SectionPreview,
+        target_end: EndType,
+    ) -> tuple[SectionPreview, SectionPreview] | None:
+        dragged_heading = self._endpoint_heading(dragged, dragged_end)
+        target_heading = self._endpoint_heading(target, target_end)
+        if dragged_heading is None or target_heading is None:
+            return None
+        if dragged_heading != target_heading:
+            return None
+
+        join_point = target.start if target_end == "start" else target.end
+        dragged_opposite = dragged.end if dragged_end == "start" else dragged.start
+        target_opposite = target.end if target_end == "start" else target.start
+
+        if not self._is_perfectly_straight_chain(dragged_opposite, join_point, target_opposite):
+            return None
+
+        updated_dragged = (
+            replace(dragged, start=join_point) if dragged_end == "start" else replace(dragged, end=join_point)
+        )
+        updated_target = (
+            replace(target, start=join_point) if target_end == "start" else replace(target, end=join_point)
+        )
+        return updated_dragged, updated_target
 
     def _apply_shared_node_drag_constraint(self, sections: list[SectionPreview], sect_index: int, endtype: EndType, track_point: Point) -> SectionSnapshotResponse | None:
         if endtype == "end":
@@ -354,7 +427,7 @@ class PreviewGeometryService:
 
     def connection_failure_reason(self, dragged_section: SectionPreview, dragged_end: EndType, target_section: SectionPreview, target_end: EndType) -> str:
         if dragged_section.type_name == "straight" and target_section.type_name == "straight":
-            return "Cannot connect straight → straight; drag a straight onto a curve instead."
+            return "Cannot connect straight → straight unless endpoint headings match and the connection is perfectly straight."
         if dragged_section.type_name == "curve" and target_section.type_name == "curve":
             return "Cannot connect curve → curve; drag a straight onto a curve or a curve end onto a straight."
         return "Unable to connect endpoints with current geometry."
@@ -363,6 +436,22 @@ class PreviewGeometryService:
         dx, dy = b[0] - a[0], b[1] - a[1]
         mag = math.hypot(dx, dy)
         return None if mag <= 0 else (dx / mag, dy / mag)
+
+    def _endpoint_heading(self, section: SectionPreview, end_type: EndType) -> tuple[float, float] | None:
+        return section.start_heading if end_type == "start" else section.end_heading
+
+    def _is_perfectly_straight_chain(self, a: Point, b: Point, c: Point, tol: float = 1e-6) -> bool:
+        ab = (b[0] - a[0], b[1] - a[1])
+        ac = (c[0] - a[0], c[1] - a[1])
+        if abs(ab[0] * ac[1] - ab[1] * ac[0]) > tol:
+            return False
+        dot = ab[0] * ac[0] + ab[1] * ac[1]
+        if dot < -tol:
+            return False
+        ac_len_sq = ac[0] * ac[0] + ac[1] * ac[1]
+        if dot - ac_len_sq > tol:
+            return False
+        return True
 
     def _points_close(self, a: Point, b: Point, tol: float = 1e-6) -> bool:
         return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol
