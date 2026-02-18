@@ -4,7 +4,6 @@ import logging
 from typing import Iterable
 
 from PyQt5 import QtCore
-import numpy as np
 
 from icr2_core.trk.sg_classes import SGFile
 from sg_viewer.sg_document_fsects import (
@@ -256,8 +255,7 @@ class SGDocument(QtCore.QObject):
                 index_map.append(index)
             dlats.append(int(round(dlat)))
 
-        dtype = getattr(self._sg_data.xsect_dlats, "dtype", np.int32)
-        self._sg_data.xsect_dlats = np.array(dlats, dtype=dtype)
+        self._sg_data.xsect_dlats = self._convert_xsect_dlats(dlats)
         self._sg_data.num_xsects = len(dlats)
         if len(self._sg_data.header) > 5:
             self._sg_data.header[5] = len(dlats)
@@ -284,6 +282,24 @@ class SGDocument(QtCore.QObject):
 
         self.metadata_changed.emit()
         self._emit_bulk_elevation_changed()
+
+    def _convert_xsect_dlats(self, dlats: list[int]) -> object:
+        existing = self._sg_data.xsect_dlats
+        if not hasattr(existing, "dtype"):
+            return list(dlats)
+
+        dtype = getattr(existing, "dtype")
+        container_type = type(existing)
+        for constructor in (
+            lambda values: container_type(values, dtype=dtype),
+            lambda values: container_type(values),
+        ):
+            try:
+                return constructor(dlats)
+            except (TypeError, ValueError):
+                continue
+
+        return list(dlats)
 
     def rebuild_dlongs(self, start_index: int = 0, start_dlong: int = 0) -> None:
         if self._sg_data is None:

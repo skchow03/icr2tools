@@ -69,3 +69,37 @@ def test_suspended_drag_updates_emit_one_bulk_signal_on_commit() -> None:
 
     assert emitted == [None]
     assert per_section == []
+
+
+def test_set_xsect_definitions_remaps_altitudes_and_emits_bulk_signal() -> None:
+    sg_document = SGDocument(_make_sgfile(2, 3))
+    emitted: list[None] = []
+    per_section: list[int] = []
+
+    sg_document.elevations_bulk_changed.connect(lambda: emitted.append(None))
+    sg_document.elevation_changed.connect(lambda section_id: per_section.append(section_id))
+
+    sg_document.set_xsect_definitions([(2, -250.2), (None, 0.0), (0, 250.8)])
+
+    assert list(sg_document.sg_data.xsect_dlats) == [-250, 0, 251]
+    assert sg_document.sg_data.num_xsects == 3
+    assert sg_document.sg_data.header[5] == 3
+    assert list(sg_document.sg_data.sects[0].alt) == [102, 0, 100]
+    assert list(sg_document.sg_data.sects[0].grade) == [12, 0, 10]
+    assert list(sg_document.sg_data.sects[1].alt) == [202, 0, 200]
+    assert list(sg_document.sg_data.sects[1].grade) == [22, 0, 20]
+    assert emitted == [None]
+    assert per_section == []
+
+
+def test_set_xsect_definitions_preserves_array_dtype_when_available() -> None:
+    np = __import__("numpy")
+    sgfile = _make_sgfile(1, 3)
+    sgfile.xsect_dlats = np.array([0, 100, 200], dtype=np.int16)
+    sg_document = SGDocument(sgfile)
+
+    sg_document.set_xsect_definitions([(0, -10), (1, 10)])
+
+    assert isinstance(sg_document.sg_data.xsect_dlats, np.ndarray)
+    assert sg_document.sg_data.xsect_dlats.dtype == np.int16
+    assert sg_document.sg_data.xsect_dlats.tolist() == [-10, 10]
