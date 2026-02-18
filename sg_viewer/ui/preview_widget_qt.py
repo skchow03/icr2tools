@@ -53,6 +53,9 @@ class PreviewWidgetQt(QtWidgets.QWidget):
             runtime=self._runtime,
             background_color=self.palette().color(QtGui.QPalette.Window),
         )
+        self._throttled_repaint_timer = QtCore.QTimer(self)
+        self._throttled_repaint_timer.setSingleShot(True)
+        self._throttled_repaint_timer.timeout.connect(self.update)
 
     def __getattr__(self, name: str):
         return getattr(self._runtime, name)
@@ -83,6 +86,12 @@ class PreviewWidgetQt(QtWidgets.QWidget):
 
     def request_repaint(self) -> None:
         self.update()
+
+    def request_repaint_throttled(self, min_interval_ms: int = 33) -> None:
+        interval_ms = max(1, int(min_interval_ms))
+        if self._throttled_repaint_timer.isActive():
+            return
+        self._throttled_repaint_timer.start(interval_ms)
 
     def widget_size(self) -> tuple[int, int]:
         return (self.width(), self.height())
