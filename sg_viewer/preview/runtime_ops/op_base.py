@@ -89,6 +89,8 @@ class _RuntimeCoreBaseMixin:
         self._fsect_undo_stack: list[list[list[PreviewFSection]]] = []
         self._fsect_redo_stack: list[list[list[PreviewFSection]]] = []
         self._suspend_fsect_history = False
+        self._fsect_edit_session_active = False
+        self._fsect_edit_session_snapshot: list[list[PreviewFSection]] | None = None
         self._last_elevation_recalc_message: str | None = None
 
         self._selection = selection.SelectionManager()
