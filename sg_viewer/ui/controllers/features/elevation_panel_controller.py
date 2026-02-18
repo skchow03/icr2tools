@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.ui.altitude_units import feet_to_slider_units, units_from_500ths
 from sg_viewer.ui.elevation_profile import elevation_profile_alt_bounds
@@ -17,15 +17,26 @@ class ElevationPanelHost(Protocol):
     def _current_xsect_index(self) -> int | None: ...
     def _current_samples_per_section(self) -> int: ...
     def _update_copy_xsect_button(self) -> None: ...
-    def _apply_altitude_edit(self) -> None: ...
-    def _apply_grade_edit(self) -> None: ...
+    def _apply_altitude_edit(self, live: bool = False) -> None: ...
+    def _apply_grade_edit(self, live: bool = False) -> None: ...
     def _refresh_elevation_inputs(self) -> None: ...
     def _sync_after_xsect_value_change(self) -> None: ...
+    def _sync_after_xsect_value_change_lightweight(self) -> None: ...
 
 
 class ElevationPanelController:
+    _LIVE_EDIT_THROTTLE_MS = 24
+
     def __init__(self, host: ElevationPanelHost) -> None:
         self._host = host
+        self._pending_altitude_value: int | None = None
+        self._pending_grade_value: int | None = None
+        self._altitude_live_timer = QtCore.QTimer(self._host._window)
+        self._altitude_live_timer.setSingleShot(True)
+        self._altitude_live_timer.timeout.connect(self._apply_pending_altitude_live_edit)
+        self._grade_live_timer = QtCore.QTimer(self._host._window)
+        self._grade_live_timer.setSingleShot(True)
+        self._grade_live_timer.timeout.connect(self._apply_pending_grade_live_edit)
 
     def populate_xsect_choices(self, preferred_index: int | None = None) -> None:
         metadata = self._host._window.preview.get_xsect_metadata()
@@ -94,22 +105,53 @@ class ElevationPanelController:
     def on_altitude_slider_changed(self, value: int) -> None:
         self._host._window.update_altitude_display(value)
         self._host._elevation_controller.begin_edit()
-        self._host._apply_altitude_edit()
+        self._pending_altitude_value = value
+        # Before: every valueChanged tick did a full sync (profile/table rebuild).
+        # After: throttle live updates so dragging stays responsive.
+        if not self._altitude_live_timer.isActive():
+            self._altitude_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def on_altitude_slider_released(self) -> None:
+        self._flush_pending_altitude_live_edit()
         self._host._window.preview.validate_document()
+        self._host._apply_altitude_edit(live=False)
         if self._host._elevation_controller.end_edit():
-            self.refresh_elevation_profile()
+            self._host._sync_after_xsect_value_change()
 
     def on_grade_slider_changed(self, value: int) -> None:
-        _ = value
+        self._pending_grade_value = value
         self._host._elevation_controller.begin_edit()
-        self._host._apply_grade_edit()
+        if not self._grade_live_timer.isActive():
+            self._grade_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def on_grade_edit_finished(self) -> None:
+        self._flush_pending_grade_live_edit()
         self._host._window.preview.validate_document()
+        self._host._apply_grade_edit(live=False)
         if self._host._elevation_controller.end_edit():
-            self.refresh_elevation_profile()
+            self._host._sync_after_xsect_value_change()
+
+    def _apply_pending_altitude_live_edit(self) -> None:
+        if self._pending_altitude_value is None:
+            return
+        self._pending_altitude_value = None
+        self._host._apply_altitude_edit(live=True)
+
+    def _apply_pending_grade_live_edit(self) -> None:
+        if self._pending_grade_value is None:
+            return
+        self._pending_grade_value = None
+        self._host._apply_grade_edit(live=True)
+
+    def _flush_pending_altitude_live_edit(self) -> None:
+        if self._altitude_live_timer.isActive():
+            self._altitude_live_timer.stop()
+        self._pending_altitude_value = None
+
+    def _flush_pending_grade_live_edit(self) -> None:
+        if self._grade_live_timer.isActive():
+            self._grade_live_timer.stop()
+        self._pending_grade_value = None
 
     def on_altitude_range_changed(self, changed: str | None = None) -> None:
         min_value = self._host._window.altitude_min_spin.value()
