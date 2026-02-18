@@ -60,14 +60,14 @@ class ElevationPanelController:
         combo.blockSignals(False)
         self._host._update_copy_xsect_button()
 
-    def refresh_elevation_profile(self) -> None:
+    def refresh_elevation_profile(self, *, refresh_table: bool = True) -> None:
         combo = self._host._window.xsect_combo
         if not combo.isEnabled():
             self._host._window.preview.set_selected_xsect_index(None)
             self._host._window.profile_widget.set_profile_data(None)
             self._host._elevation_controller.current_profile = None
             self._host._refresh_elevation_inputs()
-            self.refresh_xsect_elevation_panel()
+            self.refresh_xsect_elevation_panel(refresh_table=refresh_table)
             return
         current_index = combo.currentData()
         if current_index is None:
@@ -89,7 +89,7 @@ class ElevationPanelController:
         self._host._elevation_controller.current_profile = profile
         self._host._refresh_elevation_inputs()
         self._host._update_copy_xsect_button()
-        self.refresh_xsect_elevation_panel()
+        self.refresh_xsect_elevation_panel(refresh_table=refresh_table)
 
     def refresh_elevation_inputs(self) -> None:
         selected = self._host._active_selection
@@ -246,18 +246,20 @@ class ElevationPanelController:
         self._host._window.show_status_message(f"Copied x-section {xsect_index} data to all x-sections.")
         return True
 
-    def refresh_xsect_elevation_panel(self) -> None:
+    def refresh_xsect_elevation_panel(self, *, refresh_table: bool = True) -> None:
         selection = self._host._active_selection
         if selection is None:
             self._host._window.xsect_elevation_widget.set_xsect_data(None)
-            self.refresh_xsect_elevation_table()
+            if refresh_table:
+                self.refresh_xsect_elevation_table()
             return
         altitudes = self._host._window.preview.get_section_xsect_altitudes(selection.index)
         metadata = self._host._window.preview.get_xsect_metadata()
         xsect_dlats = [dlat for _, dlat in metadata] if metadata else None
         y_range = elevation_profile_alt_bounds(self._host._elevation_controller.current_profile) if self._host._elevation_controller.current_profile is not None else None
         self._host._window.xsect_elevation_widget.set_xsect_data(XsectElevationData(section_index=selection.index, altitudes=[float(v) if v is not None else None for v in altitudes], xsect_dlats=xsect_dlats, selected_xsect_index=self._host._current_xsect_index(), y_range=y_range, unit=self._host._window.xsect_altitude_unit(), unit_label=self._host._window.xsect_altitude_unit_label(), decimals=self._host._window.xsect_altitude_display_decimals()))
-        self.refresh_xsect_elevation_table()
+        if refresh_table:
+            self.refresh_xsect_elevation_table()
 
     def refresh_xsect_elevation_table(self) -> None:
         selection = self._host._active_selection

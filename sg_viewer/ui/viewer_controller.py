@@ -1101,7 +1101,8 @@ class SGViewerController:
         self._refresh_xsect_elevation_table()
 
     def _sync_after_xsect_value_change_lightweight(self) -> None:
-        """Keep live slider edits responsive by avoiding expensive profile/table rebuilds."""
+        """Keep live slider edits responsive while still updating elevation graphs live."""
+        self._elevation_panel_controller.refresh_elevation_profile(refresh_table=False)
         if hasattr(self._window.preview, "request_repaint"):
             self._window.preview.request_repaint_throttled(min_interval_ms=33)
 
