@@ -1,4 +1,3 @@
-import numpy as np
 import math
 
 def isclockwise(start_angle, end_angle):
@@ -12,28 +11,28 @@ def isclockwise(start_angle, end_angle):
 
 
 def approx_curve_length(a, b, c, d, scale, num_segments=10000):
-    # Define the function with scaled x
     def f(x):
         x_scaled = x / scale
         return a * x_scaled**3 + b * x_scaled**2 + c * x_scaled + d
 
-    # Generate x values
-    x_values = np.linspace(0, scale, num_segments + 1)
+    step = scale / num_segments
+    total_length = 0.0
 
-    # Calculate the y values
-    y_values = f(x_values)
+    x_prev = 0.0
+    y_prev = f(x_prev)
 
-    # Calculate the differences between consecutive x and y values
-    delta_x = np.diff(x_values)
-    delta_y = np.diff(y_values)
+    for i in range(1, num_segments + 1):
+        x_cur = i * step
+        y_cur = f(x_cur)
 
-    # Calculate the lengths of the line segments
-    segment_lengths = np.sqrt(delta_x**2 + delta_y**2)
+        dx = x_cur - x_prev
+        dy = y_cur - y_prev
+        total_length += math.hypot(dx, dy)
 
-    # Sum the segment lengths to get the total length
-    approx_length = np.sum(segment_lengths)
+        x_prev = x_cur
+        y_prev = y_cur
 
-    return approx_length
+    return float(total_length)
 
 def sg_ground_to_trk(sg_type):
     sg_to_trk_types = {
