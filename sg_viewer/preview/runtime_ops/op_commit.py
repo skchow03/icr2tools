@@ -11,10 +11,80 @@ class _RuntimeCoreCommitMixin:
     def _snapshot_fsects(self) -> list[list[PreviewFSection]]:
         return [copy.deepcopy(fsects) for fsects in self._fsects_by_section]
 
+    def _snapshot_elevation_state(self) -> dict[str, object] | None:
+        sg_data = self._document.sg_data
+        if sg_data is None:
+            return None
+        header = list(getattr(sg_data, "header", []))
+        return {
+            "num_xsects": int(getattr(sg_data, "num_xsects", 0)),
+            "xsect_dlats": list(getattr(sg_data, "xsect_dlats", [])),
+            "header": header,
+            "sections": [
+                {
+                    "alt": list(getattr(section, "alt", [])),
+                    "grade": list(getattr(section, "grade", [])),
+                }
+                for section in getattr(sg_data, "sects", [])
+            ],
+        }
+
+    def _snapshot_track_state(
+        self,
+    ) -> tuple[list[list[PreviewFSection]], dict[str, object] | None]:
+        return self._snapshot_fsects(), self._snapshot_elevation_state()
+
+    def _restore_track_state(
+        self,
+        snapshot: tuple[list[list[PreviewFSection]], dict[str, object] | None],
+    ) -> None:
+        fsects, elevation_state = snapshot
+        self._fsects_by_section = fsects
+        self._validate_section_fsects_alignment()
+        self._restore_elevation_state(elevation_state)
+
+    def _restore_elevation_state(self, state: dict[str, object] | None) -> None:
+        if state is None:
+            return
+        sg_data = self._document.sg_data
+        if sg_data is None:
+            return
+
+        sections = list(getattr(sg_data, "sects", []))
+        snapshot_sections = list(state.get("sections", []))
+        if len(sections) != len(snapshot_sections):
+            return
+
+        sg_data.num_xsects = int(state.get("num_xsects", sg_data.num_xsects))
+        if len(getattr(sg_data, "header", [])) > 5:
+            header = list(state.get("header", []))
+            if len(header) > 5:
+                sg_data.header[5] = int(header[5])
+            else:
+                sg_data.header[5] = int(sg_data.num_xsects)
+
+        xsect_dlats = state.get("xsect_dlats", [])
+        dtype = getattr(getattr(sg_data, "xsect_dlats", None), "dtype", None)
+        if dtype is not None:
+            try:
+                import numpy as np
+
+                sg_data.xsect_dlats = np.array(xsect_dlats, dtype=dtype)
+            except Exception:
+                sg_data.xsect_dlats = list(xsect_dlats)
+        else:
+            sg_data.xsect_dlats = list(xsect_dlats)
+
+        for section, snapshot_section in zip(sections, snapshot_sections):
+            if not isinstance(snapshot_section, dict):
+                continue
+            section.alt = list(snapshot_section.get("alt", []))
+            section.grade = list(snapshot_section.get("grade", []))
+
     def _record_fsect_history(self) -> None:
         if self._suspend_fsect_history:
             return
-        self._fsect_undo_stack.append(self._snapshot_fsects())
+        self._fsect_undo_stack.append(self._snapshot_track_state())
         self._fsect_redo_stack.clear()
 
     def begin_fsect_edit_session(self) -> None:
@@ -22,13 +92,16 @@ class _RuntimeCoreCommitMixin:
             return
         self._fsect_edit_session_active = True
         self._fsect_edit_session_snapshot = self._snapshot_fsects()
+        self._fsect_edit_session_elevation_snapshot = self._snapshot_elevation_state()
 
     def commit_fsect_edit_session(self) -> None:
         if not self._fsect_edit_session_active:
             return
         before = self._fsect_edit_session_snapshot
+        elevation_before = self._fsect_edit_session_elevation_snapshot
         self._fsect_edit_session_active = False
         self._fsect_edit_session_snapshot = None
+        self._fsect_edit_session_elevation_snapshot = None
         if before is None:
             return
         after = self._snapshot_fsects()
@@ -36,22 +109,26 @@ class _RuntimeCoreCommitMixin:
             return
         if self._suspend_fsect_history:
             return
-        self._fsect_undo_stack.append(before)
+        self._fsect_undo_stack.append((before, elevation_before))
         self._fsect_redo_stack.clear()
 
     def clear_fsect_history(self) -> None:
+        if self._suspend_fsect_history:
+            return
         self._fsect_undo_stack.clear()
         self._fsect_redo_stack.clear()
+        self._fsect_edit_session_snapshot = None
+        self._fsect_edit_session_elevation_snapshot = None
+        self._fsect_edit_session_active = False
 
     def undo_fsect_edit(self) -> bool:
         if not self._fsect_undo_stack:
             return False
-        self._fsect_redo_stack.append(self._snapshot_fsects())
+        self._fsect_redo_stack.append(self._snapshot_track_state())
         restored = self._fsect_undo_stack.pop()
         self._suspend_fsect_history = True
         try:
-            self._fsects_by_section = restored
-            self._validate_section_fsects_alignment()
+            self._restore_track_state(restored)
             self._has_unsaved_changes = True
             if self._emit_sections_changed is not None:
                 self._emit_sections_changed()
@@ -64,12 +141,11 @@ class _RuntimeCoreCommitMixin:
     def redo_fsect_edit(self) -> bool:
         if not self._fsect_redo_stack:
             return False
-        self._fsect_undo_stack.append(self._snapshot_fsects())
+        self._fsect_undo_stack.append(self._snapshot_track_state())
         restored = self._fsect_redo_stack.pop()
         self._suspend_fsect_history = True
         try:
-            self._fsects_by_section = restored
-            self._validate_section_fsects_alignment()
+            self._restore_track_state(restored)
             self._has_unsaved_changes = True
             if self._emit_sections_changed is not None:
                 self._emit_sections_changed()
@@ -78,6 +154,7 @@ class _RuntimeCoreCommitMixin:
         finally:
             self._suspend_fsect_history = False
         return True
+
     def _bump_sg_version(self) -> None:
         self._sg_version += 1
         self._elevation_bounds_cache.clear()
@@ -269,11 +346,14 @@ class _RuntimeCoreCommitMixin:
         *,
         validate: bool = True,
     ) -> bool:
+        self._record_fsect_history()
         try:
             self._document.set_section_xsect_altitude(
                 section_id, xsect_index, altitude, validate=validate
             )
         except (ValueError, IndexError):
+            if self._fsect_undo_stack:
+                self._fsect_undo_stack.pop()
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
         self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
@@ -287,28 +367,37 @@ class _RuntimeCoreCommitMixin:
         *,
         validate: bool = True,
     ) -> bool:
+        self._record_fsect_history()
         try:
             self._document.set_section_xsect_grade(
                 section_id, xsect_index, grade, validate=validate
             )
         except (ValueError, IndexError):
+            if self._fsect_undo_stack:
+                self._fsect_undo_stack.pop()
             return False
         self._mark_xsect_bounds_dirty(xsect_index)
         self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
         return True
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> bool:
+        self._record_fsect_history()
         try:
             self._document.copy_xsect_data_to_all(xsect_index)
         except (ValueError, IndexError):
+            if self._fsect_undo_stack:
+                self._fsect_undo_stack.pop()
             return False
         self._bump_sg_version()
         return True
 
     def offset_all_elevations(self, delta: float, *, validate: bool = True) -> bool:
+        self._record_fsect_history()
         try:
             self._document.offset_all_elevations(delta, validate=validate)
         except (ValueError, IndexError):
+            if self._fsect_undo_stack:
+                self._fsect_undo_stack.pop()
             return False
         self._bump_sg_version()
         return True
@@ -320,6 +409,7 @@ class _RuntimeCoreCommitMixin:
         grade: float = 0.0,
         validate: bool = True,
     ) -> bool:
+        self._record_fsect_history()
         try:
             self._document.flatten_all_elevations_and_grade(
                 elevation,
@@ -327,6 +417,8 @@ class _RuntimeCoreCommitMixin:
                 validate=validate,
             )
         except (ValueError, IndexError):
+            if self._fsect_undo_stack:
+                self._fsect_undo_stack.pop()
             return False
         self._bump_sg_version()
         return True

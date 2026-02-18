@@ -436,6 +436,73 @@ def test_edit_menu_undo_redo_fallback_to_fsect_history(qapp, monkeypatch):
     finally:
         window.close()
 
+
+
+def _make_single_section_sgfile(*, num_xsects: int = 2) -> SGFile:
+    data = [0] * (58 + 2 * num_xsects)
+    section = SGFile.Section(data, num_xsects)
+    section.length = 1000
+    section.alt = [1000 + idx for idx in range(num_xsects)]
+    section.grade = [100 + idx for idx in range(num_xsects)]
+    return SGFile([0, 0, 0, 0, 1, num_xsects], 1, num_xsects, [-100, 100], [section])
+
+
+def test_preview_undo_redo_tracks_multiple_fsect_edits(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._fsects_by_section = [
+            [PreviewFSection(start_dlat=100.0, end_dlat=200.0, surface_type=0, type2=0)]
+        ]
+
+        window.preview.update_fsection_dlat(0, 0, start_dlat=110.0)
+        window.preview.update_fsection_dlat(0, 0, start_dlat=130.0)
+
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 130.0
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 110.0
+        assert window.preview.undo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 100.0
+        assert window.preview.redo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 110.0
+        assert window.preview.redo_fsect_edit() is True
+        assert window.preview.get_section_fsects(0)[0].start_dlat == 130.0
+    finally:
+        window.close()
+
+
+def test_preview_undo_redo_restores_elevation_and_grade_edits(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(window.preview, "refresh_fsections_preview", lambda: True)
+        window.preview._fsects_by_section = [[]]
+        window.preview._document.set_sg_data(_make_single_section_sgfile(), validate=False)
+
+        assert window.preview.set_section_xsect_altitude(0, 0, 2000, validate=False) is True
+        assert window.preview.set_section_xsect_grade(0, 0, 250, validate=False) is True
+
+        section = window.preview._document.sg_data.sects[0]
+        assert section.alt[0] == 2000
+        assert section.grade[0] == 250
+
+        assert window.preview.undo_fsect_edit() is True
+        assert section.grade[0] == 100
+        assert section.alt[0] == 2000
+
+        assert window.preview.undo_fsect_edit() is True
+        assert section.alt[0] == 1000
+        assert section.grade[0] == 100
+
+        assert window.preview.redo_fsect_edit() is True
+        assert section.alt[0] == 2000
+        assert section.grade[0] == 100
+
+        assert window.preview.redo_fsect_edit() is True
+        assert section.alt[0] == 2000
+        assert section.grade[0] == 250
+    finally:
+        window.close()
+
 def test_file_menu_exposes_save_action(qapp):
     window = SGViewerWindow()
     try:
