@@ -168,8 +168,11 @@ class PreviewGeometryService:
 
         if dragged_section.type_name == "straight" and target_section.type_name == "straight":
             result = self._solve_straight_to_straight_connection(
+                sections,
+                dragged_idx,
                 dragged_section,
                 dragged_end,
+                target_idx,
                 target_section,
                 target_end,
             )
@@ -285,14 +288,43 @@ class PreviewGeometryService:
 
     def _solve_straight_to_straight_connection(
         self,
+        sections: list[SectionPreview],
+        dragged_idx: int,
         dragged: SectionPreview,
         dragged_end: EndType,
+        target_idx: int,
         target: SectionPreview,
         target_end: EndType,
     ) -> tuple[SectionPreview, SectionPreview] | None:
         dragged_heading = self._endpoint_heading(dragged, dragged_end)
         target_heading = self._endpoint_heading(target, target_end)
-        if dragged_heading is None or target_heading is None:
+        if dragged_heading is None:
+            return None
+
+        target_disconnected_both_ends = (
+            is_disconnected_endpoint(sections, target, "start")
+            and is_disconnected_endpoint(sections, target, "end")
+        )
+        if target_disconnected_both_ends:
+            join_point = target.start if target_end == "start" else target.end
+            segment_length = math.hypot(target.end[0] - target.start[0], target.end[1] - target.start[1])
+            if segment_length <= 0:
+                return None
+            dx = dragged_heading[0] * segment_length
+            dy = dragged_heading[1] * segment_length
+            updated_target = (
+                replace(target, start=join_point, end=(join_point[0] + dx, join_point[1] + dy))
+                if target_end == "start"
+                else replace(target, start=(join_point[0] - dx, join_point[1] - dy), end=join_point)
+            )
+            updated_dragged = (
+                replace(dragged, start=join_point)
+                if dragged_end == "start"
+                else replace(dragged, end=join_point)
+            )
+            return updated_dragged, updated_target
+
+        if target_heading is None:
             return None
         if dragged_heading != target_heading:
             return None

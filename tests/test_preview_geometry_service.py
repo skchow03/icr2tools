@@ -140,11 +140,12 @@ def test_solve_connection_allows_straight_to_straight_when_headings_match_and_jo
 def test_solve_connection_rejects_straight_to_straight_when_join_would_not_be_straight():
     service = PreviewGeometryService()
     dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
-    target = _straight(1, (20.0, 1.0), (30.0, 1.0))
+    target = _straight(1, (20.0, 1.0), (30.0, 1.0), prev=2)
+    attached = _straight(2, (0.0, 1.0), (20.0, 1.0), nxt=1)
 
     solved = service.solve_connection(
         ConnectionSolveRequest(
-            sections=[dragged, target],
+            sections=[dragged, target, attached],
             source=(0, "end"),
             target=(1, "start"),
         )
@@ -154,3 +155,25 @@ def test_solve_connection_rejects_straight_to_straight_when_join_would_not_be_st
     assert solved.status_message == (
         "Cannot connect straight → straight unless endpoint headings match and the connection is perfectly straight."
     )
+
+
+def test_solve_connection_allows_straight_to_straight_by_rotating_disconnected_target():
+    service = PreviewGeometryService()
+    dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
+    target = _straight(1, (20.0, 20.0), (20.0, 30.0))
+
+    solved = service.solve_connection(
+        ConnectionSolveRequest(
+            sections=[dragged, target],
+            source=(0, "end"),
+            target=(1, "start"),
+        )
+    )
+
+    assert solved.sections is not None
+    assert solved.sections[0].next_id == 1
+    assert solved.sections[1].previous_id == 0
+    assert solved.sections[0].end == (20.0, 20.0)
+    assert solved.sections[1].start == (20.0, 20.0)
+    assert solved.sections[1].end == (30.0, 20.0)
+    assert solved.status_message == "Straight → straight connected"
