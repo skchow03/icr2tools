@@ -4,45 +4,21 @@ import copy
 
 from sg_viewer.model.edit_commands import TrackEditSnapshot
 from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.runtime.track_state_snapshot import TrackStateSnapshotHelper
 
 
 class _RuntimeCoreCommitMixin:
+    _track_state_helper = TrackStateSnapshotHelper()
 
 
     def _snapshot_fsects(self) -> list[list[PreviewFSection]]:
-        return [copy.deepcopy(fsects) for fsects in self._fsects_by_section]
+        return self._track_state_helper.snapshot_fsects(self)
 
     def _snapshot_elevation_state(self) -> dict[str, object] | None:
-        sg_data = self._document.sg_data
-        if sg_data is None:
-            return None
-        header = list(getattr(sg_data, "header", []))
-        return {
-            "num_xsects": int(getattr(sg_data, "num_xsects", 0)),
-            "xsect_dlats": list(getattr(sg_data, "xsect_dlats", [])),
-            "header": header,
-            "sections": [
-                {
-                    "alt": list(getattr(section, "alt", [])),
-                    "grade": list(getattr(section, "grade", [])),
-                }
-                for section in getattr(sg_data, "sects", [])
-            ],
-        }
+        return self._track_state_helper.snapshot_elevation_state(self)
 
     def _snapshot_track_state(self) -> TrackEditSnapshot:
-        topology = self._snapshot_topology_state()
-        sections: list = []
-        start_finish_dlong = None
-        if isinstance(topology, dict):
-            sections = copy.deepcopy(list(topology.get("sections", [])))
-            start_finish_dlong = topology.get("start_finish_dlong")
-        return TrackEditSnapshot(
-            sections=sections,
-            start_finish_dlong=start_finish_dlong,
-            fsects_by_section=self._snapshot_fsects(),
-            elevation_state=self._snapshot_elevation_state(),
-        )
+        return self._track_state_helper.snapshot_track_state(self)
 
     def _snapshot_topology_state(self) -> dict[str, object] | None:
         return {
@@ -51,21 +27,7 @@ class _RuntimeCoreCommitMixin:
         }
 
     def restore_snapshot(self, snapshot: TrackEditSnapshot) -> list:
-        self._fsects_by_section = copy.deepcopy(snapshot.fsects_by_section)
-        self._restore_topology_state(
-            {
-                "sections": copy.deepcopy(snapshot.sections),
-                "start_finish_dlong": snapshot.start_finish_dlong,
-            }
-        )
-        self._validate_section_fsects_alignment()
-        self._restore_elevation_state(snapshot.elevation_state)
-        self._has_unsaved_changes = True
-        if self._emit_sections_changed is not None:
-            self._emit_sections_changed()
-        if not self.refresh_fsections_preview():
-            self._context.request_repaint()
-        return copy.deepcopy(self._section_manager.sections)
+        return self._track_state_helper.restore_track_state(self, snapshot)
 
     def _commit_track_snapshot(
         self,
@@ -117,42 +79,7 @@ class _RuntimeCoreCommitMixin:
                 pass
 
     def _restore_elevation_state(self, state: dict[str, object] | None) -> None:
-        if state is None:
-            return
-        sg_data = self._document.sg_data
-        if sg_data is None:
-            return
-
-        sections = list(getattr(sg_data, "sects", []))
-        snapshot_sections = list(state.get("sections", []))
-        if len(sections) != len(snapshot_sections):
-            return
-
-        sg_data.num_xsects = int(state.get("num_xsects", sg_data.num_xsects))
-        if len(getattr(sg_data, "header", [])) > 5:
-            header = list(state.get("header", []))
-            if len(header) > 5:
-                sg_data.header[5] = int(header[5])
-            else:
-                sg_data.header[5] = int(sg_data.num_xsects)
-
-        xsect_dlats = state.get("xsect_dlats", [])
-        dtype = getattr(getattr(sg_data, "xsect_dlats", None), "dtype", None)
-        if dtype is not None:
-            try:
-                import numpy as np
-
-                sg_data.xsect_dlats = np.array(xsect_dlats, dtype=dtype)
-            except Exception:
-                sg_data.xsect_dlats = list(xsect_dlats)
-        else:
-            sg_data.xsect_dlats = list(xsect_dlats)
-
-        for section, snapshot_section in zip(sections, snapshot_sections):
-            if not isinstance(snapshot_section, dict):
-                continue
-            section.alt = list(snapshot_section.get("alt", []))
-            section.grade = list(snapshot_section.get("grade", []))
+        self._track_state_helper.restore_elevation_state(self, state)
 
     def begin_fsect_edit_session(self) -> None:
         if self._fsect_edit_session_active:

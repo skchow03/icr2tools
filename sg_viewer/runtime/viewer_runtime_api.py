@@ -6,7 +6,6 @@ from typing import Callable
 from icr2_core.trk.utils import approx_curve_length
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model.edit_commands import (
-    ReplaceSectionsCommand,
     ReplaceTrackSnapshotCommand,
     TrackEditSnapshot,
 )
@@ -59,7 +58,7 @@ class ViewerRuntimeApi:
         self._snapshot_provider = snapshot_provider
         self._restore_snapshot = restore_snapshot
 
-    def _commit_track_edit(self, command: ReplaceSectionsCommand | ReplaceTrackSnapshotCommand) -> list[SectionPreview]:
+    def _commit_track_edit(self, command: ReplaceTrackSnapshotCommand) -> list[SectionPreview]:
         return self._edit_manager.execute(command)
 
     def commit_sections(
@@ -69,17 +68,17 @@ class ViewerRuntimeApi:
         after: list[SectionPreview],
         changed_indices: list[int] | None = None,
     ) -> RuntimeUpdatePayload:
-        if self._snapshot_provider is not None and self._restore_snapshot is not None:
-            before_snapshot = self._snapshot_provider()
-            before_snapshot = replace(before_snapshot, sections=list(before))
-            after_snapshot = replace(before_snapshot, sections=list(after))
-            command = ReplaceTrackSnapshotCommand(
-                before=before_snapshot,
-                after=after_snapshot,
-                restore_snapshot=self._restore_snapshot,
-            )
-        else:
-            command = ReplaceSectionsCommand(before=before, after=after)
+        if self._snapshot_provider is None or self._restore_snapshot is None:
+            raise RuntimeError("ViewerRuntimeApi.commit_sections requires snapshot provider and restore callback")
+        before_snapshot = self._snapshot_provider()
+        before_snapshot = replace(before_snapshot, sections=list(before))
+        after_snapshot = self._snapshot_provider()
+        after_snapshot = replace(after_snapshot, sections=list(after))
+        command = ReplaceTrackSnapshotCommand(
+            before=before_snapshot,
+            after=after_snapshot,
+            restore_snapshot=self._restore_snapshot,
+        )
         updated = self._commit_track_edit(command)
         return RuntimeUpdatePayload(
             updated_sections=updated,
