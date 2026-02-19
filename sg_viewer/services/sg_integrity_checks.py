@@ -12,7 +12,7 @@ Point = tuple[float, float]
 FT_TO_WORLD = 500.0
 MIN_RADIUS_FT = 50.0
 MAX_ARC_DEGREES = 120.0
-PERP_CLEARANCE_FT = 70.0
+MIN_CENTERLINE_SEPARATION_FT = 80.0
 PERP_SAMPLE_STEP_FT = 1.0
 
 
@@ -39,7 +39,7 @@ def build_integrity_report(
     lines.append("")
     lines.extend(_curve_limits_report(sections))
     lines.append("")
-    lines.extend(_perpendicular_clearance_report(sections))
+    lines.extend(_centerline_clearance_report(sections, fsects_by_section))
 
     return IntegrityReport(text="\n".join(lines))
 
@@ -149,10 +149,13 @@ def _curve_limits_report(sections: list[SectionPreview]) -> list[str]:
     return lines
 
 
-def _perpendicular_clearance_report(sections: list[SectionPreview]) -> list[str]:
-    lines = ["Perpendicular centerline clearance", "-" * 72]
+def _centerline_clearance_report(
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+) -> list[str]:
+    lines = ["Centerline clearance and boundary ownership", "-" * 72]
     sample_step_world = PERP_SAMPLE_STEP_FT * FT_TO_WORLD
-    probe_half_len_world = PERP_CLEARANCE_FT * FT_TO_WORLD
+    probe_half_len_world = MIN_CENTERLINE_SEPARATION_FT * FT_TO_WORLD
 
     all_segments: list[tuple[int, Point, Point]] = []
     for section_index, section in enumerate(sections):
@@ -182,23 +185,100 @@ def _perpendicular_clearance_report(sections: list[SectionPreview]) -> list[str]
                 (
                     f"  - section {section_index} near ({sample_point[0] / FT_TO_WORLD:.1f}, "
                     f"{sample_point[1] / FT_TO_WORLD:.1f}) ft intersects section {hit} "
-                    f"within ±{PERP_CLEARANCE_FT:.0f} ft"
+                    f"within ±{MIN_CENTERLINE_SEPARATION_FT:.0f} ft"
                 )
             )
             break
 
     if findings:
-        lines.append(f"Sections with perpendicular overlap hits: {len(findings)}")
+        lines.append(f"Sections with < {MIN_CENTERLINE_SEPARATION_FT:.0f} ft perpendicular spacing: {len(findings)}")
         lines.extend(findings)
     else:
         lines.append(
-            f"No section had a perpendicular ±{PERP_CLEARANCE_FT:.0f} ft probe intersect another centerline."
+            (
+                "No section had a perpendicular "
+                f"±{MIN_CENTERLINE_SEPARATION_FT:.0f} ft probe intersect another centerline."
+            )
         )
+
+    lines.extend(_boundary_centerline_ownership_report(sections, fsects_by_section, sample_step_world))
 
     lines.append(
         f"Sampling step: {PERP_SAMPLE_STEP_FT:.0f} ft along each centerline section."
     )
     return lines
+
+
+def _boundary_centerline_ownership_report(
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+    sample_step_world: float,
+) -> list[str]:
+    lines: list[str] = []
+    findings: list[str] = []
+
+    for section_index, section in enumerate(sections):
+        samples = _sample_polyline_with_distance(section.polyline, sample_step_world)
+        if not samples:
+            continue
+
+        section_fsects = _safe_get_fsects(fsects_by_section, section_index)
+        for sample_point, tangent, along_distance, total_distance in samples:
+            normal = _left_normal(tangent)
+            if normal is None:
+                continue
+
+            ratio = 0.0 if total_distance <= 0 else min(max(along_distance / total_distance, 0.0), 1.0)
+            left_dlat, right_dlat = _boundary_offsets_at_ratio(section_fsects, ratio)
+            for side, dlat in (("left", left_dlat), ("right", right_dlat)):
+                boundary_point = (
+                    sample_point[0] + normal[0] * dlat,
+                    sample_point[1] + normal[1] * dlat,
+                )
+                own_dist = _point_to_polyline_distance(boundary_point, section.polyline)
+                rival_index, rival_dist = _nearest_section_distance(
+                    boundary_point,
+                    sections,
+                    exclude_index=section_index,
+                )
+                if rival_index is None or rival_dist is None:
+                    continue
+                if rival_dist + 1e-6 >= own_dist:
+                    continue
+
+                findings.append(
+                    (
+                        f"  - section {section_index} {side} boundary near "
+                        f"({boundary_point[0] / FT_TO_WORLD:.1f}, {boundary_point[1] / FT_TO_WORLD:.1f}) ft "
+                        f"is closer to section {rival_index} centerline "
+                        f"({rival_dist / FT_TO_WORLD:.2f} ft) than its own "
+                        f"({own_dist / FT_TO_WORLD:.2f} ft)"
+                    )
+                )
+                break
+
+            if findings and findings[-1].startswith(f"  - section {section_index} "):
+                break
+
+    if findings:
+        lines.append(
+            f"Boundary points closer to a different centerline: {len(findings)}"
+        )
+        lines.extend(findings)
+    else:
+        lines.append("Boundary points closer to a different centerline: none")
+
+    return lines
+
+
+def _boundary_offsets_at_ratio(
+    fsects: list[PreviewFSection], ratio: float
+) -> tuple[float, float]:
+    dlats = [0.0]
+    for fsect in fsects:
+        dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * ratio
+        dlats.append(dlat)
+    return max(dlats), min(dlats)
 
 
 def _safe_get_fsects(
@@ -310,6 +390,81 @@ def _interpolate_at_distance(
     p1 = polyline[-1]
     tangent = _normalize((p1[0] - p0[0], p1[1] - p0[1])) or (1.0, 0.0)
     return polyline[-1], tangent
+
+
+def _sample_polyline_with_distance(
+    polyline: list[Point], step: float
+) -> list[tuple[Point, tuple[float, float], float, float]]:
+    if len(polyline) < 2:
+        return []
+
+    distances = [0.0]
+    total = 0.0
+    for idx in range(len(polyline) - 1):
+        seg_len = _distance(polyline[idx], polyline[idx + 1])
+        total += seg_len
+        distances.append(total)
+
+    if total <= 0:
+        return []
+
+    samples: list[tuple[Point, tuple[float, float], float, float]] = []
+    d = 0.0
+    while d <= total:
+        point, tangent = _interpolate_at_distance(polyline, distances, d)
+        samples.append((point, tangent, d, total))
+        d += max(step, 1.0)
+
+    if samples:
+        point, tangent = _interpolate_at_distance(polyline, distances, total)
+        samples[-1] = (point, tangent, total, total)
+
+    return samples
+
+
+def _nearest_section_distance(
+    point: Point,
+    sections: list[SectionPreview],
+    *,
+    exclude_index: int,
+) -> tuple[int | None, float | None]:
+    nearest_index: int | None = None
+    nearest_distance: float | None = None
+
+    for index, section in enumerate(sections):
+        if index == exclude_index:
+            continue
+        distance = _point_to_polyline_distance(point, section.polyline)
+        if nearest_distance is None or distance < nearest_distance:
+            nearest_distance = distance
+            nearest_index = index
+
+    return nearest_index, nearest_distance
+
+
+def _point_to_polyline_distance(point: Point, polyline: list[Point]) -> float:
+    if not polyline:
+        return math.inf
+    if len(polyline) == 1:
+        return _distance(point, polyline[0])
+
+    return min(
+        _point_to_segment_distance(point, polyline[idx], polyline[idx + 1])
+        for idx in range(len(polyline) - 1)
+    )
+
+
+def _point_to_segment_distance(point: Point, start: Point, end: Point) -> float:
+    seg_x = end[0] - start[0]
+    seg_y = end[1] - start[1]
+    seg_len_sq = seg_x * seg_x + seg_y * seg_y
+    if seg_len_sq <= 1e-12:
+        return _distance(point, start)
+
+    proj = ((point[0] - start[0]) * seg_x + (point[1] - start[1]) * seg_y) / seg_len_sq
+    proj = min(max(proj, 0.0), 1.0)
+    closest = (start[0] + proj * seg_x, start[1] + proj * seg_y)
+    return _distance(point, closest)
 
 
 def _find_probe_intersection(
