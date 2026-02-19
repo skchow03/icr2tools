@@ -13,7 +13,7 @@ FT_TO_WORLD = 500.0
 MIN_RADIUS_FT = 50.0
 MAX_ARC_DEGREES = 120.0
 MIN_CENTERLINE_SEPARATION_FT = 80.0
-PERP_SAMPLE_STEP_FT = 1.0
+PERP_SAMPLE_STEP_FT = 10.0
 
 
 @dataclass(frozen=True)
@@ -178,7 +178,13 @@ def _centerline_clearance_report(
                 sample_point[1] + normal[1] * probe_half_len_world,
             )
 
-            hit = _find_probe_intersection(section_index, probe_start, probe_end, all_segments)
+            hit = _find_probe_intersection(
+                section_index,
+                probe_start,
+                probe_end,
+                all_segments,
+                sections,
+            )
             if hit is None:
                 continue
             findings.append(
@@ -242,6 +248,8 @@ def _boundary_centerline_ownership_report(
                     exclude_index=section_index,
                 )
                 if rival_index is None or rival_dist is None:
+                    continue
+                if _is_adjacent_section(section_index, rival_index, sections):
                     continue
                 if rival_dist + 1e-6 >= own_dist:
                     continue
@@ -472,13 +480,34 @@ def _find_probe_intersection(
     probe_start: Point,
     probe_end: Point,
     all_segments: list[tuple[int, Point, Point]],
+    sections: list[SectionPreview],
 ) -> int | None:
     for section_index, seg_start, seg_end in all_segments:
         if section_index == source_section_index:
             continue
+        if _is_adjacent_section(source_section_index, section_index, sections):
+            continue
         if _segments_intersect(probe_start, probe_end, seg_start, seg_end):
             return section_index
     return None
+
+
+def _is_adjacent_section(
+    source_index: int,
+    target_index: int,
+    sections: list[SectionPreview],
+) -> bool:
+    if source_index < 0 or source_index >= len(sections):
+        return False
+    if target_index < 0 or target_index >= len(sections):
+        return False
+
+    source = sections[source_index]
+    target = sections[target_index]
+    return target_index in (source.previous_id, source.next_id) or source_index in (
+        target.previous_id,
+        target.next_id,
+    )
 
 
 def _segments_intersect(a: Point, b: Point, c: Point, d: Point) -> bool:
