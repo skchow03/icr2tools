@@ -282,10 +282,11 @@ class SGViewerController:
         background_menu.addAction(self._open_background_action)
         background_menu.addAction(self._background_settings_action)
         background_menu.addAction(self._calibrate_background_action)
-        tools_menu.addSeparator()
-        tools_menu.addAction(self._section_table_action)
-        tools_menu.addAction(self._heading_table_action)
-        tools_menu.addAction(self._xsect_table_action)
+
+        window_menu = self._window.menuBar().addMenu("Window")
+        window_menu.addAction(self._section_table_action)
+        window_menu.addAction(self._heading_table_action)
+        window_menu.addAction(self._xsect_table_action)
 
         self._window.set_section_table_action(self._section_table_action)
         self._window.set_heading_table_action(self._heading_table_action)
