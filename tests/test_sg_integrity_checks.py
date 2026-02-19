@@ -1,0 +1,61 @@
+from sg_viewer.model.preview_fsection import PreviewFSection
+from types import SimpleNamespace
+from sg_viewer.services.sg_integrity_checks import FT_TO_WORLD, build_integrity_report
+
+
+def _section(*, section_id: int, start: tuple[float, float], end: tuple[float, float]):
+    return SimpleNamespace(
+        section_id=section_id,
+        source_section_id=section_id,
+        type_name="straight",
+        previous_id=section_id - 1 if section_id > 0 else 1,
+        next_id=section_id + 1 if section_id < 1 else 0,
+        start=start,
+        end=end,
+        start_dlong=0.0,
+        length=((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2) ** 0.5,
+        center=None,
+        sang1=None,
+        sang2=None,
+        eang1=None,
+        eang2=None,
+        radius=None,
+        start_heading=(1.0, 0.0),
+        end_heading=(1.0, 0.0),
+        polyline=[start, end],
+    )
+
+
+def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
+        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b],
+        [[], []],
+    ).text
+
+    assert "Sections with < 80 ft perpendicular spacing: 1" in report
+
+
+def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(100.0 * FT_TO_WORLD, 0.0))
+    section_b = _section(section_id=1, start=(0.0, 10.0 * FT_TO_WORLD), end=(100.0 * FT_TO_WORLD, 10.0 * FT_TO_WORLD))
+    wide_left_boundary = PreviewFSection(
+        start_dlat=20.0 * FT_TO_WORLD,
+        end_dlat=20.0 * FT_TO_WORLD,
+        surface_type=0,
+        type2=0,
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b],
+        [[wide_left_boundary], []],
+    ).text
+
+    assert "Boundary points closer to a different centerline: 1" in report
+    assert "section 0 left boundary" in report
