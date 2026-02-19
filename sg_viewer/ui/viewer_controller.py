@@ -1010,7 +1010,16 @@ class SGViewerController:
 
     def _on_sections_changed(self) -> None:
         self._sections_controller.on_sections_changed()
+        self._sync_section_editing_menu_actions()
         self._sync_after_section_mutation()
+
+    def _sync_section_editing_menu_actions(self) -> None:
+        self._new_straight_mode_action.setEnabled(self._window.new_straight_button.isEnabled())
+        self._new_curve_mode_action.setEnabled(self._window.new_curve_button.isEnabled())
+        self._split_section_mode_action.setEnabled(self._window.split_section_button.isEnabled())
+        self._move_section_mode_action.setEnabled(self._window.move_section_button.isEnabled())
+        self._delete_section_mode_action.setEnabled(self._window.delete_section_button.isEnabled())
+        self._set_start_finish_action.setEnabled(self._window.set_start_finish_button.isEnabled())
 
     def _update_section_table(self) -> None:
         self._section_editing_coordinator.update_section_table()
