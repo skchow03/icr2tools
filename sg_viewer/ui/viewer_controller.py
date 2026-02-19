@@ -282,6 +282,28 @@ class SGViewerController:
         self._set_start_finish_action = QtWidgets.QAction("Set Start/Finish", self._window)
         self._set_start_finish_action.setEnabled(self._window.set_start_finish_button.isEnabled())
 
+        self._copy_fsects_prev_action = QtWidgets.QAction(
+            "Copy Fsects to Previous Section",
+            self._window,
+        )
+        self._copy_fsects_prev_action.setEnabled(
+            self._window.copy_fsects_prev_button.isEnabled()
+        )
+
+        self._copy_fsects_next_action = QtWidgets.QAction(
+            "Copy Fsects to Next Section",
+            self._window,
+        )
+        self._copy_fsects_next_action.setEnabled(
+            self._window.copy_fsects_next_button.isEnabled()
+        )
+
+        self._add_fsect_action = QtWidgets.QAction("Add Fsect", self._window)
+        self._add_fsect_action.setEnabled(self._window.add_fsect_button.isEnabled())
+
+        self._delete_fsect_action = QtWidgets.QAction("Delete Fsect", self._window)
+        self._delete_fsect_action.setEnabled(self._window.delete_fsect_button.isEnabled())
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -335,6 +357,13 @@ class SGViewerController:
         elevation_menu = tools_menu.addMenu("Elevation")
         elevation_menu.addAction(self._raise_lower_elevations_action)
         elevation_menu.addAction(self._flatten_all_elevations_and_grade_action)
+
+        fsects_menu = tools_menu.addMenu("Fsects")
+        fsects_menu.addAction(self._copy_fsects_prev_action)
+        fsects_menu.addAction(self._copy_fsects_next_action)
+        fsects_menu.addSeparator()
+        fsects_menu.addAction(self._add_fsect_action)
+        fsects_menu.addAction(self._delete_fsect_action)
 
         conversion_menu = tools_menu.addMenu("Conversion")
         conversion_menu.addAction(self._convert_trk_action)
@@ -601,15 +630,23 @@ class SGViewerController:
         self._window.copy_fsects_prev_button.clicked.connect(
             self._section_editing_coordinator.copy_fsects_to_previous
         )
+        self._copy_fsects_prev_action.triggered.connect(
+            self._section_editing_coordinator.copy_fsects_to_previous
+        )
         self._window.copy_fsects_next_button.clicked.connect(
+            self._section_editing_coordinator.copy_fsects_to_next
+        )
+        self._copy_fsects_next_action.triggered.connect(
             self._section_editing_coordinator.copy_fsects_to_next
         )
         self._window.add_fsect_button.clicked.connect(
             self._add_fsect_below_selected
         )
+        self._add_fsect_action.triggered.connect(self._add_fsect_below_selected)
         self._window.delete_fsect_button.clicked.connect(
             self._delete_selected_fsect
         )
+        self._delete_fsect_action.triggered.connect(self._delete_selected_fsect)
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
@@ -1128,16 +1165,23 @@ class SGViewerController:
             next_enabled = 0 <= next_index < total_sections
         self._window.copy_fsects_prev_button.setEnabled(prev_enabled)
         self._window.copy_fsects_next_button.setEnabled(next_enabled)
+        self._copy_fsects_prev_action.setEnabled(prev_enabled)
+        self._copy_fsects_next_action.setEnabled(next_enabled)
 
     def _update_fsect_edit_buttons(self) -> None:
         selection = self._active_selection
         if selection is None:
             self._window.add_fsect_button.setEnabled(False)
             self._window.delete_fsect_button.setEnabled(False)
+            self._add_fsect_action.setEnabled(False)
+            self._delete_fsect_action.setEnabled(False)
             return
         self._window.add_fsect_button.setEnabled(True)
+        self._add_fsect_action.setEnabled(True)
         fsects = self._window.preview.get_section_fsects(selection.index)
-        self._window.delete_fsect_button.setEnabled(bool(fsects))
+        delete_enabled = bool(fsects)
+        self._window.delete_fsect_button.setEnabled(delete_enabled)
+        self._delete_fsect_action.setEnabled(delete_enabled)
 
     def _current_xsect_index(self) -> int | None:
         combo = self._window.xsect_combo
