@@ -187,6 +187,15 @@ class SGViewerController:
             self._open_flatten_all_elevations_and_grade_dialog
         )
 
+        self._generate_elevation_change_action = QtWidgets.QAction(
+            "Generate elevation change…",
+            self._window,
+        )
+        self._generate_elevation_change_action.setEnabled(False)
+        self._generate_elevation_change_action.triggered.connect(
+            self._open_generate_elevation_change_dialog
+        )
+
         self._generate_pitwall_action = QtWidgets.QAction(
             "Generate pitwall.txt…",
             self._window,
@@ -261,6 +270,7 @@ class SGViewerController:
         tools_menu.addAction(self._generate_pitwall_action)
         tools_menu.addAction(self._raise_lower_elevations_action)
         tools_menu.addAction(self._flatten_all_elevations_and_grade_action)
+        tools_menu.addAction(self._generate_elevation_change_action)
         tools_menu.addAction(self._calibrate_background_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._section_table_action)
@@ -1026,6 +1036,21 @@ class SGViewerController:
 
     def _open_flatten_all_elevations_and_grade_dialog(self) -> None:
         if self._elevation_panel_controller.open_flatten_all_elevations_and_grade_dialog():
+            self._reset_altitude_range_for_track()
+            self._refresh_elevation_profile()
+            self._refresh_xsect_elevation_panel()
+            self._refresh_xsect_elevation_table()
+
+    def _open_generate_elevation_change_dialog(self) -> None:
+        xsect_index = self._current_xsect_index()
+        if xsect_index is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Generate elevation change",
+                "Select an x-section before generating an elevation change.",
+            )
+            return
+        if self._window.show_generate_elevation_change_dialog(xsect_index=xsect_index):
             self._reset_altitude_range_for_track()
             self._refresh_elevation_profile()
             self._refresh_xsect_elevation_panel()

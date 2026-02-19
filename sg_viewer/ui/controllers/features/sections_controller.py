@@ -31,6 +31,7 @@ class SectionsControllerHost(Protocol):
     _generate_pitwall_action: QtWidgets.QAction
     _raise_lower_elevations_action: QtWidgets.QAction
     _flatten_all_elevations_and_grade_action: QtWidgets.QAction
+    _generate_elevation_change_action: QtWidgets.QAction
     _delete_default_style: str
 
     def _start_new_straight(self) -> None: ...
@@ -127,6 +128,7 @@ class SectionsController:
         self._host._generate_pitwall_action.setEnabled(has_sections)
         self._host._raise_lower_elevations_action.setEnabled(has_sections)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(has_sections)
+        self._host._generate_elevation_change_action.setEnabled(has_sections)
         self._host._save_action.setEnabled(True)
         if self._host._is_untitled:
             self._host._window.update_window_title(path=None, is_dirty=True, is_untitled=True)

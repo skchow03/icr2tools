@@ -101,3 +101,56 @@ def test_set_xsect_definitions_remaps_values_for_array_backed_dlats() -> None:
     sg_document.set_xsect_definitions([(0, -10), (1, 10)])
 
     assert list(sg_document.sg_data.xsect_dlats) == [-10, 10]
+
+
+def test_generate_elevation_change_linear_updates_selected_xsect() -> None:
+    sg_document = SGDocument(_make_sgfile(5, 3))
+
+    sg_document.generate_elevation_change(
+        start_section_id=1,
+        end_section_id=4,
+        xsect_index=2,
+        start_elevation=1000,
+        end_elevation=1600,
+        curve_type="linear",
+    )
+
+    assert [section.alt[2] for section in sg_document.sg_data.sects] == [102, 1000, 1200, 1400, 1600]
+    assert [section.grade[2] for section in sg_document.sg_data.sects] == [12, 1638400, 1638400, 1638400, 1638400]
+
+
+def test_generate_elevation_change_s_curve_has_flat_endpoints() -> None:
+    sg_document = SGDocument(_make_sgfile(5, 2))
+
+    sg_document.generate_elevation_change(
+        start_section_id=0,
+        end_section_id=4,
+        xsect_index=0,
+        start_elevation=0,
+        end_elevation=800,
+        curve_type="s_curve",
+    )
+
+    assert [section.alt[0] for section in sg_document.sg_data.sects] == [0, 125, 400, 675, 800]
+    assert [section.grade[0] for section in sg_document.sg_data.sects] == [0, 1843200, 2457600, 1843200, 0]
+
+
+def test_generate_elevation_change_emits_bulk_signal() -> None:
+    sg_document = SGDocument(_make_sgfile(4, 2))
+    emitted: list[None] = []
+    per_section: list[int] = []
+
+    sg_document.elevations_bulk_changed.connect(lambda: emitted.append(None))
+    sg_document.elevation_changed.connect(lambda section_id: per_section.append(section_id))
+
+    sg_document.generate_elevation_change(
+        start_section_id=0,
+        end_section_id=3,
+        xsect_index=1,
+        start_elevation=50,
+        end_elevation=200,
+        curve_type="concave",
+    )
+
+    assert emitted == [None]
+    assert per_section == []

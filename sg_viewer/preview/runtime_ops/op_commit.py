@@ -250,3 +250,29 @@ class _RuntimeCoreCommitMixin:
             return False
         self._bump_sg_version()
         return True
+
+    def generate_elevation_change(
+        self,
+        *,
+        start_section_id: int,
+        end_section_id: int,
+        xsect_index: int,
+        start_elevation: float,
+        end_elevation: float,
+        curve_type: str,
+        validate: bool = True,
+    ) -> bool:
+        try:
+            self._document.generate_elevation_change(
+                start_section_id=start_section_id,
+                end_section_id=end_section_id,
+                xsect_index=xsect_index,
+                start_elevation=start_elevation,
+                end_elevation=end_elevation,
+                curve_type=curve_type,
+                validate=validate,
+            )
+        except (ValueError, IndexError):
+            return False
+        self._bump_sg_version()
+        return True
