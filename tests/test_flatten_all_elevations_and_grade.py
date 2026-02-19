@@ -116,7 +116,7 @@ def test_generate_elevation_change_linear_updates_selected_xsect() -> None:
     )
 
     assert [section.alt[2] for section in sg_document.sg_data.sects] == [102, 1000, 1200, 1400, 1600]
-    assert [section.grade[2] for section in sg_document.sg_data.sects] == [12, 1638400, 1638400, 1638400, 1638400]
+    assert [section.grade[2] for section in sg_document.sg_data.sects] == [12, 16384, 16384, 16384, 16384]
 
 
 def test_generate_elevation_change_s_curve_has_flat_endpoints() -> None:
@@ -132,7 +132,7 @@ def test_generate_elevation_change_s_curve_has_flat_endpoints() -> None:
     )
 
     assert [section.alt[0] for section in sg_document.sg_data.sects] == [0, 125, 400, 675, 800]
-    assert [section.grade[0] for section in sg_document.sg_data.sects] == [0, 1843200, 2457600, 1843200, 0]
+    assert [section.grade[0] for section in sg_document.sg_data.sects] == [0, 18432, 24576, 18432, 0]
 
 
 def test_generate_elevation_change_emits_bulk_signal() -> None:
@@ -154,3 +154,22 @@ def test_generate_elevation_change_emits_bulk_signal() -> None:
 
     assert emitted == [None]
     assert per_section == []
+
+
+def test_generate_elevation_change_uses_section_lengths_for_profile() -> None:
+    sg_document = SGDocument(_make_sgfile(5, 2))
+    sg_document.sg_data.sects[2].length = 50
+    sg_document.sg_data.sects[3].length = 100
+    sg_document.sg_data.sects[4].length = 250
+
+    sg_document.generate_elevation_change(
+        start_section_id=1,
+        end_section_id=4,
+        xsect_index=1,
+        start_elevation=0,
+        end_elevation=400,
+        curve_type="linear",
+    )
+
+    assert [section.alt[1] for section in sg_document.sg_data.sects] == [101, 0, 50, 150, 400]
+    assert [section.grade[1] for section in sg_document.sg_data.sects] == [11, 8192, 8192, 8192, 8192]
