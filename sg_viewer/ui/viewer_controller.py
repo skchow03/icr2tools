@@ -226,6 +226,22 @@ class SGViewerController:
             self._launch_background_calibrator
         )
 
+        self._show_radii_action = QtWidgets.QAction("Show Radii", self._window)
+        self._show_radii_action.setCheckable(True)
+        self._show_radii_action.setChecked(self._window.radii_button.isChecked())
+
+        self._show_axes_action = QtWidgets.QAction("Show Axes", self._window)
+        self._show_axes_action.setCheckable(True)
+        self._show_axes_action.setChecked(self._window.axes_button.isChecked())
+
+        self._show_background_image_action = QtWidgets.QAction(
+            "Show Background Image", self._window
+        )
+        self._show_background_image_action.setCheckable(True)
+        self._show_background_image_action.setChecked(
+            self._window.background_image_checkbox.isChecked()
+        )
+
         self._section_table_action = QtWidgets.QAction("Section Table", self._window)
         self._section_table_action.setEnabled(False)
         self._section_table_action.triggered.connect(self._section_editing_coordinator.show_section_table)
@@ -259,6 +275,14 @@ class SGViewerController:
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
+        view_menu = self._window.menuBar().addMenu("View")
+        view_menu.addAction(self._open_background_action)
+        view_menu.addAction(self._background_settings_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self._show_radii_action)
+        view_menu.addAction(self._show_axes_action)
+        view_menu.addAction(self._show_background_image_action)
+
         tools_menu = self._window.menuBar().addMenu("Tools")
 
         transform_menu = tools_menu.addMenu("Transform")
@@ -278,10 +302,8 @@ class SGViewerController:
         conversion_menu = tools_menu.addMenu("Conversion")
         conversion_menu.addAction(self._convert_trk_action)
 
-        background_menu = tools_menu.addMenu("Background")
-        background_menu.addAction(self._open_background_action)
-        background_menu.addAction(self._background_settings_action)
-        background_menu.addAction(self._calibrate_background_action)
+        tools_menu.addSeparator()
+        tools_menu.addAction(self._calibrate_background_action)
 
         window_menu = self._window.menuBar().addMenu("Window")
         window_menu.addAction(self._section_table_action)
@@ -467,6 +489,16 @@ class SGViewerController:
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
         self._window.background_image_checkbox.toggled.connect(
             self._window.preview.set_show_background_image
+        )
+        self._show_radii_action.toggled.connect(self._window.radii_button.setChecked)
+        self._show_axes_action.toggled.connect(self._window.axes_button.setChecked)
+        self._show_background_image_action.toggled.connect(
+            self._window.background_image_checkbox.setChecked
+        )
+        self._window.radii_button.toggled.connect(self._show_radii_action.setChecked)
+        self._window.axes_button.toggled.connect(self._show_axes_action.setChecked)
+        self._window.background_image_checkbox.toggled.connect(
+            self._show_background_image_action.setChecked
         )
         self._window.background_brightness_slider.valueChanged.connect(
             self._on_background_brightness_changed
