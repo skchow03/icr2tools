@@ -227,6 +227,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
+        self._quick_display_toolbar = QtWidgets.QFrame()
+        self._quick_display_toolbar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self._quick_display_toolbar.setFrameShadow(QtWidgets.QFrame.Raised)
+        quick_display_layout = QtWidgets.QHBoxLayout()
+        quick_display_layout.setContentsMargins(8, 4, 8, 4)
+        quick_display_layout.setSpacing(12)
+        quick_display_layout.addWidget(QtWidgets.QLabel("Display:"))
+        quick_display_layout.addWidget(QtWidgets.QLabel("UoM"))
+        quick_display_layout.addWidget(self._measurement_units_combo)
+        quick_display_layout.addSpacing(4)
+        quick_display_layout.addWidget(self._xsect_dlat_line_checkbox)
+        quick_display_layout.addWidget(self._sg_fsects_checkbox)
+        quick_display_layout.addSpacing(4)
+        quick_display_layout.addWidget(QtWidgets.QLabel("Track Opacity:"))
+        quick_display_layout.addWidget(self._track_opacity_slider, stretch=1)
+        quick_display_layout.addWidget(self._track_opacity_value_label)
+        quick_display_layout.addStretch()
+        self._quick_display_toolbar.setLayout(quick_display_layout)
         self._preview_color_controls: dict[
             str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]
         ] = {}
@@ -380,13 +398,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             xsect_table=self._xsect_elevation_table,
             xsect_combo=self._xsect_combo,
             copy_xsect_button=self._copy_xsect_button,
-            xsect_dlat_line_checkbox=self._xsect_dlat_line_checkbox,
             profile_widget=self._profile_widget,
             xsect_elevation_widget=self._xsect_elevation_widget,
         )
 
         fsect_panel = create_fsect_panel(
-            sg_fsects_checkbox=self._sg_fsects_checkbox,
             live_preview_checkbox=self._live_fsect_drag_preview_checkbox,
             copy_prev_button=self._copy_fsects_prev_button,
             copy_next_button=self._copy_fsects_next_button,
@@ -412,15 +428,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addLayout(background_brightness_layout)
         view_options_layout.addWidget(self._radii_button)
         view_options_layout.addWidget(self._axes_button)
-        track_opacity_layout = QtWidgets.QHBoxLayout()
-        track_opacity_layout.addWidget(QtWidgets.QLabel("Track Opacity:"))
-        track_opacity_layout.addWidget(self._track_opacity_slider, stretch=1)
-        track_opacity_layout.addWidget(self._track_opacity_value_label)
-        view_options_layout.addLayout(track_opacity_layout)
-        unit_layout = QtWidgets.QHBoxLayout()
-        unit_layout.addWidget(QtWidgets.QLabel("Unit of Measurement:"))
-        unit_layout.addWidget(self._measurement_units_combo)
-        view_options_layout.addLayout(unit_layout)
         color_group = QtWidgets.QGroupBox("Preview Colors")
         color_form = QtWidgets.QFormLayout()
         for key, label in self._preview_color_labels.items():
@@ -457,6 +464,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addWidget(toolbar_panel.widget)
+        preview_column_layout.addWidget(self._quick_display_toolbar)
         preview_column_layout.addWidget(self._preview, stretch=5)
         stats_panel = create_stats_sidebar_panel(
             self._track_stats_label,

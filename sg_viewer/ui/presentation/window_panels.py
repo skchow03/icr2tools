@@ -40,7 +40,6 @@ def create_toolbar_navigation_panel(*buttons: QtWidgets.QWidget) -> ToolbarNavig
 
 def create_fsect_panel(
     *,
-    sg_fsects_checkbox: QtWidgets.QCheckBox,
     live_preview_checkbox: QtWidgets.QCheckBox,
     copy_prev_button: QtWidgets.QPushButton,
     copy_next_button: QtWidgets.QPushButton,
@@ -52,7 +51,6 @@ def create_fsect_panel(
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
     options = QtWidgets.QHBoxLayout()
-    options.addWidget(sg_fsects_checkbox)
     options.addWidget(live_preview_checkbox)
     layout.addLayout(options)
     layout.addWidget(copy_prev_button)
@@ -74,7 +72,6 @@ def create_elevation_panel(
     xsect_table: QtWidgets.QTableWidget,
     xsect_combo: QtWidgets.QComboBox,
     copy_xsect_button: QtWidgets.QPushButton,
-    xsect_dlat_line_checkbox: QtWidgets.QCheckBox,
     profile_widget: QtWidgets.QWidget,
     xsect_elevation_widget: QtWidgets.QWidget,
 ) -> ElevationPanel:
@@ -87,7 +84,6 @@ def create_elevation_panel(
     controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
     controls.addWidget(xsect_combo)
     controls.addWidget(copy_xsect_button)
-    controls.addWidget(xsect_dlat_line_checkbox)
     layout.addLayout(controls)
     layout.addWidget(profile_widget, stretch=2)
     layout.addWidget(QtWidgets.QLabel("Section X-Section Elevation"))
