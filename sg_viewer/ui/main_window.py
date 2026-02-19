@@ -901,6 +901,107 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Unable to update elevations.",
             )
 
+
+    def show_generate_elevation_change_dialog(self, *, xsect_index: int) -> bool:
+        sections, _ = self._preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Generate elevation change",
+                "There are no track sections available.",
+            )
+            return False
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Generate elevation change")
+        layout = QtWidgets.QFormLayout(dialog)
+
+        section_max = len(sections) - 1
+
+        start_section_spin = QtWidgets.QSpinBox(dialog)
+        start_section_spin.setRange(0, section_max)
+        start_section_spin.setValue(0)
+
+        end_section_spin = QtWidgets.QSpinBox(dialog)
+        end_section_spin.setRange(0, section_max)
+        end_section_spin.setValue(section_max)
+
+        unit = self._current_measurement_unit()
+        unit_label = self._measurement_unit_label(unit)
+        decimals = self._measurement_unit_decimals(unit)
+
+        start_elevation_spin = QtWidgets.QDoubleSpinBox(dialog)
+        start_elevation_spin.setRange(-1000000.0, 1000000.0)
+        start_elevation_spin.setDecimals(decimals)
+        start_elevation_spin.setSingleStep(self._measurement_unit_step(unit))
+        start_elevation_spin.setValue(0.0)
+
+        end_elevation_spin = QtWidgets.QDoubleSpinBox(dialog)
+        end_elevation_spin.setRange(-1000000.0, 1000000.0)
+        end_elevation_spin.setDecimals(decimals)
+        end_elevation_spin.setSingleStep(self._measurement_unit_step(unit))
+        end_elevation_spin.setValue(0.0)
+
+        curve_combo = QtWidgets.QComboBox(dialog)
+        curve_combo.addItem("Linear", "linear")
+        curve_combo.addItem("Convex", "convex")
+        curve_combo.addItem("Concave", "concave")
+        curve_combo.addItem("S-curve (flat bottom and top)", "s_curve")
+
+        layout.addRow("Starting track section:", start_section_spin)
+        layout.addRow("Ending track section:", end_section_spin)
+        layout.addRow(f"Starting elevation ({unit_label}):", start_elevation_spin)
+        layout.addRow(f"Ending elevation ({unit_label}):", end_elevation_spin)
+        layout.addRow("Curve type:", curve_combo)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal,
+            dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return False
+
+        start_section = start_section_spin.value()
+        end_section = end_section_spin.value()
+        if end_section <= start_section:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Generate elevation change",
+                "Ending section must be greater than starting section.",
+            )
+            return False
+
+        start_elevation = units_to_500ths(start_elevation_spin.value(), unit)
+        end_elevation = units_to_500ths(end_elevation_spin.value(), unit)
+        curve_type = str(curve_combo.currentData())
+
+        if self._preview.generate_elevation_change(
+            start_section_id=start_section,
+            end_section_id=end_section,
+            xsect_index=xsect_index,
+            start_elevation=start_elevation,
+            end_elevation=end_elevation,
+            curve_type=curve_type,
+            validate=False,
+        ):
+            self._preview.validate_document()
+            self.show_status_message(
+                f"Generated {curve_combo.currentText().lower()} elevation change on x-section {xsect_index}."
+            )
+            return True
+
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Generate elevation change",
+            "Unable to generate elevation change for the selected range.",
+        )
+        return False
+
     def show_flatten_all_elevations_and_grade_dialog(self) -> bool:
         elevation, ok = QtWidgets.QInputDialog.getDouble(
             self,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from typing import Callable, Iterable
 
 from PyQt5 import QtCore
 
@@ -222,6 +222,77 @@ class SGDocument(QtCore.QObject):
                 raise ValueError(f"Section {idx} has no grade data.")
             section.alt = [target_altitude for _ in section.alt]
             section.grade = [target_grade for _ in section.grade]
+
+        if __debug__ and validate:
+            self.validate()
+
+        self._emit_bulk_elevation_changed()
+
+    def generate_elevation_change(
+        self,
+        *,
+        start_section_id: int,
+        end_section_id: int,
+        xsect_index: int,
+        start_elevation: float,
+        end_elevation: float,
+        curve_type: str,
+        validate: bool = True,
+    ) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if not self._sg_data.sects:
+            raise ValueError("No sections available to update.")
+
+        if start_section_id < 0 or end_section_id < 0:
+            raise IndexError("Section index out of range.")
+        if start_section_id >= len(self._sg_data.sects) or end_section_id >= len(self._sg_data.sects):
+            raise IndexError("Section index out of range.")
+        if end_section_id <= start_section_id:
+            raise ValueError("Ending section must be after starting section.")
+        if xsect_index < 0 or xsect_index >= self._sg_data.num_xsects:
+            raise IndexError("X-section index out of range.")
+
+        section_span = end_section_id - start_section_id
+        start_altitude = float(start_elevation)
+        end_altitude = float(end_elevation)
+        altitude_delta = end_altitude - start_altitude
+
+        curve_shapes: dict[str, tuple[Callable[[float], float], Callable[[float], float]]] = {
+            "linear": (
+                lambda t: t,
+                lambda t: 1.0,
+            ),
+            "convex": (
+                lambda t: t * t,
+                lambda t: 2.0 * t,
+            ),
+            "concave": (
+                lambda t: 1.0 - (1.0 - t) * (1.0 - t),
+                lambda t: 2.0 - 2.0 * t,
+            ),
+            "s_curve": (
+                lambda t: 3.0 * t * t - 2.0 * t * t * t,
+                lambda t: 6.0 * t - 6.0 * t * t,
+            ),
+        }
+        if curve_type not in curve_shapes:
+            raise ValueError("Unknown curve type.")
+
+        shape_fn, slope_fn = curve_shapes[curve_type]
+
+        for section_id in range(start_section_id, end_section_id + 1):
+            section = self._sg_data.sects[section_id]
+            if not section.alt or xsect_index >= len(section.alt):
+                raise ValueError(f"Section {section_id} has no elevation data.")
+            if not section.grade or xsect_index >= len(section.grade):
+                raise ValueError(f"Section {section_id} has no grade data.")
+
+            t = float(section_id - start_section_id) / float(section_span)
+            section.alt[xsect_index] = int(round(start_altitude + altitude_delta * shape_fn(t)))
+            slope = (altitude_delta * slope_fn(t)) / float(section_span)
+            section.grade[xsect_index] = int(round(slope * 8192.0))
 
         if __debug__ and validate:
             self.validate()

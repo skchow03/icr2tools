@@ -24,6 +24,7 @@ class DocumentControllerHost(Protocol):
     _reverse_track_action: QtWidgets.QAction
     _raise_lower_elevations_action: QtWidgets.QAction
     _flatten_all_elevations_and_grade_action: QtWidgets.QAction
+    _generate_elevation_change_action: QtWidgets.QAction
     _delete_default_style: str
     _history: object
 
@@ -248,6 +249,7 @@ class DocumentController:
         self._host._reverse_track_action.setEnabled(False)
         self._host._raise_lower_elevations_action.setEnabled(False)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(False)
+        self._host._generate_elevation_change_action.setEnabled(False)
         self._host._update_xsect_table()
         self._host._populate_xsect_choices()
         self._host._refresh_elevation_profile()
