@@ -254,6 +254,34 @@ class SGViewerController:
         self._xsect_table_action.setEnabled(False)
         self._xsect_table_action.triggered.connect(self._section_editing_coordinator.show_xsect_table)
 
+        self._new_straight_mode_action = QtWidgets.QAction("New Straight", self._window)
+        self._new_straight_mode_action.setCheckable(True)
+        self._new_straight_mode_action.setChecked(self._window.new_straight_button.isChecked())
+        self._new_straight_mode_action.setEnabled(self._window.new_straight_button.isEnabled())
+
+        self._new_curve_mode_action = QtWidgets.QAction("New Curve", self._window)
+        self._new_curve_mode_action.setCheckable(True)
+        self._new_curve_mode_action.setChecked(self._window.new_curve_button.isChecked())
+        self._new_curve_mode_action.setEnabled(self._window.new_curve_button.isEnabled())
+
+        self._split_section_mode_action = QtWidgets.QAction("Split Section", self._window)
+        self._split_section_mode_action.setCheckable(True)
+        self._split_section_mode_action.setChecked(self._window.split_section_button.isChecked())
+        self._split_section_mode_action.setEnabled(self._window.split_section_button.isEnabled())
+
+        self._move_section_mode_action = QtWidgets.QAction("Move Section", self._window)
+        self._move_section_mode_action.setCheckable(True)
+        self._move_section_mode_action.setChecked(self._window.move_section_button.isChecked())
+        self._move_section_mode_action.setEnabled(self._window.move_section_button.isEnabled())
+
+        self._delete_section_mode_action = QtWidgets.QAction("Delete Section", self._window)
+        self._delete_section_mode_action.setCheckable(True)
+        self._delete_section_mode_action.setChecked(self._window.delete_section_button.isChecked())
+        self._delete_section_mode_action.setEnabled(self._window.delete_section_button.isEnabled())
+
+        self._set_start_finish_action = QtWidgets.QAction("Set Start/Finish", self._window)
+        self._set_start_finish_action.setEnabled(self._window.set_start_finish_button.isEnabled())
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -284,6 +312,15 @@ class SGViewerController:
         view_menu.addAction(self._show_background_image_action)
 
         tools_menu = self._window.menuBar().addMenu("Tools")
+
+        section_editing_menu = tools_menu.addMenu("Section Editing")
+        section_editing_menu.addAction(self._new_straight_mode_action)
+        section_editing_menu.addAction(self._new_curve_mode_action)
+        section_editing_menu.addAction(self._split_section_mode_action)
+        section_editing_menu.addAction(self._move_section_mode_action)
+        section_editing_menu.addAction(self._delete_section_mode_action)
+        section_editing_menu.addSeparator()
+        section_editing_menu.addAction(self._set_start_finish_action)
 
         transform_menu = tools_menu.addMenu("Transform")
         transform_menu.addAction(self._scale_track_action)
@@ -462,8 +499,15 @@ class SGViewerController:
         self._window.new_straight_button.toggled.connect(
             self._toggle_new_straight_mode
         )
+        self._new_straight_mode_action.toggled.connect(
+            self._toggle_new_straight_mode
+        )
         self._window.new_curve_button.toggled.connect(self._toggle_new_curve_mode)
+        self._new_curve_mode_action.toggled.connect(self._toggle_new_curve_mode)
         self._window.set_start_finish_button.clicked.connect(
+            self._window.preview.activate_set_start_finish_mode
+        )
+        self._set_start_finish_action.triggered.connect(
             self._window.preview.activate_set_start_finish_mode
         )
         self._window.preview.newStraightModeChanged.connect(
@@ -473,10 +517,19 @@ class SGViewerController:
         self._window.delete_section_button.toggled.connect(
             self._toggle_delete_section_mode
         )
+        self._delete_section_mode_action.toggled.connect(
+            self._toggle_delete_section_mode
+        )
         self._window.split_section_button.toggled.connect(
             self._toggle_split_section_mode
         )
+        self._split_section_mode_action.toggled.connect(
+            self._toggle_split_section_mode
+        )
         self._window.move_section_button.toggled.connect(
+            self._toggle_move_section_mode
+        )
+        self._move_section_mode_action.toggled.connect(
             self._toggle_move_section_mode
         )
         self._window.preview.deleteModeChanged.connect(self._on_delete_mode_changed)
@@ -495,10 +548,58 @@ class SGViewerController:
         self._show_background_image_action.toggled.connect(
             self._window.background_image_checkbox.setChecked
         )
+        self._new_straight_mode_action.toggled.connect(
+            self._window.new_straight_button.setChecked
+        )
+        self._new_curve_mode_action.toggled.connect(
+            self._window.new_curve_button.setChecked
+        )
+        self._split_section_mode_action.toggled.connect(
+            self._window.split_section_button.setChecked
+        )
+        self._move_section_mode_action.toggled.connect(
+            self._window.move_section_button.setChecked
+        )
+        self._delete_section_mode_action.toggled.connect(
+            self._window.delete_section_button.setChecked
+        )
         self._window.radii_button.toggled.connect(self._show_radii_action.setChecked)
         self._window.axes_button.toggled.connect(self._show_axes_action.setChecked)
         self._window.background_image_checkbox.toggled.connect(
             self._show_background_image_action.setChecked
+        )
+        self._window.new_straight_button.toggled.connect(
+            self._new_straight_mode_action.setChecked
+        )
+        self._window.new_curve_button.toggled.connect(
+            self._new_curve_mode_action.setChecked
+        )
+        self._window.split_section_button.toggled.connect(
+            self._split_section_mode_action.setChecked
+        )
+        self._window.move_section_button.toggled.connect(
+            self._move_section_mode_action.setChecked
+        )
+        self._window.delete_section_button.toggled.connect(
+            self._delete_section_mode_action.setChecked
+        )
+        self._window.new_straight_button.enabledChanged.connect(
+            self._new_straight_mode_action.setEnabled
+        )
+        self._window.new_curve_button.enabledChanged.connect(
+            self._new_curve_mode_action.setEnabled
+        )
+        self._window.split_section_button.enabledChanged.connect(
+            self._split_section_mode_action.setEnabled
+        )
+        self._window.move_section_button.enabledChanged.connect(
+            self._move_section_mode_action.setEnabled
+        )
+        self._window.delete_section_button.enabledChanged.connect(
+            self._delete_section_mode_action.setEnabled
+        )
+        self._window.set_start_finish_button.enabledChanged.connect(
+            self._set_start_finish_action.setEnabled
         )
         self._window.background_brightness_slider.valueChanged.connect(
             self._on_background_brightness_changed
