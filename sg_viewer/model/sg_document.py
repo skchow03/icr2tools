@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Iterable
+from typing import Iterable
 
 from PyQt5 import QtCore
 
 from icr2_core.trk.sg_classes import SGFile
+from sg_viewer.model.elevation_math import CURVE_SHAPES, evaluate_curve, normalized_curve_position
 from sg_viewer.sg_document_fsects import (
     FSection,
     delete_fsection,
@@ -254,45 +255,39 @@ class SGDocument(QtCore.QObject):
         if xsect_index < 0 or xsect_index >= self._sg_data.num_xsects:
             raise IndexError("X-section index out of range.")
 
-        section_span = end_section_id - start_section_id
         start_altitude = float(start_elevation)
         end_altitude = float(end_elevation)
-        altitude_delta = end_altitude - start_altitude
 
-        curve_shapes: dict[str, tuple[Callable[[float], float], Callable[[float], float]]] = {
-            "linear": (
-                lambda t: t,
-                lambda t: 1.0,
-            ),
-            "convex": (
-                lambda t: t * t,
-                lambda t: 2.0 * t,
-            ),
-            "concave": (
-                lambda t: 1.0 - (1.0 - t) * (1.0 - t),
-                lambda t: 2.0 - 2.0 * t,
-            ),
-            "s_curve": (
-                lambda t: 3.0 * t * t - 2.0 * t * t * t,
-                lambda t: 6.0 * t - 6.0 * t * t,
-            ),
-        }
-        if curve_type not in curve_shapes:
+        curve = CURVE_SHAPES.get(curve_type)
+        if curve is None:
             raise ValueError("Unknown curve type.")
 
-        shape_fn, slope_fn = curve_shapes[curve_type]
+        section_distances = [0.0]
+        for section_id in range(start_section_id + 1, end_section_id + 1):
+            section_length = float(self._sg_data.sects[section_id].length)
+            if section_length <= 0.0:
+                raise ValueError(f"Section {section_id} has invalid length {section_length}.")
+            section_distances.append(section_distances[-1] + section_length)
 
-        for section_id in range(start_section_id, end_section_id + 1):
+        normalized_positions = normalized_curve_position(section_distances)
+        total_length = section_distances[-1]
+
+        for offset, section_id in enumerate(range(start_section_id, end_section_id + 1)):
             section = self._sg_data.sects[section_id]
             if not section.alt or xsect_index >= len(section.alt):
                 raise ValueError(f"Section {section_id} has no elevation data.")
             if not section.grade or xsect_index >= len(section.grade):
                 raise ValueError(f"Section {section_id} has no grade data.")
 
-            t = float(section_id - start_section_id) / float(section_span)
-            section.alt[xsect_index] = int(round(start_altitude + altitude_delta * shape_fn(t)))
-            slope = (altitude_delta * slope_fn(t)) / float(section_span)
-            section.grade[xsect_index] = int(round(slope * 8192.0))
+            altitude, grade = evaluate_curve(
+                start_elevation=start_altitude,
+                end_elevation=end_altitude,
+                normalized_position=normalized_positions[offset],
+                curve=curve,
+                total_length=total_length,
+            )
+            section.alt[xsect_index] = altitude
+            section.grade[xsect_index] = grade
 
         if __debug__ and validate:
             self.validate()
