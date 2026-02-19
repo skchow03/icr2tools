@@ -50,6 +50,23 @@ def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> 
     assert "Sampling step: 10 ft" in report
 
 
+
+
+def test_integrity_report_flags_parallel_close_centerline_spacing_violation() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(0.0, 60.0 * FT_TO_WORLD),
+        end=(200.0 * FT_TO_WORLD, 60.0 * FT_TO_WORLD),
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b],
+        [[], []],
+    ).text
+
+    assert "Sections with < 80 ft perpendicular spacing: 2" in report
+
 def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_violation() -> None:
     section_a = _section(
         section_id=0,

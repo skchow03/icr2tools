@@ -169,19 +169,11 @@ def _centerline_clearance_report(
             if normal is None:
                 continue
 
-            probe_start = (
-                sample_point[0] - normal[0] * probe_half_len_world,
-                sample_point[1] - normal[1] * probe_half_len_world,
-            )
-            probe_end = (
-                sample_point[0] + normal[0] * probe_half_len_world,
-                sample_point[1] + normal[1] * probe_half_len_world,
-            )
-
-            hit = _find_probe_intersection(
+            hit = _find_probe_proximity(
                 section_index,
-                probe_start,
-                probe_end,
+                sample_point,
+                normal,
+                probe_half_len_world,
                 all_segments,
                 sections,
             )
@@ -463,22 +455,15 @@ def _point_to_polyline_distance(point: Point, polyline: list[Point]) -> float:
 
 
 def _point_to_segment_distance(point: Point, start: Point, end: Point) -> float:
-    seg_x = end[0] - start[0]
-    seg_y = end[1] - start[1]
-    seg_len_sq = seg_x * seg_x + seg_y * seg_y
-    if seg_len_sq <= 1e-12:
-        return _distance(point, start)
-
-    proj = ((point[0] - start[0]) * seg_x + (point[1] - start[1]) * seg_y) / seg_len_sq
-    proj = min(max(proj, 0.0), 1.0)
-    closest = (start[0] + proj * seg_x, start[1] + proj * seg_y)
+    closest = _closest_point_on_segment(point, start, end)
     return _distance(point, closest)
 
 
-def _find_probe_intersection(
+def _find_probe_proximity(
     source_section_index: int,
-    probe_start: Point,
-    probe_end: Point,
+    sample_point: Point,
+    sample_normal: tuple[float, float],
+    max_perpendicular_distance: float,
     all_segments: list[tuple[int, Point, Point]],
     sections: list[SectionPreview],
 ) -> int | None:
@@ -487,9 +472,31 @@ def _find_probe_intersection(
             continue
         if _is_adjacent_section(source_section_index, section_index, sections):
             continue
-        if _segments_intersect(probe_start, probe_end, seg_start, seg_end):
+
+        closest = _closest_point_on_segment(sample_point, seg_start, seg_end)
+        radial_distance = _distance(sample_point, closest)
+        if radial_distance > max_perpendicular_distance:
+            continue
+
+        to_closest = (closest[0] - sample_point[0], closest[1] - sample_point[1])
+        perpendicular_distance = abs(
+            to_closest[0] * sample_normal[0] + to_closest[1] * sample_normal[1]
+        )
+        if perpendicular_distance <= max_perpendicular_distance:
             return section_index
     return None
+
+
+def _closest_point_on_segment(point: Point, start: Point, end: Point) -> Point:
+    seg_x = end[0] - start[0]
+    seg_y = end[1] - start[1]
+    seg_len_sq = seg_x * seg_x + seg_y * seg_y
+    if seg_len_sq <= 1e-12:
+        return start
+
+    proj = ((point[0] - start[0]) * seg_x + (point[1] - start[1]) * seg_y) / seg_len_sq
+    proj = min(max(proj, 0.0), 1.0)
+    return (start[0] + proj * seg_x, start[1] + proj * seg_y)
 
 
 def _is_adjacent_section(
@@ -509,38 +516,6 @@ def _is_adjacent_section(
         target.next_id,
     )
 
-
-def _segments_intersect(a: Point, b: Point, c: Point, d: Point) -> bool:
-    eps = 1e-6
-
-    def _orient(p: Point, q: Point, r: Point) -> float:
-        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-
-    def _on_segment(p: Point, q: Point, r: Point) -> bool:
-        return (
-            min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps
-            and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps
-        )
-
-    o1 = _orient(a, b, c)
-    o2 = _orient(a, b, d)
-    o3 = _orient(c, d, a)
-    o4 = _orient(c, d, b)
-
-    if (o1 > eps and o2 < -eps or o1 < -eps and o2 > eps) and (
-        o3 > eps and o4 < -eps or o3 < -eps and o4 > eps
-    ):
-        return True
-
-    if abs(o1) <= eps and _on_segment(a, c, b):
-        return True
-    if abs(o2) <= eps and _on_segment(a, d, b):
-        return True
-    if abs(o3) <= eps and _on_segment(c, a, d):
-        return True
-    if abs(o4) <= eps and _on_segment(c, b, d):
-        return True
-    return False
 
 
 def _left_normal(tangent: tuple[float, float]) -> tuple[float, float] | None:
