@@ -583,24 +583,6 @@ class SGViewerController:
         self._window.delete_section_button.toggled.connect(
             self._delete_section_mode_action.setChecked
         )
-        self._window.new_straight_button.enabledChanged.connect(
-            self._new_straight_mode_action.setEnabled
-        )
-        self._window.new_curve_button.enabledChanged.connect(
-            self._new_curve_mode_action.setEnabled
-        )
-        self._window.split_section_button.enabledChanged.connect(
-            self._split_section_mode_action.setEnabled
-        )
-        self._window.move_section_button.enabledChanged.connect(
-            self._move_section_mode_action.setEnabled
-        )
-        self._window.delete_section_button.enabledChanged.connect(
-            self._delete_section_mode_action.setEnabled
-        )
-        self._window.set_start_finish_button.enabledChanged.connect(
-            self._set_start_finish_action.setEnabled
-        )
         self._window.background_brightness_slider.valueChanged.connect(
             self._on_background_brightness_changed
         )
