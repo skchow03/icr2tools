@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
+from sg_viewer.services.sg_integrity_checks import build_integrity_report
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -304,6 +305,10 @@ class SGViewerController:
         self._delete_fsect_action = QtWidgets.QAction("Delete Fsect", self._window)
         self._delete_fsect_action.setEnabled(self._window.delete_fsect_button.isEnabled())
 
+        self._run_integrity_checks_action = QtWidgets.QAction("Run SG Integrity Checks", self._window)
+        self._run_integrity_checks_action.setEnabled(False)
+        self._run_integrity_checks_action.triggered.connect(self._run_sg_integrity_checks)
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -368,6 +373,8 @@ class SGViewerController:
         conversion_menu = tools_menu.addMenu("Conversion")
         conversion_menu.addAction(self._convert_trk_action)
 
+        tools_menu.addSeparator()
+        tools_menu.addAction(self._run_integrity_checks_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._calibrate_background_action)
 
@@ -1287,6 +1294,42 @@ class SGViewerController:
     def _refresh_xsect_elevation_table(self) -> None:
         self._elevation_panel_controller.refresh_xsect_elevation_table()
 
+    def _run_sg_integrity_checks(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "SG Integrity Checks",
+                "There are no sections available to analyze.",
+            )
+            return
+
+        fsects_by_section = [
+            self._window.preview.get_section_fsects(index)
+            for index in range(len(sections))
+        ]
+        report = build_integrity_report(sections, fsects_by_section)
+
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("SG Integrity Checks")
+        dialog.resize(920, 640)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        text_edit = QtWidgets.QPlainTextEdit(dialog)
+        text_edit.setReadOnly(True)
+        text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        text_edit.setPlainText(report.text)
+        layout.addWidget(text_edit)
+
+        close_button = QtWidgets.QPushButton("Close", dialog)
+        close_button.clicked.connect(dialog.accept)
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(close_button)
+        layout.addLayout(button_row)
+
+        dialog.exec_()
+
     def _sync_after_section_mutation(self) -> None:
         """Sync UI after section list/data changes in a stable update order."""
         if not self._window.preview.is_interaction_dragging:
@@ -1297,6 +1340,8 @@ class SGViewerController:
         self._update_copy_xsect_button()
         self._update_copy_fsects_buttons()
         self._update_fsect_edit_buttons()
+        sections, _ = self._window.preview.get_section_set()
+        self._run_integrity_checks_action.setEnabled(bool(sections))
 
     def _sync_after_xsect_value_change(self) -> None:
         """Sync profile and x-section views after altitude/grade data changes."""

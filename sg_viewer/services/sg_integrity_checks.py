@@ -1,0 +1,383 @@
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+from sg_viewer.geometry.topology import is_closed_loop
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.selection import heading_delta
+from sg_viewer.model.sg_model import SectionPreview
+
+Point = tuple[float, float]
+FT_TO_WORLD = 500.0
+MIN_RADIUS_FT = 50.0
+MAX_ARC_DEGREES = 120.0
+PERP_CLEARANCE_FT = 70.0
+PERP_SAMPLE_STEP_FT = 1.0
+
+
+@dataclass(frozen=True)
+class IntegrityReport:
+    text: str
+
+
+def build_integrity_report(
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+) -> IntegrityReport:
+    lines: list[str] = []
+    lines.append("SG Integrity Report")
+    lines.append("=" * 72)
+
+    if not sections:
+        lines.append("No sections found.")
+        return IntegrityReport(text="\n".join(lines))
+
+    lines.extend(_topology_report(sections))
+    lines.append("")
+    lines.extend(_heading_and_boundary_report(sections, fsects_by_section))
+    lines.append("")
+    lines.extend(_curve_limits_report(sections))
+    lines.append("")
+    lines.extend(_perpendicular_clearance_report(sections))
+
+    return IntegrityReport(text="\n".join(lines))
+
+
+def _topology_report(sections: list[SectionPreview]) -> list[str]:
+    n = len(sections)
+    closed = is_closed_loop(sections)
+    lines = ["Topology", "-" * 72, f"Sections: {n}", f"Closed loop: {'YES' if closed else 'NO'}"]
+
+    unconnected: list[str] = []
+    for index, section in enumerate(sections):
+        invalid_prev = section.previous_id < 0 or section.previous_id >= n
+        invalid_next = section.next_id < 0 or section.next_id >= n
+        if invalid_prev or invalid_next:
+            reasons: list[str] = []
+            if invalid_prev:
+                reasons.append(f"previous_id={section.previous_id}")
+            if invalid_next:
+                reasons.append(f"next_id={section.next_id}")
+            unconnected.append(f"  - section {index}: {', '.join(reasons)}")
+
+    if unconnected:
+        lines.append(f"Unconnected sections: {len(unconnected)}")
+        lines.extend(unconnected)
+    else:
+        lines.append("Unconnected sections: none")
+
+    return lines
+
+
+def _heading_and_boundary_report(
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+) -> list[str]:
+    lines = ["Join heading and boundary gap checks", "-" * 72]
+    mismatch_lines: list[str] = []
+    total = len(sections)
+
+    for index, section in enumerate(sections):
+        next_index = index + 1
+        if next_index >= total:
+            next_index = 0
+        next_section = sections[next_index]
+
+        mismatch = heading_delta(section.end_heading, next_section.start_heading)
+        if mismatch is None or abs(mismatch) < 0.01:
+            continue
+
+        center_gap = _distance(section.end, next_section.start)
+        left_gap, right_gap = _boundary_gaps(
+            section,
+            next_section,
+            _safe_get_fsects(fsects_by_section, index),
+            _safe_get_fsects(fsects_by_section, next_index),
+        )
+        mismatch_lines.append(
+            (
+                f"  - {index} -> {next_index}: heading Δ={mismatch:.3f}°, "
+                f"centerline gap={center_gap / FT_TO_WORLD:.2f} ft, "
+                f"left boundary gap={left_gap / FT_TO_WORLD:.2f} ft, "
+                f"right boundary gap={right_gap / FT_TO_WORLD:.2f} ft"
+            )
+        )
+
+    if mismatch_lines:
+        lines.append(f"Heading mismatches: {len(mismatch_lines)}")
+        lines.extend(mismatch_lines)
+    else:
+        lines.append("Heading mismatches: none")
+
+    return lines
+
+
+def _curve_limits_report(sections: list[SectionPreview]) -> list[str]:
+    lines = ["Curve limits", "-" * 72]
+    long_arc: list[str] = []
+    tight_radius: list[str] = []
+    min_radius_world = MIN_RADIUS_FT * FT_TO_WORLD
+
+    for index, section in enumerate(sections):
+        if section.type_name != "curve" or not section.radius:
+            continue
+
+        radius_abs = abs(float(section.radius))
+        if radius_abs > 0:
+            arc_degrees = math.degrees(float(section.length) / radius_abs)
+            if arc_degrees > MAX_ARC_DEGREES:
+                long_arc.append(f"  - section {index}: arc={arc_degrees:.2f}°")
+
+        if radius_abs < min_radius_world:
+            tight_radius.append(
+                f"  - section {index}: radius={radius_abs / FT_TO_WORLD:.2f} ft"
+            )
+
+    if long_arc:
+        lines.append(f"Curves with arc > {MAX_ARC_DEGREES:.0f}°: {len(long_arc)}")
+        lines.extend(long_arc)
+    else:
+        lines.append(f"Curves with arc > {MAX_ARC_DEGREES:.0f}°: none")
+
+    if tight_radius:
+        lines.append(f"Curves with radius < {MIN_RADIUS_FT:.0f} ft: {len(tight_radius)}")
+        lines.extend(tight_radius)
+    else:
+        lines.append(f"Curves with radius < {MIN_RADIUS_FT:.0f} ft: none")
+
+    return lines
+
+
+def _perpendicular_clearance_report(sections: list[SectionPreview]) -> list[str]:
+    lines = ["Perpendicular centerline clearance", "-" * 72]
+    sample_step_world = PERP_SAMPLE_STEP_FT * FT_TO_WORLD
+    probe_half_len_world = PERP_CLEARANCE_FT * FT_TO_WORLD
+
+    all_segments: list[tuple[int, Point, Point]] = []
+    for section_index, section in enumerate(sections):
+        for seg_start, seg_end in _polyline_segments(section.polyline):
+            all_segments.append((section_index, seg_start, seg_end))
+
+    findings: list[str] = []
+    for section_index, section in enumerate(sections):
+        for sample_point, tangent in _sample_polyline(section.polyline, sample_step_world):
+            normal = _left_normal(tangent)
+            if normal is None:
+                continue
+
+            probe_start = (
+                sample_point[0] - normal[0] * probe_half_len_world,
+                sample_point[1] - normal[1] * probe_half_len_world,
+            )
+            probe_end = (
+                sample_point[0] + normal[0] * probe_half_len_world,
+                sample_point[1] + normal[1] * probe_half_len_world,
+            )
+
+            hit = _find_probe_intersection(section_index, probe_start, probe_end, all_segments)
+            if hit is None:
+                continue
+            findings.append(
+                (
+                    f"  - section {section_index} near ({sample_point[0] / FT_TO_WORLD:.1f}, "
+                    f"{sample_point[1] / FT_TO_WORLD:.1f}) ft intersects section {hit} "
+                    f"within ±{PERP_CLEARANCE_FT:.0f} ft"
+                )
+            )
+            break
+
+    if findings:
+        lines.append(f"Sections with perpendicular overlap hits: {len(findings)}")
+        lines.extend(findings)
+    else:
+        lines.append(
+            f"No section had a perpendicular ±{PERP_CLEARANCE_FT:.0f} ft probe intersect another centerline."
+        )
+
+    lines.append(
+        f"Sampling step: {PERP_SAMPLE_STEP_FT:.0f} ft along each centerline section."
+    )
+    return lines
+
+
+def _safe_get_fsects(
+    fsects_by_section: list[list[PreviewFSection]], index: int
+) -> list[PreviewFSection]:
+    if index < 0 or index >= len(fsects_by_section):
+        return []
+    return list(fsects_by_section[index])
+
+
+def _boundary_gaps(
+    section: SectionPreview,
+    next_section: SectionPreview,
+    section_fsects: list[PreviewFSection],
+    next_fsects: list[PreviewFSection],
+) -> tuple[float, float]:
+    sec_heading = _normalize(section.end_heading)
+    next_heading = _normalize(next_section.start_heading)
+    if sec_heading is None:
+        sec_heading = _heading_from_segment(section.start, section.end)
+    if next_heading is None:
+        next_heading = _heading_from_segment(next_section.start, next_section.end)
+
+    if sec_heading is None or next_heading is None:
+        center_gap = _distance(section.end, next_section.start)
+        return center_gap, center_gap
+
+    section_left, section_right = _boundary_points(section.end, sec_heading, section_fsects, endtype="end")
+    next_left, next_right = _boundary_points(next_section.start, next_heading, next_fsects, endtype="start")
+
+    return _distance(section_left, next_left), _distance(section_right, next_right)
+
+
+def _boundary_points(
+    point: Point,
+    heading: tuple[float, float],
+    fsects: list[PreviewFSection],
+    *,
+    endtype: str,
+) -> tuple[Point, Point]:
+    dlats = [0.0]
+    for fsect in fsects:
+        dlat = fsect.end_dlat if endtype == "end" else fsect.start_dlat
+        dlats.append(float(dlat))
+
+    left_dlat = max(dlats)
+    right_dlat = min(dlats)
+    nx, ny = -heading[1], heading[0]
+
+    left = (point[0] + nx * left_dlat, point[1] + ny * left_dlat)
+    right = (point[0] + nx * right_dlat, point[1] + ny * right_dlat)
+    return left, right
+
+
+def _polyline_segments(polyline: list[Point]) -> list[tuple[Point, Point]]:
+    segments: list[tuple[Point, Point]] = []
+    for idx in range(len(polyline) - 1):
+        segments.append((polyline[idx], polyline[idx + 1]))
+    return segments
+
+
+def _sample_polyline(polyline: list[Point], step: float) -> list[tuple[Point, tuple[float, float]]]:
+    if len(polyline) < 2:
+        return []
+
+    distances = [0.0]
+    total = 0.0
+    for idx in range(len(polyline) - 1):
+        seg_len = _distance(polyline[idx], polyline[idx + 1])
+        total += seg_len
+        distances.append(total)
+
+    if total <= 0:
+        return []
+
+    samples: list[tuple[Point, tuple[float, float]]] = []
+    d = 0.0
+    while d <= total:
+        samples.append(_interpolate_at_distance(polyline, distances, d))
+        d += max(step, 1.0)
+
+    if samples:
+        samples[-1] = _interpolate_at_distance(polyline, distances, total)
+
+    return samples
+
+
+def _interpolate_at_distance(
+    polyline: list[Point], cumulative: list[float], target_d: float
+) -> tuple[Point, tuple[float, float]]:
+    for idx in range(len(cumulative) - 1):
+        start_d = cumulative[idx]
+        end_d = cumulative[idx + 1]
+        if target_d > end_d and idx < len(cumulative) - 2:
+            continue
+
+        p0 = polyline[idx]
+        p1 = polyline[idx + 1]
+        seg_len = max(end_d - start_d, 1e-9)
+        ratio = (target_d - start_d) / seg_len
+        ratio = min(max(ratio, 0.0), 1.0)
+        point = (p0[0] + (p1[0] - p0[0]) * ratio, p0[1] + (p1[1] - p0[1]) * ratio)
+        tangent = _normalize((p1[0] - p0[0], p1[1] - p0[1]))
+        if tangent is None:
+            tangent = (1.0, 0.0)
+        return point, tangent
+
+    p0 = polyline[-2]
+    p1 = polyline[-1]
+    tangent = _normalize((p1[0] - p0[0], p1[1] - p0[1])) or (1.0, 0.0)
+    return polyline[-1], tangent
+
+
+def _find_probe_intersection(
+    source_section_index: int,
+    probe_start: Point,
+    probe_end: Point,
+    all_segments: list[tuple[int, Point, Point]],
+) -> int | None:
+    for section_index, seg_start, seg_end in all_segments:
+        if section_index == source_section_index:
+            continue
+        if _segments_intersect(probe_start, probe_end, seg_start, seg_end):
+            return section_index
+    return None
+
+
+def _segments_intersect(a: Point, b: Point, c: Point, d: Point) -> bool:
+    eps = 1e-6
+
+    def _orient(p: Point, q: Point, r: Point) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def _on_segment(p: Point, q: Point, r: Point) -> bool:
+        return (
+            min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps
+            and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps
+        )
+
+    o1 = _orient(a, b, c)
+    o2 = _orient(a, b, d)
+    o3 = _orient(c, d, a)
+    o4 = _orient(c, d, b)
+
+    if (o1 > eps and o2 < -eps or o1 < -eps and o2 > eps) and (
+        o3 > eps and o4 < -eps or o3 < -eps and o4 > eps
+    ):
+        return True
+
+    if abs(o1) <= eps and _on_segment(a, c, b):
+        return True
+    if abs(o2) <= eps and _on_segment(a, d, b):
+        return True
+    if abs(o3) <= eps and _on_segment(c, a, d):
+        return True
+    if abs(o4) <= eps and _on_segment(c, b, d):
+        return True
+    return False
+
+
+def _left_normal(tangent: tuple[float, float]) -> tuple[float, float] | None:
+    normalized = _normalize(tangent)
+    if normalized is None:
+        return None
+    return (-normalized[1], normalized[0])
+
+
+def _heading_from_segment(start: Point, end: Point) -> tuple[float, float] | None:
+    return _normalize((end[0] - start[0], end[1] - start[1]))
+
+
+def _normalize(vec: tuple[float, float] | None) -> tuple[float, float] | None:
+    if vec is None:
+        return None
+    length = math.hypot(vec[0], vec[1])
+    if length <= 1e-9:
+        return None
+    return (vec[0] / length, vec[1] / length)
+
+
+def _distance(a: Point, b: Point) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
