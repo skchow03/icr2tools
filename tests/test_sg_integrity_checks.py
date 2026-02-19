@@ -3,13 +3,20 @@ from types import SimpleNamespace
 from sg_viewer.services.sg_integrity_checks import FT_TO_WORLD, build_integrity_report
 
 
-def _section(*, section_id: int, start: tuple[float, float], end: tuple[float, float]):
+def _section(
+    *,
+    section_id: int,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    previous_id: int | None = None,
+    next_id: int | None = None,
+):
     return SimpleNamespace(
         section_id=section_id,
         source_section_id=section_id,
         type_name="straight",
-        previous_id=section_id - 1 if section_id > 0 else 1,
-        next_id=section_id + 1 if section_id < 1 else 0,
+        previous_id=section_id if previous_id is None else previous_id,
+        next_id=section_id if next_id is None else next_id,
         start=start,
         end=end,
         start_dlong=0.0,
@@ -40,6 +47,31 @@ def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> 
     ).text
 
     assert "Sections with < 80 ft perpendicular spacing: 1" in report
+    assert "Sampling step: 10 ft" in report
+
+
+def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_violation() -> None:
+    section_a = _section(
+        section_id=0,
+        start=(0.0, 0.0),
+        end=(200.0 * FT_TO_WORLD, 0.0),
+        previous_id=1,
+        next_id=1,
+    )
+    section_b = _section(
+        section_id=1,
+        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
+        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+        previous_id=0,
+        next_id=0,
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b],
+        [[], []],
+    ).text
+
+    assert "Sections with < 80 ft perpendicular spacing: 1" not in report
 
 
 def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
@@ -59,3 +91,33 @@ def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
 
     assert "Boundary points closer to a different centerline: 1" in report
     assert "section 0 left boundary" in report
+
+
+def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> None:
+    section_a = _section(
+        section_id=0,
+        start=(0.0, 0.0),
+        end=(100.0 * FT_TO_WORLD, 0.0),
+        previous_id=1,
+        next_id=1,
+    )
+    section_b = _section(
+        section_id=1,
+        start=(0.0, 10.0 * FT_TO_WORLD),
+        end=(100.0 * FT_TO_WORLD, 10.0 * FT_TO_WORLD),
+        previous_id=0,
+        next_id=0,
+    )
+    wide_left_boundary = PreviewFSection(
+        start_dlat=20.0 * FT_TO_WORLD,
+        end_dlat=20.0 * FT_TO_WORLD,
+        surface_type=0,
+        type2=0,
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b],
+        [[wide_left_boundary], []],
+    ).text
+
+    assert "Boundary points closer to a different centerline: 1" not in report
