@@ -24,6 +24,8 @@ MIN_RADIUS_FT = 50.0
 MAX_ARC_DEGREES = 120.0
 MIN_CENTERLINE_SEPARATION_FT = 80.0
 PERP_SAMPLE_STEP_FT = 10.0
+UNIT_LABELS = {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}
+UNIT_DECIMALS = {"feet": 2, "meter": 3, "inch": 1, "500ths": 0}
 
 
 def _ft_to_world(feet: float) -> float:
@@ -32,6 +34,35 @@ def _ft_to_world(feet: float) -> float:
 
 def _world_to_ft(world_units: float) -> float:
     return world_units / FT_TO_WORLD
+
+
+def _world_to_unit(world_units: float, unit: str) -> float:
+    feet = _world_to_ft(world_units)
+    if unit == "meter":
+        return feet * 0.3048
+    if unit == "inch":
+        return feet * 12.0
+    if unit == "500ths":
+        return world_units
+    return feet
+
+
+def _unit_label(unit: str) -> str:
+    return UNIT_LABELS.get(unit, "ft")
+
+
+def _unit_decimals(unit: str) -> int:
+    return UNIT_DECIMALS.get(unit, 2)
+
+
+def _format_world_distance(world_units: float, unit: str) -> str:
+    value = _world_to_unit(world_units, unit)
+    decimals = _unit_decimals(unit)
+    label = _unit_label(unit)
+    if decimals == 0:
+        return f"{int(round(value))} {label}"
+    text = f"{value:.{decimals}f}".rstrip("0").rstrip(".")
+    return f"{text} {label}"
 
 
 def _section_polyline_for_checks(section: SectionPreview) -> list[Point]:
@@ -81,6 +112,7 @@ ProgressCallback = Callable[[IntegrityProgress], None]
 def build_integrity_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
+    measurement_unit: str = "feet",
     on_progress: ProgressCallback | None = None,
 ) -> IntegrityReport:
     total_steps = _estimate_progress_steps(sections)
@@ -98,11 +130,11 @@ def build_integrity_report(
 
     lines.extend(_topology_report(sections, progress))
     lines.append("")
-    lines.extend(_heading_and_boundary_report(sections, fsects_by_section, progress))
+    lines.extend(_heading_and_boundary_report(sections, fsects_by_section, measurement_unit, progress))
     lines.append("")
-    lines.extend(_curve_limits_report(sections, progress))
+    lines.extend(_curve_limits_report(sections, measurement_unit, progress))
     lines.append("")
-    lines.extend(_centerline_clearance_report(sections, fsects_by_section, progress))
+    lines.extend(_centerline_clearance_report(sections, fsects_by_section, measurement_unit, progress))
     progress.complete(message="Integrity checks complete")
 
     return IntegrityReport(text="\n".join(lines))
@@ -138,6 +170,7 @@ def _topology_report(sections: list[SectionPreview], progress: "_ProgressTracker
 def _heading_and_boundary_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
+    measurement_unit: str,
     progress: "_ProgressTracker",
 ) -> list[str]:
     lines = ["Join heading and boundary gap checks", "-" * 72]
@@ -165,9 +198,9 @@ def _heading_and_boundary_report(
         mismatch_lines.append(
             (
                 f"  - {index} -> {next_index}: heading Δ={mismatch:.3f}°, "
-                f"centerline gap={_world_to_ft(center_gap):.2f} ft, "
-                f"left boundary gap={_world_to_ft(left_gap):.2f} ft, "
-                f"right boundary gap={_world_to_ft(right_gap):.2f} ft"
+                f"centerline gap={_format_world_distance(center_gap, measurement_unit)}, "
+                f"left boundary gap={_format_world_distance(left_gap, measurement_unit)}, "
+                f"right boundary gap={_format_world_distance(right_gap, measurement_unit)}"
             )
         )
 
@@ -180,7 +213,9 @@ def _heading_and_boundary_report(
     return lines
 
 
-def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTracker") -> list[str]:
+def _curve_limits_report(
+    sections: list[SectionPreview], measurement_unit: str, progress: "_ProgressTracker"
+) -> list[str]:
     lines = ["Curve limits", "-" * 72]
     long_arc: list[str] = []
     tight_radius: list[str] = []
@@ -199,7 +234,7 @@ def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTra
 
         if radius_abs < min_radius_world:
             tight_radius.append(
-                f"  - section {index}: radius={_world_to_ft(radius_abs):.2f} ft"
+                f"  - section {index}: radius={_format_world_distance(radius_abs, measurement_unit)}"
             )
 
     if long_arc:
@@ -208,11 +243,16 @@ def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTra
     else:
         lines.append(f"Curves with arc > {MAX_ARC_DEGREES:.0f}°: none")
 
+    min_radius_world = _ft_to_world(MIN_RADIUS_FT)
     if tight_radius:
-        lines.append(f"Curves with radius < {MIN_RADIUS_FT:.0f} ft: {len(tight_radius)}")
+        lines.append(
+            f"Curves with radius < {_format_world_distance(min_radius_world, measurement_unit)}: {len(tight_radius)}"
+        )
         lines.extend(tight_radius)
     else:
-        lines.append(f"Curves with radius < {MIN_RADIUS_FT:.0f} ft: none")
+        lines.append(
+            f"Curves with radius < {_format_world_distance(min_radius_world, measurement_unit)}: none"
+        )
 
     return lines
 
@@ -220,6 +260,7 @@ def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTra
 def _centerline_clearance_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
+    measurement_unit: str,
     progress: "_ProgressTracker",
 ) -> list[str]:
     lines = ["Centerline clearance and boundary ownership", "-" * 72]
@@ -244,7 +285,10 @@ def _centerline_clearance_report(
     processed_samples = 0
     findings: list[str] = []
     for section_index, section in enumerate(sections):
-        for sample_point, tangent in _sample_polyline(_section_polyline_for_checks(section), sample_step_world):
+        for sample_point, tangent, along_distance, _ in _sample_polyline_with_distance(
+            _section_polyline_for_checks(section),
+            sample_step_world,
+        ):
             processed_samples += 1
             if total_samples > 0:
                 progress.step(
@@ -271,32 +315,40 @@ def _centerline_clearance_report(
                 continue
             findings.append(
                 (
-                    f"  - section {section_index} near ({_world_to_ft(sample_point[0]):.1f}, "
-                    f"{_world_to_ft(sample_point[1]):.1f}) ft intersects section {hit} "
-                    f"within ±{MIN_CENTERLINE_SEPARATION_FT:.0f} ft"
+                    f"  - section {section_index} at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
+                    f"near ({_format_world_distance(sample_point[0], measurement_unit)}, "
+                    f"{_format_world_distance(sample_point[1], measurement_unit)}) intersects section {hit} "
+                    f"within ±{_format_world_distance(probe_half_len_world, measurement_unit)}"
                 )
             )
             break
 
     if findings:
-        lines.append(f"Sections with < {MIN_CENTERLINE_SEPARATION_FT:.0f} ft perpendicular spacing: {len(findings)}")
+        lines.append(
+            f"Sections with < {_format_world_distance(_ft_to_world(MIN_CENTERLINE_SEPARATION_FT), measurement_unit)} perpendicular spacing: {len(findings)}"
+        )
         lines.extend(findings)
     else:
         lines.append(
             (
                 "No section had a perpendicular "
-                f"±{MIN_CENTERLINE_SEPARATION_FT:.0f} ft probe intersect another centerline."
+                f"±{_format_world_distance(_ft_to_world(MIN_CENTERLINE_SEPARATION_FT), measurement_unit)} "
+                "probe intersect another centerline."
             )
         )
 
     lines.extend(
         _boundary_centerline_ownership_report(
-            sections, fsects_by_section, sample_step_world, progress
+            sections,
+            fsects_by_section,
+            sample_step_world,
+            measurement_unit,
+            progress,
         )
     )
 
     lines.append(
-        f"Sampling step: {PERP_SAMPLE_STEP_FT:.0f} ft along each centerline section."
+        f"Sampling step: {_format_world_distance(sample_step_world, measurement_unit)} along each centerline section."
     )
     return lines
 
@@ -305,6 +357,7 @@ def _boundary_centerline_ownership_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
     sample_step_world: float,
+    measurement_unit: str,
     progress: "_ProgressTracker",
 ) -> list[str]:
     if np is not None:
@@ -312,12 +365,14 @@ def _boundary_centerline_ownership_report(
             sections,
             fsects_by_section,
             sample_step_world,
+            measurement_unit,
             progress,
         )
     return _boundary_centerline_ownership_report_fallback(
         sections,
         fsects_by_section,
         sample_step_world,
+        measurement_unit,
         progress,
     )
 
@@ -326,6 +381,7 @@ def _boundary_centerline_ownership_report_numpy(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
     sample_step_world: float,
+    measurement_unit: str,
     progress: "_ProgressTracker",
 ) -> list[str]:
     lines: list[str] = []
@@ -418,10 +474,11 @@ def _boundary_centerline_ownership_report_numpy(
             findings.append(
                 (
                     f"  - section {section_index} {side} boundary near "
-                    f"({_world_to_ft(boundary_point[0]):.1f}, {_world_to_ft(boundary_point[1]):.1f}) ft "
+                    f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
+                    f"at DLONG {_format_world_distance(section.start_dlong + along[first], measurement_unit)} "
                     f"is closer to section {int(rival_indices[first])} centerline "
-                    f"({_world_to_ft(rival_distances[first]):.2f} ft) than its own "
-                    f"({_world_to_ft(own_distances[first]):.2f} ft)"
+                    f"({_format_world_distance(rival_distances[first], measurement_unit)}) than its own "
+                    f"({_format_world_distance(own_distances[first], measurement_unit)})"
                 )
             )
             break
@@ -444,6 +501,7 @@ def _boundary_centerline_ownership_report_fallback(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
     sample_step_world: float,
+    measurement_unit: str,
     progress: "_ProgressTracker",
 ) -> list[str]:
     lines: list[str] = []
@@ -491,10 +549,11 @@ def _boundary_centerline_ownership_report_fallback(
                 findings.append(
                     (
                         f"  - section {section_index} {side} boundary near "
-                        f"({_world_to_ft(boundary_point[0]):.1f}, {_world_to_ft(boundary_point[1]):.1f}) ft "
+                        f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
+                        f"at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
                         f"is closer to section {rival_index} centerline "
-                        f"({_world_to_ft(rival_dist):.2f} ft) than its own "
-                        f"({_world_to_ft(own_dist):.2f} ft)"
+                        f"({_format_world_distance(rival_dist, measurement_unit)}) than its own "
+                        f"({_format_world_distance(own_dist, measurement_unit)})"
                     )
                 )
                 break

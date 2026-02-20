@@ -51,6 +51,7 @@ class SGViewerController:
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
         self._xsect_table_window: XsectTableWindow | None = None
+        self._integrity_report_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
         self._history = FileHistory()
         self._new_straight_default_style = window.new_straight_button.styleSheet()
@@ -1341,6 +1342,7 @@ class SGViewerController:
             report = build_integrity_report(
                 sections,
                 fsects_by_section,
+                measurement_unit=str(self._window.measurement_units_combo.currentData()),
                 on_progress=_on_progress,
             )
         except RuntimeError as exc:
@@ -1355,25 +1357,33 @@ class SGViewerController:
         finally:
             progress_dialog.close()
 
-        dialog = QtWidgets.QDialog(self._window)
-        dialog.setWindowTitle("SG Integrity Checks")
-        dialog.resize(920, 640)
+        if self._integrity_report_window is None:
+            self._integrity_report_window = QtWidgets.QDialog(self._window)
+            self._integrity_report_window.setWindowTitle("SG Integrity Checks")
+            self._integrity_report_window.setWindowModality(QtCore.Qt.NonModal)
+            self._integrity_report_window.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+            self._integrity_report_window.resize(920, 640)
 
-        layout = QtWidgets.QVBoxLayout(dialog)
-        text_edit = QtWidgets.QPlainTextEdit(dialog)
-        text_edit.setReadOnly(True)
-        text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
-        text_edit.setPlainText(report.text)
-        layout.addWidget(text_edit)
+            layout = QtWidgets.QVBoxLayout(self._integrity_report_window)
+            text_edit = QtWidgets.QPlainTextEdit(self._integrity_report_window)
+            text_edit.setObjectName("integrityReportText")
+            text_edit.setReadOnly(True)
+            text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+            layout.addWidget(text_edit)
 
-        close_button = QtWidgets.QPushButton("Close", dialog)
-        close_button.clicked.connect(dialog.accept)
-        button_row = QtWidgets.QHBoxLayout()
-        button_row.addStretch(1)
-        button_row.addWidget(close_button)
-        layout.addLayout(button_row)
+            close_button = QtWidgets.QPushButton("Close", self._integrity_report_window)
+            close_button.clicked.connect(self._integrity_report_window.hide)
+            button_row = QtWidgets.QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
 
-        dialog.exec_()
+        text_edit = self._integrity_report_window.findChild(QtWidgets.QPlainTextEdit, "integrityReportText")
+        if text_edit is not None:
+            text_edit.setPlainText(report.text)
+        self._integrity_report_window.show()
+        self._integrity_report_window.raise_()
+        self._integrity_report_window.activateWindow()
 
     def _sync_after_section_mutation(self) -> None:
         """Sync UI after section list/data changes in a stable update order."""
