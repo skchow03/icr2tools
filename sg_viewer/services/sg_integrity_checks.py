@@ -377,12 +377,14 @@ def _centerline_clearance_report(
             )
             if hit is None:
                 continue
+            hit_section_index, measured_clearance = hit
             findings.append(
                 (
                     f"  - section {section_index} at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
                     f"near ({_format_world_distance(sample_point[0], measurement_unit)}, "
-                    f"{_format_world_distance(sample_point[1], measurement_unit)}) intersects section {hit} "
-                    f"within ±{_format_world_distance(probe_half_len_world, measurement_unit)}"
+                    f"{_format_world_distance(sample_point[1], measurement_unit)}) intersects section {hit_section_index} "
+                    f"within ±{_format_world_distance(probe_half_len_world, measurement_unit)} "
+                    f"(measured clearance {_format_world_distance(measured_clearance, measurement_unit)})"
                 )
             )
             break
@@ -1101,7 +1103,7 @@ def _find_probe_proximity(
     all_segments: list[tuple[int, Point, Point]],
     segment_index: "_SegmentSpatialIndex | None",
     sections: list[SectionPreview],
-) -> int | None:
+) -> tuple[int, float] | None:
     probe_start = (
         sample_point[0] - sample_normal[0] * max_perpendicular_distance,
         sample_point[1] - sample_normal[1] * max_perpendicular_distance,
@@ -1134,7 +1136,7 @@ def _find_probe_proximity(
             seg_end,
         )
         if probe_distance <= 1e-6:
-            return section_index
+            return section_index, radial_distance
     return None
 
 
