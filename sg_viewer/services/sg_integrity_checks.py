@@ -195,6 +195,11 @@ def _centerline_clearance_report(
         for seg_start, seg_end in _polyline_segments(section.polyline):
             all_segments.append((section_index, seg_start, seg_end))
 
+    segment_index = _build_segment_spatial_index(
+        all_segments,
+        search_radius=probe_half_len_world,
+    )
+
     sample_counts = _centerline_sample_counts(sections, sample_step_world)
     total_samples = sum(sample_counts)
     processed_samples = 0
@@ -226,6 +231,7 @@ def _centerline_clearance_report(
                 normal,
                 probe_half_len_world,
                 all_segments,
+                segment_index,
                 sections,
             )
             if hit is None:
@@ -671,9 +677,15 @@ def _find_probe_proximity(
     sample_normal: tuple[float, float],
     max_perpendicular_distance: float,
     all_segments: list[tuple[int, Point, Point]],
+    segment_index: "_SegmentSpatialIndex | None",
     sections: list[SectionPreview],
 ) -> int | None:
-    for section_index, seg_start, seg_end in all_segments:
+    candidates = range(len(all_segments))
+    if segment_index is not None:
+        candidates = segment_index.query(sample_point, max_perpendicular_distance)
+
+    for segment_idx in candidates:
+        section_index, seg_start, seg_end = all_segments[segment_idx]
         if section_index == source_section_index:
             continue
         if _is_adjacent_section(source_section_index, section_index, sections):
@@ -691,6 +703,65 @@ def _find_probe_proximity(
         if perpendicular_distance <= max_perpendicular_distance:
             return section_index
     return None
+
+
+@dataclass(frozen=True)
+class _SegmentSpatialIndex:
+    bin_size: float
+    bins: dict[tuple[int, int], list[int]]
+    bboxes: list[tuple[float, float, float, float]]
+
+    def query(self, point: Point, radius: float) -> list[int]:
+        min_x = point[0] - radius
+        max_x = point[0] + radius
+        min_y = point[1] - radius
+        max_y = point[1] + radius
+
+        min_ix, min_iy = _grid_key((min_x, min_y), self.bin_size)
+        max_ix, max_iy = _grid_key((max_x, max_y), self.bin_size)
+
+        candidate_indices: set[int] = set()
+        for ix in range(min_ix, max_ix + 1):
+            for iy in range(min_iy, max_iy + 1):
+                candidate_indices.update(self.bins.get((ix, iy), []))
+
+        overlapping: list[int] = []
+        for segment_index in candidate_indices:
+            seg_min_x, seg_min_y, seg_max_x, seg_max_y = self.bboxes[segment_index]
+            if seg_max_x < min_x or seg_min_x > max_x:
+                continue
+            if seg_max_y < min_y or seg_min_y > max_y:
+                continue
+            overlapping.append(segment_index)
+
+        return overlapping
+
+
+def _build_segment_spatial_index(
+    all_segments: list[tuple[int, Point, Point]],
+    search_radius: float,
+) -> _SegmentSpatialIndex | None:
+    if not all_segments:
+        return None
+
+    bin_size = max(search_radius, FT_TO_WORLD)
+    bins: dict[tuple[int, int], list[int]] = {}
+    bboxes: list[tuple[float, float, float, float]] = []
+
+    for segment_index, (_, start, end) in enumerate(all_segments):
+        min_x = min(start[0], end[0])
+        max_x = max(start[0], end[0])
+        min_y = min(start[1], end[1])
+        max_y = max(start[1], end[1])
+        bboxes.append((min_x, min_y, max_x, max_y))
+
+        min_ix, min_iy = _grid_key((min_x, min_y), bin_size)
+        max_ix, max_iy = _grid_key((max_x, max_y), bin_size)
+        for ix in range(min_ix, max_ix + 1):
+            for iy in range(min_iy, max_iy + 1):
+                bins.setdefault((ix, iy), []).append(segment_index)
+
+    return _SegmentSpatialIndex(bin_size=bin_size, bins=bins, bboxes=bboxes)
 
 
 def _find_close_centerline(

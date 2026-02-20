@@ -51,7 +51,6 @@ def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> 
 
 
 
-
 def test_integrity_report_flags_parallel_close_centerline_spacing_violation() -> None:
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
     section_b = _section(
@@ -139,6 +138,59 @@ def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> Non
 
     assert "Boundary points closer to a different centerline: 1" not in report
 
+
+
+
+def test_segment_spatial_index_matches_unindexed_probe_proximity() -> None:
+    from sg_viewer.services.sg_integrity_checks import (
+        _build_segment_spatial_index,
+        _find_probe_proximity,
+    )
+
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
+        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+    )
+    section_far = _section(
+        section_id=2,
+        start=(2000.0 * FT_TO_WORLD, 2000.0 * FT_TO_WORLD),
+        end=(2100.0 * FT_TO_WORLD, 2000.0 * FT_TO_WORLD),
+    )
+
+    sections = [section_a, section_b, section_far]
+    all_segments: list[tuple[int, tuple[float, float], tuple[float, float]]] = []
+    for idx, section in enumerate(sections):
+        all_segments.append((idx, section.polyline[0], section.polyline[1]))
+
+    sample_point = (100.0 * FT_TO_WORLD, 0.0)
+    sample_normal = (0.0, 1.0)
+    probe_half_len_world = 80.0 * FT_TO_WORLD
+
+    spatial_index = _build_segment_spatial_index(all_segments, probe_half_len_world)
+
+    indexed_hit = _find_probe_proximity(
+        0,
+        sample_point,
+        sample_normal,
+        probe_half_len_world,
+        all_segments,
+        spatial_index,
+        sections,
+    )
+    unindexed_hit = _find_probe_proximity(
+        0,
+        sample_point,
+        sample_normal,
+        probe_half_len_world,
+        all_segments,
+        None,
+        sections,
+    )
+
+    assert indexed_hit == 1
+    assert indexed_hit == unindexed_hit
 
 def test_integrity_report_emits_progress_updates() -> None:
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
