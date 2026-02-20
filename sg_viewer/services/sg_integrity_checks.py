@@ -32,6 +32,35 @@ def _world_to_ft(world_units: float) -> float:
     return world_units / FT_TO_WORLD
 
 
+def _section_polyline_for_checks(section: SectionPreview) -> list[Point]:
+    polyline = list(getattr(section, "polyline", []) or [])
+    if len(polyline) >= 2:
+        return polyline
+
+    start = (float(section.start[0]), float(section.start[1]))
+    end = (float(section.end[0]), float(section.end[1]))
+    if _distance(start, end) > 1e-9:
+        return [start, end]
+    return polyline
+
+
+def _effective_curve_radius(section: SectionPreview) -> float:
+    radius = getattr(section, "radius", None)
+    if radius is not None:
+        radius_abs = abs(float(radius))
+        if radius_abs > 1e-9:
+            return radius_abs
+
+    center = getattr(section, "center", None)
+    if center is not None:
+        return _distance(
+            (float(center[0]), float(center[1])),
+            (float(section.start[0]), float(section.start[1])),
+        )
+
+    return 0.0
+
+
 @dataclass(frozen=True)
 class IntegrityReport:
     text: str
@@ -157,10 +186,10 @@ def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTra
 
     for index, section in enumerate(sections):
         progress.step(message=f"Curve limit checks: section {index + 1}/{len(sections)}")
-        if section.type_name != "curve" or not section.radius:
+        if section.type_name != "curve":
             continue
 
-        radius_abs = abs(float(section.radius))
+        radius_abs = _effective_curve_radius(section)
         if radius_abs > 0:
             arc_degrees = math.degrees(float(section.length) / radius_abs)
             if arc_degrees > MAX_ARC_DEGREES:
@@ -200,7 +229,7 @@ def _centerline_clearance_report(
         progress.step(
             message=f"Centerline setup: section {section_index + 1}/{len(sections)}"
         )
-        for seg_start, seg_end in _polyline_segments(section.polyline):
+        for seg_start, seg_end in _polyline_segments(_section_polyline_for_checks(section)):
             all_segments.append((section_index, seg_start, seg_end))
 
     segment_index = _build_segment_spatial_index(
@@ -215,11 +244,11 @@ def _centerline_clearance_report(
     for section_index, section in enumerate(sections):
         section_level_fallback_hit = _find_close_centerline(
             source_section_index=section_index,
-            source_polyline=section.polyline,
+            source_polyline=_section_polyline_for_checks(section),
             max_distance=probe_half_len_world,
             sections=sections,
         )
-        for sample_point, tangent in _sample_polyline(section.polyline, sample_step_world):
+        for sample_point, tangent in _sample_polyline(_section_polyline_for_checks(section), sample_step_world):
             processed_samples += 1
             if total_samples > 0:
                 progress.step(
@@ -313,7 +342,7 @@ def _boundary_centerline_ownership_report_numpy(
         progress.step(
             message=f"Boundary ownership checks: section {section_index + 1}/{len(sections)}"
         )
-        samples = _sample_polyline_with_distance(section.polyline, sample_step_world)
+        samples = _sample_polyline_with_distance(_section_polyline_for_checks(section), sample_step_world)
         if not samples:
             continue
 
@@ -431,7 +460,7 @@ def _boundary_centerline_ownership_report_fallback(
         progress.step(
             message=f"Boundary ownership checks: section {section_index + 1}/{len(sections)}"
         )
-        samples = _sample_polyline_with_distance(section.polyline, sample_step_world)
+        samples = _sample_polyline_with_distance(_section_polyline_for_checks(section), sample_step_world)
         if not samples:
             continue
 
@@ -450,7 +479,7 @@ def _boundary_centerline_ownership_report_fallback(
                 )
                 own_dist = _point_to_polyline_distance(
                     boundary_point,
-                    section.polyline,
+                    _section_polyline_for_checks(section),
                 )
                 rival_index, rival_dist = _nearest_section_distance(
                     boundary_point,
@@ -495,12 +524,12 @@ def _estimate_progress_steps(sections: list[SectionPreview]) -> int:
         return 1
 
     sample_step_world = _ft_to_world(PERP_SAMPLE_STEP_FT)
-    centerline_samples = sum(_count_polyline_samples(section.polyline, sample_step_world) for section in sections)
+    centerline_samples = sum(_count_polyline_samples(_section_polyline_for_checks(section), sample_step_world) for section in sections)
     return 1 + (4 * len(sections)) + centerline_samples
 
 
 def _centerline_sample_counts(sections: list[SectionPreview], step: float) -> list[int]:
-    return [_count_polyline_samples(section.polyline, step) for section in sections]
+    return [_count_polyline_samples(_section_polyline_for_checks(section), step) for section in sections]
 
 
 def _count_polyline_samples(polyline: list[Point], step: float) -> int:
@@ -734,7 +763,7 @@ def _nearest_section_distance(
         prepared_polyline = None
         if prepared_polyline_cache is not None:
             prepared_polyline = prepared_polyline_cache.get(index)
-        distance = _point_to_polyline_distance(point, section.polyline, prepared_polyline)
+        distance = _point_to_polyline_distance(point, _section_polyline_for_checks(section), prepared_polyline)
         if nearest_distance is None or distance < nearest_distance:
             nearest_distance = distance
             nearest_index = index
@@ -776,7 +805,7 @@ def _build_section_segment_spatial_index(
 ) -> _SectionSegmentSpatialIndex | None:
     indexed_segments: list[_IndexedSectionSegment] = []
     for section_index, section in enumerate(sections):
-        for seg_start, seg_end in _polyline_segments(section.polyline):
+        for seg_start, seg_end in _polyline_segments(_section_polyline_for_checks(section)):
             min_x = min(seg_start[0], seg_end[0])
             max_x = max(seg_start[0], seg_end[0])
             min_y = min(seg_start[1], seg_end[1])
@@ -831,9 +860,10 @@ def _build_prepared_polyline_cache(
 
     prepared: dict[int, _PreparedPolyline] = {}
     for index, section in enumerate(sections):
-        if len(section.polyline) < 2:
+        polyline = _section_polyline_for_checks(section)
+        if len(polyline) < 2:
             continue
-        points = np.asarray(section.polyline, dtype=float)
+        points = np.asarray(polyline, dtype=float)
         start = points[:-1]
         seg = points[1:] - start
         seg_len_sq = np.einsum("ij,ij->i", seg, seg)
@@ -1049,7 +1079,7 @@ def _find_close_centerline(
         if _is_adjacent_section(source_section_index, target_index, sections):
             continue
 
-        target_segments = _polyline_segments(target.polyline)
+        target_segments = _polyline_segments(_section_polyline_for_checks(target))
         for source_start, source_end in source_segments:
             for target_start, target_end in target_segments:
                 if (

@@ -374,3 +374,47 @@ def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_dis
     assert numpy_lines == fallback_lines
     assert batched_calls > 0
     assert scalar_calls == 0
+
+
+def test_integrity_report_uses_start_end_when_polyline_is_missing_for_spacing_checks() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(0.0, _ft_to_world(60.0)),
+        end=(_ft_to_world(200.0), _ft_to_world(60.0)),
+    )
+    section_b.polyline = [section_b.start]
+
+    report = build_integrity_report([section_a, section_b], [[], []]).text
+
+    assert "Sections with < 80 ft perpendicular spacing: 2" in report
+
+
+def test_integrity_report_uses_curve_center_radius_when_radius_field_missing() -> None:
+    radius_ft = 49.99
+    radius_world = _ft_to_world(radius_ft)
+    section = SimpleNamespace(
+        section_id=0,
+        source_section_id=0,
+        type_name="curve",
+        previous_id=0,
+        next_id=0,
+        start=(0.0, 0.0),
+        end=(radius_world, radius_world),
+        start_dlong=0.0,
+        length=radius_world,
+        center=(0.0, radius_world),
+        sang1=0.0,
+        sang2=0.0,
+        eang1=0.0,
+        eang2=0.0,
+        radius=None,
+        start_heading=(1.0, 0.0),
+        end_heading=(0.0, 1.0),
+        polyline=[(0.0, 0.0), (radius_world, 0.0)],
+    )
+
+    report = build_integrity_report([section], [[]]).text
+
+    assert "Curves with radius < 50 ft: 1" in report
+    assert "section 0: radius=49.99 ft" in report
