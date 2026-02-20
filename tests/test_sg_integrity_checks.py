@@ -446,3 +446,53 @@ def test_integrity_report_uses_curve_center_radius_when_radius_field_missing() -
 
     assert "Curves with radius < 50 ft: 1" in report
     assert "section 0: radius=49.99 ft" in report
+
+
+def test_integrity_report_flags_computed_straight_endpoint_gap_over_one_world_unit() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(100.0), 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(_ft_to_world(100.0) + 2.0, 0.0),
+        end=(_ft_to_world(200.0) + 2.0, 0.0),
+    )
+
+    report = build_integrity_report([section_a, section_b], [[], []]).text
+
+    assert "Computed endpoint gaps > 1 500ths: 2" in report
+    assert "gap=2 500ths" in report
+
+
+def test_integrity_report_computed_curve_endpoint_gap_uses_angles_and_radius() -> None:
+    radius = 5000.0
+    section_curve = SimpleNamespace(
+        section_id=0,
+        source_section_id=0,
+        type_name="curve",
+        previous_id=0,
+        next_id=1,
+        start=(0.0, 0.0),
+        end=(0.0, 0.0),
+        start_dlong=0.0,
+        length=5000.0,
+        center=(0.0, 0.0),
+        sang1=0.0,
+        sang2=-radius,
+        eang1=-radius,
+        eang2=0.0,
+        radius=radius,
+        start_heading=(1.0, 0.0),
+        end_heading=(0.0, 1.0),
+        polyline=[(0.0, 0.0), (0.0, 0.0)],
+    )
+    section_next = _section(
+        section_id=1,
+        start=(3.0, 5000.0),
+        end=(103.0, 5000.0),
+        previous_id=0,
+        next_id=0,
+    )
+
+    report = build_integrity_report([section_curve, section_next], [[], []]).text
+
+    assert "Computed endpoint gaps > 1 500ths: 1" in report
+    assert "gap=3 500ths" in report
