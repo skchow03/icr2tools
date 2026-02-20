@@ -153,6 +153,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_axes = False
         self._show_background_image = True
         self._track_opacity = 1.0
+        self._integrity_boundary_violation_points: tuple[Point, ...] = ()
 
         self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
