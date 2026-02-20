@@ -252,3 +252,62 @@ def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segme
 
     assert indexed_nearest[0] == 1
     assert indexed_nearest == unindexed_nearest
+
+
+def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_distances(monkeypatch) -> None:
+    import sg_viewer.services.sg_integrity_checks as integrity_checks
+
+    if integrity_checks.np is None:
+        return
+
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(300.0 * FT_TO_WORLD, 0.0))
+    section_b = _section(section_id=1, start=(0.0, 12.0 * FT_TO_WORLD), end=(300.0 * FT_TO_WORLD, 12.0 * FT_TO_WORLD))
+    section_c = _section(section_id=2, start=(0.0, -80.0 * FT_TO_WORLD), end=(300.0 * FT_TO_WORLD, -80.0 * FT_TO_WORLD))
+    wide_left_boundary = PreviewFSection(
+        start_dlat=24.0 * FT_TO_WORLD,
+        end_dlat=24.0 * FT_TO_WORLD,
+        surface_type=0,
+        type2=0,
+    )
+
+    sections = [section_a, section_b, section_c]
+    fsects_by_section = [[wide_left_boundary], [], []]
+    sample_step_world = 10.0 * FT_TO_WORLD
+
+    progress_numpy = integrity_checks._ProgressTracker(total=1, callback=None)
+    progress_fallback = integrity_checks._ProgressTracker(total=1, callback=None)
+
+    scalar_calls = 0
+    batched_calls = 0
+    original_scalar = integrity_checks._point_to_polyline_distance_numpy
+    original_batched = integrity_checks._points_to_polyline_distance_numpy
+
+    def _counted_scalar(*args, **kwargs):
+        nonlocal scalar_calls
+        scalar_calls += 1
+        return original_scalar(*args, **kwargs)
+
+    def _counted_batched(*args, **kwargs):
+        nonlocal batched_calls
+        batched_calls += 1
+        return original_batched(*args, **kwargs)
+
+    monkeypatch.setattr(integrity_checks, "_point_to_polyline_distance_numpy", _counted_scalar)
+    monkeypatch.setattr(integrity_checks, "_points_to_polyline_distance_numpy", _counted_batched)
+
+    numpy_lines = integrity_checks._boundary_centerline_ownership_report_numpy(
+        sections,
+        fsects_by_section,
+        sample_step_world,
+        progress_numpy,
+    )
+    fallback_lines = integrity_checks._boundary_centerline_ownership_report_fallback(
+        sections,
+        fsects_by_section,
+        sample_step_world,
+        progress_fallback,
+    )
+
+    assert numpy_lines == fallback_lines
+    assert batched_calls > 0
+    assert scalar_calls == 0
