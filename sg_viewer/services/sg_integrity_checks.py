@@ -278,11 +278,11 @@ def _boundary_centerline_ownership_report(
 ) -> list[str]:
     lines: list[str] = []
     findings: list[str] = []
-    spatial_index: _SectionSpatialIndex | None = None
+    spatial_index: _SectionSegmentSpatialIndex | None = None
     prepared_polyline_cache: dict[int, _PreparedPolyline] | None = None
     if np is not None:
         prepared_polyline_cache = _build_prepared_polyline_cache(sections)
-    spatial_index = _build_section_spatial_index(sections, sample_step_world)
+    spatial_index = _build_section_segment_spatial_index(sections, sample_step_world)
 
     for section_index, section in enumerate(sections):
         progress.step(
@@ -555,23 +555,42 @@ def _nearest_section_distance(
     *,
     exclude_index: int,
     prepared_polyline_cache: dict[int, "_PreparedPolyline"] | None = None,
-    spatial_index: "_SectionSpatialIndex | None" = None,
+    spatial_index: "_SectionSegmentSpatialIndex | None" = None,
 ) -> tuple[int | None, float | None]:
     nearest_index: int | None = None
     nearest_distance: float | None = None
-    candidate_indices: set[int] | None = None
 
     if spatial_index is not None:
-        candidate_indices = spatial_index.candidates(point)
+        section_best_distance: dict[int, float] = {}
+        max_radius = 8
+        for radius_cells in range(1, max_radius + 1):
+            candidate_segment_indices = spatial_index.candidate_segments(point, radius_cells)
+            if not candidate_segment_indices:
+                continue
 
-    scan_indices: list[int]
-    if candidate_indices:
-        scan_indices = [index for index in candidate_indices if index != exclude_index]
-    else:
-        scan_indices = [index for index in range(len(sections)) if index != exclude_index]
+            for segment_index in candidate_segment_indices:
+                indexed_segment = spatial_index.segments[segment_index]
+                section_index = indexed_segment.section_index
+                if section_index == exclude_index:
+                    continue
+                distance = _point_to_segment_distance(
+                    point,
+                    indexed_segment.seg_start,
+                    indexed_segment.seg_end,
+                )
+                best_so_far = section_best_distance.get(section_index)
+                if best_so_far is None or distance < best_so_far:
+                    section_best_distance[section_index] = distance
 
-    for index in scan_indices:
-        section = sections[index]
+            if section_best_distance:
+                break
+
+        if section_best_distance:
+            nearest_index = min(section_best_distance, key=section_best_distance.get)
+            nearest_distance = section_best_distance[nearest_index]
+            return nearest_index, nearest_distance
+
+    for index, section in enumerate(sections):
         if index == exclude_index:
             continue
         prepared_polyline = None
@@ -586,30 +605,72 @@ def _nearest_section_distance(
 
 
 @dataclass(frozen=True)
-class _SectionSpatialIndex:
+class _IndexedSectionSegment:
+    section_index: int
+    seg_start: Point
+    seg_end: Point
+    bbox: tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
+class _SectionSegmentSpatialIndex:
     bin_size: float
-    bins: dict[tuple[int, int], set[int]]
+    bins: dict[tuple[int, int], list[int]]
+    segments: list[_IndexedSectionSegment]
 
-    def candidates(self, point: Point) -> set[int]:
+    def candidate_segments(self, point: Point, radius_cells: int) -> list[int]:
         ix, iy = _grid_key(point, self.bin_size)
+        min_ix = ix - radius_cells
+        max_ix = ix + radius_cells
+        min_iy = iy - radius_cells
+        max_iy = iy + radius_cells
+
         candidates: set[int] = set()
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                candidates.update(self.bins.get((ix + dx, iy + dy), set()))
-        return candidates
+        for bx in range(min_ix, max_ix + 1):
+            for by in range(min_iy, max_iy + 1):
+                candidates.update(self.bins.get((bx, by), []))
+        return list(candidates)
 
 
-def _build_section_spatial_index(
+def _build_section_segment_spatial_index(
     sections: list[SectionPreview],
     step: float,
-) -> _SectionSpatialIndex:
-    bin_size = max(step * 4.0, FT_TO_WORLD)
-    bins: dict[tuple[int, int], set[int]] = {}
+) -> _SectionSegmentSpatialIndex | None:
+    indexed_segments: list[_IndexedSectionSegment] = []
     for section_index, section in enumerate(sections):
-        for point in section.polyline:
-            key = _grid_key(point, bin_size)
-            bins.setdefault(key, set()).add(section_index)
-    return _SectionSpatialIndex(bin_size=bin_size, bins=bins)
+        for seg_start, seg_end in _polyline_segments(section.polyline):
+            min_x = min(seg_start[0], seg_end[0])
+            max_x = max(seg_start[0], seg_end[0])
+            min_y = min(seg_start[1], seg_end[1])
+            max_y = max(seg_start[1], seg_end[1])
+            indexed_segments.append(
+                _IndexedSectionSegment(
+                    section_index=section_index,
+                    seg_start=seg_start,
+                    seg_end=seg_end,
+                    bbox=(min_x, min_y, max_x, max_y),
+                )
+            )
+
+    if not indexed_segments:
+        return None
+
+    bin_size = max(step * 4.0, FT_TO_WORLD)
+    bins: dict[tuple[int, int], list[int]] = {}
+    for segment_index, indexed_segment in enumerate(indexed_segments):
+        min_x, min_y, max_x, max_y = indexed_segment.bbox
+        min_ix, min_iy = _grid_key((min_x, min_y), bin_size)
+        max_ix, max_iy = _grid_key((max_x, max_y), bin_size)
+
+        for ix in range(min_ix, max_ix + 1):
+            for iy in range(min_iy, max_iy + 1):
+                bins.setdefault((ix, iy), []).append(segment_index)
+
+    return _SectionSegmentSpatialIndex(
+        bin_size=bin_size,
+        bins=bins,
+        segments=indexed_segments,
+    )
 
 
 def _grid_key(point: Point, bin_size: float) -> tuple[int, int]:
