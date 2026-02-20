@@ -98,6 +98,7 @@ def _effective_curve_radius(section: SectionPreview) -> float:
 class IntegrityReport:
     text: str
     boundary_ownership_violation_points: tuple[Point, ...] = ()
+    centerline_spacing_violation_points: tuple[Point, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,7 +136,7 @@ def build_integrity_report(
     lines.append("")
     lines.extend(_curve_limits_report(sections, measurement_unit, progress))
     lines.append("")
-    centerline_lines, boundary_violation_points = _centerline_clearance_report(
+    centerline_lines, boundary_violation_points, spacing_violation_points = _centerline_clearance_report(
         sections,
         fsects_by_section,
         measurement_unit,
@@ -147,6 +148,7 @@ def build_integrity_report(
     return IntegrityReport(
         text="\n".join(lines),
         boundary_ownership_violation_points=tuple(boundary_violation_points),
+        centerline_spacing_violation_points=tuple(spacing_violation_points),
     )
 
 
@@ -326,7 +328,7 @@ def _centerline_clearance_report(
     fsects_by_section: list[list[PreviewFSection]],
     measurement_unit: str,
     progress: "_ProgressTracker",
-) -> tuple[list[str], list[Point]]:
+) -> tuple[list[str], list[Point], list[Point]]:
     lines = ["Centerline clearance and boundary ownership", "-" * 72]
     sample_step_world = _ft_to_world(PERP_SAMPLE_STEP_FT)
     probe_half_len_world = _ft_to_world(MIN_CENTERLINE_SEPARATION_FT)
@@ -348,6 +350,7 @@ def _centerline_clearance_report(
     total_samples = sum(sample_counts)
     processed_samples = 0
     findings: list[str] = []
+    spacing_violation_points: list[Point] = []
     for section_index, section in enumerate(sections):
         for sample_point, tangent, along_distance, _ in _sample_polyline_with_distance(
             _section_polyline_for_checks(section),
@@ -387,6 +390,7 @@ def _centerline_clearance_report(
                     f"(measured clearance {_format_world_distance(measured_clearance, measurement_unit)})"
                 )
             )
+            spacing_violation_points.append((float(sample_point[0]), float(sample_point[1])))
             break
 
     if findings:
@@ -415,7 +419,7 @@ def _centerline_clearance_report(
     lines.append(
         f"Sampling step: {_format_world_distance(sample_step_world, measurement_unit)} along each centerline section."
     )
-    return lines, violation_points
+    return lines, violation_points, spacing_violation_points
 
 
 def _boundary_centerline_ownership_report(

@@ -1383,7 +1383,10 @@ class SGViewerController:
         if text_edit is not None:
             text_edit.setPlainText(report.text)
         self._window.preview.set_integrity_boundary_violation_points(
-            report.boundary_ownership_violation_points
+            (
+                *report.boundary_ownership_violation_points,
+                *report.centerline_spacing_violation_points,
+            )
         )
         self._integrity_report_window.show()
         self._integrity_report_window.raise_()
