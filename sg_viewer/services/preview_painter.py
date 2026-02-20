@@ -762,7 +762,7 @@ def _draw_integrity_boundary_violation_points(
     diameter = 8.0
     radius = diameter / 2.0
     for point in points:
-        mapped = sg_rendering.map_to_screen(point, transform, widget_height)
+        mapped = _map_point(point, transform, widget_height)
         painter.drawEllipse(
             QtCore.QRectF(
                 mapped.x() - radius,
