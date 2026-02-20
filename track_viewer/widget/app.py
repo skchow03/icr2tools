@@ -60,7 +60,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._replay_tab: QtWidgets.QWidget | None = None
         self._closing = False
 
-        self.setWindowTitle("ICR2 Track Viewer")
+        self.setWindowTitle("SG CREATE")
         self.resize(720, 480)
 
         self._track_list = QtWidgets.QComboBox()
@@ -815,8 +815,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
     def _show_about_dialog(self) -> None:
         QtWidgets.QMessageBox.about(
             self,
-            "About ICR2 Track Viewer",
-            f"ICR2 Track Viewer v{__version__}\nby SK Chow",
+            "About SG CREATE",
+            f"SG CREATE v{__version__}\nby SK Chow",
         )
 
     def _apply_track_list_items(
