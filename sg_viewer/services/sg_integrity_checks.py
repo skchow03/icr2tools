@@ -200,6 +200,12 @@ def _centerline_clearance_report(
     processed_samples = 0
     findings: list[str] = []
     for section_index, section in enumerate(sections):
+        section_level_fallback_hit = _find_close_centerline(
+            source_section_index=section_index,
+            source_polyline=section.polyline,
+            max_distance=probe_half_len_world,
+            sections=sections,
+        )
         for sample_point, tangent in _sample_polyline(section.polyline, sample_step_world):
             processed_samples += 1
             if total_samples > 0:
@@ -223,12 +229,7 @@ def _centerline_clearance_report(
                 sections,
             )
             if hit is None:
-                hit = _find_close_centerline(
-                    source_section_index=section_index,
-                    source_polyline=section.polyline,
-                    max_distance=probe_half_len_world,
-                    sections=sections,
-                )
+                hit = section_level_fallback_hit
             if hit is None:
                 continue
             findings.append(
