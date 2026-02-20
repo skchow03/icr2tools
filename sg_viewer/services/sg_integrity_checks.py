@@ -185,6 +185,7 @@ def _heading_and_boundary_report(
 ) -> list[str]:
     lines = ["Join heading and boundary gap checks", "-" * 72]
     mismatch_lines: list[str] = []
+    computed_endpoint_gap_lines: list[str] = []
     total = len(sections)
 
     for index, section in enumerate(sections):
@@ -196,21 +197,38 @@ def _heading_and_boundary_report(
 
         mismatch = heading_delta(section.end_heading, next_section.start_heading)
         if mismatch is None or abs(mismatch) < 0.01:
-            continue
+            pass
+        else:
+            center_gap = _distance(section.end, next_section.start)
+            left_gap, right_gap = _boundary_gaps(
+                section,
+                next_section,
+                _safe_get_fsects(fsects_by_section, index),
+                _safe_get_fsects(fsects_by_section, next_index),
+            )
+            mismatch_lines.append(
+                (
+                    f"  - {index} -> {next_index}: heading Δ={mismatch:.3f}°, "
+                    f"centerline gap={_format_world_distance(center_gap, measurement_unit)}, "
+                    f"left boundary gap={_format_world_distance(left_gap, measurement_unit)}, "
+                    f"right boundary gap={_format_world_distance(right_gap, measurement_unit)}"
+                )
+            )
 
-        center_gap = _distance(section.end, next_section.start)
-        left_gap, right_gap = _boundary_gaps(
-            section,
-            next_section,
-            _safe_get_fsects(fsects_by_section, index),
-            _safe_get_fsects(fsects_by_section, next_index),
-        )
-        mismatch_lines.append(
+        computed_end = _computed_section_end_xy(section)
+        if computed_end is None:
+            continue
+        computed_gap = _distance(computed_end, next_section.start)
+        if computed_gap <= 1.0:
+            continue
+        computed_endpoint_gap_lines.append(
             (
-                f"  - {index} -> {next_index}: heading Δ={mismatch:.3f}°, "
-                f"centerline gap={_format_world_distance(center_gap, measurement_unit)}, "
-                f"left boundary gap={_format_world_distance(left_gap, measurement_unit)}, "
-                f"right boundary gap={_format_world_distance(right_gap, measurement_unit)}"
+                f"  - {index} -> {next_index}: computed end "
+                f"({_format_world_distance(computed_end[0], measurement_unit)}, "
+                f"{_format_world_distance(computed_end[1], measurement_unit)}) vs next start "
+                f"({_format_world_distance(next_section.start[0], measurement_unit)}, "
+                f"{_format_world_distance(next_section.start[1], measurement_unit)}), "
+                f"gap={_format_world_distance(computed_gap, measurement_unit)}"
             )
         )
 
@@ -220,7 +238,43 @@ def _heading_and_boundary_report(
     else:
         lines.append("Heading mismatches: none")
 
+    if computed_endpoint_gap_lines:
+        lines.append(f"Computed endpoint gaps > 1 500ths: {len(computed_endpoint_gap_lines)}")
+        lines.extend(computed_endpoint_gap_lines)
+    else:
+        lines.append("Computed endpoint gaps > 1 500ths: none")
+
     return lines
+
+
+def _computed_section_end_xy(section: SectionPreview) -> Point | None:
+    start_x = float(section.start[0])
+    start_y = float(section.start[1])
+
+    if section.type_name == "curve":
+        radius = getattr(section, "radius", None)
+        sang1 = getattr(section, "sang1", None)
+        sang2 = getattr(section, "sang2", None)
+        eang1 = getattr(section, "eang1", None)
+        eang2 = getattr(section, "eang2", None)
+        if radius is None or sang1 is None or sang2 is None or eang1 is None or eang2 is None:
+            return None
+        radius_value = float(radius)
+        if abs(radius_value) <= 1e-9:
+            return None
+        sign = 1.0 if radius_value >= 0 else -1.0
+
+        center_x = start_x - float(sang2) * sign
+        center_y = start_y + float(sang1) * sign
+        end_x = center_x + float(eang2) * sign
+        end_y = center_y - float(eang1) * sign
+        return (end_x, end_y)
+
+    heading = _normalize(getattr(section, "start_heading", None))
+    if heading is None:
+        return None
+    length = float(getattr(section, "length", 0.0))
+    return (start_x + heading[0] * length, start_y + heading[1] * length)
 
 
 def _curve_limits_report(
