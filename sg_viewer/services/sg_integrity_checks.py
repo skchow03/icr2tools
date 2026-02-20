@@ -24,6 +24,14 @@ MIN_CENTERLINE_SEPARATION_FT = 80.0
 PERP_SAMPLE_STEP_FT = 10.0
 
 
+def _ft_to_world(feet: float) -> float:
+    return feet * FT_TO_WORLD
+
+
+def _world_to_ft(world_units: float) -> float:
+    return world_units / FT_TO_WORLD
+
+
 @dataclass(frozen=True)
 class IntegrityReport:
     text: str
@@ -126,9 +134,9 @@ def _heading_and_boundary_report(
         mismatch_lines.append(
             (
                 f"  - {index} -> {next_index}: heading Δ={mismatch:.3f}°, "
-                f"centerline gap={center_gap / FT_TO_WORLD:.2f} ft, "
-                f"left boundary gap={left_gap / FT_TO_WORLD:.2f} ft, "
-                f"right boundary gap={right_gap / FT_TO_WORLD:.2f} ft"
+                f"centerline gap={_world_to_ft(center_gap):.2f} ft, "
+                f"left boundary gap={_world_to_ft(left_gap):.2f} ft, "
+                f"right boundary gap={_world_to_ft(right_gap):.2f} ft"
             )
         )
 
@@ -145,7 +153,7 @@ def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTra
     lines = ["Curve limits", "-" * 72]
     long_arc: list[str] = []
     tight_radius: list[str] = []
-    min_radius_world = MIN_RADIUS_FT * FT_TO_WORLD
+    min_radius_world = _ft_to_world(MIN_RADIUS_FT)
 
     for index, section in enumerate(sections):
         progress.step(message=f"Curve limit checks: section {index + 1}/{len(sections)}")
@@ -160,7 +168,7 @@ def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTra
 
         if radius_abs < min_radius_world:
             tight_radius.append(
-                f"  - section {index}: radius={radius_abs / FT_TO_WORLD:.2f} ft"
+                f"  - section {index}: radius={_world_to_ft(radius_abs):.2f} ft"
             )
 
     if long_arc:
@@ -184,8 +192,8 @@ def _centerline_clearance_report(
     progress: "_ProgressTracker",
 ) -> list[str]:
     lines = ["Centerline clearance and boundary ownership", "-" * 72]
-    sample_step_world = PERP_SAMPLE_STEP_FT * FT_TO_WORLD
-    probe_half_len_world = MIN_CENTERLINE_SEPARATION_FT * FT_TO_WORLD
+    sample_step_world = _ft_to_world(PERP_SAMPLE_STEP_FT)
+    probe_half_len_world = _ft_to_world(MIN_CENTERLINE_SEPARATION_FT)
 
     all_segments: list[tuple[int, Point, Point]] = []
     for section_index, section in enumerate(sections):
@@ -240,8 +248,8 @@ def _centerline_clearance_report(
                 continue
             findings.append(
                 (
-                    f"  - section {section_index} near ({sample_point[0] / FT_TO_WORLD:.1f}, "
-                    f"{sample_point[1] / FT_TO_WORLD:.1f}) ft intersects section {hit} "
+                    f"  - section {section_index} near ({_world_to_ft(sample_point[0]):.1f}, "
+                    f"{_world_to_ft(sample_point[1]):.1f}) ft intersects section {hit} "
                     f"within ±{MIN_CENTERLINE_SEPARATION_FT:.0f} ft"
                 )
             )
@@ -387,10 +395,10 @@ def _boundary_centerline_ownership_report_numpy(
             findings.append(
                 (
                     f"  - section {section_index} {side} boundary near "
-                    f"({boundary_point[0] / FT_TO_WORLD:.1f}, {boundary_point[1] / FT_TO_WORLD:.1f}) ft "
+                    f"({_world_to_ft(boundary_point[0]):.1f}, {_world_to_ft(boundary_point[1]):.1f}) ft "
                     f"is closer to section {int(rival_indices[first])} centerline "
-                    f"({rival_distances[first] / FT_TO_WORLD:.2f} ft) than its own "
-                    f"({own_distances[first] / FT_TO_WORLD:.2f} ft)"
+                    f"({_world_to_ft(rival_distances[first]):.2f} ft) than its own "
+                    f"({_world_to_ft(own_distances[first]):.2f} ft)"
                 )
             )
             break
@@ -460,10 +468,10 @@ def _boundary_centerline_ownership_report_fallback(
                 findings.append(
                     (
                         f"  - section {section_index} {side} boundary near "
-                        f"({boundary_point[0] / FT_TO_WORLD:.1f}, {boundary_point[1] / FT_TO_WORLD:.1f}) ft "
+                        f"({_world_to_ft(boundary_point[0]):.1f}, {_world_to_ft(boundary_point[1]):.1f}) ft "
                         f"is closer to section {rival_index} centerline "
-                        f"({rival_dist / FT_TO_WORLD:.2f} ft) than its own "
-                        f"({own_dist / FT_TO_WORLD:.2f} ft)"
+                        f"({_world_to_ft(rival_dist):.2f} ft) than its own "
+                        f"({_world_to_ft(own_dist):.2f} ft)"
                     )
                 )
                 break
@@ -486,7 +494,7 @@ def _estimate_progress_steps(sections: list[SectionPreview]) -> int:
     if not sections:
         return 1
 
-    sample_step_world = PERP_SAMPLE_STEP_FT * FT_TO_WORLD
+    sample_step_world = _ft_to_world(PERP_SAMPLE_STEP_FT)
     centerline_samples = sum(_count_polyline_samples(section.polyline, sample_step_world) for section in sections)
     return 1 + (4 * len(sections)) + centerline_samples
 
@@ -785,7 +793,7 @@ def _build_section_segment_spatial_index(
     if not indexed_segments:
         return None
 
-    bin_size = max(step * 4.0, FT_TO_WORLD)
+    bin_size = max(step * 4.0, _ft_to_world(1.0))
     bins: dict[tuple[int, int], list[int]] = {}
     for segment_index, indexed_segment in enumerate(indexed_segments):
         min_x, min_y, max_x, max_y = indexed_segment.bbox
@@ -1008,7 +1016,7 @@ def _build_segment_spatial_index(
     if not all_segments:
         return None
 
-    bin_size = max(search_radius, FT_TO_WORLD)
+    bin_size = max(search_radius, _ft_to_world(1.0))
     bins: dict[tuple[int, int], list[int]] = {}
     bboxes: list[tuple[float, float, float, float]] = []
 

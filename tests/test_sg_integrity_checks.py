@@ -1,6 +1,10 @@
 from sg_viewer.model.preview_fsection import PreviewFSection
 from types import SimpleNamespace
-from sg_viewer.services.sg_integrity_checks import FT_TO_WORLD, IntegrityProgress, build_integrity_report
+from sg_viewer.services.sg_integrity_checks import (
+    IntegrityProgress,
+    _ft_to_world,
+    build_integrity_report,
+)
 
 
 def _section(
@@ -32,13 +36,37 @@ def _section(
         polyline=[start, end],
     )
 
+def _curve_section(*, section_id: int, radius_ft: float):
+    radius_world = _ft_to_world(radius_ft)
+    arc_radians = 1.0
+    return SimpleNamespace(
+        section_id=section_id,
+        source_section_id=section_id,
+        type_name="curve",
+        previous_id=section_id,
+        next_id=section_id,
+        start=(0.0, 0.0),
+        end=(radius_world, radius_world),
+        start_dlong=0.0,
+        length=radius_world * arc_radians,
+        center=(0.0, radius_world),
+        sang1=0.0,
+        sang2=0.0,
+        eang1=0.0,
+        eang2=0.0,
+        radius=radius_world,
+        start_heading=(1.0, 0.0),
+        end_heading=(0.0, 1.0),
+        polyline=[(0.0, 0.0), (radius_world, 0.0)],
+    )
+
 
 def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> None:
-    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
         section_id=1,
-        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
-        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+        start=(_ft_to_world(100.0), _ft_to_world(-40.0)),
+        end=(_ft_to_world(100.0), _ft_to_world(40.0)),
     )
 
     report = build_integrity_report(
@@ -52,11 +80,11 @@ def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> 
 
 
 def test_integrity_report_flags_parallel_close_centerline_spacing_violation() -> None:
-    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
         section_id=1,
-        start=(0.0, 60.0 * FT_TO_WORLD),
-        end=(200.0 * FT_TO_WORLD, 60.0 * FT_TO_WORLD),
+        start=(0.0, _ft_to_world(60.0)),
+        end=(_ft_to_world(200.0), _ft_to_world(60.0)),
     )
 
     report = build_integrity_report(
@@ -70,14 +98,14 @@ def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_viol
     section_a = _section(
         section_id=0,
         start=(0.0, 0.0),
-        end=(200.0 * FT_TO_WORLD, 0.0),
+        end=(_ft_to_world(200.0), 0.0),
         previous_id=1,
         next_id=1,
     )
     section_b = _section(
         section_id=1,
-        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
-        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+        start=(_ft_to_world(100.0), _ft_to_world(-40.0)),
+        end=(_ft_to_world(100.0), _ft_to_world(40.0)),
         previous_id=0,
         next_id=0,
     )
@@ -91,11 +119,11 @@ def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_viol
 
 
 def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
-    section_a = _section(section_id=0, start=(0.0, 0.0), end=(100.0 * FT_TO_WORLD, 0.0))
-    section_b = _section(section_id=1, start=(0.0, 10.0 * FT_TO_WORLD), end=(100.0 * FT_TO_WORLD, 10.0 * FT_TO_WORLD))
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(100.0), 0.0))
+    section_b = _section(section_id=1, start=(0.0, _ft_to_world(10.0)), end=(_ft_to_world(100.0), _ft_to_world(10.0)))
     wide_left_boundary = PreviewFSection(
-        start_dlat=20.0 * FT_TO_WORLD,
-        end_dlat=20.0 * FT_TO_WORLD,
+        start_dlat=_ft_to_world(20.0),
+        end_dlat=_ft_to_world(20.0),
         surface_type=0,
         type2=0,
     )
@@ -113,20 +141,20 @@ def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> Non
     section_a = _section(
         section_id=0,
         start=(0.0, 0.0),
-        end=(100.0 * FT_TO_WORLD, 0.0),
+        end=(_ft_to_world(100.0), 0.0),
         previous_id=1,
         next_id=1,
     )
     section_b = _section(
         section_id=1,
-        start=(0.0, 10.0 * FT_TO_WORLD),
-        end=(100.0 * FT_TO_WORLD, 10.0 * FT_TO_WORLD),
+        start=(0.0, _ft_to_world(10.0)),
+        end=(_ft_to_world(100.0), _ft_to_world(10.0)),
         previous_id=0,
         next_id=0,
     )
     wide_left_boundary = PreviewFSection(
-        start_dlat=20.0 * FT_TO_WORLD,
-        end_dlat=20.0 * FT_TO_WORLD,
+        start_dlat=_ft_to_world(20.0),
+        end_dlat=_ft_to_world(20.0),
         surface_type=0,
         type2=0,
     )
@@ -147,16 +175,16 @@ def test_segment_spatial_index_matches_unindexed_probe_proximity() -> None:
         _find_probe_proximity,
     )
 
-    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
         section_id=1,
-        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
-        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+        start=(_ft_to_world(100.0), _ft_to_world(-40.0)),
+        end=(_ft_to_world(100.0), _ft_to_world(40.0)),
     )
     section_far = _section(
         section_id=2,
-        start=(2000.0 * FT_TO_WORLD, 2000.0 * FT_TO_WORLD),
-        end=(2100.0 * FT_TO_WORLD, 2000.0 * FT_TO_WORLD),
+        start=(_ft_to_world(2000.0), _ft_to_world(2000.0)),
+        end=(_ft_to_world(2100.0), _ft_to_world(2000.0)),
     )
 
     sections = [section_a, section_b, section_far]
@@ -164,9 +192,9 @@ def test_segment_spatial_index_matches_unindexed_probe_proximity() -> None:
     for idx, section in enumerate(sections):
         all_segments.append((idx, section.polyline[0], section.polyline[1]))
 
-    sample_point = (100.0 * FT_TO_WORLD, 0.0)
+    sample_point = (_ft_to_world(100.0), 0.0)
     sample_normal = (0.0, 1.0)
-    probe_half_len_world = 80.0 * FT_TO_WORLD
+    probe_half_len_world = _ft_to_world(80.0)
 
     spatial_index = _build_segment_spatial_index(all_segments, probe_half_len_world)
 
@@ -193,11 +221,11 @@ def test_segment_spatial_index_matches_unindexed_probe_proximity() -> None:
     assert indexed_hit == unindexed_hit
 
 def test_integrity_report_emits_progress_updates() -> None:
-    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
         section_id=1,
-        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
-        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+        start=(_ft_to_world(100.0), _ft_to_world(-40.0)),
+        end=(_ft_to_world(100.0), _ft_to_world(40.0)),
     )
 
     updates: list[IntegrityProgress] = []
@@ -219,23 +247,23 @@ def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segme
     section_source = _section(
         section_id=0,
         start=(0.0, 0.0),
-        end=(10.0 * FT_TO_WORLD, 0.0),
+        end=(_ft_to_world(10.0), 0.0),
     )
     section_sparse_long = _section(
         section_id=1,
-        start=(0.0, 1500.0 * FT_TO_WORLD),
-        end=(4000.0 * FT_TO_WORLD, 1500.0 * FT_TO_WORLD),
+        start=(0.0, _ft_to_world(1500.0)),
+        end=(_ft_to_world(4000.0), _ft_to_world(1500.0)),
     )
     section_far = _section(
         section_id=2,
-        start=(0.0, 2500.0 * FT_TO_WORLD),
-        end=(4000.0 * FT_TO_WORLD, 2500.0 * FT_TO_WORLD),
+        start=(0.0, _ft_to_world(2500.0)),
+        end=(_ft_to_world(4000.0), _ft_to_world(2500.0)),
     )
 
     sections = [section_source, section_sparse_long, section_far]
-    sample_step_world = 10.0 * FT_TO_WORLD
+    sample_step_world = _ft_to_world(10.0)
     spatial_index = _build_section_segment_spatial_index(sections, sample_step_world)
-    probe_point = (2000.0 * FT_TO_WORLD, 1499.7 * FT_TO_WORLD)
+    probe_point = (_ft_to_world(2000.0), _ft_to_world(1499.7))
 
     indexed_nearest = _nearest_section_distance(
         probe_point,
@@ -254,25 +282,60 @@ def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segme
     assert indexed_nearest == unindexed_nearest
 
 
+def test_integrity_report_centerline_spacing_threshold_boundary_and_formatting() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
+    section_at_threshold = _section(
+        section_id=1,
+        start=(0.0, _ft_to_world(80.0)),
+        end=(_ft_to_world(200.0), _ft_to_world(80.0)),
+    )
+
+    report_at_threshold = build_integrity_report([section_a, section_at_threshold], [[], []]).text
+
+    assert "Sections with < 80 ft perpendicular spacing: none" in report_at_threshold
+
+    section_below_threshold = _section(
+        section_id=1,
+        start=(0.0, _ft_to_world(79.99)),
+        end=(_ft_to_world(200.0), _ft_to_world(79.99)),
+    )
+
+    report_below_threshold = build_integrity_report([section_a, section_below_threshold], [[], []]).text
+
+    assert "Sections with < 80 ft perpendicular spacing: 2" in report_below_threshold
+    assert "(0.0, 80.0) ft intersects section 1 within ±80 ft" in report_below_threshold
+
+
+def test_integrity_report_curve_radius_threshold_boundary_and_formatting() -> None:
+    radius_threshold = _curve_section(section_id=0, radius_ft=50.0)
+    radius_below = _curve_section(section_id=1, radius_ft=49.99)
+
+    report = build_integrity_report([radius_threshold, radius_below], [[], []]).text
+
+    assert "Curves with radius < 50 ft: 1" in report
+    assert "section 1: radius=49.99 ft" in report
+    assert "section 0: radius=50.00 ft" not in report
+
+
 def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_distances(monkeypatch) -> None:
     import sg_viewer.services.sg_integrity_checks as integrity_checks
 
     if integrity_checks.np is None:
         return
 
-    section_a = _section(section_id=0, start=(0.0, 0.0), end=(300.0 * FT_TO_WORLD, 0.0))
-    section_b = _section(section_id=1, start=(0.0, 12.0 * FT_TO_WORLD), end=(300.0 * FT_TO_WORLD, 12.0 * FT_TO_WORLD))
-    section_c = _section(section_id=2, start=(0.0, -80.0 * FT_TO_WORLD), end=(300.0 * FT_TO_WORLD, -80.0 * FT_TO_WORLD))
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(300.0), 0.0))
+    section_b = _section(section_id=1, start=(0.0, _ft_to_world(12.0)), end=(_ft_to_world(300.0), _ft_to_world(12.0)))
+    section_c = _section(section_id=2, start=(0.0, _ft_to_world(-80.0)), end=(_ft_to_world(300.0), _ft_to_world(-80.0)))
     wide_left_boundary = PreviewFSection(
-        start_dlat=24.0 * FT_TO_WORLD,
-        end_dlat=24.0 * FT_TO_WORLD,
+        start_dlat=_ft_to_world(24.0),
+        end_dlat=_ft_to_world(24.0),
         surface_type=0,
         type2=0,
     )
 
     sections = [section_a, section_b, section_c]
     fsects_by_section = [[wide_left_boundary], [], []]
-    sample_step_world = 10.0 * FT_TO_WORLD
+    sample_step_world = _ft_to_world(10.0)
 
     progress_numpy = integrity_checks._ProgressTracker(total=1, callback=None)
     progress_fallback = integrity_checks._ProgressTracker(total=1, callback=None)
