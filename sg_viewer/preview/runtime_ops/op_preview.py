@@ -181,6 +181,11 @@ class _RuntimeCorePreviewMixin:
     def track_opacity(self) -> float:
         return self._track_opacity
 
+
+    @property
+    def integrity_boundary_violation_points(self) -> tuple[Point, ...]:
+        return self._integrity_boundary_violation_points
+
     @property
     def background_brightness(self) -> float:
         return self._background.brightness_pct
@@ -307,6 +312,17 @@ class _RuntimeCorePreviewMixin:
 
     def set_show_xsect_dlat_line(self, visible: bool) -> None:
         self._show_xsect_dlat_line = visible
+        self._context.request_repaint()
+
+
+    def set_integrity_boundary_violation_points(self, points: list[Point] | tuple[Point, ...]) -> None:
+        self._integrity_boundary_violation_points = tuple((float(point[0]), float(point[1])) for point in points)
+        self._context.request_repaint()
+
+    def clear_integrity_boundary_violation_points(self) -> None:
+        if not self._integrity_boundary_violation_points:
+            return
+        self._integrity_boundary_violation_points = ()
         self._context.request_repaint()
 
     def set_track_opacity(self, opacity: float) -> None:

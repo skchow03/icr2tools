@@ -106,6 +106,7 @@ class PreviewPresenter:
                 radii_unselected_color=self._colors.radii_unselected,
                 radii_selected_color=self._colors.radii_selected,
                 xsect_dlat_line_color=self._colors.xsect_dlat_line,
+                integrity_boundary_violation_points=self._runtime.integrity_boundary_violation_points,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,

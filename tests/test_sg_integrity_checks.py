@@ -155,10 +155,11 @@ def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
     report = build_integrity_report(
         [section_a, section_b],
         [[wide_left_boundary], []],
-    ).text
+    )
 
-    assert "Boundary points closer to a different centerline: 1" in report
-    assert "section 0 left boundary" in report
+    assert "Boundary points closer to a different centerline: 1" in report.text
+    assert "section 0 left boundary" in report.text
+    assert len(report.boundary_ownership_violation_points) == 1
 
 
 def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> None:
@@ -382,20 +383,23 @@ def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_dis
     monkeypatch.setattr(integrity_checks, "_point_to_polyline_distance_numpy", _counted_scalar)
     monkeypatch.setattr(integrity_checks, "_points_to_polyline_distance_numpy", _counted_batched)
 
-    numpy_lines = integrity_checks._boundary_centerline_ownership_report_numpy(
+    numpy_lines, numpy_points = integrity_checks._boundary_centerline_ownership_report_numpy(
         sections,
         fsects_by_section,
         sample_step_world,
+        "feet",
         progress_numpy,
     )
-    fallback_lines = integrity_checks._boundary_centerline_ownership_report_fallback(
+    fallback_lines, fallback_points = integrity_checks._boundary_centerline_ownership_report_fallback(
         sections,
         fsects_by_section,
         sample_step_world,
+        "feet",
         progress_fallback,
     )
 
     assert numpy_lines == fallback_lines
+    assert numpy_points == fallback_points
     assert batched_calls > 0
     assert scalar_calls == 0
 
