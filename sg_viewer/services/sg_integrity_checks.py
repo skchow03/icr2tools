@@ -244,12 +244,6 @@ def _centerline_clearance_report(
     processed_samples = 0
     findings: list[str] = []
     for section_index, section in enumerate(sections):
-        section_level_fallback_hit = _find_close_centerline(
-            source_section_index=section_index,
-            source_polyline=_section_polyline_for_checks(section),
-            max_distance=probe_half_len_world,
-            sections=sections,
-        )
         for sample_point, tangent in _sample_polyline(_section_polyline_for_checks(section), sample_step_world):
             processed_samples += 1
             if total_samples > 0:
@@ -273,8 +267,6 @@ def _centerline_clearance_report(
                 segment_index,
                 sections,
             )
-            if hit is None:
-                hit = section_level_fallback_hit
             if hit is None:
                 continue
             findings.append(
@@ -984,6 +976,15 @@ def _find_probe_proximity(
     segment_index: "_SegmentSpatialIndex | None",
     sections: list[SectionPreview],
 ) -> int | None:
+    probe_start = (
+        sample_point[0] - sample_normal[0] * max_perpendicular_distance,
+        sample_point[1] - sample_normal[1] * max_perpendicular_distance,
+    )
+    probe_end = (
+        sample_point[0] + sample_normal[0] * max_perpendicular_distance,
+        sample_point[1] + sample_normal[1] * max_perpendicular_distance,
+    )
+
     candidates = range(len(all_segments))
     if segment_index is not None:
         candidates = segment_index.query(sample_point, max_perpendicular_distance)
@@ -1000,11 +1001,13 @@ def _find_probe_proximity(
         if radial_distance > max_perpendicular_distance:
             continue
 
-        to_closest = (closest[0] - sample_point[0], closest[1] - sample_point[1])
-        perpendicular_distance = abs(
-            to_closest[0] * sample_normal[0] + to_closest[1] * sample_normal[1]
+        probe_distance = _segment_to_segment_distance(
+            probe_start,
+            probe_end,
+            seg_start,
+            seg_end,
         )
-        if perpendicular_distance <= max_perpendicular_distance:
+        if probe_distance <= 1e-6:
             return section_index
     return None
 

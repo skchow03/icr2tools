@@ -100,6 +100,24 @@ def test_integrity_report_flags_parallel_close_centerline_spacing_violation() ->
 
     assert "Sections with < 80 ft perpendicular spacing: 2" in report
 
+
+
+def test_integrity_report_does_not_flag_collinear_sections_with_only_longitudinal_proximity() -> None:
+    section_a = _section(
+        section_id=0,
+        start=(0.0, 0.0),
+        end=(_ft_to_world(200.0), 0.0),
+    )
+    section_b = _section(
+        section_id=1,
+        start=(_ft_to_world(220.0), 0.0),
+        end=(_ft_to_world(420.0), 0.0),
+    )
+
+    report = build_integrity_report([section_a, section_b], [[], []]).text
+
+    assert "Sections with < 80 ft perpendicular spacing: none" in report
+
 def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_violation() -> None:
     section_a = _section(
         section_id=0,
