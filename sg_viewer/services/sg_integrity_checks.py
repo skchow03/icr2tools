@@ -97,6 +97,7 @@ def _effective_curve_radius(section: SectionPreview) -> float:
 @dataclass(frozen=True)
 class IntegrityReport:
     text: str
+    boundary_ownership_violation_points: tuple[Point, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -134,10 +135,19 @@ def build_integrity_report(
     lines.append("")
     lines.extend(_curve_limits_report(sections, measurement_unit, progress))
     lines.append("")
-    lines.extend(_centerline_clearance_report(sections, fsects_by_section, measurement_unit, progress))
+    centerline_lines, boundary_violation_points = _centerline_clearance_report(
+        sections,
+        fsects_by_section,
+        measurement_unit,
+        progress,
+    )
+    lines.extend(centerline_lines)
     progress.complete(message="Integrity checks complete")
 
-    return IntegrityReport(text="\n".join(lines))
+    return IntegrityReport(
+        text="\n".join(lines),
+        boundary_ownership_violation_points=tuple(boundary_violation_points),
+    )
 
 
 def _topology_report(sections: list[SectionPreview], progress: "_ProgressTracker") -> list[str]:
@@ -262,7 +272,7 @@ def _centerline_clearance_report(
     fsects_by_section: list[list[PreviewFSection]],
     measurement_unit: str,
     progress: "_ProgressTracker",
-) -> list[str]:
+) -> tuple[list[str], list[Point]]:
     lines = ["Centerline clearance and boundary ownership", "-" * 72]
     sample_step_world = _ft_to_world(PERP_SAMPLE_STEP_FT)
     probe_half_len_world = _ft_to_world(MIN_CENTERLINE_SEPARATION_FT)
@@ -337,20 +347,19 @@ def _centerline_clearance_report(
             )
         )
 
-    lines.extend(
-        _boundary_centerline_ownership_report(
-            sections,
-            fsects_by_section,
-            sample_step_world,
-            measurement_unit,
-            progress,
-        )
+    boundary_lines, violation_points = _boundary_centerline_ownership_report(
+        sections,
+        fsects_by_section,
+        sample_step_world,
+        measurement_unit,
+        progress,
     )
+    lines.extend(boundary_lines)
 
     lines.append(
         f"Sampling step: {_format_world_distance(sample_step_world, measurement_unit)} along each centerline section."
     )
-    return lines
+    return lines, violation_points
 
 
 def _boundary_centerline_ownership_report(
@@ -359,7 +368,7 @@ def _boundary_centerline_ownership_report(
     sample_step_world: float,
     measurement_unit: str,
     progress: "_ProgressTracker",
-) -> list[str]:
+) -> tuple[list[str], list[Point]]:
     if np is not None:
         return _boundary_centerline_ownership_report_numpy(
             sections,
@@ -383,9 +392,10 @@ def _boundary_centerline_ownership_report_numpy(
     sample_step_world: float,
     measurement_unit: str,
     progress: "_ProgressTracker",
-) -> list[str]:
+) -> tuple[list[str], list[Point]]:
     lines: list[str] = []
     findings: list[str] = []
+    violation_points: list[Point] = []
     prepared_polyline_cache = _build_prepared_polyline_cache(sections)
 
     for section_index, section in enumerate(sections):
@@ -481,6 +491,7 @@ def _boundary_centerline_ownership_report_numpy(
                     f"({_format_world_distance(own_distances[first], measurement_unit)})"
                 )
             )
+            violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
             break
 
         if findings and findings[-1].startswith(f"  - section {section_index} "):
@@ -494,7 +505,7 @@ def _boundary_centerline_ownership_report_numpy(
     else:
         lines.append("Boundary points closer to a different centerline: none")
 
-    return lines
+    return lines, violation_points
 
 
 def _boundary_centerline_ownership_report_fallback(
@@ -503,9 +514,10 @@ def _boundary_centerline_ownership_report_fallback(
     sample_step_world: float,
     measurement_unit: str,
     progress: "_ProgressTracker",
-) -> list[str]:
+) -> tuple[list[str], list[Point]]:
     lines: list[str] = []
     findings: list[str] = []
+    violation_points: list[Point] = []
     spatial_index = _build_section_segment_spatial_index(sections, sample_step_world)
 
     for section_index, section in enumerate(sections):
@@ -556,6 +568,7 @@ def _boundary_centerline_ownership_report_fallback(
                         f"({_format_world_distance(own_dist, measurement_unit)})"
                     )
                 )
+                violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
                 break
 
             if findings and findings[-1].startswith(f"  - section {section_index} "):
@@ -569,7 +582,7 @@ def _boundary_centerline_ownership_report_fallback(
     else:
         lines.append("Boundary points closer to a different centerline: none")
 
-    return lines
+    return lines, violation_points
 
 
 def _estimate_progress_steps(sections: list[SectionPreview]) -> int:

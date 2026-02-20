@@ -1372,7 +1372,8 @@ class SGViewerController:
             layout.addWidget(text_edit)
 
             close_button = QtWidgets.QPushButton("Close", self._integrity_report_window)
-            close_button.clicked.connect(self._integrity_report_window.hide)
+            close_button.clicked.connect(self._integrity_report_window.close)
+            self._integrity_report_window.finished.connect(lambda _result: self._on_integrity_report_window_hidden())
             button_row = QtWidgets.QHBoxLayout()
             button_row.addStretch(1)
             button_row.addWidget(close_button)
@@ -1381,9 +1382,16 @@ class SGViewerController:
         text_edit = self._integrity_report_window.findChild(QtWidgets.QPlainTextEdit, "integrityReportText")
         if text_edit is not None:
             text_edit.setPlainText(report.text)
+        self._window.preview.set_integrity_boundary_violation_points(
+            report.boundary_ownership_violation_points
+        )
         self._integrity_report_window.show()
         self._integrity_report_window.raise_()
         self._integrity_report_window.activateWindow()
+
+
+    def _on_integrity_report_window_hidden(self) -> None:
+        self._window.preview.clear_integrity_boundary_violation_points()
 
     def _sync_after_section_mutation(self) -> None:
         """Sync UI after section list/data changes in a stable update order."""

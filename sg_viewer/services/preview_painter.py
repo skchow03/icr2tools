@@ -76,6 +76,7 @@ class BasePreviewState:
     radii_unselected_color: QtGui.QColor
     radii_selected_color: QtGui.QColor
     xsect_dlat_line_color: QtGui.QColor
+    integrity_boundary_violation_points: tuple[Point, ...]
 
 
 @dataclass
@@ -200,6 +201,12 @@ def paint_preview(
                 transform,
                 widget_height,
             )
+        _draw_integrity_boundary_violation_points(
+            painter,
+            base_state.integrity_boundary_violation_points,
+            transform,
+            widget_height,
+        )
         painter.restore()
 
         if base_state.split_section_mode and base_state.split_hover_point is not None:
@@ -736,6 +743,34 @@ def _draw_nodes(
 
 
     painter.restore()
+
+
+def _draw_integrity_boundary_violation_points(
+    painter: QtGui.QPainter,
+    points: tuple[Point, ...],
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    if not points:
+        return
+
+    pen = QtGui.QPen(QtGui.QColor("red"))
+    pen.setWidth(2)
+    painter.setPen(pen)
+    painter.setBrush(QtGui.QBrush(QtGui.QColor("red")))
+
+    diameter = 8.0
+    radius = diameter / 2.0
+    for point in points:
+        mapped = sg_rendering.map_to_screen(point, transform, widget_height)
+        painter.drawEllipse(
+            QtCore.QRectF(
+                mapped.x() - radius,
+                mapped.y() - radius,
+                diameter,
+                diameter,
+            )
+        )
 
 
 def _draw_status_overlay(
