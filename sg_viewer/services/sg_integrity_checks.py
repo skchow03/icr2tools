@@ -17,7 +17,9 @@ else:
     np = None
 
 Point = tuple[float, float]
-FT_TO_WORLD = 500.0
+# SG geometry distances are expressed in 1/500" world units.
+# 12 inches per foot => 6000 world units per foot.
+FT_TO_WORLD = 6000.0
 MIN_RADIUS_FT = 50.0
 MAX_ARC_DEGREES = 120.0
 MIN_CENTERLINE_SEPARATION_FT = 80.0

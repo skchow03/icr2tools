@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from sg_viewer.services.sg_integrity_checks import (
     IntegrityProgress,
     _ft_to_world,
+    _world_to_ft,
     build_integrity_report,
 )
 
@@ -59,6 +60,11 @@ def _curve_section(*, section_id: int, radius_ft: float):
         end_heading=(0.0, 1.0),
         polyline=[(0.0, 0.0), (radius_world, 0.0)],
     )
+
+
+def test_feet_world_conversion_uses_6000_units_per_foot() -> None:
+    assert _ft_to_world(1.0) == 6000.0
+    assert _world_to_ft(6000.0) == 1.0
 
 
 def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> None:
