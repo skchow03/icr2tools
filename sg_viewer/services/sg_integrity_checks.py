@@ -352,7 +352,7 @@ def _centerline_clearance_report(
     findings: list[str] = []
     spacing_violation_points: list[Point] = []
     for section_index, section in enumerate(sections):
-        for sample_point, tangent, along_distance, _ in _sample_polyline_with_distance(
+        for sample_point, tangent, along_distance, ratio in _sample_polyline_with_distance(
             _section_polyline_for_checks(section),
             sample_step_world,
         ):
@@ -380,7 +380,7 @@ def _centerline_clearance_report(
             )
             if hit is None:
                 continue
-            hit_section_index, measured_clearance = hit
+            hit_section_index, measured_clearance, conflict_point = hit
             findings.append(
                 (
                     f"  - section {section_index} at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
@@ -390,7 +390,23 @@ def _centerline_clearance_report(
                     f"(measured clearance {_format_world_distance(measured_clearance, measurement_unit)})"
                 )
             )
-            spacing_violation_points.append((float(sample_point[0]), float(sample_point[1])))
+
+            section_fsects = fsects_by_section[section_index] if section_index < len(fsects_by_section) else []
+            left_dlat, right_dlat = _boundary_offsets_at_ratio(section_fsects, ratio)
+            side_dlat = left_dlat
+            conflict_vector = (
+                float(conflict_point[0] - sample_point[0]),
+                float(conflict_point[1] - sample_point[1]),
+            )
+            if (conflict_vector[0] * normal[0] + conflict_vector[1] * normal[1]) < 0.0:
+                side_dlat = right_dlat
+
+            spacing_violation_points.append(
+                (
+                    float(sample_point[0] + normal[0] * side_dlat),
+                    float(sample_point[1] + normal[1] * side_dlat),
+                )
+            )
             break
 
     if findings:
@@ -1107,7 +1123,7 @@ def _find_probe_proximity(
     all_segments: list[tuple[int, Point, Point]],
     segment_index: "_SegmentSpatialIndex | None",
     sections: list[SectionPreview],
-) -> tuple[int, float] | None:
+) -> tuple[int, float, Point] | None:
     probe_start = (
         sample_point[0] - sample_normal[0] * max_perpendicular_distance,
         sample_point[1] - sample_normal[1] * max_perpendicular_distance,
@@ -1140,7 +1156,7 @@ def _find_probe_proximity(
             seg_end,
         )
         if probe_distance <= 1e-6:
-            return section_index, radial_distance
+            return section_index, radial_distance, closest
     return None
 
 
