@@ -208,3 +208,47 @@ def test_integrity_report_emits_progress_updates() -> None:
     assert updates[0].message == "Preparing integrity checks"
     assert updates[-1].message == "Integrity checks complete"
     assert updates[-1].current == updates[-1].total
+
+
+def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segments() -> None:
+    from sg_viewer.services.sg_integrity_checks import (
+        _build_section_segment_spatial_index,
+        _nearest_section_distance,
+    )
+
+    section_source = _section(
+        section_id=0,
+        start=(0.0, 0.0),
+        end=(10.0 * FT_TO_WORLD, 0.0),
+    )
+    section_sparse_long = _section(
+        section_id=1,
+        start=(0.0, 1500.0 * FT_TO_WORLD),
+        end=(4000.0 * FT_TO_WORLD, 1500.0 * FT_TO_WORLD),
+    )
+    section_far = _section(
+        section_id=2,
+        start=(0.0, 2500.0 * FT_TO_WORLD),
+        end=(4000.0 * FT_TO_WORLD, 2500.0 * FT_TO_WORLD),
+    )
+
+    sections = [section_source, section_sparse_long, section_far]
+    sample_step_world = 10.0 * FT_TO_WORLD
+    spatial_index = _build_section_segment_spatial_index(sections, sample_step_world)
+    probe_point = (2000.0 * FT_TO_WORLD, 1499.7 * FT_TO_WORLD)
+
+    indexed_nearest = _nearest_section_distance(
+        probe_point,
+        sections,
+        exclude_index=0,
+        spatial_index=spatial_index,
+    )
+    unindexed_nearest = _nearest_section_distance(
+        probe_point,
+        sections,
+        exclude_index=0,
+        spatial_index=None,
+    )
+
+    assert indexed_nearest[0] == 1
+    assert indexed_nearest == unindexed_nearest
