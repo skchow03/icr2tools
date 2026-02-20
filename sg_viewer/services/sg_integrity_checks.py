@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import math
 from dataclasses import dataclass
 from typing import Callable
@@ -8,6 +9,12 @@ from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.model.selection import heading_delta
 from sg_viewer.model.sg_model import SectionPreview
+
+_NUMPY_SPEC = importlib.util.find_spec("numpy")
+if _NUMPY_SPEC is not None:
+    import numpy as np
+else:
+    np = None
 
 Point = tuple[float, float]
 FT_TO_WORLD = 500.0
@@ -264,6 +271,13 @@ def _boundary_centerline_ownership_report(
 ) -> list[str]:
     lines: list[str] = []
     findings: list[str] = []
+    polyline_cache: dict[int, np.ndarray] | None = None
+    if np is not None:
+        polyline_cache = {
+            index: np.asarray(section.polyline, dtype=float)
+            for index, section in enumerate(sections)
+            if len(section.polyline) >= 2
+        }
 
     for section_index, section in enumerate(sections):
         progress.step(
@@ -291,6 +305,7 @@ def _boundary_centerline_ownership_report(
                     boundary_point,
                     sections,
                     exclude_index=section_index,
+                    polyline_cache=polyline_cache,
                 )
                 if rival_index is None or rival_dist is None:
                     continue
@@ -526,6 +541,7 @@ def _nearest_section_distance(
     sections: list[SectionPreview],
     *,
     exclude_index: int,
+    polyline_cache: dict[int, np.ndarray] | None = None,
 ) -> tuple[int | None, float | None]:
     nearest_index: int | None = None
     nearest_distance: float | None = None
@@ -533,7 +549,10 @@ def _nearest_section_distance(
     for index, section in enumerate(sections):
         if index == exclude_index:
             continue
-        distance = _point_to_polyline_distance(point, section.polyline)
+        cached_polyline = None
+        if polyline_cache is not None:
+            cached_polyline = polyline_cache.get(index)
+        distance = _point_to_polyline_distance(point, section.polyline, cached_polyline)
         if nearest_distance is None or distance < nearest_distance:
             nearest_distance = distance
             nearest_index = index
@@ -541,16 +560,50 @@ def _nearest_section_distance(
     return nearest_index, nearest_distance
 
 
-def _point_to_polyline_distance(point: Point, polyline: list[Point]) -> float:
+def _point_to_polyline_distance(
+    point: Point,
+    polyline: list[Point],
+    polyline_array: np.ndarray | None = None,
+) -> float:
     if not polyline:
         return math.inf
     if len(polyline) == 1:
         return _distance(point, polyline[0])
 
+    if np is not None:
+        array = polyline_array
+        if array is None:
+            array = np.asarray(polyline, dtype=float)
+        return _point_to_polyline_distance_numpy(point, array)
+
     return min(
         _point_to_segment_distance(point, polyline[idx], polyline[idx + 1])
         for idx in range(len(polyline) - 1)
     )
+
+
+def _point_to_polyline_distance_numpy(point: Point, polyline: np.ndarray) -> float:
+    if polyline.shape[0] < 2:
+        return math.inf
+
+    point_array = np.asarray(point, dtype=float)
+    start = polyline[:-1]
+    end = polyline[1:]
+    seg = end - start
+    to_point = point_array - start
+
+    seg_len_sq = np.einsum("ij,ij->i", seg, seg)
+    seg_len_sq_safe = np.where(seg_len_sq > 1e-12, seg_len_sq, 1.0)
+    t = np.einsum("ij,ij->i", to_point, seg) / seg_len_sq_safe
+    t = np.clip(t, 0.0, 1.0)
+
+    closest = start + seg * t[:, None]
+    delta = closest - point_array
+    dists = np.hypot(delta[:, 0], delta[:, 1])
+
+    if dists.size == 0:
+        return math.inf
+    return float(np.min(dists))
 
 
 def _point_to_segment_distance(point: Point, start: Point, end: Point) -> float:
