@@ -9,7 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
-from sg_viewer.services.sg_integrity_checks import build_integrity_report
+from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -1308,7 +1308,52 @@ class SGViewerController:
             self._window.preview.get_section_fsects(index)
             for index in range(len(sections))
         ]
-        report = build_integrity_report(sections, fsects_by_section)
+
+        progress_dialog = QtWidgets.QProgressDialog(
+            "Running SG integrity checks...",
+            "Cancel",
+            0,
+            100,
+            self._window,
+        )
+        progress_dialog.setWindowTitle("SG Integrity Checks")
+        progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setAutoClose(False)
+        progress_dialog.setAutoReset(False)
+        progress_dialog.setValue(0)
+        progress_dialog.show()
+
+        canceled = False
+
+        def _on_progress(progress: IntegrityProgress) -> None:
+            nonlocal canceled
+            total = max(progress.total, 1)
+            value = int((progress.current / total) * 100)
+            progress_dialog.setLabelText(progress.message)
+            progress_dialog.setValue(max(0, min(100, value)))
+            QtWidgets.QApplication.processEvents()
+            if progress_dialog.wasCanceled():
+                canceled = True
+                raise RuntimeError("SG integrity checks canceled by user")
+
+        try:
+            report = build_integrity_report(
+                sections,
+                fsects_by_section,
+                on_progress=_on_progress,
+            )
+        except RuntimeError as exc:
+            if canceled:
+                QtWidgets.QMessageBox.information(
+                    self._window,
+                    "SG Integrity Checks",
+                    "Integrity checks were canceled.",
+                )
+                return
+            raise exc
+        finally:
+            progress_dialog.close()
 
         dialog = QtWidgets.QDialog(self._window)
         dialog.setWindowTitle("SG Integrity Checks")
