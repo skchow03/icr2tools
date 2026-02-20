@@ -279,13 +279,9 @@ def _boundary_centerline_ownership_report(
     lines: list[str] = []
     findings: list[str] = []
     spatial_index: _SectionSpatialIndex | None = None
-    polyline_cache: dict[int, np.ndarray] | None = None
+    prepared_polyline_cache: dict[int, _PreparedPolyline] | None = None
     if np is not None:
-        polyline_cache = {
-            index: np.asarray(section.polyline, dtype=float)
-            for index, section in enumerate(sections)
-            if len(section.polyline) >= 2
-        }
+        prepared_polyline_cache = _build_prepared_polyline_cache(sections)
     spatial_index = _build_section_spatial_index(sections, sample_step_world)
 
     for section_index, section in enumerate(sections):
@@ -309,19 +305,19 @@ def _boundary_centerline_ownership_report(
                     sample_point[0] + normal[0] * dlat,
                     sample_point[1] + normal[1] * dlat,
                 )
-                own_polyline = None
-                if polyline_cache is not None:
-                    own_polyline = polyline_cache.get(section_index)
+                own_prepared_polyline = None
+                if prepared_polyline_cache is not None:
+                    own_prepared_polyline = prepared_polyline_cache.get(section_index)
                 own_dist = _point_to_polyline_distance(
                     boundary_point,
                     section.polyline,
-                    own_polyline,
+                    own_prepared_polyline,
                 )
                 rival_index, rival_dist = _nearest_section_distance(
                     boundary_point,
                     sections,
                     exclude_index=section_index,
-                    polyline_cache=polyline_cache,
+                    prepared_polyline_cache=prepared_polyline_cache,
                     spatial_index=spatial_index,
                 )
                 if rival_index is None or rival_dist is None:
@@ -558,7 +554,7 @@ def _nearest_section_distance(
     sections: list[SectionPreview],
     *,
     exclude_index: int,
-    polyline_cache: dict[int, np.ndarray] | None = None,
+    prepared_polyline_cache: dict[int, "_PreparedPolyline"] | None = None,
     spatial_index: "_SectionSpatialIndex | None" = None,
 ) -> tuple[int | None, float | None]:
     nearest_index: int | None = None
@@ -578,10 +574,10 @@ def _nearest_section_distance(
         section = sections[index]
         if index == exclude_index:
             continue
-        cached_polyline = None
-        if polyline_cache is not None:
-            cached_polyline = polyline_cache.get(index)
-        distance = _point_to_polyline_distance(point, section.polyline, cached_polyline)
+        prepared_polyline = None
+        if prepared_polyline_cache is not None:
+            prepared_polyline = prepared_polyline_cache.get(index)
+        distance = _point_to_polyline_distance(point, section.polyline, prepared_polyline)
         if nearest_distance is None or distance < nearest_distance:
             nearest_distance = distance
             nearest_index = index
@@ -620,10 +616,43 @@ def _grid_key(point: Point, bin_size: float) -> tuple[int, int]:
     return (int(math.floor(point[0] / bin_size)), int(math.floor(point[1] / bin_size)))
 
 
+@dataclass(frozen=True)
+class _PreparedPolyline:
+    points: np.ndarray
+    start: np.ndarray
+    seg: np.ndarray
+    seg_len_sq_safe: np.ndarray
+
+
+def _build_prepared_polyline_cache(
+    sections: list[SectionPreview],
+) -> dict[int, _PreparedPolyline]:
+    if np is None:
+        return {}
+
+    prepared: dict[int, _PreparedPolyline] = {}
+    for index, section in enumerate(sections):
+        if len(section.polyline) < 2:
+            continue
+        points = np.asarray(section.polyline, dtype=float)
+        start = points[:-1]
+        seg = points[1:] - start
+        seg_len_sq = np.einsum("ij,ij->i", seg, seg)
+        seg_len_sq_safe = np.where(seg_len_sq > 1e-12, seg_len_sq, 1.0)
+        prepared[index] = _PreparedPolyline(
+            points=points,
+            start=start,
+            seg=seg,
+            seg_len_sq_safe=seg_len_sq_safe,
+        )
+
+    return prepared
+
+
 def _point_to_polyline_distance(
     point: Point,
     polyline: list[Point],
-    polyline_array: np.ndarray | None = None,
+    prepared_polyline: "_PreparedPolyline | None" = None,
 ) -> float:
     if not polyline:
         return math.inf
@@ -631,10 +660,20 @@ def _point_to_polyline_distance(
         return _distance(point, polyline[0])
 
     if np is not None:
-        array = polyline_array
-        if array is None:
-            array = np.asarray(polyline, dtype=float)
-        return _point_to_polyline_distance_numpy(point, array)
+        prepared = prepared_polyline
+        if prepared is None:
+            points = np.asarray(polyline, dtype=float)
+            start = points[:-1]
+            seg = points[1:] - start
+            seg_len_sq = np.einsum("ij,ij->i", seg, seg)
+            seg_len_sq_safe = np.where(seg_len_sq > 1e-12, seg_len_sq, 1.0)
+            prepared = _PreparedPolyline(
+                points=points,
+                start=start,
+                seg=seg,
+                seg_len_sq_safe=seg_len_sq_safe,
+            )
+        return _point_to_polyline_distance_numpy(point, prepared)
 
     return min(
         _point_to_segment_distance(point, polyline[idx], polyline[idx + 1])
@@ -642,22 +681,17 @@ def _point_to_polyline_distance(
     )
 
 
-def _point_to_polyline_distance_numpy(point: Point, polyline: np.ndarray) -> float:
-    if polyline.shape[0] < 2:
+def _point_to_polyline_distance_numpy(point: Point, prepared_polyline: _PreparedPolyline) -> float:
+    if prepared_polyline.points.shape[0] < 2:
         return math.inf
 
     point_array = np.asarray(point, dtype=float)
-    start = polyline[:-1]
-    end = polyline[1:]
-    seg = end - start
-    to_point = point_array - start
+    to_point = point_array - prepared_polyline.start
 
-    seg_len_sq = np.einsum("ij,ij->i", seg, seg)
-    seg_len_sq_safe = np.where(seg_len_sq > 1e-12, seg_len_sq, 1.0)
-    t = np.einsum("ij,ij->i", to_point, seg) / seg_len_sq_safe
+    t = np.einsum("ij,ij->i", to_point, prepared_polyline.seg) / prepared_polyline.seg_len_sq_safe
     t = np.clip(t, 0.0, 1.0)
 
-    closest = start + seg * t[:, None]
+    closest = prepared_polyline.start + prepared_polyline.seg * t[:, None]
     delta = closest - point_array
     dists = np.hypot(delta[:, 0], delta[:, 1])
 
