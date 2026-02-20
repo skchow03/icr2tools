@@ -272,6 +272,7 @@ def _boundary_centerline_ownership_report(
 ) -> list[str]:
     lines: list[str] = []
     findings: list[str] = []
+    spatial_index: _SectionSpatialIndex | None = None
     polyline_cache: dict[int, np.ndarray] | None = None
     if np is not None:
         polyline_cache = {
@@ -279,6 +280,7 @@ def _boundary_centerline_ownership_report(
             for index, section in enumerate(sections)
             if len(section.polyline) >= 2
         }
+    spatial_index = _build_section_spatial_index(sections, sample_step_world)
 
     for section_index, section in enumerate(sections):
         progress.step(
@@ -301,12 +303,20 @@ def _boundary_centerline_ownership_report(
                     sample_point[0] + normal[0] * dlat,
                     sample_point[1] + normal[1] * dlat,
                 )
-                own_dist = _point_to_polyline_distance(boundary_point, section.polyline)
+                own_polyline = None
+                if polyline_cache is not None:
+                    own_polyline = polyline_cache.get(section_index)
+                own_dist = _point_to_polyline_distance(
+                    boundary_point,
+                    section.polyline,
+                    own_polyline,
+                )
                 rival_index, rival_dist = _nearest_section_distance(
                     boundary_point,
                     sections,
                     exclude_index=section_index,
                     polyline_cache=polyline_cache,
+                    spatial_index=spatial_index,
                 )
                 if rival_index is None or rival_dist is None:
                     continue
@@ -543,11 +553,23 @@ def _nearest_section_distance(
     *,
     exclude_index: int,
     polyline_cache: dict[int, np.ndarray] | None = None,
+    spatial_index: "_SectionSpatialIndex | None" = None,
 ) -> tuple[int | None, float | None]:
     nearest_index: int | None = None
     nearest_distance: float | None = None
+    candidate_indices: set[int] | None = None
 
-    for index, section in enumerate(sections):
+    if spatial_index is not None:
+        candidate_indices = spatial_index.candidates(point)
+
+    scan_indices: list[int]
+    if candidate_indices:
+        scan_indices = [index for index in candidate_indices if index != exclude_index]
+    else:
+        scan_indices = [index for index in range(len(sections)) if index != exclude_index]
+
+    for index in scan_indices:
+        section = sections[index]
         if index == exclude_index:
             continue
         cached_polyline = None
@@ -559,6 +581,37 @@ def _nearest_section_distance(
             nearest_index = index
 
     return nearest_index, nearest_distance
+
+
+@dataclass(frozen=True)
+class _SectionSpatialIndex:
+    bin_size: float
+    bins: dict[tuple[int, int], set[int]]
+
+    def candidates(self, point: Point) -> set[int]:
+        ix, iy = _grid_key(point, self.bin_size)
+        candidates: set[int] = set()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                candidates.update(self.bins.get((ix + dx, iy + dy), set()))
+        return candidates
+
+
+def _build_section_spatial_index(
+    sections: list[SectionPreview],
+    step: float,
+) -> _SectionSpatialIndex:
+    bin_size = max(step * 4.0, FT_TO_WORLD)
+    bins: dict[tuple[int, int], set[int]] = {}
+    for section_index, section in enumerate(sections):
+        for point in section.polyline:
+            key = _grid_key(point, bin_size)
+            bins.setdefault(key, set()).add(section_index)
+    return _SectionSpatialIndex(bin_size=bin_size, bins=bins)
+
+
+def _grid_key(point: Point, bin_size: float) -> tuple[int, int]:
+    return (int(math.floor(point[0] / bin_size)), int(math.floor(point[1] / bin_size)))
 
 
 def _point_to_polyline_distance(
