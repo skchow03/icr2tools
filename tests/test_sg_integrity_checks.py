@@ -1,6 +1,6 @@
 from sg_viewer.model.preview_fsection import PreviewFSection
 from types import SimpleNamespace
-from sg_viewer.services.sg_integrity_checks import FT_TO_WORLD, build_integrity_report
+from sg_viewer.services.sg_integrity_checks import FT_TO_WORLD, IntegrityProgress, build_integrity_report
 
 
 def _section(
@@ -138,3 +138,21 @@ def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> Non
     ).text
 
     assert "Boundary points closer to a different centerline: 1" not in report
+
+
+def test_integrity_report_emits_progress_updates() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(200.0 * FT_TO_WORLD, 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(100.0 * FT_TO_WORLD, -40.0 * FT_TO_WORLD),
+        end=(100.0 * FT_TO_WORLD, 40.0 * FT_TO_WORLD),
+    )
+
+    updates: list[IntegrityProgress] = []
+
+    build_integrity_report([section_a, section_b], [[], []], on_progress=updates.append)
+
+    assert updates
+    assert updates[0].message == "Preparing integrity checks"
+    assert updates[-1].message == "Integrity checks complete"
+    assert updates[-1].current == updates[-1].total

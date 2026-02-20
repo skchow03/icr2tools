@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Callable
 
 from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.model.preview_fsection import PreviewFSection
@@ -21,36 +22,54 @@ class IntegrityReport:
     text: str
 
 
+@dataclass(frozen=True)
+class IntegrityProgress:
+    current: int
+    total: int
+    message: str
+
+
+ProgressCallback = Callable[[IntegrityProgress], None]
+
+
 def build_integrity_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
+    on_progress: ProgressCallback | None = None,
 ) -> IntegrityReport:
+    total_steps = _estimate_progress_steps(sections)
+    progress = _ProgressTracker(total=total_steps, callback=on_progress)
+    progress.update(message="Preparing integrity checks")
+
     lines: list[str] = []
     lines.append("SG Integrity Report")
     lines.append("=" * 72)
 
     if not sections:
         lines.append("No sections found.")
+        progress.complete(message="Integrity checks complete")
         return IntegrityReport(text="\n".join(lines))
 
-    lines.extend(_topology_report(sections))
+    lines.extend(_topology_report(sections, progress))
     lines.append("")
-    lines.extend(_heading_and_boundary_report(sections, fsects_by_section))
+    lines.extend(_heading_and_boundary_report(sections, fsects_by_section, progress))
     lines.append("")
-    lines.extend(_curve_limits_report(sections))
+    lines.extend(_curve_limits_report(sections, progress))
     lines.append("")
-    lines.extend(_centerline_clearance_report(sections, fsects_by_section))
+    lines.extend(_centerline_clearance_report(sections, fsects_by_section, progress))
+    progress.complete(message="Integrity checks complete")
 
     return IntegrityReport(text="\n".join(lines))
 
 
-def _topology_report(sections: list[SectionPreview]) -> list[str]:
+def _topology_report(sections: list[SectionPreview], progress: "_ProgressTracker") -> list[str]:
     n = len(sections)
     closed = is_closed_loop(sections)
     lines = ["Topology", "-" * 72, f"Sections: {n}", f"Closed loop: {'YES' if closed else 'NO'}"]
 
     unconnected: list[str] = []
     for index, section in enumerate(sections):
+        progress.step(message=f"Topology checks: section {index + 1}/{n}")
         invalid_prev = section.previous_id < 0 or section.previous_id >= n
         invalid_next = section.next_id < 0 or section.next_id >= n
         if invalid_prev or invalid_next:
@@ -73,12 +92,14 @@ def _topology_report(sections: list[SectionPreview]) -> list[str]:
 def _heading_and_boundary_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
+    progress: "_ProgressTracker",
 ) -> list[str]:
     lines = ["Join heading and boundary gap checks", "-" * 72]
     mismatch_lines: list[str] = []
     total = len(sections)
 
     for index, section in enumerate(sections):
+        progress.step(message=f"Join heading checks: section {index + 1}/{total}")
         next_index = index + 1
         if next_index >= total:
             next_index = 0
@@ -113,13 +134,14 @@ def _heading_and_boundary_report(
     return lines
 
 
-def _curve_limits_report(sections: list[SectionPreview]) -> list[str]:
+def _curve_limits_report(sections: list[SectionPreview], progress: "_ProgressTracker") -> list[str]:
     lines = ["Curve limits", "-" * 72]
     long_arc: list[str] = []
     tight_radius: list[str] = []
     min_radius_world = MIN_RADIUS_FT * FT_TO_WORLD
 
     for index, section in enumerate(sections):
+        progress.step(message=f"Curve limit checks: section {index + 1}/{len(sections)}")
         if section.type_name != "curve" or not section.radius:
             continue
 
@@ -152,6 +174,7 @@ def _curve_limits_report(sections: list[SectionPreview]) -> list[str]:
 def _centerline_clearance_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
+    progress: "_ProgressTracker",
 ) -> list[str]:
     lines = ["Centerline clearance and boundary ownership", "-" * 72]
     sample_step_world = PERP_SAMPLE_STEP_FT * FT_TO_WORLD
@@ -159,12 +182,27 @@ def _centerline_clearance_report(
 
     all_segments: list[tuple[int, Point, Point]] = []
     for section_index, section in enumerate(sections):
+        progress.step(
+            message=f"Centerline setup: section {section_index + 1}/{len(sections)}"
+        )
         for seg_start, seg_end in _polyline_segments(section.polyline):
             all_segments.append((section_index, seg_start, seg_end))
 
+    sample_counts = _centerline_sample_counts(sections, sample_step_world)
+    total_samples = sum(sample_counts)
+    processed_samples = 0
     findings: list[str] = []
     for section_index, section in enumerate(sections):
         for sample_point, tangent in _sample_polyline(section.polyline, sample_step_world):
+            processed_samples += 1
+            if total_samples > 0:
+                progress.step(
+                    message=(
+                        "Centerline spacing checks: "
+                        f"section {section_index + 1}/{len(sections)} sample "
+                        f"{processed_samples}/{total_samples}"
+                    )
+                )
             normal = _left_normal(tangent)
             if normal is None:
                 continue
@@ -206,7 +244,11 @@ def _centerline_clearance_report(
             )
         )
 
-    lines.extend(_boundary_centerline_ownership_report(sections, fsects_by_section, sample_step_world))
+    lines.extend(
+        _boundary_centerline_ownership_report(
+            sections, fsects_by_section, sample_step_world, progress
+        )
+    )
 
     lines.append(
         f"Sampling step: {PERP_SAMPLE_STEP_FT:.0f} ft along each centerline section."
@@ -218,11 +260,15 @@ def _boundary_centerline_ownership_report(
     sections: list[SectionPreview],
     fsects_by_section: list[list[PreviewFSection]],
     sample_step_world: float,
+    progress: "_ProgressTracker",
 ) -> list[str]:
     lines: list[str] = []
     findings: list[str] = []
 
     for section_index, section in enumerate(sections):
+        progress.step(
+            message=f"Boundary ownership checks: section {section_index + 1}/{len(sections)}"
+        )
         samples = _sample_polyline_with_distance(section.polyline, sample_step_world)
         if not samples:
             continue
@@ -276,6 +322,52 @@ def _boundary_centerline_ownership_report(
         lines.append("Boundary points closer to a different centerline: none")
 
     return lines
+
+
+def _estimate_progress_steps(sections: list[SectionPreview]) -> int:
+    if not sections:
+        return 1
+
+    sample_step_world = PERP_SAMPLE_STEP_FT * FT_TO_WORLD
+    centerline_samples = sum(_count_polyline_samples(section.polyline, sample_step_world) for section in sections)
+    return 1 + (4 * len(sections)) + centerline_samples
+
+
+def _centerline_sample_counts(sections: list[SectionPreview], step: float) -> list[int]:
+    return [_count_polyline_samples(section.polyline, step) for section in sections]
+
+
+def _count_polyline_samples(polyline: list[Point], step: float) -> int:
+    if len(polyline) < 2:
+        return 0
+    total_distance = 0.0
+    for idx in range(len(polyline) - 1):
+        total_distance += _distance(polyline[idx], polyline[idx + 1])
+    if total_distance <= 0:
+        return 0
+    return max(1, int(math.floor(total_distance / max(step, 1.0))) + 1)
+
+
+@dataclass
+class _ProgressTracker:
+    total: int
+    callback: ProgressCallback | None
+    current: int = 0
+
+    def update(self, message: str) -> None:
+        if self.callback is None:
+            return
+        total = max(self.total, 1)
+        current = min(max(self.current, 0), total)
+        self.callback(IntegrityProgress(current=current, total=total, message=message))
+
+    def step(self, count: int = 1, message: str = "") -> None:
+        self.current += max(count, 0)
+        self.update(message=message)
+
+    def complete(self, message: str) -> None:
+        self.current = max(self.total, self.current)
+        self.update(message=message)
 
 
 def _boundary_offsets_at_ratio(
