@@ -329,6 +329,7 @@ def test_integrity_report_centerline_spacing_threshold_boundary_and_formatting()
 
     assert "Sections with < 80 ft perpendicular spacing: 2" in report_below_threshold
     assert "(0.0, 80.0) ft intersects section 1 within ±80 ft" in report_below_threshold
+    assert "measured clearance 79.99 ft" in report_below_threshold
 
 
 def test_integrity_report_curve_radius_threshold_boundary_and_formatting() -> None:
