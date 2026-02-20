@@ -276,12 +276,147 @@ def _boundary_centerline_ownership_report(
     sample_step_world: float,
     progress: "_ProgressTracker",
 ) -> list[str]:
+    if np is not None:
+        return _boundary_centerline_ownership_report_numpy(
+            sections,
+            fsects_by_section,
+            sample_step_world,
+            progress,
+        )
+    return _boundary_centerline_ownership_report_fallback(
+        sections,
+        fsects_by_section,
+        sample_step_world,
+        progress,
+    )
+
+
+def _boundary_centerline_ownership_report_numpy(
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+    sample_step_world: float,
+    progress: "_ProgressTracker",
+) -> list[str]:
     lines: list[str] = []
     findings: list[str] = []
-    spatial_index: _SectionSegmentSpatialIndex | None = None
-    prepared_polyline_cache: dict[int, _PreparedPolyline] | None = None
-    if np is not None:
-        prepared_polyline_cache = _build_prepared_polyline_cache(sections)
+    prepared_polyline_cache = _build_prepared_polyline_cache(sections)
+
+    for section_index, section in enumerate(sections):
+        progress.step(
+            message=f"Boundary ownership checks: section {section_index + 1}/{len(sections)}"
+        )
+        samples = _sample_polyline_with_distance(section.polyline, sample_step_world)
+        if not samples:
+            continue
+
+        own_prepared_polyline = prepared_polyline_cache.get(section_index)
+        if own_prepared_polyline is None:
+            continue
+
+        sample_points = np.asarray([sample[0] for sample in samples], dtype=float)
+        tangents = np.asarray([sample[1] for sample in samples], dtype=float)
+        along = np.asarray([sample[2] for sample in samples], dtype=float)
+        total = float(samples[-1][3])
+
+        tangent_norm = np.hypot(tangents[:, 0], tangents[:, 1])
+        valid = tangent_norm > 1e-9
+        if not np.any(valid):
+            continue
+
+        normals = np.zeros_like(tangents)
+        normals[:, 0] = -tangents[:, 1]
+        normals[:, 1] = tangents[:, 0]
+        normals[valid] /= tangent_norm[valid][:, None]
+
+        ratio = np.zeros_like(along)
+        if total > 0:
+            ratio = np.clip(along / total, 0.0, 1.0)
+
+        left_dlat, right_dlat = _boundary_offsets_at_ratio_numpy(
+            _safe_get_fsects(fsects_by_section, section_index),
+            ratio,
+        )
+        left_points = sample_points + normals * left_dlat[:, None]
+        right_points = sample_points + normals * right_dlat[:, None]
+
+        for side, points in (("left", left_points), ("right", right_points)):
+            side_points = points[valid]
+            if side_points.size == 0:
+                continue
+
+            own_distances = _points_to_polyline_distance_numpy(
+                side_points,
+                own_prepared_polyline,
+            )
+            unresolved = np.ones(side_points.shape[0], dtype=bool)
+            rival_indices = np.full(side_points.shape[0], -1, dtype=int)
+            rival_distances = np.full(side_points.shape[0], math.inf, dtype=float)
+
+            for rival_index, _ in enumerate(sections):
+                if rival_index == section_index:
+                    continue
+                if _is_adjacent_section(section_index, rival_index, sections):
+                    continue
+                if not np.any(unresolved):
+                    break
+
+                rival_prepared_polyline = prepared_polyline_cache.get(rival_index)
+                if rival_prepared_polyline is None:
+                    continue
+
+                unresolved_indices = np.flatnonzero(unresolved)
+                rival_distances_candidate = _points_to_polyline_distance_numpy(
+                    side_points[unresolved_indices],
+                    rival_prepared_polyline,
+                )
+                can_flip = rival_distances_candidate + 1e-6 < own_distances[unresolved_indices]
+                if not np.any(can_flip):
+                    continue
+
+                flipped_indices = unresolved_indices[can_flip]
+                rival_indices[flipped_indices] = rival_index
+                rival_distances[flipped_indices] = rival_distances_candidate[can_flip]
+                unresolved[flipped_indices] = False
+
+            flipped = np.flatnonzero(rival_indices >= 0)
+            if flipped.size == 0:
+                continue
+
+            first = int(flipped[0])
+            boundary_point = side_points[first]
+            findings.append(
+                (
+                    f"  - section {section_index} {side} boundary near "
+                    f"({boundary_point[0] / FT_TO_WORLD:.1f}, {boundary_point[1] / FT_TO_WORLD:.1f}) ft "
+                    f"is closer to section {int(rival_indices[first])} centerline "
+                    f"({rival_distances[first] / FT_TO_WORLD:.2f} ft) than its own "
+                    f"({own_distances[first] / FT_TO_WORLD:.2f} ft)"
+                )
+            )
+            break
+
+        if findings and findings[-1].startswith(f"  - section {section_index} "):
+            continue
+
+    if findings:
+        lines.append(
+            f"Boundary points closer to a different centerline: {len(findings)}"
+        )
+        lines.extend(findings)
+    else:
+        lines.append("Boundary points closer to a different centerline: none")
+
+    return lines
+
+
+def _boundary_centerline_ownership_report_fallback(
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+    sample_step_world: float,
+    progress: "_ProgressTracker",
+) -> list[str]:
+    lines: list[str] = []
+    findings: list[str] = []
     spatial_index = _build_section_segment_spatial_index(sections, sample_step_world)
 
     for section_index, section in enumerate(sections):
@@ -305,19 +440,14 @@ def _boundary_centerline_ownership_report(
                     sample_point[0] + normal[0] * dlat,
                     sample_point[1] + normal[1] * dlat,
                 )
-                own_prepared_polyline = None
-                if prepared_polyline_cache is not None:
-                    own_prepared_polyline = prepared_polyline_cache.get(section_index)
                 own_dist = _point_to_polyline_distance(
                     boundary_point,
                     section.polyline,
-                    own_prepared_polyline,
                 )
                 rival_index, rival_dist = _nearest_section_distance(
                     boundary_point,
                     sections,
                     exclude_index=section_index,
-                    prepared_polyline_cache=prepared_polyline_cache,
                     spatial_index=spatial_index,
                 )
                 if rival_index is None or rival_dist is None:
@@ -710,6 +840,24 @@ def _build_prepared_polyline_cache(
     return prepared
 
 
+def _boundary_offsets_at_ratio_numpy(
+    fsects: list[PreviewFSection],
+    ratio: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    if ratio.size == 0:
+        return np.asarray([], dtype=float), np.asarray([], dtype=float)
+    if not fsects:
+        zeros = np.zeros_like(ratio, dtype=float)
+        return zeros, zeros
+
+    start = np.asarray([float(fsect.start_dlat) for fsect in fsects], dtype=float)
+    delta = np.asarray([float(fsect.end_dlat) - float(fsect.start_dlat) for fsect in fsects], dtype=float)
+    interpolated = start[None, :] + ratio[:, None] * delta[None, :]
+    left_dlat = np.maximum(np.max(interpolated, axis=1), 0.0)
+    right_dlat = np.minimum(np.min(interpolated, axis=1), 0.0)
+    return left_dlat, right_dlat
+
+
 def _point_to_polyline_distance(
     point: Point,
     polyline: list[Point],
@@ -759,6 +907,27 @@ def _point_to_polyline_distance_numpy(point: Point, prepared_polyline: _Prepared
     if dists.size == 0:
         return math.inf
     return float(np.min(dists))
+
+
+def _points_to_polyline_distance_numpy(
+    points: np.ndarray,
+    prepared_polyline: _PreparedPolyline,
+) -> np.ndarray:
+    if points.size == 0:
+        return np.asarray([], dtype=float)
+    if prepared_polyline.points.shape[0] < 2:
+        return np.full(points.shape[0], math.inf, dtype=float)
+
+    to_points = points[:, None, :] - prepared_polyline.start[None, :, :]
+    t = np.einsum("nsi,si->ns", to_points, prepared_polyline.seg) / prepared_polyline.seg_len_sq_safe[None, :]
+    t = np.clip(t, 0.0, 1.0)
+
+    closest = prepared_polyline.start[None, :, :] + prepared_polyline.seg[None, :, :] * t[:, :, None]
+    delta = closest - points[:, None, :]
+    dists = np.hypot(delta[:, :, 0], delta[:, :, 1])
+    if dists.size == 0:
+        return np.full(points.shape[0], math.inf, dtype=float)
+    return np.min(dists, axis=1)
 
 
 def _point_to_segment_distance(point: Point, start: Point, end: Point) -> float:
