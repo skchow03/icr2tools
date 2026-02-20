@@ -178,6 +178,13 @@ def _centerline_clearance_report(
                 sections,
             )
             if hit is None:
+                hit = _find_close_centerline(
+                    source_section_index=section_index,
+                    source_polyline=section.polyline,
+                    max_distance=probe_half_len_world,
+                    sections=sections,
+                )
+            if hit is None:
                 continue
             findings.append(
                 (
@@ -487,6 +494,35 @@ def _find_probe_proximity(
     return None
 
 
+def _find_close_centerline(
+    source_section_index: int,
+    source_polyline: list[Point],
+    max_distance: float,
+    sections: list[SectionPreview],
+) -> int | None:
+    source_segments = _polyline_segments(source_polyline)
+    for target_index, target in enumerate(sections):
+        if target_index == source_section_index:
+            continue
+        if _is_adjacent_section(source_section_index, target_index, sections):
+            continue
+
+        target_segments = _polyline_segments(target.polyline)
+        for source_start, source_end in source_segments:
+            for target_start, target_end in target_segments:
+                if (
+                    _segment_to_segment_distance(
+                        source_start,
+                        source_end,
+                        target_start,
+                        target_end,
+                    )
+                    <= max_distance
+                ):
+                    return target_index
+    return None
+
+
 def _closest_point_on_segment(point: Point, start: Point, end: Point) -> Point:
     seg_x = end[0] - start[0]
     seg_y = end[1] - start[1]
@@ -497,6 +533,48 @@ def _closest_point_on_segment(point: Point, start: Point, end: Point) -> Point:
     proj = ((point[0] - start[0]) * seg_x + (point[1] - start[1]) * seg_y) / seg_len_sq
     proj = min(max(proj, 0.0), 1.0)
     return (start[0] + proj * seg_x, start[1] + proj * seg_y)
+
+
+def _segment_to_segment_distance(a0: Point, a1: Point, b0: Point, b1: Point) -> float:
+    if _segments_intersect(a0, a1, b0, b1):
+        return 0.0
+
+    return min(
+        _point_to_segment_distance(a0, b0, b1),
+        _point_to_segment_distance(a1, b0, b1),
+        _point_to_segment_distance(b0, a0, a1),
+        _point_to_segment_distance(b1, a0, a1),
+    )
+
+
+def _segments_intersect(a0: Point, a1: Point, b0: Point, b1: Point) -> bool:
+    def orientation(p: Point, q: Point, r: Point) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    def on_segment(p: Point, q: Point, r: Point) -> bool:
+        return (
+            min(p[0], r[0]) - 1e-9 <= q[0] <= max(p[0], r[0]) + 1e-9
+            and min(p[1], r[1]) - 1e-9 <= q[1] <= max(p[1], r[1]) + 1e-9
+        )
+
+    o1 = orientation(a0, a1, b0)
+    o2 = orientation(a0, a1, b1)
+    o3 = orientation(b0, b1, a0)
+    o4 = orientation(b0, b1, a1)
+
+    if (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0):
+        return True
+
+    if abs(o1) <= 1e-9 and on_segment(a0, b0, a1):
+        return True
+    if abs(o2) <= 1e-9 and on_segment(a0, b1, a1):
+        return True
+    if abs(o3) <= 1e-9 and on_segment(b0, a0, b1):
+        return True
+    if abs(o4) <= 1e-9 and on_segment(b0, a1, b1):
+        return True
+
+    return False
 
 
 def _is_adjacent_section(
