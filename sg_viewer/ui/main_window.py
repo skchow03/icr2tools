@@ -97,7 +97,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         ) -> None:
             button.setText(label)
             button.setToolTip(f"{label} ({shortcut})")
-            button.setShortcut(shortcut)
 
         self._preview: PreviewContext = PreviewWidgetQt(
             show_status=self.show_status_message
