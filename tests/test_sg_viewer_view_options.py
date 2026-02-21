@@ -482,3 +482,22 @@ def test_export_csv_on_save_toggle_controls_csv_export(qapp, monkeypatch, tmp_pa
         assert csv_calls == [target_path]
     finally:
         window.close()
+
+
+def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
+    window = SGViewerWindow()
+    try:
+        file_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+        )
+        tools_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+        )
+
+        file_labels = [action.text() for action in file_menu.actions()]
+        tools_labels = [action.text() for action in tools_menu.actions()]
+
+        assert "Export SG to TRK…" in file_labels
+        assert "Export SG to TRK…" not in tools_labels
+    finally:
+        window.close()
