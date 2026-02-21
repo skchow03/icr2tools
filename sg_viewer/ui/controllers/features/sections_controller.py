@@ -237,6 +237,17 @@ class SectionsController:
                 )
                 return
 
+            xsect_metadata = self._host._window.preview.get_xsect_metadata()
+            if len(xsect_metadata) >= 2:
+                reversed_xsects = list(reversed(xsect_metadata))
+                if not self._host._window.preview.set_xsect_definitions(reversed_xsects):
+                    QtWidgets.QMessageBox.warning(
+                        self._host._window,
+                        "Reverse Track",
+                        "Unable to reverse x-section DLAT order for the reversed track.",
+                    )
+                    return
+
             try:
                 self._host._window.preview.apply_preview_to_sgfile()
             except ValueError:

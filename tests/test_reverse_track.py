@@ -44,12 +44,21 @@ class _FakePreview:
         fsects: list[list[PreviewFSection]],
         *,
         replace_all_fsects_result: bool = True,
+        xsect_metadata: list[tuple[int, float]] | None = None,
+        set_xsect_definitions_result: bool = True,
     ) -> None:
         self.sections = sections
         self.fsects = fsects
         self.received_sections: list[SectionPreview] | None = None
         self.received_fsects: list[list[PreviewFSection]] | None = None
         self._replace_all_fsects_result = replace_all_fsects_result
+        self._xsect_metadata = (
+            list(xsect_metadata)
+            if xsect_metadata is not None
+            else [(0, -5.0), (1, 0.0), (2, 5.0)]
+        )
+        self._set_xsect_definitions_result = set_xsect_definitions_result
+        self.received_xsect_entries: list[tuple[int | None, float]] | None = None
         self.transform_state = object()
         self.controller = SimpleNamespace(transform_state=None)
         self.repaint_requested = False
@@ -66,6 +75,15 @@ class _FakePreview:
     def replace_all_fsects(self, fsects_by_section: list[list[PreviewFSection]]):
         self.received_fsects = fsects_by_section
         return self._replace_all_fsects_result
+
+    def get_xsect_metadata(self):
+        return list(self._xsect_metadata)
+
+    def set_xsect_definitions(self, entries: list[tuple[int | None, float]]):
+        self.received_xsect_entries = list(entries)
+        if self._set_xsect_definitions_result:
+            self._xsect_metadata = [(idx, float(dlat)) for idx, (_, dlat) in enumerate(entries)]
+        return self._set_xsect_definitions_result
 
     def apply_preview_to_sgfile(self):
         return None
@@ -142,6 +160,7 @@ def test_reverse_track_reverses_sections_fsects_and_orientation() -> None:
         surface_type=5,
         type2=0,
     )
+    assert preview.received_xsect_entries == [(2, 5.0), (1, 0.0), (0, -5.0)]
     assert "Reversed section order" in (controller._host._window.status or "")
     assert preview.controller.transform_state is preview.transform_state
     assert preview.repaint_requested
