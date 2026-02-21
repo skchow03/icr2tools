@@ -19,6 +19,8 @@ _SURFACE_FILL_RGBA = (60, 160, 120, 255)
 _SURFACE_OUTLINE_RGBA = (80, 200, 150, 255)
 _FSECT_OUTLINE_RGBA = (120, 180, 220, 255)
 _SHOW_FSECT_OUTLINES = False
+_MRK_TARGET_SECTION_LENGTH = 14.0 * 6000.0
+_MRK_NOTCH_HALF_LENGTH_PX = 4.0
 
 @dataclass
 class PreviewColors:
@@ -113,6 +115,7 @@ class SgPreviewState:
     transform: ViewTransform | None
     view_state: SgPreviewViewState
     enabled: bool
+    show_mrk_notches: bool = False
 
 
 def paint_preview(
@@ -159,6 +162,7 @@ def paint_preview(
                 sg_preview_state.model,
                 sg_preview_state.transform,
                 sg_preview_state.view_state,
+                show_mrk_notches=sg_preview_state.show_mrk_notches,
             )
         _draw_centerlines(
             painter,
@@ -234,6 +238,8 @@ def render_sg_preview(
     model: SgPreviewModel,
     transform: ViewTransform,
     view_state: SgPreviewViewState,
+    *,
+    show_mrk_notches: bool = False,
 ) -> None:
     if model is None or transform is None:
         return
@@ -246,6 +252,8 @@ def render_sg_preview(
 
     if view_state.show_boundaries:
         _draw_boundaries(painter, model, transform)
+        if show_mrk_notches:
+            _draw_mrk_notches(painter, model, transform)
 
     if _SHOW_FSECT_OUTLINES:
         _draw_fsect_outlines(painter, model, transform)
@@ -303,6 +311,104 @@ def _draw_fsect_outlines(painter, model: SgPreviewModel, transform: ViewTransfor
             if len(points) < 3:
                 continue
             painter.drawPolygon(points)
+
+
+def _draw_mrk_notches(painter, model: SgPreviewModel, transform: ViewTransform) -> None:
+    notch_pen = QtGui.QPen(QtGui.QColor("white"))
+    notch_pen.setWidthF(1.5)
+    notch_pen.setCosmetic(True)
+    notch_pen.setCapStyle(QtCore.Qt.SquareCap)
+    painter.setPen(notch_pen)
+
+    for fsect in model.fsects:
+        for boundary in fsect.boundaries:
+            points = [
+                (float(point[0]), float(point[1]))
+                for point in boundary.points
+                if point is not None
+            ]
+            notch_points = _division_points_for_polyline(
+                points,
+                target_length=_MRK_TARGET_SECTION_LENGTH,
+            )
+            for notch in notch_points:
+                _draw_polyline_notch(
+                    painter,
+                    transform,
+                    points,
+                    notch,
+                    half_length_px=_MRK_NOTCH_HALF_LENGTH_PX,
+                )
+
+
+def _division_points_for_polyline(
+    points: list[Point], *, target_length: float
+) -> list[float]:
+    if len(points) < 2:
+        return []
+    lengths = _polyline_segment_lengths(points)
+    total = sum(lengths)
+    if total <= 0.0:
+        return []
+    segment_count = max(1, int(round(total / target_length)))
+    spacing = total / float(segment_count)
+    return [spacing * index for index in range(1, segment_count)]
+
+
+def _polyline_segment_lengths(points: list[Point]) -> list[float]:
+    lengths: list[float] = []
+    for index in range(len(points) - 1):
+        x1, y1 = points[index]
+        x2, y2 = points[index + 1]
+        lengths.append(math.hypot(x2 - x1, y2 - y1))
+    return lengths
+
+
+def _draw_polyline_notch(
+    painter: QtGui.QPainter,
+    transform: ViewTransform,
+    points: list[Point],
+    distance_along: float,
+    *,
+    half_length_px: float,
+) -> None:
+    sample = _sample_polyline_with_tangent(points, distance_along)
+    if sample is None:
+        return
+    (x, y), (tx, ty) = sample
+    tx_len = math.hypot(tx, ty)
+    if tx_len <= 1e-9:
+        return
+    nx = -ty / tx_len
+    ny = tx / tx_len
+    sx, sy = transform.world_to_screen((x, y))
+    start = QtCore.QPointF(sx - nx * half_length_px, sy + ny * half_length_px)
+    end = QtCore.QPointF(sx + nx * half_length_px, sy - ny * half_length_px)
+    painter.drawLine(start, end)
+
+
+def _sample_polyline_with_tangent(
+    points: list[Point],
+    distance_along: float,
+) -> tuple[Point, Point] | None:
+    remaining = max(0.0, float(distance_along))
+    for index in range(len(points) - 1):
+        x1, y1 = points[index]
+        x2, y2 = points[index + 1]
+        dx = x2 - x1
+        dy = y2 - y1
+        seg_len = math.hypot(dx, dy)
+        if seg_len <= 1e-9:
+            continue
+        if remaining <= seg_len:
+            t = remaining / seg_len
+            return ((x1 + dx * t, y1 + dy * t), (dx, dy))
+        remaining -= seg_len
+    if len(points) < 2:
+        return None
+    x1, y1 = points[-2]
+    x2, y2 = points[-1]
+    return ((x2, y2), (x2 - x1, y2 - y1))
 
 
 def _map_points(points: Iterable[Point], transform: ViewTransform) -> QtGui.QPolygonF:

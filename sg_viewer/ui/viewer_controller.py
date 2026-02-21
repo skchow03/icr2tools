@@ -720,10 +720,10 @@ class SGViewerController:
             )
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
-        if self._window.right_sidebar_tabs.tabText(index) != "Fsects":
-            return
-        if not self._window.sg_fsects_checkbox.isChecked():
+        tab_name = self._window.right_sidebar_tabs.tabText(index)
+        if tab_name in {"Fsects", "MRK"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
+        self._window.preview.set_show_mrk_notches(tab_name == "MRK")
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
