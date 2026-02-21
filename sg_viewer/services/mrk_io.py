@@ -46,6 +46,12 @@ class MarkFile:
     version: str = _MARK_HEADER
 
 
+@dataclass(frozen=True)
+class MarkTextureSpec:
+    mip_name: str
+    uv_rect: MarkUvRect
+
+
 def _strip_comment(line: str) -> str:
     return line.split("##", 1)[0].strip()
 
@@ -159,6 +165,7 @@ def generate_wall_mark_file(
     fsects_by_section: list[list[PreviewFSection]],
     mip_name: str,
     uv_rect: MarkUvRect,
+    texture_pattern: tuple[MarkTextureSpec, ...] | None = None,
     target_wall_length: float = _DEFAULT_MARK_WALL_LENGTH,
 ) -> MarkFile:
     if not sections:
@@ -169,6 +176,14 @@ def generate_wall_mark_file(
     track_length = sum(max(0.0, float(section.length)) for section in sections)
     if track_length <= 0.0:
         return MarkFile(entries=())
+
+    textures = texture_pattern
+    if textures is None:
+        textures = (MarkTextureSpec(mip_name=mip_name, uv_rect=uv_rect),)
+    if not textures:
+        raise ValueError("At least one texture specification is required")
+    if any(not texture.mip_name.strip() for texture in textures):
+        raise ValueError("Texture MIP file names cannot be empty")
 
     boundaries: dict[int, list[tuple[float, float]]] = {}
     for section, fsects in zip(sections, fsects_by_section):
@@ -193,12 +208,13 @@ def generate_wall_mark_file(
                 end = dlong_to_section_position(sections, end_dlong, track_length)
                 if start is None or end is None:
                     continue
+                texture = textures[wall_index % len(textures)]
                 entries.append(
                     MarkBoundaryEntry(
                         pointer_name=f"b{boundary_id}_wall{wall_index:04d}",
                         boundary_id=boundary_id,
-                        mip_name=mip_name,
-                        uv_rect=uv_rect,
+                        mip_name=texture.mip_name,
+                        uv_rect=texture.uv_rect,
                         start=MarkTrackPosition(
                             section=start.section_index,
                             fraction=start.fraction,

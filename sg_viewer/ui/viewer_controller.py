@@ -10,7 +10,7 @@ from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
-from sg_viewer.services.mrk_io import MarkUvRect, generate_wall_mark_file, serialize_mrk
+from sg_viewer.services.mrk_io import MarkTextureSpec, MarkUvRect, generate_wall_mark_file, serialize_mrk
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -1198,7 +1198,7 @@ class SGViewerController:
         sections, _ = self._window.preview.get_section_set()
         self._window.generate_mrk_button.setEnabled(bool(sections))
 
-    def _prompt_mrk_generation_options(self) -> tuple[str, MarkUvRect] | None:
+    def _prompt_mrk_generation_options(self) -> tuple[tuple[MarkTextureSpec, ...], str, MarkUvRect] | None:
         dialog = QtWidgets.QDialog(self._window)
         dialog.setWindowTitle("Generate MRK")
         layout = QtWidgets.QVBoxLayout(dialog)
@@ -1206,7 +1206,7 @@ class SGViewerController:
         form = QtWidgets.QFormLayout()
         mip_edit = QtWidgets.QLineEdit(dialog)
         mip_edit.setText("walldk")
-        form.addRow("MIP file name:", mip_edit)
+        form.addRow("Texture 1 MIP file name:", mip_edit)
 
         def _spin_box(value: int = 0) -> QtWidgets.QSpinBox:
             spin = QtWidgets.QSpinBox(dialog)
@@ -1219,11 +1219,31 @@ class SGViewerController:
         lr_u = _spin_box(1023)
         lr_v = _spin_box(15)
 
-        form.addRow("Upper-left U:", ul_u)
-        form.addRow("Upper-left V:", ul_v)
-        form.addRow("Lower-right U:", lr_u)
-        form.addRow("Lower-right V:", lr_v)
+        form.addRow("Texture 1 Upper-left U:", ul_u)
+        form.addRow("Texture 1 Upper-left V:", ul_v)
+        form.addRow("Texture 1 Lower-right U:", lr_u)
+        form.addRow("Texture 1 Lower-right V:", lr_v)
         layout.addLayout(form)
+
+        use_pattern_checkbox = QtWidgets.QCheckBox("Use repeating 2-texture pattern", dialog)
+        layout.addWidget(use_pattern_checkbox)
+
+        pattern_group = QtWidgets.QGroupBox("Texture 2", dialog)
+        pattern_form = QtWidgets.QFormLayout(pattern_group)
+        mip2_edit = QtWidgets.QLineEdit(dialog)
+        mip2_edit.setPlaceholderText("walllt")
+        ul2_u = _spin_box(0)
+        ul2_v = _spin_box(0)
+        lr2_u = _spin_box(1023)
+        lr2_v = _spin_box(15)
+        pattern_form.addRow("Texture 2 MIP file name:", mip2_edit)
+        pattern_form.addRow("Texture 2 Upper-left U:", ul2_u)
+        pattern_form.addRow("Texture 2 Upper-left V:", ul2_v)
+        pattern_form.addRow("Texture 2 Lower-right U:", lr2_u)
+        pattern_form.addRow("Texture 2 Lower-right V:", lr2_v)
+        pattern_group.setEnabled(False)
+        use_pattern_checkbox.toggled.connect(pattern_group.setEnabled)
+        layout.addWidget(pattern_group)
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
@@ -1252,7 +1272,29 @@ class SGViewerController:
             lower_right_u=lr_u.value(),
             lower_right_v=lr_v.value(),
         )
-        return mip_name, uv_rect
+
+        textures: list[MarkTextureSpec] = [MarkTextureSpec(mip_name=mip_name, uv_rect=uv_rect)]
+        if use_pattern_checkbox.isChecked():
+            mip2_name = mip2_edit.text().strip()
+            if not mip2_name:
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Generate MRK",
+                    "Please provide a second MIP file name when 2-texture pattern is enabled.",
+                )
+                return None
+            textures.append(
+                MarkTextureSpec(
+                    mip_name=mip2_name,
+                    uv_rect=MarkUvRect(
+                        upper_left_u=ul2_u.value(),
+                        upper_left_v=ul2_v.value(),
+                        lower_right_u=lr2_u.value(),
+                        lower_right_v=lr2_v.value(),
+                    ),
+                )
+            )
+        return tuple(textures), mip_name, uv_rect
 
     def _generate_mrk_file(self) -> None:
         sections, _ = self._window.preview.get_section_set()
@@ -1267,7 +1309,7 @@ class SGViewerController:
         options = self._prompt_mrk_generation_options()
         if options is None:
             return
-        mip_name, uv_rect = options
+        texture_pattern, mip_name, uv_rect = options
 
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
@@ -1287,6 +1329,7 @@ class SGViewerController:
             fsects_by_section=[self._window.preview.get_section_fsects(i) for i, _ in enumerate(sections)],
             mip_name=mip_name,
             uv_rect=uv_rect,
+            texture_pattern=texture_pattern,
         )
 
         try:
