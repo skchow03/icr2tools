@@ -166,3 +166,71 @@ def test_generate_wall_mark_file_curve_uses_offset_length_for_divisions() -> Non
         for boundary_id in {entry.boundary_id for entry in mark_file.entries}
     }
     assert boundary_counts == {0: 6, 1: 8}
+
+
+def test_generate_wall_mark_file_curve_respects_turn_direction_for_inside_outside() -> None:
+    sections = [
+        SectionPreview(
+            section_id=0,
+            source_section_id=0,
+            type_name="curve",
+            previous_id=-1,
+            next_id=-1,
+            start=(100.0, 0.0),
+            end=(0.0, -100.0),
+            start_dlong=0.0,
+            length=157.079632679,
+            center=(0.0, 0.0),
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=-100.0,
+            start_heading=None,
+            end_heading=None,
+            polyline=[(100.0, 0.0), (0.0, -100.0)],
+        )
+    ]
+    fsects_by_section = [
+        [
+            PreviewFSection(start_dlat=14.0, end_dlat=14.0, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=-14.0, end_dlat=-14.0, surface_type=7, type2=0),
+        ]
+    ]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="wall",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        target_wall_length=14.0,
+    )
+
+    boundary_counts = {
+        boundary_id: sum(1 for entry in mark_file.entries if entry.boundary_id == boundary_id)
+        for boundary_id in {entry.boundary_id for entry in mark_file.entries}
+    }
+    assert boundary_counts == {0: 8, 1: 6}
+
+
+def test_generate_wall_mark_file_two_texture_pattern_allows_single_wall_remainder() -> None:
+    sections = [_section(0, 0.0, 20.0)]
+    fsects_by_section = [
+        [
+            PreviewFSection(start_dlat=0.0, end_dlat=0.0, surface_type=7, type2=0),
+        ]
+    ]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="fallback",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        texture_pattern=(
+            MarkTextureSpec("wall_a", MarkUvRect(0, 0, 10, 10)),
+            MarkTextureSpec("wall_b", MarkUvRect(11, 0, 20, 10)),
+        ),
+        target_wall_length=14.0,
+    )
+
+    assert [entry.mip_name for entry in mark_file.entries] == ["wall_a"]
