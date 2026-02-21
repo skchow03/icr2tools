@@ -186,18 +186,26 @@ def _boundary_span_length(section: SectionPreview, boundary: PreviewFSection) ->
 
     start_angle = math.atan2(sy - cy, sx - cx)
     end_angle = math.atan2(ey - cy, ex - cx)
-    delta = abs(end_angle - start_angle)
-    if delta > math.pi:
-        delta = 2.0 * math.pi - delta
+    signed_delta = end_angle - start_angle
+    while signed_delta <= -math.pi:
+        signed_delta += 2.0 * math.pi
+    while signed_delta > math.pi:
+        signed_delta -= 2.0 * math.pi
 
-    base_radius = float(section.radius) if section.radius is not None else math.hypot(sx - cx, sy - cy)
+    radius_value = float(section.radius) if section.radius is not None else math.hypot(sx - cx, sy - cy)
+    base_radius = abs(radius_value)
     if base_radius <= 1e-9:
         return base_length
 
+    delta = abs(signed_delta)
     if delta <= 1e-9:
         delta = base_length / base_radius
 
-    offset_radius = max(0.0, base_radius + _average_dlat(boundary))
+    turn_sign = 1.0
+    if abs(signed_delta) > 1e-9:
+        turn_sign = 1.0 if signed_delta > 0.0 else -1.0
+
+    offset_radius = max(0.0, base_radius + turn_sign * _average_dlat(boundary))
     return max(0.0, delta * offset_radius)
 
 
@@ -250,7 +258,7 @@ def generate_wall_mark_file(
             span_length = max(0.0, span_length)
             if span_length <= 0.0:
                 span_length = span_end - span_start
-            segment_count = max(1, int(round(span_length / target_wall_length)))
+            segment_count = max(1, int(math.floor(span_length / target_wall_length)))
             dlong_spacing = (span_end - span_start) / float(segment_count)
             for index in range(segment_count):
                 start_dlong = span_start + dlong_spacing * index
