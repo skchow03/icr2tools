@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import math
 import re
 
@@ -147,6 +148,26 @@ def serialize_mrk(mark_file: MarkFile) -> str:
 
 _BOUNDARY_TYPES = {7, 8}
 _DEFAULT_MARK_WALL_LENGTH = 14.0 * 6000.0
+_DEFAULT_BOUNDARY_MATCH_TOLERANCE = 2.0 * 6000.0
+_MIN_BOUNDARY_SAMPLES = 24
+
+_LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _BoundarySignature:
+    surface_type: int
+    type2: int
+    avg_dlat: float
+    dlat_range: tuple[float, float]
+
+
+@dataclass
+class _BoundaryTrack:
+    boundary_id: int
+    surface_type: int
+    type2: int
+    last_avg_dlat: float
 
 
 def _boundary_rows_for_section(fsects: list[PreviewFSection]) -> list[PreviewFSection]:
@@ -173,12 +194,90 @@ def _average_dlat(boundary: PreviewFSection) -> float:
     return (float(boundary.start_dlat) + float(boundary.end_dlat)) * 0.5
 
 
+def _boundary_signature(boundary: PreviewFSection) -> _BoundarySignature:
+    start_dlat = float(boundary.start_dlat)
+    end_dlat = float(boundary.end_dlat)
+    return _BoundarySignature(
+        surface_type=int(boundary.surface_type),
+        type2=int(boundary.type2),
+        avg_dlat=(start_dlat + end_dlat) * 0.5,
+        dlat_range=(min(start_dlat, end_dlat), max(start_dlat, end_dlat)),
+    )
+
+
+def _polyline_length(points: list[tuple[float, float]]) -> float:
+    total = 0.0
+    for index in range(len(points) - 1):
+        x1, y1 = points[index]
+        x2, y2 = points[index + 1]
+        total += math.hypot(x2 - x1, y2 - y1)
+    return total
+
+
+def _sample_polyline_with_tangent(
+    points: list[tuple[float, float]],
+    distance_along: float,
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    if len(points) < 2:
+        return None
+    remaining = max(0.0, float(distance_along))
+    for index in range(len(points) - 1):
+        x1, y1 = points[index]
+        x2, y2 = points[index + 1]
+        dx = x2 - x1
+        dy = y2 - y1
+        seg_len = math.hypot(dx, dy)
+        if seg_len <= 1e-9:
+            continue
+        if remaining <= seg_len:
+            t = remaining / seg_len
+            return ((x1 + dx * t, y1 + dy * t), (dx, dy))
+        remaining -= seg_len
+    x1, y1 = points[-2]
+    x2, y2 = points[-1]
+    return ((x2, y2), (x2 - x1, y2 - y1))
+
+
+def _boundary_polyline(section: SectionPreview, boundary: PreviewFSection) -> list[tuple[float, float]]:
+    centerline = [(float(point[0]), float(point[1])) for point in section.polyline if point is not None]
+    if len(centerline) < 2:
+        return []
+
+    centerline_length = _polyline_length(centerline)
+    if centerline_length <= 1e-9:
+        return []
+
+    sample_count = max(_MIN_BOUNDARY_SAMPLES, len(centerline) * 3)
+    boundary_points: list[tuple[float, float]] = []
+
+    for sample_index in range(sample_count + 1):
+        ratio = sample_index / float(sample_count)
+        sampled = _sample_polyline_with_tangent(centerline, centerline_length * ratio)
+        if sampled is None:
+            continue
+        (x, y), (tx, ty) = sampled
+        tangent_length = math.hypot(tx, ty)
+        if tangent_length <= 1e-9:
+            continue
+        dlat = float(boundary.start_dlat) + (float(boundary.end_dlat) - float(boundary.start_dlat)) * ratio
+        nx = -ty / tangent_length
+        ny = tx / tangent_length
+        boundary_points.append((x + nx * dlat, y + ny * dlat))
+    return boundary_points
+
+
 def _boundary_span_length(section: SectionPreview, boundary: PreviewFSection) -> float:
     base_length = max(0.0, float(section.length))
     if base_length <= 0.0:
         return 0.0
     if section.center is None or str(section.type_name).lower() != "curve":
         return base_length
+
+    boundary_points = _boundary_polyline(section, boundary)
+    if len(boundary_points) >= 3:
+        polyline_length = _polyline_length(boundary_points)
+        if polyline_length > 0.0:
+            return polyline_length
 
     radius_value = float(section.radius)
     base_radius = abs(radius_value)
@@ -199,6 +298,8 @@ def generate_wall_mark_file(
     uv_rect: MarkUvRect,
     texture_pattern: tuple[MarkTextureSpec, ...] | None = None,
     target_wall_length: float = _DEFAULT_MARK_WALL_LENGTH,
+    boundary_match_tolerance: float = _DEFAULT_BOUNDARY_MATCH_TOLERANCE,
+    debug_boundary_matching: bool = False,
 ) -> MarkFile:
     if not sections:
         return MarkFile(entries=())
@@ -218,12 +319,62 @@ def generate_wall_mark_file(
         raise ValueError("Texture MIP file names cannot be empty")
 
     boundaries: dict[int, list[tuple[float, float, float, bool]]] = {}
-    for section, fsects in zip(sections, fsects_by_section):
+    active_tracks: list[_BoundaryTrack] = []
+    next_boundary_id = 0
+
+    section_rows = sorted(
+        zip(sections, fsects_by_section),
+        key=lambda row: float(row[0].start_dlong),
+    )
+    for section_index, (section, fsects) in enumerate(section_rows):
         section_start = float(section.start_dlong)
         section_end = section_start + max(0.0, float(section.length))
         if section_end <= section_start:
             continue
-        for boundary_id, boundary in enumerate(_boundary_rows_for_section(fsects)):
+        rows = _boundary_rows_for_section(fsects)
+        used_track_ids: set[int] = set()
+        for row_index, boundary in enumerate(rows):
+            signature = _boundary_signature(boundary)
+            matches = [
+                track
+                for track in active_tracks
+                if track.boundary_id not in used_track_ids
+                and track.surface_type == signature.surface_type
+                and track.type2 == signature.type2
+                and abs(signature.avg_dlat - track.last_avg_dlat) <= boundary_match_tolerance
+            ]
+            matched_track = min(
+                matches,
+                key=lambda track: abs(signature.avg_dlat - track.last_avg_dlat),
+                default=None,
+            )
+            if matched_track is None:
+                matched_track = _BoundaryTrack(
+                    boundary_id=next_boundary_id,
+                    surface_type=signature.surface_type,
+                    type2=signature.type2,
+                    last_avg_dlat=signature.avg_dlat,
+                )
+                active_tracks.append(matched_track)
+                next_boundary_id += 1
+
+            boundary_id = matched_track.boundary_id
+            used_track_ids.add(boundary_id)
+            matched_track.last_avg_dlat = signature.avg_dlat
+
+            if debug_boundary_matching:
+                _LOGGER.debug(
+                    "MRK boundary match section=%s row=%s avg_dlat=%.3f range=(%.3f, %.3f) type=(%s,%s) boundary_id=%s",
+                    section_index,
+                    row_index,
+                    signature.avg_dlat,
+                    signature.dlat_range[0],
+                    signature.dlat_range[1],
+                    signature.surface_type,
+                    signature.type2,
+                    boundary_id,
+                )
+
             boundaries.setdefault(boundary_id, []).append(
                 (
                     section_start,
@@ -276,6 +427,14 @@ def generate_wall_mark_file(
 
         wall_index = 0
         segment_count = max(1, int(round(total_boundary_length / target_wall_length)))
+        if debug_boundary_matching:
+            _LOGGER.debug(
+                "MRK boundary summary boundary_id=%s span_count=%s total_length=%.3f segment_count=%s",
+                boundary_id,
+                len(spans),
+                total_boundary_length,
+                segment_count,
+            )
         spacing = total_boundary_length / float(segment_count)
         for index in range(segment_count):
             start_distance = spacing * index
