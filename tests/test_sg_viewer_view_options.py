@@ -1,4 +1,5 @@
 import json
+import math
 
 import pytest
 
@@ -222,6 +223,47 @@ def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
         assert len(popen_calls[0]) == 2
     finally:
         window.close()
+
+
+def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
+    window = SGViewerWindow()
+    try:
+        assert window.preview.show_mrk_notches is False
+
+        mrk_index = next(
+            index
+            for index in range(window.right_sidebar_tabs.count())
+            if window.right_sidebar_tabs.tabText(index) == "MRK"
+        )
+        window.right_sidebar_tabs.setCurrentIndex(mrk_index)
+
+        assert window.sg_fsects_checkbox.isChecked() is True
+        assert window.preview.show_mrk_notches is True
+
+        window.right_sidebar_tabs.setCurrentIndex(0)
+        assert window.preview.show_mrk_notches is False
+    finally:
+        window.close()
+
+
+def test_mrk_divisions_follow_polyline_arc_length():
+    from sg_viewer.services.preview_painter import _division_points_for_polyline
+
+    radius = 24000.0
+    total_angle = math.pi / 2
+    points = [
+        (radius * math.cos(total_angle * step / 32), radius * math.sin(total_angle * step / 32))
+        for step in range(33)
+    ]
+
+    divisions = _division_points_for_polyline(points, target_length=14.0 * 6000.0)
+
+    total_length = (math.pi / 2) * radius
+    expected_segments = round(total_length / (14.0 * 6000.0))
+    assert len(divisions) == max(0, expected_segments - 1)
+    if divisions:
+        spacing = total_length / expected_segments
+        assert divisions[0] == pytest.approx(spacing, rel=0.03)
 
 
 def test_background_calibrator_receives_loaded_background_image_path(qapp, monkeypatch, tmp_path):

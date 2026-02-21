@@ -450,9 +450,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
+        self._mrk_sidebar = QtWidgets.QWidget()
+        mrk_layout = QtWidgets.QVBoxLayout()
+        mrk_info = QtWidgets.QLabel(
+            "MRK mode marks boundary notch divisions at approximately 14 ft spacing."
+        )
+        mrk_info.setWordWrap(True)
+        mrk_layout.addWidget(mrk_info)
+        mrk_layout.addStretch()
+        self._mrk_sidebar.setLayout(mrk_layout)
+
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
         self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
+        self._right_sidebar_tabs.addTab(self._mrk_sidebar, "MRK")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)

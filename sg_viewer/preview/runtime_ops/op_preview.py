@@ -170,6 +170,10 @@ class _RuntimeCorePreviewMixin:
         return self._show_sg_fsects
 
     @property
+    def show_mrk_notches(self) -> bool:
+        return self._show_mrk_notches
+
+    @property
     def show_xsect_dlat_line(self) -> bool:
         return self._show_xsect_dlat_line
 
@@ -308,6 +312,10 @@ class _RuntimeCorePreviewMixin:
 
     def set_show_sg_fsects(self, visible: bool) -> None:
         self._show_sg_fsects = visible
+        self._context.request_repaint()
+
+    def set_show_mrk_notches(self, visible: bool) -> None:
+        self._show_mrk_notches = visible
         self._context.request_repaint()
 
     def set_show_xsect_dlat_line(self, visible: bool) -> None:
