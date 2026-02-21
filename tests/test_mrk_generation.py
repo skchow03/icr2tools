@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.model.sg_model import SectionPreview
-from sg_viewer.services.mrk_io import MarkUvRect, generate_wall_mark_file
+from sg_viewer.services.mrk_io import MarkTextureSpec, MarkUvRect, generate_wall_mark_file
 
 
 def _section(index: int, start_dlong: float, length: float) -> SectionPreview:
@@ -69,3 +69,32 @@ def test_generate_wall_mark_file_validates_input_lengths() -> None:
         assert "Section count does not match" in str(exc)
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_generate_wall_mark_file_applies_repeating_texture_pattern() -> None:
+    sections = [_section(0, 0.0, 1000.0)]
+    fsects_by_section = [
+        [
+            PreviewFSection(start_dlat=100.0, end_dlat=100.0, surface_type=7, type2=0),
+        ],
+    ]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="fallback",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        texture_pattern=(
+            MarkTextureSpec("wall_a", MarkUvRect(0, 0, 10, 10)),
+            MarkTextureSpec("wall_b", MarkUvRect(11, 0, 20, 10)),
+        ),
+        target_wall_length=250.0,
+    )
+
+    assert [entry.mip_name for entry in mark_file.entries] == ["wall_a", "wall_b", "wall_a", "wall_b"]
+    assert [entry.uv_rect for entry in mark_file.entries] == [
+        MarkUvRect(0, 0, 10, 10),
+        MarkUvRect(11, 0, 20, 10),
+        MarkUvRect(0, 0, 10, 10),
+        MarkUvRect(11, 0, 20, 10),
+    ]
