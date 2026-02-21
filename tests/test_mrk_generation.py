@@ -165,7 +165,7 @@ def test_generate_wall_mark_file_curve_uses_offset_length_for_divisions() -> Non
         boundary_id: sum(1 for entry in mark_file.entries if entry.boundary_id == boundary_id)
         for boundary_id in {entry.boundary_id for entry in mark_file.entries}
     }
-    assert boundary_counts == {0: 6, 1: 8}
+    assert boundary_counts == {0: 10, 1: 13}
 
 
 def test_generate_wall_mark_file_curve_respects_turn_direction_for_inside_outside() -> None:
@@ -210,7 +210,7 @@ def test_generate_wall_mark_file_curve_respects_turn_direction_for_inside_outsid
         boundary_id: sum(1 for entry in mark_file.entries if entry.boundary_id == boundary_id)
         for boundary_id in {entry.boundary_id for entry in mark_file.entries}
     }
-    assert boundary_counts == {0: 8, 1: 6}
+    assert boundary_counts == {0: 13, 1: 10}
 
 
 def test_generate_wall_mark_file_two_texture_pattern_allows_single_wall_remainder() -> None:
@@ -234,3 +234,68 @@ def test_generate_wall_mark_file_two_texture_pattern_allows_single_wall_remainde
     )
 
     assert [entry.mip_name for entry in mark_file.entries] == ["wall_a"]
+
+
+def test_generate_wall_mark_file_curve_inside_outside_segment_counts_follow_arc_length() -> None:
+    target_wall_length = 14.0 * 6000.0
+    radius = 50.0 * 6000.0
+    wall_offset = 5.0 * 6000.0
+    theta = 0.5 * 3.141592653589793
+    section_length = radius * theta
+
+    sections = [
+        SectionPreview(
+            section_id=0,
+            source_section_id=0,
+            type_name="curve",
+            previous_id=-1,
+            next_id=-1,
+            start=(radius, 0.0),
+            end=(0.0, radius),
+            start_dlong=0.0,
+            length=section_length,
+            center=(0.0, 0.0),
+            sang1=None,
+            sang2=None,
+            eang1=None,
+            eang2=None,
+            radius=radius,
+            start_heading=None,
+            end_heading=None,
+            polyline=[(radius, 0.0), (0.0, radius)],
+        )
+    ]
+    fsects_by_section = [
+        [
+            PreviewFSection(start_dlat=-wall_offset, end_dlat=-wall_offset, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=wall_offset, end_dlat=wall_offset, surface_type=7, type2=0),
+        ]
+    ]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="wall",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        target_wall_length=target_wall_length,
+    )
+
+    inside_length = theta * (radius - wall_offset)
+    outside_length = theta * (radius + wall_offset)
+    assert outside_length > inside_length
+
+    boundary_counts = {
+        boundary_id: sum(1 for entry in mark_file.entries if entry.boundary_id == boundary_id)
+        for boundary_id in {entry.boundary_id for entry in mark_file.entries}
+    }
+    inside_count = boundary_counts[0]
+    outside_count = boundary_counts[1]
+
+    assert outside_count >= inside_count
+
+    inside_spacing = inside_length / inside_count
+    outside_spacing = outside_length / outside_count
+    tolerance = target_wall_length * 0.06
+
+    assert abs(inside_spacing - target_wall_length) <= tolerance
+    assert abs(outside_spacing - target_wall_length) <= tolerance
