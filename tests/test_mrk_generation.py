@@ -352,3 +352,32 @@ def test_generate_wall_mark_file_stable_ids_when_boundary_dlat_ranges_cross_sign
     }
     assert sections_per_boundary[0] == {0, 1}
     assert sections_per_boundary[1] == {0, 1}
+
+
+def test_generate_wall_mark_file_boundary_ids_stay_within_max_row_slots() -> None:
+    sections = [_section(0, 0.0, 1000.0), _section(1, 1000.0, 1000.0), _section(2, 2000.0, 1000.0)]
+    fsects_by_section = [
+        [
+            PreviewFSection(start_dlat=-100.0, end_dlat=-100.0, surface_type=8, type2=0),
+            PreviewFSection(start_dlat=100.0, end_dlat=100.0, surface_type=7, type2=0),
+        ],
+        [
+            PreviewFSection(start_dlat=100.0, end_dlat=100.0, surface_type=7, type2=0),
+        ],
+        [
+            PreviewFSection(start_dlat=-100.0, end_dlat=-100.0, surface_type=8, type2=0),
+            PreviewFSection(start_dlat=100.0, end_dlat=100.0, surface_type=7, type2=0),
+        ],
+    ]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="wall",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        target_wall_length=100.0,
+    )
+
+    boundary_ids = {entry.boundary_id for entry in mark_file.entries}
+    assert boundary_ids <= {0, 1}
+    assert all(entry.boundary_id < 2 for entry in mark_file.entries)
