@@ -82,9 +82,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_drag_timer.timeout.connect(self._on_fsect_drag_timer)
 
         shortcut_labels = {
+            "previous_section": "Ctrl+PgUp",
+            "next_section": "Ctrl+PgDown",
             "new_straight": "Ctrl+Alt+S",
             "new_curve": "Ctrl+Alt+C",
             "split_section": "Ctrl+Alt+P",
+            "move_section": "Ctrl+Alt+M",
             "delete_section": "Ctrl+Alt+D",
             "set_start_finish": "Ctrl+Alt+F",
         }
@@ -104,6 +107,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
+        _set_button_shortcut(
+            self._prev_button,
+            "Previous Section",
+            shortcut_labels["previous_section"],
+        )
+        _set_button_shortcut(
+            self._next_button,
+            "Next Section",
+            shortcut_labels["next_section"],
+        )
         self._new_straight_button = QtWidgets.QPushButton("New Straight")
         self._new_straight_button.setCheckable(True)
         self._new_straight_button.setEnabled(False)
@@ -126,6 +139,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._move_section_button.setCheckable(True)
         self._move_section_button.setChecked(False)
         self._move_section_button.setEnabled(False)
+        _set_button_shortcut(
+            self._move_section_button,
+            "Move Section",
+            shortcut_labels["move_section"],
+        )
         self._delete_section_button = QtWidgets.QPushButton("Delete Section")
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
