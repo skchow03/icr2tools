@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import re
 
 from sg_viewer.model.dlong_mapping import dlong_to_section_position
@@ -159,6 +160,47 @@ def _boundary_rows_for_section(fsects: list[PreviewFSection]) -> list[PreviewFSe
     return rows
 
 
+def _flipped_u(uv_rect: MarkUvRect) -> MarkUvRect:
+    return MarkUvRect(
+        upper_left_u=uv_rect.lower_right_u,
+        upper_left_v=uv_rect.upper_left_v,
+        lower_right_u=uv_rect.upper_left_u,
+        lower_right_v=uv_rect.lower_right_v,
+    )
+
+
+def _average_dlat(boundary: PreviewFSection) -> float:
+    return (float(boundary.start_dlat) + float(boundary.end_dlat)) * 0.5
+
+
+def _boundary_span_length(section: SectionPreview, boundary: PreviewFSection) -> float:
+    base_length = max(0.0, float(section.length))
+    if base_length <= 0.0:
+        return 0.0
+    if section.center is None or str(section.type_name).lower() != "curve":
+        return base_length
+
+    cx, cy = float(section.center[0]), float(section.center[1])
+    sx, sy = float(section.start[0]), float(section.start[1])
+    ex, ey = float(section.end[0]), float(section.end[1])
+
+    start_angle = math.atan2(sy - cy, sx - cx)
+    end_angle = math.atan2(ey - cy, ex - cx)
+    delta = abs(end_angle - start_angle)
+    if delta > math.pi:
+        delta = 2.0 * math.pi - delta
+
+    base_radius = float(section.radius) if section.radius is not None else math.hypot(sx - cx, sy - cy)
+    if base_radius <= 1e-9:
+        return base_length
+
+    if delta <= 1e-9:
+        delta = base_length / base_radius
+
+    offset_radius = max(0.0, base_radius + _average_dlat(boundary))
+    return max(0.0, delta * offset_radius)
+
+
 def generate_wall_mark_file(
     *,
     sections: list[SectionPreview],
@@ -185,36 +227,46 @@ def generate_wall_mark_file(
     if any(not texture.mip_name.strip() for texture in textures):
         raise ValueError("Texture MIP file names cannot be empty")
 
-    boundaries: dict[int, list[tuple[float, float]]] = {}
+    boundaries: dict[int, list[tuple[float, float, float, bool]]] = {}
     for section, fsects in zip(sections, fsects_by_section):
         section_start = float(section.start_dlong)
         section_end = section_start + max(0.0, float(section.length))
         if section_end <= section_start:
             continue
-        for boundary_id, _boundary in enumerate(_boundary_rows_for_section(fsects)):
-            boundaries.setdefault(boundary_id, []).append((section_start, section_end))
+        for boundary_id, boundary in enumerate(_boundary_rows_for_section(fsects)):
+            boundaries.setdefault(boundary_id, []).append(
+                (
+                    section_start,
+                    section_end,
+                    _boundary_span_length(section, boundary),
+                    _average_dlat(boundary) < 0.0,
+                )
+            )
 
     entries: list[MarkBoundaryEntry] = []
     for boundary_id, spans in sorted(boundaries.items()):
         wall_index = 0
-        for span_start, span_end in sorted(spans, key=lambda span: span[0]):
-            span_length = span_end - span_start
+        for span_start, span_end, span_length, flip_u in sorted(spans, key=lambda span: span[0]):
+            span_length = max(0.0, span_length)
+            if span_length <= 0.0:
+                span_length = span_end - span_start
             segment_count = max(1, int(round(span_length / target_wall_length)))
-            spacing = span_length / float(segment_count)
+            dlong_spacing = (span_end - span_start) / float(segment_count)
             for index in range(segment_count):
-                start_dlong = span_start + spacing * index
-                end_dlong = span_start + spacing * (index + 1)
+                start_dlong = span_start + dlong_spacing * index
+                end_dlong = span_start + dlong_spacing * (index + 1)
                 start = dlong_to_section_position(sections, start_dlong, track_length)
                 end = dlong_to_section_position(sections, end_dlong, track_length)
                 if start is None or end is None:
                     continue
                 texture = textures[wall_index % len(textures)]
+                texture_uv = _flipped_u(texture.uv_rect) if flip_u else texture.uv_rect
                 entries.append(
                     MarkBoundaryEntry(
                         pointer_name=f"b{boundary_id}_wall{wall_index:04d}",
                         boundary_id=boundary_id,
                         mip_name=texture.mip_name,
-                        uv_rect=texture.uv_rect,
+                        uv_rect=texture_uv,
                         start=MarkTrackPosition(
                             section=start.section_index,
                             fraction=start.fraction,
