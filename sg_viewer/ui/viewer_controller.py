@@ -256,12 +256,22 @@ class SGViewerController:
         self._xsect_table_action.setEnabled(False)
         self._xsect_table_action.triggered.connect(self._section_editing_coordinator.show_xsect_table)
 
+        self._previous_section_action = QtWidgets.QAction("Previous Section", self._window)
+        self._previous_section_action.setShortcut("Ctrl+PgUp")
+
+        self._next_section_action = QtWidgets.QAction("Next Section", self._window)
+        self._next_section_action.setShortcut("Ctrl+PgDown")
+
         self._new_straight_mode_action = QtWidgets.QAction("New Straight", self._window)
+        self._new_straight_mode_action.setShortcut("Ctrl+Alt+S")
         self._new_straight_mode_action.setCheckable(True)
         self._new_straight_mode_action.setChecked(self._window.new_straight_button.isChecked())
+        self._previous_section_action.setEnabled(self._window.prev_button.isEnabled())
+        self._next_section_action.setEnabled(self._window.next_button.isEnabled())
         self._new_straight_mode_action.setEnabled(self._window.new_straight_button.isEnabled())
 
         self._new_curve_mode_action = QtWidgets.QAction("New Curve", self._window)
+        self._new_curve_mode_action.setShortcut("Ctrl+Alt+C")
         self._new_curve_mode_action.setCheckable(True)
         self._new_curve_mode_action.setChecked(self._window.new_curve_button.isChecked())
         self._new_curve_mode_action.setEnabled(self._window.new_curve_button.isEnabled())
@@ -272,11 +282,13 @@ class SGViewerController:
         self._split_section_mode_action.setEnabled(self._window.split_section_button.isEnabled())
 
         self._move_section_mode_action = QtWidgets.QAction("Move Section", self._window)
+        self._move_section_mode_action.setShortcut("Ctrl+Alt+M")
         self._move_section_mode_action.setCheckable(True)
         self._move_section_mode_action.setChecked(self._window.move_section_button.isChecked())
         self._move_section_mode_action.setEnabled(self._window.move_section_button.isEnabled())
 
         self._delete_section_mode_action = QtWidgets.QAction("Delete Section", self._window)
+        self._delete_section_mode_action.setShortcut("Ctrl+Alt+D")
         self._delete_section_mode_action.setCheckable(True)
         self._delete_section_mode_action.setChecked(self._window.delete_section_button.isChecked())
         self._delete_section_mode_action.setEnabled(self._window.delete_section_button.isEnabled())
@@ -342,6 +354,9 @@ class SGViewerController:
         tools_menu = self._window.menuBar().addMenu("Tools")
 
         section_editing_menu = tools_menu.addMenu("Section Editing")
+        section_editing_menu.addAction(self._previous_section_action)
+        section_editing_menu.addAction(self._next_section_action)
+        section_editing_menu.addSeparator()
         section_editing_menu.addAction(self._new_straight_mode_action)
         section_editing_menu.addAction(self._new_curve_mode_action)
         section_editing_menu.addAction(self._split_section_mode_action)
@@ -532,6 +547,8 @@ class SGViewerController:
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
         self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
         self._window.next_button.clicked.connect(self._window.preview.select_next_section)
+        self._previous_section_action.triggered.connect(self._window.preview.select_previous_section)
+        self._next_section_action.triggered.connect(self._window.preview.select_next_section)
         #self._window.new_track_button.clicked.connect(self._start_new_track)
         self._window.new_straight_button.toggled.connect(
             self._toggle_new_straight_mode
@@ -1059,6 +1076,8 @@ class SGViewerController:
         self._sync_after_section_mutation()
 
     def _sync_section_editing_menu_actions(self) -> None:
+        self._previous_section_action.setEnabled(self._window.prev_button.isEnabled())
+        self._next_section_action.setEnabled(self._window.next_button.isEnabled())
         self._new_straight_mode_action.setEnabled(self._window.new_straight_button.isEnabled())
         self._new_curve_mode_action.setEnabled(self._window.new_curve_button.isEnabled())
         self._split_section_mode_action.setEnabled(self._window.split_section_button.isEnabled())
