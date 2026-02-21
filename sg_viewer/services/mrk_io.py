@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from sg_viewer.model.dlong_mapping import dlong_to_section_position
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.model.sg_model import SectionPreview
+
 
 _MARK_HEADER = "MARK_V1"
 _POS_RE = re.compile(r"^(?P<section>-?\d+)\s+(?P<fraction>-?(?:\d+(?:\.\d*)?|\.\d+))$")
@@ -132,3 +136,79 @@ def serialize_mrk(mark_file: MarkFile) -> str:
         lines.append(f"{entry.end.section} {_format_fraction(entry.end.fraction)}")
         lines.append(f"End {entry.pointer_name}")
     return "\n".join(lines) + "\n"
+
+
+_BOUNDARY_TYPES = {7, 8}
+_DEFAULT_MARK_WALL_LENGTH = 14.0 * 6000.0
+
+
+def _boundary_rows_for_section(fsects: list[PreviewFSection]) -> list[PreviewFSection]:
+    rows = [fsect for fsect in fsects if int(fsect.surface_type) in _BOUNDARY_TYPES]
+    rows.sort(
+        key=lambda fsect: (
+            min(float(fsect.start_dlat), float(fsect.end_dlat)),
+            max(float(fsect.start_dlat), float(fsect.end_dlat)),
+        )
+    )
+    return rows
+
+
+def generate_wall_mark_file(
+    *,
+    sections: list[SectionPreview],
+    fsects_by_section: list[list[PreviewFSection]],
+    mip_name: str,
+    uv_rect: MarkUvRect,
+    target_wall_length: float = _DEFAULT_MARK_WALL_LENGTH,
+) -> MarkFile:
+    if not sections:
+        return MarkFile(entries=())
+    if len(sections) != len(fsects_by_section):
+        raise ValueError("Section count does not match fsection count")
+
+    track_length = sum(max(0.0, float(section.length)) for section in sections)
+    if track_length <= 0.0:
+        return MarkFile(entries=())
+
+    boundaries: dict[int, list[tuple[float, float]]] = {}
+    for section, fsects in zip(sections, fsects_by_section):
+        section_start = float(section.start_dlong)
+        section_end = section_start + max(0.0, float(section.length))
+        if section_end <= section_start:
+            continue
+        for boundary_id, _boundary in enumerate(_boundary_rows_for_section(fsects)):
+            boundaries.setdefault(boundary_id, []).append((section_start, section_end))
+
+    entries: list[MarkBoundaryEntry] = []
+    for boundary_id, spans in sorted(boundaries.items()):
+        wall_index = 0
+        for span_start, span_end in sorted(spans, key=lambda span: span[0]):
+            span_length = span_end - span_start
+            segment_count = max(1, int(round(span_length / target_wall_length)))
+            spacing = span_length / float(segment_count)
+            for index in range(segment_count):
+                start_dlong = span_start + spacing * index
+                end_dlong = span_start + spacing * (index + 1)
+                start = dlong_to_section_position(sections, start_dlong, track_length)
+                end = dlong_to_section_position(sections, end_dlong, track_length)
+                if start is None or end is None:
+                    continue
+                entries.append(
+                    MarkBoundaryEntry(
+                        pointer_name=f"b{boundary_id}_wall{wall_index:04d}",
+                        boundary_id=boundary_id,
+                        mip_name=mip_name,
+                        uv_rect=uv_rect,
+                        start=MarkTrackPosition(
+                            section=start.section_index,
+                            fraction=start.fraction,
+                        ),
+                        end=MarkTrackPosition(
+                            section=end.section_index,
+                            fraction=end.fraction,
+                        ),
+                    )
+                )
+                wall_index += 1
+
+    return MarkFile(entries=tuple(entries))

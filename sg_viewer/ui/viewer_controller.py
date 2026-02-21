@@ -10,6 +10,7 @@ from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
+from sg_viewer.services.mrk_io import MarkUvRect, generate_wall_mark_file, serialize_mrk
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -654,6 +655,7 @@ class SGViewerController:
         self._window.delete_fsect_button.clicked.connect(
             self._delete_selected_fsect
         )
+        self._window.generate_mrk_button.clicked.connect(self._generate_mrk_file)
         self._delete_fsect_action.triggered.connect(self._delete_selected_fsect)
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
@@ -1191,6 +1193,118 @@ class SGViewerController:
         self._window.delete_fsect_button.setEnabled(delete_enabled)
         self._delete_fsect_action.setEnabled(delete_enabled)
 
+
+    def _update_mrk_button(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        self._window.generate_mrk_button.setEnabled(bool(sections))
+
+    def _prompt_mrk_generation_options(self) -> tuple[str, MarkUvRect] | None:
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Generate MRK")
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        form = QtWidgets.QFormLayout()
+        mip_edit = QtWidgets.QLineEdit(dialog)
+        mip_edit.setText("walldk")
+        form.addRow("MIP file name:", mip_edit)
+
+        def _spin_box(value: int = 0) -> QtWidgets.QSpinBox:
+            spin = QtWidgets.QSpinBox(dialog)
+            spin.setRange(-32768, 32767)
+            spin.setValue(value)
+            return spin
+
+        ul_u = _spin_box(0)
+        ul_v = _spin_box(0)
+        lr_u = _spin_box(1023)
+        lr_v = _spin_box(15)
+
+        form.addRow("Upper-left U:", ul_u)
+        form.addRow("Upper-left V:", ul_v)
+        form.addRow("Lower-right U:", lr_u)
+        form.addRow("Lower-right V:", lr_v)
+        layout.addLayout(form)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal,
+            dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return None
+
+        mip_name = mip_edit.text().strip()
+        if not mip_name:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Generate MRK",
+                "Please provide a MIP file name.",
+            )
+            return None
+
+        uv_rect = MarkUvRect(
+            upper_left_u=ul_u.value(),
+            upper_left_v=ul_v.value(),
+            lower_right_u=lr_u.value(),
+            lower_right_v=lr_v.value(),
+        )
+        return mip_name, uv_rect
+
+    def _generate_mrk_file(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Generate MRK",
+                "There are no track sections available.",
+            )
+            return
+
+        options = self._prompt_mrk_generation_options()
+        if options is None:
+            return
+        mip_name, uv_rect = options
+
+        output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Save MRK file",
+            "track.mrk",
+            "MRK Files (*.mrk);;All Files (*)",
+        )
+        if not output_path:
+            return
+
+        path = Path(output_path)
+        if not path.suffix:
+            path = path.with_suffix(".mrk")
+
+        mark_file = generate_wall_mark_file(
+            sections=sections,
+            fsects_by_section=[self._window.preview.get_section_fsects(i) for i, _ in enumerate(sections)],
+            mip_name=mip_name,
+            uv_rect=uv_rect,
+        )
+
+        try:
+            path.write_text(serialize_mrk(mark_file), encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Generate MRK",
+                f"Failed to write MRK file:\n{exc}",
+            )
+            return
+
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Generate MRK",
+            f"Saved {len(mark_file.entries)} MRK entries to {path.name}.",
+        )
+
     def _current_xsect_index(self) -> int | None:
         combo = self._window.xsect_combo
         if not combo.isEnabled():
@@ -1406,6 +1520,7 @@ class SGViewerController:
         self._update_copy_xsect_button()
         self._update_copy_fsects_buttons()
         self._update_fsect_edit_buttons()
+        self._update_mrk_button()
         sections, _ = self._window.preview.get_section_set()
         self._run_integrity_checks_action.setEnabled(bool(sections))
 
@@ -1428,6 +1543,7 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
         self._update_copy_fsects_buttons()
         self._update_fsect_edit_buttons()
+        self._update_mrk_button()
 
     def _sync_after_measurement_unit_change(self) -> None:
         """Sync unit-sensitive controls and displays after unit selection changes."""
