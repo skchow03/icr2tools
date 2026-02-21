@@ -47,6 +47,10 @@ class DocumentController:
     def __init__(self, host: DocumentControllerHost, logger: logging.Logger) -> None:
         self._host = host
         self._logger = logger
+        self._export_csv_on_save = True
+
+    def set_export_csv_on_save(self, enabled: bool) -> None:
+        self._export_csv_on_save = enabled
 
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
@@ -298,7 +302,8 @@ class DocumentController:
         self._host._history.record_save(path)
         self._host._refresh_recent_menu()
         self._host._persist_background_state()
-        self.convert_sg_to_csv(path)
+        if self._export_csv_on_save:
+            self.convert_sg_to_csv(path)
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(path=self._host._current_path, is_dirty=False)
 

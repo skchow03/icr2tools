@@ -138,6 +138,11 @@ class SGViewerController:
         self._save_action.setEnabled(True)
         self._save_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
 
+        self._export_csv_on_save_action = QtWidgets.QAction("Export CSVs on Save", self._window)
+        self._export_csv_on_save_action.setCheckable(True)
+        self._export_csv_on_save_action.setChecked(True)
+        self._export_csv_on_save_action.triggered.connect(self._toggle_export_csv_on_save)
+
         self._scale_track_action = QtWidgets.QAction(
             "Scale Track to Length…",
             self._window,
@@ -340,6 +345,7 @@ class SGViewerController:
         file_menu.addSeparator()
         file_menu.addAction(self._save_current_action)
         file_menu.addAction(self._save_action)
+        file_menu.addAction(self._export_csv_on_save_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -971,6 +977,9 @@ class SGViewerController:
 
     def _save_to_path(self, path: Path) -> None:
         self._file_menu_coordinator.save_to_path(path)
+
+    def _toggle_export_csv_on_save(self, enabled: bool) -> None:
+        self._document_controller.set_export_csv_on_save(enabled)
 
     def _recalculate_elevations(self) -> None:
         preview = self._window.preview

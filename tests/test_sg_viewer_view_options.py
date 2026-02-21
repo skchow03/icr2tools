@@ -400,7 +400,7 @@ def test_save_action_saves_to_current_path(qapp, monkeypatch, tmp_path):
             saved_paths.append(path)
 
         monkeypatch.setattr(window.preview, "save_sg", _fake_save)
-        monkeypatch.setattr(controller, "_convert_sg_to_csv", lambda _path: None)
+        controller._document_controller.set_export_csv_on_save(False)
 
         controller._save_current_action.trigger()
 
@@ -438,5 +438,47 @@ def test_adjusted_dlong_labels_auto_update_without_toggle(qapp):
             window._adjusted_section_length_label.text()
             == "Adjusted Section Length: 1001.2 ft (0.190 miles)"
         )
+    finally:
+        window.close()
+
+
+def test_file_menu_exposes_export_csv_on_save_toggle(qapp):
+    window = SGViewerWindow()
+    try:
+        file_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+        )
+        export_action = next(
+            action for action in file_menu.actions() if action.text() == "Export CSVs on Save"
+        )
+
+        assert export_action.isCheckable()
+        assert export_action.isChecked()
+    finally:
+        window.close()
+
+
+def test_export_csv_on_save_toggle_controls_csv_export(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        target_path = tmp_path / "loaded.sg"
+
+        save_calls = []
+        csv_calls = []
+
+        monkeypatch.setattr(window.preview, "save_sg", lambda path: save_calls.append(path))
+        monkeypatch.setattr(
+            controller._document_controller,
+            "convert_sg_to_csv",
+            lambda path: csv_calls.append(path),
+        )
+
+        controller._document_controller.save_to_path(target_path)
+        controller._export_csv_on_save_action.setChecked(False)
+        controller._document_controller.save_to_path(target_path)
+
+        assert save_calls == [target_path, target_path]
+        assert csv_calls == [target_path]
     finally:
         window.close()
