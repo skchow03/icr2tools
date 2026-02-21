@@ -162,6 +162,53 @@ class _BoundarySignature:
     dlat_range: tuple[float, float]
 
 
+@dataclass(frozen=True)
+class _BoundaryDistanceLookup:
+    distances: tuple[float, ...]
+    ratios: tuple[float, ...]
+
+    @property
+    def length(self) -> float:
+        if not self.distances:
+            return 0.0
+        return max(0.0, float(self.distances[-1]))
+
+    def ratio_at_distance(self, distance: float) -> float:
+        if not self.distances or not self.ratios:
+            return 0.0
+        if len(self.distances) == 1:
+            return float(self.ratios[0])
+
+        query = min(max(0.0, float(distance)), self.length)
+        for index in range(1, len(self.distances)):
+            end_distance = float(self.distances[index])
+            if query <= end_distance:
+                start_distance = float(self.distances[index - 1])
+                start_ratio = float(self.ratios[index - 1])
+                end_ratio = float(self.ratios[index])
+                span = end_distance - start_distance
+                if span <= 1e-9:
+                    return end_ratio
+                blend = (query - start_distance) / span
+                return start_ratio + (end_ratio - start_ratio) * blend
+        return float(self.ratios[-1])
+
+
+@dataclass(frozen=True)
+class _BoundarySectionSpan:
+    section_start: float
+    section_end: float
+    length: float
+    flip_u: bool
+    lookup: _BoundaryDistanceLookup
+
+
+@dataclass(frozen=True)
+class _BoundaryRun:
+    boundary_id: int
+    spans: tuple[_BoundarySectionSpan, ...]
+
+
 def _boundary_rows_for_section(fsects: list[PreviewFSection]) -> list[PreviewFSection]:
     rows = [fsect for fsect in fsects if int(fsect.surface_type) in _BOUNDARY_TYPES]
     rows.sort(
@@ -258,6 +305,44 @@ def _boundary_polyline(section: SectionPreview, boundary: PreviewFSection) -> li
     return boundary_points
 
 
+def _build_boundary_distance_lookup(section: SectionPreview, boundary: PreviewFSection) -> _BoundaryDistanceLookup:
+    boundary_points = _boundary_polyline(section, boundary)
+    if len(boundary_points) < 2:
+        return _BoundaryDistanceLookup(distances=(0.0, 1.0), ratios=(0.0, 1.0))
+
+    distances: list[float] = [0.0]
+    ratios: list[float] = [0.0]
+    total = 0.0
+    point_count = len(boundary_points)
+    for index in range(1, point_count):
+        x1, y1 = boundary_points[index - 1]
+        x2, y2 = boundary_points[index]
+        total += math.hypot(x2 - x1, y2 - y1)
+        distances.append(total)
+        ratios.append(index / float(point_count - 1))
+
+    if total <= 1e-9:
+        return _BoundaryDistanceLookup(distances=(0.0, 1.0), ratios=(0.0, 1.0))
+    return _BoundaryDistanceLookup(distances=tuple(distances), ratios=tuple(ratios))
+
+
+def _boundary_run_dlong_at_distance(run: _BoundaryRun, distance: float) -> float | None:
+    if not run.spans:
+        return None
+
+    remaining = min(max(0.0, float(distance)), sum(span.length for span in run.spans))
+    for span in run.spans:
+        if span.length <= 1e-9:
+            continue
+        if remaining <= span.length:
+            ratio = span.lookup.ratio_at_distance(remaining)
+            dlong_length = max(0.0, span.section_end - span.section_start)
+            return span.section_start + dlong_length * ratio
+        remaining -= span.length
+
+    last = run.spans[-1]
+    return last.section_end
+
 def _boundary_span_length(section: SectionPreview, boundary: PreviewFSection) -> float:
     base_length = max(0.0, float(section.length))
     if base_length <= 0.0:
@@ -310,7 +395,7 @@ def generate_wall_mark_file(
     if any(not texture.mip_name.strip() for texture in textures):
         raise ValueError("Texture MIP file names cannot be empty")
 
-    boundaries: dict[int, list[tuple[float, float, float, bool]]] = {}
+    boundaries: dict[int, list[_BoundarySectionSpan]] = {}
 
     section_rows = sorted(
         zip(sections, fsects_by_section),
@@ -384,48 +469,23 @@ def generate_wall_mark_file(
                     matched_slot,
                 )
 
+            lookup = _build_boundary_distance_lookup(section, boundary)
+            span_length = lookup.length
+            if span_length <= 0.0:
+                span_length = _boundary_span_length(section, boundary)
+            if span_length <= 0.0:
+                span_length = max(0.0, section_end - section_start)
             boundaries.setdefault(matched_slot, []).append(
-                (
-                    section_start,
-                    section_end,
-                    _boundary_span_length(section, boundary),
-                    _average_dlat(boundary) < 0.0,
+                _BoundarySectionSpan(
+                    section_start=section_start,
+                    section_end=section_end,
+                    length=span_length,
+                    flip_u=signature.avg_dlat < 0.0,
+                    lookup=lookup,
                 )
             )
 
-    def _dlong_at_boundary_distance(
-        spans: list[tuple[float, float, float, bool]],
-        distance: float,
-    ) -> float:
-        remaining = max(0.0, float(distance))
-        for span_start, span_end, span_length, _ in spans:
-            dlong_length = max(0.0, span_end - span_start)
-            if dlong_length <= 0.0:
-                continue
-            effective_span = max(0.0, span_length)
-            if effective_span <= 0.0:
-                effective_span = dlong_length
-            if remaining <= effective_span:
-                ratio = remaining / effective_span if effective_span > 1e-9 else 0.0
-                return span_start + dlong_length * ratio
-            remaining -= effective_span
-        return spans[-1][1]
-
-    def _flip_u_for_boundary_distance(
-        spans: list[tuple[float, float, float, bool]],
-        distance: float,
-    ) -> bool:
-        remaining = max(0.0, float(distance))
-        for _, _, span_length, flip_u in spans:
-            effective_span = max(0.0, span_length)
-            if effective_span <= 0.0:
-                continue
-            if remaining <= effective_span:
-                return flip_u
-            remaining -= effective_span
-        return spans[-1][3]
-
-    entries: list[MarkBoundaryEntry] = []
+    boundary_runs: list[_BoundaryRun] = []
     for boundary_id, raw_spans in sorted(boundaries.items()):
         if boundary_id < 0 or boundary_id >= max_boundary_rows:
             _LOGGER.warning(
@@ -434,52 +494,63 @@ def generate_wall_mark_file(
                 max_boundary_rows,
             )
             continue
-        spans = sorted(raw_spans, key=lambda span: span[0])
-        total_boundary_length = sum(max(0.0, span[2]) for span in spans)
-        if total_boundary_length <= 0.0:
-            total_boundary_length = sum(max(0.0, span[1] - span[0]) for span in spans)
+        spans = sorted(raw_spans, key=lambda span: span.section_start)
+        current: list[_BoundarySectionSpan] = []
+        previous_end: float | None = None
+        for span in spans:
+            if previous_end is not None and span.section_start > previous_end + 1e-6:
+                if current:
+                    boundary_runs.append(_BoundaryRun(boundary_id=boundary_id, spans=tuple(current)))
+                current = []
+            current.append(span)
+            previous_end = span.section_end
+        if current:
+            boundary_runs.append(_BoundaryRun(boundary_id=boundary_id, spans=tuple(current)))
+
+    entries: list[MarkBoundaryEntry] = []
+    wall_index_by_boundary: dict[int, int] = {}
+    for run in boundary_runs:
+        total_boundary_length = sum(max(0.0, span.length) for span in run.spans)
         if total_boundary_length <= 0.0:
             continue
 
-        wall_index = 0
-        segment_count = max(1, int(round(total_boundary_length / target_wall_length)))
         if debug_boundary_matching:
             _LOGGER.debug(
-                "MRK boundary summary boundary_id=%s span_count=%s total_length=%.3f segment_count=%s",
-                boundary_id,
-                len(spans),
+                "MRK boundary summary boundary_id=%s span_count=%s total_length=%.3f",
+                run.boundary_id,
+                len(run.spans),
                 total_boundary_length,
-                segment_count,
             )
-        spacing = total_boundary_length / float(segment_count)
-        for index in range(segment_count):
-            start_distance = spacing * index
-            end_distance = spacing * (index + 1)
-            start_dlong = _dlong_at_boundary_distance(spans, start_distance)
-            end_dlong = _dlong_at_boundary_distance(spans, end_distance)
+
+        wall_index = wall_index_by_boundary.get(run.boundary_id, 0)
+        position = 0.0
+        while position < total_boundary_length - 1e-9:
+            start_distance = position
+            end_distance = min(position + target_wall_length, total_boundary_length)
+            start_dlong = _boundary_run_dlong_at_distance(run, start_distance)
+            end_dlong = _boundary_run_dlong_at_distance(run, end_distance)
+            if start_dlong is None or end_dlong is None:
+                break
             start = dlong_to_section_position(sections, start_dlong, track_length)
             end = dlong_to_section_position(sections, end_dlong, track_length)
             if start is None or end is None:
+                position = end_distance
                 continue
+
             texture = textures[wall_index % len(textures)]
-            flip_u = _flip_u_for_boundary_distance(spans, (start_distance + end_distance) * 0.5)
-            texture_uv = _flipped_u(texture.uv_rect) if flip_u else texture.uv_rect
+            texture_uv = _flipped_u(texture.uv_rect) if run.spans[0].flip_u else texture.uv_rect
             entries.append(
                 MarkBoundaryEntry(
-                    pointer_name=f"b{boundary_id}_wall{wall_index:04d}",
-                    boundary_id=boundary_id,
+                    pointer_name=f"b{run.boundary_id}_wall{wall_index:04d}",
+                    boundary_id=run.boundary_id,
                     mip_name=texture.mip_name,
                     uv_rect=texture_uv,
-                    start=MarkTrackPosition(
-                        section=start.section_index,
-                        fraction=start.fraction,
-                    ),
-                    end=MarkTrackPosition(
-                        section=end.section_index,
-                        fraction=end.fraction,
-                    ),
+                    start=MarkTrackPosition(section=start.section_index, fraction=start.fraction),
+                    end=MarkTrackPosition(section=end.section_index, fraction=end.fraction),
                 )
             )
             wall_index += 1
+            wall_index_by_boundary[run.boundary_id] = wall_index
+            position = end_distance
 
     return MarkFile(entries=tuple(entries))

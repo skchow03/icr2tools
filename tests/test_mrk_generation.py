@@ -234,6 +234,50 @@ def test_generate_wall_mark_file_two_texture_pattern_allows_single_wall_remainde
     assert [entry.mip_name for entry in mark_file.entries] == ["wall_a"]
 
 
+def test_generate_wall_mark_file_uses_target_wall_length_with_remainder_segment() -> None:
+    target_wall_length = 14.0
+    sections = [_section(0, 0.0, 50.0)]
+    fsects_by_section = [[PreviewFSection(start_dlat=0.0, end_dlat=0.0, surface_type=7, type2=0)]]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="wall",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        target_wall_length=target_wall_length,
+    )
+
+    lengths = []
+    for entry in mark_file.entries:
+        start = sections[entry.start.section].start_dlong + sections[entry.start.section].length * entry.start.fraction
+        end = sections[entry.end.section].start_dlong + sections[entry.end.section].length * entry.end.fraction
+        lengths.append(end - start)
+
+    assert lengths == [14.0, 14.0, 14.0, 8.0]
+
+
+def test_generate_wall_mark_file_splits_discontinuous_boundary_runs() -> None:
+    sections = [_section(0, 0.0, 100.0), _section(1, 100.0, 100.0), _section(2, 200.0, 100.0)]
+    fsects_by_section = [
+        [PreviewFSection(start_dlat=100.0, end_dlat=100.0, surface_type=7, type2=0)],
+        [],
+        [PreviewFSection(start_dlat=100.0, end_dlat=100.0, surface_type=7, type2=0)],
+    ]
+
+    mark_file = generate_wall_mark_file(
+        sections=sections,
+        fsects_by_section=fsects_by_section,
+        mip_name="wall",
+        uv_rect=MarkUvRect(0, 0, 1, 1),
+        target_wall_length=30.0,
+    )
+
+    spans = [(entry.start.section, entry.end.section) for entry in mark_file.entries]
+    assert all((start, end) in {(0, 0), (2, 2)} for start, end in spans)
+    assert any(start == 0 for start, _ in spans)
+    assert any(start == 2 for start, _ in spans)
+
+
 def test_generate_wall_mark_file_curve_inside_outside_segment_counts_follow_arc_length() -> None:
     target_wall_length = 14.0 * 6000.0
     radius = 50.0 * 6000.0
