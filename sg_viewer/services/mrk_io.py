@@ -162,14 +162,6 @@ class _BoundarySignature:
     dlat_range: tuple[float, float]
 
 
-@dataclass
-class _BoundaryTrack:
-    boundary_id: int
-    surface_type: int
-    type2: int
-    last_avg_dlat: float
-
-
 def _boundary_rows_for_section(fsects: list[PreviewFSection]) -> list[PreviewFSection]:
     rows = [fsect for fsect in fsects if int(fsect.surface_type) in _BOUNDARY_TYPES]
     rows.sort(
@@ -319,52 +311,69 @@ def generate_wall_mark_file(
         raise ValueError("Texture MIP file names cannot be empty")
 
     boundaries: dict[int, list[tuple[float, float, float, bool]]] = {}
-    active_tracks: list[_BoundaryTrack] = []
-    next_boundary_id = 0
 
     section_rows = sorted(
         zip(sections, fsects_by_section),
         key=lambda row: float(row[0].start_dlong),
     )
-    for section_index, (section, fsects) in enumerate(section_rows):
+    boundary_rows_by_section = [_boundary_rows_for_section(fsects) for _, fsects in section_rows]
+    max_boundary_rows = max((len(rows) for rows in boundary_rows_by_section), default=0)
+    if max_boundary_rows <= 0:
+        return MarkFile(entries=())
+
+    slot_expected: list[float | None] = [None] * max_boundary_rows
+    slot_type: list[tuple[int, int] | None] = [None] * max_boundary_rows
+
+    first_nonempty_rows = next((rows for rows in boundary_rows_by_section if rows), None)
+    if first_nonempty_rows is not None:
+        for slot, boundary in enumerate(first_nonempty_rows):
+            signature = _boundary_signature(boundary)
+            slot_expected[slot] = signature.avg_dlat
+            slot_type[slot] = (signature.surface_type, signature.type2)
+
+    for section_index, (section, _) in enumerate(section_rows):
         section_start = float(section.start_dlong)
         section_end = section_start + max(0.0, float(section.length))
         if section_end <= section_start:
             continue
-        rows = _boundary_rows_for_section(fsects)
-        used_track_ids: set[int] = set()
+        rows = boundary_rows_by_section[section_index]
+        used_slots: set[int] = set()
         for row_index, boundary in enumerate(rows):
             signature = _boundary_signature(boundary)
-            matches = [
-                track
-                for track in active_tracks
-                if track.boundary_id not in used_track_ids
-                and track.surface_type == signature.surface_type
-                and track.type2 == signature.type2
-                and abs(signature.avg_dlat - track.last_avg_dlat) <= boundary_match_tolerance
+            match_candidates = [
+                slot
+                for slot in range(max_boundary_rows)
+                if slot not in used_slots
+                and slot_type[slot] == (signature.surface_type, signature.type2)
+                and slot_expected[slot] is not None
+                and abs(signature.avg_dlat - float(slot_expected[slot])) <= boundary_match_tolerance
             ]
-            matched_track = min(
-                matches,
-                key=lambda track: abs(signature.avg_dlat - track.last_avg_dlat),
+            matched_slot = min(
+                match_candidates,
+                key=lambda slot: abs(signature.avg_dlat - float(slot_expected[slot])),
                 default=None,
             )
-            if matched_track is None:
-                matched_track = _BoundaryTrack(
-                    boundary_id=next_boundary_id,
-                    surface_type=signature.surface_type,
-                    type2=signature.type2,
-                    last_avg_dlat=signature.avg_dlat,
-                )
-                active_tracks.append(matched_track)
-                next_boundary_id += 1
 
-            boundary_id = matched_track.boundary_id
-            used_track_ids.add(boundary_id)
-            matched_track.last_avg_dlat = signature.avg_dlat
+            if matched_slot is None:
+                matched_slot = min(row_index, max_boundary_rows - 1)
+                existing_type = slot_type[matched_slot]
+                if existing_type is not None and existing_type != (signature.surface_type, signature.type2):
+                    _LOGGER.debug(
+                        "MRK boundary slot fallback type mismatch section=%s row=%s slot=%s expected_type=%s actual_type=%s",
+                        section_index,
+                        row_index,
+                        matched_slot,
+                        existing_type,
+                        (signature.surface_type, signature.type2),
+                    )
+
+            used_slots.add(matched_slot)
+            slot_expected[matched_slot] = signature.avg_dlat
+            slot_type[matched_slot] = (signature.surface_type, signature.type2)
 
             if debug_boundary_matching:
                 _LOGGER.debug(
-                    "MRK boundary match section=%s row=%s avg_dlat=%.3f range=(%.3f, %.3f) type=(%s,%s) boundary_id=%s",
+                    "MRK boundary match section=%s row=%s avg_dlat=%.3f range=(%.3f, %.3f) type=(%s,%s) slot=%s",
                     section_index,
                     row_index,
                     signature.avg_dlat,
@@ -372,10 +381,10 @@ def generate_wall_mark_file(
                     signature.dlat_range[1],
                     signature.surface_type,
                     signature.type2,
-                    boundary_id,
+                    matched_slot,
                 )
 
-            boundaries.setdefault(boundary_id, []).append(
+            boundaries.setdefault(matched_slot, []).append(
                 (
                     section_start,
                     section_end,
@@ -418,6 +427,13 @@ def generate_wall_mark_file(
 
     entries: list[MarkBoundaryEntry] = []
     for boundary_id, raw_spans in sorted(boundaries.items()):
+        if boundary_id < 0 or boundary_id >= max_boundary_rows:
+            _LOGGER.warning(
+                "Skipping MRK boundary entry with out-of-range boundary_id=%s max_boundary_rows=%s",
+                boundary_id,
+                max_boundary_rows,
+            )
+            continue
         spans = sorted(raw_spans, key=lambda span: span[0])
         total_boundary_length = sum(max(0.0, span[2]) for span in spans)
         if total_boundary_length <= 0.0:
