@@ -192,6 +192,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._add_fsect_button.setEnabled(False)
         self._delete_fsect_button = QtWidgets.QPushButton("Delete Fsect")
         self._delete_fsect_button.setEnabled(False)
+        self._generate_mrk_button = QtWidgets.QPushButton("Generate MRK for 14ft Walls…")
+        self._generate_mrk_button.setEnabled(False)
         self._section_table_action: QtWidgets.QAction | None = None
         self._heading_table_action: QtWidgets.QAction | None = None
         self._xsect_table_action: QtWidgets.QAction | None = None
@@ -457,6 +459,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         mrk_info.setWordWrap(True)
         mrk_layout.addWidget(mrk_info)
+        mrk_layout.addWidget(self._generate_mrk_button)
         mrk_layout.addStretch()
         self._mrk_sidebar.setLayout(mrk_layout)
 
@@ -609,6 +612,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def fsect_table(self) -> QtWidgets.QTableWidget:
         return self._fsect_table
+
+    @property
+    def generate_mrk_button(self) -> QtWidgets.QPushButton:
+        return self._generate_mrk_button
 
     @property
     def xsect_elevation_table(self) -> QtWidgets.QTableWidget:
