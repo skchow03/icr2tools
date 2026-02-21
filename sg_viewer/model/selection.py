@@ -9,6 +9,7 @@ from PyQt5 import QtCore
 
 from track_viewer.geometry import CenterlineIndex, project_point_to_centerline
 
+from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.model.sg_model import SectionPreview
 
 Point = Tuple[float, float]
@@ -245,25 +246,10 @@ class SelectionManager(QtCore.QObject):
         if not self._sections or self._track_length is None:
             return None
 
-        if self._section_ranges:
-            track_length = self._track_length or 0
-            for idx, (start, end) in enumerate(self._section_ranges):
-                if start <= dlong <= end:
-                    return idx
-                if track_length > 0 and end > track_length and (dlong >= start or dlong <= end - track_length):
-                    return idx
+        mapped = dlong_to_section_position(self._sections, dlong, self._track_length)
+        if mapped is None:
             return None
-
-        track_length = self._track_length or 0
-        for idx, sect in enumerate(self._sections):
-            start = float(sect.start_dlong)
-            end = start + float(sect.length)
-            if track_length > 0 and end > track_length:
-                if dlong >= start or dlong <= end - track_length:
-                    return idx
-            elif start <= dlong <= end:
-                return idx
-        return None
+        return mapped.section_index
 
     @staticmethod
     def _distance_to_polyline(point: Point, polyline: list[Point]) -> float:
