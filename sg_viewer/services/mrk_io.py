@@ -180,33 +180,15 @@ def _boundary_span_length(section: SectionPreview, boundary: PreviewFSection) ->
     if section.center is None or str(section.type_name).lower() != "curve":
         return base_length
 
-    cx, cy = float(section.center[0]), float(section.center[1])
-    sx, sy = float(section.start[0]), float(section.start[1])
-    ex, ey = float(section.end[0]), float(section.end[1])
-
-    start_angle = math.atan2(sy - cy, sx - cx)
-    end_angle = math.atan2(ey - cy, ex - cx)
-    signed_delta = end_angle - start_angle
-    while signed_delta <= -math.pi:
-        signed_delta += 2.0 * math.pi
-    while signed_delta > math.pi:
-        signed_delta -= 2.0 * math.pi
-
-    radius_value = float(section.radius) if section.radius is not None else math.hypot(sx - cx, sy - cy)
+    radius_value = float(section.radius)
     base_radius = abs(radius_value)
     if base_radius <= 1e-9:
         return base_length
 
-    delta = abs(signed_delta)
-    if delta <= 1e-9:
-        delta = base_length / base_radius
-
-    turn_sign = 1.0
-    if abs(signed_delta) > 1e-9:
-        turn_sign = 1.0 if signed_delta > 0.0 else -1.0
-
+    theta = base_length / base_radius
+    turn_sign = 1.0 if radius_value >= 0.0 else -1.0
     offset_radius = max(0.0, base_radius + turn_sign * _average_dlat(boundary))
-    return max(0.0, delta * offset_radius)
+    return max(0.0, abs(theta) * offset_radius)
 
 
 def generate_wall_mark_file(
@@ -293,7 +275,7 @@ def generate_wall_mark_file(
             continue
 
         wall_index = 0
-        segment_count = max(1, int(math.floor(total_boundary_length / target_wall_length)))
+        segment_count = max(1, int(round(total_boundary_length / target_wall_length)))
         spacing = total_boundary_length / float(segment_count)
         for index in range(segment_count):
             start_distance = spacing * index
