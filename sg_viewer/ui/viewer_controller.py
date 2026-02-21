@@ -165,7 +165,7 @@ class SGViewerController:
         self._reverse_track_action.triggered.connect(self._reverse_track)
 
         self._convert_trk_action = QtWidgets.QAction(
-            "Convert SG to TRK…",
+            "Export SG to TRK…",
             self._window,
         )
         self._convert_trk_action.triggered.connect(self._convert_sg_to_trk)
@@ -346,6 +346,7 @@ class SGViewerController:
         file_menu.addAction(self._save_current_action)
         file_menu.addAction(self._save_action)
         file_menu.addAction(self._export_csv_on_save_action)
+        file_menu.addAction(self._convert_trk_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -391,9 +392,6 @@ class SGViewerController:
         fsects_menu.addSeparator()
         fsects_menu.addAction(self._add_fsect_action)
         fsects_menu.addAction(self._delete_fsect_action)
-
-        conversion_menu = tools_menu.addMenu("Conversion")
-        conversion_menu.addAction(self._convert_trk_action)
 
         tools_menu.addSeparator()
         tools_menu.addAction(self._run_integrity_checks_action)
