@@ -68,6 +68,7 @@ class PreviewPresenter:
             view_state=self._runtime.sg_preview_view_state,
             enabled=self._runtime.show_sg_fsects,
             show_mrk_notches=self._runtime.show_mrk_notches,
+            selected_mrk_wall=self._runtime.selected_mrk_wall,
         )
 
         preview_painter.paint_preview(

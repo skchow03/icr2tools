@@ -103,6 +103,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
+        self._mrk_boundary_spin = QtWidgets.QSpinBox()
+        self._mrk_boundary_spin.setRange(0, 9999)
+        self._mrk_boundary_spin.setValue(0)
+        self._mrk_track_section_spin = QtWidgets.QSpinBox()
+        self._mrk_track_section_spin.setRange(0, 9999)
+        self._mrk_track_section_spin.setValue(0)
+        self._mrk_wall_index_spin = QtWidgets.QSpinBox()
+        self._mrk_wall_index_spin.setRange(0, 9999)
+        self._mrk_wall_index_spin.setValue(0)
+        self._mrk_select_button = QtWidgets.QPushButton("Select Wall")
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
@@ -470,10 +480,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()
         mrk_info = QtWidgets.QLabel(
-            "MRK mode marks boundary notch divisions at approximately 14 ft spacing."
+            "MRK mode marks boundary notch divisions at approximately 14 ft spacing.\n"
+            "Walls are addressed by boundary #, track section #, and wall index."
         )
         mrk_info.setWordWrap(True)
         mrk_layout.addWidget(mrk_info)
+        mrk_form = QtWidgets.QFormLayout()
+        mrk_form.addRow("Boundary #:", self._mrk_boundary_spin)
+        mrk_form.addRow("Track Section #:", self._mrk_track_section_spin)
+        mrk_form.addRow("Wall Index:", self._mrk_wall_index_spin)
+        mrk_layout.addLayout(mrk_form)
+        mrk_layout.addWidget(self._mrk_select_button)
         mrk_layout.addStretch()
         self._mrk_sidebar.setLayout(mrk_layout)
 
@@ -634,6 +651,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def right_sidebar_tabs(self) -> QtWidgets.QTabWidget:
         return self._right_sidebar_tabs
+
+    @property
+    def mrk_boundary_spin(self) -> QtWidgets.QSpinBox:
+        return self._mrk_boundary_spin
+
+    @property
+    def mrk_track_section_spin(self) -> QtWidgets.QSpinBox:
+        return self._mrk_track_section_spin
+
+    @property
+    def mrk_wall_index_spin(self) -> QtWidgets.QSpinBox:
+        return self._mrk_wall_index_spin
+
+    @property
+    def mrk_select_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_select_button
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action
