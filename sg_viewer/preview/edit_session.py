@@ -214,7 +214,13 @@ def apply_preview_to_sgfile(
                 source_end,
                 dest_start,
                 dest_end,
-            ) or reverse_track_mode
+            )
+
+            # During full-track reversal, x-sections are mirrored through
+            # ``set_xsect_definitions`` before we commit preview geometry.
+            # Reversing samples again here would undo that x-sect remap.
+            if reverse_track_mode:
+                should_reverse_orientation = False
 
             if should_reverse_orientation:
                 # Canonicalization can reverse traversal. Mirror altitude and grade
