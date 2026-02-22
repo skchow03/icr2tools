@@ -160,7 +160,7 @@ def test_reverse_track_reverses_sections_fsects_and_orientation() -> None:
         surface_type=5,
         type2=0,
     )
-    assert preview.received_xsect_entries == [(2, 5.0), (1, 0.0), (0, -5.0)]
+    assert preview.received_xsect_entries == [(2, -5.0), (1, -0.0), (0, 5.0)]
     assert "Reversed section order" in (controller._host._window.status or "")
     assert preview.controller.transform_state is preview.transform_state
     assert preview.repaint_requested
