@@ -220,7 +220,7 @@ def apply_preview_to_sgfile(
                 # Canonicalization can reverse traversal. Mirror altitude and grade
                 # samples to keep each xsect value aligned with the mirrored DLATs.
                 source_alt = list(reversed(source_alt))
-                source_grade = list(reversed(source_grade))
+                source_grade = [-grade for grade in reversed(source_grade)]
 
             sg_section.alt = source_alt
             sg_section.grade = source_grade
