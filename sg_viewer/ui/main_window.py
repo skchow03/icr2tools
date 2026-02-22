@@ -113,6 +113,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_wall_index_spin.setRange(0, 9999)
         self._mrk_wall_index_spin.setValue(0)
         self._mrk_select_button = QtWidgets.QPushButton("Select Wall")
+        self._mrk_entry_count_spin = QtWidgets.QSpinBox()
+        self._mrk_entry_count_spin.setRange(1, 9999)
+        self._mrk_entry_count_spin.setValue(1)
+        self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
+        self._mrk_entries_table = QtWidgets.QTableWidget(0, 4)
+        self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count"])
+        self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
+        self._mrk_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._mrk_entries_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._mrk_entries_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         #self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
@@ -482,6 +492,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_info = QtWidgets.QLabel(
             "MRK mode marks boundary notch divisions at approximately 14 ft spacing.\n"
             "Walls are addressed by boundary #, track section #, and wall index."
+
+            "Add entries to highlight wall ranges in the track diagram."
         )
         mrk_info.setWordWrap(True)
         mrk_layout.addWidget(mrk_info)
@@ -489,8 +501,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_form.addRow("Boundary #:", self._mrk_boundary_spin)
         mrk_form.addRow("Track Section #:", self._mrk_track_section_spin)
         mrk_form.addRow("Wall Index:", self._mrk_wall_index_spin)
+        mrk_form.addRow("Wall Count:", self._mrk_entry_count_spin)
         mrk_layout.addLayout(mrk_form)
-        mrk_layout.addWidget(self._mrk_select_button)
+        mrk_buttons = QtWidgets.QHBoxLayout()
+        mrk_buttons.addWidget(self._mrk_select_button)
+        mrk_buttons.addWidget(self._mrk_add_entry_button)
+        mrk_layout.addLayout(mrk_buttons)
+        mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()
         self._mrk_sidebar.setLayout(mrk_layout)
 
@@ -667,6 +684,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_select_button(self) -> QtWidgets.QPushButton:
         return self._mrk_select_button
+
+    @property
+    def mrk_entry_count_spin(self) -> QtWidgets.QSpinBox:
+        return self._mrk_entry_count_spin
+
+    @property
+    def mrk_add_entry_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_add_entry_button
+
+    @property
+    def mrk_entries_table(self) -> QtWidgets.QTableWidget:
+        return self._mrk_entries_table
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action

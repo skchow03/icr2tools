@@ -178,6 +178,10 @@ class _RuntimeCorePreviewMixin:
         return self._selected_mrk_wall
 
     @property
+    def highlighted_mrk_walls(self) -> tuple[tuple[int, int, int, int], ...]:
+        return self._highlighted_mrk_walls
+
+    @property
     def show_xsect_dlat_line(self) -> bool:
         return self._show_xsect_dlat_line
 
@@ -328,6 +332,18 @@ class _RuntimeCorePreviewMixin:
             max(0, int(section_index)),
             max(0, int(wall_index)),
         )
+        self._context.request_repaint()
+
+    def set_highlighted_mrk_walls(self, entries: list[tuple[int, int, int, int]] | tuple[tuple[int, int, int, int], ...]) -> None:
+        normalized: list[tuple[int, int, int, int]] = []
+        for boundary_index, section_index, start_wall, wall_count in entries:
+            normalized.append((
+                max(0, int(boundary_index)),
+                max(0, int(section_index)),
+                max(0, int(start_wall)),
+                max(0, int(wall_count)),
+            ))
+        self._highlighted_mrk_walls = tuple(normalized)
         self._context.request_repaint()
 
     def set_show_xsect_dlat_line(self, visible: bool) -> None:

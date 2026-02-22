@@ -117,6 +117,7 @@ class SgPreviewState:
     enabled: bool
     show_mrk_notches: bool = False
     selected_mrk_wall: tuple[int, int, int] | None = None
+    highlighted_mrk_walls: tuple[tuple[int, int, int, int], ...] = ()
 
 
 def paint_preview(
@@ -243,6 +244,7 @@ def render_sg_preview(
     *,
     show_mrk_notches: bool = False,
     selected_mrk_wall: tuple[int, int, int] | None = None,
+    highlighted_mrk_walls: tuple[tuple[int, int, int, int], ...] = (),
 ) -> None:
     if model is None or transform is None:
         return
@@ -261,6 +263,7 @@ def render_sg_preview(
                 model,
                 transform,
                 selected_wall=selected_mrk_wall,
+                highlighted_walls=highlighted_mrk_walls,
             )
 
     if _SHOW_FSECT_OUTLINES:
@@ -327,6 +330,7 @@ def _draw_mrk_notches(
     transform: ViewTransform,
     *,
     selected_wall: tuple[int, int, int] | None,
+    highlighted_walls: tuple[tuple[int, int, int, int], ...],
 ) -> None:
     notch_pen = QtGui.QPen(QtGui.QColor("white"))
     notch_pen.setWidthF(1.5)
@@ -334,7 +338,21 @@ def _draw_mrk_notches(
     notch_pen.setCapStyle(QtCore.Qt.SquareCap)
     painter.setPen(notch_pen)
 
-    selected_sample: tuple[list[Point], float, float] | None = None
+    highlight_samples: list[tuple[list[Point], float, float]] = []
+
+    highlighted_lookup: dict[tuple[int, int], set[int]] = {}
+    for boundary_index, section_index, start_wall, wall_count in highlighted_walls:
+        if wall_count <= 0:
+            continue
+        key = (section_index, boundary_index)
+        indices = highlighted_lookup.setdefault(key, set())
+        indices.update(range(max(0, start_wall), max(0, start_wall) + wall_count))
+
+    if selected_wall is not None:
+        target_boundary, target_section, target_wall = selected_wall
+        if target_wall >= 0:
+            highlighted_lookup.setdefault((target_section, target_boundary), set()).add(target_wall)
+
     for section_index, fsect in enumerate(model.fsects):
         for boundary_index, boundary in enumerate(fsect.boundaries):
             points = [
@@ -354,21 +372,17 @@ def _draw_mrk_notches(
                     notch,
                     half_length_px=_MRK_NOTCH_HALF_LENGTH_PX,
                 )
-            if selected_wall is None:
-                continue
-            target_boundary, target_section, target_wall = selected_wall
-            if (
-                section_index != target_section
-                or boundary_index != target_boundary
-                or target_wall < 0
-            ):
+            requested_indices = highlighted_lookup.get((section_index, boundary_index))
+            if not requested_indices:
                 continue
             wall_ranges = _division_wall_ranges(points, notch_points)
-            if target_wall >= len(wall_ranges):
-                continue
-            selected_sample = (points, wall_ranges[target_wall][0], wall_ranges[target_wall][1])
+            for wall_index in requested_indices:
+                if wall_index >= len(wall_ranges):
+                    continue
+                wall_range = wall_ranges[wall_index]
+                highlight_samples.append((points, wall_range[0], wall_range[1]))
 
-    if selected_sample is None:
+    if not highlight_samples:
         return
 
     highlight_pen = QtGui.QPen(QtGui.QColor("yellow"))
@@ -376,14 +390,14 @@ def _draw_mrk_notches(
     highlight_pen.setCosmetic(True)
     highlight_pen.setCapStyle(QtCore.Qt.RoundCap)
     painter.setPen(highlight_pen)
-    points, start_distance, end_distance = selected_sample
-    _draw_polyline_segment(
-        painter,
-        transform,
-        points,
-        start_distance,
-        end_distance,
-    )
+    for points, start_distance, end_distance in highlight_samples:
+        _draw_polyline_segment(
+            painter,
+            transform,
+            points,
+            start_distance,
+            end_distance,
+        )
 
 
 def _division_points_for_polyline(

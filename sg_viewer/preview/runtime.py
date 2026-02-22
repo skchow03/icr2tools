@@ -121,6 +121,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_sg_fsects = False
         self._show_mrk_notches = False
         self._selected_mrk_wall: tuple[int, int, int] = (0, 0, 0)
+        self._highlighted_mrk_walls: tuple[tuple[int, int, int, int], ...] = ()
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
