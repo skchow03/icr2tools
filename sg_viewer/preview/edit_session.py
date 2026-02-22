@@ -228,6 +228,9 @@ def apply_preview_to_sgfile(
                 source_alt = list(reversed(source_alt))
                 source_grade = [-grade for grade in reversed(source_grade)]
 
+            if reverse_track_mode:
+                source_grade = [-grade for grade in source_grade]
+
             sg_section.alt = source_alt
             sg_section.grade = source_grade
 
