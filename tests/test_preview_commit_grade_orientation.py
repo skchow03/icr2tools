@@ -62,10 +62,10 @@ def test_apply_preview_to_sgfile_reverses_and_negates_grade_when_reversed() -> N
     apply_preview_to_sgfile(sgfile, [_preview((30.0, 40.0), (10.0, 20.0))])
 
     assert sgfile.sects[0].alt == [300, 200, 100]
-    assert sgfile.sects[0].grade == [-7, 3, -5]
+    assert sgfile.sects[0].grade == [7, -3, 5]
 
 
-def test_apply_preview_to_sgfile_reverse_track_shifts_elevation_source_and_negates_grade() -> None:
+def test_apply_preview_to_sgfile_reverse_track_shifts_elevation_source_and_reorders_grade() -> None:
     num_xsects = 3
     record_length = 58 + 2 * num_xsects
 
@@ -154,9 +154,9 @@ def test_apply_preview_to_sgfile_reverse_track_shifts_elevation_source_and_negat
     apply_preview_to_sgfile(sgfile, reversed_preview)
 
     assert sgfile.sects[0].alt == [300, 200, 100]
-    assert sgfile.sects[0].grade == [-30, -20, -10]
+    assert sgfile.sects[0].grade == [30, 20, 10]
     assert sgfile.sects[1].alt == [600, 500, 400]
-    assert sgfile.sects[1].grade == [-60, -50, -40]
+    assert sgfile.sects[1].grade == [60, 50, 40]
 
 def test_apply_preview_to_sgfile_reverse_track_uses_previous_section_elevation_source() -> None:
     num_xsects = 2
@@ -251,8 +251,8 @@ def test_apply_preview_to_sgfile_reverse_track_uses_previous_section_elevation_s
     apply_preview_to_sgfile(sgfile, reversed_preview)
 
     assert sgfile.sects[0].alt == [202, 201]
-    assert sgfile.sects[0].grade == [-22, -21]
+    assert sgfile.sects[0].grade == [22, 21]
     assert sgfile.sects[1].alt == [102, 101]
-    assert sgfile.sects[1].grade == [-12, -11]
+    assert sgfile.sects[1].grade == [12, 11]
     assert sgfile.sects[2].alt == [302, 301]
-    assert sgfile.sects[2].grade == [-32, -31]
+    assert sgfile.sects[2].grade == [32, 31]

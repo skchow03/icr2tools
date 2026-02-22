@@ -217,10 +217,10 @@ def apply_preview_to_sgfile(
             ) or reverse_track_mode
 
             if should_reverse_orientation:
-                # Canonicalization can reverse traversal. Mirror altitude samples,
-                # and mirror+negate grades so slope direction stays correct.
+                # Canonicalization can reverse traversal. Mirror altitude and grade
+                # samples to keep each xsect value aligned with the mirrored DLATs.
                 source_alt = list(reversed(source_alt))
-                source_grade = [-int(value) for value in reversed(source_grade)]
+                source_grade = list(reversed(source_grade))
 
             sg_section.alt = source_alt
             sg_section.grade = source_grade
