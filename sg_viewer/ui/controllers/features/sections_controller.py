@@ -219,6 +219,7 @@ class SectionsController:
                         if section.type_name == "curve" and section.radius is not None
                         else section.radius
                     ),
+                    grade=[-value for value in section.grade],
                 )
             )
 
