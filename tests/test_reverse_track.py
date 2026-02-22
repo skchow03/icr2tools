@@ -46,6 +46,7 @@ class _FakePreview:
         replace_all_fsects_result: bool = True,
         xsect_metadata: list[tuple[int, float]] | None = None,
         set_xsect_definitions_result: bool = True,
+        grades_by_section: list[list[int | None]] | None = None,
     ) -> None:
         self.sections = sections
         self.fsects = fsects
@@ -59,6 +60,11 @@ class _FakePreview:
         )
         self._set_xsect_definitions_result = set_xsect_definitions_result
         self.received_xsect_entries: list[tuple[int | None, float]] | None = None
+        self.grades_by_section = (
+            [list(values) for values in grades_by_section]
+            if grades_by_section is not None
+            else [[5, -4, 0] for _ in sections]
+        )
         self.transform_state = object()
         self.controller = SimpleNamespace(transform_state=None)
         self.repaint_requested = False
@@ -84,6 +90,13 @@ class _FakePreview:
         if self._set_xsect_definitions_result:
             self._xsect_metadata = [(idx, float(dlat)) for idx, (_, dlat) in enumerate(entries)]
         return self._set_xsect_definitions_result
+
+    def get_section_xsect_grades(self, section_id: int):
+        return list(self.grades_by_section[section_id])
+
+    def set_section_xsect_grade(self, section_id: int, xsect_index: int, grade: int, *, validate: bool = True):
+        self.grades_by_section[section_id][xsect_index] = grade
+        return True
 
     def apply_preview_to_sgfile(self):
         return None
@@ -161,6 +174,7 @@ def test_reverse_track_reverses_sections_fsects_and_orientation() -> None:
         type2=0,
     )
     assert preview.received_xsect_entries == [(2, -5.0), (1, -0.0), (0, 5.0)]
+    assert preview.grades_by_section == [[-5, 4, 0], [-5, 4, 0]]
     assert "Reversed section order" in (controller._host._window.status or "")
     assert preview.controller.transform_state is preview.transform_state
     assert preview.repaint_requested

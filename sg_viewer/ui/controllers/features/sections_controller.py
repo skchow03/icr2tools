@@ -219,7 +219,6 @@ class SectionsController:
                         if section.type_name == "curve" and section.radius is not None
                         else section.radius
                     ),
-                    grade=[-value for value in section.grade],
                 )
             )
 
@@ -251,6 +250,14 @@ class SectionsController:
                     )
                     return
 
+            if not self._negate_section_grades(section_count):
+                QtWidgets.QMessageBox.warning(
+                    self._host._window,
+                    "Reverse Track",
+                    "Unable to negate section grades for the reversed track.",
+                )
+                return
+
             try:
                 self._host._window.preview.apply_preview_to_sgfile()
             except ValueError:
@@ -265,6 +272,21 @@ class SectionsController:
                 preview_controller.transform_state = original_transform_state
                 if hasattr(preview, "request_repaint"):
                     preview.request_repaint()
+
+    def _negate_section_grades(self, section_count: int) -> bool:
+        for section_index in range(section_count):
+            grades = self._host._window.preview.get_section_xsect_grades(section_index)
+            for xsect_index, grade in enumerate(grades):
+                if grade is None:
+                    continue
+                if not self._host._window.preview.set_section_xsect_grade(
+                    section_index,
+                    xsect_index,
+                    -int(grade),
+                    validate=False,
+                ):
+                    return False
+        return True
 
     def _mirror_section_fsects(
         self, fsects: list[PreviewFSection]
