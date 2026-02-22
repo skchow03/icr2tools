@@ -747,11 +747,16 @@ class SGViewerController:
         boundary_index = self._window.mrk_boundary_spin.value()
         section_index = self._window.mrk_track_section_spin.value()
         wall_index = self._window.mrk_wall_index_spin.value()
+        wall_count = self._window.mrk_entry_count_spin.value()
         self._window.preview.set_selected_mrk_wall(
             boundary_index,
             section_index,
             wall_index,
         )
+        if self._window.mrk_entries_table.rowCount() == 0:
+            self._window.preview.set_highlighted_mrk_walls(
+                [(boundary_index, section_index, wall_index, wall_count)]
+            )
 
     def _on_mrk_add_entry_requested(self) -> None:
         section_index = self._window.mrk_track_section_spin.value()
@@ -779,9 +784,11 @@ class SGViewerController:
         section_index = int(table.item(row, 0).text())
         boundary_index = int(table.item(row, 1).text())
         wall_index = int(table.item(row, 2).text())
+        wall_count = int(table.item(row, 3).text())
         self._window.mrk_track_section_spin.setValue(section_index)
         self._window.mrk_boundary_spin.setValue(boundary_index)
         self._window.mrk_wall_index_spin.setValue(wall_index)
+        self._window.mrk_entry_count_spin.setValue(wall_count)
         self._on_mrk_wall_select_requested()
 
     def _update_mrk_highlights_from_table(self) -> None:

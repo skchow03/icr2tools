@@ -245,6 +245,39 @@ def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
     finally:
         window.close()
 
+def test_mrk_select_wall_highlights_full_entry_when_no_table_rows(qapp):
+    window = SGViewerWindow()
+    try:
+        window.mrk_boundary_spin.setValue(2)
+        window.mrk_track_section_spin.setValue(7)
+        window.mrk_wall_index_spin.setValue(3)
+        window.mrk_entry_count_spin.setValue(4)
+
+        window.mrk_select_button.click()
+
+        assert window.preview.highlighted_mrk_walls == ((2, 7, 3, 4),)
+    finally:
+        window.close()
+
+
+def test_mrk_table_selection_restores_wall_count_spin(qapp):
+    window = SGViewerWindow()
+    try:
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        values = [11, 5, 2, 6]
+        for column, value in enumerate(values):
+            table.setItem(0, column, QtWidgets.QTableWidgetItem(str(value)))
+
+        table.selectRow(0)
+
+        assert window.mrk_track_section_spin.value() == 11
+        assert window.mrk_boundary_spin.value() == 5
+        assert window.mrk_wall_index_spin.value() == 2
+        assert window.mrk_entry_count_spin.value() == 6
+    finally:
+        window.close()
+
 
 def test_mrk_divisions_follow_polyline_arc_length():
     from sg_viewer.services.preview_painter import _division_points_for_polyline
