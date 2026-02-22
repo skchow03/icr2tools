@@ -654,6 +654,8 @@ class SGViewerController:
             self._on_right_sidebar_tab_changed
         )
         self._window.mrk_select_button.clicked.connect(self._on_mrk_wall_select_requested)
+        self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
+        self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -751,6 +753,48 @@ class SGViewerController:
             wall_index,
         )
 
+    def _on_mrk_add_entry_requested(self) -> None:
+        section_index = self._window.mrk_track_section_spin.value()
+        boundary_index = self._window.mrk_boundary_spin.value()
+        wall_index = self._window.mrk_wall_index_spin.value()
+        wall_count = self._window.mrk_entry_count_spin.value()
+
+        table = self._window.mrk_entries_table
+        row = table.rowCount()
+        table.insertRow(row)
+        values = [section_index, boundary_index, wall_index, wall_count]
+        for column, value in enumerate(values):
+            item = QtWidgets.QTableWidgetItem(str(int(value)))
+            item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+            table.setItem(row, column, item)
+        table.selectRow(row)
+        self._update_mrk_highlights_from_table()
+
+    def _on_mrk_entry_selection_changed(self) -> None:
+        table = self._window.mrk_entries_table
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        row = selected_rows[0].row()
+        section_index = int(table.item(row, 0).text())
+        boundary_index = int(table.item(row, 1).text())
+        wall_index = int(table.item(row, 2).text())
+        self._window.mrk_track_section_spin.setValue(section_index)
+        self._window.mrk_boundary_spin.setValue(boundary_index)
+        self._window.mrk_wall_index_spin.setValue(wall_index)
+        self._on_mrk_wall_select_requested()
+
+    def _update_mrk_highlights_from_table(self) -> None:
+        table = self._window.mrk_entries_table
+        highlights: list[tuple[int, int, int, int]] = []
+        for row in range(table.rowCount()):
+            section_index = int(table.item(row, 0).text())
+            boundary_index = int(table.item(row, 1).text())
+            wall_index = int(table.item(row, 2).text())
+            wall_count = int(table.item(row, 3).text())
+            highlights.append((boundary_index, section_index, wall_index, wall_count))
+        self._window.preview.set_highlighted_mrk_walls(highlights)
+
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index)
         if tab_name in {"Fsects", "MRK"} and not self._window.sg_fsects_checkbox.isChecked():
@@ -759,6 +803,7 @@ class SGViewerController:
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         if is_mrk_tab:
             self._on_mrk_wall_select_requested()
+            self._update_mrk_highlights_from_table()
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
