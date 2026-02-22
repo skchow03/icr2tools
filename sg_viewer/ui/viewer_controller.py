@@ -653,6 +653,7 @@ class SGViewerController:
         self._window.right_sidebar_tabs.currentChanged.connect(
             self._on_right_sidebar_tab_changed
         )
+        self._window.mrk_select_button.clicked.connect(self._on_mrk_wall_select_requested)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -740,11 +741,24 @@ class SGViewerController:
                 lambda _checked=False, color_key=key: self._on_pick_preview_color(color_key)
             )
 
+    def _on_mrk_wall_select_requested(self) -> None:
+        boundary_index = self._window.mrk_boundary_spin.value()
+        section_index = self._window.mrk_track_section_spin.value()
+        wall_index = self._window.mrk_wall_index_spin.value()
+        self._window.preview.set_selected_mrk_wall(
+            boundary_index,
+            section_index,
+            wall_index,
+        )
+
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index)
         if tab_name in {"Fsects", "MRK"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
-        self._window.preview.set_show_mrk_notches(tab_name == "MRK")
+        is_mrk_tab = tab_name == "MRK"
+        self._window.preview.set_show_mrk_notches(is_mrk_tab)
+        if is_mrk_tab:
+            self._on_mrk_wall_select_requested()
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))

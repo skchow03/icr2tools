@@ -116,6 +116,7 @@ class SgPreviewState:
     view_state: SgPreviewViewState
     enabled: bool
     show_mrk_notches: bool = False
+    selected_mrk_wall: tuple[int, int, int] | None = None
 
 
 def paint_preview(
@@ -163,6 +164,7 @@ def paint_preview(
                 sg_preview_state.transform,
                 sg_preview_state.view_state,
                 show_mrk_notches=sg_preview_state.show_mrk_notches,
+                selected_mrk_wall=sg_preview_state.selected_mrk_wall,
             )
         _draw_centerlines(
             painter,
@@ -240,6 +242,7 @@ def render_sg_preview(
     view_state: SgPreviewViewState,
     *,
     show_mrk_notches: bool = False,
+    selected_mrk_wall: tuple[int, int, int] | None = None,
 ) -> None:
     if model is None or transform is None:
         return
@@ -253,7 +256,12 @@ def render_sg_preview(
     if view_state.show_boundaries:
         _draw_boundaries(painter, model, transform)
         if show_mrk_notches:
-            _draw_mrk_notches(painter, model, transform)
+            _draw_mrk_notches(
+                painter,
+                model,
+                transform,
+                selected_wall=selected_mrk_wall,
+            )
 
     if _SHOW_FSECT_OUTLINES:
         _draw_fsect_outlines(painter, model, transform)
@@ -313,15 +321,22 @@ def _draw_fsect_outlines(painter, model: SgPreviewModel, transform: ViewTransfor
             painter.drawPolygon(points)
 
 
-def _draw_mrk_notches(painter, model: SgPreviewModel, transform: ViewTransform) -> None:
+def _draw_mrk_notches(
+    painter,
+    model: SgPreviewModel,
+    transform: ViewTransform,
+    *,
+    selected_wall: tuple[int, int, int] | None,
+) -> None:
     notch_pen = QtGui.QPen(QtGui.QColor("white"))
     notch_pen.setWidthF(1.5)
     notch_pen.setCosmetic(True)
     notch_pen.setCapStyle(QtCore.Qt.SquareCap)
     painter.setPen(notch_pen)
 
-    for fsect in model.fsects:
-        for boundary in fsect.boundaries:
+    selected_sample: tuple[list[Point], float, float] | None = None
+    for section_index, fsect in enumerate(model.fsects):
+        for boundary_index, boundary in enumerate(fsect.boundaries):
             points = [
                 (float(point[0]), float(point[1]))
                 for point in boundary.points
@@ -339,6 +354,36 @@ def _draw_mrk_notches(painter, model: SgPreviewModel, transform: ViewTransform) 
                     notch,
                     half_length_px=_MRK_NOTCH_HALF_LENGTH_PX,
                 )
+            if selected_wall is None:
+                continue
+            target_boundary, target_section, target_wall = selected_wall
+            if (
+                section_index != target_section
+                or boundary_index != target_boundary
+                or target_wall < 0
+            ):
+                continue
+            wall_ranges = _division_wall_ranges(points, notch_points)
+            if target_wall >= len(wall_ranges):
+                continue
+            selected_sample = (points, wall_ranges[target_wall][0], wall_ranges[target_wall][1])
+
+    if selected_sample is None:
+        return
+
+    highlight_pen = QtGui.QPen(QtGui.QColor("yellow"))
+    highlight_pen.setWidthF(4.0)
+    highlight_pen.setCosmetic(True)
+    highlight_pen.setCapStyle(QtCore.Qt.RoundCap)
+    painter.setPen(highlight_pen)
+    points, start_distance, end_distance = selected_sample
+    _draw_polyline_segment(
+        painter,
+        transform,
+        points,
+        start_distance,
+        end_distance,
+    )
 
 
 def _division_points_for_polyline(
@@ -362,6 +407,63 @@ def _polyline_segment_lengths(points: list[Point]) -> list[float]:
         x2, y2 = points[index + 1]
         lengths.append(math.hypot(x2 - x1, y2 - y1))
     return lengths
+
+
+def _division_wall_ranges(
+    points: list[Point],
+    notch_points: list[float],
+) -> list[tuple[float, float]]:
+    segment_lengths = _polyline_segment_lengths(points)
+    total = sum(segment_lengths)
+    if total <= 0.0:
+        return []
+    cuts = [0.0, *notch_points, total]
+    return [
+        (cuts[index], cuts[index + 1])
+        for index in range(len(cuts) - 1)
+    ]
+
+
+def _draw_polyline_segment(
+    painter: QtGui.QPainter,
+    transform: ViewTransform,
+    points: list[Point],
+    start_distance: float,
+    end_distance: float,
+) -> None:
+    start_sample = _sample_polyline_with_tangent(points, start_distance)
+    end_sample = _sample_polyline_with_tangent(points, end_distance)
+    if start_sample is None or end_sample is None:
+        return
+    start_point, _ = start_sample
+    end_point, _ = end_sample
+    path = QtGui.QPainterPath()
+    sx, sy = transform.world_to_screen(start_point)
+    path.moveTo(sx, sy)
+    for waypoint in _polyline_points_between_distances(points, start_distance, end_distance):
+        wx, wy = transform.world_to_screen(waypoint)
+        path.lineTo(wx, wy)
+    ex, ey = transform.world_to_screen(end_point)
+    path.lineTo(ex, ey)
+    painter.drawPath(path)
+
+
+def _polyline_points_between_distances(
+    points: list[Point], start_distance: float, end_distance: float
+) -> list[Point]:
+    if len(points) < 2:
+        return []
+    if end_distance <= start_distance:
+        return []
+    output: list[Point] = []
+    distance_cursor = 0.0
+    for index in range(len(points) - 1):
+        seg_len = math.hypot(points[index + 1][0] - points[index][0], points[index + 1][1] - points[index][1])
+        next_distance = distance_cursor + seg_len
+        if seg_len > 1e-9 and start_distance < next_distance <= end_distance:
+            output.append(points[index + 1])
+        distance_cursor = next_distance
+    return output[:-1] if output else output
 
 
 def _draw_polyline_notch(

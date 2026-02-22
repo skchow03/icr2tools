@@ -174,6 +174,10 @@ class _RuntimeCorePreviewMixin:
         return self._show_mrk_notches
 
     @property
+    def selected_mrk_wall(self) -> tuple[int, int, int]:
+        return self._selected_mrk_wall
+
+    @property
     def show_xsect_dlat_line(self) -> bool:
         return self._show_xsect_dlat_line
 
@@ -316,6 +320,14 @@ class _RuntimeCorePreviewMixin:
 
     def set_show_mrk_notches(self, visible: bool) -> None:
         self._show_mrk_notches = visible
+        self._context.request_repaint()
+
+    def set_selected_mrk_wall(self, boundary_index: int, section_index: int, wall_index: int) -> None:
+        self._selected_mrk_wall = (
+            max(0, int(boundary_index)),
+            max(0, int(section_index)),
+            max(0, int(wall_index)),
+        )
         self._context.request_repaint()
 
     def set_show_xsect_dlat_line(self, visible: bool) -> None:
