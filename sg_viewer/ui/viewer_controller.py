@@ -789,7 +789,8 @@ class SGViewerController:
             item = QtWidgets.QTableWidgetItem(str(int(value)))
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
-        table.setItem(row, 4, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(wall_count)))
+        self._set_mrk_side_cell(row, self._auto_detect_mrk_side(section_index, boundary_index))
+        table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(wall_count)))
         table.selectRow(row)
         self._update_mrk_highlights_from_table()
 
@@ -819,6 +820,44 @@ class SGViewerController:
         pattern = [cycle[index % len(cycle)] for index in range(max(0, wall_count))]
         return ",".join(pattern)
 
+    def _normalize_mrk_side(self, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized == "right":
+            return "Right"
+        return "Left"
+
+    def _set_mrk_side_cell(self, row: int, side: str) -> None:
+        table = self._window.mrk_entries_table
+        combo = QtWidgets.QComboBox(table)
+        combo.addItems(["Left", "Right"])
+        combo.setCurrentText(self._normalize_mrk_side(side))
+        combo.currentTextChanged.connect(lambda _value: self._update_mrk_highlights_from_table())
+        table.setCellWidget(row, 4, combo)
+
+    def _mrk_side_for_row(self, row: int) -> str:
+        widget = self._window.mrk_entries_table.cellWidget(row, 4)
+        if isinstance(widget, QtWidgets.QComboBox):
+            return self._normalize_mrk_side(widget.currentText())
+        return self._normalize_mrk_side(self._table_text_value(self._window.mrk_entries_table, row, 4))
+
+    def _auto_detect_mrk_side(self, section_index: int, boundary_index: int) -> str:
+        model = self._window.preview.sg_preview_model
+        if model is None or section_index < 0 or section_index >= len(model.fsects):
+            return "Left"
+        fsect = model.fsects[section_index]
+        if boundary_index < 0 or boundary_index >= len(fsect.boundaries):
+            return "Left"
+        boundary = fsect.boundaries[boundary_index]
+        start = boundary.attrs.get("dlat_start")
+        end = boundary.attrs.get("dlat_end")
+        if start is not None and end is not None:
+            mean_dlat = (float(start) + float(end)) * 0.5
+            if mean_dlat < 0:
+                return "Right"
+            if mean_dlat > 0:
+                return "Left"
+        return "Left"
+
     def _on_mrk_entry_selection_changed(self) -> None:
         table = self._window.mrk_entries_table
         selected_rows = table.selectionModel().selectedRows()
@@ -840,7 +879,7 @@ class SGViewerController:
         return {definition.texture_name for definition in self._mrk_texture_definitions}
 
     def _on_mrk_entry_cell_double_clicked(self, row: int, column: int) -> None:
-        if column != 4:
+        if column != 5:
             return
         if not self._mrk_texture_definitions:
             QtWidgets.QMessageBox.information(
@@ -850,7 +889,7 @@ class SGViewerController:
             )
             return
         table = self._window.mrk_entries_table
-        existing_item = table.item(row, 4)
+        existing_item = table.item(row, 5)
         current = [] if existing_item is None else [token.strip() for token in existing_item.text().split(",") if token.strip()]
         dialog = MrkTexturePatternDialog(
             self._window,
@@ -862,7 +901,7 @@ class SGViewerController:
         updated = ",".join(dialog.selected_pattern())
         table.blockSignals(True)
         if existing_item is None:
-            table.setItem(row, 4, QtWidgets.QTableWidgetItem(updated))
+            table.setItem(row, 5, QtWidgets.QTableWidgetItem(updated))
         else:
             existing_item.setText(updated)
         table.blockSignals(False)
@@ -883,6 +922,11 @@ class SGViewerController:
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.blockSignals(False)
         if column == 4:
+            table.blockSignals(True)
+            item.setText(self._normalize_mrk_side(item.text()))
+            item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+            table.blockSignals(False)
+        if column == 5:
             allowed = self._allowed_mrk_texture_names()
             tokens = [token.strip() for token in item.text().split(",") if token.strip()]
             if allowed and any(token not in allowed for token in tokens):
@@ -921,7 +965,7 @@ class SGViewerController:
             if None in {section_index, boundary_index, wall_index, wall_count}:
                 continue
 
-            pattern_item = table.item(row, 4)
+            pattern_item = table.item(row, 5)
             textures = [] if pattern_item is None else [token.strip() for token in pattern_item.text().split(",") if token.strip()]
             for offset in range(max(0, wall_count)):
                 texture_name = textures[offset % len(textures)] if textures else ""
@@ -943,7 +987,8 @@ class SGViewerController:
                     "boundary": self._table_int_value(table, row, 1),
                     "starting_wall": self._table_int_value(table, row, 2),
                     "wall_count": self._table_int_value(table, row, 3),
-                    "texture_pattern": self._table_text_value(table, row, 4),
+                    "side": self._table_text_value(table, row, 4) or "Left",
+                    "texture_pattern": self._table_text_value(table, row, 5),
                 }
             )
         texture_definitions = [
@@ -1001,11 +1046,15 @@ class SGViewerController:
                 int(raw.get("boundary", 0)),
                 int(raw.get("starting_wall", 0)),
                 max(1, int(raw.get("wall_count", 1))),
+                str(raw.get("side", "Left")).strip() or "Left",
                 str(raw.get("texture_pattern", "")).strip(),
             ]
             for column, value in enumerate(values):
+                if column == 4:
+                    self._set_mrk_side_cell(row, str(value))
+                    continue
                 item = QtWidgets.QTableWidgetItem(str(value))
-                if column < 4:
+                if column < 5:
                     item.setTextAlignment(int(QtCore.Qt.AlignCenter))
                 table.setItem(row, column, item)
         table.blockSignals(False)
@@ -1023,6 +1072,9 @@ class SGViewerController:
             return 0
 
     def _table_text_value(self, table: QtWidgets.QTableWidget, row: int, column: int) -> str:
+        widget = table.cellWidget(row, column)
+        if isinstance(widget, QtWidgets.QComboBox):
+            return widget.currentText().strip()
         item = table.item(row, column)
         return "" if item is None else item.text().strip()
 
@@ -1086,10 +1138,11 @@ class SGViewerController:
             wall_count = max(0, self._table_int_value(table, row, 3))
             if wall_count <= 0:
                 continue
+            side = self._mrk_side_for_row(row)
 
             textures = [
                 token.strip()
-                for token in self._table_text_value(table, row, 4).split(",")
+                for token in self._table_text_value(table, row, 5).split(",")
                 if token.strip()
             ]
             if not textures:
@@ -1124,9 +1177,9 @@ class SGViewerController:
                         boundary_id=boundary_index,
                         mip_name=texture.mip_name,
                         uv_rect=MarkUvRect(
-                            upper_left_u=texture.upper_left_u,
+                            upper_left_u=texture.lower_right_u if side == "Right" else texture.upper_left_u,
                             upper_left_v=texture.upper_left_v,
-                            lower_right_u=texture.lower_right_u,
+                            lower_right_u=texture.upper_left_u if side == "Right" else texture.lower_right_u,
                             lower_right_v=texture.lower_right_v,
                         ),
                         start=self._mark_track_position(section_index, start_distance, wall_ranges),

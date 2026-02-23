@@ -297,11 +297,33 @@ def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
 
         window.mrk_add_entry_button.click()
 
-        assert window.mrk_entries_table.item(0, 4).text() == "brick01,stripe02,brick01,stripe02,brick01"
+        assert window.mrk_entries_table.item(0, 5).text() == "brick01,stripe02,brick01,stripe02,brick01"
     finally:
         window.close()
 
 
+
+
+
+def test_mrk_add_entry_autodetects_right_side_from_boundary_dlat(qapp):
+    window = SGViewerWindow()
+    try:
+        from types import SimpleNamespace
+
+        boundary = SimpleNamespace(points=[(0.0, 0.0), (100.0, 0.0)], attrs={"dlat_start": -20.0, "dlat_end": -20.0})
+        fsect = SimpleNamespace(boundaries=[boundary])
+        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[fsect])
+
+        window.mrk_track_section_spin.setValue(0)
+        window.mrk_boundary_spin.setValue(0)
+        window.mrk_wall_index_spin.setValue(0)
+        window.mrk_entry_count_spin.setValue(1)
+
+        window.mrk_add_entry_button.click()
+
+        assert window.controller._mrk_side_for_row(0) == "Right"
+    finally:
+        window.close()
 
 def test_mrk_highlights_repeat_texture_pattern_when_shorter_than_wall_count(qapp):
     window = SGViewerWindow()
@@ -317,7 +339,7 @@ def test_mrk_highlights_repeat_texture_pattern_when_shorter_than_wall_count(qapp
         values = [1, 2, 3, 5]
         for column, value in enumerate(values):
             table.setItem(0, column, QtWidgets.QTableWidgetItem(str(value)))
-        table.setItem(0, 4, QtWidgets.QTableWidgetItem("brick01,stripe02"))
+        table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick01,stripe02"))
 
         window.controller._update_mrk_highlights_from_table()
 
@@ -392,7 +414,7 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
         table.setItem(0, 1, QtWidgets.QTableWidgetItem("2"))
         table.setItem(0, 2, QtWidgets.QTableWidgetItem("5"))
         table.setItem(0, 3, QtWidgets.QTableWidgetItem("2"))
-        table.setItem(0, 4, QtWidgets.QTableWidgetItem("brick_red"))
+        table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick_red"))
 
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
@@ -404,6 +426,7 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
         payload = json.loads(json_path.read_text(encoding="utf-8"))
         assert payload["texture_definitions"][0]["texture_name"] == "brick_red"
         assert payload["texture_definitions"][0]["mip_filename"] == "walls01"
+        assert payload["entries"][0]["side"] == "Left"
 
         table.setRowCount(0)
         window.controller._mrk_texture_definitions = ()
@@ -418,7 +441,8 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
         assert window.controller._mrk_texture_definitions == (
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
         )
-        assert window.mrk_entries_table.item(0, 4).text() == "brick_red"
+        assert window.mrk_entries_table.item(0, 5).text() == "brick_red"
+        assert window.controller._mrk_side_for_row(0) == "Left"
     finally:
         window.close()
 
@@ -441,7 +465,8 @@ def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
         table.setItem(0, 1, QtWidgets.QTableWidgetItem("2"))
         table.setItem(0, 2, QtWidgets.QTableWidgetItem("1"))
         table.setItem(0, 3, QtWidgets.QTableWidgetItem("2"))
-        table.setItem(0, 4, QtWidgets.QTableWidgetItem("brick_red,brick_blue"))
+        table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick_red,brick_blue"))
+        window.controller._set_mrk_side_cell(0, "Right")
 
         monkeypatch.setattr(
             window.controller,
@@ -465,6 +490,8 @@ def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
         assert mark_file.entries[0].mip_name == "walls01"
         assert mark_file.entries[0].start.section == 10
         assert mark_file.entries[0].start.fraction == pytest.approx(1.0 / 3.0)
+        assert mark_file.entries[0].uv_rect.upper_left_u == 60
+        assert mark_file.entries[0].uv_rect.lower_right_u == 4
         assert mark_file.entries[0].end.fraction == pytest.approx(2.0 / 3.0)
         assert mark_file.entries[1].pointer_name == "mrk2"
         assert mark_file.entries[1].mip_name == "walls02"
