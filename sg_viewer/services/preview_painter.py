@@ -413,21 +413,12 @@ def _resolve_mrk_highlight_indices(
 ) -> dict[int, str]:
     """Resolve MRK table identifiers against zero-based preview indices.
 
-    Historically, users may enter MRK section/boundary identifiers as either
-    zero-based (preview-native) or one-based (file/tooling-oriented). To keep
-    highlighting resilient, accept both representations and merge wall colors
-    for matching walls.
+    The MRK tab inputs are zero-based. Restrict lookup to an exact
+    section/boundary match so a selection does not also render on the previous
+    section/boundary pair.
     """
 
-    resolved: dict[int, str] = {}
-    for key in (
-        (section_index, boundary_index),
-        (section_index + 1, boundary_index + 1),
-    ):
-        wall_map = highlighted_lookup.get(key)
-        if wall_map:
-            resolved.update(wall_map)
-    return resolved
+    return dict(highlighted_lookup.get((section_index, boundary_index), {}))
 
 
 def _division_points_for_polyline(
