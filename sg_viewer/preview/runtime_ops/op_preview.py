@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt5 import QtGui
+
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model import selection
