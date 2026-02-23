@@ -286,8 +286,8 @@ def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         window.controller._mrk_texture_definitions = (
-            MrkTextureDefinition("brick01", 0, 0, 63, 63, "#FF0000"),
-            MrkTextureDefinition("stripe02", 8, 8, 56, 56, "#00FF00"),
+            MrkTextureDefinition("brick01", "brick01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("stripe02", "stripe02", 8, 8, 56, 56, "#00FF00"),
         )
         window.mrk_track_section_spin.setValue(1)
         window.mrk_boundary_spin.setValue(2)
@@ -308,8 +308,8 @@ def test_mrk_highlights_repeat_texture_pattern_when_shorter_than_wall_count(qapp
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         window.controller._mrk_texture_definitions = (
-            MrkTextureDefinition("brick01", 0, 0, 63, 63, "#FF0000"),
-            MrkTextureDefinition("stripe02", 8, 8, 56, 56, "#00FF00"),
+            MrkTextureDefinition("brick01", "brick01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("stripe02", "stripe02", 8, 8, 56, 56, "#00FF00"),
         )
         table = window.mrk_entries_table
         table.setRowCount(1)
@@ -346,18 +346,80 @@ def test_mrk_textures_button_saves_texture_definitions(qapp, monkeypatch):
                 return QtWidgets.QDialog.Accepted
 
             def texture_definitions(self):
-                return (MrkTextureDefinition("stone03", 1, 2, 3, 4),)
+                return (MrkTextureDefinition("stone03", "stone03", 1, 2, 3, 4),)
 
         monkeypatch.setattr("sg_viewer.ui.viewer_controller.MrkTexturesDialog", _FakeDialog)
 
         window.mrk_textures_button.click()
 
         assert window.controller._mrk_texture_definitions == (
-            MrkTextureDefinition("stone03", 1, 2, 3, 4),
+            MrkTextureDefinition("stone03", "stone03", 1, 2, 3, 4),
         )
     finally:
         window.close()
 
+
+
+
+def test_mrk_patterns_use_texture_names_not_mip_names(qapp):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("brick_blue", "walls01", 8, 8, 56, 56, "#0000FF"),
+        )
+
+        assert window.controller._default_texture_pattern_for_wall_count(3) == "brick_red,brick_blue,brick_red"
+    finally:
+        window.close()
+
+
+def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        json_path = tmp_path / "mrk_state.json"
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+        )
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        table.setItem(0, 0, QtWidgets.QTableWidgetItem("10"))
+        table.setItem(0, 1, QtWidgets.QTableWidgetItem("2"))
+        table.setItem(0, 2, QtWidgets.QTableWidgetItem("5"))
+        table.setItem(0, 3, QtWidgets.QTableWidgetItem("2"))
+        table.setItem(0, 4, QtWidgets.QTableWidgetItem("brick_red"))
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(json_path), "JSON Files (*.json)"),
+        )
+        window.controller._on_mrk_save_requested()
+
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        assert payload["texture_definitions"][0]["texture_name"] == "brick_red"
+        assert payload["texture_definitions"][0]["mip_filename"] == "walls01"
+
+        table.setRowCount(0)
+        window.controller._mrk_texture_definitions = ()
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(json_path), "JSON Files (*.json)"),
+        )
+        window.controller._on_mrk_load_requested()
+
+        assert window.controller._mrk_texture_definitions == (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+        )
+        assert window.mrk_entries_table.item(0, 4).text() == "brick_red"
+    finally:
+        window.close()
 
 def test_mrk_divisions_follow_polyline_arc_length():
     from sg_viewer.services.preview_painter import _division_points_for_polyline

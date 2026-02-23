@@ -119,6 +119,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
         self._mrk_textures_button = QtWidgets.QPushButton("Textures…")
+        self._mrk_save_button = QtWidgets.QPushButton("Save MRK…")
+        self._mrk_load_button = QtWidgets.QPushButton("Load MRK…")
         self._mrk_entries_table = QtWidgets.QTableWidget(0, 5)
         self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count", "Texture Pattern"])
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
@@ -510,6 +512,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.addWidget(self._mrk_add_entry_button)
         mrk_buttons.addWidget(self._mrk_delete_entry_button)
         mrk_buttons.addWidget(self._mrk_textures_button)
+        mrk_buttons.addWidget(self._mrk_save_button)
+        mrk_buttons.addWidget(self._mrk_load_button)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()
@@ -708,6 +712,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_entries_table(self) -> QtWidgets.QTableWidget:
         return self._mrk_entries_table
+
+    @property
+    def mrk_save_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_save_button
+
+    @property
+    def mrk_load_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_load_button
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action

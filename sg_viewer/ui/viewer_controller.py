@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import math
 from pathlib import Path
@@ -663,6 +664,8 @@ class SGViewerController:
         self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
         self._window.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
         self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
+        self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
+        self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
         self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
         self._window.mrk_entries_table.itemChanged.connect(self._on_mrk_entry_item_changed)
         self._window.mrk_entries_table.cellDoubleClicked.connect(self._on_mrk_entry_cell_double_clicked)
@@ -804,7 +807,7 @@ class SGViewerController:
     def _default_texture_pattern_for_wall_count(self, wall_count: int) -> str:
         if not self._mrk_texture_definitions:
             return ""
-        cycle = [definition.mip_name for definition in self._mrk_texture_definitions]
+        cycle = [definition.texture_name for definition in self._mrk_texture_definitions]
         pattern = [cycle[index % len(cycle)] for index in range(max(0, wall_count))]
         return ",".join(pattern)
 
@@ -826,7 +829,7 @@ class SGViewerController:
 
 
     def _allowed_mrk_texture_names(self) -> set[str]:
-        return {definition.mip_name for definition in self._mrk_texture_definitions}
+        return {definition.texture_name for definition in self._mrk_texture_definitions}
 
     def _on_mrk_entry_cell_double_clicked(self, row: int, column: int) -> None:
         if column != 4:
@@ -843,7 +846,7 @@ class SGViewerController:
         current = [] if existing_item is None else [token.strip() for token in existing_item.text().split(",") if token.strip()]
         dialog = MrkTexturePatternDialog(
             self._window,
-            [definition.mip_name for definition in self._mrk_texture_definitions],
+            [definition.texture_name for definition in self._mrk_texture_definitions],
             current,
         )
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
@@ -892,7 +895,7 @@ class SGViewerController:
     def _update_mrk_highlights_from_table(self) -> None:
         table = self._window.mrk_entries_table
         highlights: list[tuple[int, int, int, int, str]] = []
-        color_lookup = {definition.mip_name: definition.highlight_color for definition in self._mrk_texture_definitions}
+        color_lookup = {definition.texture_name: definition.highlight_color for definition in self._mrk_texture_definitions}
 
         def _parse_non_negative_int(item: QtWidgets.QTableWidgetItem | None) -> int | None:
             if item is None:
@@ -921,6 +924,139 @@ class SGViewerController:
                     continue
                 highlights.append((boundary_index, section_index, wall_index + offset, 1, color))
         self._window.preview.set_highlighted_mrk_walls(highlights)
+
+    def _collect_mrk_state(self) -> dict[str, object]:
+        table = self._window.mrk_entries_table
+        entries: list[dict[str, object]] = []
+        for row in range(table.rowCount()):
+            entries.append(
+                {
+                    "track_section": self._table_int_value(table, row, 0),
+                    "boundary": self._table_int_value(table, row, 1),
+                    "starting_wall": self._table_int_value(table, row, 2),
+                    "wall_count": self._table_int_value(table, row, 3),
+                    "texture_pattern": self._table_text_value(table, row, 4),
+                }
+            )
+        texture_definitions = [
+            {
+                "texture_name": definition.texture_name,
+                "mip_filename": definition.mip_name,
+                "upper_left_u": definition.upper_left_u,
+                "upper_left_v": definition.upper_left_v,
+                "lower_right_u": definition.lower_right_u,
+                "lower_right_v": definition.lower_right_v,
+                "highlight_color": definition.highlight_color,
+            }
+            for definition in self._mrk_texture_definitions
+        ]
+        return {
+            "format": "sg_viewer_mrk",
+            "version": 1,
+            "texture_definitions": texture_definitions,
+            "entries": entries,
+        }
+
+    def _apply_mrk_state(self, state: dict[str, object]) -> None:
+        textures_raw = state.get("texture_definitions", [])
+        entries_raw = state.get("entries", [])
+        if not isinstance(textures_raw, list) or not isinstance(entries_raw, list):
+            raise ValueError("JSON must include list fields 'texture_definitions' and 'entries'.")
+
+        texture_definitions: list[MrkTextureDefinition] = []
+        for index, raw in enumerate(textures_raw):
+            if not isinstance(raw, dict):
+                raise ValueError(f"Texture definition #{index + 1} must be an object.")
+            texture_definitions.append(
+                MrkTextureDefinition(
+                    texture_name=str(raw.get("texture_name", "")).strip(),
+                    mip_name=str(raw.get("mip_filename", raw.get("mip_name", ""))).strip(),
+                    upper_left_u=int(raw.get("upper_left_u", 0)),
+                    upper_left_v=int(raw.get("upper_left_v", 0)),
+                    lower_right_u=int(raw.get("lower_right_u", 0)),
+                    lower_right_v=int(raw.get("lower_right_v", 0)),
+                    highlight_color=str(raw.get("highlight_color", "#FFFF00")).strip() or "#FFFF00",
+                )
+            )
+
+        table = self._window.mrk_entries_table
+        table.blockSignals(True)
+        table.setRowCount(0)
+        for index, raw in enumerate(entries_raw):
+            if not isinstance(raw, dict):
+                table.blockSignals(False)
+                raise ValueError(f"MRK entry #{index + 1} must be an object.")
+            row = table.rowCount()
+            table.insertRow(row)
+            values = [
+                int(raw.get("track_section", 0)),
+                int(raw.get("boundary", 0)),
+                int(raw.get("starting_wall", 0)),
+                max(1, int(raw.get("wall_count", 1))),
+                str(raw.get("texture_pattern", "")).strip(),
+            ]
+            for column, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if column < 4:
+                    item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+                table.setItem(row, column, item)
+        table.blockSignals(False)
+
+        self._mrk_texture_definitions = tuple(texture_definitions)
+        self._update_mrk_highlights_from_table()
+
+    def _table_int_value(self, table: QtWidgets.QTableWidget, row: int, column: int) -> int:
+        item = table.item(row, column)
+        if item is None:
+            return 0
+        try:
+            return int(item.text().strip())
+        except (TypeError, ValueError):
+            return 0
+
+    def _table_text_value(self, table: QtWidgets.QTableWidget, row: int, column: int) -> str:
+        item = table.item(row, column)
+        return "" if item is None else item.text().strip()
+
+    def _on_mrk_save_requested(self) -> None:
+        path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Save MRK Entries and Textures",
+            "",
+            "JSON Files (*.json)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() != ".json":
+            path = path.with_suffix(".json")
+        payload = self._collect_mrk_state()
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._window.show_status_message(f"Saved MRK data to {path.name}")
+
+    def _on_mrk_load_requested(self) -> None:
+        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Load MRK Entries and Textures",
+            "",
+            "JSON Files (*.json)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Top-level JSON value must be an object.")
+            self._apply_mrk_state(payload)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Load MRK JSON Failed",
+                str(exc),
+            )
+            return
+        self._window.show_status_message(f"Loaded MRK data from {path.name}")
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index)

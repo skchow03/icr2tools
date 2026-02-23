@@ -7,6 +7,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 @dataclass(frozen=True)
 class MrkTextureDefinition:
+    texture_name: str
     mip_name: str
     upper_left_u: int
     upper_left_v: int
@@ -24,8 +25,8 @@ class MrkTexturesDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("MRK Texture Definitions")
 
-        self._table = QtWidgets.QTableWidget(0, 6)
-        self._table.setHorizontalHeaderLabels(["MIP", "UL U", "UL V", "LR U", "LR V", "Color"])
+        self._table = QtWidgets.QTableWidget(0, 7)
+        self._table.setHorizontalHeaderLabels(["Texture name", "MIP filename", "UL U", "UL V", "LR U", "LR V", "Color"])
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -50,7 +51,7 @@ class MrkTexturesDialog(QtWidgets.QDialog):
         layout.addWidget(
             QtWidgets.QLabel(
                 "Define reusable textures for MRK entries."
-                " Each texture uses mip filename (without extension) and UV bounds."
+                " Each texture has a user-facing texture name, a MIP filename (without extension), and UV bounds."
             )
         )
         layout.addWidget(self._table)
@@ -63,25 +64,29 @@ class MrkTexturesDialog(QtWidgets.QDialog):
 
     def texture_definitions(self) -> tuple[MrkTextureDefinition, ...]:
         definitions: list[MrkTextureDefinition] = []
-        seen_mips: set[str] = set()
+        seen_names: set[str] = set()
         for row in range(self._table.rowCount()):
-            mip_name = self._item_text(row, 0)
+            texture_name = self._item_text(row, 0)
+            if not texture_name:
+                raise ValueError(f"Row {row + 1}: texture name is required")
+            if texture_name in seen_names:
+                raise ValueError(f"Row {row + 1}: duplicate texture name {texture_name!r}")
+            seen_names.add(texture_name)
+            mip_name = self._item_text(row, 1)
             if not mip_name:
-                raise ValueError(f"Row {row + 1}: mip name is required")
-            if mip_name in seen_mips:
-                raise ValueError(f"Row {row + 1}: duplicate mip name {mip_name!r}")
-            seen_mips.add(mip_name)
-            color_value = self._item_text(row, 5) or "#FFFF00"
+                raise ValueError(f"Row {row + 1}: MIP filename is required")
+            color_value = self._item_text(row, 6) or "#FFFF00"
             color = QtGui.QColor(color_value)
             if not color.isValid():
                 raise ValueError(f"Row {row + 1}: invalid color {color_value!r}")
             definitions.append(
                 MrkTextureDefinition(
+                    texture_name=texture_name,
                     mip_name=mip_name,
-                    upper_left_u=self._item_int(row, 1),
-                    upper_left_v=self._item_int(row, 2),
-                    lower_right_u=self._item_int(row, 3),
-                    lower_right_v=self._item_int(row, 4),
+                    upper_left_u=self._item_int(row, 2),
+                    upper_left_v=self._item_int(row, 3),
+                    lower_right_u=self._item_int(row, 4),
+                    lower_right_v=self._item_int(row, 5),
                     highlight_color=color.name().upper(),
                 )
             )
@@ -106,6 +111,7 @@ class MrkTexturesDialog(QtWidgets.QDialog):
         row = self._table.rowCount()
         self._table.insertRow(row)
         values = [
+            "" if definition is None else definition.texture_name,
             "" if definition is None else definition.mip_name,
             "0" if definition is None else str(definition.upper_left_u),
             "0" if definition is None else str(definition.upper_left_v),
@@ -115,10 +121,10 @@ class MrkTexturesDialog(QtWidgets.QDialog):
         ]
         for column, value in enumerate(values):
             item = QtWidgets.QTableWidgetItem(value)
-            if column > 0:
+            if 2 <= column <= 5:
                 item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             self._table.setItem(row, column, item)
-        self._set_color_cell(row, values[5])
+        self._set_color_cell(row, values[6])
 
     def _add_empty_row(self) -> None:
         self._append_row()
@@ -143,11 +149,11 @@ class MrkTexturesDialog(QtWidgets.QDialog):
             "}"
         )
         button.clicked.connect(lambda _checked=False, r=row: self._pick_row_color(r))
-        self._table.setCellWidget(row, 5, button)
-        self._table.item(row, 5).setText(color.name().upper())
+        self._table.setCellWidget(row, 6, button)
+        self._table.item(row, 6).setText(color.name().upper())
 
     def _pick_row_color(self, row: int) -> None:
-        item = self._table.item(row, 5)
+        item = self._table.item(row, 6)
         initial = QtGui.QColor(item.text() if item is not None else "#FFFF00")
         if not initial.isValid():
             initial = QtGui.QColor("#FFFF00")
