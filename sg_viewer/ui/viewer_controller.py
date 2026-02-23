@@ -25,7 +25,11 @@ from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
-from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition, MrkTexturesDialog
+from sg_viewer.ui.mrk_textures_dialog import (
+    MrkTextureDefinition,
+    MrkTexturePatternDialog,
+    MrkTexturesDialog,
+)
 from sg_viewer.ui.controllers import (
     BackgroundController,
     BackgroundUiCoordinator,
@@ -657,8 +661,11 @@ class SGViewerController:
         )
         self._window.mrk_select_button.clicked.connect(self._on_mrk_wall_select_requested)
         self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
+        self._window.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
         self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
         self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
+        self._window.mrk_entries_table.itemChanged.connect(self._on_mrk_entry_item_changed)
+        self._window.mrk_entries_table.cellDoubleClicked.connect(self._on_mrk_entry_cell_double_clicked)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -750,16 +757,12 @@ class SGViewerController:
         boundary_index = self._window.mrk_boundary_spin.value()
         section_index = self._window.mrk_track_section_spin.value()
         wall_index = self._window.mrk_wall_index_spin.value()
-        wall_count = self._window.mrk_entry_count_spin.value()
         self._window.preview.set_selected_mrk_wall(
             boundary_index,
             section_index,
             wall_index,
         )
-        if self._window.mrk_entries_table.rowCount() == 0:
-            self._window.preview.set_highlighted_mrk_walls(
-                [(boundary_index, section_index, wall_index, wall_count)]
-            )
+        self._update_mrk_highlights_from_table()
 
     def _on_mrk_add_entry_requested(self) -> None:
         section_index = self._window.mrk_track_section_spin.value()
@@ -777,6 +780,14 @@ class SGViewerController:
             table.setItem(row, column, item)
         table.setItem(row, 4, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(wall_count)))
         table.selectRow(row)
+        self._update_mrk_highlights_from_table()
+
+    def _on_mrk_delete_entry_requested(self) -> None:
+        table = self._window.mrk_entries_table
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        table.removeRow(selected_rows[0].row())
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_textures_requested(self) -> None:
@@ -812,15 +823,86 @@ class SGViewerController:
         self._window.mrk_entry_count_spin.setValue(wall_count)
         self._on_mrk_wall_select_requested()
 
+
+    def _allowed_mrk_texture_names(self) -> set[str]:
+        return {definition.mip_name for definition in self._mrk_texture_definitions}
+
+    def _on_mrk_entry_cell_double_clicked(self, row: int, column: int) -> None:
+        if column != 4:
+            return
+        if not self._mrk_texture_definitions:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "No MRK Textures Defined",
+                "Define MRK textures first using the Textures dialog.",
+            )
+            return
+        table = self._window.mrk_entries_table
+        existing_item = table.item(row, 4)
+        current = [] if existing_item is None else [token.strip() for token in existing_item.text().split(",") if token.strip()]
+        dialog = MrkTexturePatternDialog(
+            self._window,
+            [definition.mip_name for definition in self._mrk_texture_definitions],
+            current,
+        )
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        updated = ",".join(dialog.selected_pattern())
+        table.blockSignals(True)
+        if existing_item is None:
+            table.setItem(row, 4, QtWidgets.QTableWidgetItem(updated))
+        else:
+            existing_item.setText(updated)
+        table.blockSignals(False)
+        self._update_mrk_highlights_from_table()
+
+    def _on_mrk_entry_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        row = item.row()
+        column = item.column()
+        table = self._window.mrk_entries_table
+        if column in {0, 1, 2, 3}:
+            raw = item.text().strip()
+            try:
+                value = max(0, int(raw))
+            except ValueError:
+                value = 0
+            table.blockSignals(True)
+            item.setText(str(value))
+            item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+            table.blockSignals(False)
+        if column == 4:
+            allowed = self._allowed_mrk_texture_names()
+            tokens = [token.strip() for token in item.text().split(",") if token.strip()]
+            if allowed and any(token not in allowed for token in tokens):
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Invalid Texture Pattern",
+                    "Texture pattern entries must reference predefined texture names.",
+                )
+                table.blockSignals(True)
+                item.setText(
+                    self._default_texture_pattern_for_wall_count(
+                        int(table.item(row, 3).text()) if table.item(row, 3) else 1
+                    )
+                )
+                table.blockSignals(False)
+        self._update_mrk_highlights_from_table()
+
     def _update_mrk_highlights_from_table(self) -> None:
         table = self._window.mrk_entries_table
-        highlights: list[tuple[int, int, int, int]] = []
+        highlights: list[tuple[int, int, int, int, str]] = []
+        color_lookup = {definition.mip_name: definition.highlight_color for definition in self._mrk_texture_definitions}
         for row in range(table.rowCount()):
             section_index = int(table.item(row, 0).text())
             boundary_index = int(table.item(row, 1).text())
             wall_index = int(table.item(row, 2).text())
             wall_count = int(table.item(row, 3).text())
-            highlights.append((boundary_index, section_index, wall_index, wall_count))
+            pattern_item = table.item(row, 4)
+            textures = [] if pattern_item is None else [token.strip() for token in pattern_item.text().split(",") if token.strip()]
+            for offset in range(max(0, wall_count)):
+                texture_name = textures[offset] if offset < len(textures) else ""
+                color = color_lookup.get(texture_name, "#FFFF00")
+                highlights.append((boundary_index, section_index, wall_index + offset, 1, color))
         self._window.preview.set_highlighted_mrk_walls(highlights)
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
@@ -830,8 +912,9 @@ class SGViewerController:
         is_mrk_tab = tab_name == "MRK"
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         if is_mrk_tab:
-            self._on_mrk_wall_select_requested()
             self._update_mrk_highlights_from_table()
+        else:
+            self._window.preview.set_highlighted_mrk_walls(())
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
