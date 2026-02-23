@@ -178,7 +178,7 @@ class _RuntimeCorePreviewMixin:
         return self._selected_mrk_wall
 
     @property
-    def highlighted_mrk_walls(self) -> tuple[tuple[int, int, int, int], ...]:
+    def highlighted_mrk_walls(self) -> tuple[tuple[int, int, int, int, str], ...]:
         return self._highlighted_mrk_walls
 
     @property
@@ -334,14 +334,17 @@ class _RuntimeCorePreviewMixin:
         )
         self._context.request_repaint()
 
-    def set_highlighted_mrk_walls(self, entries: list[tuple[int, int, int, int]] | tuple[tuple[int, int, int, int], ...]) -> None:
-        normalized: list[tuple[int, int, int, int]] = []
-        for boundary_index, section_index, start_wall, wall_count in entries:
+    def set_highlighted_mrk_walls(self, entries: list[tuple[int, int, int, int, str]] | tuple[tuple[int, int, int, int, str], ...]) -> None:
+        normalized: list[tuple[int, int, int, int, str]] = []
+        for boundary_index, section_index, start_wall, wall_count, color in entries:
+            parsed = QtGui.QColor(color)
+            resolved = parsed.name().upper() if parsed.isValid() else "#FFFF00"
             normalized.append((
                 max(0, int(boundary_index)),
                 max(0, int(section_index)),
                 max(0, int(start_wall)),
                 max(0, int(wall_count)),
+                resolved,
             ))
         self._highlighted_mrk_walls = tuple(normalized)
         self._context.request_repaint()
