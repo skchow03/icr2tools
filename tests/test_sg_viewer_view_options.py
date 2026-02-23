@@ -441,25 +441,7 @@ def test_mrk_divisions_follow_polyline_arc_length():
         assert divisions[0] == pytest.approx(spacing, rel=0.03)
 
 
-def test_mrk_highlight_lookup_accepts_one_based_section_boundary_ids():
-    from sg_viewer.services.preview_painter import _resolve_mrk_highlight_indices
-
-    one_based_lookup = {
-        (2, 3): {
-            4: "#FF00FF",
-        }
-    }
-
-    resolved = _resolve_mrk_highlight_indices(
-        one_based_lookup,
-        section_index=1,
-        boundary_index=2,
-    )
-
-    assert resolved == {4: "#FF00FF"}
-
-
-def test_mrk_highlight_lookup_merges_zero_based_and_one_based_matches():
+def test_mrk_highlight_lookup_requires_exact_zero_based_match():
     from sg_viewer.services.preview_painter import _resolve_mrk_highlight_indices
 
     lookup = {
@@ -473,7 +455,23 @@ def test_mrk_highlight_lookup_merges_zero_based_and_one_based_matches():
         boundary_index=2,
     )
 
-    assert resolved == {3: "#00FF00", 4: "#FF0000"}
+    assert resolved == {3: "#00FF00"}
+
+
+def test_mrk_highlight_lookup_does_not_match_previous_boundary_pair():
+    from sg_viewer.services.preview_painter import _resolve_mrk_highlight_indices
+
+    lookup = {
+        (2, 3): {4: "#FF00FF"},
+    }
+
+    resolved = _resolve_mrk_highlight_indices(
+        lookup,
+        section_index=1,
+        boundary_index=2,
+    )
+
+    assert resolved == {}
 
 
 def test_paint_preview_passes_mrk_highlight_walls_to_renderer(monkeypatch):
