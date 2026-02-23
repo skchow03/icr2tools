@@ -913,7 +913,7 @@ class SGViewerController:
             pattern_item = table.item(row, 4)
             textures = [] if pattern_item is None else [token.strip() for token in pattern_item.text().split(",") if token.strip()]
             for offset in range(max(0, wall_count)):
-                texture_name = textures[offset] if offset < len(textures) else ""
+                texture_name = textures[offset % len(textures)] if textures else ""
                 if not texture_name:
                     continue
                 color = color_lookup.get(texture_name)
