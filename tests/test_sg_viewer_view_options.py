@@ -453,7 +453,7 @@ def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         output_path = tmp_path / "generated.mrk"
-        window.preview._runtime._sg_preview_model = object()
+        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[object() for _ in range(20)])
         window.controller._mrk_texture_definitions = (
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
             MrkTextureDefinition("brick_blue", "walls02", 4, 8, 60, 72, "#0000FF"),
@@ -499,6 +499,98 @@ def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
         assert mark_file.entries[1].end.fraction == pytest.approx(1.0)
     finally:
         window.close()
+
+def test_generate_mrk_file_allows_wall_count_to_continue_into_next_section(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        output_path = tmp_path / "carryover.mrk"
+        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[object(), object(), object()])
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+        )
+
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        table.setItem(0, 0, QtWidgets.QTableWidgetItem("0"))
+        table.setItem(0, 1, QtWidgets.QTableWidgetItem("1"))
+        table.setItem(0, 2, QtWidgets.QTableWidgetItem("1"))
+        table.setItem(0, 3, QtWidgets.QTableWidgetItem("3"))
+        table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick_red"))
+        window.controller._set_mrk_side_cell(0, "Left")
+
+        def _ranges(_model, *, section_index, boundary_index):
+            assert boundary_index == 1
+            if section_index == 0:
+                return [(0.0, 30.0), (30.0, 60.0)]
+            if section_index == 1:
+                return [(0.0, 20.0), (20.0, 40.0)]
+            return []
+
+        monkeypatch.setattr(window.controller, "_wall_ranges_for_section_boundary", _ranges)
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(output_path), "MRK Files (*.mrk)"),
+        )
+
+        window.controller._on_mrk_generate_file_requested()
+
+        mark_file = parse_mrk_text(output_path.read_text(encoding="utf-8"))
+
+        assert len(mark_file.entries) == 3
+        assert [entry.start.section for entry in mark_file.entries] == [0, 1, 1]
+        assert [entry.end.section for entry in mark_file.entries] == [1, 1, 1]
+        assert mark_file.entries[0].start.fraction == pytest.approx(0.5)
+        assert mark_file.entries[0].end.fraction == pytest.approx(1.0)
+        assert mark_file.entries[1].start.fraction == pytest.approx(0.0)
+        assert mark_file.entries[1].end.fraction == pytest.approx(0.5)
+        assert mark_file.entries[2].start.fraction == pytest.approx(0.5)
+        assert mark_file.entries[2].end.fraction == pytest.approx(1.0)
+    finally:
+        window.close()
+
+
+def test_mrk_highlights_continue_into_next_section_when_wall_count_exceeds_section(qapp):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[object(), object(), object()])
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("brick_blue", "walls02", 0, 0, 63, 63, "#0000FF"),
+        )
+
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        table.setItem(0, 0, QtWidgets.QTableWidgetItem("0"))
+        table.setItem(0, 1, QtWidgets.QTableWidgetItem("2"))
+        table.setItem(0, 2, QtWidgets.QTableWidgetItem("1"))
+        table.setItem(0, 3, QtWidgets.QTableWidgetItem("3"))
+        table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick_red,brick_blue"))
+
+        def _ranges(_model, *, section_index, boundary_index):
+            assert boundary_index == 2
+            if section_index == 0:
+                return [(0.0, 10.0), (10.0, 20.0)]
+            if section_index == 1:
+                return [(0.0, 12.0), (12.0, 24.0)]
+            return []
+
+        monkeypatch.setattr(window.controller, "_wall_ranges_for_section_boundary", _ranges)
+
+        window.controller._update_mrk_highlights_from_table()
+
+        assert window.preview.highlighted_mrk_walls == (
+            (2, 0, 1, 1, "#FF0000"),
+            (2, 1, 0, 1, "#0000FF"),
+            (2, 1, 1, 1, "#FF0000"),
+        )
+    finally:
+        window.close()
+
 
 def test_mrk_divisions_follow_polyline_arc_length():
     from sg_viewer.services.preview_painter import _division_points_for_polyline

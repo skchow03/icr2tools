@@ -948,6 +948,7 @@ class SGViewerController:
         table = self._window.mrk_entries_table
         highlights: list[tuple[int, int, int, int, str]] = []
         color_lookup = {definition.texture_name: definition.highlight_color for definition in self._mrk_texture_definitions}
+        model = self._window.preview.sg_preview_model
 
         def _parse_non_negative_int(item: QtWidgets.QTableWidgetItem | None) -> int | None:
             if item is None:
@@ -967,14 +968,31 @@ class SGViewerController:
 
             pattern_item = table.item(row, 5)
             textures = [] if pattern_item is None else [token.strip() for token in pattern_item.text().split(",") if token.strip()]
-            for offset in range(max(0, wall_count)):
+            if model is None:
+                wall_positions = [(section_index, wall_index + offset) for offset in range(max(0, wall_count))]
+            else:
+                try:
+                    wall_positions = [
+                        (position_section, position_wall)
+                        for position_section, position_wall, _wall_ranges in self._iter_mrk_wall_positions(
+                            model,
+                            section_index=section_index,
+                            boundary_index=boundary_index,
+                            wall_index=wall_index,
+                            wall_count=wall_count,
+                        )
+                    ]
+                except ValueError:
+                    continue
+
+            for offset, (position_section, position_wall) in enumerate(wall_positions):
                 texture_name = textures[offset % len(textures)] if textures else ""
                 if not texture_name:
                     continue
                 color = color_lookup.get(texture_name)
                 if not color:
                     continue
-                highlights.append((boundary_index, section_index, wall_index + offset, 1, color))
+                highlights.append((boundary_index, position_section, position_wall, 1, color))
         self._window.preview.set_highlighted_mrk_walls(highlights)
 
     def _collect_mrk_state(self) -> dict[str, object]:
@@ -1158,19 +1176,22 @@ class SGViewerController:
                     f"Row {row + 1}: no wall geometry found for section {section_index}, boundary {boundary_index}."
                 )
 
-            for offset in range(wall_count):
-                current_wall = wall_index + offset
-                if current_wall >= len(wall_ranges):
-                    raise ValueError(
-                        f"Row {row + 1}: wall index {current_wall} exceeds available walls ({len(wall_ranges)})."
-                    )
+            for offset, (current_section, current_wall, current_wall_ranges) in enumerate(
+                self._iter_mrk_wall_positions(
+                    model,
+                    section_index=section_index,
+                    boundary_index=boundary_index,
+                    wall_index=wall_index,
+                    wall_count=wall_count,
+                )
+            ):
                 texture_name = textures[offset % len(textures)]
                 texture = texture_lookup.get(texture_name)
                 if texture is None:
                     raise ValueError(
                         f"Row {row + 1}: texture {texture_name!r} is not defined in MRK textures."
                     )
-                start_distance, end_distance = wall_ranges[current_wall]
+                start_distance, end_distance = current_wall_ranges[current_wall]
                 entries.append(
                     MarkBoundaryEntry(
                         pointer_name=f"mrk{pointer_index}",
@@ -1182,8 +1203,8 @@ class SGViewerController:
                             lower_right_u=texture.upper_left_u if side == "Right" else texture.lower_right_u,
                             lower_right_v=texture.lower_right_v,
                         ),
-                        start=self._mark_track_position(section_index, start_distance, wall_ranges),
-                        end=self._mark_track_position(section_index, end_distance, wall_ranges),
+                        start=self._mark_track_position(current_section, start_distance, current_wall_ranges),
+                        end=self._mark_track_position(current_section, end_distance, current_wall_ranges),
                     )
                 )
                 pointer_index += 1
@@ -1240,6 +1261,59 @@ class SGViewerController:
             fraction = distance_along_boundary / total
         fraction = max(0.0, min(1.0, fraction))
         return MarkTrackPosition(section=section_index, fraction=fraction)
+
+    def _iter_mrk_wall_positions(
+        self,
+        model,
+        *,
+        section_index: int,
+        boundary_index: int,
+        wall_index: int,
+        wall_count: int,
+    ) -> list[tuple[int, int, list[tuple[float, float]]]]:
+        if wall_count <= 0:
+            return []
+
+        if section_index < 0 or section_index >= len(model.fsects):
+            raise ValueError(f"Track section {section_index} is out of range.")
+
+        current_section = section_index
+        current_wall_index = max(0, wall_index)
+        remaining = wall_count
+        positions: list[tuple[int, int, list[tuple[float, float]]]] = []
+
+        while remaining > 0:
+            if current_section >= len(model.fsects):
+                raise ValueError(
+                    f"Track section {section_index} with starting wall {wall_index} and wall count {wall_count} "
+                    "extends beyond available section geometry."
+                )
+
+            wall_ranges = self._wall_ranges_for_section_boundary(
+                model,
+                section_index=current_section,
+                boundary_index=boundary_index,
+            )
+            if not wall_ranges:
+                raise ValueError(
+                    f"No wall geometry found for section {current_section}, boundary {boundary_index}."
+                )
+
+            wall_total = len(wall_ranges)
+            if current_wall_index >= wall_total:
+                current_wall_index -= wall_total
+                current_section += 1
+                continue
+
+            available = wall_total - current_wall_index
+            take = min(remaining, available)
+            for offset in range(take):
+                positions.append((current_section, current_wall_index + offset, wall_ranges))
+            remaining -= take
+            current_section += 1
+            current_wall_index = 0
+
+        return positions
 
     def _on_mrk_load_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
