@@ -279,6 +279,55 @@ def test_mrk_table_selection_restores_wall_count_spin(qapp):
         window.close()
 
 
+def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick01", 0, 0, 63, 63),
+            MrkTextureDefinition("stripe02", 8, 8, 56, 56),
+        )
+        window.mrk_track_section_spin.setValue(1)
+        window.mrk_boundary_spin.setValue(2)
+        window.mrk_wall_index_spin.setValue(3)
+        window.mrk_entry_count_spin.setValue(5)
+
+        window.mrk_add_entry_button.click()
+
+        assert window.mrk_entries_table.item(0, 4).text() == "brick01,stripe02,brick01,stripe02,brick01"
+    finally:
+        window.close()
+
+
+def test_mrk_textures_button_saves_texture_definitions(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        class _FakeDialog:
+            Accepted = QtWidgets.QDialog.Accepted
+
+            def __init__(self, _parent, _definitions):
+                pass
+
+            def exec_(self):
+                return QtWidgets.QDialog.Accepted
+
+            def texture_definitions(self):
+                return (MrkTextureDefinition("stone03", 1, 2, 3, 4),)
+
+        monkeypatch.setattr("sg_viewer.ui.viewer_controller.MrkTexturesDialog", _FakeDialog)
+
+        window.mrk_textures_button.click()
+
+        assert window.controller._mrk_texture_definitions == (
+            MrkTextureDefinition("stone03", 1, 2, 3, 4),
+        )
+    finally:
+        window.close()
+
+
 def test_mrk_divisions_follow_polyline_arc_length():
     from sg_viewer.services.preview_painter import _division_points_for_polyline
 

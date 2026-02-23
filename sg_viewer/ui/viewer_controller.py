@@ -25,6 +25,7 @@ from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
+from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition, MrkTexturesDialog
 from sg_viewer.ui.controllers import (
     BackgroundController,
     BackgroundUiCoordinator,
@@ -78,6 +79,7 @@ class SGViewerController:
         self._section_editing_coordinator = SectionEditingCoordinator(self, self._sections_controller)
         self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
+        self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
 
         self._create_actions()
         self._create_menus()
@@ -655,6 +657,7 @@ class SGViewerController:
         )
         self._window.mrk_select_button.clicked.connect(self._on_mrk_wall_select_requested)
         self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
+        self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
         self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
@@ -772,8 +775,26 @@ class SGViewerController:
             item = QtWidgets.QTableWidgetItem(str(int(value)))
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
+        table.setItem(row, 4, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(wall_count)))
         table.selectRow(row)
         self._update_mrk_highlights_from_table()
+
+    def _on_mrk_textures_requested(self) -> None:
+        dialog = MrkTexturesDialog(self._window, self._mrk_texture_definitions)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        try:
+            self._mrk_texture_definitions = dialog.texture_definitions()
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "Invalid MRK Texture", str(exc))
+            return
+
+    def _default_texture_pattern_for_wall_count(self, wall_count: int) -> str:
+        if not self._mrk_texture_definitions:
+            return ""
+        cycle = [definition.mip_name for definition in self._mrk_texture_definitions]
+        pattern = [cycle[index % len(cycle)] for index in range(max(0, wall_count))]
+        return ",".join(pattern)
 
     def _on_mrk_entry_selection_changed(self) -> None:
         table = self._window.mrk_entries_table

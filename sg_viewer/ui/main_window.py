@@ -117,8 +117,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_entry_count_spin.setRange(1, 9999)
         self._mrk_entry_count_spin.setValue(1)
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
-        self._mrk_entries_table = QtWidgets.QTableWidget(0, 4)
-        self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count"])
+        self._mrk_textures_button = QtWidgets.QPushButton("Textures…")
+        self._mrk_entries_table = QtWidgets.QTableWidget(0, 5)
+        self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count", "Texture Pattern"])
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
         self._mrk_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._mrk_entries_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -506,6 +507,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons = QtWidgets.QHBoxLayout()
         mrk_buttons.addWidget(self._mrk_select_button)
         mrk_buttons.addWidget(self._mrk_add_entry_button)
+        mrk_buttons.addWidget(self._mrk_textures_button)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()
@@ -692,6 +694,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_add_entry_button(self) -> QtWidgets.QPushButton:
         return self._mrk_add_entry_button
+
+    @property
+    def mrk_textures_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_textures_button
 
     @property
     def mrk_entries_table(self) -> QtWidgets.QTableWidget:
