@@ -166,6 +166,7 @@ def paint_preview(
                 sg_preview_state.view_state,
                 show_mrk_notches=sg_preview_state.show_mrk_notches,
                 selected_mrk_wall=sg_preview_state.selected_mrk_wall,
+                highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
             )
         _draw_centerlines(
             painter,
