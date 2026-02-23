@@ -349,10 +349,9 @@ def _draw_mrk_notches(
         for wall in range(max(0, start_wall), max(0, start_wall) + wall_count):
             indices[wall] = color
 
-    if selected_wall is not None:
-        target_boundary, target_section, target_wall = selected_wall
-        if target_wall >= 0:
-            highlighted_lookup.setdefault((target_section, target_boundary), {})[target_wall] = "#FFFF00"
+    # MRK highlights are driven entirely by table entries so that all MRKs
+    # are rendered simultaneously with their texture-derived colors.
+    _ = selected_wall
 
     for section_index, fsect in enumerate(model.fsects):
         for boundary_index, boundary in enumerate(fsect.boundaries):

@@ -799,6 +799,7 @@ class SGViewerController:
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self._window, "Invalid MRK Texture", str(exc))
             return
+        self._update_mrk_highlights_from_table()
 
     def _default_texture_pattern_for_wall_count(self, wall_count: int) -> str:
         if not self._mrk_texture_definitions:
@@ -913,7 +914,11 @@ class SGViewerController:
             textures = [] if pattern_item is None else [token.strip() for token in pattern_item.text().split(",") if token.strip()]
             for offset in range(max(0, wall_count)):
                 texture_name = textures[offset] if offset < len(textures) else ""
-                color = color_lookup.get(texture_name, "#FFFF00")
+                if not texture_name:
+                    continue
+                color = color_lookup.get(texture_name)
+                if not color:
+                    continue
                 highlights.append((boundary_index, section_index, wall_index + offset, 1, color))
         self._window.preview.set_highlighted_mrk_walls(highlights)
 
