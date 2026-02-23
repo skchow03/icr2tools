@@ -348,6 +348,41 @@ def test_mrk_divisions_follow_polyline_arc_length():
         assert divisions[0] == pytest.approx(spacing, rel=0.03)
 
 
+def test_mrk_highlight_lookup_accepts_one_based_section_boundary_ids():
+    from sg_viewer.services.preview_painter import _resolve_mrk_highlight_indices
+
+    one_based_lookup = {
+        (2, 3): {
+            4: "#FF00FF",
+        }
+    }
+
+    resolved = _resolve_mrk_highlight_indices(
+        one_based_lookup,
+        section_index=1,
+        boundary_index=2,
+    )
+
+    assert resolved == {4: "#FF00FF"}
+
+
+def test_mrk_highlight_lookup_merges_zero_based_and_one_based_matches():
+    from sg_viewer.services.preview_painter import _resolve_mrk_highlight_indices
+
+    lookup = {
+        (1, 2): {3: "#00FF00"},
+        (2, 3): {4: "#FF0000"},
+    }
+
+    resolved = _resolve_mrk_highlight_indices(
+        lookup,
+        section_index=1,
+        boundary_index=2,
+    )
+
+    assert resolved == {3: "#00FF00", 4: "#FF0000"}
+
+
 def test_background_calibrator_receives_loaded_background_image_path(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:

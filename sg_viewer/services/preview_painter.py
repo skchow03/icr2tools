@@ -372,7 +372,11 @@ def _draw_mrk_notches(
                     notch,
                     half_length_px=_MRK_NOTCH_HALF_LENGTH_PX,
                 )
-            requested_indices = highlighted_lookup.get((section_index, boundary_index))
+            requested_indices = _resolve_mrk_highlight_indices(
+                highlighted_lookup,
+                section_index=section_index,
+                boundary_index=boundary_index,
+            )
             if not requested_indices:
                 continue
             wall_ranges = _division_wall_ranges(points, notch_points)
@@ -398,6 +402,31 @@ def _draw_mrk_notches(
             start_distance,
             end_distance,
         )
+
+
+def _resolve_mrk_highlight_indices(
+    highlighted_lookup: dict[tuple[int, int], dict[int, str]],
+    *,
+    section_index: int,
+    boundary_index: int,
+) -> dict[int, str]:
+    """Resolve MRK table identifiers against zero-based preview indices.
+
+    Historically, users may enter MRK section/boundary identifiers as either
+    zero-based (preview-native) or one-based (file/tooling-oriented). To keep
+    highlighting resilient, accept both representations and merge wall colors
+    for matching walls.
+    """
+
+    resolved: dict[int, str] = {}
+    for key in (
+        (section_index, boundary_index),
+        (section_index + 1, boundary_index + 1),
+    ):
+        wall_map = highlighted_lookup.get(key)
+        if wall_map:
+            resolved.update(wall_map)
+    return resolved
 
 
 def _division_points_for_polyline(
