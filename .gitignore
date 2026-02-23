@@ -24,6 +24,7 @@ timing_log.txt
 *.trk
 *.sg
 repo_dump.py
+*.json
 
 # Virtual environments
 venv/
