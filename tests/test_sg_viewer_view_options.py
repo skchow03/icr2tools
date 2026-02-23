@@ -286,8 +286,8 @@ def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         window.controller._mrk_texture_definitions = (
-            MrkTextureDefinition("brick01", 0, 0, 63, 63),
-            MrkTextureDefinition("stripe02", 8, 8, 56, 56),
+            MrkTextureDefinition("brick01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("stripe02", 8, 8, 56, 56, "#00FF00"),
         )
         window.mrk_track_section_spin.setValue(1)
         window.mrk_boundary_spin.setValue(2)
@@ -297,6 +297,36 @@ def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
         window.mrk_add_entry_button.click()
 
         assert window.mrk_entries_table.item(0, 4).text() == "brick01,stripe02,brick01,stripe02,brick01"
+    finally:
+        window.close()
+
+
+
+def test_mrk_highlights_repeat_texture_pattern_when_shorter_than_wall_count(qapp):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("stripe02", 8, 8, 56, 56, "#00FF00"),
+        )
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        values = [1, 2, 3, 5]
+        for column, value in enumerate(values):
+            table.setItem(0, column, QtWidgets.QTableWidgetItem(str(value)))
+        table.setItem(0, 4, QtWidgets.QTableWidgetItem("brick01,stripe02"))
+
+        window.controller._update_mrk_highlights_from_table()
+
+        assert window.preview.highlighted_mrk_walls == (
+            (2, 1, 3, 1, "#FF0000"),
+            (2, 1, 4, 1, "#00FF00"),
+            (2, 1, 5, 1, "#FF0000"),
+            (2, 1, 6, 1, "#00FF00"),
+            (2, 1, 7, 1, "#FF0000"),
+        )
     finally:
         window.close()
 
