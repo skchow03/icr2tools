@@ -10,6 +10,13 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.model.history import FileHistory
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
+from sg_viewer.services.mrk_io import (
+    MarkBoundaryEntry,
+    MarkFile,
+    MarkTrackPosition,
+    MarkUvRect,
+    serialize_mrk,
+)
 from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
@@ -664,6 +671,7 @@ class SGViewerController:
         self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
         self._window.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
         self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
+        self._window.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
         self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
@@ -1033,6 +1041,152 @@ class SGViewerController:
         payload = self._collect_mrk_state()
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         self._window.show_status_message(f"Saved MRK data to {path.name}")
+
+    def _on_mrk_generate_file_requested(self) -> None:
+        path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Generate MRK File",
+            "",
+            "MRK Files (*.mrk)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() != ".mrk":
+            path = path.with_suffix(".mrk")
+
+        try:
+            mark_file = self._build_mark_file_from_table()
+            path.write_text(serialize_mrk(mark_file), encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Generate MRK Failed",
+                str(exc),
+            )
+            return
+        self._window.show_status_message(f"Generated MRK file {path.name}")
+
+    def _build_mark_file_from_table(self) -> MarkFile:
+        model = self._window.preview.sg_preview_model
+        if model is None:
+            raise ValueError("No SG preview model is available for MRK generation.")
+
+        texture_lookup = {
+            definition.texture_name: definition for definition in self._mrk_texture_definitions
+        }
+        table = self._window.mrk_entries_table
+        entries: list[MarkBoundaryEntry] = []
+        pointer_index = 1
+
+        for row in range(table.rowCount()):
+            section_index = self._table_int_value(table, row, 0)
+            boundary_index = self._table_int_value(table, row, 1)
+            wall_index = self._table_int_value(table, row, 2)
+            wall_count = max(0, self._table_int_value(table, row, 3))
+            if wall_count <= 0:
+                continue
+
+            textures = [
+                token.strip()
+                for token in self._table_text_value(table, row, 4).split(",")
+                if token.strip()
+            ]
+            if not textures:
+                raise ValueError(f"Row {row + 1}: texture pattern is required.")
+
+            wall_ranges = self._wall_ranges_for_section_boundary(
+                model,
+                section_index=section_index,
+                boundary_index=boundary_index,
+            )
+            if not wall_ranges:
+                raise ValueError(
+                    f"Row {row + 1}: no wall geometry found for section {section_index}, boundary {boundary_index}."
+                )
+
+            for offset in range(wall_count):
+                current_wall = wall_index + offset
+                if current_wall >= len(wall_ranges):
+                    raise ValueError(
+                        f"Row {row + 1}: wall index {current_wall} exceeds available walls ({len(wall_ranges)})."
+                    )
+                texture_name = textures[offset % len(textures)]
+                texture = texture_lookup.get(texture_name)
+                if texture is None:
+                    raise ValueError(
+                        f"Row {row + 1}: texture {texture_name!r} is not defined in MRK textures."
+                    )
+                start_distance, end_distance = wall_ranges[current_wall]
+                entries.append(
+                    MarkBoundaryEntry(
+                        pointer_name=f"mrk{pointer_index}",
+                        boundary_id=boundary_index,
+                        mip_name=texture.mip_name,
+                        uv_rect=MarkUvRect(
+                            upper_left_u=texture.upper_left_u,
+                            upper_left_v=texture.upper_left_v,
+                            lower_right_u=texture.lower_right_u,
+                            lower_right_v=texture.lower_right_v,
+                        ),
+                        start=self._mark_track_position(section_index, start_distance, wall_ranges),
+                        end=self._mark_track_position(section_index, end_distance, wall_ranges),
+                    )
+                )
+                pointer_index += 1
+
+        if not entries:
+            raise ValueError("No MRK entries to export.")
+        return MarkFile(entries=tuple(entries))
+
+    def _wall_ranges_for_section_boundary(
+        self,
+        model,
+        *,
+        section_index: int,
+        boundary_index: int,
+    ) -> list[tuple[float, float]]:
+        if section_index < 0 or section_index >= len(model.fsects):
+            return []
+        fsect = model.fsects[section_index]
+        if boundary_index < 0 or boundary_index >= len(fsect.boundaries):
+            return []
+        boundary = fsect.boundaries[boundary_index]
+        points = [
+            (float(point[0]), float(point[1]))
+            for point in boundary.points
+            if point is not None
+        ]
+        if len(points) < 2:
+            return []
+        segment_lengths = [
+            math.hypot(points[index + 1][0] - points[index][0], points[index + 1][1] - points[index][1])
+            for index in range(len(points) - 1)
+        ]
+        total = sum(segment_lengths)
+        if total <= 0.0:
+            return []
+        target_length = 14.0 * 6000.0
+        segment_count = max(1, int(round(total / target_length)))
+        spacing = total / float(segment_count)
+        cuts = [0.0]
+        cuts.extend(spacing * index for index in range(1, segment_count))
+        cuts.append(total)
+        return [(cuts[index], cuts[index + 1]) for index in range(len(cuts) - 1)]
+
+    def _mark_track_position(
+        self,
+        section_index: int,
+        distance_along_boundary: float,
+        wall_ranges: list[tuple[float, float]],
+    ) -> MarkTrackPosition:
+        total = wall_ranges[-1][1] if wall_ranges else 0.0
+        if total <= 0.0:
+            fraction = 0.0
+        else:
+            fraction = distance_along_boundary / total
+        fraction = max(0.0, min(1.0, fraction))
+        return MarkTrackPosition(section=section_index, fraction=fraction)
 
     def _on_mrk_load_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(

@@ -119,6 +119,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
         self._mrk_textures_button = QtWidgets.QPushButton("Textures…")
+        self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
         self._mrk_save_button = QtWidgets.QPushButton("Save MRK…")
         self._mrk_load_button = QtWidgets.QPushButton("Load MRK…")
         self._mrk_entries_table = QtWidgets.QTableWidget(0, 5)
@@ -512,6 +513,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.addWidget(self._mrk_add_entry_button)
         mrk_buttons.addWidget(self._mrk_delete_entry_button)
         mrk_buttons.addWidget(self._mrk_textures_button)
+        mrk_buttons.addWidget(self._mrk_generate_file_button)
         mrk_buttons.addWidget(self._mrk_save_button)
         mrk_buttons.addWidget(self._mrk_load_button)
         mrk_layout.addLayout(mrk_buttons)
@@ -708,6 +710,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_textures_button(self) -> QtWidgets.QPushButton:
         return self._mrk_textures_button
+
+    @property
+    def mrk_generate_file_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_generate_file_button
 
     @property
     def mrk_entries_table(self) -> QtWidgets.QTableWidget:
