@@ -892,11 +892,23 @@ class SGViewerController:
         table = self._window.mrk_entries_table
         highlights: list[tuple[int, int, int, int, str]] = []
         color_lookup = {definition.mip_name: definition.highlight_color for definition in self._mrk_texture_definitions}
+
+        def _parse_non_negative_int(item: QtWidgets.QTableWidgetItem | None) -> int | None:
+            if item is None:
+                return None
+            try:
+                return max(0, int(item.text().strip()))
+            except (TypeError, ValueError):
+                return None
+
         for row in range(table.rowCount()):
-            section_index = int(table.item(row, 0).text())
-            boundary_index = int(table.item(row, 1).text())
-            wall_index = int(table.item(row, 2).text())
-            wall_count = int(table.item(row, 3).text())
+            section_index = _parse_non_negative_int(table.item(row, 0))
+            boundary_index = _parse_non_negative_int(table.item(row, 1))
+            wall_index = _parse_non_negative_int(table.item(row, 2))
+            wall_count = _parse_non_negative_int(table.item(row, 3))
+            if None in {section_index, boundary_index, wall_index, wall_count}:
+                continue
+
             pattern_item = table.item(row, 4)
             textures = [] if pattern_item is None else [token.strip() for token in pattern_item.text().split(",") if token.strip()]
             for offset in range(max(0, wall_count)):
