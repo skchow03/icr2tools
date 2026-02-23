@@ -3,6 +3,7 @@ import math
 from types import SimpleNamespace
 
 import pytest
+from sg_viewer.services.mrk_io import parse_mrk_text
 
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
@@ -418,6 +419,57 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
         )
         assert window.mrk_entries_table.item(0, 4).text() == "brick_red"
+    finally:
+        window.close()
+
+
+def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        output_path = tmp_path / "generated.mrk"
+        window.preview._runtime._sg_preview_model = object()
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+            MrkTextureDefinition("brick_blue", "walls02", 4, 8, 60, 72, "#0000FF"),
+        )
+
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        table.setItem(0, 0, QtWidgets.QTableWidgetItem("10"))
+        table.setItem(0, 1, QtWidgets.QTableWidgetItem("2"))
+        table.setItem(0, 2, QtWidgets.QTableWidgetItem("1"))
+        table.setItem(0, 3, QtWidgets.QTableWidgetItem("2"))
+        table.setItem(0, 4, QtWidgets.QTableWidgetItem("brick_red,brick_blue"))
+
+        monkeypatch.setattr(
+            window.controller,
+            "_wall_ranges_for_section_boundary",
+            lambda *_args, **_kwargs: [(0.0, 50.0), (50.0, 100.0), (100.0, 150.0)],
+        )
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(output_path), "MRK Files (*.mrk)"),
+        )
+
+        window.controller._on_mrk_generate_file_requested()
+
+        mrk_text = output_path.read_text(encoding="utf-8")
+        mark_file = parse_mrk_text(mrk_text)
+
+        assert len(mark_file.entries) == 2
+        assert mark_file.entries[0].pointer_name == "mrk1"
+        assert mark_file.entries[0].boundary_id == 2
+        assert mark_file.entries[0].mip_name == "walls01"
+        assert mark_file.entries[0].start.section == 10
+        assert mark_file.entries[0].start.fraction == pytest.approx(1.0 / 3.0)
+        assert mark_file.entries[0].end.fraction == pytest.approx(2.0 / 3.0)
+        assert mark_file.entries[1].pointer_name == "mrk2"
+        assert mark_file.entries[1].mip_name == "walls02"
+        assert mark_file.entries[1].start.fraction == pytest.approx(2.0 / 3.0)
+        assert mark_file.entries[1].end.fraction == pytest.approx(1.0)
     finally:
         window.close()
 
