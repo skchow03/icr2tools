@@ -7,6 +7,7 @@ from typing import Iterable, Tuple
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 
 from PyQt5 import QtCore, QtGui
+from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
 from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.model.sg_model import SectionPreview
@@ -780,16 +781,10 @@ def _draw_tsd_lines(
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     section_list = [section for section in sections if section.length > 0]
+    track_length = _track_length_from_sections(section_list)
+    closed_loop = bool(section_list) and is_closed_loop(section_list)
 
     for line in tsd_lines:
-        world_points = _sample_tsd_detail_line(line, section_list, transform[0])
-        if len(world_points) < 2:
-            continue
-        mapped_points = [
-            sg_rendering.map_point(point[0], point[1], transform, widget_height)
-            for point in world_points
-        ]
-
         color_index = max(0, min(255, int(line.color_index)))
         if tsd_palette:
             color = QtGui.QColor(tsd_palette[color_index % len(tsd_palette)])
@@ -805,7 +800,31 @@ def _draw_tsd_lines(
         pen.setCapStyle(QtCore.Qt.FlatCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
-        painter.drawPolyline(QtGui.QPolygonF(mapped_points))
+
+        for segment in split_wrapped_segment(
+            x1=float(line.start_dlong),
+            y1=float(line.start_dlat),
+            x2=float(line.end_dlong),
+            y2=float(line.end_dlat),
+            track_length=track_length,
+            is_closed_loop=closed_loop,
+        ):
+            world_points = _sample_tsd_detail_segment(
+                start_dlong=segment[0],
+                start_dlat=segment[1],
+                end_dlong=segment[2],
+                end_dlat=segment[3],
+                sections=section_list,
+                pixels_per_world_unit=transform[0],
+                track_length=track_length,
+            )
+            if len(world_points) < 2:
+                continue
+            mapped_points = [
+                sg_rendering.map_point(point[0], point[1], transform, widget_height)
+                for point in world_points
+            ]
+            painter.drawPolyline(QtGui.QPolygonF(mapped_points))
 
     painter.restore()
 
@@ -824,16 +843,36 @@ def _sample_tsd_detail_line(
     if not sections:
         return []
 
-    track_length = max(
-        (float(section.start_dlong) + float(section.length) for section in sections),
-        default=0.0,
-    )
+    track_length = _track_length_from_sections(sections)
     if track_length <= 0:
         return []
 
-    start_dlong = float(line.start_dlong) % track_length
-    end_dlong = float(line.end_dlong) % track_length
-    span = (end_dlong - start_dlong) % track_length
+    return _sample_tsd_detail_segment(
+        start_dlong=float(line.start_dlong),
+        start_dlat=float(line.start_dlat),
+        end_dlong=float(line.end_dlong),
+        end_dlat=float(line.end_dlat),
+        sections=sections,
+        pixels_per_world_unit=pixels_per_world_unit,
+        track_length=track_length,
+    )
+
+
+def _sample_tsd_detail_segment(
+    start_dlong: float,
+    start_dlat: float,
+    end_dlong: float,
+    end_dlat: float,
+    sections: list[SectionPreview],
+    pixels_per_world_unit: float,
+    track_length: float,
+) -> list[Point]:
+    if track_length <= 0:
+        return []
+
+    normalized_start = float(start_dlong) % track_length
+    normalized_end = float(end_dlong) % track_length
+    span = (normalized_end - normalized_start) % track_length
     if math.isclose(span, 0.0):
         return []
 
@@ -845,16 +884,42 @@ def _sample_tsd_detail_line(
     for step in range(step_count + 1):
         along = min(span, step * increment)
         fraction = along / span if span > 0 else 0.0
-        dlong = (start_dlong + along) % track_length
-        dlat_500ths = float(line.start_dlat) + (
-            float(line.end_dlat) - float(line.start_dlat)
-        ) * fraction
-        dlat = dlat_500ths
+        dlong = (normalized_start + along) % track_length
+        dlat = float(start_dlat) + (float(end_dlat) - float(start_dlat)) * fraction
         point = _point_on_track_at_dlong(sections, dlong, dlat, track_length)
         if point is not None:
             points.append(point)
 
     return points
+
+
+def _track_length_from_sections(sections: list[SectionPreview]) -> float:
+    return max(
+        (float(section.start_dlong) + float(section.length) for section in sections),
+        default=0.0,
+    )
+
+
+def split_wrapped_segment(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    track_length: float,
+    is_closed_loop: bool,
+) -> tuple[tuple[float, float, float, float], ...]:
+    if not is_closed_loop or track_length <= 0:
+        return ((x1, y1, x2, y2),)
+
+    start = float(x1) % track_length
+    end = float(x2) % track_length
+    if abs(end - start) <= track_length / 2.0:
+        return ((start, y1, end, y2),)
+
+    return (
+        (start, y1, track_length, y1),
+        (0.0, y2, end, y2),
+    )
 
 
 def _point_on_track_at_dlong(

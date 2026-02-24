@@ -7,6 +7,7 @@ from sg_viewer.services.preview_painter import (
     _point_on_section,
     _sample_tsd_detail_line,
     _tsd_width_to_pixels,
+    split_wrapped_segment,
 )
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 
@@ -95,3 +96,19 @@ def test_tsd_detail_zero_span_does_not_draw_full_loop() -> None:
     points = _sample_tsd_detail_line(line, [section], pixels_per_world_unit=1.0)
 
     assert points == []
+
+
+def test_split_wrapped_segment_splits_closed_loop_crossing() -> None:
+    segments = split_wrapped_segment(
+        x1=9800.0,
+        y1=10.0,
+        x2=200.0,
+        y2=20.0,
+        track_length=10000.0,
+        is_closed_loop=True,
+    )
+
+    assert segments == (
+        (9800.0, 10.0, 10000.0, 10.0),
+        (0.0, 20.0, 200.0, 20.0),
+    )
