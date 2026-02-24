@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Protocol
 
 from PyQt5 import QtWidgets
 
 from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.geometry.topology import infer_section_connectivity
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
@@ -37,6 +39,9 @@ class SectionEditingCoordinator:
         if self._host._section_table_window is None:
             self._host._section_table_window = SectionTableWindow(self._host._window)
             self._host._section_table_window.on_sections_edited(self.apply_section_table_edits)
+            self._host._section_table_window.on_section_value_edited(
+                self.apply_section_value_edit
+            )
 
         self._host._section_table_window.set_sections(sections, track_length)
         self._host._section_table_window.show()
@@ -50,8 +55,38 @@ class SectionEditingCoordinator:
         self._host._section_table_window.set_sections(sections, track_length)
 
     def apply_section_table_edits(self, sections: list[SectionPreview]) -> None:
+        started = perf_counter()
+        infer_section_connectivity(sections)
         self._host._window.preview.set_sections(sections)
         self.update_heading_table()
+        print(f"[profiling] Section structural edit duration: {(perf_counter() - started) * 1000:.2f} ms")
+
+    def apply_section_value_edit(
+        self,
+        section_index: int,
+        updated_section: SectionPreview,
+        _neighbor_required: bool,
+    ) -> None:
+        started = perf_counter()
+        sections, _track_length = self._host._window.preview.get_section_set()
+        if not (0 <= section_index < len(sections)):
+            return
+
+        updated_sections = list(sections)
+        updated_sections[section_index] = updated_section
+
+        changed_indices = [section_index]
+        if section_index + 1 < len(updated_sections):
+            changed_indices.append(section_index + 1)
+
+        geometry_started = perf_counter()
+        self._host._window.preview.set_sections(
+            updated_sections,
+            changed_indices=changed_indices,
+        )
+        print(f"[profiling] Geometry recompute duration: {(perf_counter() - geometry_started) * 1000:.2f} ms")
+        self.update_heading_table()
+        print(f"[profiling] Table cell edit duration: {(perf_counter() - started) * 1000:.2f} ms")
 
     def show_heading_table(self) -> None:
         headings = self._host._window.preview.get_section_headings()
