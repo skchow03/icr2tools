@@ -1475,74 +1475,113 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _update_fsect_table(self, section_index: int | None) -> None:
         fsects = self._preview.get_section_fsects(section_index)
-        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
         self._updating_fsect_table = True
         self._fsect_table.setRowCount(len(fsects))
-        for row_index, fsect in enumerate(fsects):
-            next_fsect = fsects[row_index + 1] if row_index < len(fsects) - 1 else None
-            start_item = QtWidgets.QTableWidgetItem(
-                self._format_fsect_dlat(fsect.start_dlat)
-            )
-            end_item = QtWidgets.QTableWidgetItem(
-                self._format_fsect_dlat(fsect.end_dlat)
-            )
-            if next_fsect is not None and fsect.start_dlat > next_fsect.start_dlat:
-                start_item.setBackground(QtGui.QColor("salmon"))
-            if next_fsect is not None and fsect.end_dlat > next_fsect.end_dlat:
-                end_item.setBackground(QtGui.QColor("salmon"))
-            for editable_item in (start_item, end_item):
-                editable_item.setFlags(
-                    editable_item.flags()
-                    | QtCore.Qt.ItemIsEditable
-                    | QtCore.Qt.ItemIsSelectable
-                )
-            start_delta_item = QtWidgets.QTableWidgetItem(
-                format_fsect_delta(fsects, row_index, "start", unit=self._current_measurement_unit())
-            )
-            end_delta_item = QtWidgets.QTableWidgetItem(
-                format_fsect_delta(fsects, row_index, "end", unit=self._current_measurement_unit())
-            )
-            if row_index < len(fsects) - 1:
-                for delta_item in (start_delta_item, end_delta_item):
-                    delta_item.setFlags(
-                        delta_item.flags()
-                        | QtCore.Qt.ItemIsEditable
-                        | QtCore.Qt.ItemIsSelectable
-                    )
-            else:
-                for delta_item in (start_delta_item, end_delta_item):
-                    delta_item.setFlags(delta_item.flags() & ~QtCore.Qt.ItemIsEditable)
-            self._fsect_table.setItem(
-                row_index, 0, QtWidgets.QTableWidgetItem(str(row_index))
-            )
-            boundary_item = QtWidgets.QTableWidgetItem(
-                boundary_number_by_row.get(row_index, "")
-            )
-            boundary_item.setFlags(
-                boundary_item.flags()
-                & ~QtCore.Qt.ItemIsEditable
-            )
-            self._fsect_table.setItem(row_index, 1, boundary_item)
-            self._fsect_table.setItem(row_index, 2, start_item)
-            self._fsect_table.setItem(row_index, 3, end_item)
-            self._fsect_table.setItem(row_index, 4, start_delta_item)
-            self._fsect_table.setItem(row_index, 5, end_delta_item)
-            combo = QtWidgets.QComboBox()
-            for label, surface_type, type2 in fsect_type_options():
-                combo.addItem(label, (surface_type, type2))
-            combo.setCurrentIndex(
-                fsect_type_index(fsect.surface_type, fsect.type2)
-            )
-            combo.currentIndexChanged.connect(
-                lambda _idx, row=row_index, widget=combo: self._on_fsect_type_changed(
-                    row, widget
-                )
-            )
-            self._fsect_table.setCellWidget(row_index, 6, combo)
-        if not fsects:
-            self._fsect_table.setRowCount(0)
+        self._refresh_fsect_row_range(
+            section_index,
+            range(len(fsects)),
+        )
         self._updating_fsect_table = False
         self._fsect_table.resizeColumnsToContents()
+        self._refresh_fsect_diagram_data(section_index)
+
+    def _refresh_fsect_row_range(
+        self, section_index: int | None, rows: list[int] | range | set[int] | tuple[int, ...]
+    ) -> None:
+        if section_index is None:
+            return
+        fsects = self._preview.get_section_fsects(section_index)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+        was_updating = self._updating_fsect_table
+        self._updating_fsect_table = True
+        for row_index in sorted(set(rows)):
+            if row_index < 0 or row_index >= len(fsects):
+                continue
+            fsect = fsects[row_index]
+            next_fsect = fsects[row_index + 1] if row_index < len(fsects) - 1 else None
+            self._set_fsect_text_cell(row_index, 0, str(row_index), editable=False)
+            self._set_fsect_text_cell(
+                row_index,
+                1,
+                boundary_number_by_row.get(row_index, ""),
+                editable=False,
+            )
+            self._set_fsect_text_cell(
+                row_index,
+                2,
+                self._format_fsect_dlat(fsect.start_dlat),
+                editable=True,
+                highlight=next_fsect is not None
+                and fsect.start_dlat > next_fsect.start_dlat,
+            )
+            self._set_fsect_text_cell(
+                row_index,
+                3,
+                self._format_fsect_dlat(fsect.end_dlat),
+                editable=True,
+                highlight=next_fsect is not None
+                and fsect.end_dlat > next_fsect.end_dlat,
+            )
+            self._set_fsect_text_cell(
+                row_index,
+                4,
+                format_fsect_delta(
+                    fsects,
+                    row_index,
+                    "start",
+                    unit=self._current_measurement_unit(),
+                ),
+                editable=row_index < len(fsects) - 1,
+            )
+            self._set_fsect_text_cell(
+                row_index,
+                5,
+                format_fsect_delta(
+                    fsects,
+                    row_index,
+                    "end",
+                    unit=self._current_measurement_unit(),
+                ),
+                editable=row_index < len(fsects) - 1,
+            )
+            combo = self._fsect_table.cellWidget(row_index, 6)
+            if not isinstance(combo, QtWidgets.QComboBox):
+                combo = QtWidgets.QComboBox()
+                for label, surface_type, type2 in fsect_type_options():
+                    combo.addItem(label, (surface_type, type2))
+                combo.currentIndexChanged.connect(
+                    lambda _idx, row=row_index, widget=combo: self._on_fsect_type_changed(
+                        row, widget
+                    )
+                )
+                self._fsect_table.setCellWidget(row_index, 6, combo)
+            combo.setCurrentIndex(fsect_type_index(fsect.surface_type, fsect.type2))
+        self._updating_fsect_table = was_updating
+
+    def _set_fsect_text_cell(
+        self,
+        row_index: int,
+        column_index: int,
+        text: str,
+        *,
+        editable: bool,
+        highlight: bool = False,
+    ) -> None:
+        item = self._fsect_table.item(row_index, column_index)
+        if item is None:
+            item = QtWidgets.QTableWidgetItem("")
+            self._fsect_table.setItem(row_index, column_index, item)
+        item.setText(text)
+        flags = item.flags() | QtCore.Qt.ItemIsSelectable
+        if editable:
+            flags |= QtCore.Qt.ItemIsEditable
+        else:
+            flags &= ~QtCore.Qt.ItemIsEditable
+        item.setFlags(flags)
+        item.setBackground(QtGui.QColor("salmon") if highlight else QtGui.QColor())
+
+    def _refresh_fsect_diagram_data(self, section_index: int | None) -> None:
+        fsects = self._preview.get_section_fsects(section_index)
         prev_fsects = (
             self._preview.get_section_fsects(section_index - 1)
             if section_index is not None
@@ -1601,6 +1640,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
             normalize_on_commit = text != self._format_fsect_dlat(new_value)
             self._update_fsect_delta_cells(section_index, row_index)
+            self._refresh_fsect_row_range(
+                section_index,
+                {row_index - 1, row_index},
+            )
         else:
             next_row_index = row_index + 1
             if next_row_index >= len(fsects):
@@ -1625,6 +1668,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
             normalize_on_commit = True
             self._update_fsect_delta_cells(section_index, next_row_index)
+            self._refresh_fsect_row_range(
+                section_index,
+                {next_row_index - 1, next_row_index},
+            )
+        self._refresh_fsect_diagram_data(section_index)
         self._schedule_fsect_table_commit(normalize_on_commit)
 
     def _schedule_fsect_table_commit(self, normalize_on_commit: bool) -> None:
