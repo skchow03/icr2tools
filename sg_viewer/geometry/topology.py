@@ -1,3 +1,40 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+
+def infer_section_connectivity(sections) -> None:
+    """Normalize section ordering and index-based connectivity in place.
+
+    Section table edits may change ``section_id`` and link fields. The preview
+    model requires ``section_id == list index`` and connectivity links to point
+    at those indices, so this helper reorders sections by ``section_id``,
+    remaps links to the new indices, and updates the original list in place.
+    """
+
+    if not sections:
+        return
+
+    ordered_sections = sorted(sections, key=lambda section: int(section.section_id))
+    id_to_new_index = {int(section.section_id): index for index, section in enumerate(ordered_sections)}
+    count = len(ordered_sections)
+
+    normalized = []
+    for index, section in enumerate(ordered_sections):
+        prev_index = id_to_new_index.get(int(section.previous_id), (index - 1) % count)
+        next_index = id_to_new_index.get(int(section.next_id), (index + 1) % count)
+        normalized.append(
+            replace(
+                section,
+                section_id=index,
+                previous_id=prev_index,
+                next_id=next_index,
+            )
+        )
+
+    sections[:] = normalized
+
+
 def is_closed_loop(sections) -> bool:
     """
     Returns True iff sections form exactly one closed loop.
