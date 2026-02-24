@@ -95,6 +95,8 @@ class SGViewerController:
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
         self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
         self._sunny_palette: list[QtGui.QColor] | None = None
+        self._sunny_palette_path: Path | None = None
+        self._palette_colors_dialog: PaletteColorDialog | None = None
 
         self._create_actions()
         self._create_menus()
@@ -465,20 +467,26 @@ class SGViewerController:
 
         self._load_sunny_palette(Path(path_str))
 
-    def _load_sunny_palette(self, path: Path) -> None:
+    def _load_sunny_palette(self, path: Path, *, persist_for_current_track: bool = True) -> bool:
+        resolved_path = path.resolve()
         try:
-            self._sunny_palette = self._read_pcx_256_palette(path)
+            self._sunny_palette = self._read_pcx_256_palette(resolved_path)
+            self._sunny_palette_path = resolved_path
         except (OSError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
                 "Load SUNNY.PCX Palette",
                 f"Could not load palette from {path.name}:\n{exc}",
             )
-            return
+            return False
+
+        if persist_for_current_track and self._current_path is not None:
+            self._history.set_sunny_palette(self._current_path, resolved_path)
 
         self._window.show_status_message(
-            f"Loaded SUNNY palette from {path.name} ({len(self._sunny_palette)} colors)."
+            f"Loaded SUNNY palette from {resolved_path.name} ({len(self._sunny_palette)} colors)."
         )
+        return True
 
     def _show_palette_colors_dialog(self) -> None:
         if not self._sunny_palette:
@@ -489,8 +497,15 @@ class SGViewerController:
             )
             return
 
-        dialog = PaletteColorDialog(self._sunny_palette, self._window)
-        dialog.exec_()
+        if self._palette_colors_dialog is None:
+            self._palette_colors_dialog = PaletteColorDialog(self._sunny_palette, self._window)
+        else:
+            self._palette_colors_dialog.close()
+            self._palette_colors_dialog = PaletteColorDialog(self._sunny_palette, self._window)
+
+        self._palette_colors_dialog.show()
+        self._palette_colors_dialog.raise_()
+        self._palette_colors_dialog.activateWindow()
 
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
@@ -1541,6 +1556,15 @@ class SGViewerController:
         self._window.preview.refresh_fsections_preview()
         self._window.update_selected_section_fsect_table()
 
+
+    def _apply_saved_sunny_palette(self, sg_path: Path | None = None) -> None:
+        path = sg_path or self._current_path
+        if path is None:
+            return
+        palette_path = self._history.get_sunny_palette(path)
+        if palette_path is None:
+            return
+        self._load_sunny_palette(palette_path, persist_for_current_track=False)
 
     def _load_measurement_unit_from_history(self) -> None:
         unit = self._history.get_measurement_unit()

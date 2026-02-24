@@ -105,3 +105,40 @@ def test_measurement_unit_round_trip(tmp_path):
 
     history.set_measurement_unit("invalid")
     assert history.get_measurement_unit() == "meter"
+
+
+def test_sunny_palette_round_trip(tmp_path):
+    ini_path = tmp_path / "sg_viewer.ini"
+    track_path = tmp_path / "tracks" / "test.sg"
+    track_path.parent.mkdir(parents=True, exist_ok=True)
+    track_path.write_text("", encoding="utf-8")
+    palette_path = tmp_path / "palettes" / "sunny.pcx"
+    palette_path.parent.mkdir(parents=True, exist_ok=True)
+    palette_path.write_text("", encoding="utf-8")
+
+    history = FileHistory(ini_path)
+    history.set_sunny_palette(track_path, palette_path)
+
+    restored = history.get_sunny_palette(track_path)
+
+    assert restored == palette_path.resolve()
+
+
+def test_sunny_palette_supports_relative_paths(tmp_path):
+    ini_path = tmp_path / "sg_viewer.ini"
+    track_path = tmp_path / "tracks" / "test.sg"
+    track_path.parent.mkdir(parents=True, exist_ok=True)
+    track_path.write_text("", encoding="utf-8")
+
+    ini_path.write_text(
+        f"""
+[files]
+{track_path.resolve()} = {{"sunny_palette": "../palettes/sunny.pcx"}}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    history = FileHistory(ini_path)
+
+    assert history.get_sunny_palette(track_path) == (tmp_path / "palettes" / "sunny.pcx").resolve()
