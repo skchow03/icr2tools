@@ -75,3 +75,23 @@ def test_tsd_width_uses_world_500ths_scale() -> None:
 
 def test_tsd_width_has_minimum_visible_pixel() -> None:
     assert _tsd_width_to_pixels(1, pixels_per_world_unit=0.1) == pytest.approx(1.0)
+
+
+def test_tsd_detail_wraps_once_when_end_is_before_start() -> None:
+    section = _make_section(length=10000.0)
+    line = TrackSurfaceDetailLine(1, 500, 9000, 0, 1000, 0)
+
+    points = _sample_tsd_detail_line(line, [section], pixels_per_world_unit=1.0)
+
+    assert points[0] == (9.0, 0.0)
+    assert points[-1] == (1.0, 0.0)
+    assert len(points) == 3
+
+
+def test_tsd_detail_zero_span_does_not_draw_full_loop() -> None:
+    section = _make_section(length=10000.0)
+    line = TrackSurfaceDetailLine(1, 500, 2500, 0, 2500, 0)
+
+    points = _sample_tsd_detail_line(line, [section], pixels_per_world_unit=1.0)
+
+    assert points == []
