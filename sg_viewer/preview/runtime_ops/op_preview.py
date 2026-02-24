@@ -188,6 +188,10 @@ class _RuntimeCorePreviewMixin:
         return self._show_tsd_lines
 
     @property
+    def show_tsd_selected_section_only(self) -> bool:
+        return self._show_tsd_selected_section_only
+
+    @property
     def tsd_lines(self):
         return self._tsd_lines
 
@@ -342,6 +346,10 @@ class _RuntimeCorePreviewMixin:
 
     def set_show_tsd_lines(self, visible: bool) -> None:
         self._show_tsd_lines = visible
+        self._context.request_repaint()
+
+    def set_show_tsd_selected_section_only(self, selected_only: bool) -> None:
+        self._show_tsd_selected_section_only = selected_only
         self._context.request_repaint()
 
     def set_tsd_lines(self, lines) -> None:

@@ -71,6 +71,8 @@ class PreviewPresenter:
             selected_mrk_wall=self._runtime.selected_mrk_wall,
             highlighted_mrk_walls=self._runtime.highlighted_mrk_walls,
             show_tsd_lines=self._runtime.show_tsd_lines,
+            show_tsd_selected_section_only=self._runtime.show_tsd_selected_section_only,
+            selected_section_index=selection.selected_section_index,
             tsd_lines=self._runtime.tsd_lines,
             tsd_palette=self._runtime.tsd_palette,
         )
