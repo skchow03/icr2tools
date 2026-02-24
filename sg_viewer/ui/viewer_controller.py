@@ -22,7 +22,6 @@ from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_inte
 from sg_viewer.services.tsd_io import (
     TrackSurfaceDetailFile,
     TrackSurfaceDetailLine,
-    normalize_tsd_command,
     parse_tsd,
     serialize_tsd,
 )
@@ -47,6 +46,7 @@ from sg_viewer.ui.mrk_textures_dialog import (
     MrkTexturePatternDialog,
     MrkTexturesDialog,
 )
+from sg_viewer.ui.models.tsd_lines_model import TsdLinesTableModel
 from sg_viewer.ui.controllers import (
     BackgroundController,
     BackgroundUiCoordinator,
@@ -105,8 +105,8 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
-        self._tsd_row_cache: dict[int, tuple[tuple[str, ...], TrackSurfaceDetailLine | None]] = {}
-        self._tsd_dirty_rows: set[int] = set()
+        self._tsd_lines_model = TsdLinesTableModel(self._window)
+        self._window.tsd_lines_table.setModel(self._tsd_lines_model)
         self._tsd_preview_refresh_timer = QtCore.QTimer(self._window)
         self._tsd_preview_refresh_timer.setSingleShot(True)
         self._tsd_preview_refresh_timer.setInterval(40)
@@ -778,12 +778,13 @@ class SGViewerController:
         self._window.tsd_draw_all_sections_checkbox.toggled.connect(
             self._on_tsd_draw_mode_changed
         )
-        self._window.tsd_lines_table.itemSelectionChanged.connect(
-            self._refresh_tsd_preview_lines
-        )
-        self._window.tsd_lines_table.itemChanged.connect(
-            self._schedule_tsd_preview_refresh
-        )
+        self._tsd_lines_model.dataChanged.connect(self._schedule_tsd_preview_refresh)
+        self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
+        self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
+        self._tsd_lines_model.modelReset.connect(self._refresh_tsd_preview_lines)
+        tsd_selection_model = self._window.tsd_lines_table.selectionModel()
+        if tsd_selection_model is not None:
+            tsd_selection_model.selectionChanged.connect(self._on_tsd_selection_changed)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -911,27 +912,18 @@ class SGViewerController:
 
 
     def _on_tsd_add_line_requested(self) -> None:
-        table = self._window.tsd_lines_table
-        row = table.rowCount()
-        table.insertRow(row)
-        defaults = ["Detail", 36, 4000, 0, 0, 0, 0]
-        for column, value in enumerate(defaults):
-            item = QtWidgets.QTableWidgetItem(str(value))
-            item.setTextAlignment(int(QtCore.Qt.AlignCenter))
-            table.setItem(row, column, item)
-        self._tsd_dirty_rows.add(row)
-        self._tsd_row_cache.pop(row, None)
-        table.selectRow(row)
+        row = self._tsd_lines_model.add_default_row()
+        self._window.tsd_lines_table.selectRow(row)
         self._refresh_tsd_preview_lines()
 
     def _on_tsd_delete_line_requested(self) -> None:
-        table = self._window.tsd_lines_table
-        selected_rows = table.selectionModel().selectedRows()
+        selection_model = self._window.tsd_lines_table.selectionModel()
+        if selection_model is None:
+            return
+        selected_rows = selection_model.selectedRows()
         if not selected_rows:
             return
-        removed_row = selected_rows[0].row()
-        table.removeRow(removed_row)
-        self._remove_tsd_cached_row(removed_row)
+        self._tsd_lines_model.remove_row(selected_rows[0].row())
         self._refresh_tsd_preview_lines()
 
     def _on_tsd_draw_mode_changed(self, checked: bool) -> None:
@@ -952,7 +944,7 @@ class SGViewerController:
             path = path.with_suffix(".tsd")
 
         try:
-            detail_file = self._build_tsd_file_from_table()
+            detail_file = self._build_tsd_file_from_model()
             path.write_text(serialize_tsd(detail_file), encoding="utf-8")
         except (OSError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
@@ -990,89 +982,43 @@ class SGViewerController:
         self._window.show_status_message(f"Loaded TSD file {path.name}")
 
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
-        table = self._window.tsd_lines_table
-        table.blockSignals(True)
-        self._tsd_row_cache.clear()
-        self._tsd_dirty_rows.clear()
-        try:
-            table.setRowCount(0)
-            for line in detail_file.lines:
-                row = table.rowCount()
-                table.insertRow(row)
-                values = [
-                    line.command,
-                    line.color_index,
-                    line.width_500ths,
-                    line.start_dlong,
-                    line.start_dlat,
-                    line.end_dlong,
-                    line.end_dlat,
-                ]
-                for column, value in enumerate(values):
-                    item = QtWidgets.QTableWidgetItem(str(value))
-                    item.setTextAlignment(int(QtCore.Qt.AlignCenter))
-                    table.setItem(row, column, item)
-                self._tsd_row_cache[row] = (tuple(str(value) for value in values), line)
-        finally:
-            table.blockSignals(False)
+        self._tsd_lines_model.replace_lines(detail_file.lines)
         self._loaded_tsd_lines = tuple(detail_file.lines)
         self._refresh_tsd_preview_lines()
 
-    def _schedule_tsd_preview_refresh(self, item: QtWidgets.QTableWidgetItem) -> None:
-        self._tsd_dirty_rows.add(item.row())
+    def _on_tsd_selection_changed(
+        self,
+        _selected: QtCore.QItemSelection,
+        _deselected: QtCore.QItemSelection,
+    ) -> None:
+        self._refresh_tsd_preview_lines()
+
+    def _schedule_tsd_preview_refresh(self, *_args: object) -> None:
         self._tsd_preview_refresh_timer.start()
 
     def _refresh_tsd_preview_lines(self) -> None:
         draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
-        table = self._window.tsd_lines_table
-        rows = range(table.rowCount())
-        if not draw_all:
-            selected_rows = table.selectionModel().selectedRows()
-            rows = [index.row() for index in selected_rows]
+        if draw_all:
+            lines = list(self._tsd_lines_model.all_lines())
+        else:
+            selection_model = self._window.tsd_lines_table.selectionModel()
+            selected_rows = [] if selection_model is None else [index.row() for index in selection_model.selectedRows()]
+            lines = self._tsd_lines_model.lines_for_rows(selected_rows)
 
-        lines: list[TrackSurfaceDetailLine] = []
         sections, _ = self._window.preview.get_section_set()
         adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
-        for row in rows:
-            line = self._get_cached_tsd_line_for_preview(row)
-            if line is not None:
-                lines.append(
-                    self._convert_tsd_line_for_preview(
-                        line,
-                        sections,
-                        adjusted_to_sg_ranges,
-                    )
-                )
+        preview_lines = [
+            self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
+            for line in lines
+        ]
 
-        self._window.preview.set_tsd_lines(tuple(lines))
+        self._window.preview.set_tsd_lines(tuple(preview_lines))
 
-    def _capture_tsd_row_values(self, row: int) -> tuple[str, ...]:
-        table = self._window.tsd_lines_table
-        return tuple(self._table_text_value(table, row, column) for column in range(7))
-
-    def _get_cached_tsd_line_for_preview(self, row: int) -> TrackSurfaceDetailLine | None:
-        row_values = self._capture_tsd_row_values(row)
-        cached = self._tsd_row_cache.get(row)
-        should_reparse = row in self._tsd_dirty_rows or cached is None or cached[0] != row_values
-        if should_reparse:
-            parsed_line = self._parse_tsd_line_for_preview(row)
-            self._tsd_row_cache[row] = (row_values, parsed_line)
-            self._tsd_dirty_rows.discard(row)
-            return parsed_line
-
-        return cached[1]
-
-    def _remove_tsd_cached_row(self, removed_row: int) -> None:
-        self._tsd_row_cache = {
-            (row - 1 if row > removed_row else row): value
-            for row, value in self._tsd_row_cache.items()
-            if row != removed_row
-        }
-        self._tsd_dirty_rows = {
-            (row - 1 if row > removed_row else row)
-            for row in self._tsd_dirty_rows
-            if row != removed_row
-        }
+    def _build_tsd_file_from_model(self) -> TrackSurfaceDetailFile:
+        lines = self._tsd_lines_model.all_lines()
+        if not lines:
+            raise ValueError("No TSD lines to export.")
+        return TrackSurfaceDetailFile(lines=lines)
 
     def _convert_tsd_line_for_preview(
         self,
@@ -1180,60 +1126,6 @@ class SGViewerController:
         fraction = (normalized - adjusted_start) / adjusted_length
         return int(round(sg_start + fraction * (sg_end - sg_start)))
 
-    def _parse_tsd_line_for_preview(self, row: int) -> TrackSurfaceDetailLine | None:
-        table = self._window.tsd_lines_table
-        try:
-            command = normalize_tsd_command(
-                self._table_text_value(table, row, 0) or "Detail"
-            )
-            values = [self._table_int_value(table, row, column) for column in range(1, 7)]
-            color_index, width_500ths, start_dlong, start_dlat, end_dlong, end_dlat = values
-        except ValueError:
-            return None
-
-        if width_500ths <= 0:
-            return None
-
-        return TrackSurfaceDetailLine(
-            color_index=color_index,
-            width_500ths=width_500ths,
-            start_dlong=start_dlong,
-            start_dlat=start_dlat,
-            end_dlong=end_dlong,
-            end_dlat=end_dlat,
-            command=command,
-        )
-
-    def _build_tsd_file_from_table(self) -> TrackSurfaceDetailFile:
-        table = self._window.tsd_lines_table
-        lines: list[TrackSurfaceDetailLine] = []
-
-        for row in range(table.rowCount()):
-            try:
-                command = normalize_tsd_command(self._table_text_value(table, row, 0) or "Detail")
-            except ValueError as exc:
-                raise ValueError(
-                    f"Row {row + 1}: command must be Detail or Detail_Dash."
-                ) from exc
-            values = [self._table_int_value(table, row, column) for column in range(1, 7)]
-            color_index, width_500ths, start_dlong, start_dlat, end_dlong, end_dlat = values
-            if width_500ths <= 0:
-                raise ValueError(f"Row {row + 1}: width (500ths) must be greater than zero.")
-            lines.append(
-                TrackSurfaceDetailLine(
-                    color_index=color_index,
-                    width_500ths=width_500ths,
-                    start_dlong=start_dlong,
-                    start_dlat=start_dlat,
-                    end_dlong=end_dlong,
-                    end_dlat=end_dlat,
-                    command=command,
-                )
-            )
-
-        if not lines:
-            raise ValueError("No TSD lines to export.")
-        return TrackSurfaceDetailFile(lines=tuple(lines))
 
     def _on_mrk_textures_requested(self) -> None:
         dialog = MrkTexturesDialog(self._window, self._mrk_texture_definitions)
