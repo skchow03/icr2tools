@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import pytest
 
 pytest.importorskip("PyQt5")
@@ -89,3 +90,73 @@ def test_sections_changed_syncs_section_editing_menu_actions() -> None:
     assert controller._move_section_mode_action.enabled is True
     assert controller._delete_section_mode_action.enabled is False
     assert controller._set_start_finish_action.enabled is True
+
+
+def _legacy_adjusted_dlong_to_sg_dlong(
+    adjusted_dlong: int,
+    section_ranges: list[tuple[float, float, float, float]],
+) -> int:
+    if not section_ranges:
+        return int(adjusted_dlong)
+
+    total_adjusted_length = section_ranges[-1][1]
+    if total_adjusted_length <= 0:
+        return int(adjusted_dlong)
+
+    normalized = float(adjusted_dlong) % total_adjusted_length
+    for adjusted_start, adjusted_end, sg_start, sg_end in section_ranges:
+        adjusted_length = adjusted_end - adjusted_start
+        if adjusted_length < 0:
+            continue
+        if not adjusted_start <= normalized <= adjusted_end:
+            continue
+        if math.isclose(adjusted_length, 0.0):
+            return int(round(sg_start))
+        fraction = (normalized - adjusted_start) / adjusted_length
+        return int(round(sg_start + fraction * (sg_end - sg_start)))
+
+    return int(round(section_ranges[-1][3]))
+
+
+def test_adjusted_dlong_to_sg_dlong_matches_legacy_at_boundaries() -> None:
+    controller = SGViewerController.__new__(SGViewerController)
+    section_ranges = [
+        (0.0, 100.0, 0.0, 150.0),
+        (100.0, 200.0, 150.0, 210.0),
+    ]
+    adjusted_to_sg_ranges = (section_ranges, [0.0, 100.0, 100.0, 200.0])
+
+    for adjusted_dlong in (0, 100, 200):
+        assert controller._adjusted_dlong_to_sg_dlong(
+            adjusted_dlong,
+            adjusted_to_sg_ranges,
+        ) == _legacy_adjusted_dlong_to_sg_dlong(adjusted_dlong, section_ranges)
+
+
+def test_adjusted_dlong_to_sg_dlong_matches_legacy_for_zero_length_section() -> None:
+    controller = SGViewerController.__new__(SGViewerController)
+    section_ranges = [
+        (0.0, 0.0, 25.0, 25.0),
+        (0.0, 100.0, 25.0, 125.0),
+    ]
+    adjusted_to_sg_ranges = (section_ranges, [0.0, 0.0, 0.0, 100.0])
+
+    assert controller._adjusted_dlong_to_sg_dlong(
+        0,
+        adjusted_to_sg_ranges,
+    ) == _legacy_adjusted_dlong_to_sg_dlong(0, section_ranges)
+
+
+def test_adjusted_dlong_to_sg_dlong_matches_legacy_for_wraparound_values() -> None:
+    controller = SGViewerController.__new__(SGViewerController)
+    section_ranges = [
+        (0.0, 100.0, 0.0, 100.0),
+        (100.0, 250.0, 100.0, 300.0),
+    ]
+    adjusted_to_sg_ranges = (section_ranges, [0.0, 100.0, 100.0, 250.0])
+
+    for adjusted_dlong in (251, 500, 751):
+        assert controller._adjusted_dlong_to_sg_dlong(
+            adjusted_dlong,
+            adjusted_to_sg_ranges,
+        ) == _legacy_adjusted_dlong_to_sg_dlong(adjusted_dlong, section_ranges)
