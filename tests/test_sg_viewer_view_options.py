@@ -279,8 +279,8 @@ def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
         output_path = tmp_path / "detail.tsd"
         table = window.tsd_lines_table
         table.setRowCount(2)
-        first_line = [36, 4000, 0, -126000, 919091, -126000]
-        second_line = [36, 4000, 919091, -126000, 2015740, -126000]
+        first_line = ["Detail", 36, 4000, 0, -126000, 919091, -126000]
+        second_line = ["Detail_Dash", 36, 4000, 919091, -126000, 2015740, -126000]
         for row, values in enumerate((first_line, second_line)):
             for column, value in enumerate(values):
                 table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
@@ -295,7 +295,7 @@ def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
 
         assert output_path.read_text(encoding="utf-8") == (
             "Detail: 36 4000 0 -126000 919091 -126000\n"
-            "Detail: 36 4000 919091 -126000 2015740 -126000\n"
+            "Detail_Dash: 36 4000 919091 -126000 2015740 -126000\n"
         )
     finally:
         window.close()
@@ -308,7 +308,7 @@ def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
         input_path = tmp_path / "detail.tsd"
         input_path.write_text(
             "Detail: 36 4000 0 -126000 919091 -126000\n"
-            "Detail: 37 3000 919091 -126000 2015740 -126000\n",
+            "Detail_Dash: 37 3000 919091 -126000 2015740 -126000\n",
             encoding="utf-8",
         )
 
@@ -322,8 +322,10 @@ def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
 
         table = window.tsd_lines_table
         assert table.rowCount() == 2
-        assert table.item(0, 0).text() == "36"
-        assert table.item(1, 0).text() == "37"
+        assert table.item(0, 0).text() == "Detail"
+        assert table.item(1, 0).text() == "Detail_Dash"
+        assert table.item(0, 1).text() == "36"
+        assert table.item(1, 1).text() == "37"
         assert len(window.preview.tsd_lines) == 2
         assert window.preview.tsd_lines[1].width_500ths == 3000
     finally:
