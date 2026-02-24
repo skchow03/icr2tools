@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, Tuple
 
+from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+
 from PyQt5 import QtCore, QtGui
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
 from sg_viewer.model.sg_model import SectionPreview
@@ -118,6 +120,9 @@ class SgPreviewState:
     show_mrk_notches: bool = False
     selected_mrk_wall: tuple[int, int, int] | None = None
     highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
+    show_tsd_lines: bool = False
+    tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+    tsd_palette: tuple[QtGui.QColor, ...] = ()
 
 
 def paint_preview(
@@ -167,6 +172,14 @@ def paint_preview(
                 show_mrk_notches=sg_preview_state.show_mrk_notches,
                 selected_mrk_wall=sg_preview_state.selected_mrk_wall,
                 highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
+            )
+        if sg_preview_state and sg_preview_state.show_tsd_lines:
+            _draw_tsd_lines(
+                painter,
+                sg_preview_state.tsd_lines,
+                sg_preview_state.tsd_palette,
+                transform,
+                widget_height,
             )
         _draw_centerlines(
             painter,
@@ -746,6 +759,50 @@ def _is_long_curve_section(section: SectionPreview) -> bool:
     return arc_degrees > 120.0
 
 
+
+
+def _draw_tsd_lines(
+    painter: QtGui.QPainter,
+    tsd_lines: tuple[TrackSurfaceDetailLine, ...],
+    tsd_palette: tuple[QtGui.QColor, ...],
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    if not tsd_lines:
+        return
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+    for line in tsd_lines:
+        start_point = sg_rendering.map_point(
+            line.start_dlong / 500.0,
+            line.start_dlat / 500.0,
+            transform,
+            widget_height,
+        )
+        end_point = sg_rendering.map_point(
+            line.end_dlong / 500.0,
+            line.end_dlat / 500.0,
+            transform,
+            widget_height,
+        )
+
+        color_index = max(0, min(255, int(line.color_index)))
+        if tsd_palette:
+            color = QtGui.QColor(tsd_palette[color_index % len(tsd_palette)])
+        else:
+            color = QtGui.QColor(color_index, color_index, color_index)
+        width_px = max(1.0, float(line.width_500ths) / 500.0)
+
+        pen = QtGui.QPen(color)
+        pen.setWidthF(width_px)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        pen.setJoinStyle(QtCore.Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawLine(start_point, end_point)
+
+    painter.restore()
 def _draw_xsect_dlat_line(
     painter: QtGui.QPainter,
     sections: Iterable[SectionPreview],

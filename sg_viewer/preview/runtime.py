@@ -38,6 +38,7 @@ from sg_viewer.preview.creation_controller import CreationController, CreationEv
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 from sg_viewer.ui.preview_state_controller import PreviewStateController
+from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_viewport import PreviewViewport
 from sg_viewer.model.preview_state_utils import update_node_status
@@ -122,6 +123,9 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_mrk_notches = False
         self._selected_mrk_wall: tuple[int, int, int] = (0, 0, 0)
         self._highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
+        self._show_tsd_lines = False
+        self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._tsd_palette: tuple[QtGui.QColor, ...] = ()
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
