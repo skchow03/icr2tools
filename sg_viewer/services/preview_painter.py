@@ -25,6 +25,8 @@ _SHOW_FSECT_OUTLINES = False
 _MRK_TARGET_SECTION_LENGTH = 14.0 * 6000.0
 _MRK_NOTCH_HALF_LENGTH_PX = 4.0
 ICR2_UNITS_PER_FOOT = 500.0 * 12.0
+MIN_TSD_SAMPLE_STEP = ICR2_UNITS_PER_FOOT
+TARGET_TSD_PIXELS_PER_SAMPLE = 6.0
 
 @dataclass
 class PreviewColors:
@@ -780,7 +782,7 @@ def _draw_tsd_lines(
     section_list = [section for section in sections if section.length > 0]
 
     for line in tsd_lines:
-        world_points = _sample_tsd_detail_line(line, section_list)
+        world_points = _sample_tsd_detail_line(line, section_list, transform[0])
         if len(world_points) < 2:
             continue
         mapped_points = [
@@ -809,14 +811,15 @@ def _draw_tsd_lines(
 
 
 def _tsd_width_to_pixels(width_500ths: int, pixels_per_world_unit: float) -> float:
-    """Convert a TSD width from 500ths of an inch to on-screen pixels."""
-    width_in_world_units = float(width_500ths) / 6000.0
+    """Convert a TSD width from world 500ths units to on-screen pixels."""
+    width_in_world_units = float(width_500ths)
     return max(1.0, width_in_world_units * float(pixels_per_world_unit))
 
 
 def _sample_tsd_detail_line(
     line: TrackSurfaceDetailLine,
     sections: list[SectionPreview],
+    pixels_per_world_unit: float,
 ) -> list[Point]:
     if not sections:
         return []
@@ -836,7 +839,8 @@ def _sample_tsd_detail_line(
     if math.isclose(span, 0.0):
         span = track_length
 
-    increment = ICR2_UNITS_PER_FOOT
+    adaptive_step = TARGET_TSD_PIXELS_PER_SAMPLE / max(pixels_per_world_unit, 1e-9)
+    increment = max(MIN_TSD_SAMPLE_STEP, adaptive_step)
     step_count = max(1, int(math.ceil(span / increment)))
 
     points: list[Point] = []
@@ -847,7 +851,7 @@ def _sample_tsd_detail_line(
         dlat_500ths = float(line.start_dlat) + (
             float(line.end_dlat) - float(line.start_dlat)
         ) * fraction
-        dlat = dlat_500ths / 500.0
+        dlat = dlat_500ths
         point = _point_on_track_at_dlong(sections, dlong, dlat, track_length)
         if point is not None:
             points.append(point)
