@@ -802,7 +802,7 @@ def _draw_tsd_lines(
         if line.command == "Detail_Dash":
             pen.setStyle(QtCore.Qt.DashLine)
             pen.setDashPattern([8.0, 8.0])
-        pen.setCapStyle(QtCore.Qt.RoundCap)
+        pen.setCapStyle(QtCore.Qt.FlatCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
         painter.drawPolyline(QtGui.QPolygonF(mapped_points))
@@ -831,13 +831,11 @@ def _sample_tsd_detail_line(
     if track_length <= 0:
         return []
 
-    start_dlong = float(line.start_dlong)
-    end_dlong = float(line.end_dlong)
-    span = end_dlong - start_dlong
-    if span < 0:
-        span += track_length
+    start_dlong = float(line.start_dlong) % track_length
+    end_dlong = float(line.end_dlong) % track_length
+    span = (end_dlong - start_dlong) % track_length
     if math.isclose(span, 0.0):
-        span = track_length
+        return []
 
     adaptive_step = TARGET_TSD_PIXELS_PER_SAMPLE / max(pixels_per_world_unit, 1e-9)
     increment = max(MIN_TSD_SAMPLE_STEP, adaptive_step)
