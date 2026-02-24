@@ -332,6 +332,38 @@ def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
         window.close()
 
 
+
+
+def test_load_tsd_file_refreshes_preview_once_on_model_reset(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        input_path = tmp_path / "detail.tsd"
+        input_path.write_text(
+            "Detail: 36 4000 0 -126000 919091 -126000\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(input_path), "TSD Files (*.tsd)"),
+        )
+
+        refresh_calls = {"count": 0}
+        original_set_tsd_lines = window.preview.set_tsd_lines
+
+        def _counted_set_tsd_lines(lines):
+            refresh_calls["count"] += 1
+            original_set_tsd_lines(lines)
+
+        monkeypatch.setattr(window.preview, "set_tsd_lines", _counted_set_tsd_lines)
+
+        window.controller._on_tsd_load_file_requested()
+
+        assert refresh_calls["count"] == 1
+    finally:
+        window.close()
+
+
 def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:

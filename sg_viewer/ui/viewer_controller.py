@@ -984,7 +984,6 @@ class SGViewerController:
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
         self._tsd_lines_model.replace_lines(detail_file.lines)
         self._loaded_tsd_lines = tuple(detail_file.lines)
-        self._refresh_tsd_preview_lines()
 
     def _on_tsd_selection_changed(
         self,
