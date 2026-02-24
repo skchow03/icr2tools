@@ -9,7 +9,7 @@ from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 from PyQt5 import QtCore, QtGui
 from sg_viewer.geometry.topology import is_closed_loop
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
-from sg_viewer.model.dlong_mapping import dlong_to_section_position
+from sg_viewer.model.dlong_mapping import DlongSectionIndex, dlong_to_section_position
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.preview_state import SgPreviewModel, SgPreviewViewState
 from sg_viewer.preview.render_state import split_nodes_by_status
@@ -1027,13 +1027,14 @@ def _estimate_tsd_segment_world_bbox(
         return None
 
     checkpoint_count = max(4, min(32, int(math.ceil(span / (50.0 * MIN_TSD_SAMPLE_STEP)))))
+    section_index = DlongSectionIndex.build(sections, track_length)
     sampled_points: list[Point] = []
     for index in range(checkpoint_count + 1):
         fraction = index / checkpoint_count
         along = span * fraction
         dlong = (normalized_start + along) % track_length
         dlat = float(start_dlat) + (float(end_dlat) - float(start_dlat)) * fraction
-        point = _point_on_track_at_dlong(sections, dlong, dlat, track_length)
+        point = _point_on_track_at_dlong(sections, dlong, dlat, track_length, section_index=section_index)
         if point is not None:
             sampled_points.append(point)
 
@@ -1063,6 +1064,7 @@ def _sample_tsd_detail_line(
     if track_length <= 0:
         return []
 
+    section_index = DlongSectionIndex.build(sections, track_length)
     return _sample_tsd_detail_segment(
         start_dlong=float(line.start_dlong),
         start_dlat=float(line.start_dlat),
@@ -1071,6 +1073,7 @@ def _sample_tsd_detail_line(
         sections=sections,
         pixels_per_world_unit=pixels_per_world_unit,
         track_length=track_length,
+        section_index=section_index,
     )
 
 
@@ -1082,6 +1085,7 @@ def _sample_tsd_detail_segment(
     sections: list[SectionPreview],
     pixels_per_world_unit: float,
     track_length: float,
+    section_index: DlongSectionIndex | None = None,
 ) -> list[Point]:
     if track_length <= 0:
         return []
@@ -1102,7 +1106,7 @@ def _sample_tsd_detail_segment(
         fraction = along / span if span > 0 else 0.0
         dlong = (normalized_start + along) % track_length
         dlat = float(start_dlat) + (float(end_dlat) - float(start_dlat)) * fraction
-        point = _point_on_track_at_dlong(sections, dlong, dlat, track_length)
+        point = _point_on_track_at_dlong(sections, dlong, dlat, track_length, section_index=section_index)
         if point is not None:
             points.append(point)
 
@@ -1143,8 +1147,9 @@ def _point_on_track_at_dlong(
     dlong: float,
     dlat: float,
     track_length: float,
+    section_index: DlongSectionIndex | None = None,
 ) -> Point | None:
-    position = dlong_to_section_position(sections, dlong, track_length)
+    position = section_index.lookup(dlong) if section_index is not None else dlong_to_section_position(sections, dlong, track_length)
     if position is None:
         return None
 
