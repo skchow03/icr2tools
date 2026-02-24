@@ -793,7 +793,7 @@ def _draw_tsd_lines(
             color = QtGui.QColor(tsd_palette[color_index % len(tsd_palette)])
         else:
             color = QtGui.QColor(color_index, color_index, color_index)
-        width_px = max(1.0, float(line.width_500ths) / 500.0)
+        width_px = _tsd_width_to_pixels(line.width_500ths, transform[0])
 
         pen = QtGui.QPen(color)
         pen.setWidthF(width_px)
@@ -806,6 +806,12 @@ def _draw_tsd_lines(
         painter.drawPolyline(QtGui.QPolygonF(mapped_points))
 
     painter.restore()
+
+
+def _tsd_width_to_pixels(width_500ths: int, pixels_per_world_unit: float) -> float:
+    """Convert a TSD width from 500ths of an inch to on-screen pixels."""
+    width_in_world_units = float(width_500ths) / 6000.0
+    return max(1.0, width_in_world_units * float(pixels_per_world_unit))
 
 
 def _sample_tsd_detail_line(
