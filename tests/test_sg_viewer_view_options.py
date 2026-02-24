@@ -332,6 +332,47 @@ def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
         window.close()
 
 
+def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        input_path = tmp_path / "detail.tsd"
+        input_path.write_text(
+            "Detail: 36 4000 0 -126000 919091 -126000\n"
+            "Detail_Dash: 37 3000 919091 -126000 2015740 -126000\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(input_path), "TSD Files (*.tsd)"),
+        )
+
+        calls = {"count": 0}
+
+        def _fake_adjusted_range(section_index: int):
+            calls["count"] += 1
+            return (section_index * 1000, (section_index + 1) * 1000)
+
+        monkeypatch.setattr(window, "adjusted_section_range_500ths", _fake_adjusted_range)
+        monkeypatch.setattr(
+            window.preview,
+            "get_section_set",
+            lambda: (
+                [
+                    SimpleNamespace(start_dlong=0.0, length=1000.0),
+                    SimpleNamespace(start_dlong=1000.0, length=1000.0),
+                ],
+                None,
+            ),
+        )
+
+        window.controller._on_tsd_load_file_requested()
+
+        assert calls["count"] == 2
+    finally:
+        window.close()
+
+
 def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
     window = SGViewerWindow()
     try:
