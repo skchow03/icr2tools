@@ -104,6 +104,8 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._tsd_row_cache: dict[int, tuple[tuple[str, ...], TrackSurfaceDetailLine | None]] = {}
+        self._tsd_dirty_rows: set[int] = set()
         self._tsd_preview_refresh_timer = QtCore.QTimer(self._window)
         self._tsd_preview_refresh_timer.setSingleShot(True)
         self._tsd_preview_refresh_timer.setInterval(40)
@@ -916,6 +918,8 @@ class SGViewerController:
             item = QtWidgets.QTableWidgetItem(str(value))
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
+        self._tsd_dirty_rows.add(row)
+        self._tsd_row_cache.pop(row, None)
         table.selectRow(row)
         self._refresh_tsd_preview_lines()
 
@@ -924,7 +928,9 @@ class SGViewerController:
         selected_rows = table.selectionModel().selectedRows()
         if not selected_rows:
             return
-        table.removeRow(selected_rows[0].row())
+        removed_row = selected_rows[0].row()
+        table.removeRow(removed_row)
+        self._remove_tsd_cached_row(removed_row)
         self._refresh_tsd_preview_lines()
 
     def _on_tsd_draw_mode_changed(self, checked: bool) -> None:
@@ -985,6 +991,8 @@ class SGViewerController:
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
         table = self._window.tsd_lines_table
         table.blockSignals(True)
+        self._tsd_row_cache.clear()
+        self._tsd_dirty_rows.clear()
         try:
             table.setRowCount(0)
             for line in detail_file.lines:
@@ -1003,12 +1011,14 @@ class SGViewerController:
                     item = QtWidgets.QTableWidgetItem(str(value))
                     item.setTextAlignment(int(QtCore.Qt.AlignCenter))
                     table.setItem(row, column, item)
+                self._tsd_row_cache[row] = (tuple(str(value) for value in values), line)
         finally:
             table.blockSignals(False)
         self._loaded_tsd_lines = tuple(detail_file.lines)
         self._refresh_tsd_preview_lines()
 
-    def _schedule_tsd_preview_refresh(self, _item: QtWidgets.QTableWidgetItem) -> None:
+    def _schedule_tsd_preview_refresh(self, item: QtWidgets.QTableWidgetItem) -> None:
+        self._tsd_dirty_rows.add(item.row())
         self._tsd_preview_refresh_timer.start()
 
     def _refresh_tsd_preview_lines(self) -> None:
@@ -1023,7 +1033,7 @@ class SGViewerController:
         sections, _ = self._window.preview.get_section_set()
         adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
         for row in rows:
-            line = self._parse_tsd_line_for_preview(row)
+            line = self._get_cached_tsd_line_for_preview(row)
             if line is not None:
                 lines.append(
                     self._convert_tsd_line_for_preview(
@@ -1034,6 +1044,34 @@ class SGViewerController:
                 )
 
         self._window.preview.set_tsd_lines(tuple(lines))
+
+    def _capture_tsd_row_values(self, row: int) -> tuple[str, ...]:
+        table = self._window.tsd_lines_table
+        return tuple(self._table_text_value(table, row, column) for column in range(7))
+
+    def _get_cached_tsd_line_for_preview(self, row: int) -> TrackSurfaceDetailLine | None:
+        row_values = self._capture_tsd_row_values(row)
+        cached = self._tsd_row_cache.get(row)
+        should_reparse = row in self._tsd_dirty_rows or cached is None or cached[0] != row_values
+        if should_reparse:
+            parsed_line = self._parse_tsd_line_for_preview(row)
+            self._tsd_row_cache[row] = (row_values, parsed_line)
+            self._tsd_dirty_rows.discard(row)
+            return parsed_line
+
+        return cached[1]
+
+    def _remove_tsd_cached_row(self, removed_row: int) -> None:
+        self._tsd_row_cache = {
+            (row - 1 if row > removed_row else row): value
+            for row, value in self._tsd_row_cache.items()
+            if row != removed_row
+        }
+        self._tsd_dirty_rows = {
+            (row - 1 if row > removed_row else row)
+            for row in self._tsd_dirty_rows
+            if row != removed_row
+        }
 
     def _convert_tsd_line_for_preview(
         self,
