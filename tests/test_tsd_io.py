@@ -31,6 +31,18 @@ def test_parse_tsd_reads_detail_lines() -> None:
     )
 
 
+def test_parse_tsd_ignores_comment_and_detail_tex_lines() -> None:
+    parsed = parse_tsd(
+        "% note about lane marking\n"
+        "Detail_Tex: 1 2 3 4 5 6\n"
+        "Detail: 36 4000 0 -126000 919091 -126000\n"
+    )
+
+    assert parsed == TrackSurfaceDetailFile(
+        lines=(TrackSurfaceDetailLine(36, 4000, 0, -126000, 919091, -126000, command="Detail"),)
+    )
+
+
 def test_parse_tsd_rejects_invalid_line() -> None:
     try:
         parse_tsd("Oops: 1 2 3\n")

@@ -45,11 +45,15 @@ def parse_tsd(content: str) -> TrackSurfaceDetailFile:
         stripped = raw_line.strip()
         if not stripped:
             continue
+        if stripped.startswith("%"):
+            continue
         prefix, sep, payload = stripped.partition(":")
         if sep != ":":
             raise ValueError(
                 f"Line {line_number}: expected 'Detail:' or 'Detail_Dash:' prefix."
             )
+        if prefix.strip().lower() == "detail_tex":
+            continue
         try:
             command = normalize_tsd_command(prefix)
         except ValueError as exc:
