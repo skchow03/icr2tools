@@ -8,6 +8,7 @@ from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 
 from PyQt5 import QtCore, QtGui
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
+from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.preview_state import SgPreviewModel, SgPreviewViewState
 from sg_viewer.preview.render_state import split_nodes_by_status
@@ -178,6 +179,7 @@ def paint_preview(
                 painter,
                 sg_preview_state.tsd_lines,
                 sg_preview_state.tsd_palette,
+                base_state.sections,
                 transform,
                 widget_height,
             )
@@ -765,6 +767,7 @@ def _draw_tsd_lines(
     painter: QtGui.QPainter,
     tsd_lines: tuple[TrackSurfaceDetailLine, ...],
     tsd_palette: tuple[QtGui.QColor, ...],
+    sections: Iterable[SectionPreview],
     transform: Transform,
     widget_height: int,
 ) -> None:
@@ -773,20 +776,16 @@ def _draw_tsd_lines(
 
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    section_list = [section for section in sections if section.length > 0]
 
     for line in tsd_lines:
-        start_point = sg_rendering.map_point(
-            line.start_dlong / 500.0,
-            line.start_dlat / 500.0,
-            transform,
-            widget_height,
-        )
-        end_point = sg_rendering.map_point(
-            line.end_dlong / 500.0,
-            line.end_dlat / 500.0,
-            transform,
-            widget_height,
-        )
+        world_points = _sample_tsd_detail_line(line, section_list)
+        if len(world_points) < 2:
+            continue
+        mapped_points = [
+            sg_rendering.map_point(point[0], point[1], transform, widget_height)
+            for point in world_points
+        ]
 
         color_index = max(0, min(255, int(line.color_index)))
         if tsd_palette:
@@ -803,9 +802,128 @@ def _draw_tsd_lines(
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
-        painter.drawLine(start_point, end_point)
+        painter.drawPolyline(QtGui.QPolygonF(mapped_points))
 
     painter.restore()
+
+
+def _sample_tsd_detail_line(
+    line: TrackSurfaceDetailLine,
+    sections: list[SectionPreview],
+) -> list[Point]:
+    if not sections:
+        return []
+
+    track_length = max(
+        (float(section.start_dlong) + float(section.length) for section in sections),
+        default=0.0,
+    )
+    if track_length <= 0:
+        return []
+
+    start_dlong = float(line.start_dlong)
+    end_dlong = float(line.end_dlong)
+    span = end_dlong - start_dlong
+    if span < 0:
+        span += track_length
+    if math.isclose(span, 0.0):
+        span = track_length
+
+    increment = 500.0
+    step_count = max(1, int(math.ceil(span / increment)))
+
+    points: list[Point] = []
+    for step in range(step_count + 1):
+        along = min(span, step * increment)
+        fraction = along / span if span > 0 else 0.0
+        dlong = (start_dlong + along) % track_length
+        dlat_500ths = float(line.start_dlat) + (
+            float(line.end_dlat) - float(line.start_dlat)
+        ) * fraction
+        dlat = dlat_500ths / 500.0
+        point = _point_on_track_at_dlong(sections, dlong, dlat, track_length)
+        if point is not None:
+            points.append(point)
+
+    return points
+
+
+def _point_on_track_at_dlong(
+    sections: list[SectionPreview],
+    dlong: float,
+    dlat: float,
+    track_length: float,
+) -> Point | None:
+    position = dlong_to_section_position(sections, dlong, track_length)
+    if position is None:
+        return None
+
+    section = sections[position.section_index]
+    fraction = max(0.0, min(1.0, position.fraction))
+    return _point_on_section(section, fraction, dlat)
+
+
+def _point_on_section(section: SectionPreview, fraction: float, dlat: float) -> Point:
+    sx, sy = section.start
+    ex, ey = section.end
+    center = section.center
+
+    if center is None:
+        dx = ex - sx
+        dy = ey - sy
+        cx = sx + dx * fraction
+        cy = sy + dy * fraction
+        length = math.hypot(dx, dy)
+        if length <= 0:
+            return (cx, cy)
+        nx = -dy / length
+        ny = dx / length
+        return (cx + nx * dlat, cy + ny * dlat)
+
+    center_x, center_y = center
+    start_vec = (sx - center_x, sy - center_y)
+    end_vec = (ex - center_x, ey - center_y)
+    base_radius = math.hypot(start_vec[0], start_vec[1])
+    if base_radius <= 0:
+        return (sx, sy)
+
+    start_angle = math.atan2(start_vec[1], start_vec[0])
+    end_angle = math.atan2(end_vec[1], end_vec[0])
+    ccw = _is_ccw_turn(start_vec, end_vec, section.start_heading)
+    delta = _angle_delta(start_angle, end_angle, ccw)
+    angle = start_angle + delta * fraction
+
+    sign = -1.0 if ccw else 1.0
+    radius = max(0.0, base_radius + sign * dlat)
+    return (
+        center_x + math.cos(angle) * radius,
+        center_y + math.sin(angle) * radius,
+    )
+
+
+def _is_ccw_turn(
+    start_vec: Point,
+    end_vec: Point,
+    heading: tuple[float, float] | None,
+) -> bool:
+    if heading is not None:
+        cross = start_vec[0] * heading[1] - start_vec[1] * heading[0]
+        if not math.isclose(cross, 0.0, abs_tol=1e-12):
+            return cross > 0
+
+    cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+    return cross > 0
+
+
+def _angle_delta(start_angle: float, end_angle: float, ccw: bool) -> float:
+    delta = end_angle - start_angle
+    if ccw:
+        while delta <= 0:
+            delta += math.tau
+    else:
+        while delta >= 0:
+            delta -= math.tau
+    return delta
 def _draw_xsect_dlat_line(
     painter: QtGui.QPainter,
     sections: Iterable[SectionPreview],
