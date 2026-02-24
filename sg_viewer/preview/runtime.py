@@ -126,6 +126,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_tsd_lines = False
         self._show_tsd_selected_section_only = False
         self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._tsd_lines_version = 0
         self._tsd_palette: tuple[QtGui.QColor, ...] = ()
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None

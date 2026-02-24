@@ -200,6 +200,14 @@ class _RuntimeCorePreviewMixin:
         return self._tsd_palette
 
     @property
+    def section_geometry_version(self) -> int:
+        return int(self._sg_version)
+
+    @property
+    def tsd_lines_version(self) -> int:
+        return int(self._tsd_lines_version)
+
+    @property
     def show_xsect_dlat_line(self) -> bool:
         return self._show_xsect_dlat_line
 
@@ -354,6 +362,7 @@ class _RuntimeCorePreviewMixin:
 
     def set_tsd_lines(self, lines) -> None:
         self._tsd_lines = tuple(lines)
+        self._tsd_lines_version += 1
         self._context.request_repaint()
 
     def set_tsd_palette(self, palette) -> None:

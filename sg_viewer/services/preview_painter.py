@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Tuple
 
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
@@ -130,6 +130,24 @@ class SgPreviewState:
     selected_section_index: int | None = None
     tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
     tsd_palette: tuple[QtGui.QColor, ...] = ()
+    section_geometry_version: int = 0
+    tsd_lines_version: int = 0
+
+
+@dataclass
+class TsdGeometryCache:
+    section_geometry_version: int | None = None
+    tsd_lines_version: int | None = None
+    sampling_bucket: int | None = None
+    world_points_by_key: dict[tuple[object, ...], tuple[Point, ...]] = field(
+        default_factory=dict
+    )
+
+    def clear(self) -> None:
+        self.world_points_by_key.clear()
+
+
+_GLOBAL_TSD_GEOMETRY_CACHE = TsdGeometryCache()
 
 
 def paint_preview(
@@ -190,6 +208,8 @@ def paint_preview(
                 widget_height,
                 selected_section_only=sg_preview_state.show_tsd_selected_section_only,
                 selected_section_index=sg_preview_state.selected_section_index,
+                section_geometry_version=sg_preview_state.section_geometry_version,
+                tsd_lines_version=sg_preview_state.tsd_lines_version,
             )
         _draw_centerlines(
             painter,
@@ -781,6 +801,8 @@ def _draw_tsd_lines(
     *,
     selected_section_only: bool = False,
     selected_section_index: int | None = None,
+    section_geometry_version: int = 0,
+    tsd_lines_version: int = 0,
 ) -> None:
     if not tsd_lines:
         return
@@ -790,6 +812,18 @@ def _draw_tsd_lines(
     section_list = [section for section in sections if section.length > 0]
     track_length = _track_length_from_sections(section_list)
     closed_loop = bool(section_list) and is_closed_loop(section_list)
+    sampling_bucket = _tsd_sampling_bucket(transform[0])
+    cache = _GLOBAL_TSD_GEOMETRY_CACHE
+
+    if (
+        cache.section_geometry_version != section_geometry_version
+        or cache.tsd_lines_version != tsd_lines_version
+        or cache.sampling_bucket != sampling_bucket
+    ):
+        cache.clear()
+        cache.section_geometry_version = section_geometry_version
+        cache.tsd_lines_version = tsd_lines_version
+        cache.sampling_bucket = sampling_bucket
 
     selected_range: tuple[float, float] | None = None
     if selected_section_only:
@@ -839,15 +873,34 @@ def _draw_tsd_lines(
             track_length=track_length,
             is_closed_loop=closed_loop,
         ):
-            world_points = _sample_tsd_detail_segment(
-                start_dlong=segment[0],
-                start_dlat=segment[1],
-                end_dlong=segment[2],
-                end_dlat=segment[3],
-                sections=section_list,
-                pixels_per_world_unit=transform[0],
-                track_length=track_length,
+            cache_key = (
+                str(line.command),
+                int(line.width_500ths),
+                float(line.start_dlong),
+                float(line.start_dlat),
+                float(line.end_dlong),
+                float(line.end_dlat),
+                int(line.color_index),
+                section_geometry_version,
+                sampling_bucket,
+                float(segment[0]),
+                float(segment[1]),
+                float(segment[2]),
+                float(segment[3]),
             )
+            world_points = cache.world_points_by_key.get(cache_key)
+            if world_points is None:
+                sampled_points = _sample_tsd_detail_segment(
+                    start_dlong=segment[0],
+                    start_dlat=segment[1],
+                    end_dlong=segment[2],
+                    end_dlat=segment[3],
+                    sections=section_list,
+                    pixels_per_world_unit=transform[0],
+                    track_length=track_length,
+                )
+                world_points = tuple(sampled_points)
+                cache.world_points_by_key[cache_key] = world_points
             if len(world_points) < 2:
                 continue
             mapped_points = [
@@ -887,6 +940,11 @@ def _tsd_width_to_pixels(width_500ths: int, pixels_per_world_unit: float) -> flo
     """Convert a TSD width from world 500ths units to on-screen pixels."""
     width_in_world_units = float(width_500ths)
     return max(1.0, width_in_world_units * float(pixels_per_world_unit))
+
+
+def _tsd_sampling_bucket(pixels_per_world_unit: float) -> int:
+    safe_density = max(float(pixels_per_world_unit), 1e-9)
+    return int(math.floor(math.log2(safe_density) * 4.0))
 
 
 def _sample_tsd_detail_line(
