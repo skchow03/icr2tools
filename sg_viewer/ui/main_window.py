@@ -136,18 +136,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Draw all TSDs (uncheck for selected section only)"
         )
         self._tsd_draw_all_sections_checkbox.setChecked(True)
-        self._tsd_lines_table = QtWidgets.QTableWidget(0, 7)
-        self._tsd_lines_table.setHorizontalHeaderLabels(
-            [
-                "Command",
-                "Color Index",
-                "Width (500ths)",
-                "Start DLONG",
-                "Start DLAT",
-                "End DLONG",
-                "End DLAT",
-            ]
-        )
+        self._tsd_lines_table = QtWidgets.QTableView()
         self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
         self._tsd_lines_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._tsd_lines_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -792,7 +781,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._tsd_load_file_button
 
     @property
-    def tsd_lines_table(self) -> QtWidgets.QTableWidget:
+    def tsd_lines_table(self) -> QtWidgets.QTableView:
         return self._tsd_lines_table
 
     @property
