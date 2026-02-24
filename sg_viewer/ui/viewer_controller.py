@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from bisect import bisect_left
 from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -1077,7 +1078,10 @@ class SGViewerController:
         self,
         line: TrackSurfaceDetailLine,
         sections: list[SectionPreview],
-        adjusted_to_sg_ranges: list[tuple[float, float, float, float]],
+        adjusted_to_sg_ranges: tuple[
+            list[tuple[float, float, float, float]],
+            list[float],
+        ],
     ) -> TrackSurfaceDetailLine:
         if not sections:
             return line
@@ -1103,25 +1107,54 @@ class SGViewerController:
     def _build_adjusted_to_sg_ranges(
         self,
         sections: list[SectionPreview],
-    ) -> list[tuple[float, float, float, float]]:
+    ) -> tuple[list[tuple[float, float, float, float]], list[float]]:
         section_ranges: list[tuple[float, float, float, float]] = []
+        section_boundaries: list[float] = []
         for section_index, section in enumerate(sections):
             adjusted_range = self._window.adjusted_section_range_500ths(section_index)
             if adjusted_range is None:
-                return []
+                return [], []
             adjusted_start, adjusted_end = adjusted_range
             sg_start = float(section.start_dlong)
             sg_end = sg_start + float(section.length)
             section_ranges.append(
                 (float(adjusted_start), float(adjusted_end), sg_start, sg_end)
             )
-        return section_ranges
+            section_boundaries.extend((float(adjusted_start), float(adjusted_end)))
+        section_boundaries.sort()
+        return section_ranges, section_boundaries
+
+    def _find_adjusted_segment_index(
+        self,
+        normalized_dlong: float,
+        section_ranges: list[tuple[float, float, float, float]],
+        section_boundaries: list[float],
+    ) -> int | None:
+        if not section_ranges or not section_boundaries:
+            return None
+
+        boundary_index = bisect_left(section_boundaries, normalized_dlong)
+        candidate = max(0, min(len(section_ranges) - 1, (boundary_index - 1) // 2))
+        adjusted_start, adjusted_end, _, _ = section_ranges[candidate]
+        if adjusted_start <= normalized_dlong <= adjusted_end:
+            return candidate
+
+        if candidate + 1 < len(section_ranges):
+            next_start, next_end, _, _ = section_ranges[candidate + 1]
+            if next_start <= normalized_dlong <= next_end:
+                return candidate + 1
+
+        return None
 
     def _adjusted_dlong_to_sg_dlong(
         self,
         adjusted_dlong: int,
-        section_ranges: list[tuple[float, float, float, float]],
+        adjusted_to_sg_ranges: tuple[
+            list[tuple[float, float, float, float]],
+            list[float],
+        ],
     ) -> int:
+        section_ranges, section_boundaries = adjusted_to_sg_ranges
         if not section_ranges:
             return int(adjusted_dlong)
 
@@ -1130,19 +1163,22 @@ class SGViewerController:
             return int(adjusted_dlong)
 
         normalized = float(adjusted_dlong) % total_adjusted_length
-        for adjusted_start, adjusted_end, sg_start, sg_end in section_ranges:
-            adjusted_length = adjusted_end - adjusted_start
-            if adjusted_length < 0:
-                continue
-            in_range = adjusted_start <= normalized <= adjusted_end
-            if not in_range:
-                continue
-            if math.isclose(adjusted_length, 0.0):
-                return int(round(sg_start))
-            fraction = (normalized - adjusted_start) / adjusted_length
-            return int(round(sg_start + fraction * (sg_end - sg_start)))
+        segment_index = self._find_adjusted_segment_index(
+            normalized,
+            section_ranges,
+            section_boundaries,
+        )
+        if segment_index is None:
+            return int(round(section_ranges[-1][3]))
 
-        return int(round(section_ranges[-1][3]))
+        adjusted_start, adjusted_end, sg_start, sg_end = section_ranges[segment_index]
+        adjusted_length = adjusted_end - adjusted_start
+        if adjusted_length < 0:
+            return int(round(section_ranges[-1][3]))
+        if math.isclose(adjusted_length, 0.0):
+            return int(round(sg_start))
+        fraction = (normalized - adjusted_start) / adjusted_length
+        return int(round(sg_start + fraction * (sg_end - sg_start)))
 
     def _parse_tsd_line_for_preview(self, row: int) -> TrackSurfaceDetailLine | None:
         table = self._window.tsd_lines_table
