@@ -184,6 +184,18 @@ class _RuntimeCorePreviewMixin:
         return self._highlighted_mrk_walls
 
     @property
+    def show_tsd_lines(self) -> bool:
+        return self._show_tsd_lines
+
+    @property
+    def tsd_lines(self):
+        return self._tsd_lines
+
+    @property
+    def tsd_palette(self):
+        return self._tsd_palette
+
+    @property
     def show_xsect_dlat_line(self) -> bool:
         return self._show_xsect_dlat_line
 
@@ -326,6 +338,18 @@ class _RuntimeCorePreviewMixin:
 
     def set_show_mrk_notches(self, visible: bool) -> None:
         self._show_mrk_notches = visible
+        self._context.request_repaint()
+
+    def set_show_tsd_lines(self, visible: bool) -> None:
+        self._show_tsd_lines = visible
+        self._context.request_repaint()
+
+    def set_tsd_lines(self, lines) -> None:
+        self._tsd_lines = tuple(lines)
+        self._context.request_repaint()
+
+    def set_tsd_palette(self, palette) -> None:
+        self._tsd_palette = tuple(palette)
         self._context.request_repaint()
 
     def set_selected_mrk_wall(self, boundary_index: int, section_index: int, wall_index: int) -> None:

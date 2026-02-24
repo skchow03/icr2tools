@@ -18,7 +18,12 @@ from sg_viewer.services.mrk_io import (
     serialize_mrk,
 )
 from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
-from sg_viewer.services.tsd_io import TrackSurfaceDetailFile, TrackSurfaceDetailLine, serialize_tsd
+from sg_viewer.services.tsd_io import (
+    TrackSurfaceDetailFile,
+    TrackSurfaceDetailLine,
+    parse_tsd,
+    serialize_tsd,
+)
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -97,6 +102,7 @@ class SGViewerController:
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
+        self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
 
         self._create_actions()
         self._create_menus()
@@ -483,6 +489,7 @@ class SGViewerController:
         if persist_for_current_track and self._current_path is not None:
             self._history.set_sunny_palette(self._current_path, resolved_path)
 
+        self._window.preview.set_tsd_palette(self._sunny_palette)
         self._window.show_status_message(
             f"Loaded SUNNY palette from {resolved_path.name} ({len(self._sunny_palette)} colors)."
         )
@@ -759,6 +766,7 @@ class SGViewerController:
         self._window.tsd_add_line_button.clicked.connect(self._on_tsd_add_line_requested)
         self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
+        self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -926,7 +934,54 @@ class SGViewerController:
                 str(exc),
             )
             return
+        self._loaded_tsd_lines = tuple(detail_file.lines)
+        self._window.preview.set_tsd_lines(self._loaded_tsd_lines)
         self._window.show_status_message(f"Generated TSD file {path.name}")
+
+    def _on_tsd_load_file_requested(self) -> None:
+        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Load TSD File",
+            "",
+            "TSD Files (*.tsd *.TSD);;All files (*)",
+        )
+        if not path_str:
+            return
+
+        path = Path(path_str)
+        try:
+            detail_file = parse_tsd(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Load TSD Failed",
+                str(exc),
+            )
+            return
+
+        self._populate_tsd_table(detail_file)
+        self._window.show_status_message(f"Loaded TSD file {path.name}")
+
+    def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
+        table = self._window.tsd_lines_table
+        table.setRowCount(0)
+        for line in detail_file.lines:
+            row = table.rowCount()
+            table.insertRow(row)
+            values = [
+                line.color_index,
+                line.width_500ths,
+                line.start_dlong,
+                line.start_dlat,
+                line.end_dlong,
+                line.end_dlat,
+            ]
+            for column, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(str(int(value)))
+                item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+                table.setItem(row, column, item)
+        self._loaded_tsd_lines = tuple(detail_file.lines)
+        self._window.preview.set_tsd_lines(self._loaded_tsd_lines)
 
     def _build_tsd_file_from_table(self) -> TrackSurfaceDetailFile:
         table = self._window.tsd_lines_table
@@ -1494,7 +1549,9 @@ class SGViewerController:
         if tab_name in {"Fsects", "MRK"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
         is_mrk_tab = tab_name == "MRK"
+        is_tsd_tab = tab_name == "TSD"
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
+        self._window.preview.set_show_tsd_lines(is_tsd_tab)
         if is_mrk_tab:
             self._update_mrk_highlights_from_table()
         else:

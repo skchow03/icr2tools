@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from PyQt5 import QtGui
+
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.geometry.derived_geometry import DerivedGeometry
@@ -16,6 +18,7 @@ from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.model.preview_state import SgPreviewViewState
+from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
@@ -87,6 +90,9 @@ class _RuntimeCoreBaseMixin:
         self._show_mrk_notches = False
         self._selected_mrk_wall: tuple[int, int, int] = (0, 0, 0)
         self._highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
+        self._show_tsd_lines = False
+        self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._tsd_palette: tuple[QtGui.QColor, ...] = ()
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []

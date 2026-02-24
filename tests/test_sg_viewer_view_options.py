@@ -268,6 +268,7 @@ def test_tsd_tab_exists(qapp):
         )
         assert tsd_index >= 0
         assert window.tsd_generate_file_button.text() == "Generate .TSD file"
+        assert window.tsd_load_file_button.text() == "Load .TSD file"
     finally:
         window.close()
 
@@ -296,6 +297,52 @@ def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
             "Detail: 36 4000 0 -126000 919091 -126000\n"
             "Detail: 36 4000 919091 -126000 2015740 -126000\n"
         )
+    finally:
+        window.close()
+
+
+
+def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        input_path = tmp_path / "detail.tsd"
+        input_path.write_text(
+            "Detail: 36 4000 0 -126000 919091 -126000\n"
+            "Detail: 37 3000 919091 -126000 2015740 -126000\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(input_path), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_load_file_requested()
+
+        table = window.tsd_lines_table
+        assert table.rowCount() == 2
+        assert table.item(0, 0).text() == "36"
+        assert table.item(1, 0).text() == "37"
+        assert len(window.preview.tsd_lines) == 2
+        assert window.preview.tsd_lines[1].width_500ths == 3000
+    finally:
+        window.close()
+
+
+def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
+    window = SGViewerWindow()
+    try:
+        tsd_index = next(
+            index
+            for index in range(window.right_sidebar_tabs.count())
+            if window.right_sidebar_tabs.tabText(index) == "TSD"
+        )
+        window.right_sidebar_tabs.setCurrentIndex(tsd_index)
+        assert window.preview.show_tsd_lines is True
+
+        window.right_sidebar_tabs.setCurrentIndex(0)
+        assert window.preview.show_tsd_lines is False
     finally:
         window.close()
 
