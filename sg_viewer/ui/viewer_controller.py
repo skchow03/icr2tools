@@ -104,6 +104,10 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._tsd_preview_refresh_timer = QtCore.QTimer(self._window)
+        self._tsd_preview_refresh_timer.setSingleShot(True)
+        self._tsd_preview_refresh_timer.setInterval(40)
+        self._tsd_preview_refresh_timer.timeout.connect(self._refresh_tsd_preview_lines)
 
         self._create_actions()
         self._create_menus()
@@ -775,7 +779,7 @@ class SGViewerController:
             self._refresh_tsd_preview_lines
         )
         self._window.tsd_lines_table.itemChanged.connect(
-            lambda _item: self._refresh_tsd_preview_lines()
+            self._schedule_tsd_preview_refresh
         )
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
@@ -980,25 +984,32 @@ class SGViewerController:
 
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
         table = self._window.tsd_lines_table
-        table.setRowCount(0)
-        for line in detail_file.lines:
-            row = table.rowCount()
-            table.insertRow(row)
-            values = [
-                line.command,
-                line.color_index,
-                line.width_500ths,
-                line.start_dlong,
-                line.start_dlat,
-                line.end_dlong,
-                line.end_dlat,
-            ]
-            for column, value in enumerate(values):
-                item = QtWidgets.QTableWidgetItem(str(value))
-                item.setTextAlignment(int(QtCore.Qt.AlignCenter))
-                table.setItem(row, column, item)
+        table.blockSignals(True)
+        try:
+            table.setRowCount(0)
+            for line in detail_file.lines:
+                row = table.rowCount()
+                table.insertRow(row)
+                values = [
+                    line.command,
+                    line.color_index,
+                    line.width_500ths,
+                    line.start_dlong,
+                    line.start_dlat,
+                    line.end_dlong,
+                    line.end_dlat,
+                ]
+                for column, value in enumerate(values):
+                    item = QtWidgets.QTableWidgetItem(str(value))
+                    item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+                    table.setItem(row, column, item)
+        finally:
+            table.blockSignals(False)
         self._loaded_tsd_lines = tuple(detail_file.lines)
         self._refresh_tsd_preview_lines()
+
+    def _schedule_tsd_preview_refresh(self, _item: QtWidgets.QTableWidgetItem) -> None:
+        self._tsd_preview_refresh_timer.start()
 
     def _refresh_tsd_preview_lines(self) -> None:
         draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
