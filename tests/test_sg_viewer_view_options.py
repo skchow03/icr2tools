@@ -247,17 +247,11 @@ def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
     finally:
         window.close()
 
-def test_mrk_select_wall_highlights_full_entry_when_no_table_rows(qapp):
+def test_mrk_tab_buttons_use_entries_labels(qapp):
     window = SGViewerWindow()
     try:
-        window.mrk_boundary_spin.setValue(2)
-        window.mrk_track_section_spin.setValue(7)
-        window.mrk_wall_index_spin.setValue(3)
-        window.mrk_entry_count_spin.setValue(4)
-
-        window.mrk_select_button.click()
-
-        assert window.preview.highlighted_mrk_walls == ((2, 7, 3, 4),)
+        assert window.mrk_save_button.text() == "Save MRK entries"
+        assert window.mrk_load_button.text() == "Load MRK entries"
     finally:
         window.close()
 

@@ -667,7 +667,6 @@ class SGViewerController:
         self._window.right_sidebar_tabs.currentChanged.connect(
             self._on_right_sidebar_tab_changed
         )
-        self._window.mrk_select_button.clicked.connect(self._on_mrk_wall_select_requested)
         self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
         self._window.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
         self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)

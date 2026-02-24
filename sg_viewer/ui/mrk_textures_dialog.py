@@ -173,8 +173,10 @@ class MrkTexturePatternDialog(QtWidgets.QDialog):
         self._combo.addItems(self._available)
         add_button = QtWidgets.QPushButton("Add")
         remove_button = QtWidgets.QPushButton("Remove Selected")
+        remove_all_button = QtWidgets.QPushButton("Remove all")
         add_button.clicked.connect(self._add_selected)
         remove_button.clicked.connect(self._remove_selected)
+        remove_all_button.clicked.connect(self._remove_all)
 
         self._list = QtWidgets.QListWidget()
         self._list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -186,6 +188,7 @@ class MrkTexturePatternDialog(QtWidgets.QDialog):
         row.addWidget(self._combo)
         row.addWidget(add_button)
         row.addWidget(remove_button)
+        row.addWidget(remove_all_button)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -204,10 +207,20 @@ class MrkTexturePatternDialog(QtWidgets.QDialog):
     def _add_selected(self) -> None:
         if self._combo.count() == 0:
             return
-        self._list.addItem(self._combo.currentText())
+        insert_row = self._list.currentRow()
+        if insert_row < 0:
+            self._list.addItem(self._combo.currentText())
+            self._list.setCurrentRow(self._list.count() - 1)
+            return
+        new_row = insert_row + 1
+        self._list.insertItem(new_row, self._combo.currentText())
+        self._list.setCurrentRow(new_row)
 
     def _remove_selected(self) -> None:
         row = self._list.currentRow()
         if row < 0:
             return
         self._list.takeItem(row)
+
+    def _remove_all(self) -> None:
+        self._list.clear()
