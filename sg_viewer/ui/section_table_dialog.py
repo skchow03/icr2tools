@@ -62,6 +62,7 @@ class SectionTableWindow(QtWidgets.QDialog):
     """Displays a table of section endpoints and gaps."""
 
     sectionsEdited = QtCore.pyqtSignal(list)
+    sectionValueEdited = QtCore.pyqtSignal(int, object, bool)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -72,6 +73,7 @@ class SectionTableWindow(QtWidgets.QDialog):
         self._track_length: float | None = None
         self._is_updating = False
         self._pending_edit = False
+        self._pending_structural_edit = False
 
         self._apply_timer = QtCore.QTimer(self)
         self._apply_timer.setInterval(500)
@@ -129,6 +131,7 @@ class SectionTableWindow(QtWidgets.QDialog):
         self._track_length = track_length
         self._is_updating = True
         self._pending_edit = False
+        self._pending_structural_edit = False
         self._apply_timer.stop()
         self._apply_button.setEnabled(False)
         try:
@@ -143,13 +146,14 @@ class SectionTableWindow(QtWidgets.QDialog):
     def on_sections_edited(self, callback: Callable[[list[SectionPreview]], None]) -> None:
         self.sectionsEdited.connect(callback)
 
-    def _apply_after_editor_close(self, editor, hint):
-        if self._is_updating:
-            return
+    def on_section_value_edited(
+        self,
+        callback: Callable[[int, SectionPreview, bool], None],
+    ) -> None:
+        self.sectionValueEdited.connect(callback)
 
-        updated_sections = self._build_sections_from_table()
-        self._sections = updated_sections
-        self.sectionsEdited.emit(updated_sections)
+    def _apply_after_editor_close(self, editor, hint):
+        _ = (editor, hint)
 
     def _populate_rows(self) -> None:
         def _fmt(value: float | None, precision: int = 1) -> str:
@@ -198,9 +202,125 @@ class SectionTableWindow(QtWidgets.QDialog):
     def _resize_columns(self) -> None:
         self._table.resizeColumnsToContents()
 
-    def _handle_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
+    def _is_structural_column(self, column: int) -> bool:
+        return column <= 3
+
+    def _build_section_from_row(self, row: int, original: SectionPreview) -> SectionPreview:
+        section_item = self._table.item(row, 0)
+        type_item = self._table.item(row, 1)
+        prev_item = self._table.item(row, 2)
+        next_item = self._table.item(row, 3)
+
+        def _cell_text(column: int) -> str:
+            cell = self._table.item(row, column)
+            return cell.text() if cell is not None else ""
+
+        start_x = _parse_float(_cell_text(4))
+        start_y = _parse_float(_cell_text(5))
+        end_x = _parse_float(_cell_text(6))
+        end_y = _parse_float(_cell_text(7))
+
+        center_x = _parse_float(_cell_text(9))
+        center_y = _parse_float(_cell_text(10))
+        sang1 = _parse_float(_cell_text(11))
+        sang2 = _parse_float(_cell_text(12))
+        eang1 = _parse_float(_cell_text(13))
+        eang2 = _parse_float(_cell_text(14))
+        radius = _parse_float(_cell_text(15))
+
+        type_text = type_item.text() if type_item else original.type_name
+        type_name = type_text.lower().strip()
+        if type_name not in {"curve", "straight"}:
+            type_name = original.type_name
+
+        section_id = (
+            _parse_int(section_item.text(), original.section_id)
+            if section_item
+            else original.section_id
+        )
+        prev_id = (
+            _parse_int(prev_item.text(), original.previous_id)
+            if prev_item
+            else original.previous_id
+        )
+        next_id = (
+            _parse_int(next_item.text(), original.next_id)
+            if next_item
+            else original.next_id
+        )
+
+        start = (
+            (start_x, start_y)
+            if start_x is not None and start_y is not None
+            else original.start
+        )
+        end = (
+            (end_x, end_y) if end_x is not None and end_y is not None else original.end
+        )
+
+        center = None
+        if center_x is not None and center_y is not None:
+            center = (center_x, center_y)
+
+        start_heading = None
+        end_heading = None
+        if sang1 is not None and sang2 is not None:
+            start_heading = (sang1, sang2)
+        if eang1 is not None and eang2 is not None:
+            end_heading = (eang1, eang2)
+
+        if type_name == "curve" and center is not None and radius is not None:
+            recalculated_start = _point_from_heading(center, start_heading, radius, start)
+            recalculated_end = _point_from_heading(center, end_heading, radius, end)
+
+            if recalculated_start is not None:
+                start = recalculated_start
+            if recalculated_end is not None:
+                end = recalculated_end
+
+        polyline: list[tuple[float, float]]
+        if original.polyline:
+            polyline = list(original.polyline)
+            polyline[0] = start
+            polyline[-1] = end
+        else:
+            polyline = [start, end]
+
+        return replace(
+            original,
+            section_id=section_id,
+            type_name=type_name,
+            previous_id=prev_id,
+            next_id=next_id,
+            start=start,
+            end=end,
+            center=center,
+            sang1=sang1,
+            sang2=sang2,
+            eang1=eang1,
+            eang2=eang2,
+            radius=radius,
+            start_heading=start_heading,
+            end_heading=end_heading,
+            polyline=polyline,
+        )
+
+    def _handle_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._is_updating:
             return
+
+        row = item.row()
+        if row < 0 or row >= len(self._sections):
+            return
+
+        updated_section = self._build_section_from_row(row, self._sections[row])
+        self._sections[row] = updated_section
+
+        is_structural_edit = self._is_structural_column(item.column())
+        if is_structural_edit:
+            self._pending_structural_edit = True
+        else:
+            self.sectionValueEdited.emit(row, updated_section, False)
 
         self._pending_edit = True
         self._apply_button.setEnabled(True)
@@ -212,113 +332,17 @@ class SectionTableWindow(QtWidgets.QDialog):
 
         updated_sections = self._build_sections_from_table()
         self._pending_edit = False
+        has_structural_edit = self._pending_structural_edit
+        self._pending_structural_edit = False
         self._sections = updated_sections
 
-        self.sectionsEdited.emit(updated_sections)
+        if has_structural_edit:
+            self.sectionsEdited.emit(updated_sections)
         self._apply_button.setEnabled(False)
 
     def _build_sections_from_table(self) -> list[SectionPreview]:
         updated: list[SectionPreview] = []
         for row, original in enumerate(self._sections):
-            section_item = self._table.item(row, 0)
-            type_item = self._table.item(row, 1)
-            prev_item = self._table.item(row, 2)
-            next_item = self._table.item(row, 3)
-
-            def _cell_text(column: int) -> str:
-                cell = self._table.item(row, column)
-                return cell.text() if cell is not None else ""
-
-            start_x = _parse_float(_cell_text(4))
-            start_y = _parse_float(_cell_text(5))
-            end_x = _parse_float(_cell_text(6))
-            end_y = _parse_float(_cell_text(7))
-
-            center_x = _parse_float(_cell_text(9))
-            center_y = _parse_float(_cell_text(10))
-            sang1 = _parse_float(_cell_text(11))
-            sang2 = _parse_float(_cell_text(12))
-            eang1 = _parse_float(_cell_text(13))
-            eang2 = _parse_float(_cell_text(14))
-            radius = _parse_float(_cell_text(15))
-
-            type_text = type_item.text() if type_item else original.type_name
-            type_name = type_text.lower().strip()
-            if type_name not in {"curve", "straight"}:
-                type_name = original.type_name
-
-            section_id = (
-                _parse_int(section_item.text(), original.section_id)
-                if section_item
-                else original.section_id
-            )
-            prev_id = (
-                _parse_int(prev_item.text(), original.previous_id)
-                if prev_item
-                else original.previous_id
-            )
-            next_id = (
-                _parse_int(next_item.text(), original.next_id)
-                if next_item
-                else original.next_id
-            )
-
-            start = (
-                (start_x, start_y)
-                if start_x is not None and start_y is not None
-                else original.start
-            )
-            end = (
-                (end_x, end_y) if end_x is not None and end_y is not None else original.end
-            )
-
-            center = None
-            if center_x is not None and center_y is not None:
-                center = (center_x, center_y)
-
-            start_heading = None
-            end_heading = None
-            if sang1 is not None and sang2 is not None:
-                start_heading = (sang1, sang2)
-            if eang1 is not None and eang2 is not None:
-                end_heading = (eang1, eang2)
-
-            if type_name == "curve" and center is not None and radius is not None:
-                recalculated_start = _point_from_heading(center, start_heading, radius, start)
-                recalculated_end = _point_from_heading(center, end_heading, radius, end)
-
-                if recalculated_start is not None:
-                    start = recalculated_start
-                if recalculated_end is not None:
-                    end = recalculated_end
-
-            polyline: list[tuple[float, float]]
-            if original.polyline:
-                polyline = list(original.polyline)
-                polyline[0] = start
-                polyline[-1] = end
-            else:
-                polyline = [start, end]
-
-            updated.append(
-                replace(
-                    original,
-                    section_id=section_id,
-                    type_name=type_name,
-                    previous_id=prev_id,
-                    next_id=next_id,
-                    start=start,
-                    end=end,
-                    center=center,
-                    sang1=sang1,
-                    sang2=sang2,
-                    eang1=eang1,
-                    eang2=eang2,
-                    radius=radius,
-                    start_heading=start_heading,
-                    end_heading=end_heading,
-                    polyline=polyline,
-                )
-            )
+            updated.append(self._build_section_from_row(row, original))
 
         return updated

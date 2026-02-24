@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
 
@@ -105,6 +106,7 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._suspend_tsd_preview_refresh = False
         self._tsd_lines_model = TsdLinesTableModel(self._window)
         self._window.tsd_lines_table.setModel(self._tsd_lines_model)
         self._tsd_preview_refresh_timer = QtCore.QTimer(self._window)
@@ -781,7 +783,7 @@ class SGViewerController:
         self._tsd_lines_model.dataChanged.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
-        self._tsd_lines_model.modelReset.connect(self._refresh_tsd_preview_lines)
+        self._tsd_lines_model.modelReset.connect(self._schedule_tsd_preview_refresh)
         tsd_selection_model = self._window.tsd_lines_table.selectionModel()
         if tsd_selection_model is not None:
             tsd_selection_model.selectionChanged.connect(self._on_tsd_selection_changed)
@@ -968,6 +970,7 @@ class SGViewerController:
             return
 
         path = Path(path_str)
+        started = perf_counter()
         try:
             detail_file = parse_tsd(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
@@ -979,11 +982,23 @@ class SGViewerController:
             return
 
         self._populate_tsd_table(detail_file)
+        print(f"[profiling] TSD load duration: {(perf_counter() - started) * 1000:.2f} ms")
         self._window.show_status_message(f"Loaded TSD file {path.name}")
 
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
-        self._tsd_lines_model.replace_lines(detail_file.lines)
-        self._loaded_tsd_lines = tuple(detail_file.lines)
+        started = perf_counter()
+        self._suspend_tsd_preview_refresh = True
+        table = self._window.tsd_lines_table
+        previous_block_state = table.blockSignals(True)
+        try:
+            self._tsd_lines_model.replace_lines(detail_file.lines)
+            self._loaded_tsd_lines = tuple(detail_file.lines)
+        finally:
+            table.blockSignals(previous_block_state)
+            self._suspend_tsd_preview_refresh = False
+
+        self._refresh_tsd_preview_lines()
+        print(f"[profiling] TSD table populate duration: {(perf_counter() - started) * 1000:.2f} ms")
 
     def _on_tsd_selection_changed(
         self,
@@ -993,9 +1008,12 @@ class SGViewerController:
         self._refresh_tsd_preview_lines()
 
     def _schedule_tsd_preview_refresh(self, *_args: object) -> None:
+        if self._suspend_tsd_preview_refresh:
+            return
         self._tsd_preview_refresh_timer.start()
 
     def _refresh_tsd_preview_lines(self) -> None:
+        started = perf_counter()
         draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
         if draw_all:
             lines = list(self._tsd_lines_model.all_lines())
@@ -1012,6 +1030,7 @@ class SGViewerController:
         ]
 
         self._window.preview.set_tsd_lines(tuple(preview_lines))
+        print(f"[profiling] TSD preview refresh duration: {(perf_counter() - started) * 1000:.2f} ms")
 
     def _build_tsd_file_from_model(self) -> TrackSurfaceDetailFile:
         lines = self._tsd_lines_model.all_lines()
