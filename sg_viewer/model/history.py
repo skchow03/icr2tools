@@ -184,6 +184,21 @@ class FileHistory:
         except KeyError:
             return None
 
+    def set_sunny_palette(self, sg_path: Path, palette_path: Path) -> None:
+        data = self._load_file_entry(sg_path)
+        data["sunny_palette"] = str(palette_path)
+        self._store_file_entry(sg_path, data)
+
+    def get_sunny_palette(self, sg_path: Path) -> Path | None:
+        data = self._load_file_entry(sg_path)
+        palette_value = data.get("sunny_palette")
+        if not palette_value:
+            return None
+        palette_path = Path(palette_value)
+        if not palette_path.is_absolute():
+            palette_path = (sg_path.parent / palette_path).resolve()
+        return palette_path
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
