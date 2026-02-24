@@ -21,6 +21,7 @@ from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_inte
 from sg_viewer.services.tsd_io import (
     TrackSurfaceDetailFile,
     TrackSurfaceDetailLine,
+    normalize_tsd_command,
     parse_tsd,
     serialize_tsd,
 )
@@ -897,9 +898,9 @@ class SGViewerController:
         table = self._window.tsd_lines_table
         row = table.rowCount()
         table.insertRow(row)
-        defaults = [36, 4000, 0, 0, 0, 0]
+        defaults = ["Detail", 36, 4000, 0, 0, 0, 0]
         for column, value in enumerate(defaults):
-            item = QtWidgets.QTableWidgetItem(str(int(value)))
+            item = QtWidgets.QTableWidgetItem(str(value))
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
         table.selectRow(row)
@@ -969,6 +970,7 @@ class SGViewerController:
             row = table.rowCount()
             table.insertRow(row)
             values = [
+                line.command,
                 line.color_index,
                 line.width_500ths,
                 line.start_dlong,
@@ -977,7 +979,7 @@ class SGViewerController:
                 line.end_dlat,
             ]
             for column, value in enumerate(values):
-                item = QtWidgets.QTableWidgetItem(str(int(value)))
+                item = QtWidgets.QTableWidgetItem(str(value))
                 item.setTextAlignment(int(QtCore.Qt.AlignCenter))
                 table.setItem(row, column, item)
         self._loaded_tsd_lines = tuple(detail_file.lines)
@@ -988,7 +990,13 @@ class SGViewerController:
         lines: list[TrackSurfaceDetailLine] = []
 
         for row in range(table.rowCount()):
-            values = [self._table_int_value(table, row, column) for column in range(6)]
+            try:
+                command = normalize_tsd_command(self._table_text_value(table, row, 0) or "Detail")
+            except ValueError as exc:
+                raise ValueError(
+                    f"Row {row + 1}: command must be Detail or Detail_Dash."
+                ) from exc
+            values = [self._table_int_value(table, row, column) for column in range(1, 7)]
             color_index, width_500ths, start_dlong, start_dlat, end_dlong, end_dlat = values
             if width_500ths <= 0:
                 raise ValueError(f"Row {row + 1}: width (500ths) must be greater than zero.")
@@ -1000,6 +1008,7 @@ class SGViewerController:
                     start_dlat=start_dlat,
                     end_dlong=end_dlong,
                     end_dlat=end_dlat,
+                    command=command,
                 )
             )
 

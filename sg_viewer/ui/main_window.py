@@ -125,9 +125,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
-        self._tsd_lines_table = QtWidgets.QTableWidget(0, 6)
+        self._tsd_lines_table = QtWidgets.QTableWidget(0, 7)
         self._tsd_lines_table.setHorizontalHeaderLabels(
             [
+                "Command",
                 "Color Index",
                 "Width (500ths)",
                 "Start DLONG",
@@ -545,7 +546,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_layout = QtWidgets.QVBoxLayout()
         tsd_info = QtWidgets.QLabel(
             "Track Surface Detail (TSD) lines define solid roadway markings for Papyrus generation.\n"
-            "Each row stores: color index, width (500ths), start/end DLONG, and start/end DLAT."
+            "Each row stores: command, color index, width (500ths), start/end DLONG, and start/end DLAT."
         )
         tsd_info.setWordWrap(True)
         tsd_layout.addWidget(tsd_info)

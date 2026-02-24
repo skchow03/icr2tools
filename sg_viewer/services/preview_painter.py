@@ -797,6 +797,9 @@ def _draw_tsd_lines(
 
         pen = QtGui.QPen(color)
         pen.setWidthF(width_px)
+        if line.command == "Detail_Dash":
+            pen.setStyle(QtCore.Qt.DashLine)
+            pen.setDashPattern([8.0, 8.0])
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
