@@ -1020,23 +1020,38 @@ class SGViewerController:
             rows = [index.row() for index in selected_rows]
 
         lines: list[TrackSurfaceDetailLine] = []
+        sections, _ = self._window.preview.get_section_set()
+        adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
         for row in rows:
             line = self._parse_tsd_line_for_preview(row)
             if line is not None:
-                lines.append(self._convert_tsd_line_for_preview(line))
+                lines.append(
+                    self._convert_tsd_line_for_preview(
+                        line,
+                        sections,
+                        adjusted_to_sg_ranges,
+                    )
+                )
 
         self._window.preview.set_tsd_lines(tuple(lines))
 
     def _convert_tsd_line_for_preview(
         self,
         line: TrackSurfaceDetailLine,
+        sections: list[SectionPreview],
+        adjusted_to_sg_ranges: list[tuple[float, float, float, float]],
     ) -> TrackSurfaceDetailLine:
-        sections, _ = self._window.preview.get_section_set()
         if not sections:
             return line
 
-        start_dlong = self._adjusted_dlong_to_sg_dlong(line.start_dlong, sections)
-        end_dlong = self._adjusted_dlong_to_sg_dlong(line.end_dlong, sections)
+        start_dlong = self._adjusted_dlong_to_sg_dlong(
+            line.start_dlong,
+            adjusted_to_sg_ranges,
+        )
+        end_dlong = self._adjusted_dlong_to_sg_dlong(
+            line.end_dlong,
+            adjusted_to_sg_ranges,
+        )
         return TrackSurfaceDetailLine(
             color_index=line.color_index,
             width_500ths=line.width_500ths,
@@ -1047,25 +1062,30 @@ class SGViewerController:
             command=line.command,
         )
 
-    def _adjusted_dlong_to_sg_dlong(
+    def _build_adjusted_to_sg_ranges(
         self,
-        adjusted_dlong: int,
         sections: list[SectionPreview],
-    ) -> int:
-        if not sections:
-            return int(adjusted_dlong)
-
+    ) -> list[tuple[float, float, float, float]]:
         section_ranges: list[tuple[float, float, float, float]] = []
         for section_index, section in enumerate(sections):
             adjusted_range = self._window.adjusted_section_range_500ths(section_index)
             if adjusted_range is None:
-                return int(adjusted_dlong)
+                return []
             adjusted_start, adjusted_end = adjusted_range
             sg_start = float(section.start_dlong)
             sg_end = sg_start + float(section.length)
             section_ranges.append(
                 (float(adjusted_start), float(adjusted_end), sg_start, sg_end)
             )
+        return section_ranges
+
+    def _adjusted_dlong_to_sg_dlong(
+        self,
+        adjusted_dlong: int,
+        section_ranges: list[tuple[float, float, float, float]],
+    ) -> int:
+        if not section_ranges:
+            return int(adjusted_dlong)
 
         total_adjusted_length = section_ranges[-1][1]
         if total_adjusted_length <= 0:
