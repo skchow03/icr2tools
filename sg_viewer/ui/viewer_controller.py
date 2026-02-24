@@ -1023,9 +1023,68 @@ class SGViewerController:
         for row in rows:
             line = self._parse_tsd_line_for_preview(row)
             if line is not None:
-                lines.append(line)
+                lines.append(self._convert_tsd_line_for_preview(line))
 
         self._window.preview.set_tsd_lines(tuple(lines))
+
+    def _convert_tsd_line_for_preview(
+        self,
+        line: TrackSurfaceDetailLine,
+    ) -> TrackSurfaceDetailLine:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            return line
+
+        start_dlong = self._adjusted_dlong_to_sg_dlong(line.start_dlong, sections)
+        end_dlong = self._adjusted_dlong_to_sg_dlong(line.end_dlong, sections)
+        return TrackSurfaceDetailLine(
+            color_index=line.color_index,
+            width_500ths=line.width_500ths,
+            start_dlong=start_dlong,
+            start_dlat=line.start_dlat,
+            end_dlong=end_dlong,
+            end_dlat=line.end_dlat,
+            command=line.command,
+        )
+
+    def _adjusted_dlong_to_sg_dlong(
+        self,
+        adjusted_dlong: int,
+        sections: list[SectionPreview],
+    ) -> int:
+        if not sections:
+            return int(adjusted_dlong)
+
+        section_ranges: list[tuple[float, float, float, float]] = []
+        for section_index, section in enumerate(sections):
+            adjusted_range = self._window.adjusted_section_range_500ths(section_index)
+            if adjusted_range is None:
+                return int(adjusted_dlong)
+            adjusted_start, adjusted_end = adjusted_range
+            sg_start = float(section.start_dlong)
+            sg_end = sg_start + float(section.length)
+            section_ranges.append(
+                (float(adjusted_start), float(adjusted_end), sg_start, sg_end)
+            )
+
+        total_adjusted_length = section_ranges[-1][1]
+        if total_adjusted_length <= 0:
+            return int(adjusted_dlong)
+
+        normalized = float(adjusted_dlong) % total_adjusted_length
+        for adjusted_start, adjusted_end, sg_start, sg_end in section_ranges:
+            adjusted_length = adjusted_end - adjusted_start
+            if adjusted_length < 0:
+                continue
+            in_range = adjusted_start <= normalized <= adjusted_end
+            if not in_range:
+                continue
+            if math.isclose(adjusted_length, 0.0):
+                return int(round(sg_start))
+            fraction = (normalized - adjusted_start) / adjusted_length
+            return int(round(sg_start + fraction * (sg_end - sg_start)))
+
+        return int(round(section_ranges[-1][3]))
 
     def _parse_tsd_line_for_preview(self, row: int) -> TrackSurfaceDetailLine | None:
         table = self._window.tsd_lines_table
