@@ -107,11 +107,14 @@ class SGViewerController:
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
         self._suspend_tsd_preview_refresh = False
+        self._debug_tsd_perf = False
+        self._last_tsd_preview_lines: list[TrackSurfaceDetailLine] = []
+        self._last_tsd_adjusted_to_sg_ranges: tuple[list[tuple[float, float, float, float]], list[float]] = ([], [])
         self._tsd_lines_model = TsdLinesTableModel(self._window)
         self._window.tsd_lines_table.setModel(self._tsd_lines_model)
         self._tsd_preview_refresh_timer = QtCore.QTimer(self._window)
         self._tsd_preview_refresh_timer.setSingleShot(True)
-        self._tsd_preview_refresh_timer.setInterval(40)
+        self._tsd_preview_refresh_timer.setInterval(60)
         self._tsd_preview_refresh_timer.timeout.connect(self._refresh_tsd_preview_lines)
 
         self._create_actions()
@@ -780,7 +783,7 @@ class SGViewerController:
         self._window.tsd_draw_all_sections_checkbox.toggled.connect(
             self._on_tsd_draw_mode_changed
         )
-        self._tsd_lines_model.dataChanged.connect(self._schedule_tsd_preview_refresh)
+        self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.modelReset.connect(self._schedule_tsd_preview_refresh)
@@ -982,7 +985,7 @@ class SGViewerController:
             return
 
         self._populate_tsd_table(detail_file)
-        print(f"[profiling] TSD load duration: {(perf_counter() - started) * 1000:.2f} ms")
+        self._log_tsd_perf("TSD load duration", started)
         self._window.show_status_message(f"Loaded TSD file {path.name}")
 
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
@@ -998,14 +1001,14 @@ class SGViewerController:
             self._suspend_tsd_preview_refresh = False
 
         self._refresh_tsd_preview_lines()
-        print(f"[profiling] TSD table populate duration: {(perf_counter() - started) * 1000:.2f} ms")
+        self._log_tsd_perf("TSD table populate duration", started)
 
     def _on_tsd_selection_changed(
         self,
         _selected: QtCore.QItemSelection,
         _deselected: QtCore.QItemSelection,
     ) -> None:
-        self._refresh_tsd_preview_lines()
+        self._schedule_tsd_preview_refresh()
 
     def _schedule_tsd_preview_refresh(self, *_args: object) -> None:
         if self._suspend_tsd_preview_refresh:
@@ -1015,22 +1018,84 @@ class SGViewerController:
     def _refresh_tsd_preview_lines(self) -> None:
         started = perf_counter()
         draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
+        sections, _ = self._window.preview.get_section_set()
+
+        range_started = perf_counter()
+        adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
+        self._last_tsd_adjusted_to_sg_ranges = adjusted_to_sg_ranges
+        self._log_tsd_perf("build adjusted_to_sg_ranges", range_started)
+
+        convert_started = perf_counter()
+        lines: list[TrackSurfaceDetailLine]
         if draw_all:
             lines = list(self._tsd_lines_model.all_lines())
+            preview_lines = [
+                self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
+                for line in lines
+            ]
         else:
             selection_model = self._window.tsd_lines_table.selectionModel()
             selected_rows = [] if selection_model is None else [index.row() for index in selection_model.selectedRows()]
             lines = self._tsd_lines_model.lines_for_rows(selected_rows)
+            preview_lines = [
+                self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
+                for line in lines
+            ]
+        self._last_tsd_preview_lines = list(preview_lines)
+        self._log_tsd_perf("convert TSD lines", convert_started)
+
+        set_started = perf_counter()
+        self._window.preview.set_tsd_lines(tuple(preview_lines))
+        self._log_tsd_perf("preview.set_tsd_lines", set_started)
+        self._log_tsd_perf("TSD preview refresh duration", started)
+
+    def _on_tsd_data_changed(
+        self,
+        top_left: QtCore.QModelIndex,
+        bottom_right: QtCore.QModelIndex,
+        _roles: list[int] | None = None,
+    ) -> None:
+        if self._suspend_tsd_preview_refresh:
+            return
+        if not top_left.isValid() or not bottom_right.isValid():
+            self._schedule_tsd_preview_refresh()
+            return
+        if top_left.row() != bottom_right.row():
+            self._schedule_tsd_preview_refresh()
+            return
+
+        draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
+        if not draw_all:
+            self._schedule_tsd_preview_refresh()
+            return
+
+        row = top_left.row()
+        line = self._tsd_lines_model.line_at(row)
+        if line is None:
+            self._schedule_tsd_preview_refresh()
+            return
 
         sections, _ = self._window.preview.get_section_set()
-        adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
-        preview_lines = [
-            self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
-            for line in lines
-        ]
+        adjusted_to_sg_ranges = self._last_tsd_adjusted_to_sg_ranges
+        if not adjusted_to_sg_ranges[0]:
+            adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
+            self._last_tsd_adjusted_to_sg_ranges = adjusted_to_sg_ranges
 
-        self._window.preview.set_tsd_lines(tuple(preview_lines))
-        print(f"[profiling] TSD preview refresh duration: {(perf_counter() - started) * 1000:.2f} ms")
+        if row >= len(self._last_tsd_preview_lines):
+            self._schedule_tsd_preview_refresh()
+            return
+
+        self._last_tsd_preview_lines[row] = self._convert_tsd_line_for_preview(
+            line,
+            sections,
+            adjusted_to_sg_ranges,
+        )
+        self._window.preview.set_tsd_lines(tuple(self._last_tsd_preview_lines))
+
+    def _log_tsd_perf(self, label: str, started: float) -> None:
+        if not self._debug_tsd_perf:
+            return
+        print(f"[tsd_perf] {label}: {(perf_counter() - started) * 1000:.2f} ms")
 
     def _build_tsd_file_from_model(self) -> TrackSurfaceDetailFile:
         lines = self._tsd_lines_model.all_lines()
@@ -2382,6 +2447,8 @@ class SGViewerController:
 
     def _sync_after_section_mutation(self) -> None:
         """Sync UI after section list/data changes in a stable update order."""
+        self._window.invalidate_adjusted_section_range_cache()
+        self._last_tsd_adjusted_to_sg_ranges = ([], [])
         if not self._window.preview.is_interaction_dragging:
             self._refresh_elevation_profile()
             self._window.update_selection_sidebar(self._active_selection)
@@ -2395,12 +2462,16 @@ class SGViewerController:
 
     def _sync_after_xsect_value_change(self) -> None:
         """Sync profile and x-section views after altitude/grade data changes."""
+        self._window.invalidate_adjusted_section_range_cache()
+        self._last_tsd_adjusted_to_sg_ranges = ([], [])
         self._refresh_elevation_profile()
         self._refresh_xsect_elevation_panel()
         self._refresh_xsect_elevation_table()
 
     def _sync_after_xsect_value_change_lightweight(self) -> None:
         """Keep live slider edits responsive while still updating elevation graphs live."""
+        self._window.invalidate_adjusted_section_range_cache()
+        self._last_tsd_adjusted_to_sg_ranges = ([], [])
         self._elevation_panel_controller.refresh_elevation_profile(refresh_table=False)
         if hasattr(self._window.preview, "request_repaint"):
             self._window.preview.request_repaint_throttled(min_interval_ms=33)

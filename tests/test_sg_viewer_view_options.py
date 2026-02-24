@@ -405,6 +405,158 @@ def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, m
         window.close()
 
 
+
+
+def test_adjusted_section_range_uses_cached_ranges(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        calls = {"count": 0}
+
+        def _fake_rebuild():
+            calls["count"] += 1
+            return ((0, 100, 100), (100, 250, 150))
+
+        monkeypatch.setattr(window, "_rebuild_adjusted_section_ranges_cache", _fake_rebuild)
+
+        assert window.adjusted_section_range_500ths(0) == (0, 100)
+        assert window.adjusted_section_range_500ths(1) == (100, 250)
+        assert calls["count"] == 1
+
+        window.invalidate_adjusted_section_range_cache()
+        assert window.adjusted_section_range_500ths(0) == (0, 100)
+        assert calls["count"] == 2
+    finally:
+        window.close()
+
+
+
+
+def test_tsd_refresh_uses_window_adjusted_range_cache(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+
+        window.controller._tsd_lines_model.replace_lines(
+            (
+                TrackSurfaceDetailLine(
+                    color_index=36,
+                    width_500ths=4000,
+                    start_dlong=0,
+                    start_dlat=0,
+                    end_dlong=100,
+                    end_dlat=0,
+                    command="Detail",
+                ),
+            )
+        )
+
+        monkeypatch.setattr(
+            window.preview,
+            "get_section_set",
+            lambda: (
+                [
+                    SimpleNamespace(start_dlong=0.0, length=100.0),
+                    SimpleNamespace(start_dlong=100.0, length=100.0),
+                ],
+                None,
+            ),
+        )
+
+        calls = {"count": 0}
+
+        def _fake_rebuild():
+            calls["count"] += 1
+            return ((0, 100, 100), (100, 200, 100))
+
+        monkeypatch.setattr(window, "_rebuild_adjusted_section_ranges_cache", _fake_rebuild)
+
+        window.controller._refresh_tsd_preview_lines()
+        window.controller._refresh_tsd_preview_lines()
+
+        assert calls["count"] == 1
+    finally:
+        window.close()
+
+def test_tsd_single_row_edit_patches_cached_preview_line(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        lines = (
+            SimpleNamespace(
+                command="Detail",
+                color_index=36,
+                width_500ths=4000,
+                start_dlong=0,
+                start_dlat=0,
+                end_dlong=100,
+                end_dlat=0,
+            ),
+            SimpleNamespace(
+                command="Detail",
+                color_index=37,
+                width_500ths=3000,
+                start_dlong=100,
+                start_dlat=0,
+                end_dlong=200,
+                end_dlat=0,
+            ),
+        )
+        from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+
+        model_lines = tuple(
+            TrackSurfaceDetailLine(
+                color_index=line.color_index,
+                width_500ths=line.width_500ths,
+                start_dlong=line.start_dlong,
+                start_dlat=line.start_dlat,
+                end_dlong=line.end_dlong,
+                end_dlat=line.end_dlat,
+                command=line.command,
+            )
+            for line in lines
+        )
+        window.controller._tsd_lines_model.replace_lines(model_lines)
+        window.controller._last_tsd_preview_lines = list(model_lines)
+        window.controller._last_tsd_adjusted_to_sg_ranges = (
+            [(0.0, 200.0, 0.0, 200.0)],
+            [0.0, 200.0],
+        )
+
+        convert_calls = {"count": 0}
+
+        def _fake_convert(line, _sections, _ranges):
+            convert_calls["count"] += 1
+            return TrackSurfaceDetailLine(
+                color_index=line.color_index,
+                width_500ths=line.width_500ths + 1,
+                start_dlong=line.start_dlong,
+                start_dlat=line.start_dlat,
+                end_dlong=line.end_dlong,
+                end_dlat=line.end_dlat,
+                command=line.command,
+            )
+
+        monkeypatch.setattr(window.controller, "_convert_tsd_line_for_preview", _fake_convert)
+        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([], None))
+
+        calls = {"count": 0}
+        original = window.preview.set_tsd_lines
+
+        def _count_set(lines):
+            calls["count"] += 1
+            original(lines)
+
+        monkeypatch.setattr(window.preview, "set_tsd_lines", _count_set)
+
+        index = window.controller._tsd_lines_model.index(1, 0)
+        window.controller._on_tsd_data_changed(index, index)
+
+        assert convert_calls["count"] == 1
+        assert calls["count"] == 1
+        assert window.controller._last_tsd_preview_lines[0].width_500ths == 4000
+        assert window.controller._last_tsd_preview_lines[1].width_500ths == 3001
+    finally:
+        window.close()
+
 def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
     window = SGViewerWindow()
     try:

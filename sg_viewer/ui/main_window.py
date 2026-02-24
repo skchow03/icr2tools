@@ -87,6 +87,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._on_fsect_table_commit_timer
         )
         self._fsect_table_commit_needs_normalization = False
+        # Cache of adjusted section ranges indexed by section. Rebuilt when SG geometry or
+        # elevation/grade data changes, because those values feed intent-length conversion.
+        self._adjusted_section_ranges_cache: tuple[tuple[int, int, int], ...] | None = None
 
         shortcut_labels = {
             "previous_section": "Ctrl+PgUp",
@@ -1350,10 +1353,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _adjusted_section_dlongs(self, section_index: int) -> tuple[int, int, int] | None:
+        cache = self._adjusted_section_ranges_cache
+        if cache is None:
+            cache = self._rebuild_adjusted_section_ranges_cache()
+        if cache is None or section_index < 0 or section_index >= len(cache):
+            return None
+        return cache[section_index]
+
+    def invalidate_adjusted_section_range_cache(self) -> None:
+        self._adjusted_section_ranges_cache = None
+
+    def _rebuild_adjusted_section_ranges_cache(self) -> tuple[tuple[int, int, int], ...] | None:
         sgfile = self._preview.sgfile
         if sgfile is None:
-            return None
-        if section_index < 0 or section_index >= len(sgfile.sects):
             return None
         if sgfile.num_xsects <= 0 or len(sgfile.xsect_dlats) == 0:
             return None
@@ -1416,14 +1428,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
             )
 
-        adjusted_starts = [0]
-        for index in range(1, len(adjusted_lengths)):
-            adjusted_starts.append(adjusted_starts[index - 1] + adjusted_lengths[index - 1])
-
-        adjusted_start = adjusted_starts[section_index]
-        adjusted_length = adjusted_lengths[section_index]
-        adjusted_end = adjusted_start + adjusted_length
-        return adjusted_start, adjusted_end, adjusted_length
+        adjusted_ranges: list[tuple[int, int, int]] = []
+        running_start = 0
+        for adjusted_length in adjusted_lengths:
+            adjusted_end = running_start + adjusted_length
+            adjusted_ranges.append((running_start, adjusted_end, adjusted_length))
+            running_start = adjusted_end
+        self._adjusted_section_ranges_cache = tuple(adjusted_ranges)
+        return self._adjusted_section_ranges_cache
 
     def adjusted_section_range_500ths(self, section_index: int) -> tuple[int, int] | None:
         adjusted = self._adjusted_section_dlongs(section_index)
