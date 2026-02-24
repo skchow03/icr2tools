@@ -112,7 +112,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_wall_index_spin = QtWidgets.QSpinBox()
         self._mrk_wall_index_spin.setRange(0, 9999)
         self._mrk_wall_index_spin.setValue(0)
-        self._mrk_select_button = QtWidgets.QPushButton("Select Wall")
         self._mrk_entry_count_spin = QtWidgets.QSpinBox()
         self._mrk_entry_count_spin.setRange(1, 9999)
         self._mrk_entry_count_spin.setValue(1)
@@ -120,8 +119,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
         self._mrk_textures_button = QtWidgets.QPushButton("Textures…")
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
-        self._mrk_save_button = QtWidgets.QPushButton("Save MRK…")
-        self._mrk_load_button = QtWidgets.QPushButton("Load MRK…")
+        self._mrk_save_button = QtWidgets.QPushButton("Save MRK entries")
+        self._mrk_load_button = QtWidgets.QPushButton("Load MRK entries")
         self._mrk_entries_table = QtWidgets.QTableWidget(0, 6)
         self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count", "Side", "Texture Pattern"])
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
@@ -509,7 +508,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_form.addRow("Wall Count:", self._mrk_entry_count_spin)
         mrk_layout.addLayout(mrk_form)
         mrk_buttons = QtWidgets.QHBoxLayout()
-        mrk_buttons.addWidget(self._mrk_select_button)
         mrk_buttons.addWidget(self._mrk_add_entry_button)
         mrk_buttons.addWidget(self._mrk_delete_entry_button)
         mrk_buttons.addWidget(self._mrk_textures_button)
@@ -691,9 +689,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def mrk_wall_index_spin(self) -> QtWidgets.QSpinBox:
         return self._mrk_wall_index_spin
 
-    @property
-    def mrk_select_button(self) -> QtWidgets.QPushButton:
-        return self._mrk_select_button
 
     @property
     def mrk_entry_count_spin(self) -> QtWidgets.QSpinBox:
