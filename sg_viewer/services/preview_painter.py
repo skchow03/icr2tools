@@ -24,6 +24,7 @@ _FSECT_OUTLINE_RGBA = (120, 180, 220, 255)
 _SHOW_FSECT_OUTLINES = False
 _MRK_TARGET_SECTION_LENGTH = 14.0 * 6000.0
 _MRK_NOTCH_HALF_LENGTH_PX = 4.0
+ICR2_UNITS_PER_FOOT = 500.0 * 12.0
 
 @dataclass
 class PreviewColors:
@@ -829,7 +830,7 @@ def _sample_tsd_detail_line(
     if math.isclose(span, 0.0):
         span = track_length
 
-    increment = 500.0
+    increment = ICR2_UNITS_PER_FOOT
     step_count = max(1, int(math.ceil(span / increment)))
 
     points: list[Point] = []

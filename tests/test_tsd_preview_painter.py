@@ -42,7 +42,7 @@ def test_tsd_detail_straight_uses_dlat_as_line_offset() -> None:
 
 def test_tsd_detail_sampling_uses_one_foot_steps() -> None:
     section = _make_section()
-    line = TrackSurfaceDetailLine(1, 500, 0, 0, 1500, 0)
+    line = TrackSurfaceDetailLine(1, 500, 0, 0, 18000, 0)
 
     points = _sample_tsd_detail_line(line, [section])
 
