@@ -256,6 +256,49 @@ def test_mrk_tab_buttons_use_entries_labels(qapp):
         window.close()
 
 
+
+
+def test_tsd_tab_exists(qapp):
+    window = SGViewerWindow()
+    try:
+        tsd_index = next(
+            index
+            for index in range(window.right_sidebar_tabs.count())
+            if window.right_sidebar_tabs.tabText(index) == "TSD"
+        )
+        assert tsd_index >= 0
+        assert window.tsd_generate_file_button.text() == "Generate .TSD file"
+    finally:
+        window.close()
+
+
+def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        output_path = tmp_path / "detail.tsd"
+        table = window.tsd_lines_table
+        table.setRowCount(2)
+        first_line = [36, 4000, 0, -126000, 919091, -126000]
+        second_line = [36, 4000, 919091, -126000, 2015740, -126000]
+        for row, values in enumerate((first_line, second_line)):
+            for column, value in enumerate(values):
+                table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(output_path), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_generate_file_requested()
+
+        assert output_path.read_text(encoding="utf-8") == (
+            "Detail: 36 4000 0 -126000 919091 -126000\n"
+            "Detail: 36 4000 919091 -126000 2015740 -126000\n"
+        )
+    finally:
+        window.close()
+
 def test_mrk_table_selection_restores_wall_count_spin(qapp):
     window = SGViewerWindow()
     try:

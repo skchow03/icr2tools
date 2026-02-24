@@ -121,6 +121,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
         self._mrk_save_button = QtWidgets.QPushButton("Save MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Load MRK entries")
+        self._tsd_add_line_button = QtWidgets.QPushButton("Add TSD line")
+        self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
+        self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
+        self._tsd_lines_table = QtWidgets.QTableWidget(0, 6)
+        self._tsd_lines_table.setHorizontalHeaderLabels(
+            [
+                "Color Index",
+                "Width (500ths)",
+                "Start DLONG",
+                "Start DLAT",
+                "End DLONG",
+                "End DLAT",
+            ]
+        )
+        self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
+        self._tsd_lines_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._tsd_lines_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._tsd_lines_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
         self._mrk_entries_table = QtWidgets.QTableWidget(0, 6)
         self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count", "Side", "Texture Pattern"])
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
@@ -519,10 +540,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_layout.addStretch()
         self._mrk_sidebar.setLayout(mrk_layout)
 
+        self._tsd_sidebar = QtWidgets.QWidget()
+        tsd_layout = QtWidgets.QVBoxLayout()
+        tsd_info = QtWidgets.QLabel(
+            "Track Surface Detail (TSD) lines define solid roadway markings for Papyrus generation.\n"
+            "Each row stores: color index, width (500ths), start/end DLONG, and start/end DLAT."
+        )
+        tsd_info.setWordWrap(True)
+        tsd_layout.addWidget(tsd_info)
+        tsd_buttons = QtWidgets.QHBoxLayout()
+        tsd_buttons.addWidget(self._tsd_add_line_button)
+        tsd_buttons.addWidget(self._tsd_delete_line_button)
+        tsd_buttons.addWidget(self._tsd_generate_file_button)
+        tsd_layout.addLayout(tsd_buttons)
+        tsd_layout.addWidget(self._tsd_lines_table)
+        self._tsd_sidebar.setLayout(tsd_layout)
+
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
         self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
         self._right_sidebar_tabs.addTab(self._mrk_sidebar, "MRK")
+        self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)
@@ -721,6 +759,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_load_button(self) -> QtWidgets.QPushButton:
         return self._mrk_load_button
+
+    @property
+    def tsd_add_line_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_add_line_button
+
+    @property
+    def tsd_delete_line_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_delete_line_button
+
+    @property
+    def tsd_generate_file_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_generate_file_button
+
+    @property
+    def tsd_lines_table(self) -> QtWidgets.QTableWidget:
+        return self._tsd_lines_table
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action

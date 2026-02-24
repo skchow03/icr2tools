@@ -18,6 +18,7 @@ from sg_viewer.services.mrk_io import (
     serialize_mrk,
 )
 from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
+from sg_viewer.services.tsd_io import TrackSurfaceDetailFile, TrackSurfaceDetailLine, serialize_tsd
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -676,6 +677,9 @@ class SGViewerController:
         self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
         self._window.mrk_entries_table.itemChanged.connect(self._on_mrk_entry_item_changed)
         self._window.mrk_entries_table.cellDoubleClicked.connect(self._on_mrk_entry_cell_double_clicked)
+        self._window.tsd_add_line_button.clicked.connect(self._on_tsd_add_line_requested)
+        self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
+        self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )
@@ -800,6 +804,74 @@ class SGViewerController:
             return
         table.removeRow(selected_rows[0].row())
         self._update_mrk_highlights_from_table()
+
+
+    def _on_tsd_add_line_requested(self) -> None:
+        table = self._window.tsd_lines_table
+        row = table.rowCount()
+        table.insertRow(row)
+        defaults = [36, 4000, 0, 0, 0, 0]
+        for column, value in enumerate(defaults):
+            item = QtWidgets.QTableWidgetItem(str(int(value)))
+            item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+            table.setItem(row, column, item)
+        table.selectRow(row)
+
+    def _on_tsd_delete_line_requested(self) -> None:
+        table = self._window.tsd_lines_table
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        table.removeRow(selected_rows[0].row())
+
+    def _on_tsd_generate_file_requested(self) -> None:
+        path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Generate TSD File",
+            "",
+            "TSD Files (*.tsd)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() != ".tsd":
+            path = path.with_suffix(".tsd")
+
+        try:
+            detail_file = self._build_tsd_file_from_table()
+            path.write_text(serialize_tsd(detail_file), encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Generate TSD Failed",
+                str(exc),
+            )
+            return
+        self._window.show_status_message(f"Generated TSD file {path.name}")
+
+    def _build_tsd_file_from_table(self) -> TrackSurfaceDetailFile:
+        table = self._window.tsd_lines_table
+        lines: list[TrackSurfaceDetailLine] = []
+
+        for row in range(table.rowCount()):
+            values = [self._table_int_value(table, row, column) for column in range(6)]
+            color_index, width_500ths, start_dlong, start_dlat, end_dlong, end_dlat = values
+            if width_500ths <= 0:
+                raise ValueError(f"Row {row + 1}: width (500ths) must be greater than zero.")
+            lines.append(
+                TrackSurfaceDetailLine(
+                    color_index=color_index,
+                    width_500ths=width_500ths,
+                    start_dlong=start_dlong,
+                    start_dlat=start_dlat,
+                    end_dlong=end_dlong,
+                    end_dlat=end_dlat,
+                )
+            )
+
+        if not lines:
+            raise ValueError("No TSD lines to export.")
+        return TrackSurfaceDetailFile(lines=tuple(lines))
 
     def _on_mrk_textures_requested(self) -> None:
         dialog = MrkTexturesDialog(self._window, self._mrk_texture_definitions)
