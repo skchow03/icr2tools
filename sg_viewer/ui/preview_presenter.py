@@ -75,6 +75,8 @@ class PreviewPresenter:
             selected_section_index=selection.selected_section_index,
             tsd_lines=self._runtime.tsd_lines,
             tsd_palette=self._runtime.tsd_palette,
+            section_geometry_version=self._runtime.section_geometry_version,
+            tsd_lines_version=self._runtime.tsd_lines_version,
         )
 
         preview_painter.paint_preview(
