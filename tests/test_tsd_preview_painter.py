@@ -3,7 +3,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from sg_viewer.services.preview_painter import _point_on_section, _sample_tsd_detail_line
+from sg_viewer.services.preview_painter import (
+    _point_on_section,
+    _sample_tsd_detail_line,
+    _tsd_width_to_pixels,
+)
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 
 
@@ -62,3 +66,12 @@ def test_point_on_section_curve_follows_arc_with_dlat_offset() -> None:
 
     expected = (9.0 / math.sqrt(2), 9.0 / math.sqrt(2))
     assert midpoint == pytest.approx(expected)
+
+
+def test_tsd_width_uses_500ths_of_an_inch_scale() -> None:
+    # 6000 units = 1 foot in world coordinates, and 500ths/inch => 6000 500ths = 1 foot.
+    assert _tsd_width_to_pixels(6000, pixels_per_world_unit=2.0) == pytest.approx(2.0)
+
+
+def test_tsd_width_has_minimum_visible_pixel() -> None:
+    assert _tsd_width_to_pixels(1, pixels_per_world_unit=0.1) == pytest.approx(1.0)
