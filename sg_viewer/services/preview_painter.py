@@ -170,6 +170,16 @@ def paint_preview(
             painter, base_state.rect, base_state.show_axes, transform, widget_height
         )
 
+        if sg_preview_state and sg_preview_state.enabled:
+            render_sg_preview(
+                painter,
+                sg_preview_state.model,
+                sg_preview_state.transform,
+                sg_preview_state.view_state,
+                show_mrk_notches=sg_preview_state.show_mrk_notches,
+                selected_mrk_wall=sg_preview_state.selected_mrk_wall,
+                highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
+            )
         if sg_preview_state and sg_preview_state.show_tsd_lines:
             _draw_tsd_lines(
                 painter,
@@ -180,16 +190,6 @@ def paint_preview(
                 widget_height,
                 selected_section_only=sg_preview_state.show_tsd_selected_section_only,
                 selected_section_index=sg_preview_state.selected_section_index,
-            )
-        if sg_preview_state and sg_preview_state.enabled:
-            render_sg_preview(
-                painter,
-                sg_preview_state.model,
-                sg_preview_state.transform,
-                sg_preview_state.view_state,
-                show_mrk_notches=sg_preview_state.show_mrk_notches,
-                selected_mrk_wall=sg_preview_state.selected_mrk_wall,
-                highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
             )
         _draw_centerlines(
             painter,
