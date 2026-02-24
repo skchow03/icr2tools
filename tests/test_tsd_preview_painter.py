@@ -36,9 +36,9 @@ def _make_section(**overrides) -> _Section:
 
 def test_tsd_detail_straight_uses_dlat_as_line_offset() -> None:
     section = _make_section()
-    line = TrackSurfaceDetailLine(1, 500, 0, 500, 5000, 500)
+    line = TrackSurfaceDetailLine(1, 500, 0, 1, 5000, 1)
 
-    points = _sample_tsd_detail_line(line, [section])
+    points = _sample_tsd_detail_line(line, [section], pixels_per_world_unit=1.0)
 
     assert points[0] == (0.0, 1.0)
     assert points[-1] == (10.0, 1.0)
@@ -48,7 +48,7 @@ def test_tsd_detail_sampling_uses_one_foot_steps() -> None:
     section = _make_section()
     line = TrackSurfaceDetailLine(1, 500, 0, 0, 18000, 0)
 
-    points = _sample_tsd_detail_line(line, [section])
+    points = _sample_tsd_detail_line(line, [section], pixels_per_world_unit=1.0)
 
     assert len(points) == 4
 
@@ -68,9 +68,9 @@ def test_point_on_section_curve_follows_arc_with_dlat_offset() -> None:
     assert midpoint == pytest.approx(expected)
 
 
-def test_tsd_width_uses_500ths_of_an_inch_scale() -> None:
-    # 6000 units = 1 foot in world coordinates, and 500ths/inch => 6000 500ths = 1 foot.
-    assert _tsd_width_to_pixels(6000, pixels_per_world_unit=2.0) == pytest.approx(2.0)
+def test_tsd_width_uses_world_500ths_scale() -> None:
+    # TSD widths are already in 500ths world units and should not be rescaled by inch/foot conversion.
+    assert _tsd_width_to_pixels(500, pixels_per_world_unit=2.0) == pytest.approx(1000.0)
 
 
 def test_tsd_width_has_minimum_visible_pixel() -> None:
