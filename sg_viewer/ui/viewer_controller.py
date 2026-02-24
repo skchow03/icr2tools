@@ -34,6 +34,7 @@ from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
+from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
     MrkTexturePatternDialog,
@@ -93,6 +94,7 @@ class SGViewerController:
         self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
         self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
+        self._sunny_palette: list[QtGui.QColor] | None = None
 
         self._create_actions()
         self._create_menus()
@@ -131,6 +133,9 @@ class SGViewerController:
         self._open_action = QtWidgets.QAction("Open SG…", self._window)
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._file_menu_coordinator.open_file_dialog)
+
+        self._load_sunny_palette_action = QtWidgets.QAction("Load SUNNY.PCX…", self._window)
+        self._load_sunny_palette_action.triggered.connect(self._load_sunny_palette_dialog)
 
         self._import_trk_action = QtWidgets.QAction("Import TRK…", self._window)
         self._import_trk_action.triggered.connect(self._file_menu_coordinator.import_trk_file_dialog)
@@ -342,6 +347,9 @@ class SGViewerController:
         self._run_integrity_checks_action.setEnabled(False)
         self._run_integrity_checks_action.triggered.connect(self._run_sg_integrity_checks)
 
+        self._show_palette_colors_action = QtWidgets.QAction("Show SUNNY Palette Colors…", self._window)
+        self._show_palette_colors_action.triggered.connect(self._show_palette_colors_dialog)
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -353,6 +361,7 @@ class SGViewerController:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._new_action)
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._load_sunny_palette_action)
         file_menu.addMenu(self._open_recent_menu)
         import_menu = file_menu.addMenu("Import")
         import_menu.addAction(self._import_trk_action)
@@ -409,6 +418,8 @@ class SGViewerController:
         fsects_menu.addAction(self._delete_fsect_action)
 
         tools_menu.addSeparator()
+        tools_menu.addAction(self._show_palette_colors_action)
+        tools_menu.addSeparator()
         tools_menu.addAction(self._run_integrity_checks_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._calibrate_background_action)
@@ -427,6 +438,59 @@ class SGViewerController:
 
     def _show_about_dialog(self) -> None:
         show_about_dialog(self._window)
+
+    @staticmethod
+    def _read_pcx_256_palette(path: Path) -> list[QtGui.QColor]:
+        data = path.read_bytes()
+        if len(data) < 769 or data[-769] != 0x0C:
+            raise ValueError("Invalid or missing 256-color PCX palette marker")
+        raw_palette = data[-768:]
+        return [
+            QtGui.QColor(raw_palette[i], raw_palette[i + 1], raw_palette[i + 2])
+            for i in range(0, 768, 3)
+        ]
+
+    def _load_sunny_palette_dialog(self) -> None:
+        default_directory = ""
+        if self._current_path is not None:
+            default_directory = str(self._current_path.parent)
+        path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Load SUNNY.PCX Palette",
+            default_directory,
+            "PCX files (*.pcx *.PCX);;All files (*)",
+        )
+        if not path_str:
+            return
+
+        self._load_sunny_palette(Path(path_str))
+
+    def _load_sunny_palette(self, path: Path) -> None:
+        try:
+            self._sunny_palette = self._read_pcx_256_palette(path)
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Load SUNNY.PCX Palette",
+                f"Could not load palette from {path.name}:\n{exc}",
+            )
+            return
+
+        self._window.show_status_message(
+            f"Loaded SUNNY palette from {path.name} ({len(self._sunny_palette)} colors)."
+        )
+
+    def _show_palette_colors_dialog(self) -> None:
+        if not self._sunny_palette:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "SUNNY Palette",
+                "Load SUNNY.PCX first from File → Load SUNNY.PCX…",
+            )
+            return
+
+        dialog = PaletteColorDialog(self._sunny_palette, self._window)
+        dialog.exec_()
 
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
