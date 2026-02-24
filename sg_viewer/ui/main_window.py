@@ -80,6 +80,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_drag_timer.setSingleShot(True)
         self._fsect_drag_timer.setInterval(50)
         self._fsect_drag_timer.timeout.connect(self._on_fsect_drag_timer)
+        self._fsect_table_commit_timer = QtCore.QTimer(self)
+        self._fsect_table_commit_timer.setSingleShot(True)
+        self._fsect_table_commit_timer.setInterval(150)
+        self._fsect_table_commit_timer.timeout.connect(
+            self._on_fsect_table_commit_timer
+        )
+        self._fsect_table_commit_needs_normalization = False
 
         shortcut_labels = {
             "previous_section": "Ctrl+PgUp",
@@ -1574,15 +1581,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             reset_fsect_dlat_cell(self._fsect_table, row_index, column_index, fsects[row_index], unit=self._current_measurement_unit())
             return
         new_value = self._fsect_dlat_from_display_units(new_value)
+        normalize_on_commit = False
         if column_index in (2, 3):
             if column_index == 2:
                 self._preview.update_fsection_dlat(
-                    section_index, row_index, start_dlat=new_value
+                    section_index,
+                    row_index,
+                    start_dlat=new_value,
+                    refresh_preview=False,
+                    emit_sections_changed=False,
                 )
             else:
                 self._preview.update_fsection_dlat(
-                    section_index, row_index, end_dlat=new_value
+                    section_index,
+                    row_index,
+                    end_dlat=new_value,
+                    refresh_preview=False,
+                    emit_sections_changed=False,
                 )
+            normalize_on_commit = text != self._format_fsect_dlat(new_value)
+            self._update_fsect_delta_cells(section_index, row_index)
         else:
             next_row_index = row_index + 1
             if next_row_index >= len(fsects):
@@ -1594,14 +1612,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     section_index,
                     next_row_index,
                     start_dlat=base_value + new_value,
+                    refresh_preview=False,
+                    emit_sections_changed=False,
                 )
             else:
                 self._preview.update_fsection_dlat(
                     section_index,
                     next_row_index,
                     end_dlat=base_value + new_value,
+                    refresh_preview=False,
+                    emit_sections_changed=False,
                 )
-        self._update_fsect_table(section_index)
+            normalize_on_commit = True
+            self._update_fsect_delta_cells(section_index, next_row_index)
+        self._schedule_fsect_table_commit(normalize_on_commit)
+
+    def _schedule_fsect_table_commit(self, normalize_on_commit: bool) -> None:
+        self._fsect_table_commit_needs_normalization = (
+            self._fsect_table_commit_needs_normalization or normalize_on_commit
+        )
+        self._fsect_table_commit_timer.start()
+
+    def _on_fsect_table_commit_timer(self) -> None:
+        self._preview.refresh_fsections_preview()
+        if self._fsect_table_commit_needs_normalization:
+            self.update_selected_section_fsect_table()
+        self._fsect_table_commit_needs_normalization = False
 
     def _update_fsect_dlat_cell(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
