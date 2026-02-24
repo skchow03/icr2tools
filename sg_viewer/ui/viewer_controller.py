@@ -769,7 +769,13 @@ class SGViewerController:
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.tsd_draw_all_sections_checkbox.toggled.connect(
-            lambda checked: self._window.preview.set_show_tsd_selected_section_only(not checked)
+            self._on_tsd_draw_mode_changed
+        )
+        self._window.tsd_lines_table.itemSelectionChanged.connect(
+            self._refresh_tsd_preview_lines
+        )
+        self._window.tsd_lines_table.itemChanged.connect(
+            lambda _item: self._refresh_tsd_preview_lines()
         )
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
@@ -907,6 +913,7 @@ class SGViewerController:
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
         table.selectRow(row)
+        self._refresh_tsd_preview_lines()
 
     def _on_tsd_delete_line_requested(self) -> None:
         table = self._window.tsd_lines_table
@@ -914,6 +921,11 @@ class SGViewerController:
         if not selected_rows:
             return
         table.removeRow(selected_rows[0].row())
+        self._refresh_tsd_preview_lines()
+
+    def _on_tsd_draw_mode_changed(self, checked: bool) -> None:
+        self._window.preview.set_show_tsd_selected_section_only(not checked)
+        self._refresh_tsd_preview_lines()
 
     def _on_tsd_generate_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
@@ -939,7 +951,7 @@ class SGViewerController:
             )
             return
         self._loaded_tsd_lines = tuple(detail_file.lines)
-        self._window.preview.set_tsd_lines(self._loaded_tsd_lines)
+        self._refresh_tsd_preview_lines()
         self._window.show_status_message(f"Generated TSD file {path.name}")
 
     def _on_tsd_load_file_requested(self) -> None:
@@ -986,7 +998,47 @@ class SGViewerController:
                 item.setTextAlignment(int(QtCore.Qt.AlignCenter))
                 table.setItem(row, column, item)
         self._loaded_tsd_lines = tuple(detail_file.lines)
-        self._window.preview.set_tsd_lines(self._loaded_tsd_lines)
+        self._refresh_tsd_preview_lines()
+
+    def _refresh_tsd_preview_lines(self) -> None:
+        draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
+        table = self._window.tsd_lines_table
+        rows = range(table.rowCount())
+        if not draw_all:
+            selected_rows = table.selectionModel().selectedRows()
+            rows = [index.row() for index in selected_rows]
+
+        lines: list[TrackSurfaceDetailLine] = []
+        for row in rows:
+            line = self._parse_tsd_line_for_preview(row)
+            if line is not None:
+                lines.append(line)
+
+        self._window.preview.set_tsd_lines(tuple(lines))
+
+    def _parse_tsd_line_for_preview(self, row: int) -> TrackSurfaceDetailLine | None:
+        table = self._window.tsd_lines_table
+        try:
+            command = normalize_tsd_command(
+                self._table_text_value(table, row, 0) or "Detail"
+            )
+            values = [self._table_int_value(table, row, column) for column in range(1, 7)]
+            color_index, width_500ths, start_dlong, start_dlat, end_dlong, end_dlat = values
+        except ValueError:
+            return None
+
+        if width_500ths <= 0:
+            return None
+
+        return TrackSurfaceDetailLine(
+            color_index=color_index,
+            width_500ths=width_500ths,
+            start_dlong=start_dlong,
+            start_dlat=start_dlat,
+            end_dlong=end_dlong,
+            end_dlat=end_dlat,
+            command=command,
+        )
 
     def _build_tsd_file_from_table(self) -> TrackSurfaceDetailFile:
         table = self._window.tsd_lines_table
