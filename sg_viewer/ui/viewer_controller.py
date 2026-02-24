@@ -768,6 +768,9 @@ class SGViewerController:
         self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
+        self._window.tsd_draw_all_sections_checkbox.toggled.connect(
+            lambda checked: self._window.preview.set_show_tsd_selected_section_only(not checked)
+        )
         self._window.xsect_dlat_line_checkbox.toggled.connect(
             self._window.preview.set_show_xsect_dlat_line
         )

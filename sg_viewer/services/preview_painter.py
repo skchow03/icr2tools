@@ -126,6 +126,8 @@ class SgPreviewState:
     selected_mrk_wall: tuple[int, int, int] | None = None
     highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
     show_tsd_lines: bool = False
+    show_tsd_selected_section_only: bool = False
+    selected_section_index: int | None = None
     tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
     tsd_palette: tuple[QtGui.QColor, ...] = ()
 
@@ -168,6 +170,17 @@ def paint_preview(
             painter, base_state.rect, base_state.show_axes, transform, widget_height
         )
 
+        if sg_preview_state and sg_preview_state.show_tsd_lines:
+            _draw_tsd_lines(
+                painter,
+                sg_preview_state.tsd_lines,
+                sg_preview_state.tsd_palette,
+                base_state.sections,
+                transform,
+                widget_height,
+                selected_section_only=sg_preview_state.show_tsd_selected_section_only,
+                selected_section_index=sg_preview_state.selected_section_index,
+            )
         if sg_preview_state and sg_preview_state.enabled:
             render_sg_preview(
                 painter,
@@ -177,15 +190,6 @@ def paint_preview(
                 show_mrk_notches=sg_preview_state.show_mrk_notches,
                 selected_mrk_wall=sg_preview_state.selected_mrk_wall,
                 highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
-            )
-        if sg_preview_state and sg_preview_state.show_tsd_lines:
-            _draw_tsd_lines(
-                painter,
-                sg_preview_state.tsd_lines,
-                sg_preview_state.tsd_palette,
-                base_state.sections,
-                transform,
-                widget_height,
             )
         _draw_centerlines(
             painter,
@@ -774,6 +778,9 @@ def _draw_tsd_lines(
     sections: Iterable[SectionPreview],
     transform: Transform,
     widget_height: int,
+    *,
+    selected_section_only: bool = False,
+    selected_section_index: int | None = None,
 ) -> None:
     if not tsd_lines:
         return
@@ -783,6 +790,21 @@ def _draw_tsd_lines(
     section_list = [section for section in sections if section.length > 0]
     track_length = _track_length_from_sections(section_list)
     closed_loop = bool(section_list) and is_closed_loop(section_list)
+
+    selected_range: tuple[float, float] | None = None
+    if selected_section_only:
+        if (
+            selected_section_index is None
+            or selected_section_index < 0
+            or selected_section_index >= len(section_list)
+        ):
+            painter.restore()
+            return
+        selected_section = section_list[selected_section_index]
+        selected_range = (
+            float(selected_section.start_dlong),
+            float(selected_section.start_dlong) + float(selected_section.length),
+        )
 
     for line in tsd_lines:
         color_index = max(0, min(255, int(line.color_index)))
@@ -800,6 +822,14 @@ def _draw_tsd_lines(
         pen.setCapStyle(QtCore.Qt.FlatCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
+
+        if selected_range is not None and not _tsd_line_overlaps_section_range(
+            line,
+            selected_range,
+            track_length,
+            closed_loop,
+        ):
+            continue
 
         for segment in split_wrapped_segment(
             x1=float(line.start_dlong),
@@ -827,6 +857,30 @@ def _draw_tsd_lines(
             painter.drawPolyline(QtGui.QPolygonF(mapped_points))
 
     painter.restore()
+
+
+def _tsd_line_overlaps_section_range(
+    line: TrackSurfaceDetailLine,
+    section_range: tuple[float, float],
+    track_length: float,
+    is_closed_loop: bool,
+) -> bool:
+    section_start, section_end = section_range
+    if section_end <= section_start:
+        return False
+    for segment in split_wrapped_segment(
+        x1=float(line.start_dlong),
+        y1=float(line.start_dlat),
+        x2=float(line.end_dlong),
+        y2=float(line.end_dlat),
+        track_length=track_length,
+        is_closed_loop=is_closed_loop,
+    ):
+        seg_start = min(float(segment[0]), float(segment[2]))
+        seg_end = max(float(segment[0]), float(segment[2]))
+        if seg_end > section_start and seg_start < section_end:
+            return True
+    return False
 
 
 def _tsd_width_to_pixels(width_500ths: int, pixels_per_world_unit: float) -> float:
