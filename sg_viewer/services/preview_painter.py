@@ -18,6 +18,7 @@ from sg_viewer.services import sg_rendering
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
+BBox = tuple[float, float, float, float]
 BASE_WIDTH = 3.0
 _SURFACE_FILL_RGBA = (60, 160, 120, 255)
 _SURFACE_OUTLINE_RGBA = (80, 200, 150, 255)
@@ -840,6 +841,8 @@ def _draw_tsd_lines(
             float(selected_section.start_dlong) + float(selected_section.length),
         )
 
+    viewport_bbox = _world_bbox_for_painter_rect(painter.viewport(), transform, widget_height)
+
     for line in tsd_lines:
         color_index = max(0, min(255, int(line.color_index)))
         if tsd_palette:
@@ -873,6 +876,25 @@ def _draw_tsd_lines(
             track_length=track_length,
             is_closed_loop=closed_loop,
         ):
+            cull_margin_world = width_px / max(transform[0], 1e-9)
+            estimated_bbox = _estimate_tsd_segment_world_bbox(
+                start_dlong=float(segment[0]),
+                start_dlat=float(segment[1]),
+                end_dlong=float(segment[2]),
+                end_dlat=float(segment[3]),
+                sections=section_list,
+                track_length=track_length,
+            )
+            if (
+                estimated_bbox is not None
+                and not _bbox_intersects(
+                    estimated_bbox,
+                    viewport_bbox,
+                    margin=cull_margin_world,
+                )
+            ):
+                continue
+
             cache_key = (
                 str(line.command),
                 int(line.width_500ths),
@@ -902,6 +924,13 @@ def _draw_tsd_lines(
                 world_points = tuple(sampled_points)
                 cache.world_points_by_key[cache_key] = world_points
             if len(world_points) < 2:
+                continue
+            sampled_bbox = _bbox_from_points(world_points)
+            if sampled_bbox is not None and not _bbox_intersects(
+                sampled_bbox,
+                viewport_bbox,
+                margin=cull_margin_world,
+            ):
                 continue
             mapped_points = [
                 sg_rendering.map_point(point[0], point[1], transform, widget_height)
@@ -934,6 +963,81 @@ def _tsd_line_overlaps_section_range(
         if seg_end > section_start and seg_start < section_end:
             return True
     return False
+
+
+def _world_bbox_for_painter_rect(
+    rect: QtCore.QRect,
+    transform: Transform,
+    widget_height: int,
+) -> BBox:
+    scale, (offset_x, offset_y) = transform
+    safe_scale = scale if abs(scale) > 1e-12 else 1e-12
+    left_px = float(rect.left())
+    right_px = float(rect.right())
+    top_px = float(rect.top())
+    bottom_px = float(rect.bottom())
+
+    world_x0 = (left_px - offset_x) / safe_scale
+    world_x1 = (right_px - offset_x) / safe_scale
+    world_y0 = (widget_height - top_px - offset_y) / safe_scale
+    world_y1 = (widget_height - bottom_px - offset_y) / safe_scale
+    return (
+        min(world_x0, world_x1),
+        min(world_y0, world_y1),
+        max(world_x0, world_x1),
+        max(world_y0, world_y1),
+    )
+
+
+def _bbox_from_points(points: Iterable[Point]) -> BBox | None:
+    xs: list[float] = []
+    ys: list[float] = []
+    for x, y in points:
+        xs.append(float(x))
+        ys.append(float(y))
+    if not xs:
+        return None
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _bbox_intersects(a: BBox, b: BBox, *, margin: float = 0.0) -> bool:
+    return not (
+        a[2] < b[0] - margin
+        or a[0] > b[2] + margin
+        or a[3] < b[1] - margin
+        or a[1] > b[3] + margin
+    )
+
+
+def _estimate_tsd_segment_world_bbox(
+    start_dlong: float,
+    start_dlat: float,
+    end_dlong: float,
+    end_dlat: float,
+    sections: list[SectionPreview],
+    track_length: float,
+) -> BBox | None:
+    if track_length <= 0:
+        return None
+
+    normalized_start = float(start_dlong) % track_length
+    normalized_end = float(end_dlong) % track_length
+    span = (normalized_end - normalized_start) % track_length
+    if math.isclose(span, 0.0):
+        return None
+
+    checkpoint_count = max(4, min(32, int(math.ceil(span / (50.0 * MIN_TSD_SAMPLE_STEP)))))
+    sampled_points: list[Point] = []
+    for index in range(checkpoint_count + 1):
+        fraction = index / checkpoint_count
+        along = span * fraction
+        dlong = (normalized_start + along) % track_length
+        dlat = float(start_dlat) + (float(end_dlat) - float(start_dlat)) * fraction
+        point = _point_on_track_at_dlong(sections, dlong, dlat, track_length)
+        if point is not None:
+            sampled_points.append(point)
+
+    return _bbox_from_points(sampled_points)
 
 
 def _tsd_width_to_pixels(width_500ths: int, pixels_per_world_unit: float) -> float:
