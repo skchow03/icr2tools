@@ -5,7 +5,6 @@ import pytest
 
 pytest.importorskip("PyQt5")
 
-from PyQt5 import QtWidgets
 from types import SimpleNamespace
 
 from sg_viewer.ui.viewer_controller import SGViewerController
@@ -167,20 +166,20 @@ def test_confirm_close_prompts_for_unsaved_sg_changes(monkeypatch: pytest.Monkey
     controller = SGViewerController.__new__(SGViewerController)
     controller._window = SimpleNamespace(preview=SimpleNamespace(has_unsaved_changes=True))
 
-    prompts: list[tuple[str, str]] = []
+    prompts: list[tuple[str, str, str]] = []
 
-    def _fake_question(_parent, title, text, *_args, **_kwargs):
-        prompts.append((title, text))
-        return QtWidgets.QMessageBox.No
+    def _fake_confirm_discard_dialog(*, title: str, message: str, confirm_text: str) -> bool:
+        prompts.append((title, message, confirm_text))
+        return False
 
-    monkeypatch.setattr(QtWidgets.QMessageBox, "question", _fake_question)
-    controller._confirm_discard_unsaved_mrk = lambda *_args, **_kwargs: True
+    monkeypatch.setattr(controller, "_confirm_discard_dialog", _fake_confirm_discard_dialog)
 
     assert controller.confirm_close() is False
     assert prompts == [
         (
-            "Close SG Viewer",
-            "You have unsaved SG changes. Continue and close the application without saving?",
+            "Close SG Viewer?",
+            "You have unsaved changes in:\n• SG track geometry\n\nContinue and close sg viewer without saving?",
+            "Close without saving",
         )
     ]
 
@@ -191,13 +190,12 @@ def test_confirm_close_skips_prompt_when_sg_not_dirty(monkeypatch: pytest.Monkey
 
     asked = False
 
-    def _fake_question(*_args, **_kwargs):
+    def _fake_confirm_discard_dialog(*, title: str, message: str, confirm_text: str) -> bool:
         nonlocal asked
         asked = True
-        return QtWidgets.QMessageBox.Yes
+        return True
 
-    monkeypatch.setattr(QtWidgets.QMessageBox, "question", _fake_question)
-    controller._confirm_discard_unsaved_mrk = lambda *_args, **_kwargs: True
+    monkeypatch.setattr(controller, "_confirm_discard_dialog", _fake_confirm_discard_dialog)
 
     assert controller.confirm_close() is True
     assert asked is False
