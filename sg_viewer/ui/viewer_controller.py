@@ -74,6 +74,8 @@ class LoadedTsdFile:
 
 
 class SGViewerController:
+    _TSD_SHOW_ALL_LABEL = "Show all TSDs"
+
     """Coordinates actions, menus, and dialogs for the SG viewer window."""
 
     def __init__(self, window: QtWidgets.QMainWindow) -> None:
@@ -1012,6 +1014,8 @@ class SGViewerController:
         previous_block_state = combo.blockSignals(True)
         try:
             combo.clear()
+            combo.addItem(self._TSD_SHOW_ALL_LABEL)
+            combo.setCurrentIndex(0)
             combo.setEnabled(False)
         finally:
             combo.blockSignals(previous_block_state)
@@ -1028,6 +1032,8 @@ class SGViewerController:
         combo = self._window.tsd_files_combo
         previous_block_state = combo.blockSignals(True)
         try:
+            if combo.count() == 0:
+                combo.addItem(self._TSD_SHOW_ALL_LABEL)
             combo.addItem(name)
             combo.setEnabled(True)
             if select:
@@ -1035,7 +1041,7 @@ class SGViewerController:
         finally:
             combo.blockSignals(previous_block_state)
         if select:
-            self._set_active_tsd_file(combo.count() - 1)
+            self._set_active_tsd_file(len(self._loaded_tsd_files) - 1)
 
     def _upsert_loaded_tsd_file(
         self,
@@ -1052,7 +1058,7 @@ class SGViewerController:
         combo = self._window.tsd_files_combo
         previous_block_state = combo.blockSignals(True)
         try:
-            combo.setItemText(self._active_tsd_file_index, name)
+            combo.setItemText(self._active_tsd_file_index + 1, name)
         finally:
             combo.blockSignals(previous_block_state)
 
@@ -1066,7 +1072,18 @@ class SGViewerController:
         self._populate_tsd_table(detail_file)
 
     def _on_tsd_file_selection_changed(self, index: int) -> None:
-        self._set_active_tsd_file(index)
+        if index <= 0:
+            self._sync_active_tsd_file_from_model()
+            self._active_tsd_file_index = None
+            self._populate_tsd_table(TrackSurfaceDetailFile(lines=self._all_loaded_tsd_lines()))
+            return
+        self._set_active_tsd_file(index - 1)
+
+    def _all_loaded_tsd_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
+        lines: list[TrackSurfaceDetailLine] = []
+        for loaded_file in self._loaded_tsd_files:
+            lines.extend(loaded_file.lines)
+        return tuple(lines)
 
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
         started = perf_counter()
