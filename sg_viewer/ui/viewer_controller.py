@@ -924,10 +924,30 @@ class SGViewerController:
             )
 
     def confirm_close(self) -> bool:
-        return self._confirm_discard_unsaved_mrk("Close SG Viewer", "close the application")
+        if not self._confirm_discard_unsaved_track(
+            "Close SG Viewer", "close the application"
+        ):
+            return False
+        return self._confirm_discard_unsaved_mrk(
+            "Close SG Viewer", "close the application"
+        )
 
     def confirm_mrk_safe_reset(self, action_label: str) -> bool:
         return self._confirm_discard_unsaved_mrk(f"{action_label}?", action_label.lower())
+
+    def _confirm_discard_unsaved_track(
+        self, title: str, action_description: str
+    ) -> bool:
+        if not self._window.preview.has_unsaved_changes:
+            return True
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            title,
+            f"You have unsaved SG changes. Continue and {action_description} without saving?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
 
     def _confirm_discard_unsaved_mrk(self, title: str, action_description: str) -> bool:
         if not self._mrk_is_dirty:

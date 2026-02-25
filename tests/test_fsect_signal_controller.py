@@ -5,6 +5,7 @@ import pytest
 
 pytest.importorskip("PyQt5")
 
+from PyQt5 import QtWidgets
 from types import SimpleNamespace
 
 from sg_viewer.ui.viewer_controller import SGViewerController
@@ -160,3 +161,43 @@ def test_adjusted_dlong_to_sg_dlong_matches_legacy_for_wraparound_values() -> No
             adjusted_dlong,
             adjusted_to_sg_ranges,
         ) == _legacy_adjusted_dlong_to_sg_dlong(adjusted_dlong, section_ranges)
+
+
+def test_confirm_close_prompts_for_unsaved_sg_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    controller = SGViewerController.__new__(SGViewerController)
+    controller._window = SimpleNamespace(preview=SimpleNamespace(has_unsaved_changes=True))
+
+    prompts: list[tuple[str, str]] = []
+
+    def _fake_question(_parent, title, text, *_args, **_kwargs):
+        prompts.append((title, text))
+        return QtWidgets.QMessageBox.No
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", _fake_question)
+    controller._confirm_discard_unsaved_mrk = lambda *_args, **_kwargs: True
+
+    assert controller.confirm_close() is False
+    assert prompts == [
+        (
+            "Close SG Viewer",
+            "You have unsaved SG changes. Continue and close the application without saving?",
+        )
+    ]
+
+
+def test_confirm_close_skips_prompt_when_sg_not_dirty(monkeypatch: pytest.MonkeyPatch) -> None:
+    controller = SGViewerController.__new__(SGViewerController)
+    controller._window = SimpleNamespace(preview=SimpleNamespace(has_unsaved_changes=False))
+
+    asked = False
+
+    def _fake_question(*_args, **_kwargs):
+        nonlocal asked
+        asked = True
+        return QtWidgets.QMessageBox.Yes
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", _fake_question)
+    controller._confirm_discard_unsaved_mrk = lambda *_args, **_kwargs: True
+
+    assert controller.confirm_close() is True
+    assert asked is False
