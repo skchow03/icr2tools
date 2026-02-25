@@ -1473,3 +1473,63 @@ def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
         assert "Export SG to TRK…" not in tools_labels
     finally:
         window.close()
+
+
+def test_fsect_diagram_uses_wrapped_neighbor_sections(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window._selected_section_index = 0
+        window.preview._fsects_by_section = [
+            [PreviewFSection(start_dlat=10.0, end_dlat=20.0, surface_type=0, type2=0)],
+            [PreviewFSection(start_dlat=30.0, end_dlat=40.0, surface_type=0, type2=0)],
+            [PreviewFSection(start_dlat=50.0, end_dlat=60.0, surface_type=0, type2=0)],
+        ]
+
+        monkeypatch.setattr(
+            window.preview,
+            "get_section_set",
+            lambda: ([object(), object(), object()], None),
+        )
+
+        captured: list[
+            tuple[
+                int | None,
+                list[PreviewFSection],
+                list[PreviewFSection],
+                list[PreviewFSection],
+            ]
+        ] = []
+
+        def _capture(
+            section_index: int | None,
+            fsects: list[PreviewFSection],
+            *,
+            prev_fsects: list[PreviewFSection] | None = None,
+            next_fsects: list[PreviewFSection] | None = None,
+        ) -> None:
+            captured.append(
+                (
+                    section_index,
+                    list(fsects),
+                    list(prev_fsects or []),
+                    list(next_fsects or []),
+                )
+            )
+
+        monkeypatch.setattr(window._fsect_diagram, "set_fsects", _capture)
+
+        window._update_fsect_table(0)
+        section_index, fsects, prev_fsects, next_fsects = captured[-1]
+        assert section_index == 0
+        assert fsects == window.preview.get_section_fsects(0)
+        assert prev_fsects == window.preview.get_section_fsects(2)
+        assert next_fsects == window.preview.get_section_fsects(1)
+
+        window._update_fsect_table(2)
+        section_index, fsects, prev_fsects, next_fsects = captured[-1]
+        assert section_index == 2
+        assert fsects == window.preview.get_section_fsects(2)
+        assert prev_fsects == window.preview.get_section_fsects(1)
+        assert next_fsects == window.preview.get_section_fsects(0)
+    finally:
+        window.close()
