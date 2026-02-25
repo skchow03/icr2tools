@@ -111,6 +111,7 @@ class SGViewerController:
         self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
         self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
+        self._mrk_is_dirty = False
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
@@ -922,6 +923,59 @@ class SGViewerController:
                 lambda _checked=False, color_key=key: self._on_pick_preview_color(color_key)
             )
 
+    def confirm_close(self) -> bool:
+        return self._confirm_discard_unsaved_mrk("Close SG Viewer", "close the application")
+
+    def confirm_mrk_safe_reset(self, action_label: str) -> bool:
+        return self._confirm_discard_unsaved_mrk(f"{action_label}?", action_label.lower())
+
+    def _confirm_discard_unsaved_mrk(self, title: str, action_description: str) -> bool:
+        if not self._mrk_is_dirty:
+            return True
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            title,
+            f"You have unsaved MRK changes. Continue and {action_description} without saving?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
+    def _set_mrk_dirty(self, dirty: bool) -> None:
+        self._mrk_is_dirty = dirty
+
+    def _persist_mrk_state_for_current_track(self) -> None:
+        if self._current_path is None:
+            return
+        self._history.set_mrk_state(self._current_path, self._collect_mrk_state())
+
+    def _load_mrk_state_for_current_track(self) -> None:
+        self._set_mrk_dirty(False)
+        self._mrk_texture_definitions = ()
+        table = self._window.mrk_entries_table
+        table.blockSignals(True)
+        table.setRowCount(0)
+        table.blockSignals(False)
+
+        if self._current_path is None:
+            self._update_mrk_highlights_from_table()
+            return
+
+        state = self._history.get_mrk_state(self._current_path)
+        if not isinstance(state, dict):
+            self._update_mrk_highlights_from_table()
+            return
+
+        try:
+            self._apply_mrk_state(state, mark_dirty=False)
+        except ValueError:
+            logger.warning("Unable to restore MRK state for %s", self._current_path, exc_info=True)
+            self._mrk_texture_definitions = ()
+            table.blockSignals(True)
+            table.setRowCount(0)
+            table.blockSignals(False)
+            self._update_mrk_highlights_from_table()
+
     def _on_mrk_wall_select_requested(self) -> None:
         table = self._window.mrk_entries_table
         selected_rows = table.selectionModel().selectedRows()
@@ -952,6 +1006,8 @@ class SGViewerController:
         self._set_mrk_side_cell(row, self._auto_detect_mrk_side(0, 0))
         table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(1)))
         table.selectRow(row)
+        self._set_mrk_dirty(True)
+        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_delete_entry_requested(self) -> None:
@@ -960,6 +1016,8 @@ class SGViewerController:
         if not selected_rows:
             return
         table.removeRow(selected_rows[0].row())
+        self._set_mrk_dirty(True)
+        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
 
@@ -1339,6 +1397,8 @@ class SGViewerController:
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self._window, "Invalid MRK Texture", str(exc))
             return
+        self._set_mrk_dirty(True)
+        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _default_texture_pattern_for_wall_count(self, wall_count: int) -> str:
@@ -1359,8 +1419,13 @@ class SGViewerController:
         combo = QtWidgets.QComboBox(table)
         combo.addItems(["Left", "Right"])
         combo.setCurrentText(self._normalize_mrk_side(side))
-        combo.currentTextChanged.connect(lambda _value: self._update_mrk_highlights_from_table())
+        combo.currentTextChanged.connect(lambda _value: self._on_mrk_side_changed())
         table.setCellWidget(row, 4, combo)
+
+    def _on_mrk_side_changed(self) -> None:
+        self._set_mrk_dirty(True)
+        self._persist_mrk_state_for_current_track()
+        self._update_mrk_highlights_from_table()
 
     def _mrk_side_for_row(self, row: int) -> str:
         widget = self._window.mrk_entries_table.cellWidget(row, 4)
@@ -1425,6 +1490,8 @@ class SGViewerController:
         else:
             existing_item.setText(updated)
         table.blockSignals(False)
+        self._set_mrk_dirty(True)
+        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_entry_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
@@ -1462,6 +1529,8 @@ class SGViewerController:
                     )
                 )
                 table.blockSignals(False)
+        self._set_mrk_dirty(True)
+        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _update_mrk_highlights_from_table(self) -> None:
@@ -1548,7 +1617,7 @@ class SGViewerController:
             "entries": entries,
         }
 
-    def _apply_mrk_state(self, state: dict[str, object]) -> None:
+    def _apply_mrk_state(self, state: dict[str, object], *, mark_dirty: bool = True) -> None:
         textures_raw = state.get("texture_definitions", [])
         entries_raw = state.get("entries", [])
         if not isinstance(textures_raw, list) or not isinstance(entries_raw, list):
@@ -1598,6 +1667,9 @@ class SGViewerController:
         table.blockSignals(False)
 
         self._mrk_texture_definitions = tuple(texture_definitions)
+        self._set_mrk_dirty(mark_dirty)
+        if mark_dirty:
+            self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _table_int_value(self, table: QtWidgets.QTableWidget, row: int, column: int) -> int:
@@ -1630,6 +1702,8 @@ class SGViewerController:
             path = path.with_suffix(".json")
         payload = self._collect_mrk_state()
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._set_mrk_dirty(False)
+        self._persist_mrk_state_for_current_track()
         self._window.show_status_message(f"Saved MRK data to {path.name}")
 
     def _on_mrk_generate_file_requested(self) -> None:
@@ -1849,7 +1923,8 @@ class SGViewerController:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("Top-level JSON value must be an object.")
-            self._apply_mrk_state(payload)
+            self._apply_mrk_state(payload, mark_dirty=False)
+            self._persist_mrk_state_for_current_track()
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,

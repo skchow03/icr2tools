@@ -43,6 +43,9 @@ class DocumentControllerHost(Protocol):
     def _persist_background_state(self) -> None: ...
     def _should_confirm_reset(self) -> bool: ...
     def _clear_loaded_tsd_files(self) -> None: ...
+    def _load_mrk_state_for_current_track(self) -> None: ...
+    def _persist_mrk_state_for_current_track(self) -> None: ...
+    def confirm_mrk_safe_reset(self, action_label: str) -> bool: ...
 
 
 class DocumentController:
@@ -56,6 +59,8 @@ class DocumentController:
 
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
+        if not self._host.confirm_mrk_safe_reset("Load Another Track"):
+            return
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
         self._logger.info("Loading SG file %s", path)
@@ -109,8 +114,11 @@ class DocumentController:
         self._host._reset_altitude_range_for_track()
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
+        self._host._load_mrk_state_for_current_track()
 
     def import_trk_file_dialog(self) -> None:
+        if not self._host.confirm_mrk_safe_reset("Load Another Track"):
+            return
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
@@ -156,6 +164,7 @@ class DocumentController:
         self._host._save_action.setEnabled(True)
         self._host._save_current_action.setEnabled(False)
         self._host._clear_background_state()
+        self._host._load_mrk_state_for_current_track()
         self._host._update_section_table()
         self._host._update_heading_table()
         self._host._update_xsect_table()
@@ -165,6 +174,8 @@ class DocumentController:
         self._host._update_track_length_display()
 
     def import_trk_from_dat_file_dialog(self) -> None:
+        if not self._host.confirm_mrk_safe_reset("Load Another Track"):
+            return
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
@@ -230,6 +241,8 @@ class DocumentController:
             self.load_sg(Path(file_path))
 
     def start_new_track(self, *, confirm: bool = True) -> None:
+        if confirm and not self._host.confirm_mrk_safe_reset("Start New Track"):
+            return
         if confirm and self._host._should_confirm_reset():
             response = QtWidgets.QMessageBox.question(
                 self._host._window,
@@ -272,6 +285,7 @@ class DocumentController:
         self._host._is_untitled = True
         self._host._window.update_window_title(path=None, is_dirty=False, is_untitled=True)
         self._host._update_track_length_display()
+        self._host._load_mrk_state_for_current_track()
 
     def save_file_dialog(self) -> None:
         if self._host._window.preview.sgfile is None:
@@ -307,6 +321,7 @@ class DocumentController:
         self._host._history.record_save(path)
         self._host._refresh_recent_menu()
         self._host._persist_background_state()
+        self._host._persist_mrk_state_for_current_track()
         if self._export_csv_on_save:
             self.convert_sg_to_csv(path)
         self._host._save_current_action.setEnabled(True)
