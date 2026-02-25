@@ -300,6 +300,9 @@ class SGViewerController:
             self._window.background_image_checkbox.isChecked()
         )
 
+        self._view_options_action = QtWidgets.QAction("View Options…", self._window)
+        self._view_options_action.triggered.connect(self._window.show_view_options_dialog)
+
         self._section_table_action = QtWidgets.QAction("Section Table", self._window)
         self._section_table_action.setEnabled(False)
         self._section_table_action.triggered.connect(self._section_editing_coordinator.show_section_table)
@@ -426,6 +429,7 @@ class SGViewerController:
         view_menu = self._window.menuBar().addMenu("View")
         view_menu.addAction(self._open_background_action)
         view_menu.addAction(self._background_settings_action)
+        view_menu.addAction(self._view_options_action)
         view_menu.addSeparator()
         view_menu.addAction(self._show_radii_action)
         view_menu.addAction(self._show_axes_action)
