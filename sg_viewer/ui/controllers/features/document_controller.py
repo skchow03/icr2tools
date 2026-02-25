@@ -42,6 +42,7 @@ class DocumentControllerHost(Protocol):
     def _reset_altitude_range(self, min_altitude: float, max_altitude: float) -> None: ...
     def _persist_background_state(self) -> None: ...
     def _should_confirm_reset(self) -> bool: ...
+    def _clear_loaded_tsd_files(self) -> None: ...
 
 
 class DocumentController:
@@ -56,6 +57,7 @@ class DocumentController:
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
         self._host._clear_background_state()
+        self._host._clear_loaded_tsd_files()
         self._logger.info("Loading SG file %s", path)
         try:
             self._host._window.preview.load_sg_file(path)
@@ -238,6 +240,7 @@ class DocumentController:
                 return
 
         self._host._clear_background_state()
+        self._host._clear_loaded_tsd_files()
         self._host._current_path = None
         self._host._window.preview.start_new_track()
         self._host._active_selection = None
