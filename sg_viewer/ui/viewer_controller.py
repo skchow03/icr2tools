@@ -923,9 +923,16 @@ class SGViewerController:
             )
 
     def _on_mrk_wall_select_requested(self) -> None:
-        boundary_index = self._window.mrk_boundary_spin.value()
-        section_index = self._window.mrk_track_section_spin.value()
-        wall_index = self._window.mrk_wall_index_spin.value()
+        table = self._window.mrk_entries_table
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            self._window.preview.set_selected_mrk_wall(None, None, None)
+            self._update_mrk_highlights_from_table()
+            return
+        row = selected_rows[0].row()
+        section_index = self._parse_table_int(table, row, 0, default=0)
+        boundary_index = self._parse_table_int(table, row, 1, default=0)
+        wall_index = self._parse_table_int(table, row, 2, default=0)
         self._window.preview.set_selected_mrk_wall(
             boundary_index,
             section_index,
@@ -934,21 +941,16 @@ class SGViewerController:
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_add_entry_requested(self) -> None:
-        section_index = self._window.mrk_track_section_spin.value()
-        boundary_index = self._window.mrk_boundary_spin.value()
-        wall_index = self._window.mrk_wall_index_spin.value()
-        wall_count = self._window.mrk_entry_count_spin.value()
-
         table = self._window.mrk_entries_table
         row = table.rowCount()
         table.insertRow(row)
-        values = [section_index, boundary_index, wall_index, wall_count]
+        values = [0, 0, 0, 1]
         for column, value in enumerate(values):
             item = QtWidgets.QTableWidgetItem(str(int(value)))
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
-        self._set_mrk_side_cell(row, self._auto_detect_mrk_side(section_index, boundary_index))
-        table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(wall_count)))
+        self._set_mrk_side_cell(row, self._auto_detect_mrk_side(0, 0))
+        table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(1)))
         table.selectRow(row)
         self._update_mrk_highlights_from_table()
 
@@ -1390,14 +1392,6 @@ class SGViewerController:
         if not selected_rows:
             return
         row = selected_rows[0].row()
-        section_index = int(table.item(row, 0).text())
-        boundary_index = int(table.item(row, 1).text())
-        wall_index = int(table.item(row, 2).text())
-        wall_count = int(table.item(row, 3).text())
-        self._window.mrk_track_section_spin.setValue(section_index)
-        self._window.mrk_boundary_spin.setValue(boundary_index)
-        self._window.mrk_wall_index_spin.setValue(wall_index)
-        self._window.mrk_entry_count_spin.setValue(wall_count)
         self._on_mrk_wall_select_requested()
 
 

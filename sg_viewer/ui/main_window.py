@@ -114,18 +114,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
         self._view_options_dialog: QtWidgets.QDialog | None = None
-        self._mrk_boundary_spin = QtWidgets.QSpinBox()
-        self._mrk_boundary_spin.setRange(0, 9999)
-        self._mrk_boundary_spin.setValue(0)
-        self._mrk_track_section_spin = QtWidgets.QSpinBox()
-        self._mrk_track_section_spin.setRange(0, 9999)
-        self._mrk_track_section_spin.setValue(0)
-        self._mrk_wall_index_spin = QtWidgets.QSpinBox()
-        self._mrk_wall_index_spin.setRange(0, 9999)
-        self._mrk_wall_index_spin.setValue(0)
-        self._mrk_entry_count_spin = QtWidgets.QSpinBox()
-        self._mrk_entry_count_spin.setRange(1, 9999)
-        self._mrk_entry_count_spin.setValue(1)
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
         self._mrk_textures_button = QtWidgets.QPushButton("Textures…")
@@ -536,12 +524,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         mrk_info.setWordWrap(True)
         mrk_layout.addWidget(mrk_info)
-        mrk_form = QtWidgets.QFormLayout()
-        mrk_form.addRow("Boundary #:", self._mrk_boundary_spin)
-        mrk_form.addRow("Track Section #:", self._mrk_track_section_spin)
-        mrk_form.addRow("Wall Index:", self._mrk_wall_index_spin)
-        mrk_form.addRow("Wall Count:", self._mrk_entry_count_spin)
-        mrk_layout.addLayout(mrk_form)
         mrk_buttons = QtWidgets.QGridLayout()
         mrk_buttons.setHorizontalSpacing(8)
         mrk_buttons.setVerticalSpacing(6)
@@ -741,23 +723,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._view_options_dialog.show()
         self._view_options_dialog.raise_()
         self._view_options_dialog.activateWindow()
-
-    @property
-    def mrk_boundary_spin(self) -> QtWidgets.QSpinBox:
-        return self._mrk_boundary_spin
-
-    @property
-    def mrk_track_section_spin(self) -> QtWidgets.QSpinBox:
-        return self._mrk_track_section_spin
-
-    @property
-    def mrk_wall_index_spin(self) -> QtWidgets.QSpinBox:
-        return self._mrk_wall_index_spin
-
-
-    @property
-    def mrk_entry_count_spin(self) -> QtWidgets.QSpinBox:
-        return self._mrk_entry_count_spin
 
     @property
     def mrk_add_entry_button(self) -> QtWidgets.QPushButton:
