@@ -45,7 +45,9 @@ class DocumentControllerHost(Protocol):
     def _clear_loaded_tsd_files(self) -> None: ...
     def _load_mrk_state_for_current_track(self) -> None: ...
     def _persist_mrk_state_for_current_track(self) -> None: ...
-    def confirm_mrk_safe_reset(self, action_label: str) -> bool: ...
+    def confirm_discard_unsaved_for_action(self, action_label: str) -> bool: ...
+    def _mark_elevation_grade_dirty(self, dirty: bool) -> None: ...
+    def _mark_fsects_dirty(self, dirty: bool) -> None: ...
 
 
 class DocumentController:
@@ -59,7 +61,7 @@ class DocumentController:
 
     def load_sg(self, path: Path) -> None:
         path = path.resolve()
-        if not self._host.confirm_mrk_safe_reset("Load Another Track"):
+        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
             return
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
@@ -93,6 +95,8 @@ class DocumentController:
         self._host._elevation_controller.reset()
 
         self._host._window.update_window_title(path=path, is_dirty=False)
+        self._host._mark_elevation_grade_dirty(False)
+        self._host._mark_fsects_dirty(False)
         self._host._window.set_table_actions_enabled(True)
         self._host._window.new_straight_button.setEnabled(True)
         self._host._window.new_curve_button.setEnabled(True)
@@ -117,7 +121,7 @@ class DocumentController:
         self._host._load_mrk_state_for_current_track()
 
     def import_trk_file_dialog(self) -> None:
-        if not self._host.confirm_mrk_safe_reset("Load Another Track"):
+        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
             return
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -174,7 +178,7 @@ class DocumentController:
         self._host._update_track_length_display()
 
     def import_trk_from_dat_file_dialog(self) -> None:
-        if not self._host.confirm_mrk_safe_reset("Load Another Track"):
+        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
             return
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -241,16 +245,8 @@ class DocumentController:
             self.load_sg(Path(file_path))
 
     def start_new_track(self, *, confirm: bool = True) -> None:
-        if confirm and not self._host.confirm_mrk_safe_reset("Start New Track"):
+        if confirm and not self._host.confirm_discard_unsaved_for_action("Start New Track"):
             return
-        if confirm and self._host._should_confirm_reset():
-            response = QtWidgets.QMessageBox.question(
-                self._host._window,
-                "Start New Track?",
-                "Any unsaved changes will be lost. Continue?",
-            )
-            if response != QtWidgets.QMessageBox.Yes:
-                return
 
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
@@ -284,6 +280,8 @@ class DocumentController:
         self._host._window.show_status_message("New track ready. Click New Straight to start drawing.")
         self._host._is_untitled = True
         self._host._window.update_window_title(path=None, is_dirty=False, is_untitled=True)
+        self._host._mark_elevation_grade_dirty(False)
+        self._host._mark_fsects_dirty(False)
         self._host._update_track_length_display()
         self._host._load_mrk_state_for_current_track()
 
@@ -326,6 +324,8 @@ class DocumentController:
             self.convert_sg_to_csv(path)
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(path=self._host._current_path, is_dirty=False)
+        self._host._mark_elevation_grade_dirty(False)
+        self._host._mark_fsects_dirty(False)
 
     def ensure_saved_sg(self) -> Path | None:
         if self._host._window.preview.sgfile is None:
