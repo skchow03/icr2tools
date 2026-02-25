@@ -657,7 +657,7 @@ def test_tsd_draw_all_sections_checkbox_controls_selected_only_mode(qapp):
     finally:
         window.close()
 
-def test_mrk_table_selection_restores_wall_count_spin(qapp):
+def test_mrk_table_selection_updates_selected_wall_preview(qapp):
     window = SGViewerWindow()
     try:
         table = window.mrk_entries_table
@@ -668,10 +668,7 @@ def test_mrk_table_selection_restores_wall_count_spin(qapp):
 
         table.selectRow(0)
 
-        assert window.mrk_track_section_spin.value() == 11
-        assert window.mrk_boundary_spin.value() == 5
-        assert window.mrk_wall_index_spin.value() == 2
-        assert window.mrk_entry_count_spin.value() == 6
+        assert window.preview.selected_mrk_wall == (5, 11, 2)
     finally:
         window.close()
 
@@ -685,12 +682,11 @@ def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
             MrkTextureDefinition("brick01", "brick01", 0, 0, 63, 63, "#FF0000"),
             MrkTextureDefinition("stripe02", "stripe02", 8, 8, 56, 56, "#00FF00"),
         )
-        window.mrk_track_section_spin.setValue(1)
-        window.mrk_boundary_spin.setValue(2)
-        window.mrk_wall_index_spin.setValue(3)
-        window.mrk_entry_count_spin.setValue(5)
 
         window.mrk_add_entry_button.click()
+
+        window.mrk_entries_table.item(0, 3).setText("5")
+        window.controller._on_mrk_entry_item_changed(window.mrk_entries_table.item(0, 3))
 
         assert window.mrk_entries_table.item(0, 5).text() == "brick01,stripe02,brick01,stripe02,brick01"
     finally:
@@ -708,11 +704,6 @@ def test_mrk_add_entry_autodetects_right_side_from_boundary_dlat(qapp):
         boundary = SimpleNamespace(points=[(0.0, 0.0), (100.0, 0.0)], attrs={"dlat_start": -20.0, "dlat_end": -20.0})
         fsect = SimpleNamespace(boundaries=[boundary])
         window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[fsect])
-
-        window.mrk_track_section_spin.setValue(0)
-        window.mrk_boundary_spin.setValue(0)
-        window.mrk_wall_index_spin.setValue(0)
-        window.mrk_entry_count_spin.setValue(1)
 
         window.mrk_add_entry_button.click()
 
