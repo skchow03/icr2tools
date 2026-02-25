@@ -135,10 +135,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
-        self._tsd_draw_all_sections_checkbox = QtWidgets.QCheckBox(
-            "Draw all TSDs (uncheck for selected section only)"
-        )
-        self._tsd_draw_all_sections_checkbox.setChecked(True)
+        self._tsd_files_combo = QtWidgets.QComboBox()
+        self._tsd_files_combo.setEnabled(False)
+        self._tsd_files_combo.setToolTip("Select a loaded TSD file to edit.")
         self._tsd_lines_table = QtWidgets.QTableView()
         self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
         self._tsd_lines_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -559,7 +558,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_buttons.addWidget(self._tsd_generate_file_button)
         tsd_buttons.addWidget(self._tsd_load_file_button)
         tsd_layout.addLayout(tsd_buttons)
-        tsd_layout.addWidget(self._tsd_draw_all_sections_checkbox)
+        tsd_file_row = QtWidgets.QHBoxLayout()
+        tsd_file_row.addWidget(QtWidgets.QLabel("Loaded TSD file:"))
+        tsd_file_row.addWidget(self._tsd_files_combo)
+        tsd_layout.addLayout(tsd_file_row)
         tsd_layout.addWidget(self._tsd_lines_table)
         self._tsd_sidebar.setLayout(tsd_layout)
 
@@ -788,8 +790,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._tsd_lines_table
 
     @property
-    def tsd_draw_all_sections_checkbox(self) -> QtWidgets.QCheckBox:
-        return self._tsd_draw_all_sections_checkbox
+    def tsd_files_combo(self) -> QtWidgets.QComboBox:
+        return self._tsd_files_combo
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action

@@ -6,6 +6,7 @@ import math
 from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
+from dataclasses import dataclass
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -66,6 +67,12 @@ from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class LoadedTsdFile:
+    name: str
+    lines: tuple[TrackSurfaceDetailLine, ...]
+
+
 class SGViewerController:
     """Coordinates actions, menus, and dialogs for the SG viewer window."""
 
@@ -105,7 +112,8 @@ class SGViewerController:
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
-        self._loaded_tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._loaded_tsd_files: list[LoadedTsdFile] = []
+        self._active_tsd_file_index: int | None = None
         self._suspend_tsd_preview_refresh = False
         self._debug_tsd_perf = False
         self._last_tsd_preview_lines: list[TrackSurfaceDetailLine] = []
@@ -780,9 +788,7 @@ class SGViewerController:
         self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
-        self._window.tsd_draw_all_sections_checkbox.toggled.connect(
-            self._on_tsd_draw_mode_changed
-        )
+        self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -919,6 +925,7 @@ class SGViewerController:
     def _on_tsd_add_line_requested(self) -> None:
         row = self._tsd_lines_model.add_default_row()
         self._window.tsd_lines_table.selectRow(row)
+        self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
 
     def _on_tsd_delete_line_requested(self) -> None:
@@ -929,10 +936,7 @@ class SGViewerController:
         if not selected_rows:
             return
         self._tsd_lines_model.remove_row(selected_rows[0].row())
-        self._refresh_tsd_preview_lines()
-
-    def _on_tsd_draw_mode_changed(self, checked: bool) -> None:
-        self._window.preview.set_show_tsd_selected_section_only(not checked)
+        self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
 
     def _on_tsd_generate_file_requested(self) -> None:
@@ -958,7 +962,7 @@ class SGViewerController:
                 str(exc),
             )
             return
-        self._loaded_tsd_lines = tuple(detail_file.lines)
+        self._upsert_loaded_tsd_file(path.name, tuple(detail_file.lines))
         self._refresh_tsd_preview_lines()
         self._window.show_status_message(f"Generated TSD file {path.name}")
 
@@ -984,9 +988,85 @@ class SGViewerController:
             )
             return
 
-        self._populate_tsd_table(detail_file)
+        self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=True)
         self._log_tsd_perf("TSD load duration", started)
-        self._window.show_status_message(f"Loaded TSD file {path.name}")
+        self._window.show_status_message(
+            f"Loaded TSD file {path.name} ({len(self._loaded_tsd_files)} total)"
+        )
+
+    def _sync_active_tsd_file_from_model(self) -> None:
+        if self._active_tsd_file_index is None:
+            return
+        if self._active_tsd_file_index < 0 or self._active_tsd_file_index >= len(self._loaded_tsd_files):
+            return
+        active_file = self._loaded_tsd_files[self._active_tsd_file_index]
+        self._loaded_tsd_files[self._active_tsd_file_index] = LoadedTsdFile(
+            name=active_file.name,
+            lines=self._tsd_lines_model.all_lines(),
+        )
+
+    def _clear_loaded_tsd_files(self) -> None:
+        self._loaded_tsd_files = []
+        self._active_tsd_file_index = None
+        combo = self._window.tsd_files_combo
+        previous_block_state = combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.setEnabled(False)
+        finally:
+            combo.blockSignals(previous_block_state)
+        self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
+
+    def _add_loaded_tsd_file(
+        self,
+        name: str,
+        lines: tuple[TrackSurfaceDetailLine, ...],
+        *,
+        select: bool,
+    ) -> None:
+        self._loaded_tsd_files.append(LoadedTsdFile(name=name, lines=tuple(lines)))
+        combo = self._window.tsd_files_combo
+        previous_block_state = combo.blockSignals(True)
+        try:
+            combo.addItem(name)
+            combo.setEnabled(True)
+            if select:
+                combo.setCurrentIndex(combo.count() - 1)
+        finally:
+            combo.blockSignals(previous_block_state)
+        if select:
+            self._set_active_tsd_file(combo.count() - 1)
+
+    def _upsert_loaded_tsd_file(
+        self,
+        name: str,
+        lines: tuple[TrackSurfaceDetailLine, ...],
+    ) -> None:
+        if self._active_tsd_file_index is None:
+            self._add_loaded_tsd_file(name, lines, select=True)
+            return
+        self._loaded_tsd_files[self._active_tsd_file_index] = LoadedTsdFile(
+            name=name,
+            lines=tuple(lines),
+        )
+        combo = self._window.tsd_files_combo
+        previous_block_state = combo.blockSignals(True)
+        try:
+            combo.setItemText(self._active_tsd_file_index, name)
+        finally:
+            combo.blockSignals(previous_block_state)
+
+    def _set_active_tsd_file(self, index: int) -> None:
+        if index < 0 or index >= len(self._loaded_tsd_files):
+            return
+        if self._active_tsd_file_index is not None and self._active_tsd_file_index != index:
+            self._sync_active_tsd_file_from_model()
+        self._active_tsd_file_index = index
+        detail_file = TrackSurfaceDetailFile(lines=self._loaded_tsd_files[index].lines)
+        self._populate_tsd_table(detail_file)
+
+    def _on_tsd_file_selection_changed(self, index: int) -> None:
+        self._set_active_tsd_file(index)
 
     def _populate_tsd_table(self, detail_file: TrackSurfaceDetailFile) -> None:
         started = perf_counter()
@@ -995,7 +1075,6 @@ class SGViewerController:
         previous_block_state = table.blockSignals(True)
         try:
             self._tsd_lines_model.replace_lines(detail_file.lines)
-            self._loaded_tsd_lines = tuple(detail_file.lines)
         finally:
             table.blockSignals(previous_block_state)
             self._suspend_tsd_preview_refresh = False
@@ -1017,7 +1096,6 @@ class SGViewerController:
 
     def _refresh_tsd_preview_lines(self) -> None:
         started = perf_counter()
-        draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
         sections, _ = self._window.preview.get_section_set()
 
         range_started = perf_counter()
@@ -1026,21 +1104,11 @@ class SGViewerController:
         self._log_tsd_perf("build adjusted_to_sg_ranges", range_started)
 
         convert_started = perf_counter()
-        lines: list[TrackSurfaceDetailLine]
-        if draw_all:
-            lines = list(self._tsd_lines_model.all_lines())
-            preview_lines = [
-                self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
-                for line in lines
-            ]
-        else:
-            selection_model = self._window.tsd_lines_table.selectionModel()
-            selected_rows = [] if selection_model is None else [index.row() for index in selection_model.selectedRows()]
-            lines = self._tsd_lines_model.lines_for_rows(selected_rows)
-            preview_lines = [
-                self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
-                for line in lines
-            ]
+        lines = list(self._tsd_lines_model.all_lines())
+        preview_lines = [
+            self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
+            for line in lines
+        ]
         self._last_tsd_preview_lines = list(preview_lines)
         self._log_tsd_perf("convert TSD lines", convert_started)
 
@@ -1061,11 +1129,6 @@ class SGViewerController:
             self._schedule_tsd_preview_refresh()
             return
         if top_left.row() != bottom_right.row():
-            self._schedule_tsd_preview_refresh()
-            return
-
-        draw_all = self._window.tsd_draw_all_sections_checkbox.isChecked()
-        if not draw_all:
             self._schedule_tsd_preview_refresh()
             return
 
@@ -1091,6 +1154,7 @@ class SGViewerController:
             adjusted_to_sg_ranges,
         )
         self._window.preview.set_tsd_lines(tuple(self._last_tsd_preview_lines))
+        self._sync_active_tsd_file_from_model()
 
     def _log_tsd_perf(self, label: str, started: float) -> None:
         if not self._debug_tsd_perf:
