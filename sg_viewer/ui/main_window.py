@@ -519,10 +519,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()
         mrk_info = QtWidgets.QLabel(
-            "MRK mode marks boundary notch divisions at approximately 14 ft spacing.\n"
-            "Walls are addressed by boundary #, track section #, and wall index."
-
-            "Add entries to highlight wall ranges in the track diagram."
+            "Use the MRK tab to author wall-marking ranges and export a .MRK file.\n"
+            "Each entry uses Track Section #, Boundary #, Starting Wall, and Wall Count.\n"
+            "The preview highlights selected ranges; Side controls UV flip and Texture Pattern "
+            "cycles texture names across the wall count.\n"
+            "Save/Load stores editable MRK entries + texture definitions as JSON."
         )
         mrk_info.setWordWrap(True)
         mrk_layout.addWidget(mrk_info)
@@ -532,13 +533,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_form.addRow("Wall Index:", self._mrk_wall_index_spin)
         mrk_form.addRow("Wall Count:", self._mrk_entry_count_spin)
         mrk_layout.addLayout(mrk_form)
-        mrk_buttons = QtWidgets.QHBoxLayout()
-        mrk_buttons.addWidget(self._mrk_add_entry_button)
-        mrk_buttons.addWidget(self._mrk_delete_entry_button)
-        mrk_buttons.addWidget(self._mrk_textures_button)
-        mrk_buttons.addWidget(self._mrk_generate_file_button)
-        mrk_buttons.addWidget(self._mrk_save_button)
-        mrk_buttons.addWidget(self._mrk_load_button)
+        mrk_buttons = QtWidgets.QGridLayout()
+        mrk_buttons.setHorizontalSpacing(8)
+        mrk_buttons.setVerticalSpacing(6)
+        mrk_buttons.addWidget(self._mrk_add_entry_button, 0, 0)
+        mrk_buttons.addWidget(self._mrk_delete_entry_button, 0, 1)
+        mrk_buttons.addWidget(self._mrk_textures_button, 0, 2)
+        mrk_buttons.addWidget(self._mrk_generate_file_button, 1, 0)
+        mrk_buttons.addWidget(self._mrk_save_button, 1, 1)
+        mrk_buttons.addWidget(self._mrk_load_button, 1, 2)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()

@@ -312,6 +312,24 @@ class SGViewerController:
         self._xsect_table_action.setEnabled(False)
         self._xsect_table_action.triggered.connect(self._section_editing_coordinator.show_xsect_table)
 
+        self._mrk_add_entry_action = QtWidgets.QAction("Add MRK Entry", self._window)
+        self._mrk_add_entry_action.setEnabled(self._window.mrk_add_entry_button.isEnabled())
+
+        self._mrk_delete_entry_action = QtWidgets.QAction("Delete MRK Entry", self._window)
+        self._mrk_delete_entry_action.setEnabled(self._window.mrk_delete_entry_button.isEnabled())
+
+        self._mrk_textures_action = QtWidgets.QAction("MRK Textures…", self._window)
+        self._mrk_textures_action.setEnabled(self._window.mrk_textures_button.isEnabled())
+
+        self._mrk_generate_file_action = QtWidgets.QAction("Generate .MRK file…", self._window)
+        self._mrk_generate_file_action.setEnabled(self._window.mrk_generate_file_button.isEnabled())
+
+        self._mrk_save_entries_action = QtWidgets.QAction("Save MRK entries…", self._window)
+        self._mrk_save_entries_action.setEnabled(self._window.mrk_save_button.isEnabled())
+
+        self._mrk_load_entries_action = QtWidgets.QAction("Load MRK entries…", self._window)
+        self._mrk_load_entries_action.setEnabled(self._window.mrk_load_button.isEnabled())
+
         self._previous_section_action = QtWidgets.QAction("Previous Section", self._window)
         self._previous_section_action.setShortcut("Ctrl+PgUp")
 
@@ -447,6 +465,15 @@ class SGViewerController:
         fsects_menu.addSeparator()
         fsects_menu.addAction(self._add_fsect_action)
         fsects_menu.addAction(self._delete_fsect_action)
+
+        mrk_menu = tools_menu.addMenu("MRK")
+        mrk_menu.addAction(self._mrk_add_entry_action)
+        mrk_menu.addAction(self._mrk_delete_entry_action)
+        mrk_menu.addSeparator()
+        mrk_menu.addAction(self._mrk_textures_action)
+        mrk_menu.addAction(self._mrk_generate_file_action)
+        mrk_menu.addAction(self._mrk_save_entries_action)
+        mrk_menu.addAction(self._mrk_load_entries_action)
 
         tools_menu.addSeparator()
         tools_menu.addAction(self._show_palette_colors_action)
@@ -783,6 +810,12 @@ class SGViewerController:
         self._window.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
+        self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
+        self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
+        self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
+        self._mrk_generate_file_action.triggered.connect(self._on_mrk_generate_file_requested)
+        self._mrk_save_entries_action.triggered.connect(self._on_mrk_save_requested)
+        self._mrk_load_entries_action.triggered.connect(self._on_mrk_load_requested)
         self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
         self._window.mrk_entries_table.itemChanged.connect(self._on_mrk_entry_item_changed)
         self._window.mrk_entries_table.cellDoubleClicked.connect(self._on_mrk_entry_cell_double_clicked)
