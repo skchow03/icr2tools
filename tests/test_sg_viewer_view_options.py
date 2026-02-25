@@ -626,6 +626,78 @@ def test_tsd_single_row_edit_patches_cached_preview_line(qapp, monkeypatch):
     finally:
         window.close()
 
+def test_selecting_tsd_row_centers_viewport_on_line_midpoint(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+
+        line = TrackSurfaceDetailLine(
+            color_index=36,
+            width_500ths=4000,
+            start_dlong=0,
+            start_dlat=0,
+            end_dlong=100,
+            end_dlat=0,
+            command="Detail",
+        )
+        window.controller._tsd_lines_model.replace_lines((line,))
+
+        section = SimpleNamespace(
+            start=(0.0, 0.0),
+            end=(100.0, 0.0),
+            center=None,
+            length=100.0,
+            start_dlong=0.0,
+            start_heading=(1.0, 0.0),
+        )
+        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+
+        centered_points: list[tuple[float, float]] = []
+        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+
+        window.tsd_lines_table.selectRow(0)
+
+        assert centered_points == [pytest.approx((50.0, 0.0))]
+    finally:
+        window.close()
+
+
+def test_tsd_selection_does_not_center_when_line_has_zero_span(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+
+        line = TrackSurfaceDetailLine(
+            color_index=36,
+            width_500ths=4000,
+            start_dlong=100,
+            start_dlat=0,
+            end_dlong=100,
+            end_dlat=0,
+            command="Detail",
+        )
+        window.controller._tsd_lines_model.replace_lines((line,))
+
+        section = SimpleNamespace(
+            start=(0.0, 0.0),
+            end=(200.0, 0.0),
+            center=None,
+            length=200.0,
+            start_dlong=0.0,
+            start_heading=(1.0, 0.0),
+        )
+        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+
+        centered_points: list[tuple[float, float]] = []
+        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+
+        window.tsd_lines_table.selectRow(0)
+
+        assert centered_points == []
+    finally:
+        window.close()
+
+
 def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
     window = SGViewerWindow()
     try:

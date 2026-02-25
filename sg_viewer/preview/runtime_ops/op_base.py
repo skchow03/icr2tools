@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Callable
 
 from PyQt5 import QtGui
@@ -282,6 +283,22 @@ class _RuntimeCoreBaseMixin:
 
     def _set_transform_state(self, value: preview_state.TransformState) -> None:
         self._transform_state = value
+
+    def center_view_on_point(self, point: Point) -> None:
+        state = self._transform_state
+        if state.current_scale is None:
+            self._update_fit_scale()
+            state = self._transform_state
+        if state.current_scale is None:
+            return
+        self._set_transform_state(
+            replace(
+                state,
+                view_center=(float(point[0]), float(point[1])),
+                user_transform_active=True,
+            )
+        )
+        self._context.request_repaint()
 
     @property
     def _delete_section_active(self) -> bool:
