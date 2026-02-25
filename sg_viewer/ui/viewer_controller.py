@@ -27,7 +27,7 @@ from sg_viewer.services.tsd_io import (
     parse_tsd,
     serialize_tsd,
 )
-from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.model.sg_model import Point, SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
     feet_from_500ths,
@@ -1221,7 +1221,145 @@ class SGViewerController:
         _selected: QtCore.QItemSelection,
         _deselected: QtCore.QItemSelection,
     ) -> None:
+        self._center_viewport_on_selected_tsd_line()
         self._schedule_tsd_preview_refresh()
+
+    def _center_viewport_on_selected_tsd_line(self) -> None:
+        selection_model = self._window.tsd_lines_table.selectionModel()
+        if selection_model is None:
+            return
+        selected_rows = selection_model.selectedRows()
+        if not selected_rows:
+            return
+
+        line = self._tsd_lines_model.line_at(selected_rows[0].row())
+        if line is None:
+            return
+
+        center_point = self._tsd_line_center_point(line)
+        if center_point is None:
+            return
+
+        self._window.preview.center_view_on_point(center_point)
+
+    def _tsd_line_center_point(self, line: TrackSurfaceDetailLine) -> Point | None:
+        sections, _ = self._window.preview.get_section_set()
+        if not sections:
+            return None
+
+        adjusted_to_sg_ranges = self._last_tsd_adjusted_to_sg_ranges
+        if not adjusted_to_sg_ranges[0]:
+            adjusted_to_sg_ranges = self._build_adjusted_to_sg_ranges(sections)
+            self._last_tsd_adjusted_to_sg_ranges = adjusted_to_sg_ranges
+
+        preview_line = self._convert_tsd_line_for_preview(
+            line,
+            sections,
+            adjusted_to_sg_ranges,
+        )
+
+        track_length = max(
+            (float(section.start_dlong) + float(section.length) for section in sections),
+            default=0.0,
+        )
+        if track_length <= 0.0:
+            return None
+
+        start = float(preview_line.start_dlong) % track_length
+        end = float(preview_line.end_dlong) % track_length
+        span = (end - start) % track_length
+        if math.isclose(span, 0.0):
+            return None
+
+        midpoint_dlong = (start + span * 0.5) % track_length
+        midpoint_dlat = float(preview_line.start_dlat) + (
+            float(preview_line.end_dlat) - float(preview_line.start_dlat)
+        ) * 0.5
+        return self._point_on_track_at_dlong(sections, midpoint_dlong, midpoint_dlat, track_length)
+
+    @staticmethod
+    def _point_on_track_at_dlong(
+        sections: list[SectionPreview],
+        dlong: float,
+        dlat: float,
+        track_length: float,
+    ) -> Point | None:
+        if not sections or track_length <= 0.0:
+            return None
+
+        wrapped_dlong = float(dlong) % track_length
+        for section in sections:
+            length = float(section.length)
+            if length <= 0.0:
+                continue
+            start = float(section.start_dlong)
+            end = start + length
+            in_range = start <= wrapped_dlong < end
+            if end > track_length:
+                wrapped_end = end - track_length
+                in_range = in_range or wrapped_dlong < wrapped_end
+            if not in_range:
+                continue
+
+            fraction = (wrapped_dlong - start) / length
+            if end > track_length and wrapped_dlong < start:
+                fraction = (wrapped_dlong + track_length - start) / length
+            fraction = max(0.0, min(1.0, fraction))
+            return SGViewerController._point_on_section(section, fraction, dlat)
+
+        return SGViewerController._point_on_section(sections[-1], 1.0, dlat)
+
+    @staticmethod
+    def _point_on_section(section: SectionPreview, fraction: float, dlat: float) -> Point:
+        sx, sy = section.start
+        ex, ey = section.end
+        center = section.center
+
+        if center is None:
+            dx = ex - sx
+            dy = ey - sy
+            cx = sx + dx * fraction
+            cy = sy + dy * fraction
+            length = math.hypot(dx, dy)
+            if length <= 0.0:
+                return (cx, cy)
+            nx = -dy / length
+            ny = dx / length
+            return (cx + nx * dlat, cy + ny * dlat)
+
+        center_x, center_y = center
+        start_vec = (sx - center_x, sy - center_y)
+        end_vec = (ex - center_x, ey - center_y)
+        base_radius = math.hypot(start_vec[0], start_vec[1])
+        if base_radius <= 0.0:
+            return (sx, sy)
+
+        start_angle = math.atan2(start_vec[1], start_vec[0])
+        end_angle = math.atan2(end_vec[1], end_vec[0])
+
+        heading = section.start_heading
+        if heading is not None:
+            cross = start_vec[0] * heading[1] - start_vec[1] * heading[0]
+            ccw = cross > 0 if not math.isclose(cross, 0.0, abs_tol=1e-12) else (
+                start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+            ) > 0
+        else:
+            ccw = (start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]) > 0
+
+        delta = end_angle - start_angle
+        if ccw:
+            while delta <= 0:
+                delta += math.tau
+        else:
+            while delta >= 0:
+                delta -= math.tau
+
+        angle = start_angle + delta * fraction
+        radius = max(0.0, base_radius + (-1.0 if ccw else 1.0) * dlat)
+        return (
+            center_x + math.cos(angle) * radius,
+            center_y + math.sin(angle) * radius,
+        )
 
     def _schedule_tsd_preview_refresh(self, *_args: object) -> None:
         if self._suspend_tsd_preview_refresh:
