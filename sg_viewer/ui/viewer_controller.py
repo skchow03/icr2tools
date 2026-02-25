@@ -930,9 +930,9 @@ class SGViewerController:
             self._update_mrk_highlights_from_table()
             return
         row = selected_rows[0].row()
-        section_index = self._parse_table_int(table, row, 0, default=0)
-        boundary_index = self._parse_table_int(table, row, 1, default=0)
-        wall_index = self._parse_table_int(table, row, 2, default=0)
+        section_index = self._table_int_value(table, row, 0)
+        boundary_index = self._table_int_value(table, row, 1)
+        wall_index = self._table_int_value(table, row, 2)
         self._window.preview.set_selected_mrk_wall(
             boundary_index,
             section_index,
