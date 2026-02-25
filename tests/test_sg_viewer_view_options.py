@@ -407,6 +407,75 @@ def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, m
 
 
 
+def test_load_multiple_tsd_files_allows_show_all_in_combo(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        first_path = tmp_path / "first.tsd"
+        second_path = tmp_path / "second.tsd"
+        first_path.write_text(
+            "Detail: 36 4000 0 -126000 1000 -126000\n",
+            encoding="utf-8",
+        )
+        second_path.write_text(
+            "Detail_Dash: 37 3000 1000 -126000 2000 -126000\n",
+            encoding="utf-8",
+        )
+
+        paths = iter((str(first_path), str(second_path)))
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (next(paths), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_load_file_requested()
+        window.controller._on_tsd_load_file_requested()
+
+        combo = window.tsd_files_combo
+        assert combo.itemText(0) == "Show all TSDs"
+        assert combo.itemText(1) == "first.tsd"
+        assert combo.itemText(2) == "second.tsd"
+    finally:
+        window.close()
+
+
+
+def test_show_all_tsds_selection_populates_table_with_all_loaded_rows(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        first_path = tmp_path / "first.tsd"
+        second_path = tmp_path / "second.tsd"
+        first_path.write_text(
+            "Detail: 36 4000 0 -126000 1000 -126000\n",
+            encoding="utf-8",
+        )
+        second_path.write_text(
+            "Detail_Dash: 37 3000 1000 -126000 2000 -126000\n",
+            encoding="utf-8",
+        )
+
+        paths = iter((str(first_path), str(second_path)))
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (next(paths), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_load_file_requested()
+        window.controller._on_tsd_load_file_requested()
+
+        window.tsd_files_combo.setCurrentIndex(0)
+
+        table = window.tsd_lines_table
+        assert table.rowCount() == 2
+        assert table.item(0, 0).text() == "Detail"
+        assert table.item(1, 0).text() == "Detail_Dash"
+        assert len(window.preview.tsd_lines) == 2
+    finally:
+        window.close()
+
+
+
 def test_adjusted_section_range_uses_cached_ranges(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
