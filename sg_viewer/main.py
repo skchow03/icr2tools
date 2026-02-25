@@ -64,14 +64,6 @@ def main() -> None:
     app.window = window
     window.show()
 
-    def cleanup() -> None:
-        try:
-            if window:
-                window.close()
-        except Exception:  # pragma: no cover - best effort
-            logger.exception("Unexpected error while closing window")
-
-    app.aboutToQuit.connect(cleanup)
     sys.exit(app.exec_())
 
 

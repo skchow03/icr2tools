@@ -944,14 +944,27 @@ class SGViewerController:
             + "\n".join(f"• {item}" for item in unsaved_items)
             + f"\n\nContinue and {action_label.lower()} without saving?"
         )
-        response = QtWidgets.QMessageBox.question(
-            self._window,
-            f"{action_label}?",
-            message,
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
+        confirm_text = (
+            "Close without saving"
+            if action_label == "Close SG Viewer"
+            else "Continue without saving"
         )
-        return response == QtWidgets.QMessageBox.Yes
+        return self._confirm_discard_dialog(
+            title=f"{action_label}?",
+            message=message,
+            confirm_text=confirm_text,
+        )
+
+    def _confirm_discard_dialog(self, title: str, message: str, confirm_text: str) -> bool:
+        dialog = QtWidgets.QMessageBox(self._window)
+        dialog.setIcon(QtWidgets.QMessageBox.Warning)
+        dialog.setWindowTitle(title)
+        dialog.setText(message)
+        discard_button = dialog.addButton(confirm_text, QtWidgets.QMessageBox.DestructiveRole)
+        cancel_button = dialog.addButton("Cancel", QtWidgets.QMessageBox.RejectRole)
+        dialog.setDefaultButton(cancel_button)
+        dialog.exec()
+        return dialog.clickedButton() == discard_button
 
     def _confirm_discard_unsaved_track(
         self, title: str, action_description: str
