@@ -113,6 +113,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
+        self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_boundary_spin = QtWidgets.QSpinBox()
         self._mrk_boundary_spin.setRange(0, 9999)
         self._mrk_boundary_spin.setValue(0)
@@ -516,6 +517,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
 
+        self._view_options_dialog = QtWidgets.QDialog(self)
+        self._view_options_dialog.setWindowTitle("View Options")
+        self._view_options_dialog.setModal(False)
+        view_options_dialog_layout = QtWidgets.QVBoxLayout()
+        view_options_dialog_layout.addWidget(view_options_sidebar)
+        self._view_options_dialog.setLayout(view_options_dialog_layout)
+        self._view_options_dialog.resize(360, 460)
+
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()
         mrk_info = QtWidgets.QLabel(
@@ -570,7 +579,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
-        self._right_sidebar_tabs.addTab(view_options_sidebar, "View Options")
         self._right_sidebar_tabs.addTab(self._mrk_sidebar, "MRK")
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
@@ -726,6 +734,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def right_sidebar_tabs(self) -> QtWidgets.QTabWidget:
         return self._right_sidebar_tabs
+
+    def show_view_options_dialog(self) -> None:
+        if self._view_options_dialog is None:
+            return
+        self._view_options_dialog.show()
+        self._view_options_dialog.raise_()
+        self._view_options_dialog.activateWindow()
 
     @property
     def mrk_boundary_spin(self) -> QtWidgets.QSpinBox:
