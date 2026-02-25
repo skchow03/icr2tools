@@ -199,6 +199,18 @@ class FileHistory:
             palette_path = (sg_path.parent / palette_path).resolve()
         return palette_path
 
+    def set_mrk_state(self, sg_path: Path, state: dict[str, object]) -> None:
+        data = self._load_file_entry(sg_path)
+        data["mrk_state"] = state
+        self._store_file_entry(sg_path, data)
+
+    def get_mrk_state(self, sg_path: Path) -> dict[str, object] | None:
+        data = self._load_file_entry(sg_path)
+        raw_state = data.get("mrk_state")
+        if not isinstance(raw_state, dict):
+            return None
+        return raw_state
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

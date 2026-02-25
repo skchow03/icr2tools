@@ -116,7 +116,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
-        self._mrk_textures_button = QtWidgets.QPushButton("Textures…")
+        self._mrk_textures_button = QtWidgets.QPushButton("Manage textures...")
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
         self._mrk_save_button = QtWidgets.QPushButton("Save MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Load MRK entries")
@@ -515,15 +515,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()
-        mrk_info = QtWidgets.QLabel(
-            "Use the MRK tab to author wall-marking ranges and export a .MRK file.\n"
-            "Each entry uses Track Section #, Boundary #, Starting Wall, and Wall Count.\n"
-            "The preview highlights selected ranges; Side controls UV flip and Texture Pattern "
-            "cycles texture names across the wall count.\n"
-            "Save/Load stores editable MRK entries + texture definitions as JSON."
-        )
-        mrk_info.setWordWrap(True)
-        mrk_layout.addWidget(mrk_info)
         mrk_buttons = QtWidgets.QGridLayout()
         mrk_buttons.setHorizontalSpacing(8)
         mrk_buttons.setVerticalSpacing(6)
@@ -608,6 +599,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             from sg_viewer.ui.app_bootstrap import wire_window_features
 
             wire_window_features(self)
+
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if self.controller is not None and hasattr(self.controller, "confirm_close"):
+            if not self.controller.confirm_close():
+                event.ignore()
+                return
+        super().closeEvent(event)
 
     @property
     def preview(self) -> PreviewContext:
