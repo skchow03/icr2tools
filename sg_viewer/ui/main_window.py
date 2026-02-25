@@ -113,6 +113,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
+        self._sidebar_tab_base_labels: dict[str, str] = {
+            "Elevation/Grade": "Elevation/Grade",
+            "Fsects": "Fsects",
+            "MRK": "MRK",
+            "TSD": "TSD",
+        }
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
@@ -1620,6 +1626,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_fsect_table_commit_timer(self) -> None:
         self._preview.refresh_fsections_preview()
+        if self.controller is not None and hasattr(self.controller, "mark_fsects_dirty"):
+            self.controller.mark_fsects_dirty(True)
         if self._fsect_table_commit_needs_normalization:
             self.update_selected_section_fsect_table()
         self._fsect_table_commit_needs_normalization = False
@@ -1758,6 +1766,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             surface_type=surface_type,
             type2=type2,
         )
+        if self.controller is not None and hasattr(self.controller, "mark_fsects_dirty"):
+            self.controller.mark_fsects_dirty(True)
 
     def _on_fsect_diagram_dlat_changed(
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
@@ -1849,3 +1859,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(
             build_window_title(path=path, is_dirty=is_dirty, is_untitled=is_untitled)
         )
+
+    def set_sidebar_tab_dirty(self, tab_base_label: str, dirty: bool) -> None:
+        base_label = self._sidebar_tab_base_labels.get(tab_base_label)
+        if base_label is None:
+            return
+        display_label = f"{base_label}*" if dirty else base_label
+        for index in range(self._right_sidebar_tabs.count()):
+            tab_text = self._right_sidebar_tabs.tabText(index)
+            if tab_text == base_label or tab_text == f"{base_label}*":
+                self._right_sidebar_tabs.setTabText(index, display_label)
+                return

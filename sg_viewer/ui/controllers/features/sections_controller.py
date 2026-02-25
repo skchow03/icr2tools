@@ -39,6 +39,7 @@ class SectionsControllerHost(Protocol):
     def _on_move_section_mode_changed(self, active: bool) -> None: ...
     def _sync_after_section_mutation(self) -> None: ...
     def _update_track_length_display(self) -> None: ...
+    def _mark_fsects_dirty(self, dirty: bool) -> None: ...
 
 
 class SectionsController:
@@ -371,6 +372,7 @@ class SectionsController:
             return
         if not self._host._window.sg_fsects_checkbox.isChecked():
             self._host._window.sg_fsects_checkbox.setChecked(True)
+        self._host._mark_fsects_dirty(True)
         self._host._window.show_status_message("Generated fsects for all sections.")
 
 
@@ -393,6 +395,7 @@ class SectionsController:
         if not self._host._window.preview.copy_section_fsects(selection.index, target_index, edge=edge):
             QtWidgets.QMessageBox.warning(self._host._window, "Copy Failed", "Unable to copy fsect data to the requested section.")
             return
+        self._host._mark_fsects_dirty(True)
         self._host._window.preview.selection_manager.set_selected_section(target_index)
         self._host._window.show_status_message(f"Copied fsects from section {selection.index} to {direction} section {target_index}.")
 
@@ -414,6 +417,7 @@ class SectionsController:
             new_fsect = PreviewFSection(start_dlat=current.start_dlat, end_dlat=current.end_dlat, surface_type=current.surface_type, type2=current.type2)
             insert_index = row_index + 1
         self._host._window.preview.insert_fsection(section_index, insert_index, new_fsect)
+        self._host._mark_fsects_dirty(True)
         self._host._window.update_selection_sidebar(selection)
         self._host._window.fsect_table.setCurrentCell(insert_index, 0)
         self._host._update_fsect_edit_buttons()
@@ -429,6 +433,7 @@ class SectionsController:
             self._host._window.show_status_message("Select an Fsect row to delete.")
             return
         self._host._window.preview.delete_fsection(selection.index, row_index)
+        self._host._mark_fsects_dirty(True)
         self._host._window.update_selection_sidebar(selection)
         remaining = len(self._host._window.preview.get_section_fsects(selection.index))
         if remaining:

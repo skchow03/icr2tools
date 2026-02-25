@@ -112,6 +112,9 @@ class SGViewerController:
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
         self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
         self._mrk_is_dirty = False
+        self._tsd_is_dirty = False
+        self._elevation_grade_is_dirty = False
+        self._fsects_is_dirty = False
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
@@ -139,6 +142,12 @@ class SGViewerController:
         self._load_preview_colors_from_history()
         self._initialize_preview_color_controls()
         self._window.preview.sectionsChanged.connect(self._on_sections_changed)
+        self._window.preview.document.elevation_changed.connect(
+            lambda _section_id: self._mark_elevation_grade_dirty(True)
+        )
+        self._window.preview.document.elevations_bulk_changed.connect(
+            lambda: self._mark_elevation_grade_dirty(True)
+        )
         self._window.preview.set_section_drag_enabled(
             self._window.move_section_button.isChecked()
         )
@@ -924,16 +933,25 @@ class SGViewerController:
             )
 
     def confirm_close(self) -> bool:
-        if not self._confirm_discard_unsaved_track(
-            "Close SG Viewer", "close the application"
-        ):
-            return False
-        return self._confirm_discard_unsaved_mrk(
-            "Close SG Viewer", "close the application"
-        )
+        return self.confirm_discard_unsaved_for_action("Close SG Viewer")
 
-    def confirm_mrk_safe_reset(self, action_label: str) -> bool:
-        return self._confirm_discard_unsaved_mrk(f"{action_label}?", action_label.lower())
+    def confirm_discard_unsaved_for_action(self, action_label: str) -> bool:
+        unsaved_items = self._collect_unsaved_item_labels()
+        if not unsaved_items:
+            return True
+        message = (
+            "You have unsaved changes in:\n"
+            + "\n".join(f"• {item}" for item in unsaved_items)
+            + f"\n\nContinue and {action_label.lower()} without saving?"
+        )
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            f"{action_label}?",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
 
     def _confirm_discard_unsaved_track(
         self, title: str, action_description: str
@@ -963,6 +981,36 @@ class SGViewerController:
 
     def _set_mrk_dirty(self, dirty: bool) -> None:
         self._mrk_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("MRK", dirty)
+
+    def _set_tsd_dirty(self, dirty: bool) -> None:
+        self._tsd_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("TSD", dirty)
+
+    def _mark_elevation_grade_dirty(self, dirty: bool) -> None:
+        self._elevation_grade_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("Elevation/Grade", dirty)
+
+    def _mark_fsects_dirty(self, dirty: bool) -> None:
+        self._fsects_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("Fsects", dirty)
+
+    def _collect_unsaved_item_labels(self) -> list[str]:
+        labels: list[str] = []
+        if self._elevation_grade_is_dirty:
+            labels.append("Elevation/Grade")
+        if self._fsects_is_dirty:
+            labels.append("Fsects")
+        if self._window.preview.has_unsaved_changes and not labels:
+            labels.append("SG track geometry")
+        if self._mrk_is_dirty:
+            labels.append("MRK entries")
+        if self._tsd_is_dirty:
+            labels.append("TSD lines")
+        return labels
+
+    def mark_fsects_dirty(self, dirty: bool) -> None:
+        self._mark_fsects_dirty(dirty)
 
     def _persist_mrk_state_for_current_track(self) -> None:
         if self._current_path is None:
@@ -1046,6 +1094,7 @@ class SGViewerController:
         self._window.tsd_lines_table.selectRow(row)
         self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
 
     def _on_tsd_delete_line_requested(self) -> None:
         selection_model = self._window.tsd_lines_table.selectionModel()
@@ -1057,6 +1106,7 @@ class SGViewerController:
         self._tsd_lines_model.remove_row(selected_rows[0].row())
         self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
 
     def _on_tsd_generate_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
@@ -1083,6 +1133,7 @@ class SGViewerController:
             return
         self._upsert_loaded_tsd_file(path.name, tuple(detail_file.lines))
         self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(False)
         self._window.show_status_message(f"Generated TSD file {path.name}")
 
     def _on_tsd_load_file_requested(self) -> None:
@@ -1108,6 +1159,7 @@ class SGViewerController:
             return
 
         self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=True)
+        self._set_tsd_dirty(False)
         self._log_tsd_perf("TSD load duration", started)
         self._window.show_status_message(
             f"Loaded TSD file {path.name} ({len(self._loaded_tsd_files)} total)"
@@ -1137,6 +1189,7 @@ class SGViewerController:
         finally:
             combo.blockSignals(previous_block_state)
         self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
+        self._set_tsd_dirty(False)
 
     def _add_loaded_tsd_file(
         self,
@@ -1427,6 +1480,7 @@ class SGViewerController:
         )
         self._window.preview.set_tsd_lines(tuple(self._last_tsd_preview_lines))
         self._sync_active_tsd_file_from_model()
+        self._set_tsd_dirty(True)
 
     def _log_tsd_perf(self, label: str, started: float) -> None:
         if not self._debug_tsd_perf:
@@ -2093,7 +2147,7 @@ class SGViewerController:
         self._window.show_status_message(f"Loaded MRK data from {path.name}")
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
-        tab_name = self._window.right_sidebar_tabs.tabText(index)
+        tab_name = self._window.right_sidebar_tabs.tabText(index).rstrip("*")
         if tab_name in {"Fsects", "MRK"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
         is_mrk_tab = tab_name == "MRK"
@@ -2128,6 +2182,7 @@ class SGViewerController:
             "refresh_preview": refresh_preview,
             "emit_sections_changed": emit_sections_changed,
         }
+        self._mark_fsects_dirty(True)
         if endpoint == "start":
             self._window.preview.update_fsection_dlat(
                 section_index,
