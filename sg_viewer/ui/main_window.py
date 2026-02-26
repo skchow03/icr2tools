@@ -782,6 +782,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def generate_pitwall_button(self) -> QtWidgets.QPushButton:
         return self._generate_pitwall_button
 
+    @property
+    def pitwall_wall_height_spin(self) -> QtWidgets.QDoubleSpinBox:
+        return self._pitwall_wall_height_spin
+
+    @property
+    def pitwall_armco_height_spin(self) -> QtWidgets.QDoubleSpinBox:
+        return self._pitwall_armco_height_spin
+
     def pitwall_wall_height_500ths(self) -> int:
         return int(
             round(

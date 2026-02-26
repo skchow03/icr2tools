@@ -138,6 +138,8 @@ class SGViewerController:
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
         )
+        self._on_mrk_wall_height_changed(self._window.pitwall_wall_height_spin.value())
+        self._on_mrk_armco_height_changed(self._window.pitwall_armco_height_spin.value())
         self._load_measurement_unit_from_history()
         self._load_preview_colors_from_history()
         self._initialize_preview_color_controls()
@@ -780,6 +782,8 @@ class SGViewerController:
         self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
         self._window.generate_pitwall_button.clicked.connect(self._generate_pitwall_txt)
+        self._window.pitwall_wall_height_spin.valueChanged.connect(self._on_mrk_wall_height_changed)
+        self._window.pitwall_armco_height_spin.valueChanged.connect(self._on_mrk_armco_height_changed)
         self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
         self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
         self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
@@ -2127,6 +2131,16 @@ class SGViewerController:
             self._update_mrk_highlights_from_table()
         else:
             self._window.preview.set_highlighted_mrk_walls(())
+
+    def _on_mrk_wall_height_changed(self, _value: float) -> None:
+        self._window.preview.set_mrk_wall_height_500ths(
+            self._window.pitwall_wall_height_500ths()
+        )
+
+    def _on_mrk_armco_height_changed(self, _value: float) -> None:
+        self._window.preview.set_mrk_armco_height_500ths(
+            self._window.pitwall_armco_height_500ths()
+        )
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))

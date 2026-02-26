@@ -91,6 +91,8 @@ class _RuntimeCoreBaseMixin:
         self._show_mrk_notches = False
         self._selected_mrk_wall: tuple[int, int, int] = (0, 0, 0)
         self._highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
+        self._mrk_wall_height_500ths = 21000.0
+        self._mrk_armco_height_500ths = 18000.0
         self._show_tsd_lines = False
         self._show_tsd_selected_section_only = False
         self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
