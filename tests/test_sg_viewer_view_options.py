@@ -1120,6 +1120,47 @@ def test_mrk_divisions_follow_polyline_arc_length():
         assert divisions[0] == pytest.approx(spacing, rel=0.03)
 
 
+def test_generate_mrk_file_uses_boundary_type_for_wall_segment_length(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
+
+        output_path = tmp_path / "boundary_type_length.mrk"
+        boundary = SimpleNamespace(points=((0.0, 0.0), (240.0, 0.0)), attrs={"type1": 8})
+        fsect = SimpleNamespace(surface_type=7, boundaries=[boundary])
+        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[fsect])
+        window.controller._mrk_texture_definitions = (
+            MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
+        )
+
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        table.setItem(0, 0, QtWidgets.QTableWidgetItem("0"))
+        table.setItem(0, 1, QtWidgets.QTableWidgetItem("0"))
+        table.setItem(0, 2, QtWidgets.QTableWidgetItem("0"))
+        table.setItem(0, 3, QtWidgets.QTableWidgetItem("1"))
+        table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick_red"))
+
+        window.pitwall_wall_height_spin.setValue(12.0)
+        window.pitwall_armco_height_spin.setValue(30.0)
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(output_path), "MRK Files (*.mrk)"),
+        )
+
+        window.controller._on_mrk_generate_file_requested()
+
+        mark_file = parse_mrk_text(output_path.read_text(encoding="utf-8"))
+
+        assert len(mark_file.entries) == 1
+        assert mark_file.entries[0].start.fraction == pytest.approx(0.0)
+        assert mark_file.entries[0].end.fraction == pytest.approx(0.5)
+    finally:
+        window.close()
+
+
 def test_generate_mrk_file_uses_wall_height_for_wall_segment_length(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
