@@ -1,4 +1,4 @@
-from sg_viewer.geometry_domain.preview_geometry_domain_service import (
+from .preview_geometry_domain_service import (
     ClosureTransitionResponse,
     ConnectNodesRequest,
     ConnectionSolveRequest,
@@ -13,13 +13,8 @@ from sg_viewer.geometry_domain.preview_geometry_domain_service import (
     StartFinishResponse,
 )
 
-
-class PreviewGeometryService(PreviewGeometryDomainService):
-    """Backward-compatible alias for the geometry domain service."""
-
-
 __all__ = [
-    "PreviewGeometryService",
+    "PreviewGeometryDomainService",
     "Point",
     "EndType",
     "ConnectNodesRequest",

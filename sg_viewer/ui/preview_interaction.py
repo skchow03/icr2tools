@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING, Callable
 
 from PyQt5 import QtCore, QtGui
 
-from sg_viewer.preview.connection_detection import find_unconnected_node_target
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.preview_mutations import (
     distance_to_polyline,
 )
-from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
+from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 
 
 if TYPE_CHECKING:
@@ -443,7 +442,7 @@ class PreviewInteraction:
 
         snap_radius = self._node_radius_px / scale
 
-        target = find_unconnected_node_target(
+        target = self._runtime_api.find_connection_target_intent(
             dragged_key=self._active_node,
             dragged_pos=track_point,
             sections=sections,
