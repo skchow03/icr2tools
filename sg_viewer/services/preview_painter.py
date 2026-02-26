@@ -143,9 +143,11 @@ class TsdGeometryCache:
     world_points_by_key: dict[tuple[object, ...], tuple[Point, ...]] = field(
         default_factory=dict
     )
+    bbox_by_key: dict[tuple[object, ...], BBox | None] = field(default_factory=dict)
 
     def clear(self) -> None:
         self.world_points_by_key.clear()
+        self.bbox_by_key.clear()
 
 
 _GLOBAL_TSD_GEOMETRY_CACHE = TsdGeometryCache()
@@ -881,15 +883,32 @@ def _draw_tsd_lines(
             track_length=track_length,
             is_closed_loop=closed_loop,
         ):
-            cull_margin_world = width_px / max(transform[0], 1e-9)
-            estimated_bbox = _estimate_tsd_segment_world_bbox(
-                start_dlong=float(segment[0]),
-                start_dlat=float(segment[1]),
-                end_dlong=float(segment[2]),
-                end_dlat=float(segment[3]),
-                sections=section_list,
-                track_length=track_length,
+            segment_cache_key = (
+                str(line.command),
+                int(line.width_500ths),
+                float(line.start_dlong),
+                float(line.start_dlat),
+                float(line.end_dlong),
+                float(line.end_dlat),
+                int(line.color_index),
+                section_geometry_version,
+                float(segment[0]),
+                float(segment[1]),
+                float(segment[2]),
+                float(segment[3]),
             )
+            cull_margin_world = width_px / max(transform[0], 1e-9)
+            estimated_bbox = cache.bbox_by_key.get(segment_cache_key)
+            if segment_cache_key not in cache.bbox_by_key:
+                estimated_bbox = _estimate_tsd_segment_world_bbox(
+                    start_dlong=float(segment[0]),
+                    start_dlat=float(segment[1]),
+                    end_dlong=float(segment[2]),
+                    end_dlat=float(segment[3]),
+                    sections=section_list,
+                    track_length=track_length,
+                )
+                cache.bbox_by_key[segment_cache_key] = estimated_bbox
             if (
                 estimated_bbox is not None
                 and not _bbox_intersects(
@@ -910,10 +929,7 @@ def _draw_tsd_lines(
                 int(line.color_index),
                 section_geometry_version,
                 sampling_bucket,
-                float(segment[0]),
-                float(segment[1]),
-                float(segment[2]),
-                float(segment[3]),
+                *segment_cache_key[-4:],
             )
             world_points = cache.world_points_by_key.get(cache_key)
             if world_points is None:

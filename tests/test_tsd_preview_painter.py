@@ -112,3 +112,90 @@ def test_split_wrapped_segment_splits_closed_loop_crossing() -> None:
         (9800.0, 10.0, 10000.0, 10.0),
         (0.0, 20.0, 200.0, 20.0),
     )
+
+
+def test_tsd_segment_bbox_cached_across_paints(monkeypatch, qapp) -> None:
+    from PyQt5 import QtGui
+
+    from sg_viewer.services import preview_painter
+
+    preview_painter._GLOBAL_TSD_GEOMETRY_CACHE.clear()
+    line = TrackSurfaceDetailLine(1, 500, 0, 0, 5000, 0)
+    section = _make_section()
+    sections = [section]
+    estimate_calls = 0
+
+    def _fake_estimate(**_kwargs):
+        nonlocal estimate_calls
+        estimate_calls += 1
+        return (0.0, 0.0, 10.0, 10.0)
+
+    monkeypatch.setattr(preview_painter, "_estimate_tsd_segment_world_bbox", _fake_estimate)
+    monkeypatch.setattr(
+        preview_painter,
+        "_sample_tsd_detail_segment",
+        lambda **_kwargs: [(0.0, 0.0), (1.0, 1.0)],
+    )
+
+    for _ in range(2):
+        image = QtGui.QImage(80, 80, QtGui.QImage.Format_ARGB32)
+        image.fill(0)
+        painter = QtGui.QPainter(image)
+        preview_painter._draw_tsd_lines(
+            painter,
+            (line,),
+            (),
+            sections,
+            (1.0, (0.0, 0.0)),
+            widget_height=80,
+            section_geometry_version=7,
+            tsd_lines_version=11,
+        )
+        painter.end()
+
+    assert estimate_calls == 1
+
+
+def test_tsd_segment_bbox_culling_still_skips_sampling(monkeypatch, qapp) -> None:
+    from PyQt5 import QtGui
+
+    from sg_viewer.services import preview_painter
+
+    preview_painter._GLOBAL_TSD_GEOMETRY_CACHE.clear()
+    line = TrackSurfaceDetailLine(1, 500, 0, 0, 5000, 0)
+    section = _make_section()
+    sections = [section]
+    estimate_calls = 0
+    sample_calls = 0
+
+    def _fake_estimate(**_kwargs):
+        nonlocal estimate_calls
+        estimate_calls += 1
+        return (1000.0, 1000.0, 1010.0, 1010.0)
+
+    def _count_sample(**_kwargs):
+        nonlocal sample_calls
+        sample_calls += 1
+        return [(0.0, 0.0), (1.0, 1.0)]
+
+    monkeypatch.setattr(preview_painter, "_estimate_tsd_segment_world_bbox", _fake_estimate)
+    monkeypatch.setattr(preview_painter, "_sample_tsd_detail_segment", _count_sample)
+
+    for _ in range(2):
+        image = QtGui.QImage(80, 80, QtGui.QImage.Format_ARGB32)
+        image.fill(0)
+        painter = QtGui.QPainter(image)
+        preview_painter._draw_tsd_lines(
+            painter,
+            (line,),
+            (),
+            sections,
+            (1.0, (0.0, 0.0)),
+            widget_height=80,
+            section_geometry_version=7,
+            tsd_lines_version=11,
+        )
+        painter.end()
+
+    assert estimate_calls == 1
+    assert sample_calls == 0
