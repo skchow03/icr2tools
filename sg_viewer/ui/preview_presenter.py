@@ -70,6 +70,8 @@ class PreviewPresenter:
             show_mrk_notches=self._runtime.show_mrk_notches,
             selected_mrk_wall=self._runtime.selected_mrk_wall,
             highlighted_mrk_walls=self._runtime.highlighted_mrk_walls,
+            mrk_wall_height_500ths=self._runtime.mrk_wall_height_500ths,
+            mrk_armco_height_500ths=self._runtime.mrk_armco_height_500ths,
             show_tsd_lines=self._runtime.show_tsd_lines,
             show_tsd_selected_section_only=self._runtime.show_tsd_selected_section_only,
             selected_section_index=selection.selected_section_index,
