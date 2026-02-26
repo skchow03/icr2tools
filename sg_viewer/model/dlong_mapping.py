@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass
 import math
 from typing import Protocol, Sequence
@@ -16,10 +17,51 @@ class DlongSectionPosition:
     fraction: float
 
 
+@dataclass(frozen=True)
+class DlongSectionInterval:
+    start: float
+    end: float
+    section_index: int
+
+
+@dataclass(frozen=True)
+class DlongSectionLookup:
+    intervals: tuple[DlongSectionInterval, ...]
+    starts: tuple[float, ...]
+    wrapping_interval_indexes: tuple[int, ...]
+
+
+def build_dlong_section_lookup(
+    sections: Sequence[_SectionWithDlong],
+    track_length: float,
+) -> DlongSectionLookup:
+    intervals: list[DlongSectionInterval] = []
+    starts: list[float] = []
+    wrapping_interval_indexes: list[int] = []
+    for section_index, section in enumerate(sections):
+        length = float(section.length)
+        if length <= 0:
+            continue
+        start = float(section.start_dlong)
+        end = start + length
+        interval_index = len(intervals)
+        intervals.append(DlongSectionInterval(start=start, end=end, section_index=section_index))
+        starts.append(start)
+        if end > track_length:
+            wrapping_interval_indexes.append(interval_index)
+
+    return DlongSectionLookup(
+        intervals=tuple(intervals),
+        starts=tuple(starts),
+        wrapping_interval_indexes=tuple(wrapping_interval_indexes),
+    )
+
+
 def dlong_to_section_position(
     sections: Sequence[_SectionWithDlong],
     dlong: float,
     track_length: float | None = None,
+    lookup: DlongSectionLookup | None = None,
 ) -> DlongSectionPosition | None:
     """Map absolute ``dlong`` to a section index and local fraction in [0, 1]."""
 
@@ -31,21 +73,49 @@ def dlong_to_section_position(
         return None
 
     wrapped_dlong = dlong % resolved_length
+    resolved_lookup = lookup or build_dlong_section_lookup(sections, resolved_length)
 
-    for idx, section in enumerate(sections):
-        start = float(section.start_dlong)
-        length = float(section.length)
-        if length <= 0:
-            continue
-
-        end = start + length
-        if _dlong_in_section_range(wrapped_dlong, start, end, resolved_length):
-            fraction = (wrapped_dlong - start) / length
-            if end > resolved_length and wrapped_dlong < start:
-                fraction = (wrapped_dlong + resolved_length - start) / length
-            return DlongSectionPosition(section_index=idx, fraction=max(0.0, min(1.0, fraction)))
+    position = _lookup_dlong_section_position(resolved_lookup, wrapped_dlong, resolved_length)
+    if position is not None:
+        return position
 
     return DlongSectionPosition(section_index=len(sections) - 1, fraction=1.0)
+
+
+def _lookup_dlong_section_position(
+    lookup: DlongSectionLookup,
+    wrapped_dlong: float,
+    track_length: float,
+) -> DlongSectionPosition | None:
+    if not lookup.intervals:
+        return None
+
+    interval_indexes: set[int] = set()
+    candidate_index = bisect_right(lookup.starts, wrapped_dlong) - 1
+    if 0 <= candidate_index < len(lookup.intervals):
+        interval_indexes.add(candidate_index)
+    if candidate_index - 1 >= 0:
+        interval_indexes.add(candidate_index - 1)
+    if candidate_index + 1 < len(lookup.intervals):
+        interval_indexes.add(candidate_index + 1)
+    interval_indexes.update(lookup.wrapping_interval_indexes)
+
+    for interval_index in sorted(interval_indexes, key=lambda idx: lookup.intervals[idx].section_index):
+        interval = lookup.intervals[interval_index]
+        if not _dlong_in_section_range(wrapped_dlong, interval.start, interval.end, track_length):
+            continue
+        length = interval.end - interval.start
+        if length <= 0:
+            continue
+        fraction = (wrapped_dlong - interval.start) / length
+        if interval.end > track_length and wrapped_dlong < interval.start:
+            fraction = (wrapped_dlong + track_length - interval.start) / length
+        return DlongSectionPosition(
+            section_index=interval.section_index,
+            fraction=max(0.0, min(1.0, fraction)),
+        )
+
+    return None
 
 
 def _resolve_track_length(sections: Sequence[_SectionWithDlong], track_length: float | None) -> float:
