@@ -235,7 +235,7 @@ def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
         mrk_index = next(
             index
             for index in range(window.right_sidebar_tabs.count())
-            if window.right_sidebar_tabs.tabText(index) == "MRK"
+            if window.right_sidebar_tabs.tabText(index) == "Walls"
         )
         window.right_sidebar_tabs.setCurrentIndex(mrk_index)
 
@@ -252,6 +252,9 @@ def test_mrk_tab_buttons_use_entries_labels(qapp):
     try:
         assert window.mrk_save_button.text() == "Save MRK entries"
         assert window.mrk_load_button.text() == "Load MRK entries"
+        assert window.generate_pitwall_button.text() == "Generate pitwall.txt"
+        assert window.pitwall_wall_height_500ths() == 21000
+        assert window.pitwall_armco_height_500ths() == 18000
     finally:
         window.close()
 
