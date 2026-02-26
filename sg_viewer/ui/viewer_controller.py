@@ -631,11 +631,13 @@ class SGViewerController:
             )
             for boundary_number, (_row_index, fsect) in enumerate(boundary_rows):
                 height = wall_height if fsect.surface_type == 7 else armco_height
+                boundary_length = height * 4
+                boundary_end_dlong = min(end_dlong, start_dlong + boundary_length)
                 lines.append(
                     "BOUNDARY "
                     f"{boundary_number}: "
                     f"{start_dlong} "
-                    f"{end_dlong} "
+                    f"{boundary_end_dlong} "
                     f"HEIGHT {height}"
                 )
 

@@ -259,6 +259,53 @@ def test_mrk_tab_buttons_use_entries_labels(qapp):
         window.close()
 
 
+def test_pitwall_controls_are_grouped_in_wall_heights_box(qapp):
+    window = SGViewerWindow()
+    try:
+        wall_heights_group = next(
+            group
+            for group in window.findChildren(QtWidgets.QGroupBox)
+            if group.title() == "Wall heights"
+        )
+
+        layout = wall_heights_group.layout()
+        assert isinstance(layout, QtWidgets.QVBoxLayout)
+        assert layout.itemAt(0).layout() is not None
+        assert layout.itemAt(1).widget() is window.generate_pitwall_button
+    finally:
+        window.close()
+
+
+def test_generate_pitwall_uses_boundary_length_from_surface_height(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        output_path = tmp_path / "pitwall.txt"
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(output_path), "Text Files (*.txt)"),
+        )
+        monkeypatch.setattr(QtGui.QDesktopServices, "openUrl", lambda _url: True)
+
+        monkeypatch.setattr(window, "pitwall_wall_height_500ths", lambda: 20)
+        monkeypatch.setattr(window, "pitwall_armco_height_500ths", lambda: 10)
+        monkeypatch.setattr(window, "adjusted_section_range_500ths", lambda _index: (100, 999))
+
+        wall_fsect = PreviewFSection(start_dlat=0.0, end_dlat=0.0, surface_type=7, type2=0)
+        armco_fsect = PreviewFSection(start_dlat=1.0, end_dlat=1.0, surface_type=8, type2=0)
+
+        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([SimpleNamespace()], None))
+        monkeypatch.setattr(window.preview, "get_section_fsects", lambda _index: [wall_fsect, armco_fsect])
+
+        window.controller._generate_pitwall_txt()
+
+        assert output_path.read_text(encoding="utf-8") == (
+            "BOUNDARY 0: 100 180 HEIGHT 20\n"
+            "BOUNDARY 1: 100 140 HEIGHT 10\n"
+        )
+    finally:
+        window.close()
+
 
 
 def test_tsd_tab_exists(qapp):
