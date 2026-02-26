@@ -2005,7 +2005,11 @@ class SGViewerController:
         if boundary_index < 0 or boundary_index >= len(fsect.boundaries):
             return []
         boundary = fsect.boundaries[boundary_index]
-        target_length = self._mrk_target_length_for_surface_type(getattr(fsect, "surface_type", 0))
+        boundary_attrs = getattr(boundary, "attrs", None)
+        boundary_surface_type = 0
+        if boundary_attrs is not None:
+            boundary_surface_type = int(boundary_attrs.get("type1", 0))
+        target_length = self._mrk_target_length_for_surface_type(boundary_surface_type)
         points = [
             (float(point[0]), float(point[1]))
             for point in boundary.points
