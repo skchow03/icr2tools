@@ -588,10 +588,8 @@ class SGViewerController:
             )
             return
 
-        heights = self._prompt_pitwall_heights()
-        if heights is None:
-            return
-        wall_height, armco_height = heights
+        wall_height = self._window.pitwall_wall_height_500ths()
+        armco_height = self._window.pitwall_armco_height_500ths()
 
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
@@ -663,51 +661,6 @@ class SGViewerController:
             return
 
         self._window.show_status_message(f"Generated and opened {path.name}.")
-
-    def _prompt_pitwall_heights(self) -> tuple[int, int] | None:
-        unit = str(self._window.measurement_units_combo.currentData())
-        unit_label = self._window.fsect_display_unit_label()
-        decimals = self._window.fsect_display_decimals()
-        step = self._window.fsect_display_step()
-
-        dialog = QtWidgets.QDialog(self._window)
-        dialog.setWindowTitle("Generate pitwall.txt")
-        layout = QtWidgets.QVBoxLayout(dialog)
-        form = QtWidgets.QFormLayout()
-
-        wall_spin = QtWidgets.QDoubleSpinBox(dialog)
-        wall_spin.setDecimals(decimals)
-        wall_spin.setSingleStep(step)
-        wall_spin.setRange(0.0, 999999999.0)
-        wall_spin.setValue(self._window.fsect_dlat_to_display_units(21000.0))
-        wall_spin.setSuffix(f" {unit_label}")
-
-        armco_spin = QtWidgets.QDoubleSpinBox(dialog)
-        armco_spin.setDecimals(decimals)
-        armco_spin.setSingleStep(step)
-        armco_spin.setRange(0.0, 999999999.0)
-        armco_spin.setValue(self._window.fsect_dlat_to_display_units(18000.0))
-        armco_spin.setSuffix(f" {unit_label}")
-
-        form.addRow("Wall height:", wall_spin)
-        form.addRow("Armco height:", armco_spin)
-        layout.addLayout(form)
-
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
-            QtCore.Qt.Horizontal,
-            dialog,
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        if dialog.exec_() != QtWidgets.QDialog.Accepted:
-            return None
-
-        wall_height = int(units_to_500ths(wall_spin.value(), unit))
-        armco_height = int(units_to_500ths(armco_spin.value(), unit))
-        return wall_height, armco_height
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
@@ -824,6 +777,7 @@ class SGViewerController:
         self._window.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
+        self._window.generate_pitwall_button.clicked.connect(self._generate_pitwall_txt)
         self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
         self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
         self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
@@ -994,7 +948,7 @@ class SGViewerController:
 
     def _set_mrk_dirty(self, dirty: bool) -> None:
         self._mrk_is_dirty = dirty
-        self._window.set_sidebar_tab_dirty("MRK", dirty)
+        self._window.set_sidebar_tab_dirty("Walls", dirty)
 
     def _set_tsd_dirty(self, dirty: bool) -> None:
         self._tsd_is_dirty = dirty
@@ -2161,9 +2115,9 @@ class SGViewerController:
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index).rstrip("*")
-        if tab_name in {"Fsects", "MRK"} and not self._window.sg_fsects_checkbox.isChecked():
+        if tab_name in {"Fsects", "Walls"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
-        is_mrk_tab = tab_name == "MRK"
+        is_mrk_tab = tab_name == "Walls"
         is_tsd_tab = tab_name == "TSD"
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         self._window.preview.set_show_tsd_lines(is_tsd_tab)

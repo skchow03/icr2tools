@@ -116,7 +116,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sidebar_tab_base_labels: dict[str, str] = {
             "Elevation/Grade": "Elevation/Grade",
             "Fsects": "Fsects",
-            "MRK": "MRK",
+            "Walls": "Walls",
             "TSD": "TSD",
         }
         self._view_options_dialog: QtWidgets.QDialog | None = None
@@ -126,6 +126,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
         self._mrk_save_button = QtWidgets.QPushButton("Save MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Load MRK entries")
+        self._generate_pitwall_button = QtWidgets.QPushButton("Generate pitwall.txt")
+        self._generate_pitwall_button.setEnabled(False)
+        self._pitwall_wall_height_spin = QtWidgets.QDoubleSpinBox()
+        self._pitwall_armco_height_spin = QtWidgets.QDoubleSpinBox()
         self._tsd_add_line_button = QtWidgets.QPushButton("Add TSD line")
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
@@ -521,6 +525,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()
+        pitwall_height_group = QtWidgets.QGroupBox("Pitwall heights")
+        pitwall_height_form = QtWidgets.QFormLayout()
+        pitwall_height_form.addRow("Wall:", self._pitwall_wall_height_spin)
+        pitwall_height_form.addRow("Armco:", self._pitwall_armco_height_spin)
+        pitwall_height_group.setLayout(pitwall_height_form)
+        mrk_layout.addWidget(pitwall_height_group)
+        mrk_layout.addWidget(self._generate_pitwall_button)
+
         mrk_buttons = QtWidgets.QGridLayout()
         mrk_buttons.setHorizontalSpacing(8)
         mrk_buttons.setVerticalSpacing(6)
@@ -534,6 +546,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()
         self._mrk_sidebar.setLayout(mrk_layout)
+
+        self._sync_pitwall_height_spin_units(previous_unit="500ths")
+        self._pitwall_wall_height_spin.setValue(self._fsect_dlat_to_display_units(21000.0))
+        self._pitwall_armco_height_spin.setValue(self._fsect_dlat_to_display_units(18000.0))
 
         self._tsd_sidebar = QtWidgets.QWidget()
         tsd_layout = QtWidgets.QVBoxLayout()
@@ -558,7 +574,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
-        self._right_sidebar_tabs.addTab(self._mrk_sidebar, "MRK")
+        self._right_sidebar_tabs.addTab(self._mrk_sidebar, "Walls")
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
@@ -756,6 +772,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_load_button(self) -> QtWidgets.QPushButton:
         return self._mrk_load_button
+
+    @property
+    def generate_pitwall_button(self) -> QtWidgets.QPushButton:
+        return self._generate_pitwall_button
+
+    def pitwall_wall_height_500ths(self) -> int:
+        return int(
+            round(
+                units_to_500ths(
+                    self._pitwall_wall_height_spin.value(),
+                    self._current_measurement_unit(),
+                )
+            )
+        )
+
+    def pitwall_armco_height_500ths(self) -> int:
+        return int(
+            round(
+                units_to_500ths(
+                    self._pitwall_armco_height_spin.value(),
+                    self._current_measurement_unit(),
+                )
+            )
+        )
 
     @property
     def tsd_add_line_button(self) -> QtWidgets.QPushButton:
@@ -1679,9 +1719,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         previous_unit = self._measurement_unit_data
         self._measurement_unit_data = str(self._measurement_units_combo.currentData())
         self._sync_altitude_range_spin_units(previous_unit)
+        self._sync_pitwall_height_spin_units(previous_unit)
         self.update_xsect_table_headers()
         self._update_fsect_table_headers()
         self._update_fsect_table(self._selected_section_index)
+
+    def _sync_pitwall_height_spin_units(self, previous_unit: str) -> None:
+        current_unit = self._current_measurement_unit()
+        wall_height_500ths = units_to_500ths(self._pitwall_wall_height_spin.value(), previous_unit)
+        armco_height_500ths = units_to_500ths(self._pitwall_armco_height_spin.value(), previous_unit)
+
+        decimals = self._measurement_unit_decimals(current_unit)
+        step = self._measurement_unit_step(current_unit)
+        suffix = f" {self._measurement_unit_label(current_unit)}"
+        maximum = units_from_500ths(999999999, current_unit)
+
+        for spin in (self._pitwall_wall_height_spin, self._pitwall_armco_height_spin):
+            spin.blockSignals(True)
+            spin.setDecimals(decimals)
+            spin.setSingleStep(step)
+            spin.setRange(0.0, maximum)
+            spin.setSuffix(suffix)
+            spin.blockSignals(False)
+
+        self._pitwall_wall_height_spin.setValue(units_from_500ths(wall_height_500ths, current_unit))
+        self._pitwall_armco_height_spin.setValue(units_from_500ths(armco_height_500ths, current_unit))
 
     def _update_fsect_table_headers(self) -> None:
         unit_label = self._fsect_dlat_units_label()
