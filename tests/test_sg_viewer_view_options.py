@@ -276,7 +276,7 @@ def test_pitwall_controls_are_grouped_in_wall_heights_box(qapp):
         window.close()
 
 
-def test_generate_pitwall_uses_boundary_length_from_surface_height(qapp, tmp_path, monkeypatch):
+def test_generate_pitwall_uses_full_section_range_for_all_boundaries(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
         output_path = tmp_path / "pitwall.txt"
@@ -300,8 +300,8 @@ def test_generate_pitwall_uses_boundary_length_from_surface_height(qapp, tmp_pat
         window.controller._generate_pitwall_txt()
 
         assert output_path.read_text(encoding="utf-8") == (
-            "BOUNDARY 0: 100 180 HEIGHT 20\n"
-            "BOUNDARY 1: 100 140 HEIGHT 10\n"
+            "BOUNDARY 0: 100 999 HEIGHT 20\n"
+            "BOUNDARY 1: 100 999 HEIGHT 10\n"
         )
     finally:
         window.close()
