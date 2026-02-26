@@ -20,6 +20,28 @@ from sg_viewer.preview.runtime_ops.base_context import Point, logger
 
 
 class _RuntimeCorePreviewMixin:
+    def _should_throttle_interaction_repaint(self) -> bool:
+        """Throttle only during expensive TSD/TRK overlay interaction redraws."""
+        return bool(
+            getattr(self, "_show_tsd_lines", False)
+            and getattr(self, "_trk_overlay", None) is not None
+            and self._trk_overlay.has_overlay()
+        )
+
+    def _request_interaction_repaint(self, min_interval_ms: int = 33) -> None:
+        if not self._should_throttle_interaction_repaint():
+            self._context.request_repaint()
+            return
+
+        request_repaint_throttled = getattr(
+            self._context, "request_repaint_throttled", None
+        )
+        if callable(request_repaint_throttled):
+            request_repaint_throttled(min_interval_ms=min_interval_ms)
+            return
+
+        self._context.request_repaint()
+
     @property
     def preview_fsections(self) -> list[PreviewFSection]:
         if self._preview_data is None:

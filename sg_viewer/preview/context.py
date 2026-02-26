@@ -35,6 +35,9 @@ class PreviewContext(Protocol):
     def request_repaint(self) -> None:
         ...
 
+    def request_repaint_throttled(self, min_interval_ms: int = 33) -> None:
+        ...
+
     def refresh_fsections_preview(self) -> bool:
         ...
 

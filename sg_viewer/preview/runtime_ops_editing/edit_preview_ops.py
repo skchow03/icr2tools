@@ -377,7 +377,7 @@ class _RuntimeEditPreviewOpsMixin:
             self._section_manager.centerline_index,
             self._section_manager.sampled_dlongs,
         )
-        self._context.request_repaint()
+        self._request_interaction_repaint()
 
     def rebuild_after_start_finish(self, sections: list[SectionPreview]) -> None:
         old_sections = list(self._section_manager.sections)

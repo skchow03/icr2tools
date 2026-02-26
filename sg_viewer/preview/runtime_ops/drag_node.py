@@ -134,7 +134,7 @@ class _RuntimeCoreDragNodeMixin:
             transform=transform,
         ):
             return
-        self._context.request_repaint()
+        self._request_interaction_repaint()
         event.accept()
 
     def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
@@ -176,7 +176,7 @@ class _RuntimeCoreDragNodeMixin:
             return
 
         if self._interaction.handle_mouse_move(event):
-            self._context.request_repaint()
+            self._request_interaction_repaint()
             return
 
         intent = self._interaction_state.on_mouse_move(
@@ -244,7 +244,7 @@ class _RuntimeCoreDragNodeMixin:
             if intent.payload is not None and self._transform_controller.update_pan(
                 intent.payload
             ):
-                self._context.request_repaint()
+                self._request_interaction_repaint()
                 event.accept()
             return
         if intent.kind == "stop_pan":
