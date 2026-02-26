@@ -851,14 +851,19 @@ def _draw_tsd_lines(
             color = QtGui.QColor(color_index, color_index, color_index)
         width_px = _tsd_width_to_pixels(line.width_500ths, transform[0])
 
-        pen = QtGui.QPen(color)
-        pen.setWidthF(width_px)
-        if line.command == "Detail_Dash":
+        is_dashed = line.command == "Detail_Dash"
+        if is_dashed:
+            pen = QtGui.QPen(color)
+            pen.setWidthF(width_px)
             pen.setStyle(QtCore.Qt.DashLine)
             pen.setDashPattern([8.0, 8.0])
-        pen.setCapStyle(QtCore.Qt.FlatCap)
-        pen.setJoinStyle(QtCore.Qt.RoundJoin)
-        painter.setPen(pen)
+            pen.setCapStyle(QtCore.Qt.FlatCap)
+            pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+        else:
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QBrush(color))
 
         if selected_range is not None and not _tsd_line_overlaps_section_range(
             line,
@@ -936,7 +941,41 @@ def _draw_tsd_lines(
                 sg_rendering.map_point(point[0], point[1], transform, widget_height)
                 for point in world_points
             ]
-            painter.drawPolyline(QtGui.QPolygonF(mapped_points))
+            if is_dashed:
+                painter.drawPolyline(QtGui.QPolygonF(mapped_points))
+                continue
+
+            half_width_world = float(line.width_500ths) * 0.5
+            positive_edge = _sample_tsd_detail_segment(
+                start_dlong=segment[0],
+                start_dlat=float(segment[1]) + half_width_world,
+                end_dlong=segment[2],
+                end_dlat=float(segment[3]) + half_width_world,
+                sections=section_list,
+                pixels_per_world_unit=transform[0],
+                track_length=track_length,
+            )
+            negative_edge = _sample_tsd_detail_segment(
+                start_dlong=segment[0],
+                start_dlat=float(segment[1]) - half_width_world,
+                end_dlong=segment[2],
+                end_dlat=float(segment[3]) - half_width_world,
+                sections=section_list,
+                pixels_per_world_unit=transform[0],
+                track_length=track_length,
+            )
+            if len(positive_edge) < 2 or len(negative_edge) < 2:
+                continue
+
+            polygon_points = [
+                sg_rendering.map_point(point[0], point[1], transform, widget_height)
+                for point in positive_edge
+            ]
+            polygon_points.extend(
+                sg_rendering.map_point(point[0], point[1], transform, widget_height)
+                for point in reversed(negative_edge)
+            )
+            painter.drawPolygon(QtGui.QPolygonF(polygon_points))
 
     painter.restore()
 
