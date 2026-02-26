@@ -2005,6 +2005,7 @@ class SGViewerController:
         if boundary_index < 0 or boundary_index >= len(fsect.boundaries):
             return []
         boundary = fsect.boundaries[boundary_index]
+        target_length = self._mrk_target_length_for_surface_type(getattr(fsect, "surface_type", 0))
         points = [
             (float(point[0]), float(point[1]))
             for point in boundary.points
@@ -2019,13 +2020,17 @@ class SGViewerController:
         total = sum(segment_lengths)
         if total <= 0.0:
             return []
-        target_length = 14.0 * 6000.0
         segment_count = max(1, int(round(total / target_length)))
         spacing = total / float(segment_count)
         cuts = [0.0]
         cuts.extend(spacing * index for index in range(1, segment_count))
         cuts.append(total)
         return [(cuts[index], cuts[index + 1]) for index in range(len(cuts) - 1)]
+
+    def _mrk_target_length_for_surface_type(self, surface_type: int) -> float:
+        if surface_type == 8:
+            return max(1.0, float(self._window.pitwall_armco_height_500ths()) * 4.0)
+        return max(1.0, float(self._window.pitwall_wall_height_500ths()) * 4.0)
 
     def _mark_track_position(
         self,
