@@ -40,6 +40,7 @@ class SectionsControllerHost(Protocol):
     def _sync_after_section_mutation(self) -> None: ...
     def _update_track_length_display(self) -> None: ...
     def _mark_fsects_dirty(self, dirty: bool) -> None: ...
+    def _settings_path_for(self, sg_path: object) -> object: ...
 
 
 class SectionsController:
@@ -135,7 +136,11 @@ class SectionsController:
         if self._host._is_untitled:
             self._host._window.update_window_title(path=None, is_dirty=True, is_untitled=True)
         elif self._host._current_path is not None:
-            self._host._window.update_window_title(path=self._host._current_path, is_dirty=True)
+            self._host._window.update_window_title(
+                path=self._host._current_path,
+                project_path=self._host._settings_path_for(self._host._current_path),
+                is_dirty=True,
+            )
 
     def scale_track(self) -> None:
         sections, _ = self._host._window.preview.get_section_set()

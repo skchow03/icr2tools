@@ -116,6 +116,7 @@ class DocumentController:
 
         self._host._window.update_window_title(
             path=self._host._current_path,
+            project_path=self._host._settings_path_for(self._host._current_path) if self._host._current_path is not None else None,
             is_dirty=False,
             is_untitled=self._host._is_untitled,
         )
@@ -341,6 +342,14 @@ class DocumentController:
             project_path = project_path.with_suffix(".sgc")
 
         sg_path = project_path.with_suffix(".sg")
+        if self._host._current_path is None:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Project Save",
+                "Saving a project will also save an SG file with the same base name in the same folder.\n\n"
+                f"Project: {project_path.name}\nSG: {sg_path.name}",
+            )
+
         self.save_to_path(sg_path)
 
     def start_new_track(self, *, confirm: bool = True) -> None:
@@ -425,7 +434,11 @@ class DocumentController:
         self._host._persist_tsd_state_for_current_track()
         self._persist_project_sg_reference(path)
         self._host._save_current_action.setEnabled(True)
-        self._host._window.update_window_title(path=self._host._current_path, is_dirty=False)
+        self._host._window.update_window_title(
+            path=self._host._current_path,
+            project_path=self._host._settings_path_for(self._host._current_path) if self._host._current_path is not None else None,
+            is_dirty=False,
+        )
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
 
@@ -447,7 +460,11 @@ class DocumentController:
         self._host._history.record_open(project_path)
         self._host._elevation_controller.reset()
 
-        self._host._window.update_window_title(path=sg_path, is_dirty=False)
+        self._host._window.update_window_title(
+            path=sg_path,
+            project_path=project_path,
+            is_dirty=False,
+        )
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
         self._host._window.set_table_actions_enabled(True)
