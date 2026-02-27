@@ -1533,7 +1533,7 @@ def test_file_menu_exposes_project_actions(qapp):
         window.close()
 
 
-def test_save_project_as_action_saves_sgc_and_sg(qapp, monkeypatch, tmp_path):
+def test_save_project_as_action_saves_sgc_with_sg_reference(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:
         controller = window.controller
@@ -1554,6 +1554,9 @@ def test_save_project_as_action_saves_sgc_and_sg(qapp, monkeypatch, tmp_path):
         controller._save_action.trigger()
 
         assert saved_paths == [tmp_path / "project.sg"]
+        payload = json.loads(project_path.read_text(encoding="utf-8"))
+        assert payload["sg_file"] == "project.sg"
+        assert "sg_data" not in payload
     finally:
         window.close()
 

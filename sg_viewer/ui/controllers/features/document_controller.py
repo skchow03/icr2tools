@@ -301,11 +301,10 @@ class DocumentController:
                 sg_path = project_path.with_suffix(".sg")
 
             embedded_sg = payload.get("sg_data")
-            if embedded_sg is not None:
-                self._load_project_embedded_sg(project_path, sg_path, embedded_sg)
-                return
-
             if raw_sg_file is None:
+                if embedded_sg is not None:
+                    self._load_project_embedded_sg(project_path, sg_path, embedded_sg)
+                    return
                 raise ValueError("Project file must include either 'sg_data' or an 'sg_file' path.")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
@@ -418,7 +417,7 @@ class DocumentController:
         self._host._persist_mrk_state_for_current_track()
         self._host._persist_mrk_wall_heights_for_current_track()
         self._host._persist_tsd_state_for_current_track()
-        self._persist_embedded_sg_project_data(path)
+        self._persist_project_sg_reference(path)
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(path=self._host._current_path, is_dirty=False)
         self._host._mark_elevation_grade_dirty(False)
@@ -470,11 +469,7 @@ class DocumentController:
         self._host._load_mrk_state_for_current_track()
         self._host._load_tsd_state_for_current_track()
 
-    def _persist_embedded_sg_project_data(self, sg_path: Path) -> None:
-        sgfile = self._host._window.preview.sgfile
-        if sgfile is None:
-            return
-
+    def _persist_project_sg_reference(self, sg_path: Path) -> None:
         settings_path = self._host._settings_path_for(sg_path)
         payload: dict[str, object] = {}
         if settings_path.exists():
@@ -486,7 +481,7 @@ class DocumentController:
                 payload = loaded_payload
 
         payload["sg_file"] = sg_path.name
-        payload["sg_data"] = self._serialize_sg_data_payload(sgfile)
+        payload.pop("sg_data", None)
         settings_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
     def _serialize_sg_data_payload(self, sgfile: SGFile) -> dict[str, object]:
