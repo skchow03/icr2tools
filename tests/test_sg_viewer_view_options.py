@@ -1526,28 +1526,30 @@ def test_file_menu_exposes_project_actions(qapp):
         )
         labels = [action.text() for action in file_menu.actions()]
         assert "Open Project…" in labels
-        assert "Save Project As…" in labels
+        assert "Save .SG and project file" in labels
     finally:
         window.close()
 
 
-def test_save_project_as_writes_sgc_with_sg_reference(qapp, monkeypatch, tmp_path):
+def test_save_project_action_saves_current_file(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:
-        sg_path = tmp_path / "track.sg"
-        sg_path.write_bytes(b"x")
-        project_path = tmp_path / "my_project.sgc"
-        window.controller._current_path = sg_path
-        monkeypatch.setattr(
-            QtWidgets.QFileDialog,
-            "getSaveFileName",
-            lambda *args, **kwargs: (str(project_path), "SG Project files (*.sgc *.SGC)"),
-        )
+        controller = window.controller
+        target_path = tmp_path / "loaded.sg"
+        controller._current_path = target_path
+        controller._save_current_action.setEnabled(True)
 
-        window.controller._save_project_action.trigger()
+        saved_paths = []
 
-        payload = json.loads(project_path.read_text(encoding="utf-8"))
-        assert payload == {"sg_file": "track.sg"}
+        def _fake_save(path):
+            saved_paths.append(path)
+
+        monkeypatch.setattr(window.preview, "save_sg", _fake_save)
+        controller._document_controller.set_export_csv_on_save(False)
+
+        controller._save_project_action.trigger()
+
+        assert saved_paths == [target_path]
     finally:
         window.close()
 

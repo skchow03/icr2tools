@@ -285,46 +285,7 @@ class DocumentController:
         self.load_sg(sg_path)
 
     def save_project_file_dialog(self) -> None:
-        if self._host._window.preview.sgfile is None:
-            QtWidgets.QMessageBox.information(
-                self._host._window,
-                "No SG Loaded",
-                "Load an SG file before saving a project.",
-            )
-            return
-        if self._host._current_path is None:
-            QtWidgets.QMessageBox.information(
-                self._host._window,
-                "Save SG First",
-                "Save the SG file before saving a project.",
-            )
-            self.save_file_dialog()
-            if self._host._current_path is None:
-                return
-        default_path = str(self._host._settings_path_for(self._host._current_path))
-        options = QtWidgets.QFileDialog.Options()
-        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self._host._window,
-            "Save Project As",
-            default_path,
-            "SG Project files (*.sgc *.SGC);;All files (*)",
-            options=options,
-        )
-        if not file_path:
-            return
-        project_path = Path(file_path)
-        if project_path.suffix.lower() != ".sgc":
-            project_path = project_path.with_suffix(".sgc")
-        payload = {
-            "sg_file": str(Path(self._host._current_path.name)),
-        }
-        try:
-            project_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        except OSError as exc:
-            QtWidgets.QMessageBox.critical(self._host._window, "Failed to save project", str(exc))
-            self._logger.exception("Failed to save project file")
-            return
-        self._host._window.show_status_message(f"Saved project {project_path}")
+        self.save_current_file()
 
     def start_new_track(self, *, confirm: bool = True) -> None:
         if confirm and not self._host.confirm_discard_unsaved_for_action("Start New Track"):
@@ -399,7 +360,7 @@ class DocumentController:
             self._logger.exception("Failed to save SG file")
             return
         self._host._current_path = path
-        self._host._window.show_status_message(f"Saved {path}")
+        self._host._window.show_status_message(f"Saved {path} and project {self._host._settings_path_for(path)}")
         self._host._history.record_save(path)
         self._host._refresh_recent_menu()
         self._host._persist_background_state()
