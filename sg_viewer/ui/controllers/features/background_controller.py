@@ -12,7 +12,7 @@ from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 
 class BackgroundControllerHost(Protocol):
     _window: QtWidgets.QMainWindow
-    _history: object
+    _sg_settings_store: object
     _current_path: Path | None
     _background_settings_action: QtWidgets.QAction
     _calibrator_window: Calibrator | None
@@ -105,7 +105,7 @@ class BackgroundController:
         path = sg_path or self._host._current_path
         if path is None:
             return
-        background_data = self._host._history.get_background(path)
+        background_data = self._host._sg_settings_store.get_background(path)
         if not background_data:
             return
         image_path, scale, origin = background_data
@@ -129,4 +129,4 @@ class BackgroundController:
         if background_path is None:
             return
         scale, origin = self._host._window.preview.get_background_settings()
-        self._host._history.set_background(self._host._current_path, background_path, scale, origin)
+        self._host._sg_settings_store.set_background(self._host._current_path, background_path, scale, origin)

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.model.history import FileHistory
+from sg_viewer.services.sg_settings_store import SGSettingsStore
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.services.mrk_io import (
@@ -34,6 +35,7 @@ from sg_viewer.ui.altitude_units import (
     feet_from_slider_units,
     feet_to_500ths,
     units_to_500ths,
+    units_from_500ths,
 )
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
@@ -71,6 +73,7 @@ logger = logging.getLogger(__name__)
 class LoadedTsdFile:
     name: str
     lines: tuple[TrackSurfaceDetailLine, ...]
+    source_path: Path | None = None
 
 
 class SGViewerController:
@@ -86,6 +89,7 @@ class SGViewerController:
         self._integrity_report_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
         self._history = FileHistory()
+        self._sg_settings_store = SGSettingsStore()
         self._new_straight_default_style = window.new_straight_button.styleSheet()
         self._new_curve_default_style = window.new_curve_button.styleSheet()
         self._delete_default_style = window.delete_section_button.styleSheet()
@@ -553,7 +557,7 @@ class SGViewerController:
             return False
 
         if persist_for_current_track and self._current_path is not None:
-            self._history.set_sunny_palette(self._current_path, resolved_path)
+            self._sg_settings_store.set_sunny_palette(self._current_path, resolved_path)
 
         self._window.preview.set_tsd_palette(self._sunny_palette)
         self._window.show_status_message(
@@ -986,7 +990,7 @@ class SGViewerController:
     def _persist_mrk_state_for_current_track(self) -> None:
         if self._current_path is None:
             return
-        self._history.set_mrk_state(self._current_path, self._collect_mrk_state())
+        self._sg_settings_store.set_mrk_state(self._current_path, self._collect_mrk_state())
 
     def _load_mrk_state_for_current_track(self) -> None:
         self._set_mrk_dirty(False)
@@ -1000,7 +1004,7 @@ class SGViewerController:
             self._update_mrk_highlights_from_table()
             return
 
-        state = self._history.get_mrk_state(self._current_path)
+        state = self._sg_settings_store.get_mrk_state(self._current_path)
         if not isinstance(state, dict):
             self._update_mrk_highlights_from_table()
             return
@@ -1014,6 +1018,61 @@ class SGViewerController:
             table.setRowCount(0)
             table.blockSignals(False)
             self._update_mrk_highlights_from_table()
+
+
+    def _persist_tsd_state_for_current_track(self) -> None:
+        if self._current_path is None:
+            return
+        files = [
+            loaded.source_path
+            for loaded in self._loaded_tsd_files
+            if loaded.source_path is not None
+        ]
+        self._sg_settings_store.set_tsd_files(self._current_path, files, self._active_tsd_file_index)
+
+    def _load_tsd_state_for_current_track(self) -> None:
+        self._clear_loaded_tsd_files()
+        if self._current_path is None:
+            return
+        files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
+        for path in files:
+            if not path.exists():
+                continue
+            try:
+                detail_file = parse_tsd(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                logger.warning("Unable to restore TSD file %s", path, exc_info=True)
+                continue
+            self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=False, source_path=path.resolve())
+        if self._loaded_tsd_files:
+            target_index = active_index if isinstance(active_index, int) and 0 <= active_index < len(self._loaded_tsd_files) else None
+            if target_index is None:
+                self._window.tsd_files_combo.setCurrentIndex(0)
+                self._on_tsd_file_selection_changed(0)
+            else:
+                self._window.tsd_files_combo.setCurrentIndex(target_index + 1)
+                self._set_active_tsd_file(target_index)
+        self._set_tsd_dirty(False)
+
+    def _persist_mrk_wall_heights_for_current_track(self) -> None:
+        if self._current_path is None:
+            return
+        self._sg_settings_store.set_mrk_wall_heights(
+            self._current_path,
+            self._window.pitwall_wall_height_500ths(),
+            self._window.pitwall_armco_height_500ths(),
+        )
+
+    def _load_mrk_wall_heights_for_current_track(self) -> None:
+        if self._current_path is None:
+            return
+        heights = self._sg_settings_store.get_mrk_wall_heights(self._current_path)
+        if heights is None:
+            return
+        unit = self._window.current_measurement_unit()
+        wall_height_500ths, armco_height_500ths = heights
+        self._window.pitwall_wall_height_spin.setValue(units_from_500ths(wall_height_500ths, unit))
+        self._window.pitwall_armco_height_spin.setValue(units_from_500ths(armco_height_500ths, unit))
 
     def _on_mrk_wall_select_requested(self) -> None:
         table = self._window.mrk_entries_table
@@ -1066,6 +1125,7 @@ class SGViewerController:
         self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _on_tsd_delete_line_requested(self) -> None:
         selection_model = self._window.tsd_lines_table.selectionModel()
@@ -1078,6 +1138,7 @@ class SGViewerController:
         self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _on_tsd_generate_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
@@ -1102,7 +1163,7 @@ class SGViewerController:
                 str(exc),
             )
             return
-        self._upsert_loaded_tsd_file(path.name, tuple(detail_file.lines))
+        self._upsert_loaded_tsd_file(path.name, tuple(detail_file.lines), source_path=path.resolve())
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(False)
         self._window.show_status_message(f"Generated TSD file {path.name}")
@@ -1129,7 +1190,7 @@ class SGViewerController:
             )
             return
 
-        self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=True)
+        self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=True, source_path=path.resolve())
         self._set_tsd_dirty(False)
         self._log_tsd_perf("TSD load duration", started)
         self._window.show_status_message(
@@ -1145,6 +1206,7 @@ class SGViewerController:
         self._loaded_tsd_files[self._active_tsd_file_index] = LoadedTsdFile(
             name=active_file.name,
             lines=self._tsd_lines_model.all_lines(),
+            source_path=active_file.source_path,
         )
 
     def _clear_loaded_tsd_files(self) -> None:
@@ -1168,8 +1230,9 @@ class SGViewerController:
         lines: tuple[TrackSurfaceDetailLine, ...],
         *,
         select: bool,
+        source_path: Path | None = None,
     ) -> None:
-        self._loaded_tsd_files.append(LoadedTsdFile(name=name, lines=tuple(lines)))
+        self._loaded_tsd_files.append(LoadedTsdFile(name=name, lines=tuple(lines), source_path=source_path))
         combo = self._window.tsd_files_combo
         previous_block_state = combo.blockSignals(True)
         try:
@@ -1188,13 +1251,17 @@ class SGViewerController:
         self,
         name: str,
         lines: tuple[TrackSurfaceDetailLine, ...],
+        *,
+        source_path: Path | None = None,
     ) -> None:
         if self._active_tsd_file_index is None:
-            self._add_loaded_tsd_file(name, lines, select=True)
+            self._add_loaded_tsd_file(name, lines, select=True, source_path=source_path)
             return
+        previous = self._loaded_tsd_files[self._active_tsd_file_index]
         self._loaded_tsd_files[self._active_tsd_file_index] = LoadedTsdFile(
             name=name,
             lines=tuple(lines),
+            source_path=source_path or previous.source_path,
         )
         combo = self._window.tsd_files_combo
         previous_block_state = combo.blockSignals(True)
@@ -1452,6 +1519,7 @@ class SGViewerController:
         self._window.preview.set_tsd_lines(tuple(self._last_tsd_preview_lines))
         self._sync_active_tsd_file_from_model()
         self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _log_tsd_perf(self, label: str, started: float) -> None:
         if not self._debug_tsd_perf:
@@ -2143,11 +2211,13 @@ class SGViewerController:
         self._window.preview.set_mrk_wall_height_500ths(
             self._window.pitwall_wall_height_500ths()
         )
+        self._persist_mrk_wall_heights_for_current_track()
 
     def _on_mrk_armco_height_changed(self, _value: float) -> None:
         self._window.preview.set_mrk_armco_height_500ths(
             self._window.pitwall_armco_height_500ths()
         )
+        self._persist_mrk_wall_heights_for_current_track()
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
@@ -2211,7 +2281,7 @@ class SGViewerController:
         path = sg_path or self._current_path
         if path is None:
             return
-        palette_path = self._history.get_sunny_palette(path)
+        palette_path = self._sg_settings_store.get_sunny_palette(path)
         if palette_path is None:
             return
         self._load_sunny_palette(palette_path, persist_for_current_track=False)
