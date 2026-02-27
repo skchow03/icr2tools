@@ -432,6 +432,7 @@ class DocumentController:
         self._host._persist_mrk_state_for_current_track()
         self._host._persist_mrk_wall_heights_for_current_track()
         self._host._persist_tsd_state_for_current_track()
+        self._host._set_mrk_dirty(False)
         self._persist_project_sg_reference(path)
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(

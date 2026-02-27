@@ -347,10 +347,10 @@ class SGViewerController:
         self._mrk_generate_file_action = QtWidgets.QAction("Generate .MRK file…", self._window)
         self._mrk_generate_file_action.setEnabled(self._window.mrk_generate_file_button.isEnabled())
 
-        self._mrk_save_entries_action = QtWidgets.QAction("Save MRK entries…", self._window)
+        self._mrk_save_entries_action = QtWidgets.QAction("Export MRK entries…", self._window)
         self._mrk_save_entries_action.setEnabled(self._window.mrk_save_button.isEnabled())
 
-        self._mrk_load_entries_action = QtWidgets.QAction("Load MRK entries…", self._window)
+        self._mrk_load_entries_action = QtWidgets.QAction("Import MRK entries…", self._window)
         self._mrk_load_entries_action.setEnabled(self._window.mrk_load_button.isEnabled())
 
         self._previous_section_action = QtWidgets.QAction("Previous Section", self._window)
@@ -1121,7 +1121,6 @@ class SGViewerController:
         table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(1)))
         table.selectRow(row)
         self._set_mrk_dirty(True)
-        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_delete_entry_requested(self) -> None:
@@ -1131,7 +1130,6 @@ class SGViewerController:
             return
         table.removeRow(selected_rows[0].row())
         self._set_mrk_dirty(True)
-        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
 
@@ -1669,7 +1667,6 @@ class SGViewerController:
             QtWidgets.QMessageBox.warning(self._window, "Invalid MRK Texture", str(exc))
             return
         self._set_mrk_dirty(True)
-        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _default_texture_pattern_for_wall_count(self, wall_count: int) -> str:
@@ -1695,7 +1692,6 @@ class SGViewerController:
 
     def _on_mrk_side_changed(self) -> None:
         self._set_mrk_dirty(True)
-        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _mrk_side_for_row(self, row: int) -> str:
@@ -1762,7 +1758,6 @@ class SGViewerController:
             existing_item.setText(updated)
         table.blockSignals(False)
         self._set_mrk_dirty(True)
-        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_entry_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
@@ -1801,7 +1796,6 @@ class SGViewerController:
                 )
                 table.blockSignals(False)
         self._set_mrk_dirty(True)
-        self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _update_mrk_highlights_from_table(self) -> None:
@@ -1939,8 +1933,6 @@ class SGViewerController:
 
         self._mrk_texture_definitions = tuple(texture_definitions)
         self._set_mrk_dirty(mark_dirty)
-        if mark_dirty:
-            self._persist_mrk_state_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _table_int_value(self, table: QtWidgets.QTableWidget, row: int, column: int) -> int:
@@ -1962,7 +1954,7 @@ class SGViewerController:
     def _on_mrk_save_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
-            "Save MRK Entries and Textures",
+            "Export MRK Entries and Textures",
             "",
             "JSON Files (*.json)",
         )
@@ -1973,9 +1965,7 @@ class SGViewerController:
             path = path.with_suffix(".json")
         payload = self._collect_mrk_state()
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        self._set_mrk_dirty(False)
-        self._persist_mrk_state_for_current_track()
-        self._window.show_status_message(f"Saved MRK data to {path.name}")
+        self._window.show_status_message(f"Exported MRK data to {path.name}")
 
     def _on_mrk_generate_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
@@ -2192,7 +2182,7 @@ class SGViewerController:
     def _on_mrk_load_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
             self._window,
-            "Load MRK Entries and Textures",
+            "Import MRK Entries and Textures",
             "",
             "JSON Files (*.json)",
         )
@@ -2203,16 +2193,15 @@ class SGViewerController:
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("Top-level JSON value must be an object.")
-            self._apply_mrk_state(payload, mark_dirty=False)
-            self._persist_mrk_state_for_current_track()
+            self._apply_mrk_state(payload, mark_dirty=True)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
-                "Load MRK JSON Failed",
+                "Import MRK JSON Failed",
                 str(exc),
             )
             return
-        self._window.show_status_message(f"Loaded MRK data from {path.name}")
+        self._window.show_status_message(f"Imported MRK data from {path.name}")
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index).rstrip("*")
