@@ -1527,7 +1527,7 @@ def test_file_menu_exposes_project_actions(qapp):
         )
         labels = [action.text() for action in file_menu.actions()]
         assert "Open Project…" in labels
-        assert "Save .SG and project file" in labels
+        assert "Save Project" in labels
     finally:
         window.close()
 
@@ -1738,8 +1738,16 @@ def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
         file_labels = [action.text() for action in file_menu.actions()]
         tools_labels = [action.text() for action in tools_menu.actions()]
 
-        assert "Export SG to TRK…" in file_labels
-        assert "Export SG to TRK…" not in tools_labels
+        assert "Export" in file_labels
+        assert "Export to TRK…" not in file_labels
+
+        export_action = next(action for action in file_menu.actions() if action.text() == "Export")
+        export_menu = export_action.menu()
+        assert export_menu is not None
+        export_labels = [action.text() for action in export_menu.actions()]
+
+        assert "Export to TRK…" in export_labels
+        assert "Export to TRK…" not in tools_labels
     finally:
         window.close()
 

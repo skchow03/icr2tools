@@ -21,8 +21,8 @@ class FileMenuCoordinator:
         self._host = host
         self._document_controller = document_controller
 
-    def open_file_dialog(self) -> None:
-        self._document_controller.open_file_dialog()
+    def import_sg_file_dialog(self) -> None:
+        self._document_controller.import_sg_file_dialog()
 
     def import_trk_file_dialog(self) -> None:
         self._document_controller.import_trk_file_dialog()
