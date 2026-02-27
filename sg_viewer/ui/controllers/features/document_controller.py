@@ -8,6 +8,7 @@ from typing import Protocol
 from PyQt5 import QtWidgets
 
 from icr2_core.dat.unpackdat import extract_file_bytes, list_dat_entries
+from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
@@ -57,6 +58,8 @@ class DocumentControllerHost(Protocol):
 
 
 class DocumentController:
+    PROJECT_SG_DATA_VERSION = 1
+
     def __init__(self, host: DocumentControllerHost, logger: logging.Logger) -> None:
         self._host = host
         self._logger = logger
@@ -271,13 +274,24 @@ class DocumentController:
             if not isinstance(payload, dict):
                 raise ValueError("Project file must contain a JSON object.")
             raw_sg_file = payload.get("sg_file")
-            if not isinstance(raw_sg_file, str) or not raw_sg_file.strip():
-                raise ValueError("Project file must include an 'sg_file' path.")
-            sg_path = Path(raw_sg_file)
-            if not sg_path.is_absolute():
-                sg_path = (project_path.parent / sg_path).resolve()
+            if raw_sg_file is not None and (not isinstance(raw_sg_file, str) or not raw_sg_file.strip()):
+                raise ValueError("Project 'sg_file' path must be a non-empty string when provided.")
+            if isinstance(raw_sg_file, str):
+                sg_path = Path(raw_sg_file)
+                if not sg_path.is_absolute():
+                    sg_path = (project_path.parent / sg_path).resolve()
+                else:
+                    sg_path = sg_path.resolve()
             else:
-                sg_path = sg_path.resolve()
+                sg_path = project_path.with_suffix(".sg")
+
+            embedded_sg = payload.get("sg_data")
+            if embedded_sg is not None:
+                self._load_project_embedded_sg(project_path, sg_path, embedded_sg)
+                return
+
+            if raw_sg_file is None:
+                raise ValueError("Project file must include either 'sg_data' or an 'sg_file' path.")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
             self._logger.exception("Failed to open project file")
@@ -367,12 +381,205 @@ class DocumentController:
         self._host._persist_mrk_state_for_current_track()
         self._host._persist_mrk_wall_heights_for_current_track()
         self._host._persist_tsd_state_for_current_track()
+        self._persist_embedded_sg_project_data(path)
         if self._export_csv_on_save:
             self.convert_sg_to_csv(path)
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(path=self._host._current_path, is_dirty=False)
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
+
+    def _load_project_embedded_sg(self, project_path: Path, sg_path: Path, embedded_sg: object) -> None:
+        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
+            return
+        self._host._clear_background_state()
+        self._host._clear_loaded_tsd_files()
+
+        sgfile = self._deserialize_sg_data_payload(embedded_sg)
+        self._host._window.preview.load_sg_data(
+            sgfile,
+            status_message=f"Loaded {project_path.name}",
+        )
+
+        self._host._window.show_status_message(f"Loaded project {project_path}")
+        self._host._current_path = sg_path
+        self._host._is_untitled = False
+        self._host._history.record_open(project_path)
+        self._host._elevation_controller.reset()
+
+        self._host._window.update_window_title(path=sg_path, is_dirty=False)
+        self._host._mark_elevation_grade_dirty(False)
+        self._host._mark_fsects_dirty(False)
+        self._host._window.set_table_actions_enabled(True)
+        self._host._window.new_straight_button.setEnabled(True)
+        self._host._window.new_curve_button.setEnabled(True)
+        self._host._window.delete_section_button.setEnabled(True)
+        self._host._window.preview.set_trk_comparison(None)
+        sections, _ = self._host._window.preview.get_section_set()
+        self._host._window.set_start_finish_button.setEnabled(bool(sections))
+        self._host._window.split_section_button.setEnabled(bool(sections))
+        self._host._window.split_section_button.setChecked(False)
+        self._host._save_action.setEnabled(True)
+        self._host._save_current_action.setEnabled(True)
+        self._host._apply_saved_background(sg_path)
+        self._host._apply_saved_sunny_palette(sg_path)
+        self._host._refresh_recent_menu()
+        self._host._update_section_table()
+        self._host._update_heading_table()
+        self._host._update_xsect_table()
+        self._host._populate_xsect_choices()
+        self._host._reset_altitude_range_for_track()
+        self._host._refresh_elevation_profile()
+        self._host._update_track_length_display()
+        self._host._load_mrk_wall_heights_for_current_track()
+        self._host._load_mrk_state_for_current_track()
+        self._host._load_tsd_state_for_current_track()
+
+    def _persist_embedded_sg_project_data(self, sg_path: Path) -> None:
+        sgfile = self._host._window.preview.sgfile
+        if sgfile is None:
+            return
+
+        settings_path = self._host._settings_path_for(sg_path)
+        payload: dict[str, object] = {}
+        if settings_path.exists():
+            try:
+                loaded_payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                loaded_payload = {}
+            if isinstance(loaded_payload, dict):
+                payload = loaded_payload
+
+        payload["sg_file"] = sg_path.name
+        payload["sg_data"] = self._serialize_sg_data_payload(sgfile)
+        settings_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _serialize_sg_data_payload(self, sgfile: SGFile) -> dict[str, object]:
+        sections: list[dict[str, object]] = []
+        for section in sgfile.sects:
+            num_fsects = int(getattr(section, "num_fsects", 0))
+            sections.append(
+                {
+                    "type": int(section.type),
+                    "sec_next": int(section.sec_next),
+                    "sec_prev": int(section.sec_prev),
+                    "start_x": int(section.start_x),
+                    "start_y": int(section.start_y),
+                    "end_x": int(section.end_x),
+                    "end_y": int(section.end_y),
+                    "start_dlong": int(section.start_dlong),
+                    "length": int(section.length),
+                    "center_x": int(section.center_x),
+                    "center_y": int(section.center_y),
+                    "sang1": int(section.sang1),
+                    "sang2": int(section.sang2),
+                    "eang1": int(section.eang1),
+                    "eang2": int(section.eang2),
+                    "radius": int(section.radius),
+                    "num1": int(section.num1),
+                    "alt": [int(value) for value in list(section.alt)],
+                    "grade": [int(value) for value in list(section.grade)],
+                    "num_fsects": num_fsects,
+                    "ftype1": [int(value) for value in list(section.ftype1)[:num_fsects]],
+                    "ftype2": [int(value) for value in list(section.ftype2)[:num_fsects]],
+                    "fstart": [int(value) for value in list(section.fstart)[:num_fsects]],
+                    "fend": [int(value) for value in list(section.fend)[:num_fsects]],
+                }
+            )
+
+        return {
+            "version": self.PROJECT_SG_DATA_VERSION,
+            "header": [int(value) for value in list(sgfile.header)],
+            "num_sects": int(sgfile.num_sects),
+            "num_xsects": int(sgfile.num_xsects),
+            "xsect_dlats": [int(value) for value in list(sgfile.xsect_dlats)],
+            "sections": sections,
+        }
+
+    def _deserialize_sg_data_payload(self, payload: object) -> SGFile:
+        if not isinstance(payload, dict):
+            raise ValueError("Project 'sg_data' must be an object.")
+        version = payload.get("version")
+        if version != self.PROJECT_SG_DATA_VERSION:
+            raise ValueError(f"Unsupported project SG data version: {version!r}")
+
+        num_xsects = int(payload.get("num_xsects", 0))
+        if num_xsects < 0:
+            raise ValueError("Project 'num_xsects' must be >= 0.")
+
+        header = [int(value) for value in list(payload.get("header", []))]
+        while len(header) < 6:
+            header.append(0)
+        header = header[:6]
+        header[5] = num_xsects
+
+        xsect_dlats = [int(value) for value in list(payload.get("xsect_dlats", []))]
+        if len(xsect_dlats) != num_xsects:
+            raise ValueError("Project 'xsect_dlats' length must equal 'num_xsects'.")
+
+        raw_sections = payload.get("sections")
+        if not isinstance(raw_sections, list):
+            raise ValueError("Project 'sections' must be an array.")
+
+        sections: list[SGFile.Section] = []
+        for raw_section in raw_sections:
+            if not isinstance(raw_section, dict):
+                raise ValueError("Each project section must be an object.")
+
+            section_data = [0] * (58 + 2 * num_xsects)
+            ordered_fields = (
+                "type",
+                "sec_next",
+                "sec_prev",
+                "start_x",
+                "start_y",
+                "end_x",
+                "end_y",
+                "start_dlong",
+                "length",
+                "center_x",
+                "center_y",
+                "sang1",
+                "sang2",
+                "eang1",
+                "eang2",
+                "radius",
+                "num1",
+            )
+            for index, key in enumerate(ordered_fields):
+                section_data[index] = int(raw_section.get(key, 0))
+
+            altitudes = [int(value) for value in list(raw_section.get("alt", []))]
+            grades = [int(value) for value in list(raw_section.get("grade", []))]
+            if len(altitudes) != num_xsects or len(grades) != num_xsects:
+                raise ValueError("Each project section must include alt/grade values for every xsect.")
+            for xsect_index in range(num_xsects):
+                section_data[17 + 2 * xsect_index] = altitudes[xsect_index]
+                section_data[18 + 2 * xsect_index] = grades[xsect_index]
+
+            fsect_start = 17 + 2 * num_xsects
+            max_fsects = 40
+            requested_num_fsects = int(raw_section.get("num_fsects", 0))
+            requested_num_fsects = max(0, min(requested_num_fsects, max_fsects))
+            ftype1 = [int(value) for value in list(raw_section.get("ftype1", []))]
+            ftype2 = [int(value) for value in list(raw_section.get("ftype2", []))]
+            fstart = [int(value) for value in list(raw_section.get("fstart", []))]
+            fend = [int(value) for value in list(raw_section.get("fend", []))]
+            actual_num_fsects = min(requested_num_fsects, len(ftype1), len(ftype2), len(fstart), len(fend), max_fsects)
+            section_data[fsect_start] = actual_num_fsects
+            for fsect_index in range(actual_num_fsects):
+                section_data[fsect_start + 1 + 4 * fsect_index] = ftype1[fsect_index]
+                section_data[fsect_start + 2 + 4 * fsect_index] = ftype2[fsect_index]
+                section_data[fsect_start + 3 + 4 * fsect_index] = fstart[fsect_index]
+                section_data[fsect_start + 4 + 4 * fsect_index] = fend[fsect_index]
+
+            sections.append(SGFile.Section(section_data, num_xsects))
+
+        num_sects = int(payload.get("num_sects", len(sections)))
+        if num_sects != len(sections):
+            num_sects = len(sections)
+        header[4] = num_sects
+        return SGFile(header, num_sects, num_xsects, xsect_dlats, sections)
 
     def ensure_saved_sg(self) -> Path | None:
         if self._host._window.preview.sgfile is None:
