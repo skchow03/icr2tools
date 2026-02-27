@@ -314,7 +314,29 @@ class DocumentController:
         self.load_sg(sg_path)
 
     def save_project_file_dialog(self) -> None:
-        self.save_current_file()
+        if self._host._window.preview.sgfile is None:
+            QtWidgets.QMessageBox.information(self._host._window, "No SG Loaded", "Load an SG file before saving.")
+            return
+        default_path = ""
+        if self._host._current_path is not None:
+            default_path = str(self._host._settings_path_for(self._host._current_path))
+        options = QtWidgets.QFileDialog.Options()
+        project_path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._host._window,
+            "Save Project As",
+            default_path,
+            "SG Project files (*.sgc *.SGC);;All files (*)",
+            options=options,
+        )
+        if not project_path_str:
+            return
+
+        project_path = Path(project_path_str)
+        if project_path.suffix.lower() != ".sgc":
+            project_path = project_path.with_suffix(".sgc")
+
+        sg_path = project_path.with_suffix(".sg")
+        self.save_to_path(sg_path)
 
     def start_new_track(self, *, confirm: bool = True) -> None:
         if confirm and not self._host.confirm_discard_unsaved_for_action("Start New Track"):
@@ -397,8 +419,6 @@ class DocumentController:
         self._host._persist_mrk_wall_heights_for_current_track()
         self._host._persist_tsd_state_for_current_track()
         self._persist_embedded_sg_project_data(path)
-        if self._export_csv_on_save:
-            self.convert_sg_to_csv(path)
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(path=self._host._current_path, is_dirty=False)
         self._host._mark_elevation_grade_dirty(False)
