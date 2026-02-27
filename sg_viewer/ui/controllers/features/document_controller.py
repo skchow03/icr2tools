@@ -300,6 +300,9 @@ class DocumentController:
             else:
                 sg_path = project_path.with_suffix(".sg")
 
+            if not sg_path.exists():
+                raise ValueError(f"Referenced SG file does not exist: {sg_path}")
+
             embedded_sg = payload.get("sg_data")
             if raw_sg_file is None:
                 if embedded_sg is not None:

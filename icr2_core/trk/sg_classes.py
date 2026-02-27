@@ -68,13 +68,28 @@ class SGFile:
             logger.info("Opening SG file %s", file_name)
 
         a = np.fromfile(file_name, dtype=np.int32)
+        if a.size < 6:
+            raise ValueError(
+                f"Invalid SG file '{file_name}': expected at least 6 int32 header values, found {a.size}."
+            )
 
         header = a[0:6]
         num_sects = header[4]
         num_xsects = header[5]
+        if num_sects < 0 or num_xsects < 0:
+            raise ValueError(
+                f"Invalid SG header in '{file_name}': num_sects={int(num_sects)}, num_xsects={int(num_xsects)}."
+            )
         xsect_dlats = a[6:num_xsects + 6]
         sections_start = num_xsects + 6
         sections_length = 58 + 2 * num_xsects
+        expected_size = sections_start + num_sects * sections_length
+        if a.size < expected_size:
+            raise ValueError(
+                "Invalid or truncated SG file "
+                f"'{file_name}': header expects {int(expected_size)} int32 values "
+                f"({int(num_sects)} sections, {int(num_xsects)} xsects), found {a.size}."
+            )
         if logger.isEnabledFor(logging.INFO):
             logger.info("Header values: %s", header.tolist())
             logger.info("num_sects=%s num_xsects=%s", int(num_sects), int(num_xsects))
@@ -90,6 +105,12 @@ class SGFile:
         for i in range(0,num_sects):
             sec_data = a[sections_start + i * sections_length: \
                          sections_start + (i + 1) * sections_length]
+            if sec_data.size != sections_length:
+                raise ValueError(
+                    "Invalid SG section data in "
+                    f"'{file_name}': section {i} expected {int(sections_length)} int32 values, "
+                    f"found {sec_data.size}."
+                )
             sects.append(cls.Section(sec_data, num_xsects))
             if logger.isEnabledFor(logging.INFO):
                 section = sects[-1]
