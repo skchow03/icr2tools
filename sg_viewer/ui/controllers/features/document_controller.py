@@ -45,6 +45,10 @@ class DocumentControllerHost(Protocol):
     def _clear_loaded_tsd_files(self) -> None: ...
     def _load_mrk_state_for_current_track(self) -> None: ...
     def _persist_mrk_state_for_current_track(self) -> None: ...
+    def _load_tsd_state_for_current_track(self) -> None: ...
+    def _persist_tsd_state_for_current_track(self) -> None: ...
+    def _load_mrk_wall_heights_for_current_track(self) -> None: ...
+    def _persist_mrk_wall_heights_for_current_track(self) -> None: ...
     def confirm_discard_unsaved_for_action(self, action_label: str) -> bool: ...
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None: ...
     def _mark_fsects_dirty(self, dirty: bool) -> None: ...
@@ -118,7 +122,9 @@ class DocumentController:
         self._host._reset_altitude_range_for_track()
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
+        self._host._load_mrk_wall_heights_for_current_track()
         self._host._load_mrk_state_for_current_track()
+        self._host._load_tsd_state_for_current_track()
 
     def import_trk_file_dialog(self) -> None:
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
@@ -168,7 +174,9 @@ class DocumentController:
         self._host._save_action.setEnabled(True)
         self._host._save_current_action.setEnabled(False)
         self._host._clear_background_state()
+        self._host._load_mrk_wall_heights_for_current_track()
         self._host._load_mrk_state_for_current_track()
+        self._host._load_tsd_state_for_current_track()
         self._host._update_section_table()
         self._host._update_heading_table()
         self._host._update_xsect_table()
@@ -283,7 +291,9 @@ class DocumentController:
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
         self._host._update_track_length_display()
+        self._host._load_mrk_wall_heights_for_current_track()
         self._host._load_mrk_state_for_current_track()
+        self._host._load_tsd_state_for_current_track()
 
     def save_file_dialog(self) -> None:
         if self._host._window.preview.sgfile is None:
@@ -320,6 +330,8 @@ class DocumentController:
         self._host._refresh_recent_menu()
         self._host._persist_background_state()
         self._host._persist_mrk_state_for_current_track()
+        self._host._persist_mrk_wall_heights_for_current_track()
+        self._host._persist_tsd_state_for_current_track()
         if self._export_csv_on_save:
             self.convert_sg_to_csv(path)
         self._host._save_current_action.setEnabled(True)
