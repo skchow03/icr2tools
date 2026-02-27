@@ -283,7 +283,10 @@ class DocumentController:
         )
         if not project_path_str:
             return
-        project_path = Path(project_path_str).resolve()
+        self.open_project_path(Path(project_path_str))
+
+    def open_project_path(self, project_path: Path) -> None:
+        project_path = project_path.resolve()
         try:
             payload = json.loads(project_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
