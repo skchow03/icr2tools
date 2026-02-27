@@ -7,6 +7,7 @@ from sg_viewer.services.mrk_io import parse_mrk_text
 
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
+    from sg_viewer.ui.controllers.features.document_controller import DocumentController
     from sg_viewer.ui.app import SGViewerWindow
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
@@ -1573,6 +1574,57 @@ def test_open_project_loads_sg_from_sgc(qapp, monkeypatch, tmp_path):
         assert loaded_paths == [(tmp_path / "track.sg").resolve()]
     finally:
         window.close()
+
+
+def test_project_sg_data_round_trips_through_document_controller_payload(qapp):
+    num_xsects = 2
+    section_data = [0] * (58 + 2 * num_xsects)
+    section_data[0] = 2
+    section_data[1] = 0
+    section_data[2] = -1
+    section_data[3] = 100
+    section_data[4] = 200
+    section_data[5] = 300
+    section_data[6] = 400
+    section_data[7] = 500
+    section_data[8] = 600
+    section_data[9] = 700
+    section_data[10] = 800
+    section_data[11] = 1000
+    section_data[12] = 0
+    section_data[13] = 0
+    section_data[14] = 1000
+    section_data[15] = 900
+    section_data[16] = 77
+    section_data[17] = 11
+    section_data[18] = 1
+    section_data[19] = 22
+    section_data[20] = 2
+    fsect_start = 17 + 2 * num_xsects
+    section_data[fsect_start] = 1
+    section_data[fsect_start + 1] = 5
+    section_data[fsect_start + 2] = 6
+    section_data[fsect_start + 3] = -100
+    section_data[fsect_start + 4] = 100
+    section = SGFile.Section(section_data, num_xsects)
+    sgfile = SGFile([1, 2, 3, 4, 1, num_xsects], 1, num_xsects, [-50, 50], [section])
+
+    controller = DocumentController.__new__(DocumentController)
+    payload = controller._serialize_sg_data_payload(sgfile)
+    restored = controller._deserialize_sg_data_payload(payload)
+
+    assert restored.header == [1, 2, 3, 4, 1, num_xsects]
+    assert restored.num_sects == 1
+    assert restored.num_xsects == num_xsects
+    assert list(restored.xsect_dlats) == [-50, 50]
+    restored_section = restored.sects[0]
+    assert restored_section.type == 2
+    assert restored_section.start_x == 100
+    assert restored_section.end_y == 400
+    assert restored_section.length == 600
+    assert restored_section.num_fsects == 1
+    assert restored_section.ftype1[:1] == [5]
+    assert restored_section.fstart[:1] == [-100]
 
 
 def test_save_action_saves_to_current_path(qapp, monkeypatch, tmp_path):
