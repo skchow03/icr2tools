@@ -163,7 +163,7 @@ class SGViewerController:
         self._file_menu_coordinator.refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.show_status_message(
-            "Click New Straight to begin drawing or File → Import SG."
+            "Click New Straight to begin drawing or File → Import → Import .SG."
         )
         self._update_track_length_display()
 
@@ -177,14 +177,14 @@ class SGViewerController:
         self._new_action.triggered.connect(self._start_new_track)
 
 
-        self._import_sg_action = QtWidgets.QAction("Import SG…", self._window)
+        self._import_sg_action = QtWidgets.QAction("Import .SG…", self._window)
         self._import_sg_action.setShortcut("Ctrl+O")
         self._import_sg_action.triggered.connect(self._file_menu_coordinator.import_sg_file_dialog)
 
         self._open_project_action = QtWidgets.QAction("Open Project…", self._window)
         self._open_project_action.triggered.connect(self._file_menu_coordinator.open_project_file_dialog)
 
-        self._load_sunny_palette_action = QtWidgets.QAction("Load SUNNY.PCX…", self._window)
+        self._load_sunny_palette_action = QtWidgets.QAction("Import SUNNY.PCX…", self._window)
         self._load_sunny_palette_action.triggered.connect(self._load_sunny_palette_dialog)
 
         self._import_trk_action = QtWidgets.QAction("Import TRK…", self._window)
@@ -203,18 +203,13 @@ class SGViewerController:
         self._save_current_action.setEnabled(False)
         self._save_current_action.triggered.connect(self._file_menu_coordinator.save_current_file)
 
-        self._save_action = QtWidgets.QAction("Export to SG file…", self._window)
+        self._save_action = QtWidgets.QAction("Save Project As…", self._window)
         self._save_action.setShortcut("Ctrl+Shift+S")
         self._save_action.setEnabled(True)
-        self._save_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
+        self._save_action.triggered.connect(self._file_menu_coordinator.save_project_file_dialog)
 
-        self._save_project_action = QtWidgets.QAction("Save Project As…", self._window)
-        self._save_project_action.triggered.connect(self._file_menu_coordinator.save_project_file_dialog)
-
-        self._export_csv_on_save_action = QtWidgets.QAction("Export CSVs on Save", self._window)
-        self._export_csv_on_save_action.setCheckable(True)
-        self._export_csv_on_save_action.setChecked(True)
-        self._export_csv_on_save_action.triggered.connect(self._toggle_export_csv_on_save)
+        self._save_project_action = QtWidgets.QAction("Export to SG file…", self._window)
+        self._save_project_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
 
         self._scale_track_action = QtWidgets.QAction(
             "Scale Track to Length…",
@@ -242,6 +237,9 @@ class SGViewerController:
             self._window,
         )
         self._convert_trk_action.triggered.connect(self._convert_sg_to_trk)
+
+        self._export_csv_action = QtWidgets.QAction("Export .SG data to .CSV", self._window)
+        self._export_csv_action.triggered.connect(self._export_current_sg_to_csv)
 
         self._generate_fsects_action = QtWidgets.QAction(
             "Generate Fsects…",
@@ -434,20 +432,20 @@ class SGViewerController:
     def _create_menus(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._new_action)
-        file_menu.addAction(self._import_sg_action)
         file_menu.addAction(self._open_project_action)
-        file_menu.addAction(self._load_sunny_palette_action)
         file_menu.addMenu(self._open_recent_menu)
         import_menu = file_menu.addMenu("Import")
+        import_menu.addAction(self._import_sg_action)
+        import_menu.addAction(self._load_sunny_palette_action)
         import_menu.addAction(self._import_trk_action)
         import_menu.addAction(self._import_trk_from_dat_action)
         file_menu.addSeparator()
         file_menu.addAction(self._save_current_action)
-        file_menu.addAction(self._save_project_action)
-        file_menu.addAction(self._export_csv_on_save_action)
+        file_menu.addAction(self._save_action)
         export_menu = file_menu.addMenu("Export")
-        export_menu.addAction(self._save_action)
+        export_menu.addAction(self._save_project_action)
         export_menu.addAction(self._convert_trk_action)
+        export_menu.addAction(self._export_csv_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
 
@@ -598,7 +596,7 @@ class SGViewerController:
             QtWidgets.QMessageBox.information(
                 self._window,
                 "SUNNY Palette",
-                "Load SUNNY.PCX first from File → Load SUNNY.PCX…",
+                "Load SUNNY.PCX first from File → Import → Import SUNNY.PCX…",
             )
             return
 
@@ -2496,8 +2494,11 @@ class SGViewerController:
     def _save_to_path(self, path: Path) -> None:
         self._file_menu_coordinator.save_to_path(path)
 
-    def _toggle_export_csv_on_save(self, enabled: bool) -> None:
-        self._document_controller.set_export_csv_on_save(enabled)
+    def _export_current_sg_to_csv(self) -> None:
+        sg_path = self._document_controller.ensure_saved_sg()
+        if sg_path is None:
+            return
+        self._document_controller.convert_sg_to_csv(sg_path)
 
     def _recalculate_elevations(self) -> None:
         preview = self._window.preview

@@ -215,7 +215,10 @@ class FileHistory:
     # Internals
     # ------------------------------------------------------------------
     def _touch_recent(self, sg_path: Path) -> None:
-        normalized = str(sg_path.resolve())
+        resolved_path = sg_path.resolve()
+        if resolved_path.suffix.lower() == ".sg":
+            resolved_path = resolved_path.with_suffix(".sgc")
+        normalized = str(resolved_path)
         recent = [p for p in self.get_recent_paths() if str(p) != normalized]
         recent.insert(0, Path(normalized))
         if not self._config.has_section("recent"):

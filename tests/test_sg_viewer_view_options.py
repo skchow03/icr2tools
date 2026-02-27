@@ -1528,29 +1528,32 @@ def test_file_menu_exposes_project_actions(qapp):
         labels = [action.text() for action in file_menu.actions()]
         assert "Open Project…" in labels
         assert "Save Project" in labels
+        assert "Save Project As…" in labels
     finally:
         window.close()
 
 
-def test_save_project_action_saves_current_file(qapp, monkeypatch, tmp_path):
+def test_save_project_as_action_saves_sgc_and_sg(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:
         controller = window.controller
-        target_path = tmp_path / "loaded.sg"
-        controller._current_path = target_path
+        current_path = tmp_path / "loaded.sg"
+        controller._current_path = current_path
         controller._save_current_action.setEnabled(True)
 
         saved_paths = []
+        project_path = tmp_path / "project.sgc"
 
-        def _fake_save(path):
-            saved_paths.append(path)
+        monkeypatch.setattr(window.preview, "save_sg", lambda path: saved_paths.append(path))
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(project_path), "SG Project files (*.sgc *.SGC)"),
+        )
 
-        monkeypatch.setattr(window.preview, "save_sg", _fake_save)
-        controller._document_controller.set_export_csv_on_save(False)
+        controller._save_action.trigger()
 
-        controller._save_project_action.trigger()
-
-        assert saved_paths == [target_path]
+        assert saved_paths == [tmp_path / "project.sg"]
     finally:
         window.close()
 
@@ -1683,43 +1686,41 @@ def test_adjusted_dlong_labels_auto_update_without_toggle(qapp):
         window.close()
 
 
-def test_file_menu_exposes_export_csv_on_save_toggle(qapp):
+def test_file_menu_exposes_export_csv_action_in_export_submenu(qapp):
     window = SGViewerWindow()
     try:
         file_menu = next(
             menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
         )
-        export_action = next(
-            action for action in file_menu.actions() if action.text() == "Export CSVs on Save"
-        )
+        export_menu_action = next(action for action in file_menu.actions() if action.text() == "Export")
+        export_menu = export_menu_action.menu()
+        labels = [action.text() for action in export_menu.actions()]
 
-        assert export_action.isCheckable()
-        assert export_action.isChecked()
+        assert "Export .SG data to .CSV" in labels
     finally:
         window.close()
 
 
-def test_export_csv_on_save_toggle_controls_csv_export(qapp, monkeypatch, tmp_path):
+def test_export_csv_action_exports_current_sg(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:
         controller = window.controller
         target_path = tmp_path / "loaded.sg"
 
-        save_calls = []
         csv_calls = []
-
-        monkeypatch.setattr(window.preview, "save_sg", lambda path: save_calls.append(path))
+        monkeypatch.setattr(
+            controller._document_controller,
+            "ensure_saved_sg",
+            lambda: target_path,
+        )
         monkeypatch.setattr(
             controller._document_controller,
             "convert_sg_to_csv",
             lambda path: csv_calls.append(path),
         )
 
-        controller._document_controller.save_to_path(target_path)
-        controller._export_csv_on_save_action.setChecked(False)
-        controller._document_controller.save_to_path(target_path)
+        controller._export_csv_action.trigger()
 
-        assert save_calls == [target_path, target_path]
         assert csv_calls == [target_path]
     finally:
         window.close()
