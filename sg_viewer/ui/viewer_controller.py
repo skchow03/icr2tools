@@ -198,7 +198,7 @@ class SGViewerController:
 
         self._open_recent_menu = QtWidgets.QMenu("Open Recent", self._window)
 
-        self._save_current_action = QtWidgets.QAction("Save", self._window)
+        self._save_current_action = QtWidgets.QAction("Save .SG and project file", self._window)
         self._save_current_action.setShortcut("Ctrl+S")
         self._save_current_action.setEnabled(False)
         self._save_current_action.triggered.connect(self._file_menu_coordinator.save_current_file)
