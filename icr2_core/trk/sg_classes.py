@@ -68,6 +68,10 @@ class SGFile:
             logger.info("Opening SG file %s", file_name)
 
         a = np.fromfile(file_name, dtype=np.int32)
+        if a.size < 6:
+            raise ValueError(
+                f"Invalid SG file '{file_name}': expected at least 6 int32 header values, found {a.size}."
+            )
 
         header = a[0:6]
         num_sects = header[4]
@@ -88,8 +92,16 @@ class SGFile:
         # Read each section and store each section object into the sects list.
         sects = []
         for i in range(0,num_sects):
-            sec_data = a[sections_start + i * sections_length: \
-                         sections_start + (i + 1) * sections_length]
+            section_offset = sections_start + i * sections_length
+            section_end = section_offset + sections_length
+            sec_data = a[section_offset:section_end]
+            if sec_data.size < sections_length:
+                raise ValueError(
+                    "Invalid SG section data: "
+                    f"section {i} is truncated (expected {sections_length} int32 values, "
+                    f"found {sec_data.size}). Header num_sects={int(num_sects)} "
+                    f"num_xsects={int(num_xsects)} file_int32_count={a.size}."
+                )
             sects.append(cls.Section(sec_data, num_xsects))
             if logger.isEnabledFor(logging.INFO):
                 section = sects[-1]
@@ -442,6 +454,20 @@ class SGFile:
 
         print ('Creating SG file {}...'.format(output_file),end='')
 
+        section_count = len(self.sects)
+        xsect_count = len(self.xsect_dlats)
+
+        self.num_sects = section_count
+        self.num_xsects = xsect_count
+
+        header = [int(value) for value in list(self.header)]
+        while len(header) < 6:
+            header.append(0)
+        header = header[:6]
+        header[4] = section_count
+        header[5] = xsect_count
+        self.header = header
+
         output_array = []
         output_array.extend(self.header)
         output_array.extend(self.xsect_dlats)
@@ -466,13 +492,14 @@ class SGFile:
             for j in range(0,self.num_xsects):
                 output_array.extend([self.sects[i].alt[j]])
                 output_array.extend([self.sects[i].grade[j]])
-            output_array.extend([self.sects[i].num_fsects])
-            for j in range(0,self.sects[i].num_fsects):
+            num_fsects = max(0, min(int(self.sects[i].num_fsects), 10))
+            output_array.extend([num_fsects])
+            for j in range(0,num_fsects):
                 output_array.extend([self.sects[i].ftype1[j]])
                 output_array.extend([self.sects[i].ftype2[j]])
                 output_array.extend([self.sects[i].fstart[j]])
                 output_array.extend([self.sects[i].fend[j]])
-            unused_fsects = 10-self.sects[i].num_fsects
+            unused_fsects = 10-num_fsects
             for j in range(0, unused_fsects):
                 output_array.extend([0,0,0,0])
 
