@@ -529,15 +529,19 @@ class SGViewerController:
         return self._sg_settings_store._settings_path(sg_path)
 
     @staticmethod
-    def _read_pcx_256_palette(path: Path) -> list[QtGui.QColor]:
+    def _read_pcx_256_palette(path: Path) -> list[tuple[int, int, int]]:
         data = path.read_bytes()
         if len(data) < 769 or data[-769] != 0x0C:
             raise ValueError("Invalid or missing 256-color PCX palette marker")
         raw_palette = data[-768:]
         return [
-            QtGui.QColor(raw_palette[i], raw_palette[i + 1], raw_palette[i + 2])
+            (int(raw_palette[i]), int(raw_palette[i + 1]), int(raw_palette[i + 2]))
             for i in range(0, 768, 3)
         ]
+
+    @staticmethod
+    def _as_qcolors(colors: list[tuple[int, int, int]]) -> list[QtGui.QColor]:
+        return [QtGui.QColor(red, green, blue) for red, green, blue in colors]
 
     def _load_sunny_palette_dialog(self) -> None:
         default_directory = ""
@@ -557,8 +561,7 @@ class SGViewerController:
     def _load_sunny_palette(self, path: Path, *, persist_for_current_track: bool = True) -> bool:
         resolved_path = path.resolve()
         try:
-            self._sunny_palette = self._read_pcx_256_palette(resolved_path)
-            self._sunny_palette_path = resolved_path
+            colors = self._read_pcx_256_palette(resolved_path)
         except (OSError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -567,14 +570,27 @@ class SGViewerController:
             )
             return False
 
+        self._sunny_palette = self._as_qcolors(colors)
+        self._sunny_palette_path = resolved_path
+
         if persist_for_current_track and self._current_path is not None:
             self._sg_settings_store.set_sunny_palette(self._current_path, resolved_path)
+            self._sg_settings_store.set_sunny_palette_colors(self._current_path, colors)
 
         self._window.preview.set_tsd_palette(self._sunny_palette)
         self._window.show_status_message(
             f"Loaded SUNNY palette from {resolved_path.name} ({len(self._sunny_palette)} colors)."
         )
         return True
+
+    def _load_embedded_sunny_palette(self, colors: list[tuple[int, int, int]]) -> None:
+        self._sunny_palette = self._as_qcolors(colors)
+        self._sunny_palette_path = None
+        self._window.preview.set_tsd_palette(self._sunny_palette)
+        self._window.show_status_message(
+            f"Loaded SUNNY palette from project file ({len(self._sunny_palette)} colors)."
+        )
+
 
     def _show_palette_colors_dialog(self) -> None:
         if not self._sunny_palette:
@@ -2296,6 +2312,11 @@ class SGViewerController:
         path = sg_path or self._current_path
         if path is None:
             return
+        embedded_palette = self._sg_settings_store.get_sunny_palette_colors(path)
+        if embedded_palette is not None:
+            self._load_embedded_sunny_palette(embedded_palette)
+            return
+
         palette_path = self._sg_settings_store.get_sunny_palette(path)
         if palette_path is None:
             return

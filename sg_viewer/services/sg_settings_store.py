@@ -92,6 +92,24 @@ class SGSettingsStore:
             path = (sg_path.parent / path).resolve()
         return path
 
+    def get_sunny_palette_colors(self, sg_path: Path) -> list[tuple[int, int, int]] | None:
+        payload = self.load(sg_path)
+        raw_colors = payload.get("sunny_palette_colors")
+        if not isinstance(raw_colors, list) or len(raw_colors) != 256:
+            return None
+
+        colors: list[tuple[int, int, int]] = []
+        for entry in raw_colors:
+            if not isinstance(entry, list) or len(entry) != 3:
+                return None
+            rgb: list[int] = []
+            for channel in entry:
+                if not isinstance(channel, int) or channel < 0 or channel > 255:
+                    return None
+                rgb.append(channel)
+            colors.append((rgb[0], rgb[1], rgb[2]))
+        return colors
+
     def set_sunny_palette(self, sg_path: Path, palette_path: Path) -> None:
         stored_path = palette_path
         if palette_path.is_absolute():
@@ -100,6 +118,19 @@ class SGSettingsStore:
             except ValueError:
                 stored_path = palette_path.resolve()
         self.update(sg_path, sunny_palette=str(stored_path))
+
+    def set_sunny_palette_colors(self, sg_path: Path, colors: list[tuple[int, int, int]]) -> None:
+        if len(colors) != 256:
+            raise ValueError("SUNNY palette must contain exactly 256 colors")
+        serialized: list[list[int]] = []
+        for color in colors:
+            if len(color) != 3:
+                raise ValueError("Each SUNNY palette color must contain exactly 3 channels")
+            red, green, blue = color
+            if not (0 <= red <= 255 and 0 <= green <= 255 and 0 <= blue <= 255):
+                raise ValueError("SUNNY palette channels must be in the 0-255 range")
+            serialized.append([int(red), int(green), int(blue)])
+        self.update(sg_path, sunny_palette_colors=serialized)
 
     def get_tsd_files(self, sg_path: Path) -> tuple[list[Path], int | None]:
         payload = self.load(sg_path)
