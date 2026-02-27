@@ -1165,6 +1165,7 @@ class SGViewerController:
             return
         self._upsert_loaded_tsd_file(path.name, tuple(detail_file.lines), source_path=path.resolve())
         self._refresh_tsd_preview_lines()
+        self._persist_tsd_state_for_current_track()
         self._set_tsd_dirty(False)
         self._window.show_status_message(f"Generated TSD file {path.name}")
 
@@ -1191,6 +1192,7 @@ class SGViewerController:
             return
 
         self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=True, source_path=path.resolve())
+        self._persist_tsd_state_for_current_track()
         self._set_tsd_dirty(False)
         self._log_tsd_perf("TSD load duration", started)
         self._window.show_status_message(
@@ -1284,8 +1286,10 @@ class SGViewerController:
             self._sync_active_tsd_file_from_model()
             self._active_tsd_file_index = None
             self._populate_tsd_table(TrackSurfaceDetailFile(lines=self._all_loaded_tsd_lines()))
+            self._persist_tsd_state_for_current_track()
             return
         self._set_active_tsd_file(index - 1)
+        self._persist_tsd_state_for_current_track()
 
     def _all_loaded_tsd_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         lines: list[TrackSurfaceDetailLine] = []
