@@ -574,22 +574,12 @@ class SGViewerController:
 
         if persist_for_current_track and self._current_path is not None:
             self._sg_settings_store.set_sunny_palette(self._current_path, resolved_path)
-            self._sg_settings_store.set_sunny_palette_colors(self._current_path, colors)
 
         self._window.preview.set_tsd_palette(self._sunny_palette)
         self._window.show_status_message(
             f"Loaded SUNNY palette from {resolved_path.name} ({len(self._sunny_palette)} colors)."
         )
         return True
-
-    def _load_embedded_sunny_palette(self, colors: list[tuple[int, int, int]]) -> None:
-        self._sunny_palette = self._as_qcolors(colors)
-        self._sunny_palette_path = None
-        self._window.preview.set_tsd_palette(self._sunny_palette)
-        self._window.show_status_message(
-            f"Loaded SUNNY palette from project file ({len(self._sunny_palette)} colors)."
-        )
-
 
     def _show_palette_colors_dialog(self) -> None:
         if not self._sunny_palette:
@@ -2311,11 +2301,6 @@ class SGViewerController:
         path = sg_path or self._current_path
         if path is None:
             return
-        embedded_palette = self._sg_settings_store.get_sunny_palette_colors(path)
-        if embedded_palette is not None:
-            self._load_embedded_sunny_palette(embedded_palette)
-            return
-
         palette_path = self._sg_settings_store.get_sunny_palette(path)
         if palette_path is None:
             return
