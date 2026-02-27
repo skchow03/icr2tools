@@ -181,6 +181,9 @@ class SGViewerController:
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._file_menu_coordinator.open_file_dialog)
 
+        self._open_project_action = QtWidgets.QAction("Open Project…", self._window)
+        self._open_project_action.triggered.connect(self._file_menu_coordinator.open_project_file_dialog)
+
         self._load_sunny_palette_action = QtWidgets.QAction("Load SUNNY.PCX…", self._window)
         self._load_sunny_palette_action.triggered.connect(self._load_sunny_palette_dialog)
 
@@ -204,6 +207,9 @@ class SGViewerController:
         self._save_action.setShortcut("Ctrl+Shift+S")
         self._save_action.setEnabled(True)
         self._save_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
+
+        self._save_project_action = QtWidgets.QAction("Save Project As…", self._window)
+        self._save_project_action.triggered.connect(self._file_menu_coordinator.save_project_file_dialog)
 
         self._export_csv_on_save_action = QtWidgets.QAction("Export CSVs on Save", self._window)
         self._export_csv_on_save_action.setCheckable(True)
@@ -429,6 +435,7 @@ class SGViewerController:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._new_action)
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._open_project_action)
         file_menu.addAction(self._load_sunny_palette_action)
         file_menu.addMenu(self._open_recent_menu)
         import_menu = file_menu.addMenu("Import")
@@ -437,6 +444,7 @@ class SGViewerController:
         file_menu.addSeparator()
         file_menu.addAction(self._save_current_action)
         file_menu.addAction(self._save_action)
+        file_menu.addAction(self._save_project_action)
         file_menu.addAction(self._export_csv_on_save_action)
         file_menu.addAction(self._convert_trk_action)
         file_menu.addSeparator()
@@ -516,6 +524,9 @@ class SGViewerController:
 
     def _show_about_dialog(self) -> None:
         show_about_dialog(self._window)
+
+    def _settings_path_for(self, sg_path: Path) -> Path:
+        return self._sg_settings_store._settings_path(sg_path)
 
     @staticmethod
     def _read_pcx_256_palette(path: Path) -> list[QtGui.QColor]:

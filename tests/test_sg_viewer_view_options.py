@@ -403,7 +403,8 @@ def test_load_tsd_file_persists_track_tsd_state(qapp, tmp_path, monkeypatch):
 
         window.controller._on_tsd_load_file_requested()
 
-        payload = json.loads((tmp_path / "track.sg.json").read_text(encoding="utf-8"))
+        payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
+        assert payload["sg_file"] == "track.sg"
         assert payload["tsd"]["files"] == ["detail.tsd"]
         assert payload["tsd"]["active_index"] == 0
     finally:
@@ -1513,6 +1514,61 @@ def test_file_menu_exposes_save_action(qapp):
         )
 
         assert save_action.shortcut().toString() == "Ctrl+S"
+    finally:
+        window.close()
+
+
+def test_file_menu_exposes_project_actions(qapp):
+    window = SGViewerWindow()
+    try:
+        file_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+        )
+        labels = [action.text() for action in file_menu.actions()]
+        assert "Open Project…" in labels
+        assert "Save Project As…" in labels
+    finally:
+        window.close()
+
+
+def test_save_project_as_writes_sgc_with_sg_reference(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"x")
+        project_path = tmp_path / "my_project.sgc"
+        window.controller._current_path = sg_path
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(project_path), "SG Project files (*.sgc *.SGC)"),
+        )
+
+        window.controller._save_project_action.trigger()
+
+        payload = json.loads(project_path.read_text(encoding="utf-8"))
+        assert payload == {"sg_file": "track.sg"}
+    finally:
+        window.close()
+
+
+def test_open_project_loads_sg_from_sgc(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        project_path = tmp_path / "track.sgc"
+        project_path.write_text(json.dumps({"sg_file": "track.sg"}), encoding="utf-8")
+
+        loaded_paths: list[Path] = []
+        monkeypatch.setattr(window.controller._document_controller, "load_sg", lambda path: loaded_paths.append(path))
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(project_path), "SG Project files (*.sgc *.SGC)"),
+        )
+
+        window.controller._open_project_action.trigger()
+
+        assert loaded_paths == [(tmp_path / "track.sg").resolve()]
     finally:
         window.close()
 

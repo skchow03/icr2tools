@@ -33,6 +33,12 @@ class FileMenuCoordinator:
     def save_file_dialog(self) -> None:
         self._document_controller.save_file_dialog()
 
+    def open_project_file_dialog(self) -> None:
+        self._document_controller.open_project_file_dialog()
+
+    def save_project_file_dialog(self) -> None:
+        self._document_controller.save_project_file_dialog()
+
     def save_current_file(self) -> None:
         self._document_controller.save_current_file()
 

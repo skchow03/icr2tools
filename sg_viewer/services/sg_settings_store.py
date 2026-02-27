@@ -5,10 +5,14 @@ from pathlib import Path
 
 
 class SGSettingsStore:
-    """Persists SG-specific viewer settings to a JSON file next to the SG."""
+    """Persists SG-specific viewer settings to a project file next to the SG."""
 
     def _settings_path(self, sg_path: Path) -> Path:
-        return sg_path.with_suffix(f"{sg_path.suffix}.json")
+        return sg_path.with_suffix(".sgc")
+
+    @staticmethod
+    def _sg_file_value(sg_path: Path) -> str:
+        return str(Path(sg_path.name))
 
     def load(self, sg_path: Path) -> dict[str, object]:
         path = self._settings_path(sg_path)
@@ -28,6 +32,7 @@ class SGSettingsStore:
 
     def update(self, sg_path: Path, **fields: object) -> None:
         payload = self.load(sg_path)
+        payload.setdefault("sg_file", self._sg_file_value(sg_path))
         payload.update(fields)
         self.save(sg_path, payload)
 
