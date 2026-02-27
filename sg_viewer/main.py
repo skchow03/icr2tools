@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import sys
-
+from PyQt5.QtGui import QIcon
 # ensure repo root on path for local runs
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -51,15 +51,26 @@ def configure_logging(log_level_name: str, log_path: str | None) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-
+def resource_path(relative_path: str) -> str:
+    """
+    Return absolute path to resource, works for dev and PyInstaller.
+    """
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 def main() -> None:
     args = parse_args()
     log_level_name = "DEBUG" if args.debug else args.log_level
     configure_logging(log_level_name, args.log_file)
-    logger.info("Starting SG Viewer (log level %s)", log_level_name.upper())
+    logger.info("Starting SG Create (log level %s)", log_level_name.upper())
 
     app = SGViewerApp(sys.argv)
+
+    # Set application icon
+    icon_path = resource_path("sg_create.ico")
+    app.setWindowIcon(QIcon(icon_path))
+
     window = bootstrap_window()
     app.window = window
     window.show()
