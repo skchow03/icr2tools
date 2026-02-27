@@ -69,6 +69,12 @@ class DocumentController:
         self._export_csv_on_save = enabled
 
     def load_sg(self, path: Path) -> None:
+        self._load_sg(path, attach_path=True)
+
+    def import_sg(self, path: Path) -> None:
+        self._load_sg(path, attach_path=False)
+
+    def _load_sg(self, path: Path, *, attach_path: bool) -> None:
         path = path.resolve()
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
             return
@@ -97,13 +103,22 @@ class DocumentController:
                 f"{details}",
             )
 
-        self._host._window.show_status_message(f"Loaded {path}")
-        self._host._current_path = path
-        self._host._is_untitled = False
-        self._host._history.record_open(path)
+        if attach_path:
+            self._host._window.show_status_message(f"Loaded {path}")
+            self._host._current_path = path
+            self._host._is_untitled = False
+            self._host._history.record_open(path)
+        else:
+            self._host._window.show_status_message(f"Imported {path} into project")
+            self._host._current_path = None
+            self._host._is_untitled = True
         self._host._elevation_controller.reset()
 
-        self._host._window.update_window_title(path=path, is_dirty=False)
+        self._host._window.update_window_title(
+            path=self._host._current_path,
+            is_dirty=False,
+            is_untitled=self._host._is_untitled,
+        )
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
         self._host._window.set_table_actions_enabled(True)
@@ -116,9 +131,9 @@ class DocumentController:
         self._host._window.split_section_button.setEnabled(bool(sections))
         self._host._window.split_section_button.setChecked(False)
         self._host._save_action.setEnabled(True)
-        self._host._save_current_action.setEnabled(True)
-        self._host._apply_saved_background(path)
-        self._host._apply_saved_sunny_palette(path)
+        self._host._save_current_action.setEnabled(attach_path)
+        self._host._apply_saved_background(path if attach_path else None)
+        self._host._apply_saved_sunny_palette(path if attach_path else None)
         self._host._refresh_recent_menu()
         self._host._update_section_table()
         self._host._update_heading_table()
@@ -245,17 +260,17 @@ class DocumentController:
             status_message=f"Imported {source_name} as a new SG track",
         )
 
-    def open_file_dialog(self) -> None:
+    def import_sg_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
-            "Open SG file",
+            "Import SG file",
             "",
             "SG files (*.sg *.SG);;All files (*)",
             options=options,
         )
         if file_path:
-            self.load_sg(Path(file_path))
+            self.import_sg(Path(file_path))
 
     def open_project_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
@@ -351,7 +366,7 @@ class DocumentController:
         default_path = str(self._host._current_path) if self._host._current_path else ""
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self._host._window, "Save SG As", default_path, "SG files (*.sg *.SG);;All files (*)", options=options
+            self._host._window, "Export to SG file", default_path, "SG files (*.sg *.SG);;All files (*)", options=options
         )
         if not file_path:
             return
