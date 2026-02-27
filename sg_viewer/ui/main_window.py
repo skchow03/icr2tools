@@ -1273,6 +1273,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _current_measurement_unit(self) -> str:
         return str(self._measurement_units_combo.currentData())
 
+    def current_measurement_unit(self) -> str:
+        return self._current_measurement_unit()
+
     @staticmethod
     def _measurement_unit_label(unit: str) -> str:
         return measurement_unit_label(unit)
