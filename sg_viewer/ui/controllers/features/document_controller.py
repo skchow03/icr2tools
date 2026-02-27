@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Protocol
@@ -52,6 +53,7 @@ class DocumentControllerHost(Protocol):
     def confirm_discard_unsaved_for_action(self, action_label: str) -> bool: ...
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None: ...
     def _mark_fsects_dirty(self, dirty: bool) -> None: ...
+    def _settings_path_for(self, sg_path: Path) -> Path: ...
 
 
 class DocumentController:
@@ -251,6 +253,78 @@ class DocumentController:
         )
         if file_path:
             self.load_sg(Path(file_path))
+
+    def open_project_file_dialog(self) -> None:
+        options = QtWidgets.QFileDialog.Options()
+        project_path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self._host._window,
+            "Open Project file",
+            "",
+            "SG Project files (*.sgc *.SGC);;All files (*)",
+            options=options,
+        )
+        if not project_path_str:
+            return
+        project_path = Path(project_path_str).resolve()
+        try:
+            payload = json.loads(project_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Project file must contain a JSON object.")
+            raw_sg_file = payload.get("sg_file")
+            if not isinstance(raw_sg_file, str) or not raw_sg_file.strip():
+                raise ValueError("Project file must include an 'sg_file' path.")
+            sg_path = Path(raw_sg_file)
+            if not sg_path.is_absolute():
+                sg_path = (project_path.parent / sg_path).resolve()
+            else:
+                sg_path = sg_path.resolve()
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
+            self._logger.exception("Failed to open project file")
+            return
+        self.load_sg(sg_path)
+
+    def save_project_file_dialog(self) -> None:
+        if self._host._window.preview.sgfile is None:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "No SG Loaded",
+                "Load an SG file before saving a project.",
+            )
+            return
+        if self._host._current_path is None:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Save SG First",
+                "Save the SG file before saving a project.",
+            )
+            self.save_file_dialog()
+            if self._host._current_path is None:
+                return
+        default_path = str(self._host._settings_path_for(self._host._current_path))
+        options = QtWidgets.QFileDialog.Options()
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._host._window,
+            "Save Project As",
+            default_path,
+            "SG Project files (*.sgc *.SGC);;All files (*)",
+            options=options,
+        )
+        if not file_path:
+            return
+        project_path = Path(file_path)
+        if project_path.suffix.lower() != ".sgc":
+            project_path = project_path.with_suffix(".sgc")
+        payload = {
+            "sg_file": str(Path(self._host._current_path.name)),
+        }
+        try:
+            project_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(self._host._window, "Failed to save project", str(exc))
+            self._logger.exception("Failed to save project file")
+            return
+        self._host._window.show_status_message(f"Saved project {project_path}")
 
     def start_new_track(self, *, confirm: bool = True) -> None:
         if confirm and not self._host.confirm_discard_unsaved_for_action("Start New Track"):
