@@ -62,5 +62,7 @@ class FileMenuCoordinator:
 
         for path in recent_paths:
             action = QtWidgets.QAction(str(path), self._host._open_recent_menu)
-            action.triggered.connect(lambda checked=False, p=path: self._host.load_sg(p))
+            action.triggered.connect(
+                lambda checked=False, p=path: self._document_controller.open_project_path(p)
+            )
             self._host._open_recent_menu.addAction(action)
