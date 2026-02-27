@@ -117,20 +117,11 @@ class SGSettingsStore:
                 stored_path = palette_path.resolve().relative_to(sg_path.parent.resolve())
             except ValueError:
                 stored_path = palette_path.resolve()
-        self.update(sg_path, sunny_palette=str(stored_path))
-
-    def set_sunny_palette_colors(self, sg_path: Path, colors: list[tuple[int, int, int]]) -> None:
-        if len(colors) != 256:
-            raise ValueError("SUNNY palette must contain exactly 256 colors")
-        serialized: list[list[int]] = []
-        for color in colors:
-            if len(color) != 3:
-                raise ValueError("Each SUNNY palette color must contain exactly 3 channels")
-            red, green, blue = color
-            if not (0 <= red <= 255 and 0 <= green <= 255 and 0 <= blue <= 255):
-                raise ValueError("SUNNY palette channels must be in the 0-255 range")
-            serialized.append([int(red), int(green), int(blue)])
-        self.update(sg_path, sunny_palette_colors=serialized)
+        payload = self.load(sg_path)
+        payload.setdefault("sg_file", self._sg_file_value(sg_path))
+        payload["sunny_palette"] = str(stored_path)
+        payload.pop("sunny_palette_colors", None)
+        self.save(sg_path, payload)
 
     def get_tsd_files(self, sg_path: Path) -> tuple[list[Path], int | None]:
         payload = self.load(sg_path)
