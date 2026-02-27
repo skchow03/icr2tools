@@ -382,6 +382,34 @@ def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
         window.close()
 
 
+def test_load_tsd_file_persists_track_tsd_state(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        window.controller._current_path = sg_path
+
+        input_path = tmp_path / "detail.tsd"
+        input_path.write_text(
+            "Detail: 36 4000 0 -126000 919091 -126000\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(input_path), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_load_file_requested()
+
+        payload = json.loads((tmp_path / "track.sg.json").read_text(encoding="utf-8"))
+        assert payload["tsd"]["files"] == ["detail.tsd"]
+        assert payload["tsd"]["active_index"] == 0
+    finally:
+        window.close()
+
+
 
 
 def test_load_tsd_file_refreshes_preview_once_on_model_reset(qapp, tmp_path, monkeypatch):
