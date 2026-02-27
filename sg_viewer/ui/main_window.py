@@ -1931,11 +1931,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self,
         *,
         path: Path | None,
+        project_path: Path | None = None,
         is_dirty: bool,
         is_untitled: bool = False,
     ) -> None:
         self.setWindowTitle(
-            build_window_title(path=path, is_dirty=is_dirty, is_untitled=is_untitled)
+            build_window_title(
+                path=path,
+                project_path=project_path,
+                is_dirty=is_dirty,
+                is_untitled=is_untitled,
+            )
         )
 
     def set_sidebar_tab_dirty(self, tab_base_label: str, dirty: bool) -> None:
