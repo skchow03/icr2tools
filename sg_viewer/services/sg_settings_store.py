@@ -153,13 +153,29 @@ class SGSettingsStore:
                 except ValueError:
                     stored_path = path.resolve()
             serialized.append(str(stored_path))
-        self.update(
-            sg_path,
-            tsd={
-                "files": serialized,
-                "active_index": active_index,
-            },
-        )
+        payload = self.load(sg_path)
+        raw_tsd = payload.get("tsd")
+        tsd_state = dict(raw_tsd) if isinstance(raw_tsd, dict) else {}
+        tsd_state["files"] = serialized
+        tsd_state["active_index"] = active_index
+        self.update(sg_path, tsd=tsd_state)
+
+    def get_tsd_objects(self, sg_path: Path) -> list[dict[str, object]]:
+        payload = self.load(sg_path)
+        raw = payload.get("tsd")
+        if not isinstance(raw, dict):
+            return []
+        objects = raw.get("objects")
+        if not isinstance(objects, list):
+            return []
+        return [entry for entry in objects if isinstance(entry, dict)]
+
+    def set_tsd_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
+        payload = self.load(sg_path)
+        raw_tsd = payload.get("tsd")
+        tsd_state = dict(raw_tsd) if isinstance(raw_tsd, dict) else {}
+        tsd_state["objects"] = objects
+        self.update(sg_path, tsd=tsd_state)
 
     def get_mrk_wall_heights(self, sg_path: Path) -> tuple[float, float] | None:
         payload = self.load(sg_path)

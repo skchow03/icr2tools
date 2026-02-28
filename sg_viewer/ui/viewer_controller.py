@@ -28,6 +28,11 @@ from sg_viewer.services.tsd_io import (
     parse_tsd,
     serialize_tsd,
 )
+from sg_viewer.services.tsd_objects import (
+    TsdZebraCrossingObject,
+    tsd_object_from_payload,
+    tsd_object_to_payload,
+)
 from sg_viewer.model.sg_model import Point, SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -123,6 +128,7 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
+        self._tsd_objects: list[TsdZebraCrossingObject] = []
         self._active_tsd_file_index: int | None = None
         self._suspend_tsd_preview_refresh = False
         self._debug_tsd_perf = False
@@ -816,6 +822,9 @@ class SGViewerController:
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
+        self._window.tsd_add_zebra_object_button.clicked.connect(self._on_tsd_add_zebra_object_requested)
+        self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
+        self._window.tsd_objects_table.itemChanged.connect(self._on_tsd_object_item_changed)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -1045,12 +1054,23 @@ class SGViewerController:
             if loaded.source_path is not None
         ]
         self._sg_settings_store.set_tsd_files(self._current_path, files, self._active_tsd_file_index)
+        self._sg_settings_store.set_tsd_objects(
+            self._current_path,
+            [tsd_object_to_payload(obj) for obj in self._tsd_objects],
+        )
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
         if self._current_path is None:
             return
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
+        self._tsd_objects = []
+        for raw_object in self._sg_settings_store.get_tsd_objects(self._current_path):
+            try:
+                self._tsd_objects.append(tsd_object_from_payload(raw_object))
+            except (ValueError, TypeError, KeyError):
+                logger.warning("Unable to restore TSD object %s", raw_object, exc_info=True)
+        self._refresh_tsd_objects_table()
         for path in files:
             if not path.exists():
                 continue
@@ -1228,6 +1248,7 @@ class SGViewerController:
     def _clear_loaded_tsd_files(self) -> None:
         self._loaded_tsd_files = []
         self._active_tsd_file_index = None
+        self._tsd_objects = []
         combo = self._window.tsd_files_combo
         previous_block_state = combo.blockSignals(True)
         try:
@@ -1238,6 +1259,7 @@ class SGViewerController:
         finally:
             combo.blockSignals(previous_block_state)
         self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
+        self._refresh_tsd_objects_table()
         self._set_tsd_dirty(False)
 
     def _add_loaded_tsd_file(
@@ -1485,7 +1507,7 @@ class SGViewerController:
         self._log_tsd_perf("build adjusted_to_sg_ranges", range_started)
 
         convert_started = perf_counter()
-        lines = list(self._tsd_lines_model.all_lines())
+        lines = list(self._all_tsd_lines())
         preview_lines = [
             self._convert_tsd_line_for_preview(line, sections, adjusted_to_sg_ranges)
             for line in lines
@@ -1655,6 +1677,112 @@ class SGViewerController:
             return int(round(sg_start))
         fraction = (normalized - adjusted_start) / adjusted_length
         return int(round(sg_start + fraction * (sg_end - sg_start)))
+
+
+    def _all_tsd_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
+        lines = list(self._tsd_lines_model.all_lines())
+        for obj in self._tsd_objects:
+            lines.extend(obj.generated_lines())
+        return tuple(lines)
+
+    def _refresh_tsd_objects_table(self) -> None:
+        table = self._window.tsd_objects_table
+        previous_state = table.blockSignals(True)
+        try:
+            table.setRowCount(len(self._tsd_objects))
+            for row, obj in enumerate(self._tsd_objects):
+                values = [
+                    obj.name,
+                    str(obj.start_dlong),
+                    str(obj.center_dlat),
+                    str(obj.stripe_count),
+                    str(obj.stripe_width_500ths),
+                    str(obj.stripe_length_500ths),
+                    str(obj.stripe_spacing_500ths),
+                    str(obj.color_index),
+                    obj.command,
+                ]
+                for column, value in enumerate(values):
+                    item = table.item(row, column)
+                    if item is None:
+                        item = QtWidgets.QTableWidgetItem(value)
+                        table.setItem(row, column, item)
+                    else:
+                        item.setText(value)
+                    item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+        finally:
+            table.blockSignals(previous_state)
+
+    def _on_tsd_add_zebra_object_requested(self) -> None:
+        index = len(self._tsd_objects) + 1
+        self._tsd_objects.append(
+            TsdZebraCrossingObject(
+                name=f"Zebra Crossing {index}",
+                start_dlong=0,
+                center_dlat=0,
+                stripe_count=6,
+                stripe_width_500ths=4000,
+                stripe_length_500ths=28000,
+                stripe_spacing_500ths=3000,
+                color_index=36,
+                command="Detail",
+            )
+        )
+        self._refresh_tsd_objects_table()
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tsd_object_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        row = item.row()
+        if row < 0 or row >= len(self._tsd_objects):
+            return
+        table = self._window.tsd_objects_table
+        try:
+            command_text = (table.item(row, 8).text() if table.item(row, 8) else "Detail").strip() or "Detail"
+            if command_text not in ("Detail", "Detail_Dash"):
+                command_text = "Detail"
+            obj = TsdZebraCrossingObject(
+                name=(table.item(row, 0).text() if table.item(row, 0) else "Zebra Crossing").strip() or "Zebra Crossing",
+                start_dlong=int((table.item(row, 1).text() if table.item(row, 1) else "0").strip()),
+                center_dlat=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
+                stripe_count=max(1, int((table.item(row, 3).text() if table.item(row, 3) else "1").strip())),
+                stripe_width_500ths=max(1, int((table.item(row, 4).text() if table.item(row, 4) else "1").strip())),
+                stripe_length_500ths=max(1, int((table.item(row, 5).text() if table.item(row, 5) else "1").strip())),
+                stripe_spacing_500ths=max(0, int((table.item(row, 6).text() if table.item(row, 6) else "0").strip())),
+                color_index=int((table.item(row, 7).text() if table.item(row, 7) else "36").strip()),
+                command=command_text,
+            )
+        except ValueError:
+            self._refresh_tsd_objects_table()
+            return
+        self._tsd_objects[row] = obj
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tsd_export_objects_requested(self) -> None:
+        if not self._tsd_objects:
+            QtWidgets.QMessageBox.information(self._window, "Export TSD Objects", "No TSD objects to export.")
+            return
+        output_dir = QtWidgets.QFileDialog.getExistingDirectory(
+            self._window,
+            "Export TSD Object Files",
+            "",
+        )
+        if not output_dir:
+            return
+        out_path = Path(output_dir)
+        exported = 0
+        for obj in self._tsd_objects:
+            safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in obj.name).strip("_") or "tsd_object"
+            tsd_path = out_path / f"{safe_name}.tsd"
+            tsd_path.write_text(
+                serialize_tsd(TrackSurfaceDetailFile(lines=obj.generated_lines())),
+                encoding="utf-8",
+            )
+            exported += 1
+        self._window.show_status_message(f"Exported {exported} TSD object files to {out_path}")
 
 
     def _on_mrk_textures_requested(self) -> None:
