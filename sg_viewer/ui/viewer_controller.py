@@ -1694,7 +1694,8 @@ class SGViewerController:
                 values = [
                     obj.name,
                     str(obj.start_dlong),
-                    str(obj.center_dlat),
+                    str(obj.right_dlat),
+                    str(obj.left_dlat),
                     str(obj.stripe_count),
                     str(obj.stripe_width_500ths),
                     str(obj.stripe_length_500ths),
@@ -1719,7 +1720,8 @@ class SGViewerController:
             TsdZebraCrossingObject(
                 name=f"Zebra Crossing {index}",
                 start_dlong=0,
-                center_dlat=0,
+                right_dlat=20000,
+                left_dlat=-20000,
                 stripe_count=6,
                 stripe_width_500ths=4000,
                 stripe_length_500ths=28000,
@@ -1739,18 +1741,19 @@ class SGViewerController:
             return
         table = self._window.tsd_objects_table
         try:
-            command_text = (table.item(row, 8).text() if table.item(row, 8) else "Detail").strip() or "Detail"
+            command_text = (table.item(row, 9).text() if table.item(row, 9) else "Detail").strip() or "Detail"
             if command_text not in ("Detail", "Detail_Dash"):
                 command_text = "Detail"
             obj = TsdZebraCrossingObject(
                 name=(table.item(row, 0).text() if table.item(row, 0) else "Zebra Crossing").strip() or "Zebra Crossing",
                 start_dlong=int((table.item(row, 1).text() if table.item(row, 1) else "0").strip()),
-                center_dlat=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
-                stripe_count=max(1, int((table.item(row, 3).text() if table.item(row, 3) else "1").strip())),
-                stripe_width_500ths=max(1, int((table.item(row, 4).text() if table.item(row, 4) else "1").strip())),
-                stripe_length_500ths=max(1, int((table.item(row, 5).text() if table.item(row, 5) else "1").strip())),
-                stripe_spacing_500ths=max(0, int((table.item(row, 6).text() if table.item(row, 6) else "0").strip())),
-                color_index=int((table.item(row, 7).text() if table.item(row, 7) else "36").strip()),
+                right_dlat=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
+                left_dlat=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
+                stripe_count=max(1, int((table.item(row, 4).text() if table.item(row, 4) else "1").strip())),
+                stripe_width_500ths=max(1, int((table.item(row, 5).text() if table.item(row, 5) else "1").strip())),
+                stripe_length_500ths=max(1, int((table.item(row, 6).text() if table.item(row, 6) else "1").strip())),
+                stripe_spacing_500ths=max(0, int((table.item(row, 7).text() if table.item(row, 7) else "0").strip())),
+                color_index=int((table.item(row, 8).text() if table.item(row, 8) else "36").strip()),
                 command=command_text,
             )
         except ValueError:

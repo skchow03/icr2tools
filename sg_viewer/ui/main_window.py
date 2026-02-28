@@ -136,11 +136,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
         self._tsd_add_zebra_object_button = QtWidgets.QPushButton("Add zebra crossing object")
         self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
-        self._tsd_objects_table = QtWidgets.QTableWidget(0, 9)
+        self._tsd_objects_table = QtWidgets.QTableWidget(0, 10)
         self._tsd_objects_table.setHorizontalHeaderLabels([
             "Name",
             "Start DLONG",
-            "Center DLAT",
+            "Right DLAT",
+            "Left DLAT",
             "Stripe Count",
             "Stripe Width",
             "Stripe Length",

@@ -9,7 +9,8 @@ from sg_viewer.services.tsd_io import TrackSurfaceDetailLine, normalize_tsd_comm
 class TsdZebraCrossingObject:
     name: str
     start_dlong: int
-    center_dlat: int
+    right_dlat: int
+    left_dlat: int
     stripe_count: int
     stripe_width_500ths: int
     stripe_length_500ths: int
@@ -23,25 +24,33 @@ class TsdZebraCrossingObject:
         width = max(1, int(self.stripe_width_500ths))
         length = max(1, int(self.stripe_length_500ths))
         spacing = max(0, int(self.stripe_spacing_500ths))
-        half_length = int(round(length / 2.0))
-        start_dlat = int(self.center_dlat) - half_length
-        end_dlat = int(self.center_dlat) + half_length
+        start_dlong = int(self.start_dlong)
+        end_dlong = start_dlong + length
+
+        right_dlat = int(self.right_dlat)
+        left_dlat = int(self.left_dlat)
+        stride = width + spacing
+        direction = 1 if left_dlat >= right_dlat else -1
 
         lines: list[TrackSurfaceDetailLine] = []
-        current_dlong = int(self.start_dlong)
-        for _index in range(count):
+        current_dlat = right_dlat
+        for _ in range(count):
+            if direction > 0 and current_dlat > left_dlat:
+                break
+            if direction < 0 and current_dlat < left_dlat:
+                break
             lines.append(
                 TrackSurfaceDetailLine(
                     color_index=int(self.color_index),
                     width_500ths=width,
-                    start_dlong=current_dlong,
-                    start_dlat=start_dlat,
-                    end_dlong=current_dlong,
-                    end_dlat=end_dlat,
+                    start_dlong=start_dlong,
+                    start_dlat=current_dlat,
+                    end_dlong=end_dlong,
+                    end_dlat=current_dlat,
                     command=command,
                 )
             )
-            current_dlong += width + spacing
+            current_dlat += direction * stride
         return tuple(lines)
 
 
@@ -50,7 +59,8 @@ def tsd_object_to_payload(obj: TsdZebraCrossingObject) -> dict[str, object]:
         "type": "zebra_crossing",
         "name": obj.name,
         "start_dlong": int(obj.start_dlong),
-        "center_dlat": int(obj.center_dlat),
+        "right_dlat": int(obj.right_dlat),
+        "left_dlat": int(obj.left_dlat),
         "stripe_count": int(obj.stripe_count),
         "stripe_width_500ths": int(obj.stripe_width_500ths),
         "stripe_length_500ths": int(obj.stripe_length_500ths),
@@ -63,10 +73,20 @@ def tsd_object_to_payload(obj: TsdZebraCrossingObject) -> dict[str, object]:
 def tsd_object_from_payload(payload: dict[str, object]) -> TsdZebraCrossingObject:
     if payload.get("type") != "zebra_crossing":
         raise ValueError("Unsupported TSD object type.")
+    right_dlat = payload.get("right_dlat")
+    left_dlat = payload.get("left_dlat")
+    if right_dlat is None or left_dlat is None:
+        center = int(payload.get("center_dlat", 0))
+        length = max(1, int(payload["stripe_length_500ths"]))
+        half_length = int(round(length / 2.0))
+        right_dlat = center - half_length
+        left_dlat = center + half_length
+
     return TsdZebraCrossingObject(
         name=str(payload.get("name") or "Zebra Crossing"),
         start_dlong=int(payload["start_dlong"]),
-        center_dlat=int(payload["center_dlat"]),
+        right_dlat=int(right_dlat),
+        left_dlat=int(left_dlat),
         stripe_count=max(1, int(payload["stripe_count"])),
         stripe_width_500ths=max(1, int(payload["stripe_width_500ths"])),
         stripe_length_500ths=max(1, int(payload["stripe_length_500ths"])),
