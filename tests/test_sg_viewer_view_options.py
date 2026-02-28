@@ -1814,3 +1814,51 @@ def test_fsect_diagram_uses_wrapped_neighbor_sections(qapp, monkeypatch):
         assert next_fsects == window.preview.get_section_fsects(0)
     finally:
         window.close()
+
+
+def test_tsd_objects_controls_exist(qapp):
+    window = SGViewerWindow()
+    try:
+        assert window.tsd_add_zebra_object_button.text() == "Add zebra crossing object"
+        assert window.tsd_export_objects_button.text() == "Export object .TSD files"
+        assert window.tsd_objects_table.columnCount() == 9
+    finally:
+        window.close()
+
+
+def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        window.controller._current_path = sg_path
+
+        window.controller._on_tsd_add_zebra_object_requested()
+
+        assert window.tsd_objects_table.rowCount() == 1
+        assert len(window.preview.tsd_lines) == 6
+        payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
+        assert payload["tsd"]["objects"][0]["type"] == "zebra_crossing"
+        assert payload["tsd"]["objects"][0]["stripe_count"] == 6
+    finally:
+        window.close()
+
+
+def test_export_tsd_objects_writes_generated_tsd_files(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._on_tsd_add_zebra_object_requested()
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getExistingDirectory",
+            lambda *args, **kwargs: str(tmp_path),
+        )
+
+        window.controller._on_tsd_export_objects_requested()
+
+        exported = tmp_path / "Zebra_Crossing_1.tsd"
+        assert exported.exists()
+        content = exported.read_text(encoding="utf-8")
+        assert content.count("Detail:") == 6
+    finally:
+        window.close()

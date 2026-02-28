@@ -134,6 +134,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
+        self._tsd_add_zebra_object_button = QtWidgets.QPushButton("Add zebra crossing object")
+        self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
+        self._tsd_objects_table = QtWidgets.QTableWidget(0, 9)
+        self._tsd_objects_table.setHorizontalHeaderLabels([
+            "Name",
+            "Start DLONG",
+            "Center DLAT",
+            "Stripe Count",
+            "Stripe Width",
+            "Stripe Length",
+            "Stripe Spacing",
+            "Color",
+            "Command",
+        ])
+        self._tsd_objects_table.horizontalHeader().setStretchLastSection(True)
         self._tsd_files_combo = QtWidgets.QComboBox()
         self._tsd_files_combo.setEnabled(False)
         self._tsd_files_combo.setToolTip("Select a loaded TSD file to edit.")
@@ -575,6 +590,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_file_row.addWidget(self._tsd_files_combo)
         tsd_layout.addLayout(tsd_file_row)
         tsd_layout.addWidget(self._tsd_lines_table)
+        tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
+        tsd_objects_layout = QtWidgets.QVBoxLayout()
+        tsd_objects_layout.addWidget(QtWidgets.QLabel("Create higher-level patterns that generate multiple TSD lines."))
+        tsd_object_buttons = QtWidgets.QHBoxLayout()
+        tsd_object_buttons.addWidget(self._tsd_add_zebra_object_button)
+        tsd_object_buttons.addWidget(self._tsd_export_objects_button)
+        tsd_objects_layout.addLayout(tsd_object_buttons)
+        tsd_objects_layout.addWidget(self._tsd_objects_table)
+        tsd_objects_group.setLayout(tsd_objects_layout)
+        tsd_layout.addWidget(tsd_objects_group)
         self._tsd_sidebar.setLayout(tsd_layout)
 
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
@@ -833,6 +858,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_files_combo(self) -> QtWidgets.QComboBox:
         return self._tsd_files_combo
+
+    @property
+    def tsd_add_zebra_object_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_add_zebra_object_button
+
+    @property
+    def tsd_export_objects_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_export_objects_button
+
+    @property
+    def tsd_objects_table(self) -> QtWidgets.QTableWidget:
+        return self._tsd_objects_table
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action
