@@ -122,6 +122,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
+        self._mrk_move_up_button = QtWidgets.QPushButton("Move Up")
+        self._mrk_move_down_button = QtWidgets.QPushButton("Move Down")
         self._mrk_textures_button = QtWidgets.QPushButton("Manage textures...")
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
         self._mrk_save_button = QtWidgets.QPushButton("Export MRK entries")
@@ -162,8 +164,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
         )
-        self._mrk_entries_table = QtWidgets.QTableWidget(0, 6)
-        self._mrk_entries_table.setHorizontalHeaderLabels(["Track Section", "Boundary", "Starting Wall", "Wall Count", "Side", "Texture Pattern"])
+        self._mrk_entries_table = QtWidgets.QTableWidget(0, 7)
+        self._mrk_entries_table.setHorizontalHeaderLabels([
+            "Track Section",
+            "Boundary",
+            "Starting Wall",
+            "Wall Count",
+            "Side",
+            "Texture Pattern",
+            "Description",
+        ])
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
         self._mrk_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._mrk_entries_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -571,10 +581,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.setVerticalSpacing(6)
         mrk_buttons.addWidget(self._mrk_add_entry_button, 0, 0)
         mrk_buttons.addWidget(self._mrk_delete_entry_button, 0, 1)
-        mrk_buttons.addWidget(self._mrk_textures_button, 0, 2)
-        mrk_buttons.addWidget(self._mrk_generate_file_button, 1, 0)
-        mrk_buttons.addWidget(self._mrk_save_button, 1, 1)
-        mrk_buttons.addWidget(self._mrk_load_button, 1, 2)
+        mrk_buttons.addWidget(self._mrk_move_up_button, 0, 2)
+        mrk_buttons.addWidget(self._mrk_move_down_button, 0, 3)
+        mrk_buttons.addWidget(self._mrk_textures_button, 1, 0)
+        mrk_buttons.addWidget(self._mrk_generate_file_button, 1, 1)
+        mrk_buttons.addWidget(self._mrk_save_button, 1, 2)
+        mrk_buttons.addWidget(self._mrk_load_button, 1, 3)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()
@@ -807,6 +819,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_delete_entry_button(self) -> QtWidgets.QPushButton:
         return self._mrk_delete_entry_button
+
+    @property
+    def mrk_move_up_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_move_up_button
+
+    @property
+    def mrk_move_down_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_move_down_button
 
     @property
     def mrk_textures_button(self) -> QtWidgets.QPushButton:

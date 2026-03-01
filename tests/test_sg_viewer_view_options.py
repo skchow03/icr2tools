@@ -253,6 +253,8 @@ def test_mrk_tab_buttons_use_entries_labels(qapp):
     try:
         assert window.mrk_save_button.text() == "Save MRK entries"
         assert window.mrk_load_button.text() == "Load MRK entries"
+        assert window.mrk_move_up_button.text() == "Move Up"
+        assert window.mrk_move_down_button.text() == "Move Down"
         assert window.generate_pitwall_button.text() == "Generate pitwall.txt"
         assert window.pitwall_wall_height_500ths() == 21000
         assert window.pitwall_armco_height_500ths() == 18000
@@ -953,6 +955,7 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
         table.setItem(0, 2, QtWidgets.QTableWidgetItem("5"))
         table.setItem(0, 3, QtWidgets.QTableWidgetItem("2"))
         table.setItem(0, 5, QtWidgets.QTableWidgetItem("brick_red"))
+        table.setItem(0, 6, QtWidgets.QTableWidgetItem("Pit lane wall"))
 
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
@@ -965,6 +968,7 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
         assert payload["texture_definitions"][0]["texture_name"] == "brick_red"
         assert payload["texture_definitions"][0]["mip_filename"] == "walls01"
         assert payload["entries"][0]["side"] == "Left"
+        assert payload["entries"][0]["description"] == "Pit lane wall"
 
         table.setRowCount(0)
         window.controller._mrk_texture_definitions = ()
@@ -980,6 +984,7 @@ def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
         )
         assert window.mrk_entries_table.item(0, 5).text() == "brick_red"
+        assert window.mrk_entries_table.item(0, 6).text() == "Pit lane wall"
         assert window.controller._mrk_side_for_row(0) == "Left"
     finally:
         window.close()
@@ -1126,6 +1131,41 @@ def test_mrk_highlights_continue_into_next_section_when_wall_count_exceeds_secti
             (2, 1, 0, 1, "#0000FF"),
             (2, 1, 1, 1, "#FF0000"),
         )
+    finally:
+        window.close()
+
+
+def test_mrk_move_up_and_down_reorders_rows(qapp):
+    window = SGViewerWindow()
+    try:
+        table = window.mrk_entries_table
+        table.setRowCount(2)
+        first = ["1", "0", "0", "1", "Left", "brick01", "first"]
+        second = ["2", "1", "3", "2", "Right", "brick02", "second"]
+
+        for column, value in enumerate(first):
+            if column == 4:
+                window.controller._set_mrk_side_cell(0, value)
+            else:
+                table.setItem(0, column, QtWidgets.QTableWidgetItem(value))
+        for column, value in enumerate(second):
+            if column == 4:
+                window.controller._set_mrk_side_cell(1, value)
+            else:
+                table.setItem(1, column, QtWidgets.QTableWidgetItem(value))
+
+        table.selectRow(1)
+        window.controller._on_mrk_move_up_requested()
+
+        assert table.item(0, 0).text() == "2"
+        assert table.item(0, 6).text() == "second"
+        assert window.controller._mrk_side_for_row(0) == "Right"
+
+        window.controller._on_mrk_move_down_requested()
+
+        assert table.item(1, 0).text() == "2"
+        assert table.item(1, 6).text() == "second"
+        assert window.controller._mrk_side_for_row(1) == "Right"
     finally:
         window.close()
 
