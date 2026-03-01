@@ -814,6 +814,9 @@ class SGViewerController:
         self._window.generate_pitwall_button.clicked.connect(self._generate_pitwall_txt)
         self._window.pitwall_wall_height_spin.valueChanged.connect(self._on_mrk_wall_height_changed)
         self._window.pitwall_armco_height_spin.valueChanged.connect(self._on_mrk_armco_height_changed)
+        self._window.pitwall_length_multiplier_spin.valueChanged.connect(
+            self._on_mrk_length_multiplier_changed
+        )
         self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
         self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
         self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
@@ -2252,9 +2255,10 @@ class SGViewerController:
         return [(cuts[index], cuts[index + 1]) for index in range(len(cuts) - 1)]
 
     def _mrk_target_length_for_surface_type(self, surface_type: int) -> float:
+        multiplier = max(0.1, self._window.pitwall_length_multiplier())
         if surface_type == 8:
-            return max(1.0, float(self._window.pitwall_armco_height_500ths()) * 4.0)
-        return max(1.0, float(self._window.pitwall_wall_height_500ths()) * 4.0)
+            return max(1.0, float(self._window.pitwall_armco_height_500ths()) * multiplier)
+        return max(1.0, float(self._window.pitwall_wall_height_500ths()) * multiplier)
 
     def _mark_track_position(
         self,
@@ -2365,12 +2369,17 @@ class SGViewerController:
             self._window.pitwall_wall_height_500ths()
         )
         self._persist_mrk_wall_heights_for_current_track()
+        self._update_mrk_highlights_from_table()
 
     def _on_mrk_armco_height_changed(self, _value: float) -> None:
         self._window.preview.set_mrk_armco_height_500ths(
             self._window.pitwall_armco_height_500ths()
         )
         self._persist_mrk_wall_heights_for_current_track()
+        self._update_mrk_highlights_from_table()
+
+    def _on_mrk_length_multiplier_changed(self, _value: float) -> None:
+        self._update_mrk_highlights_from_table()
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))

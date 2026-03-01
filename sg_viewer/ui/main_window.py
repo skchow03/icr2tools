@@ -130,6 +130,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._generate_pitwall_button.setEnabled(False)
         self._pitwall_wall_height_spin = QtWidgets.QDoubleSpinBox()
         self._pitwall_armco_height_spin = QtWidgets.QDoubleSpinBox()
+        self._pitwall_length_multiplier_spin = QtWidgets.QDoubleSpinBox()
         self._tsd_add_line_button = QtWidgets.QPushButton("Add TSD line")
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
@@ -556,6 +557,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         pitwall_inputs_row.addWidget(QtWidgets.QLabel("Armco:"))
         pitwall_inputs_row.addWidget(self._pitwall_armco_height_spin)
         pitwall_height_layout.addLayout(pitwall_inputs_row)
+        pitwall_multiplier_row = QtWidgets.QHBoxLayout()
+        pitwall_multiplier_row.addWidget(QtWidgets.QLabel("Length multiplier:"))
+        pitwall_multiplier_row.addWidget(self._pitwall_length_multiplier_spin)
+        pitwall_multiplier_row.addStretch()
+        pitwall_height_layout.addLayout(pitwall_multiplier_row)
         pitwall_height_layout.addWidget(self._generate_pitwall_button)
         pitwall_height_group.setLayout(pitwall_height_layout)
         mrk_layout.addWidget(pitwall_height_group)
@@ -577,6 +583,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_pitwall_height_spin_units(previous_unit="500ths")
         self._pitwall_wall_height_spin.setValue(self._fsect_dlat_to_display_units(21000.0))
         self._pitwall_armco_height_spin.setValue(self._fsect_dlat_to_display_units(18000.0))
+        self._pitwall_length_multiplier_spin.setDecimals(2)
+        self._pitwall_length_multiplier_spin.setRange(0.1, 1000.0)
+        self._pitwall_length_multiplier_spin.setSingleStep(0.1)
+        self._pitwall_length_multiplier_spin.setValue(4.0)
 
         self._tsd_sidebar = QtWidgets.QWidget()
         tsd_layout = QtWidgets.QVBoxLayout()
@@ -829,6 +839,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def pitwall_armco_height_spin(self) -> QtWidgets.QDoubleSpinBox:
         return self._pitwall_armco_height_spin
+
+    @property
+    def pitwall_length_multiplier_spin(self) -> QtWidgets.QDoubleSpinBox:
+        return self._pitwall_length_multiplier_spin
+
+    def pitwall_length_multiplier(self) -> float:
+        return float(self._pitwall_length_multiplier_spin.value())
 
     def pitwall_wall_height_500ths(self) -> int:
         return int(
