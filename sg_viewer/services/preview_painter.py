@@ -133,6 +133,7 @@ class SgPreviewState:
     highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
     mrk_wall_height_500ths: float = _MRK_DEFAULT_WALL_HEIGHT
     mrk_armco_height_500ths: float = _MRK_DEFAULT_ARMCO_HEIGHT
+    mrk_length_multiplier: float = 4.0
     show_tsd_lines: bool = False
     show_tsd_selected_section_only: bool = False
     selected_section_index: int | None = None
@@ -209,6 +210,7 @@ def paint_preview(
                 highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
                 mrk_wall_height_500ths=sg_preview_state.mrk_wall_height_500ths,
                 mrk_armco_height_500ths=sg_preview_state.mrk_armco_height_500ths,
+                mrk_length_multiplier=sg_preview_state.mrk_length_multiplier,
             )
         if sg_preview_state and sg_preview_state.show_tsd_lines:
             _draw_tsd_lines(
@@ -303,6 +305,7 @@ def render_sg_preview(
     highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = (),
     mrk_wall_height_500ths: float = _MRK_DEFAULT_WALL_HEIGHT,
     mrk_armco_height_500ths: float = _MRK_DEFAULT_ARMCO_HEIGHT,
+    mrk_length_multiplier: float = 4.0,
 ) -> None:
     if model is None or transform is None:
         return
@@ -324,6 +327,7 @@ def render_sg_preview(
                 highlighted_walls=highlighted_mrk_walls,
                 wall_height_500ths=mrk_wall_height_500ths,
                 armco_height_500ths=mrk_armco_height_500ths,
+                length_multiplier=mrk_length_multiplier,
             )
 
     if _SHOW_FSECT_OUTLINES:
@@ -393,6 +397,7 @@ def _draw_mrk_notches(
     highlighted_walls: tuple[tuple[int, int, int, int, str], ...],
     wall_height_500ths: float,
     armco_height_500ths: float,
+    length_multiplier: float,
 ) -> None:
     notch_pen = QtGui.QPen(QtGui.QColor("white"))
     notch_pen.setWidthF(1.5)
@@ -428,6 +433,7 @@ def _draw_mrk_notches(
                     int(boundary.attrs.get("type1", 0)) if boundary.attrs is not None else 0,
                     wall_height_500ths,
                     armco_height_500ths,
+                    length_multiplier,
                 ),
             )
             for notch in notch_points:
@@ -504,10 +510,12 @@ def _mrk_target_length_for_surface_type(
     surface_type: int,
     wall_height_500ths: float,
     armco_height_500ths: float,
+    length_multiplier: float,
 ) -> float:
+    multiplier = max(0.1, float(length_multiplier))
     if surface_type == 8:
-        return max(1.0, float(armco_height_500ths) * 4.0)
-    return max(1.0, float(wall_height_500ths) * 4.0)
+        return max(1.0, float(armco_height_500ths) * multiplier)
+    return max(1.0, float(wall_height_500ths) * multiplier)
 
 
 def _polyline_segment_lengths(points: list[Point]) -> list[float]:

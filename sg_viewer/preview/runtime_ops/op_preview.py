@@ -214,6 +214,10 @@ class _RuntimeCorePreviewMixin:
         return float(self._mrk_armco_height_500ths)
 
     @property
+    def mrk_length_multiplier(self) -> float:
+        return float(self._mrk_length_multiplier)
+
+    @property
     def show_tsd_lines(self) -> bool:
         return self._show_tsd_lines
 
@@ -428,6 +432,10 @@ class _RuntimeCorePreviewMixin:
 
     def set_mrk_armco_height_500ths(self, value: float) -> None:
         self._mrk_armco_height_500ths = max(0.0, float(value))
+        self._context.request_repaint()
+
+    def set_mrk_length_multiplier(self, value: float) -> None:
+        self._mrk_length_multiplier = max(0.1, float(value))
         self._context.request_repaint()
 
     def set_show_xsect_dlat_line(self, visible: bool) -> None:
