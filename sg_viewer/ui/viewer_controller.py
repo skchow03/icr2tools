@@ -347,6 +347,12 @@ class SGViewerController:
         self._mrk_delete_entry_action = QtWidgets.QAction("Delete MRK Entry", self._window)
         self._mrk_delete_entry_action.setEnabled(self._window.mrk_delete_entry_button.isEnabled())
 
+        self._mrk_move_up_action = QtWidgets.QAction("Move MRK Entry Up", self._window)
+        self._mrk_move_up_action.setEnabled(self._window.mrk_move_up_button.isEnabled())
+
+        self._mrk_move_down_action = QtWidgets.QAction("Move MRK Entry Down", self._window)
+        self._mrk_move_down_action.setEnabled(self._window.mrk_move_down_button.isEnabled())
+
         self._mrk_textures_action = QtWidgets.QAction("MRK Textures…", self._window)
         self._mrk_textures_action.setEnabled(self._window.mrk_textures_button.isEnabled())
 
@@ -508,6 +514,8 @@ class SGViewerController:
         mrk_menu = tools_menu.addMenu("MRK")
         mrk_menu.addAction(self._mrk_add_entry_action)
         mrk_menu.addAction(self._mrk_delete_entry_action)
+        mrk_menu.addAction(self._mrk_move_up_action)
+        mrk_menu.addAction(self._mrk_move_down_action)
         mrk_menu.addSeparator()
         mrk_menu.addAction(self._mrk_textures_action)
         mrk_menu.addAction(self._mrk_generate_file_action)
@@ -807,6 +815,8 @@ class SGViewerController:
         )
         self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
         self._window.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
+        self._window.mrk_move_up_button.clicked.connect(self._on_mrk_move_up_requested)
+        self._window.mrk_move_down_button.clicked.connect(self._on_mrk_move_down_requested)
         self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
         self._window.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
@@ -822,6 +832,8 @@ class SGViewerController:
         )
         self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
         self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
+        self._mrk_move_up_action.triggered.connect(self._on_mrk_move_up_requested)
+        self._mrk_move_down_action.triggered.connect(self._on_mrk_move_down_requested)
         self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
         self._mrk_generate_file_action.triggered.connect(self._on_mrk_generate_file_requested)
         self._mrk_save_entries_action.triggered.connect(self._on_mrk_save_requested)
@@ -1158,6 +1170,7 @@ class SGViewerController:
             table.setItem(row, column, item)
         self._set_mrk_side_cell(row, self._auto_detect_mrk_side(0, 0))
         table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(1)))
+        table.setItem(row, 6, QtWidgets.QTableWidgetItem(""))
         table.selectRow(row)
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
@@ -1170,6 +1183,51 @@ class SGViewerController:
         table.removeRow(selected_rows[0].row())
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
+
+    def _move_mrk_entry(self, *, direction: int) -> None:
+        table = self._window.mrk_entries_table
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        source_row = selected_rows[0].row()
+        target_row = source_row + direction
+        if target_row < 0 or target_row >= table.rowCount():
+            return
+
+        source_values = [self._table_text_value(table, source_row, column) for column in range(7)]
+        target_values = [self._table_text_value(table, target_row, column) for column in range(7)]
+
+        table.blockSignals(True)
+        for column in range(7):
+            if column == 4:
+                self._set_mrk_side_cell(source_row, target_values[column])
+                self._set_mrk_side_cell(target_row, source_values[column])
+                continue
+            source_item = table.item(source_row, column)
+            target_item = table.item(target_row, column)
+            source_text = source_values[column]
+            target_text = target_values[column]
+            if source_item is None:
+                source_item = QtWidgets.QTableWidgetItem()
+                table.setItem(source_row, column, source_item)
+            if target_item is None:
+                target_item = QtWidgets.QTableWidgetItem()
+                table.setItem(target_row, column, target_item)
+            source_item.setText(target_text)
+            target_item.setText(source_text)
+            if column in {0, 1, 2, 3}:
+                source_item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+                target_item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+        table.blockSignals(False)
+        table.selectRow(target_row)
+        self._set_mrk_dirty(True)
+        self._update_mrk_highlights_from_table()
+
+    def _on_mrk_move_up_requested(self) -> None:
+        self._move_mrk_entry(direction=-1)
+
+    def _on_mrk_move_down_requested(self) -> None:
+        self._move_mrk_entry(direction=1)
 
 
     def _on_tsd_add_line_requested(self) -> None:
@@ -2011,6 +2069,7 @@ class SGViewerController:
                     "wall_count": self._table_int_value(table, row, 3),
                     "side": self._table_text_value(table, row, 4) or "Left",
                     "texture_pattern": self._table_text_value(table, row, 5),
+                    "description": self._table_text_value(table, row, 6),
                 }
             )
         texture_definitions = [
@@ -2027,7 +2086,7 @@ class SGViewerController:
         ]
         return {
             "format": "sg_viewer_mrk",
-            "version": 1,
+            "version": 2,
             "texture_definitions": texture_definitions,
             "entries": entries,
         }
@@ -2070,6 +2129,7 @@ class SGViewerController:
                 max(1, int(raw.get("wall_count", 1))),
                 str(raw.get("side", "Left")).strip() or "Left",
                 str(raw.get("texture_pattern", "")).strip(),
+                str(raw.get("description", "")).strip(),
             ]
             for column, value in enumerate(values):
                 if column == 4:
