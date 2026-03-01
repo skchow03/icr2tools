@@ -273,6 +273,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._add_fsect_button.setEnabled(False)
         self._delete_fsect_button = QtWidgets.QPushButton("Delete Fsect")
         self._delete_fsect_button.setEnabled(False)
+        self._move_fsect_up_button = QtWidgets.QPushButton("Move Fsect Up")
+        self._move_fsect_up_button.setEnabled(False)
+        self._move_fsect_down_button = QtWidgets.QPushButton("Move Fsect Down")
+        self._move_fsect_down_button.setEnabled(False)
         self._section_table_action: QtWidgets.QAction | None = None
         self._heading_table_action: QtWidgets.QAction | None = None
         self._xsect_table_action: QtWidgets.QAction | None = None
@@ -489,6 +493,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             copy_next_button=self._copy_fsects_next_button,
             add_button=self._add_fsect_button,
             delete_button=self._delete_fsect_button,
+            move_up_button=self._move_fsect_up_button,
+            move_down_button=self._move_fsect_down_button,
             table=self._fsect_table,
             diagram=self._fsect_diagram,
         )
@@ -756,6 +762,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def delete_fsect_button(self) -> QtWidgets.QPushButton:
         return self._delete_fsect_button
+
+    @property
+    def move_fsect_up_button(self) -> QtWidgets.QPushButton:
+        return self._move_fsect_up_button
+
+    @property
+    def move_fsect_down_button(self) -> QtWidgets.QPushButton:
+        return self._move_fsect_down_button
 
     @property
     def fsect_table(self) -> QtWidgets.QTableWidget:

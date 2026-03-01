@@ -420,6 +420,10 @@ class SGViewerController:
 
         self._delete_fsect_action = QtWidgets.QAction("Delete Fsect", self._window)
         self._delete_fsect_action.setEnabled(self._window.delete_fsect_button.isEnabled())
+        self._move_fsect_up_action = QtWidgets.QAction("Move Fsect Up", self._window)
+        self._move_fsect_up_action.setEnabled(self._window.move_fsect_up_button.isEnabled())
+        self._move_fsect_down_action = QtWidgets.QAction("Move Fsect Down", self._window)
+        self._move_fsect_down_action.setEnabled(self._window.move_fsect_down_button.isEnabled())
 
         self._run_integrity_checks_action = QtWidgets.QAction("Run SG Integrity Checks", self._window)
         self._run_integrity_checks_action.setEnabled(False)
@@ -498,6 +502,8 @@ class SGViewerController:
         fsects_menu.addSeparator()
         fsects_menu.addAction(self._add_fsect_action)
         fsects_menu.addAction(self._delete_fsect_action)
+        fsects_menu.addAction(self._move_fsect_up_action)
+        fsects_menu.addAction(self._move_fsect_down_action)
 
         mrk_menu = tools_menu.addMenu("MRK")
         mrk_menu.addAction(self._mrk_add_entry_action)
@@ -855,6 +861,13 @@ class SGViewerController:
             self._delete_selected_fsect
         )
         self._delete_fsect_action.triggered.connect(self._delete_selected_fsect)
+        self._window.fsect_table.itemSelectionChanged.connect(
+            self._update_fsect_edit_buttons
+        )
+        self._window.move_fsect_up_button.clicked.connect(self._move_selected_fsect_up)
+        self._move_fsect_up_action.triggered.connect(self._move_selected_fsect_up)
+        self._window.move_fsect_down_button.clicked.connect(self._move_selected_fsect_down)
+        self._move_fsect_down_action.triggered.connect(self._move_selected_fsect_down)
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
@@ -2833,15 +2846,26 @@ class SGViewerController:
         if selection is None:
             self._window.add_fsect_button.setEnabled(False)
             self._window.delete_fsect_button.setEnabled(False)
+            self._window.move_fsect_up_button.setEnabled(False)
+            self._window.move_fsect_down_button.setEnabled(False)
             self._add_fsect_action.setEnabled(False)
             self._delete_fsect_action.setEnabled(False)
+            self._move_fsect_up_action.setEnabled(False)
+            self._move_fsect_down_action.setEnabled(False)
             return
         self._window.add_fsect_button.setEnabled(True)
         self._add_fsect_action.setEnabled(True)
         fsects = self._window.preview.get_section_fsects(selection.index)
+        row_index = self._window.fsect_table.currentRow()
         delete_enabled = bool(fsects)
+        move_up_enabled = bool(fsects) and row_index > 0
+        move_down_enabled = bool(fsects) and 0 <= row_index < len(fsects) - 1
         self._window.delete_fsect_button.setEnabled(delete_enabled)
         self._delete_fsect_action.setEnabled(delete_enabled)
+        self._window.move_fsect_up_button.setEnabled(move_up_enabled)
+        self._window.move_fsect_down_button.setEnabled(move_down_enabled)
+        self._move_fsect_up_action.setEnabled(move_up_enabled)
+        self._move_fsect_down_action.setEnabled(move_down_enabled)
 
     def _current_xsect_index(self) -> int | None:
         combo = self._window.xsect_combo
@@ -2934,6 +2958,12 @@ class SGViewerController:
 
     def _delete_selected_fsect(self) -> None:
         self._sections_controller.delete_selected_fsect()
+
+    def _move_selected_fsect_up(self) -> None:
+        self._sections_controller.move_selected_fsect_up()
+
+    def _move_selected_fsect_down(self) -> None:
+        self._sections_controller.move_selected_fsect_down()
 
     def _on_grade_slider_changed(self, value: int) -> None:
         self._elevation_panel_controller.on_grade_slider_changed(value)

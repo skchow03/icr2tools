@@ -446,3 +446,42 @@ class SectionsController:
             self._host._window.fsect_table.setCurrentCell(min(row_index, remaining - 1), 0)
         self._host._update_fsect_edit_buttons()
         self._host._window.show_status_message(f"Deleted fsect row {row_index}.")
+
+    def move_selected_fsect_up(self) -> None:
+        self._move_selected_fsect(direction="up")
+
+    def move_selected_fsect_down(self) -> None:
+        self._move_selected_fsect(direction="down")
+
+    def _move_selected_fsect(self, *, direction: str) -> None:
+        selection = self._host._active_selection
+        if selection is None:
+            return
+        section_index = selection.index
+        row_index = self._host._window.fsect_table.currentRow()
+        fsects = list(self._host._window.preview.get_section_fsects(section_index))
+        if row_index < 0 or row_index >= len(fsects):
+            self._host._window.show_status_message("Select an Fsect row to move.")
+            return
+
+        target_index = row_index - 1 if direction == "up" else row_index + 1
+        if target_index < 0 or target_index >= len(fsects):
+            self._host._window.show_status_message(
+                f"Cannot move fsect {direction} from row {row_index}."
+            )
+            return
+
+        fsect_to_move = fsects[row_index]
+        self._host._window.preview.delete_fsection(section_index, row_index)
+        insert_index = target_index if direction == "up" else row_index + 1
+        self._host._window.preview.insert_fsection(
+            section_index, insert_index, fsect_to_move
+        )
+
+        self._host._mark_fsects_dirty(True)
+        self._host._window.update_selection_sidebar(selection)
+        self._host._window.fsect_table.setCurrentCell(target_index, 0)
+        self._host._update_fsect_edit_buttons()
+        self._host._window.show_status_message(
+            f"Moved fsect from row {row_index} to row {target_index}."
+        )
