@@ -471,11 +471,8 @@ class SectionsController:
             )
             return
 
-        fsect_to_move = fsects[row_index]
-        self._host._window.preview.delete_fsection(section_index, row_index)
-        insert_index = target_index if direction == "up" else row_index + 1
-        self._host._window.preview.insert_fsection(
-            section_index, insert_index, fsect_to_move
+        self._host._window.preview.move_fsection(
+            section_index, row_index, target_index
         )
 
         self._host._mark_fsects_dirty(True)

@@ -128,6 +128,30 @@ class _RuntimeCoreCommitMixin:
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
+    def move_fsection(
+        self,
+        section_index: int,
+        from_index: int,
+        to_index: int,
+    ) -> None:
+        if section_index < 0 or section_index >= len(self._fsects_by_section):
+            return
+        fsects = list(self._fsects_by_section[section_index])
+        if from_index < 0 or from_index >= len(fsects):
+            return
+        if to_index < 0 or to_index >= len(fsects) or from_index == to_index:
+            return
+
+        fsect = fsects.pop(from_index)
+        fsects.insert(to_index, fsect)
+
+        self._fsects_by_section[section_index] = fsects
+        self._has_unsaved_changes = True
+        if self._emit_sections_changed is not None:
+            self._emit_sections_changed()
+        if not self.refresh_fsections_preview():
+            self._context.request_repaint()
+
     def replace_all_fsects(
         self,
         fsects_by_section: list[list[PreviewFSection]],
