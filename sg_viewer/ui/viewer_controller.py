@@ -817,6 +817,9 @@ class SGViewerController:
         self._window.pitwall_length_multiplier_spin.valueChanged.connect(
             self._on_mrk_length_multiplier_changed
         )
+        self._window.preview.set_mrk_length_multiplier(
+            self._window.pitwall_length_multiplier()
+        )
         self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
         self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
         self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
@@ -2379,6 +2382,9 @@ class SGViewerController:
         self._update_mrk_highlights_from_table()
 
     def _on_mrk_length_multiplier_changed(self, _value: float) -> None:
+        self._window.preview.set_mrk_length_multiplier(
+            self._window.pitwall_length_multiplier()
+        )
         self._update_mrk_highlights_from_table()
 
     def _on_track_opacity_changed(self, value: int) -> None:
