@@ -145,6 +145,9 @@ class _RuntimePersistenceMixin:
         return True
 
     def refresh_fsections_preview(self) -> bool:
+        # Full refresh path: use for any edit that can change SG topology,
+        # section geometry, or derived document/dlong state. This path rebuilds
+        # dlongs and clears elevation/profile caches for correctness.
         if self._sgfile is None:
             return False
 
@@ -186,6 +189,9 @@ class _RuntimePersistenceMixin:
         return True
 
     def refresh_fsections_preview_lightweight(self) -> bool:
+        # Lightweight refresh path: valid only for Fsect-only visual edits
+        # (type/start/end/order) that keep section topology and dlong geometry
+        # unchanged. Avoids document rebuild/cache invalidation.
         if self._preview_data is None:
             return self.refresh_fsections_preview()
 
