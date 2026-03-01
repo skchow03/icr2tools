@@ -52,7 +52,9 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
-        if not self.refresh_fsections_preview():
+        # Fsect type swaps are visual-only updates; they do not alter section
+        # topology or dlong geometry.
+        if not self.refresh_fsections_preview_lightweight():
             self._context.request_repaint()
 
     def update_fsection_dlat(
@@ -86,7 +88,9 @@ class _RuntimeCoreCommitMixin:
         if emit_sections_changed and self._emit_sections_changed is not None:
             self._emit_sections_changed()
         if refresh_preview:
-            if not self.refresh_fsections_preview():
+            # Fsect start/end dlat edits only retune lateral visual distribution
+            # without changing section topology.
+            if not self.refresh_fsections_preview_lightweight():
                 self._context.request_repaint()
 
     def insert_fsection(
@@ -107,6 +111,8 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
+        # Inserting/deleting fsects changes section profile layout; keep the
+        # full refresh path so document data/dlong caches stay aligned.
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
@@ -125,6 +131,8 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
+        # Inserting/deleting fsects changes section profile layout; keep the
+        # full refresh path so document data/dlong caches stay aligned.
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
 
@@ -149,7 +157,8 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
-        if not self.refresh_fsections_preview():
+        # Fsect reorder is visual-only and safe for the lightweight preview path.
+        if not self.refresh_fsections_preview_lightweight():
             self._context.request_repaint()
 
     def replace_all_fsects(
@@ -164,6 +173,7 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
+        # Bulk replacement can alter section profile layout; retain full refresh.
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
             return False
@@ -194,6 +204,7 @@ class _RuntimeCoreCommitMixin:
         self._has_unsaved_changes = True
         if self._emit_sections_changed is not None:
             self._emit_sections_changed()
+        # Copying another section's fsect layout may change profile topology.
         if not self.refresh_fsections_preview():
             self._context.request_repaint()
         return True
