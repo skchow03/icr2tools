@@ -11,6 +11,7 @@ except ImportError:  # pragma: no cover
 
 from sunny_optimizer.model import OPTIMIZED_SLOTS, SunnyPaletteOptimizer
 from sunny_optimizer.palette import load_sunny_palette, save_palette, visualize_palette
+from sunny_optimizer.ui.settings import SunnyOptimizerSettings
 
 
 class TextureBudgetItemWidget(QtWidgets.QWidget):
@@ -152,6 +153,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.selected_palette_index: int | None = None
         self._palette_image_size: int = 0
         self._syncing_previews = False
+        self.loaded_texture_folder: Path | None = None
+        self._last_sunny_palette_path: Path | None = None
+        self.settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
+        self.settings.load()
 
         self._build_ui()
 
@@ -217,15 +222,19 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addLayout(right_panel, 2)
         self.setCentralWidget(central)
         self._refresh_palette_view()
+        self._restore_last_texture_folder()
 
     def select_folder(self) -> None:
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select RGB Texture Folder")
+        start_dir = self.settings.last_texture_folder if self.settings.last_texture_folder else ""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select RGB Texture Folder", start_dir)
         if not folder:
             return
         self._load_folder(Path(folder))
 
     def _load_folder(self, folder: Path) -> None:
         from PIL import Image
+
+        resolved_folder = folder.resolve()
 
         self.texture_images.clear()
         self.per_texture_budget.clear()
@@ -244,16 +253,19 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         equal_budget = max(1, OPTIMIZED_SLOTS // len(image_files))
+        saved_budgets = self.settings.budgets_for_folder(resolved_folder)
         for path in image_files:
             with Image.open(path) as img:
                 img = img.convert("RGB")
                 img.thumbnail((self.preview_max_dim, self.preview_max_dim), Image.Resampling.NEAREST)
                 arr = np.asarray(img, dtype=np.uint8)
             self.texture_images[path.name] = arr
-            self.per_texture_budget[path.name] = equal_budget
+            budget = saved_budgets.get(path.name, equal_budget)
+            budget = max(1, min(OPTIMIZED_SLOTS, int(budget)))
+            self.per_texture_budget[path.name] = budget
 
             item = QtWidgets.QListWidgetItem(self.texture_list)
-            widget = TextureBudgetItemWidget(path.name, equal_budget)
+            widget = TextureBudgetItemWidget(path.name, budget)
             widget.budget_changed.connect(self._on_budget_changed)
             item.setSizeHint(widget.sizeHint())
             self.texture_list.addItem(item)
@@ -262,8 +274,31 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.texture_list.count() > 0:
             self.texture_list.setCurrentRow(0)
 
+        self.loaded_texture_folder = resolved_folder
+        self.settings.last_texture_folder = str(resolved_folder)
+        self._save_settings()
+
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
+        self._persist_current_folder_budgets()
+
+    def _restore_last_texture_folder(self) -> None:
+        folder_text = self.settings.last_texture_folder
+        if not folder_text:
+            return
+        folder = Path(folder_text).expanduser()
+        if not folder.exists() or not folder.is_dir():
+            return
+        self._load_folder(folder)
+
+    def _save_settings(self) -> None:
+        self.settings.save()
+
+    def _persist_current_folder_budgets(self) -> None:
+        if self.loaded_texture_folder is None:
+            return
+        self.settings.set_budgets_for_folder(self.loaded_texture_folder, self.per_texture_budget)
+        self._save_settings()
 
     def _on_current_item_changed(
         self,
@@ -345,14 +380,26 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "No textures", "Load a folder with textures first.")
             return
 
-        palette_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Load SUNNY palette",
-            "",
-            "PCX files (*.pcx *.PCX);;All files (*)",
-        )
+        palette_path = ""
+        if self._last_sunny_palette_path is not None and self._last_sunny_palette_path.exists():
+            palette_path = str(self._last_sunny_palette_path)
+        else:
+            remembered = self.settings.last_sunny_palette
+            if remembered:
+                remembered_path = Path(remembered).expanduser()
+                if remembered_path.exists():
+                    palette_path = str(remembered_path)
+
         if not palette_path:
-            return
+            selected_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Load SUNNY palette",
+                "",
+                "PCX files (*.pcx *.PCX);;All files (*)",
+            )
+            if not selected_path:
+                return
+            palette_path = selected_path
 
         self.compute_btn.setEnabled(False)
         self.compute_progress.setValue(5)
@@ -361,6 +408,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         try:
             fixed_palette = load_sunny_palette(palette_path)
+            resolved_palette = Path(palette_path).resolve()
+            self._last_sunny_palette_path = resolved_palette
+            self.settings.last_sunny_palette = str(resolved_palette)
+            self._persist_current_folder_budgets()
             self.compute_progress.setValue(20)
             self.compute_progress.setFormat("Preparing optimizer...")
             QtWidgets.QApplication.processEvents()
