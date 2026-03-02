@@ -91,6 +91,56 @@ class SunnyPaletteOptimizer:
             final_centers = np.vstack([final_centers, repeats])
         return final_centers[:OPTIMIZED_SLOTS]
 
+    def _remove_exact_duplicates(self, optimized_rgb: np.ndarray) -> np.ndarray:
+        """Remove exact RGB duplicates."""
+        return np.unique(optimized_rgb, axis=0)
+
+    def _remove_near_fixed_duplicates(
+        self,
+        optimized_rgb: np.ndarray,
+        threshold: float = 3.0,
+    ) -> np.ndarray:
+        """
+        Remove optimized colors that are too close (ΔE in LAB space)
+        to any fixed palette color.
+        """
+        if optimized_rgb.size == 0:
+            return optimized_rgb
+
+        fixed_lab = self._rgb_to_lab(self.fixed_palette.reshape(-1, 1, 3)).reshape(-1, 3)
+
+        opt_lab = self._rgb_to_lab(optimized_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
+
+        keep_mask = np.ones(len(opt_lab), dtype=bool)
+
+        for i, lab_color in enumerate(opt_lab):
+            distances = np.linalg.norm(fixed_lab - lab_color, axis=1)
+            if np.min(distances) < threshold:
+                keep_mask[i] = False
+
+        return optimized_rgb[keep_mask]
+
+    def _remove_internal_duplicates(
+        self,
+        optimized_rgb: np.ndarray,
+        threshold: float = 2.0,
+    ) -> np.ndarray:
+        """
+        Remove optimized colors that are too close to each other.
+        """
+        if optimized_rgb.size == 0:
+            return optimized_rgb
+
+        lab = self._rgb_to_lab(optimized_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
+
+        keep_indices = []
+
+        for i, color in enumerate(lab):
+            if all(np.linalg.norm(color - lab[j]) >= threshold for j in keep_indices):
+                keep_indices.append(i)
+
+        return optimized_rgb[keep_indices]
+
     def _reorder_optimized_colors(self, optimized_rgb: np.ndarray) -> np.ndarray:
         """Sort optimized colors into a more coherent progression.
 
@@ -150,6 +200,24 @@ class SunnyPaletteOptimizer:
         centroids = self._stage1_centroids()
         optimized_lab = self._final_optimized_lab(centroids)
         optimized_rgb = self._lab_to_rgb_u8(optimized_lab)
+
+        # Remove duplicates
+        optimized_rgb = self._remove_exact_duplicates(optimized_rgb)
+        optimized_rgb = self._remove_near_fixed_duplicates(optimized_rgb)
+        optimized_rgb = self._remove_internal_duplicates(optimized_rgb)
+
+        # Refill if we removed too many
+        if optimized_rgb.shape[0] < OPTIMIZED_SLOTS:
+            deficit = OPTIMIZED_SLOTS - optimized_rgb.shape[0]
+            if optimized_rgb.shape[0] > 0:
+                padding = np.tile(optimized_rgb[-1:], (deficit, 1))
+                optimized_rgb = np.vstack([optimized_rgb, padding])
+            else:
+                optimized_rgb = np.zeros((OPTIMIZED_SLOTS, 3), dtype=np.uint8)
+
+        # Ensure exact slot count
+        optimized_rgb = optimized_rgb[:OPTIMIZED_SLOTS]
+
         optimized_rgb = self._reorder_optimized_colors(optimized_rgb)
 
         palette[OPTIMIZED_START : OPTIMIZED_END + 1] = optimized_rgb
