@@ -35,6 +35,7 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
 
 class PannableGraphicsView(QtWidgets.QGraphicsView):
     clicked = QtCore.pyqtSignal(QtCore.QPointF)
+    view_changed = QtCore.pyqtSignal()
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -46,6 +47,7 @@ class PannableGraphicsView(QtWidgets.QGraphicsView):
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         zoom_factor = 1.1 if event.angleDelta().y() > 0 else 1 / 1.1
         self.scale(zoom_factor, zoom_factor)
+        self.view_changed.emit()
         event.accept()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -54,9 +56,20 @@ class PannableGraphicsView(QtWidgets.QGraphicsView):
             self.clicked.emit(scene_pos)
         super().mousePressEvent(event)
 
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        if event.button() == QtCore.Qt.LeftButton:
+            self.view_changed.emit()
+
+    def scrollContentsBy(self, dx: int, dy: int) -> None:
+        super().scrollContentsBy(dx, dy)
+        if dx or dy:
+            self.view_changed.emit()
+
 
 class ZoomableImageLabel(QtWidgets.QWidget):
     image_clicked = QtCore.pyqtSignal(QtCore.QPoint)
+    view_changed = QtCore.pyqtSignal()
 
     def __init__(self, placeholder_text: str, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -68,6 +81,7 @@ class ZoomableImageLabel(QtWidgets.QWidget):
         self._view = PannableGraphicsView(self)
         self._view.setScene(self._scene)
         self._view.clicked.connect(self._on_view_clicked)
+        self._view.view_changed.connect(self.view_changed)
 
         self._placeholder = QtWidgets.QLabel(placeholder_text)
         self._placeholder.setAlignment(QtCore.Qt.AlignCenter)
@@ -89,6 +103,13 @@ class ZoomableImageLabel(QtWidgets.QWidget):
         self._view.resetTransform()
         self.layout().setCurrentWidget(self._view)
         self._view.fitInView(self._scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+
+    def copy_view_from(self, other: ZoomableImageLabel) -> None:
+        if self._base_pixmap.isNull() or other._base_pixmap.isNull():
+            return
+        self._view.setTransform(other._view.transform())
+        self._view.horizontalScrollBar().setValue(other._view.horizontalScrollBar().value())
+        self._view.verticalScrollBar().setValue(other._view.verticalScrollBar().value())
 
     def clear_base_pixmap(self, text: str | None = None) -> None:
         self._base_pixmap = QtGui.QPixmap()
@@ -120,6 +141,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quantized_images: dict[str, np.ndarray] = {}
         self.indexed_images: dict[str, np.ndarray] = {}
         self.selected_palette_index: int | None = None
+        self._syncing_previews = False
 
         self._build_ui()
 
@@ -144,6 +166,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quant_label = ZoomableImageLabel("Quantized Preview")
         self.quant_label.setMinimumSize(300, 250)
         self.quant_label.image_clicked.connect(self._on_quantized_preview_clicked)
+        self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
+        self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
         center_panel.addWidget(self.orig_label, 1)
         center_panel.addWidget(self.quant_label, 1)
 
@@ -255,6 +279,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtCore.Qt.FastTransformation,
             )
         )
+
+    def _sync_preview_views(self, source: ZoomableImageLabel, target: ZoomableImageLabel) -> None:
+        if self._syncing_previews:
+            return
+        self._syncing_previews = True
+        try:
+            target.copy_view_from(source)
+        finally:
+            self._syncing_previews = False
 
     def compute_palette(self) -> None:
         if not self.texture_images:
