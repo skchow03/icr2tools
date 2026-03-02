@@ -27,16 +27,23 @@ def save_palette(path: str | Path, palette_array: np.ndarray) -> None:
     out[1] = 5
     out[2] = 1
     out[3] = 8
-    out[8] = 0
-    out[9] = 0
-    out[10] = 0
-    out[11] = 0
+    width = 320
+    height = 200
+    out[8] = (width - 1) & 0xFF
+    out[9] = ((width - 1) >> 8) & 0xFF
+    out[10] = (height - 1) & 0xFF
+    out[11] = ((height - 1) >> 8) & 0xFF
     out[65] = 1
-    out[66] = 1
-    out[67] = 0
+    out[66] = width & 0xFF
+    out[67] = (width >> 8) & 0xFF
     out[68] = 1
     out[69] = 0
-    out.extend(bytes([0xC1, 0x00]))
+    pixels = width * height
+    while pixels > 0:
+        run = min(63, pixels)
+        out.append(0xC0 | run)
+        out.append(0xFF)
+        pixels -= run
     out.append(0x0C)
     out.extend(palette.tobytes())
     Path(path).write_bytes(bytes(out))
