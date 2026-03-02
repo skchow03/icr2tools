@@ -55,7 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_btn = QtWidgets.QPushButton("Select Texture Folder")
         self.folder_btn.clicked.connect(self.select_folder)
         self.texture_list = QtWidgets.QListWidget()
-        self.texture_list.currentTextChanged.connect(self._update_preview)
+        self.texture_list.currentItemChanged.connect(self._on_current_item_changed)
         self.dirt_checkbox = QtWidgets.QCheckBox("Dirt present")
 
         left_panel.addWidget(self.folder_btn)
@@ -137,6 +137,20 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
 
+    def _on_current_item_changed(
+        self,
+        current: QtWidgets.QListWidgetItem | None,
+        previous: QtWidgets.QListWidgetItem | None,
+    ) -> None:
+        _ = previous
+        if current is None:
+            return
+        widget = self.texture_list.itemWidget(current)
+        if widget is None:
+            return
+        texture_name = widget.texture_name
+        self._update_preview(texture_name)
+
     def _to_pixmap(self, rgb_array: np.ndarray) -> QtGui.QPixmap:
         h, w, _ = rgb_array.shape
         image = QtGui.QImage(rgb_array.data, w, h, w * 3, QtGui.QImage.Format_RGB888)
@@ -157,7 +171,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)
-        self._update_preview(self.texture_list.currentItem().text() if self.texture_list.currentItem() else "")
+        current = self.texture_list.currentItem()
+        if current is None:
+            return
+        widget = self.texture_list.itemWidget(current)
+        if widget is not None:
+            self._update_preview(widget.texture_name)
 
     def _refresh_palette_view(self) -> None:
         image = visualize_palette(self.current_palette)
@@ -192,7 +211,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self._refresh_palette_view()
-        self._update_preview(self.texture_list.currentItem().text() if self.texture_list.currentItem() else "")
+        current = self.texture_list.currentItem()
+        if current is None:
+            return
+        widget = self.texture_list.itemWidget(current)
+        if widget is not None:
+            self._update_preview(widget.texture_name)
 
     def save_palette_dialog(self) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
