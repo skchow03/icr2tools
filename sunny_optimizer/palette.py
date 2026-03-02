@@ -42,7 +42,11 @@ def save_palette(path: str | Path, palette_array: np.ndarray) -> None:
     Path(path).write_bytes(bytes(out))
 
 
-def visualize_palette(palette_array: np.ndarray, tile_size: int = 16) -> QtGui.QImage:
+def visualize_palette(
+    palette_array: np.ndarray,
+    tile_size: int = 16,
+    selected_index: int | None = None,
+) -> QtGui.QImage:
     palette = np.asarray(palette_array, dtype=np.uint8)
     if palette.shape != (256, 3):
         raise ValueError("palette_array must be shape (256, 3)")
@@ -59,5 +63,10 @@ def visualize_palette(palette_array: np.ndarray, tile_size: int = 16) -> QtGui.Q
             pen.setWidth(1)
             painter.setPen(pen)
             painter.drawRect(x, y, tile_size - 1, tile_size - 1)
+        if selected_index is not None and i == selected_index:
+            pen = QtGui.QPen(QtGui.QColor(255, 64, 64))
+            pen.setWidth(3)
+            painter.setPen(pen)
+            painter.drawRect(x + 1, y + 1, tile_size - 3, tile_size - 3)
     painter.end()
     return image
