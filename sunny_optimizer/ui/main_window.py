@@ -163,13 +163,17 @@ class MainWindow(QtWidgets.QMainWindow):
         center_panel = QtWidgets.QVBoxLayout()
         self.orig_label = ZoomableImageLabel("Original RGB")
         self.orig_label.setMinimumSize(300, 250)
+        self.orig_unique_colors_label = QtWidgets.QLabel("Original unique colors: —")
         self.quant_label = ZoomableImageLabel("Quantized Preview")
         self.quant_label.setMinimumSize(300, 250)
+        self.paletted_unique_colors_label = QtWidgets.QLabel("Paletted unique colors: —")
         self.quant_label.image_clicked.connect(self._on_quantized_preview_clicked)
         self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
         self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
         center_panel.addWidget(self.orig_label, 1)
+        center_panel.addWidget(self.orig_unique_colors_label)
         center_panel.addWidget(self.quant_label, 1)
+        center_panel.addWidget(self.paletted_unique_colors_label)
 
         right_panel = QtWidgets.QVBoxLayout()
         self.palette_label = QtWidgets.QLabel()
@@ -263,12 +267,36 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         orig = self.texture_images[texture_name]
         self.orig_label.set_base_pixmap(self._to_pixmap(orig))
+        self.orig_unique_colors_label.setText(
+            f"Original unique colors: {self._count_unique_rgb_colors(orig)}"
+        )
 
         quant = self.quantized_images.get(texture_name)
+        indexed = self.indexed_images.get(texture_name)
         if quant is None:
             self.quant_label.clear_base_pixmap("Quantized Preview")
+            self.paletted_unique_colors_label.setText("Paletted unique colors: —")
         else:
             self.quant_label.set_base_pixmap(self._to_pixmap(quant))
+            if indexed is None:
+                self.paletted_unique_colors_label.setText("Paletted unique colors: —")
+            else:
+                self.paletted_unique_colors_label.setText(
+                    f"Paletted unique colors: {self._count_unique_palette_indices(indexed)}"
+                )
+
+    @staticmethod
+    def _count_unique_rgb_colors(rgb_array: np.ndarray) -> int:
+        if rgb_array.size == 0:
+            return 0
+        flat = rgb_array.reshape(-1, 3)
+        return int(np.unique(flat, axis=0).shape[0])
+
+    @staticmethod
+    def _count_unique_palette_indices(indexed_array: np.ndarray) -> int:
+        if indexed_array.size == 0:
+            return 0
+        return int(np.unique(indexed_array).shape[0])
 
     def _refresh_palette_view(self) -> None:
         image = visualize_palette(self.current_palette, selected_index=self.selected_palette_index)
