@@ -33,6 +33,54 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
         self.budget_changed.emit(self.texture_name, int(value))
 
 
+class ZoomableImageLabel(QtWidgets.QLabel):
+    def __init__(self, placeholder_text: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(placeholder_text, parent)
+        self.setAlignment(QtCore.Qt.AlignCenter)
+        self._base_pixmap = QtGui.QPixmap()
+        self._zoom = 1.0
+        self._zoom_min = 0.2
+        self._zoom_max = 8.0
+
+    def set_base_pixmap(self, pixmap: QtGui.QPixmap) -> None:
+        self._base_pixmap = pixmap
+        self._zoom = 1.0
+        self._update_scaled_pixmap()
+
+    def clear_base_pixmap(self, text: str | None = None) -> None:
+        self._base_pixmap = QtGui.QPixmap()
+        self._zoom = 1.0
+        self.setPixmap(QtGui.QPixmap())
+        if text is not None:
+            self.setText(text)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        if self._base_pixmap.isNull():
+            super().wheelEvent(event)
+            return
+
+        zoom_factor = 1.1 if event.angleDelta().y() > 0 else 1 / 1.1
+        self._zoom = max(self._zoom_min, min(self._zoom * zoom_factor, self._zoom_max))
+        self._update_scaled_pixmap()
+        event.accept()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if not self._base_pixmap.isNull():
+            self._update_scaled_pixmap()
+
+    def _update_scaled_pixmap(self) -> None:
+        if self._base_pixmap.isNull():
+            return
+        target_size = self.size() * self._zoom
+        scaled = self._base_pixmap.scaled(
+            target_size,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
+        )
+        self.setPixmap(scaled)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -63,11 +111,9 @@ class MainWindow(QtWidgets.QMainWindow):
         left_panel.addWidget(self.dirt_checkbox)
 
         center_panel = QtWidgets.QVBoxLayout()
-        self.orig_label = QtWidgets.QLabel("Original RGB")
-        self.orig_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.orig_label = ZoomableImageLabel("Original RGB")
         self.orig_label.setMinimumSize(300, 250)
-        self.quant_label = QtWidgets.QLabel("Quantized Preview")
-        self.quant_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.quant_label = ZoomableImageLabel("Quantized Preview")
         self.quant_label.setMinimumSize(300, 250)
         center_panel.addWidget(self.orig_label, 1)
         center_panel.addWidget(self.quant_label, 1)
@@ -160,23 +206,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if not texture_name or texture_name not in self.texture_images:
             return
         orig = self.texture_images[texture_name]
-        self.orig_label.setPixmap(self._to_pixmap(orig).scaled(self.orig_label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+        self.orig_label.set_base_pixmap(self._to_pixmap(orig))
 
         quant = self.quantized_images.get(texture_name)
         if quant is None:
-            self.quant_label.setText("Quantized Preview")
-            self.quant_label.setPixmap(QtGui.QPixmap())
+            self.quant_label.clear_base_pixmap("Quantized Preview")
         else:
-            self.quant_label.setPixmap(self._to_pixmap(quant).scaled(self.quant_label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
-
-    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
-        super().resizeEvent(event)
-        current = self.texture_list.currentItem()
-        if current is None:
-            return
-        widget = self.texture_list.itemWidget(current)
-        if widget is not None:
-            self._update_preview(widget.texture_name)
+            self.quant_label.set_base_pixmap(self._to_pixmap(quant))
 
     def _refresh_palette_view(self) -> None:
         image = visualize_palette(self.current_palette)
