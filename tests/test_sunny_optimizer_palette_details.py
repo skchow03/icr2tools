@@ -29,7 +29,6 @@ def test_update_palette_details_displays_expected_fields(qapp) -> None:
     assert "Palette index: 42" in text
     assert "Hex: #FF0000" in text
     assert "RGB: (255, 0, 0)" in text
-    assert "Nearest XKCD color:" in text
 
 
 def test_palette_click_selects_tile_and_updates_details(qapp) -> None:

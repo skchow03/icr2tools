@@ -137,36 +137,6 @@ class ClickablePaletteLabel(QtWidgets.QLabel):
         super().mousePressEvent(event)
 
 
-XKCD_COLORS: tuple[tuple[str, tuple[int, int, int]], ...] = (
-    ("black", (0, 0, 0)),
-    ("white", (255, 255, 255)),
-    ("red", (229, 0, 0)),
-    ("green", (21, 176, 26)),
-    ("blue", (3, 67, 223)),
-    ("yellow", (255, 255, 20)),
-    ("orange", (249, 115, 6)),
-    ("purple", (126, 30, 156)),
-    ("pink", (255, 129, 192)),
-    ("brown", (101, 55, 0)),
-    ("grey", (146, 149, 145)),
-    ("light blue", (149, 208, 252)),
-    ("light green", (150, 249, 123)),
-    ("dark green", (3, 53, 0)),
-    ("navy", (1, 21, 62)),
-    ("teal", (2, 147, 134)),
-    ("cyan", (0, 255, 255)),
-    ("magenta", (194, 0, 120)),
-    ("olive", (110, 117, 14)),
-    ("maroon", (101, 0, 33)),
-    ("beige", (230, 218, 166)),
-    ("lavender", (199, 159, 239)),
-    ("gold", (219, 180, 12)),
-    ("salmon", (255, 121, 108)),
-    ("aqua", (19, 234, 201)),
-    ("mint", (159, 254, 176)),
-)
-
-
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -222,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.palette_label.setStyleSheet("background: #202020; padding: 2px;")
         self.palette_label.clicked.connect(self._on_palette_clicked)
         self.palette_details_label = QtWidgets.QLabel(
-            "Palette selection: click a palette color tile to inspect index, hex, RGB, and nearest XKCD color."
+            "Palette selection: click a palette color tile to inspect index, hex, and RGB values."
         )
         self.palette_details_label.setWordWrap(True)
         self.compute_btn = QtWidgets.QPushButton("Compute Palette")
@@ -424,26 +394,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _rgb_to_hex(color: tuple[int, int, int]) -> str:
         return f"#{color[0]:02X}{color[1]:02X}{color[2]:02X}"
 
-    @staticmethod
-    def _closest_xkcd_color_name(color: tuple[int, int, int]) -> str:
-        target = np.array(color, dtype=np.int32)
-        best_name = "unknown"
-        best_distance = float("inf")
-        for name, xkcd_rgb in XKCD_COLORS:
-            candidate = np.array(xkcd_rgb, dtype=np.int32)
-            distance = int(np.sum((target - candidate) ** 2))
-            if distance < best_distance:
-                best_distance = distance
-                best_name = name
-        return best_name
-
     def _update_palette_details(self, index: int) -> None:
         rgb = tuple(int(v) for v in self.current_palette[index])
         hex_code = self._rgb_to_hex(rgb)
-        nearest_xkcd = self._closest_xkcd_color_name(rgb)
         self.palette_details_label.setText(
-            f"Palette index: {index} | Hex: {hex_code} | RGB: ({rgb[0]}, {rgb[1]}, {rgb[2]}) | "
-            f"Nearest XKCD color: {nearest_xkcd}"
+            f"Palette index: {index} | Hex: {hex_code} | RGB: ({rgb[0]}, {rgb[1]}, {rgb[2]})"
         )
 
     def _on_palette_clicked(self, point: QtCore.QPoint) -> None:
