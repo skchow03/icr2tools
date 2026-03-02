@@ -76,7 +76,7 @@ class ZoomableImageLabel(QtWidgets.QLabel):
         scaled = self._base_pixmap.scaled(
             target_size,
             QtCore.Qt.KeepAspectRatio,
-            QtCore.Qt.SmoothTransformation,
+            QtCore.Qt.FastTransformation,
         )
         self.setPixmap(scaled)
 
@@ -165,7 +165,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for path in image_files:
             with Image.open(path) as img:
                 img = img.convert("RGB")
-                img.thumbnail((self.preview_max_dim, self.preview_max_dim), Image.Resampling.LANCZOS)
+                img.thumbnail((self.preview_max_dim, self.preview_max_dim), Image.Resampling.NEAREST)
                 arr = np.asarray(img, dtype=np.uint8)
             self.texture_images[path.name] = arr
             self.per_texture_budget[path.name] = equal_budget
