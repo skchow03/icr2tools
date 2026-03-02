@@ -91,6 +91,31 @@ class SunnyPaletteOptimizer:
             final_centers = np.vstack([final_centers, repeats])
         return final_centers[:OPTIMIZED_SLOTS]
 
+    def _reorder_optimized_colors(self, optimized_rgb: np.ndarray) -> np.ndarray:
+        """Sort optimized colors into a more coherent progression.
+
+        Neutrals are grouped first by lightness; chromatic colors are grouped by hue,
+        then by lightness.
+        """
+        if optimized_rgb.shape != (OPTIMIZED_SLOTS, 3):
+            raise ValueError("optimized_rgb must have shape (OPTIMIZED_SLOTS, 3)")
+
+        lab = self._rgb_to_lab(optimized_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
+        chroma = np.hypot(lab[:, 1], lab[:, 2])
+        hue = (np.degrees(np.arctan2(lab[:, 2], lab[:, 1])) + 360.0) % 360.0
+        lightness = lab[:, 0]
+
+        neutral_mask = chroma < 8.0
+        neutral_idx = np.where(neutral_mask)[0]
+        chromatic_idx = np.where(~neutral_mask)[0]
+
+        neutral_order = neutral_idx[np.argsort(lightness[neutral_idx], kind="stable")]
+        chromatic_order = chromatic_idx[
+            np.lexsort((lightness[chromatic_idx], hue[chromatic_idx]))
+        ]
+        order = np.concatenate([neutral_order, chromatic_order])
+        return optimized_rgb[order]
+
     def _compute_brown_pair(self) -> tuple[np.ndarray, np.ndarray]:
         candidates: list[np.ndarray] = []
         for image in self.rgb_images.values():
@@ -125,6 +150,7 @@ class SunnyPaletteOptimizer:
         centroids = self._stage1_centroids()
         optimized_lab = self._final_optimized_lab(centroids)
         optimized_rgb = self._lab_to_rgb_u8(optimized_lab)
+        optimized_rgb = self._reorder_optimized_colors(optimized_rgb)
 
         palette[OPTIMIZED_START : OPTIMIZED_END + 1] = optimized_rgb
         if self.dirt_present:
