@@ -128,6 +128,45 @@ class ZoomableImageLabel(QtWidgets.QWidget):
             self.image_clicked.emit(QtCore.QPoint(x, y))
 
 
+class ClickablePaletteLabel(QtWidgets.QLabel):
+    clicked = QtCore.pyqtSignal(QtCore.QPoint)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton:
+            self.clicked.emit(event.pos())
+        super().mousePressEvent(event)
+
+
+XKCD_COLORS: tuple[tuple[str, tuple[int, int, int]], ...] = (
+    ("black", (0, 0, 0)),
+    ("white", (255, 255, 255)),
+    ("red", (229, 0, 0)),
+    ("green", (21, 176, 26)),
+    ("blue", (3, 67, 223)),
+    ("yellow", (255, 255, 20)),
+    ("orange", (249, 115, 6)),
+    ("purple", (126, 30, 156)),
+    ("pink", (255, 129, 192)),
+    ("brown", (101, 55, 0)),
+    ("grey", (146, 149, 145)),
+    ("light blue", (149, 208, 252)),
+    ("light green", (150, 249, 123)),
+    ("dark green", (3, 53, 0)),
+    ("navy", (1, 21, 62)),
+    ("teal", (2, 147, 134)),
+    ("cyan", (0, 255, 255)),
+    ("magenta", (194, 0, 120)),
+    ("olive", (110, 117, 14)),
+    ("maroon", (101, 0, 33)),
+    ("beige", (230, 218, 166)),
+    ("lavender", (199, 159, 239)),
+    ("gold", (219, 180, 12)),
+    ("salmon", (255, 121, 108)),
+    ("aqua", (19, 234, 201)),
+    ("mint", (159, 254, 176)),
+)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -141,6 +180,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quantized_images: dict[str, np.ndarray] = {}
         self.indexed_images: dict[str, np.ndarray] = {}
         self.selected_palette_index: int | None = None
+        self._palette_image_size: int = 0
         self._syncing_previews = False
 
         self._build_ui()
@@ -176,16 +216,22 @@ class MainWindow(QtWidgets.QMainWindow):
         center_panel.addWidget(self.paletted_unique_colors_label)
 
         right_panel = QtWidgets.QVBoxLayout()
-        self.palette_label = QtWidgets.QLabel()
+        self.palette_label = ClickablePaletteLabel()
         self.palette_label.setMinimumSize(256, 256)
         self.palette_label.setAlignment(QtCore.Qt.AlignCenter)
         self.palette_label.setStyleSheet("background: #202020; padding: 2px;")
+        self.palette_label.clicked.connect(self._on_palette_clicked)
+        self.palette_details_label = QtWidgets.QLabel(
+            "Palette selection: click a palette color tile to inspect index, hex, RGB, and nearest XKCD color."
+        )
+        self.palette_details_label.setWordWrap(True)
         self.compute_btn = QtWidgets.QPushButton("Compute Palette")
         self.compute_btn.clicked.connect(self.compute_palette)
         self.save_btn = QtWidgets.QPushButton("Save Palette")
         self.save_btn.clicked.connect(self.save_palette_dialog)
 
         right_panel.addWidget(self.palette_label)
+        right_panel.addWidget(self.palette_details_label)
         right_panel.addWidget(self.compute_btn)
         right_panel.addWidget(self.save_btn)
         right_panel.addStretch(1)
@@ -300,6 +346,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _refresh_palette_view(self) -> None:
         image = visualize_palette(self.current_palette, selected_index=self.selected_palette_index)
+        self._palette_image_size = image.width()
         self.palette_label.setPixmap(
             QtGui.QPixmap.fromImage(image).scaled(
                 self.palette_label.size(),
@@ -371,6 +418,56 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.selected_palette_index = int(indexed[y, x])
         self._refresh_palette_view()
+        self._update_palette_details(self.selected_palette_index)
+
+    @staticmethod
+    def _rgb_to_hex(color: tuple[int, int, int]) -> str:
+        return f"#{color[0]:02X}{color[1]:02X}{color[2]:02X}"
+
+    @staticmethod
+    def _closest_xkcd_color_name(color: tuple[int, int, int]) -> str:
+        target = np.array(color, dtype=np.int32)
+        best_name = "unknown"
+        best_distance = float("inf")
+        for name, xkcd_rgb in XKCD_COLORS:
+            candidate = np.array(xkcd_rgb, dtype=np.int32)
+            distance = int(np.sum((target - candidate) ** 2))
+            if distance < best_distance:
+                best_distance = distance
+                best_name = name
+        return best_name
+
+    def _update_palette_details(self, index: int) -> None:
+        rgb = tuple(int(v) for v in self.current_palette[index])
+        hex_code = self._rgb_to_hex(rgb)
+        nearest_xkcd = self._closest_xkcd_color_name(rgb)
+        self.palette_details_label.setText(
+            f"Palette index: {index} | Hex: {hex_code} | RGB: ({rgb[0]}, {rgb[1]}, {rgb[2]}) | "
+            f"Nearest XKCD color: {nearest_xkcd}"
+        )
+
+    def _on_palette_clicked(self, point: QtCore.QPoint) -> None:
+        pixmap = self.palette_label.pixmap()
+        if pixmap is None or pixmap.isNull() or self._palette_image_size <= 0:
+            return
+        x_offset = (self.palette_label.width() - pixmap.width()) // 2
+        y_offset = (self.palette_label.height() - pixmap.height()) // 2
+        x = point.x() - x_offset
+        y = point.y() - y_offset
+        if x < 0 or y < 0 or x >= pixmap.width() or y >= pixmap.height():
+            return
+
+        source_x = int(x * self._palette_image_size / pixmap.width())
+        source_y = int(y * self._palette_image_size / pixmap.height())
+        tile_size = max(1, self._palette_image_size // 16)
+        col = source_x // tile_size
+        row = source_y // tile_size
+        if not (0 <= row < 16 and 0 <= col < 16):
+            return
+        index = int(row * 16 + col)
+        self.selected_palette_index = index
+        self._refresh_palette_view()
+        self._update_palette_details(index)
 
     def save_palette_dialog(self) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
