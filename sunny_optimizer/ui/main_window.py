@@ -199,10 +199,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compute_btn.clicked.connect(self.compute_palette)
         self.save_btn = QtWidgets.QPushButton("Save Palette")
         self.save_btn.clicked.connect(self.save_palette_dialog)
+        self.compute_progress = QtWidgets.QProgressBar()
+        self.compute_progress.setRange(0, 100)
+        self.compute_progress.setValue(0)
+        self.compute_progress.setFormat("Idle")
+        self.compute_progress.setTextVisible(True)
 
         right_panel.addWidget(self.palette_label)
         right_panel.addWidget(self.palette_details_label)
         right_panel.addWidget(self.compute_btn)
+        right_panel.addWidget(self.compute_progress)
         right_panel.addWidget(self.save_btn)
         right_panel.addStretch(1)
 
@@ -348,20 +354,46 @@ class MainWindow(QtWidgets.QMainWindow):
         if not palette_path:
             return
 
+        self.compute_btn.setEnabled(False)
+        self.compute_progress.setValue(5)
+        self.compute_progress.setFormat("Loading base palette...")
+        QtWidgets.QApplication.processEvents()
+
         try:
             fixed_palette = load_sunny_palette(palette_path)
+            self.compute_progress.setValue(20)
+            self.compute_progress.setFormat("Preparing optimizer...")
+            QtWidgets.QApplication.processEvents()
+
             optimizer = SunnyPaletteOptimizer(
                 rgb_images=self.texture_images,
                 per_texture_color_budget=self.per_texture_budget,
                 fixed_palette=fixed_palette,
                 dirt_present=self.dirt_checkbox.isChecked(),
             )
+
+            self.compute_progress.setValue(45)
+            self.compute_progress.setFormat("Computing optimized palette...")
+            QtWidgets.QApplication.processEvents()
+
             self.current_palette = optimizer.compute_palette()
+
+            self.compute_progress.setValue(80)
+            self.compute_progress.setFormat("Building quantized previews...")
+            QtWidgets.QApplication.processEvents()
+
             self.indexed_images, self.quantized_images = optimizer.compute_quantized_images(self.current_palette)
             self.selected_palette_index = None
         except Exception as exc:  # prototype surface
+            self.compute_progress.setValue(0)
+            self.compute_progress.setFormat("Failed")
             QtWidgets.QMessageBox.critical(self, "Optimization failed", str(exc))
             return
+        finally:
+            self.compute_btn.setEnabled(True)
+
+        self.compute_progress.setValue(100)
+        self.compute_progress.setFormat("Done")
 
         self._refresh_palette_view()
         current = self.texture_list.currentItem()
