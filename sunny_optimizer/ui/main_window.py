@@ -165,13 +165,18 @@ class MainWindow(QtWidgets.QMainWindow):
         root = QtWidgets.QHBoxLayout(central)
 
         left_panel = QtWidgets.QVBoxLayout()
+        folder_controls = QtWidgets.QHBoxLayout()
         self.folder_btn = QtWidgets.QPushButton("Select Texture Folder")
         self.folder_btn.clicked.connect(self.select_folder)
+        self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
+        self.refresh_folder_btn.clicked.connect(self.refresh_folder)
         self.texture_list = QtWidgets.QListWidget()
         self.texture_list.currentItemChanged.connect(self._on_current_item_changed)
         self.dirt_checkbox = QtWidgets.QCheckBox("Dirt present")
 
-        left_panel.addWidget(self.folder_btn)
+        folder_controls.addWidget(self.folder_btn)
+        folder_controls.addWidget(self.refresh_folder_btn)
+        left_panel.addLayout(folder_controls)
         left_panel.addWidget(self.texture_list, 1)
         left_panel.addWidget(self.dirt_checkbox)
 
@@ -230,6 +235,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if not folder:
             return
         self._load_folder(Path(folder))
+
+    def refresh_folder(self) -> None:
+        if self.loaded_texture_folder is None:
+            QtWidgets.QMessageBox.information(self, "No folder", "No folder selected yet.")
+            return
+        if not self.loaded_texture_folder.exists() or not self.loaded_texture_folder.is_dir():
+            QtWidgets.QMessageBox.warning(self, "Folder missing", "Selected folder no longer exists.")
+            return
+        self._load_folder(self.loaded_texture_folder)
 
     def _load_folder(self, folder: Path) -> None:
         from PIL import Image
