@@ -13,10 +13,14 @@ from .quantizer import Quantizer
 from .palette import load_sunny_palette, save_palette
 
 OPTIMIZED_START = 176
-OPTIMIZED_END = 243
+OPTIMIZED_END = 245
 OPTIMIZED_SLOTS = OPTIMIZED_END - OPTIMIZED_START + 1
 BROWN_BASE_INDEX = 244
 BROWN_DARK_INDEX = 245
+
+
+def optimized_slot_count(dirt_present: bool) -> int:
+    return OPTIMIZED_SLOTS - 2 if dirt_present else OPTIMIZED_SLOTS
 
 
 @dataclass
@@ -81,24 +85,24 @@ class SunnyPaletteOptimizer:
             raise ValueError("No textures available for optimization")
         return np.vstack(all_centroids)
 
-    def _final_optimized_lab(self, centroids: np.ndarray) -> np.ndarray:
-        n_clusters = min(OPTIMIZED_SLOTS, centroids.shape[0])
+    def _final_optimized_lab(self, centroids: np.ndarray, slot_count: int) -> np.ndarray:
+        n_clusters = min(slot_count, centroids.shape[0])
         kmeans = KMeans(n_clusters=n_clusters, n_init=8, random_state=self.random_state)
         kmeans.fit(centroids)
         final_centers = kmeans.cluster_centers_
-        if n_clusters < OPTIMIZED_SLOTS:
-            repeats = np.tile(final_centers[-1:], (OPTIMIZED_SLOTS - n_clusters, 1))
+        if n_clusters < slot_count:
+            repeats = np.tile(final_centers[-1:], (slot_count - n_clusters, 1))
             final_centers = np.vstack([final_centers, repeats])
-        return final_centers[:OPTIMIZED_SLOTS]
+        return final_centers[:slot_count]
 
-    def _reorder_optimized_colors(self, optimized_rgb: np.ndarray) -> np.ndarray:
+    def _reorder_optimized_colors(self, optimized_rgb: np.ndarray, slot_count: int) -> np.ndarray:
         """Sort optimized colors into a more coherent progression.
 
         Neutrals are grouped first by lightness; chromatic colors are grouped by hue,
         then by lightness.
         """
-        if optimized_rgb.shape != (OPTIMIZED_SLOTS, 3):
-            raise ValueError("optimized_rgb must have shape (OPTIMIZED_SLOTS, 3)")
+        if optimized_rgb.shape != (slot_count, 3):
+            raise ValueError("optimized_rgb must have shape (slot_count, 3)")
 
         lab = self._rgb_to_lab(optimized_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
         chroma = np.hypot(lab[:, 1], lab[:, 2])
@@ -147,12 +151,14 @@ class SunnyPaletteOptimizer:
 
     def compute_palette(self) -> np.ndarray:
         palette = self.fixed_palette.copy()
+        slot_count = optimized_slot_count(self.dirt_present)
+        optimized_end = OPTIMIZED_START + slot_count - 1
         centroids = self._stage1_centroids()
-        optimized_lab = self._final_optimized_lab(centroids)
+        optimized_lab = self._final_optimized_lab(centroids, slot_count)
         optimized_rgb = self._lab_to_rgb_u8(optimized_lab)
-        optimized_rgb = self._reorder_optimized_colors(optimized_rgb)
+        optimized_rgb = self._reorder_optimized_colors(optimized_rgb, slot_count)
 
-        palette[OPTIMIZED_START : OPTIMIZED_END + 1] = optimized_rgb
+        palette[OPTIMIZED_START : optimized_end + 1] = optimized_rgb
         if self.dirt_present:
             brown_base, brown_dark = self._compute_brown_pair()
             palette[BROWN_BASE_INDEX] = brown_base
