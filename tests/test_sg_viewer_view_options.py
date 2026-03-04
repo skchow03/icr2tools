@@ -1902,3 +1902,18 @@ def test_export_tsd_objects_writes_generated_tsd_files(qapp, tmp_path, monkeypat
         assert content.count("Detail:") == 6
     finally:
         window.close()
+
+
+def test_mrk_length_multiplier_persists_in_sgc_state(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        window.controller._current_path = sg_path
+
+        window.pitwall_length_multiplier_spin.setValue(6.5)
+
+        payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
+        assert payload["mrk_wall_heights"]["length_multiplier"] == pytest.approx(6.5)
+    finally:
+        window.close()
