@@ -177,21 +177,31 @@ class SGSettingsStore:
         tsd_state["objects"] = objects
         self.update(sg_path, tsd=tsd_state)
 
-    def get_mrk_wall_heights(self, sg_path: Path) -> tuple[float, float] | None:
+    def get_mrk_wall_heights(self, sg_path: Path) -> tuple[float, float, float] | None:
         payload = self.load(sg_path)
         raw = payload.get("mrk_wall_heights")
         if not isinstance(raw, dict):
             return None
         try:
-            return float(raw["wall_height_500ths"]), float(raw["armco_height_500ths"])
+            wall_height_500ths = float(raw["wall_height_500ths"])
+            armco_height_500ths = float(raw["armco_height_500ths"])
+            length_multiplier = float(raw.get("length_multiplier", 4.0))
+            return wall_height_500ths, armco_height_500ths, length_multiplier
         except (KeyError, TypeError, ValueError):
             return None
 
-    def set_mrk_wall_heights(self, sg_path: Path, wall_height_500ths: float, armco_height_500ths: float) -> None:
+    def set_mrk_wall_heights(
+        self,
+        sg_path: Path,
+        wall_height_500ths: float,
+        armco_height_500ths: float,
+        length_multiplier: float,
+    ) -> None:
         self.update(
             sg_path,
             mrk_wall_heights={
                 "wall_height_500ths": float(wall_height_500ths),
                 "armco_height_500ths": float(armco_height_500ths),
+                "length_multiplier": float(length_multiplier),
             },
         )

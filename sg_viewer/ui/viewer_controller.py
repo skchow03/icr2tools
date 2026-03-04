@@ -1128,6 +1128,7 @@ class SGViewerController:
             self._current_path,
             self._window.pitwall_wall_height_500ths(),
             self._window.pitwall_armco_height_500ths(),
+            self._window.pitwall_length_multiplier(),
         )
 
     def _load_mrk_wall_heights_for_current_track(self) -> None:
@@ -1137,9 +1138,10 @@ class SGViewerController:
         if heights is None:
             return
         unit = self._window.current_measurement_unit()
-        wall_height_500ths, armco_height_500ths = heights
+        wall_height_500ths, armco_height_500ths, length_multiplier = heights
         self._window.pitwall_wall_height_spin.setValue(units_from_500ths(wall_height_500ths, unit))
         self._window.pitwall_armco_height_spin.setValue(units_from_500ths(armco_height_500ths, unit))
+        self._window.pitwall_length_multiplier_spin.setValue(length_multiplier)
 
     def _on_mrk_wall_select_requested(self) -> None:
         table = self._window.mrk_entries_table
@@ -2445,6 +2447,7 @@ class SGViewerController:
         self._window.preview.set_mrk_length_multiplier(
             self._window.pitwall_length_multiplier()
         )
+        self._persist_mrk_wall_heights_for_current_track()
         self._update_mrk_highlights_from_table()
 
     def _on_track_opacity_changed(self, value: int) -> None:
