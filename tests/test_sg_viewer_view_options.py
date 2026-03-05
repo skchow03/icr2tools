@@ -1919,6 +1919,21 @@ def test_mrk_length_multiplier_persists_in_sgc_state(qapp, tmp_path):
         window.close()
 
 
+
+
+def test_set_trackside_objects_tolerates_missing_selected_index_attr(qapp):
+    window = SGViewerWindow()
+    try:
+        assert hasattr(window.preview, "_selected_trackside_object_index")
+        delattr(window.preview, "_selected_trackside_object_index")
+
+        window.preview.set_trackside_objects(())
+
+        assert window.preview.selected_trackside_object_index is None
+    finally:
+        window.close()
+
+
 def test_add_tso_updates_preview_overlay_and_selection(qapp):
     window = SGViewerWindow()
     try:

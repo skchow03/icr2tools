@@ -417,9 +417,10 @@ class _RuntimeCorePreviewMixin:
 
     def set_trackside_objects(self, objects) -> None:
         self._trackside_objects = tuple(objects)
-        if self._selected_trackside_object_index is not None and (
-            self._selected_trackside_object_index < 0
-            or self._selected_trackside_object_index >= len(self._trackside_objects)
+        selected_index = getattr(self, "_selected_trackside_object_index", None)
+        if selected_index is not None and (
+            selected_index < 0
+            or selected_index >= len(self._trackside_objects)
         ):
             self._selected_trackside_object_index = None
         self._context.request_repaint()
