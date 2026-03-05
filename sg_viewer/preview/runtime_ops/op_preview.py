@@ -423,11 +423,15 @@ class _RuntimeCorePreviewMixin:
             or selected_index >= len(self._trackside_objects)
         ):
             self._selected_trackside_object_index = None
+        selected_indices = getattr(self, "_selected_trackside_object_indices", ())
         self._selected_trackside_object_indices = tuple(
-            index for index in self._selected_trackside_object_indices if 0 <= index < len(self._trackside_objects)
+            index for index in selected_indices if 0 <= index < len(self._trackside_objects)
         )
+        move_enabled_indices = getattr(self, "_trackside_move_enabled_indices", ())
         self._trackside_move_enabled_indices = tuple(
-            index for index in self._trackside_move_enabled_indices if 0 <= index < len(self._trackside_objects)
+            index
+            for index in move_enabled_indices
+            if 0 <= index < len(self._trackside_objects)
         )
         self._context.request_repaint()
 
