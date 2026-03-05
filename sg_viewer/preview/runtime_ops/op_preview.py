@@ -423,6 +423,12 @@ class _RuntimeCorePreviewMixin:
             or selected_index >= len(self._trackside_objects)
         ):
             self._selected_trackside_object_index = None
+        self._selected_trackside_object_indices = tuple(
+            index for index in self._selected_trackside_object_indices if 0 <= index < len(self._trackside_objects)
+        )
+        self._trackside_move_enabled_indices = tuple(
+            index for index in self._trackside_move_enabled_indices if 0 <= index < len(self._trackside_objects)
+        )
         self._context.request_repaint()
 
     def set_selected_trackside_object_index(self, index: int | None) -> None:
@@ -434,6 +440,31 @@ class _RuntimeCorePreviewMixin:
                 self._selected_trackside_object_index = None
             else:
                 self._selected_trackside_object_index = value
+        self._context.request_repaint()
+
+
+    def set_selected_trackside_object_indices(self, indices: tuple[int, ...]) -> None:
+        normalized = []
+        seen: set[int] = set()
+        for index in indices:
+            value = int(index)
+            if value < 0 or value >= len(self._trackside_objects) or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        self._selected_trackside_object_indices = tuple(normalized)
+        self._context.request_repaint()
+
+    def set_trackside_move_enabled_indices(self, indices: tuple[int, ...]) -> None:
+        normalized = []
+        seen: set[int] = set()
+        for index in indices:
+            value = int(index)
+            if value < 0 or value >= len(self._trackside_objects) or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        self._trackside_move_enabled_indices = tuple(normalized)
         self._context.request_repaint()
 
     def set_show_trackside_objects(self, visible: bool) -> None:

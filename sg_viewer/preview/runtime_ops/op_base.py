@@ -102,6 +102,8 @@ class _RuntimeCoreBaseMixin:
         self._tsd_palette: tuple[QtGui.QColor, ...] = ()
         self._trackside_objects: tuple[TracksideObject, ...] = ()
         self._selected_trackside_object_index: int | None = None
+        self._selected_trackside_object_indices: tuple[int, ...] = ()
+        self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
         self._active_trackside_drag_index: int | None = None
