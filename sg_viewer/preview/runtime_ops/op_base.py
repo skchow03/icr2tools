@@ -20,6 +20,7 @@ from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.services.preview_background import PreviewBackground
 from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+from sg_viewer.services.trackside_objects import TracksideObject
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
@@ -99,6 +100,11 @@ class _RuntimeCoreBaseMixin:
         self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
         self._tsd_lines_version = 0
         self._tsd_palette: tuple[QtGui.QColor, ...] = ()
+        self._trackside_objects: tuple[TracksideObject, ...] = ()
+        self._selected_trackside_object_index: int | None = None
+        self._show_trackside_objects = False
+        self._trackside_object_drag_callback = None
+        self._active_trackside_drag_index: int | None = None
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []

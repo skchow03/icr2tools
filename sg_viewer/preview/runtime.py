@@ -226,7 +226,57 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._request_interaction_repaint()
         event.accept()
 
+    def _trackside_drag_hit_test(self, screen_pos: QtCore.QPointF) -> int | None:
+        if not self._show_trackside_objects:
+            return None
+        selected = self._selected_trackside_object_index
+        if selected is None or selected < 0 or selected >= len(self._trackside_objects):
+            return None
+        transform = self.current_transform(self._widget_size())
+        if transform is None:
+            return None
+        obj = self._trackside_objects[selected]
+        scale, offsets = transform
+        sx = offsets[0] + float(obj.x) * scale
+        sy = offsets[1] - float(obj.y) * scale
+        dx = float(screen_pos.x()) - sx
+        dy = float(screen_pos.y()) - sy
+        yaw_radians = math.radians(float(obj.yaw) / 10.0)
+        cos_yaw = math.cos(-yaw_radians)
+        sin_yaw = math.sin(-yaw_radians)
+        local_x = dx * cos_yaw - dy * sin_yaw
+        local_y = dx * sin_yaw + dy * cos_yaw
+        half_length = max(4.0 / max(scale, 1e-9), float(obj.bbox_length) * 0.5)
+        half_width = max(4.0 / max(scale, 1e-9), float(obj.bbox_width) * 0.5)
+        if abs(local_x) <= half_length and abs(local_y) <= half_width:
+            return selected
+        return None
+
+    def _drag_trackside_object_to(self, screen_pos: QtCore.QPointF) -> bool:
+        index = self._active_trackside_drag_index
+        callback = self._trackside_object_drag_callback
+        if index is None or not callable(callback):
+            return False
+        transform = self.current_transform(self._widget_size())
+        if transform is None:
+            return False
+        world_pos = self.map_to_track(
+            (float(screen_pos.x()), float(screen_pos.y())),
+            self._widget_size(),
+            self._widget_height(),
+            transform,
+        )
+        if world_pos is None:
+            return False
+        callback(index, int(round(world_pos[0])), int(round(world_pos[1])))
+        return True
+
     def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() == QtCore.Qt.LeftButton and self._trackside_drag_hit_test(event.localPos()) is not None:
+            self._active_trackside_drag_index = self._selected_trackside_object_index
+            event.accept()
+            return
+
         if self._handle_creation_mouse_press(event):
             return
 
@@ -246,6 +296,12 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._apply_mouse_intent(intent, event)
 
     def on_mouse_move(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._active_trackside_drag_index is not None:
+            if self._drag_trackside_object_to(event.localPos()):
+                event.accept()
+                self._request_interaction_repaint()
+                return
+
         if self._handle_creation_mouse_move(event.pos()):
             event.accept()
             return
@@ -274,6 +330,12 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._apply_mouse_intent(intent, event)
 
     def on_mouse_release(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._active_trackside_drag_index is not None and event.button() == QtCore.Qt.LeftButton:
+            self._drag_trackside_object_to(event.localPos())
+            self._active_trackside_drag_index = None
+            event.accept()
+            return
+
         if self._handle_creation_mouse_release(event):
             return
 

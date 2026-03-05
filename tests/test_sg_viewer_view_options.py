@@ -1917,3 +1917,41 @@ def test_mrk_length_multiplier_persists_in_sgc_state(qapp, tmp_path):
         assert payload["mrk_wall_heights"]["length_multiplier"] == pytest.approx(6.5)
     finally:
         window.close()
+
+
+def test_add_tso_updates_preview_overlay_and_selection(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._on_tso_add_requested()
+
+        assert window.tso_table.rowCount() == 1
+        assert len(window.preview.trackside_objects) == 1
+
+        window.tso_table.selectRow(0)
+        window.controller._on_tso_selection_changed()
+
+        assert window.preview.selected_trackside_object_index == 0
+    finally:
+        window.close()
+
+
+def test_preview_tso_drag_updates_table_and_state(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        window.controller._current_path = sg_path
+
+        window.controller._on_tso_add_requested()
+        window.controller._on_preview_tso_dragged(0, 123, -456)
+
+        assert window.controller._trackside_objects[0].x == 123
+        assert window.controller._trackside_objects[0].y == -456
+        assert window.tso_table.item(0, 2).text() == "123"
+        assert window.tso_table.item(0, 3).text() == "-456"
+
+        payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
+        assert payload["trackside_objects"][0]["x"] == 123
+        assert payload["trackside_objects"][0]["y"] == -456
+    finally:
+        window.close()
