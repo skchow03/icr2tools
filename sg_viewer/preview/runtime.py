@@ -21,6 +21,7 @@ from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
+from sg_viewer.services.trackside_objects import TracksideObject
 from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
@@ -128,6 +129,11 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
         self._tsd_lines_version = 0
         self._tsd_palette: tuple[QtGui.QColor, ...] = ()
+        self._trackside_objects: tuple[TracksideObject, ...] = ()
+        self._selected_trackside_object_index: int | None = None
+        self._show_trackside_objects = False
+        self._trackside_object_drag_callback = None
+        self._active_trackside_drag_index: int | None = None
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
