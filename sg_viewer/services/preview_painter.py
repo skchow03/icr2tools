@@ -141,6 +141,7 @@ class SgPreviewState:
     tsd_palette: tuple[QtGui.QColor, ...] = ()
     trackside_objects: tuple[object, ...] = ()
     selected_trackside_object_index: int | None = None
+    trackside_move_enabled_indices: tuple[int, ...] = ()
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
 
@@ -234,6 +235,7 @@ def paint_preview(
                 transform,
                 widget_height,
                 selected_index=sg_preview_state.selected_trackside_object_index,
+                move_enabled_indices=sg_preview_state.trackside_move_enabled_indices,
             )
         _draw_centerlines(
             painter,
@@ -789,14 +791,17 @@ def _draw_trackside_objects(
     widget_height: int,
     *,
     selected_index: int | None,
+    move_enabled_indices: tuple[int, ...],
 ) -> None:
+    highlighted_indices = set(int(i) for i in move_enabled_indices)
     for index, obj in enumerate(trackside_objects):
         yaw_radians = math.radians(float(getattr(obj, "yaw", 0.0)) / 10.0)
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
         half_width = max(0.0, float(getattr(obj, "bbox_width", 0.0)) * 0.5)
-        color = QtGui.QColor("#FFD54A") if index == selected_index else QtGui.QColor("#44CCFF")
+        is_highlighted = index in highlighted_indices
+        color = QtGui.QColor("#FFD54A") if is_highlighted else QtGui.QColor("#44CCFF")
         painter.save()
-        painter.setPen(QtGui.QPen(color, 2.0 if index == selected_index else 1.25))
+        painter.setPen(QtGui.QPen(color, 2.0 if is_highlighted else 1.25))
         painter.setBrush(QtCore.Qt.NoBrush)
 
         if half_length <= 0.0 or half_width <= 0.0:

@@ -80,6 +80,7 @@ class PreviewPresenter:
             tsd_palette=self._runtime.tsd_palette,
             trackside_objects=self._runtime.trackside_objects if self._runtime.show_trackside_objects else (),
             selected_trackside_object_index=self._runtime.selected_trackside_object_index,
+            trackside_move_enabled_indices=self._runtime.trackside_move_enabled_indices,
             section_geometry_version=self._runtime.section_geometry_version,
             tsd_lines_version=self._runtime.tsd_lines_version,
         )

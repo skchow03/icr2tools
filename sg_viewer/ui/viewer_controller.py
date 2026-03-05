@@ -51,6 +51,7 @@ from sg_viewer.ui.altitude_units import (
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
+from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
@@ -97,6 +98,7 @@ class SGViewerController:
         self._section_table_window: SectionTableWindow | None = None
         self._heading_table_window: HeadingTableWindow | None = None
         self._xsect_table_window: XsectTableWindow | None = None
+        self._tso_attributes_dialog: TracksideObjectAttributesDialog | None = None
         self._integrity_report_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
         self._history = FileHistory()
@@ -867,6 +869,7 @@ class SGViewerController:
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
         self._window.tso_table.itemSelectionChanged.connect(self._on_tso_selection_changed)
+        self._window.tso_table.cellClicked.connect(self._on_tso_table_cell_clicked)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -1933,12 +1936,6 @@ class SGViewerController:
                     str(obj.x),
                     str(obj.y),
                     str(obj.z),
-                    str(obj.yaw),
-                    str(obj.pitch),
-                    str(obj.tilt),
-                    obj.description,
-                    str(obj.bbox_length),
-                    str(obj.bbox_width),
                 ]
                 for index, value in enumerate(values):
                     column = index + 1
@@ -1952,6 +1949,9 @@ class SGViewerController:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                     else:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
+                button = QtWidgets.QPushButton("Edit…")
+                button.clicked.connect(lambda _checked=False, row_index=row: self._open_tso_attributes_dialog(row_index))
+                table.setCellWidget(row, 6, button)
         finally:
             table.blockSignals(previous_state)
         self._window.preview.set_trackside_move_enabled_indices(tuple(sorted(self._trackside_move_enabled_indices)))
@@ -1977,6 +1977,34 @@ class SGViewerController:
         selected_index = selected_indices[0] if selected_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
         self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+        if selected_indices:
+            self._window.show_status_message("TSO selected: hold Shift and drag in the preview to move selected TSOs.")
+
+    def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
+        if column == 6:
+            self._open_tso_attributes_dialog(row)
+
+    def _open_tso_attributes_dialog(self, row: int) -> None:
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        if self._tso_attributes_dialog is None:
+            self._tso_attributes_dialog = TracksideObjectAttributesDialog(self._window)
+            self._tso_attributes_dialog.objectUpdated.connect(self._on_tso_attributes_updated)
+        self._tso_attributes_dialog.edit_object(row, self._trackside_objects[row])
+        self._tso_attributes_dialog.show()
+        self._tso_attributes_dialog.raise_()
+        self._tso_attributes_dialog.activateWindow()
+
+    def _on_tso_attributes_updated(self, row: int, obj: object) -> None:
+        if not isinstance(obj, TracksideObject):
+            return
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        self._trackside_objects[row] = obj
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _on_preview_tso_dragged(self, anchor_index: int, delta_x: int, delta_y: int) -> None:
         move_indices = sorted(
@@ -2014,11 +2042,22 @@ class SGViewerController:
         self._persist_tsd_state_for_current_track()
 
     def _on_tso_add_requested(self) -> None:
+        center_x = 0
+        center_y = 0
+        preview = self._window.preview
+        world_center = preview.map_to_track(
+            (preview.width() * 0.5, preview.height() * 0.5),
+            (preview.width(), preview.height()),
+            preview.height(),
+        )
+        if world_center is not None:
+            center_x = int(round(world_center[0]))
+            center_y = int(round(world_center[1]))
         self._trackside_objects.append(
             TracksideObject(
                 filename="object.3do",
-                x=0,
-                y=0,
+                x=center_x,
+                y=center_y,
                 z=0,
                 yaw=0,
                 pitch=0,
@@ -2091,17 +2130,18 @@ class SGViewerController:
             filename = (table.item(row, 2).text() if table.item(row, 2) else "").strip()
             if not filename:
                 raise ValueError
+            existing = self._trackside_objects[row]
             obj = TracksideObject(
                 filename=filename,
                 x=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
                 y=int((table.item(row, 4).text() if table.item(row, 4) else "0").strip()),
                 z=int((table.item(row, 5).text() if table.item(row, 5) else "0").strip()),
-                yaw=int((table.item(row, 6).text() if table.item(row, 6) else "0").strip()),
-                pitch=int((table.item(row, 7).text() if table.item(row, 7) else "0").strip()),
-                tilt=int((table.item(row, 8).text() if table.item(row, 8) else "0").strip()),
-                description=(table.item(row, 9).text() if table.item(row, 9) else "").strip(),
-                bbox_length=max(0, int((table.item(row, 10).text() if table.item(row, 10) else "0").strip())),
-                bbox_width=max(0, int((table.item(row, 11).text() if table.item(row, 11) else "0").strip())),
+                yaw=existing.yaw,
+                pitch=existing.pitch,
+                tilt=existing.tilt,
+                description=existing.description,
+                bbox_length=max(0, int(existing.bbox_length)),
+                bbox_width=max(0, int(existing.bbox_width)),
             )
         except ValueError:
             self._refresh_tso_table()

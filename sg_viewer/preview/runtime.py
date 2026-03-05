@@ -305,7 +305,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         return True
 
     def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.LeftButton and bool(event.modifiers() & QtCore.Qt.ShiftModifier):
             hit_index = self._trackside_drag_hit_test(event.localPos())
             if hit_index is not None:
                 transform = self.current_transform(self._widget_size())

@@ -242,6 +242,10 @@ class _RuntimeCorePreviewMixin:
         return self._selected_trackside_object_index
 
     @property
+    def trackside_move_enabled_indices(self) -> tuple[int, ...]:
+        return tuple(self._trackside_move_enabled_indices)
+
+    @property
     def show_trackside_objects(self) -> bool:
         return bool(self._show_trackside_objects)
 
