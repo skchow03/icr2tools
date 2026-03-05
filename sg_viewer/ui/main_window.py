@@ -159,8 +159,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_move_up_button = QtWidgets.QPushButton("Move Up")
         self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
-        self._tso_table = QtWidgets.QTableWidget(0, 11)
+        self._tso_table = QtWidgets.QTableWidget(0, 12)
         self._tso_table.setHorizontalHeaderLabels([
+            "Move",
             "Name",
             "Filename (.3do)",
             "X (500ths)",
@@ -175,7 +176,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         ])
         self._tso_table.horizontalHeader().setStretchLastSection(True)
         self._tso_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._tso_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._tso_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._tso_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
         self._tsd_files_combo = QtWidgets.QComboBox()
         self._tsd_files_combo.setEnabled(False)
