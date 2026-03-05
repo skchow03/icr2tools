@@ -78,6 +78,8 @@ class PreviewPresenter:
             selected_section_index=selection.selected_section_index,
             tsd_lines=self._runtime.tsd_lines,
             tsd_palette=self._runtime.tsd_palette,
+            trackside_objects=self._runtime.trackside_objects if self._runtime.show_trackside_objects else (),
+            selected_trackside_object_index=self._runtime.selected_trackside_object_index,
             section_geometry_version=self._runtime.section_geometry_version,
             tsd_lines_version=self._runtime.tsd_lines_version,
         )

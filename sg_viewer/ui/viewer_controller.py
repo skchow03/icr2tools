@@ -152,6 +152,7 @@ class SGViewerController:
         self._create_actions()
         self._create_menus()
         self._connect_signals()
+        self._window.preview.set_trackside_object_drag_callback(self._on_preview_tso_dragged)
         self._on_track_opacity_changed(self._window.track_opacity_slider.value())
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
@@ -863,6 +864,7 @@ class SGViewerController:
         self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
+        self._window.tso_table.itemSelectionChanged.connect(self._on_tso_selection_changed)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -1908,6 +1910,7 @@ class SGViewerController:
         previous_state = table.blockSignals(True)
         try:
             table.setRowCount(len(self._trackside_objects))
+            self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
             for row, obj in enumerate(self._trackside_objects):
                 values = [
                     f"__TSO{row}",
@@ -1935,6 +1938,34 @@ class SGViewerController:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
         finally:
             table.blockSignals(previous_state)
+
+    def _on_tso_selection_changed(self) -> None:
+        table = self._window.tso_table
+        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        selected_index = selected_rows[0].row() if selected_rows else None
+        self._window.preview.set_selected_trackside_object_index(selected_index)
+
+    def _on_preview_tso_dragged(self, index: int, x: int, y: int) -> None:
+        if index < 0 or index >= len(self._trackside_objects):
+            return
+        obj = self._trackside_objects[index]
+        updated = TracksideObject(
+            filename=obj.filename,
+            x=int(x),
+            y=int(y),
+            z=obj.z,
+            yaw=obj.yaw,
+            pitch=obj.pitch,
+            tilt=obj.tilt,
+            description=obj.description,
+            bbox_length=obj.bbox_length,
+            bbox_width=obj.bbox_width,
+        )
+        self._trackside_objects[index] = updated
+        self._refresh_tso_table()
+        self._window.tso_table.selectRow(index)
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _on_tso_add_requested(self) -> None:
         self._trackside_objects.append(
@@ -2017,6 +2048,7 @@ class SGViewerController:
             self._refresh_tso_table()
             return
         self._trackside_objects[row] = obj
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
 
@@ -2602,6 +2634,7 @@ class SGViewerController:
         is_objects_tab = tab_name == "Objects"
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab)
+        self._window.preview.set_show_trackside_objects(is_objects_tab)
         if is_mrk_tab:
             self._update_mrk_highlights_from_table()
         else:

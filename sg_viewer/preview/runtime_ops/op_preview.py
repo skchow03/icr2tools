@@ -234,6 +234,18 @@ class _RuntimeCorePreviewMixin:
         return self._tsd_palette
 
     @property
+    def trackside_objects(self):
+        return self._trackside_objects
+
+    @property
+    def selected_trackside_object_index(self) -> int | None:
+        return self._selected_trackside_object_index
+
+    @property
+    def show_trackside_objects(self) -> bool:
+        return bool(self._show_trackside_objects)
+
+    @property
     def section_geometry_version(self) -> int:
         return int(self._sg_version)
 
@@ -402,6 +414,33 @@ class _RuntimeCorePreviewMixin:
     def set_tsd_palette(self, palette) -> None:
         self._tsd_palette = tuple(palette)
         self._context.request_repaint()
+
+    def set_trackside_objects(self, objects) -> None:
+        self._trackside_objects = tuple(objects)
+        if self._selected_trackside_object_index is not None and (
+            self._selected_trackside_object_index < 0
+            or self._selected_trackside_object_index >= len(self._trackside_objects)
+        ):
+            self._selected_trackside_object_index = None
+        self._context.request_repaint()
+
+    def set_selected_trackside_object_index(self, index: int | None) -> None:
+        if index is None:
+            self._selected_trackside_object_index = None
+        else:
+            value = int(index)
+            if value < 0 or value >= len(self._trackside_objects):
+                self._selected_trackside_object_index = None
+            else:
+                self._selected_trackside_object_index = value
+        self._context.request_repaint()
+
+    def set_show_trackside_objects(self, visible: bool) -> None:
+        self._show_trackside_objects = bool(visible)
+        self._context.request_repaint()
+
+    def set_trackside_object_drag_callback(self, callback) -> None:
+        self._trackside_object_drag_callback = callback
 
     def set_selected_mrk_wall(self, boundary_index: int, section_index: int, wall_index: int) -> None:
         self._selected_mrk_wall = (

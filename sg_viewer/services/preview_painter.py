@@ -139,6 +139,8 @@ class SgPreviewState:
     selected_section_index: int | None = None
     tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
     tsd_palette: tuple[QtGui.QColor, ...] = ()
+    trackside_objects: tuple[object, ...] = ()
+    selected_trackside_object_index: int | None = None
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
 
@@ -224,6 +226,13 @@ def paint_preview(
                 selected_section_index=sg_preview_state.selected_section_index,
                 section_geometry_version=sg_preview_state.section_geometry_version,
                 tsd_lines_version=sg_preview_state.tsd_lines_version,
+            )
+        if sg_preview_state and sg_preview_state.trackside_objects:
+            _draw_trackside_objects(
+                painter,
+                sg_preview_state.trackside_objects,
+                transform,
+                selected_index=sg_preview_state.selected_trackside_object_index,
             )
         _draw_centerlines(
             painter,
@@ -771,6 +780,53 @@ def _draw_axes(
     )
     painter.restore()
 
+
+
+def _draw_trackside_objects(
+    painter: QtGui.QPainter,
+    trackside_objects: tuple[object, ...],
+    transform: Transform,
+    *,
+    selected_index: int | None,
+) -> None:
+    scale, offsets = transform
+    for index, obj in enumerate(trackside_objects):
+        yaw_radians = math.radians(float(getattr(obj, "yaw", 0.0)) / 10.0)
+        half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
+        half_width = max(0.0, float(getattr(obj, "bbox_width", 0.0)) * 0.5)
+        color = QtGui.QColor("#FFD54A") if index == selected_index else QtGui.QColor("#44CCFF")
+        painter.save()
+        painter.setPen(QtGui.QPen(color, 2.0 if index == selected_index else 1.25))
+        painter.setBrush(QtCore.Qt.NoBrush)
+
+        if half_length <= 0.0 or half_width <= 0.0:
+            sx = offsets[0] + float(obj.x) * scale
+            sy = offsets[1] - float(obj.y) * scale
+            marker_size = 4.0
+            painter.drawRect(QtCore.QRectF(sx - marker_size, sy - marker_size, marker_size * 2.0, marker_size * 2.0))
+            painter.restore()
+            continue
+
+        cos_yaw = math.cos(yaw_radians)
+        sin_yaw = math.sin(yaw_radians)
+        corners = (
+            (half_length, half_width),
+            (half_length, -half_width),
+            (-half_length, -half_width),
+            (-half_length, half_width),
+        )
+        polygon = QtGui.QPolygonF()
+        for local_x, local_y in corners:
+            wx = float(obj.x) + local_x * cos_yaw - local_y * sin_yaw
+            wy = float(obj.y) + local_x * sin_yaw + local_y * cos_yaw
+            polygon.append(
+                QtCore.QPointF(
+                    offsets[0] + wx * scale,
+                    offsets[1] - wy * scale,
+                )
+            )
+        painter.drawPolygon(polygon)
+        painter.restore()
 
 def _draw_centerlines(
     painter: QtGui.QPainter,
