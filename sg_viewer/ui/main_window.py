@@ -118,6 +118,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Fsects": "Fsects",
             "Walls": "Walls",
             "TSD": "TSD",
+            "Objects": "Objects",
         }
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
@@ -153,6 +154,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Command",
         ])
         self._tsd_objects_table.horizontalHeader().setStretchLastSection(True)
+        self._tso_add_button = QtWidgets.QPushButton("Add TSO")
+        self._tso_delete_button = QtWidgets.QPushButton("Delete TSO")
+        self._tso_move_up_button = QtWidgets.QPushButton("Move Up")
+        self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
+        self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
+        self._tso_table = QtWidgets.QTableWidget(0, 11)
+        self._tso_table.setHorizontalHeaderLabels([
+            "Name",
+            "Filename (.3do)",
+            "X (500ths)",
+            "Y (500ths)",
+            "Z (500ths)",
+            "Yaw (tenths)",
+            "Pitch (tenths)",
+            "Tilt (tenths)",
+            "Description",
+            "BBox Length",
+            "BBox Width",
+        ])
+        self._tso_table.horizontalHeader().setStretchLastSection(True)
+        self._tso_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._tso_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._tso_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
         self._tsd_files_combo = QtWidgets.QComboBox()
         self._tsd_files_combo.setEnabled(False)
         self._tsd_files_combo.setToolTip("Select a loaded TSD file to edit.")
@@ -631,10 +655,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_layout.addWidget(tsd_objects_group)
         self._tsd_sidebar.setLayout(tsd_layout)
 
+        self._tso_sidebar = QtWidgets.QWidget()
+        tso_layout = QtWidgets.QVBoxLayout()
+        tso_info = QtWidgets.QLabel(
+            "Trackside objects (TSOs) are exported to objects.txt entries named __TSOn.\n"
+            "Position values use 500ths and rotations use tenths of angles."
+        )
+        tso_info.setWordWrap(True)
+        tso_layout.addWidget(tso_info)
+        tso_buttons = QtWidgets.QHBoxLayout()
+        tso_buttons.addWidget(self._tso_add_button)
+        tso_buttons.addWidget(self._tso_delete_button)
+        tso_buttons.addWidget(self._tso_move_up_button)
+        tso_buttons.addWidget(self._tso_move_down_button)
+        tso_layout.addLayout(tso_buttons)
+        tso_layout.addWidget(self._tso_generate_file_button)
+        tso_layout.addWidget(self._tso_table)
+        self._tso_sidebar.setLayout(tso_layout)
+
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
         self._right_sidebar_tabs.addTab(self._mrk_sidebar, "Walls")
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
+        self._right_sidebar_tabs.addTab(self._tso_sidebar, "Objects")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)
@@ -922,6 +965,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_objects_table(self) -> QtWidgets.QTableWidget:
         return self._tsd_objects_table
+
+    @property
+    def tso_add_button(self) -> QtWidgets.QPushButton:
+        return self._tso_add_button
+
+    @property
+    def tso_delete_button(self) -> QtWidgets.QPushButton:
+        return self._tso_delete_button
+
+    @property
+    def tso_move_up_button(self) -> QtWidgets.QPushButton:
+        return self._tso_move_up_button
+
+    @property
+    def tso_move_down_button(self) -> QtWidgets.QPushButton:
+        return self._tso_move_down_button
+
+    @property
+    def tso_generate_file_button(self) -> QtWidgets.QPushButton:
+        return self._tso_generate_file_button
+
+    @property
+    def tso_table(self) -> QtWidgets.QTableWidget:
+        return self._tso_table
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action

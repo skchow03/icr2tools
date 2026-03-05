@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class TracksideObject:
+    filename: str
+    x: int
+    y: int
+    z: int
+    yaw: int
+    pitch: int
+    tilt: int
+    description: str = ""
+    bbox_length: int = 0
+    bbox_width: int = 0
+
+    def to_objects_txt_line(self, index: int) -> str:
+        return (
+            f'__TSO{index}: DYNAMIC {self.x}, {self.y}, {self.z}, {self.yaw}, '
+            f'{self.pitch}, {self.tilt}, 1, EXTERN "{self.filename}";'
+        )
+
+
+def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
+    return {
+        "filename": obj.filename,
+        "x": obj.x,
+        "y": obj.y,
+        "z": obj.z,
+        "yaw": obj.yaw,
+        "pitch": obj.pitch,
+        "tilt": obj.tilt,
+        "description": obj.description,
+        "bbox_length": obj.bbox_length,
+        "bbox_width": obj.bbox_width,
+    }
+
+
+def trackside_object_from_payload(payload: dict[str, object]) -> TracksideObject:
+    filename = str(payload.get("filename", "")).strip()
+    if not filename:
+        raise ValueError("Trackside object filename is required.")
+    return TracksideObject(
+        filename=filename,
+        x=int(payload.get("x", 0)),
+        y=int(payload.get("y", 0)),
+        z=int(payload.get("z", 0)),
+        yaw=int(payload.get("yaw", 0)),
+        pitch=int(payload.get("pitch", 0)),
+        tilt=int(payload.get("tilt", 0)),
+        description=str(payload.get("description", "")),
+        bbox_length=max(0, int(payload.get("bbox_length", 0))),
+        bbox_width=max(0, int(payload.get("bbox_width", 0))),
+    )
+
+
+def serialize_objects_txt(objects: list[TracksideObject]) -> str:
+    return "\n".join(obj.to_objects_txt_line(index) for index, obj in enumerate(objects))
