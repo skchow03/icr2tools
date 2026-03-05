@@ -33,6 +33,12 @@ from sg_viewer.services.tsd_objects import (
     tsd_object_from_payload,
     tsd_object_to_payload,
 )
+from sg_viewer.services.trackside_objects import (
+    TracksideObject,
+    serialize_objects_txt,
+    trackside_object_from_payload,
+    trackside_object_to_payload,
+)
 from sg_viewer.model.sg_model import Point, SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
@@ -124,11 +130,13 @@ class SGViewerController:
         self._tsd_is_dirty = False
         self._elevation_grade_is_dirty = False
         self._fsects_is_dirty = False
+        self._trackside_objects_is_dirty = False
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._tsd_objects: list[TsdZebraCrossingObject] = []
+        self._trackside_objects: list[TracksideObject] = []
         self._active_tsd_file_index: int | None = None
         self._suspend_tsd_preview_refresh = False
         self._debug_tsd_perf = False
@@ -849,6 +857,12 @@ class SGViewerController:
         self._window.tsd_add_zebra_object_button.clicked.connect(self._on_tsd_add_zebra_object_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
         self._window.tsd_objects_table.itemChanged.connect(self._on_tsd_object_item_changed)
+        self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
+        self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
+        self._window.tso_move_up_button.clicked.connect(self._on_tso_move_up_requested)
+        self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
+        self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
+        self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -1018,6 +1032,10 @@ class SGViewerController:
         self._tsd_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("TSD", dirty)
 
+    def _set_trackside_objects_dirty(self, dirty: bool) -> None:
+        self._trackside_objects_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("Objects", dirty)
+
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None:
         self._elevation_grade_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("Elevation/Grade", dirty)
@@ -1038,6 +1056,8 @@ class SGViewerController:
             labels.append("MRK entries")
         if self._tsd_is_dirty:
             labels.append("TSD lines")
+        if self._trackside_objects_is_dirty:
+            labels.append("Trackside objects")
         return labels
 
     def mark_fsects_dirty(self, dirty: bool) -> None:
@@ -1089,6 +1109,10 @@ class SGViewerController:
             self._current_path,
             [tsd_object_to_payload(obj) for obj in self._tsd_objects],
         )
+        self._sg_settings_store.set_trackside_objects(
+            self._current_path,
+            [trackside_object_to_payload(obj) for obj in self._trackside_objects],
+        )
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
@@ -1096,12 +1120,20 @@ class SGViewerController:
             return
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
         self._tsd_objects = []
+        self._trackside_objects = []
         for raw_object in self._sg_settings_store.get_tsd_objects(self._current_path):
             try:
                 self._tsd_objects.append(tsd_object_from_payload(raw_object))
             except (ValueError, TypeError, KeyError):
                 logger.warning("Unable to restore TSD object %s", raw_object, exc_info=True)
         self._refresh_tsd_objects_table()
+        self._trackside_objects = []
+        for raw_object in self._sg_settings_store.get_trackside_objects(self._current_path):
+            try:
+                self._trackside_objects.append(trackside_object_from_payload(raw_object))
+            except ValueError:
+                continue
+        self._refresh_tso_table()
         for path in files:
             if not path.exists():
                 continue
@@ -1120,6 +1152,7 @@ class SGViewerController:
                 self._window.tsd_files_combo.setCurrentIndex(target_index + 1)
                 self._set_active_tsd_file(target_index)
         self._set_tsd_dirty(False)
+        self._set_trackside_objects_dirty(False)
 
     def _persist_mrk_wall_heights_for_current_track(self) -> None:
         if self._current_path is None:
@@ -1328,6 +1361,7 @@ class SGViewerController:
         self._loaded_tsd_files = []
         self._active_tsd_file_index = None
         self._tsd_objects = []
+        self._trackside_objects = []
         combo = self._window.tsd_files_combo
         previous_block_state = combo.blockSignals(True)
         try:
@@ -1339,7 +1373,9 @@ class SGViewerController:
             combo.blockSignals(previous_block_state)
         self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
         self._refresh_tsd_objects_table()
+        self._refresh_tso_table()
         self._set_tsd_dirty(False)
+        self._set_trackside_objects_dirty(False)
 
     def _add_loaded_tsd_file(
         self,
@@ -1866,6 +1902,147 @@ class SGViewerController:
             exported += 1
         self._window.show_status_message(f"Exported {exported} TSD object files to {out_path}")
 
+
+    def _refresh_tso_table(self) -> None:
+        table = self._window.tso_table
+        previous_state = table.blockSignals(True)
+        try:
+            table.setRowCount(len(self._trackside_objects))
+            for row, obj in enumerate(self._trackside_objects):
+                values = [
+                    f"__TSO{row}",
+                    obj.filename,
+                    str(obj.x),
+                    str(obj.y),
+                    str(obj.z),
+                    str(obj.yaw),
+                    str(obj.pitch),
+                    str(obj.tilt),
+                    obj.description,
+                    str(obj.bbox_length),
+                    str(obj.bbox_width),
+                ]
+                for column, value in enumerate(values):
+                    item = table.item(row, column)
+                    if item is None:
+                        item = QtWidgets.QTableWidgetItem(value)
+                        table.setItem(row, column, item)
+                    else:
+                        item.setText(value)
+                    if column == 0:
+                        item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                    else:
+                        item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
+        finally:
+            table.blockSignals(previous_state)
+
+    def _on_tso_add_requested(self) -> None:
+        self._trackside_objects.append(
+            TracksideObject(
+                filename="object.3do",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+            )
+        )
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tso_delete_requested(self) -> None:
+        table = self._window.tso_table
+        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        if not selected_rows:
+            return
+        row = selected_rows[0].row()
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        del self._trackside_objects[row]
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _move_tso(self, *, direction: int) -> None:
+        table = self._window.tso_table
+        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        if not selected_rows:
+            return
+        source_row = selected_rows[0].row()
+        target_row = source_row + direction
+        if target_row < 0 or target_row >= len(self._trackside_objects):
+            return
+        self._trackside_objects[source_row], self._trackside_objects[target_row] = (
+            self._trackside_objects[target_row],
+            self._trackside_objects[source_row],
+        )
+        self._refresh_tso_table()
+        table.selectRow(target_row)
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tso_move_up_requested(self) -> None:
+        self._move_tso(direction=-1)
+
+    def _on_tso_move_down_requested(self) -> None:
+        self._move_tso(direction=1)
+
+    def _on_tso_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        row = item.row()
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        table = self._window.tso_table
+        try:
+            filename = (table.item(row, 1).text() if table.item(row, 1) else "").strip()
+            if not filename:
+                raise ValueError
+            obj = TracksideObject(
+                filename=filename,
+                x=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
+                y=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
+                z=int((table.item(row, 4).text() if table.item(row, 4) else "0").strip()),
+                yaw=int((table.item(row, 5).text() if table.item(row, 5) else "0").strip()),
+                pitch=int((table.item(row, 6).text() if table.item(row, 6) else "0").strip()),
+                tilt=int((table.item(row, 7).text() if table.item(row, 7) else "0").strip()),
+                description=(table.item(row, 8).text() if table.item(row, 8) else "").strip(),
+                bbox_length=max(0, int((table.item(row, 9).text() if table.item(row, 9) else "0").strip())),
+                bbox_width=max(0, int((table.item(row, 10).text() if table.item(row, 10) else "0").strip())),
+            )
+        except ValueError:
+            self._refresh_tso_table()
+            return
+        self._trackside_objects[row] = obj
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tso_generate_file_requested(self) -> None:
+        if not self._trackside_objects:
+            QtWidgets.QMessageBox.information(self._window, "Generate objects.txt", "No TSOs to export.")
+            return
+        path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Save objects.txt",
+            "objects.txt",
+            "Text Files (*.txt);;All files (*)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        try:
+            path.write_text(serialize_objects_txt(self._trackside_objects), encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Generate objects.txt",
+                f"Could not save objects file:\n{exc}",
+            )
+            return
+        self._window.show_status_message(f"Saved objects.txt to {path}")
 
     def _on_mrk_textures_requested(self) -> None:
         dialog = MrkTexturesDialog(self._window, self._mrk_texture_definitions)
@@ -2422,8 +2599,9 @@ class SGViewerController:
             self._window.sg_fsects_checkbox.setChecked(True)
         is_mrk_tab = tab_name == "Walls"
         is_tsd_tab = tab_name == "TSD"
+        is_objects_tab = tab_name == "Objects"
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
-        self._window.preview.set_show_tsd_lines(is_tsd_tab)
+        self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab)
         if is_mrk_tab:
             self._update_mrk_highlights_from_table()
         else:
