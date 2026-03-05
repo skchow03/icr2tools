@@ -232,6 +232,7 @@ def paint_preview(
                 painter,
                 sg_preview_state.trackside_objects,
                 transform,
+                widget_height,
                 selected_index=sg_preview_state.selected_trackside_object_index,
             )
         _draw_centerlines(
@@ -754,7 +755,6 @@ def _draw_axes(
     if not show_axes:
         return
 
-    scale, offsets = transform
     if scale == 0:
         return
 
@@ -786,10 +786,10 @@ def _draw_trackside_objects(
     painter: QtGui.QPainter,
     trackside_objects: tuple[object, ...],
     transform: Transform,
+    widget_height: int,
     *,
     selected_index: int | None,
 ) -> None:
-    scale, offsets = transform
     for index, obj in enumerate(trackside_objects):
         yaw_radians = math.radians(float(getattr(obj, "yaw", 0.0)) / 10.0)
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
@@ -800,8 +800,9 @@ def _draw_trackside_objects(
         painter.setBrush(QtCore.Qt.NoBrush)
 
         if half_length <= 0.0 or half_width <= 0.0:
-            sx = offsets[0] + float(obj.x) * scale
-            sy = offsets[1] - float(obj.y) * scale
+            point = sg_rendering.map_point(float(obj.x), float(obj.y), transform, widget_height)
+            sx = float(point.x())
+            sy = float(point.y())
             marker_size = 4.0
             painter.drawRect(QtCore.QRectF(sx - marker_size, sy - marker_size, marker_size * 2.0, marker_size * 2.0))
             painter.restore()
@@ -819,12 +820,7 @@ def _draw_trackside_objects(
         for local_x, local_y in corners:
             wx = float(obj.x) + local_x * cos_yaw - local_y * sin_yaw
             wy = float(obj.y) + local_x * sin_yaw + local_y * cos_yaw
-            polygon.append(
-                QtCore.QPointF(
-                    offsets[0] + wx * scale,
-                    offsets[1] - wy * scale,
-                )
-            )
+            polygon.append(sg_rendering.map_point(wx, wy, transform, widget_height))
         painter.drawPolygon(polygon)
         painter.restore()
 
