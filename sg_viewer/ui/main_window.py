@@ -159,7 +159,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_move_up_button = QtWidgets.QPushButton("Move Up")
         self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
-        self._tso_table = QtWidgets.QTableWidget(0, 12)
+        self._tso_table = QtWidgets.QTableWidget(0, 7)
         self._tso_table.setHorizontalHeaderLabels([
             "Move",
             "Name",
@@ -167,12 +167,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "X (500ths)",
             "Y (500ths)",
             "Z (500ths)",
-            "Yaw (tenths)",
-            "Pitch (tenths)",
-            "Tilt (tenths)",
-            "Description",
-            "BBox Length",
-            "BBox Width",
+            "Attributes",
         ])
         self._tso_table.horizontalHeader().setStretchLastSection(True)
         self._tso_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
