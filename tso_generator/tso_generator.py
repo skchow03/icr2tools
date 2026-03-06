@@ -460,6 +460,17 @@ def remove_template(config: configparser.ConfigParser, name: str):
     config.remove_section(f"{TEMPLATE_SECTION_PREFIX}{name}")
 
 
+def int_or_default(raw_value, default):
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, str) and not raw_value.strip():
+        return default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+
 def load_sunny_palette(path: str | Path):
     data = Path(path).read_bytes()
     if len(data) < 769 or data[-769] != 0x0C:
@@ -840,32 +851,32 @@ def build_window():
 
         def apply_values(self, values):
             self.shape_combo.setCurrentText(values.get("building_shape", self.shape_combo.currentText()))
-            self.width_spin.setValue(int(values.get("width", self.width_spin.value())))
-            self.depth_spin.setValue(int(values.get("depth", self.depth_spin.value())))
+            self.width_spin.setValue(int_or_default(values.get("width"), self.width_spin.value()))
+            self.depth_spin.setValue(int_or_default(values.get("depth"), self.depth_spin.value()))
             self.rect_center_check.setChecked(str(values.get("rect_center_origin", "False")).lower() in {"1", "true", "yes", "on"})
-            self.diameter_spin.setValue(int(values.get("diameter", self.diameter_spin.value())))
-            self.sides_spin.setValue(int(values.get("num_sides", self.sides_spin.value())))
-            self.height_spin.setValue(int(values.get("height", self.height_spin.value())))
-            self.tree_trunk_width_spin.setValue(int(values.get("tree_trunk_width", self.tree_trunk_width_spin.value())))
-            self.tree_leaf_base_height_spin.setValue(int(values.get("tree_leaf_base_height", self.tree_leaf_base_height_spin.value())))
-            self.tree_sides_spin.setValue(int(values.get("tree_num_sides", self.tree_sides_spin.value())))
+            self.diameter_spin.setValue(int_or_default(values.get("diameter"), self.diameter_spin.value()))
+            self.sides_spin.setValue(int_or_default(values.get("num_sides"), self.sides_spin.value()))
+            self.height_spin.setValue(int_or_default(values.get("height"), self.height_spin.value()))
+            self.tree_trunk_width_spin.setValue(int_or_default(values.get("tree_trunk_width"), self.tree_trunk_width_spin.value()))
+            self.tree_leaf_base_height_spin.setValue(int_or_default(values.get("tree_leaf_base_height"), self.tree_leaf_base_height_spin.value()))
+            self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
             self.roof_combo.setCurrentText(values.get("roof_type", self.roof_combo.currentText()))
-            self.inset_spin.setValue(int(values.get("parapet_inset", self.inset_spin.value())))
-            self.roof_height_spin.setValue(int(values.get("parapet_height", self.roof_height_spin.value())))
-            self.gable_spin.setValue(int(values.get("gable_rise", self.gable_spin.value())))
-            self.pyramid_spin.setValue(int(values.get("pyramid_rise", self.pyramid_spin.value())))
-            self.dome_layers_spin.setValue(int(values.get("dome_layers", self.dome_layers_spin.value())))
-            self.dome_roundness_spin.setValue(int(values.get("dome_roundness", self.dome_roundness_spin.value())))
+            self.inset_spin.setValue(int_or_default(values.get("parapet_inset"), self.inset_spin.value()))
+            self.roof_height_spin.setValue(int_or_default(values.get("parapet_height"), self.roof_height_spin.value()))
+            self.gable_spin.setValue(int_or_default(values.get("gable_rise"), self.gable_spin.value()))
+            self.pyramid_spin.setValue(int_or_default(values.get("pyramid_rise"), self.pyramid_spin.value()))
+            self.dome_layers_spin.setValue(int_or_default(values.get("dome_layers"), self.dome_layers_spin.value()))
+            self.dome_roundness_spin.setValue(int_or_default(values.get("dome_roundness"), self.dome_roundness_spin.value()))
             self.sunny_edit.setText(values.get("sunny_pcx", self.sunny_edit.text().strip()))
 
-            self.roof_bright_picker.set_color_index(int(values.get("roof_color_bright", 0)))
-            self.roof_dark_picker.set_color_index(int(values.get("roof_color_dark", 0)))
-            self.side_bright_picker.set_color_index(int(values.get("side_color_bright", 0)))
-            self.side_dark_picker.set_color_index(int(values.get("side_color_dark", 0)))
-            tree_trunk_bright = int(values.get("tree_trunk_color_bright", values.get("tree_trunk_color", 0)))
-            tree_trunk_dark = int(values.get("tree_trunk_color_dark", tree_trunk_bright))
-            tree_leaves_bright = int(values.get("tree_leaves_color_bright", values.get("tree_leaves_color", 0)))
-            tree_leaves_dark = int(values.get("tree_leaves_color_dark", tree_leaves_bright))
+            self.roof_bright_picker.set_color_index(int_or_default(values.get("roof_color_bright"), 0))
+            self.roof_dark_picker.set_color_index(int_or_default(values.get("roof_color_dark"), 0))
+            self.side_bright_picker.set_color_index(int_or_default(values.get("side_color_bright"), 0))
+            self.side_dark_picker.set_color_index(int_or_default(values.get("side_color_dark"), 0))
+            tree_trunk_bright = int_or_default(values.get("tree_trunk_color_bright", values.get("tree_trunk_color")), 0)
+            tree_trunk_dark = int_or_default(values.get("tree_trunk_color_dark"), tree_trunk_bright)
+            tree_leaves_bright = int_or_default(values.get("tree_leaves_color_bright", values.get("tree_leaves_color")), 0)
+            tree_leaves_dark = int_or_default(values.get("tree_leaves_color_dark"), tree_leaves_bright)
             self.tree_trunk_bright_picker.set_color_index(tree_trunk_bright)
             self.tree_trunk_dark_picker.set_color_index(tree_trunk_dark)
             self.tree_leaves_bright_picker.set_color_index(tree_leaves_bright)

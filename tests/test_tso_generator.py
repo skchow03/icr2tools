@@ -5,6 +5,7 @@ from tso_generator.tso_generator import (
     TEMPLATE_SECTION_PREFIX,
     generate_building,
     get_template_values,
+    int_or_default,
     list_template_names,
     remove_template,
     save_template,
@@ -363,3 +364,11 @@ def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     assert verts["r1"][0] == 0
     assert verts["r0"][1] == -521
     assert verts["r1"][1] == 521
+
+
+def test_int_or_default_uses_default_for_blank_and_invalid_values():
+    assert int_or_default("", 7) == 7
+    assert int_or_default("   ", 8) == 8
+    assert int_or_default(None, 9) == 9
+    assert int_or_default("abc", 10) == 10
+    assert int_or_default("12", 0) == 12
