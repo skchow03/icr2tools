@@ -32,6 +32,10 @@ def _base_parameters():
         "roof_color_dark": 201,
         "side_color_bright": 202,
         "side_color_dark": 203,
+        "tree_trunk_width": 30,
+        "tree_leaf_base_height": 100,
+        "tree_trunk_color": 96,
+        "tree_leaves_color": 120,
     }
 
 
@@ -247,6 +251,61 @@ def test_circular_dome_roundness_still_curves_to_top():
     # staying near full radius with a sudden top cap.
     assert verts["dr4_0"][0] < 150
 
+
+
+
+def test_tree_shape_generates_trunk_and_leaf_faces():
+    verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+    )
+
+    assert verts["tb0"] == (-20, 0, 0)
+    assert verts["tb1"] == (20, 0, 0)
+    assert verts["tt0"] == (0, 0, 120)
+    assert any(name.startswith("trunk") for name, _ in faces)
+    assert any(name.startswith("leaf") for name, _ in faces)
+
+
+def test_tree_shape_uses_tree_colors(tmp_path: Path):
+    verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=50,
+        tree_leaf_base_height=140,
+    )
+    out = tmp_path / "tree.3D"
+
+    params = _base_parameters()
+    params.update(
+        {
+            "building_shape": "tree",
+            "roof_type": "none",
+            "tree_trunk_color": 88,
+            "tree_leaves_color": 132,
+        }
+    )
+    write_3d(out, verts, faces, params)
+
+    text = out.read_text(encoding="utf-8")
+    assert "trunk0: POLY <88>" in text
+    assert "leaf0: POLY <132>" in text
 
 def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     verts, _faces = generate_building(

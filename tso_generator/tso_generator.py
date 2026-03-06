@@ -44,6 +44,10 @@ TEMPLATE_FIELDS = (
     "roof_color_dark",
     "side_color_bright",
     "side_color_dark",
+    "tree_trunk_width",
+    "tree_leaf_base_height",
+    "tree_trunk_color",
+    "tree_leaves_color",
 )
 
 
@@ -190,6 +194,41 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
         faces.append((f"{roof_prefix}Top{i}", [prev_ring[i], prev_ring[nxt], "dome_top"]))
 
 
+def generate_tree(width, height, trunk_width, leaf_base_height, leaf_segments=10):
+    width = max(1, int(width))
+    height = max(1, int(height))
+    trunk_width = max(1, min(int(trunk_width), width))
+    leaf_base_height = max(1, min(int(leaf_base_height), height - 1))
+
+    verts = {
+        "tb0": (-(trunk_width // 2), 0, 0),
+        "tb1": ((trunk_width + 1) // 2, 0, 0),
+        "tt0": (0, 0, leaf_base_height),
+    }
+    faces = [("trunk0", ["tb0", "tb1", "tt0"])]
+
+    leaf_radius_x = width / 2.0
+    leaf_radius_z = max(1.0, (height - leaf_base_height) / 2.0)
+    leaf_center_z = leaf_base_height + leaf_radius_z
+    verts["lc"] = (0, 0, int(round(leaf_center_z)))
+
+    segment_count = max(6, int(leaf_segments))
+    ring = []
+    for i in range(segment_count):
+        angle = (2.0 * math.pi * i) / segment_count
+        x = leaf_radius_x * math.cos(angle)
+        z = leaf_center_z + (leaf_radius_z * math.sin(angle))
+        name = f"lv{i}"
+        verts[name] = (int(round(x)), 0, int(round(z)))
+        ring.append(name)
+
+    for i in range(segment_count):
+        nxt = (i + 1) % segment_count
+        faces.append((f"leaf{i}", ["lc", ring[i], ring[nxt]]))
+
+    return verts, faces
+
+
 def generate_building(
     width,
     depth,
@@ -205,7 +244,12 @@ def generate_building(
     dome_layers=4,
     dome_roundness=100,
     rect_center_origin=False,
+    tree_trunk_width=30,
+    tree_leaf_base_height=100,
 ):
+    if building_shape == "tree":
+        return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height)
+
     if building_shape == "circular":
         verts, faces = generate_circular_base(diameter, num_sides, height)
         if roof_type == "flat":
@@ -242,16 +286,25 @@ def generate_building(
 # ------------------------------------------------------------
 
 def write_3d(path, verts, faces, parameters):
-    roof_bright = int(parameters["roof_color_bright"])
-    roof_dark = int(parameters["roof_color_dark"])
-    side_bright = int(parameters["side_color_bright"])
-    side_dark = int(parameters["side_color_dark"])
+    roof_bright = int(parameters.get("roof_color_bright", 0))
+    roof_dark = int(parameters.get("roof_color_dark", roof_bright))
+    side_bright = int(parameters.get("side_color_bright", 0))
+    side_dark = int(parameters.get("side_color_dark", side_bright))
     roof_type = str(parameters.get("roof_type", ""))
+    building_shape = str(parameters.get("building_shape", "rectangular"))
+    tree_trunk_color = int(parameters.get("tree_trunk_color", side_dark))
+    tree_leaves_color = int(parameters.get("tree_leaves_color", side_bright))
 
     if roof_type == "flat":
         roof_dark = roof_bright
 
     def color_for_face(name):
+        if building_shape == "tree":
+            if name.startswith("trunk"):
+                return tree_trunk_color
+            if name.startswith("leaf"):
+                return tree_leaves_color
+
         roof_bright_faces = {"topB", "roofB", "roofL", "pyrF", "pyrL"}
         roof_dark_faces = {"topD", "roofD", "roofR", "pyrR", "pyrB"}
         side_bright_faces = {"ls1", "fr1", "ls2", "fr2", "gableF"}
@@ -516,8 +569,16 @@ def build_window():
             self.height_spin.setRange(1, 50000)
             self.height_spin.setValue(100)
 
+            self.tree_trunk_width_spin = QtWidgets.QSpinBox()
+            self.tree_trunk_width_spin.setRange(1, 50000)
+            self.tree_trunk_width_spin.setValue(30)
+
+            self.tree_leaf_base_height_spin = QtWidgets.QSpinBox()
+            self.tree_leaf_base_height_spin.setRange(1, 50000)
+            self.tree_leaf_base_height_spin.setValue(100)
+
             self.shape_combo = QtWidgets.QComboBox()
-            self.shape_combo.addItems(["rectangular", "circular"])
+            self.shape_combo.addItems(["rectangular", "circular", "tree"])
             self.shape_combo.currentTextChanged.connect(self.update_shape_field_visibility)
 
             self.roof_combo = QtWidgets.QComboBox()
@@ -562,11 +623,15 @@ def build_window():
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
             self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
             self.side_dark_picker = PaletteIndexPicker(self, self.palette, 203)
+            self.tree_trunk_picker = PaletteIndexPicker(self, self.palette, 96)
+            self.tree_leaves_picker = PaletteIndexPicker(self, self.palette, 120)
             self.color_pickers = [
                 self.roof_bright_picker,
                 self.roof_dark_picker,
                 self.side_bright_picker,
                 self.side_dark_picker,
+                self.tree_trunk_picker,
+                self.tree_leaves_picker,
             ]
 
             self.sunny_edit = QtWidgets.QLineEdit(self.settings.get("paths", "sunny_pcx", fallback=""))
@@ -592,6 +657,8 @@ def build_window():
                 ("diameter", "Diameter", self.diameter_spin),
                 ("num_sides", "Number of Sides", self.sides_spin),
                 ("height", "Height", self.height_spin),
+                ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
+                ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("roof_type", "Roof Type", self.roof_combo),
                 ("parapet_inset", "Parapet Inset", self.inset_spin),
                 ("parapet_height", "Parapet Height", self.roof_height_spin),
@@ -603,6 +670,8 @@ def build_window():
                 ("roof_color_dark", "Roof Color (Dark)", self.roof_dark_picker),
                 ("side_color_bright", "Side Color (Bright)", self.side_bright_picker),
                 ("side_color_dark", "Side Color (Dark)", self.side_dark_picker),
+                ("tree_trunk_color", "Tree Trunk Color", self.tree_trunk_picker),
+                ("tree_leaves_color", "Tree Leaves Color", self.tree_leaves_picker),
             ]
             for row, (field_name, label, widget) in enumerate(row_specs):
                 add_form_row(row, field_name, label, widget)
@@ -633,7 +702,12 @@ def build_window():
 
         def _set_roof_options_for_shape(self, shape: str):
             shape = str(shape)
-            options = ["none", "flat", "parapet", "gable", "pyramid"] if shape == "rectangular" else ["none", "flat", "dome"]
+            if shape == "rectangular":
+                options = ["none", "flat", "parapet", "gable", "pyramid"]
+            elif shape == "circular":
+                options = ["none", "flat", "dome"]
+            else:
+                options = ["none"]
             current = self.roof_combo.currentText()
             self.roof_combo.blockSignals(True)
             self.roof_combo.clear()
@@ -644,19 +718,29 @@ def build_window():
         def update_shape_field_visibility(self, shape: str):
             shape = str(shape)
             is_rectangular = shape == "rectangular"
+            is_tree = shape == "tree"
             self._set_roof_options_for_shape(shape)
-            self._set_row_visible("width", is_rectangular)
+            self._set_row_visible("width", is_rectangular or is_tree)
             self._set_row_visible("depth", is_rectangular)
             self._set_row_visible("rect_center_origin", is_rectangular)
-            self._set_row_visible("diameter", not is_rectangular)
-            self._set_row_visible("num_sides", not is_rectangular)
+            self._set_row_visible("diameter", shape == "circular")
+            self._set_row_visible("num_sides", shape == "circular")
+            self._set_row_visible("tree_trunk_width", is_tree)
+            self._set_row_visible("tree_leaf_base_height", is_tree)
             self.update_roof_field_visibility(self.roof_combo.currentText())
 
         def update_roof_field_visibility(self, roof_type: str):
             roof_type = str(roof_type)
             shape = self.shape_combo.currentText()
             is_rectangular = shape == "rectangular"
-            self._set_row_visible("roof_color_dark", roof_type not in {"none", "flat"})
+            is_tree = shape == "tree"
+            self._set_row_visible("roof_color_bright", not is_tree)
+            self._set_row_visible("roof_color_dark", (roof_type not in {"none", "flat"}) and (not is_tree))
+            self._set_row_visible("side_color_bright", not is_tree)
+            self._set_row_visible("side_color_dark", not is_tree)
+            self._set_row_visible("tree_trunk_color", is_tree)
+            self._set_row_visible("tree_leaves_color", is_tree)
+            self._set_row_visible("roof_type", not is_tree)
             self._set_row_visible("parapet_inset", is_rectangular and roof_type == "parapet")
             self._set_row_visible("parapet_height", is_rectangular and roof_type == "parapet")
             self._set_row_visible("gable_rise", is_rectangular and roof_type == "gable")
@@ -674,6 +758,8 @@ def build_window():
                 "diameter": self.diameter_spin.value(),
                 "num_sides": self.sides_spin.value(),
                 "height": self.height_spin.value(),
+                "tree_trunk_width": self.tree_trunk_width_spin.value(),
+                "tree_leaf_base_height": self.tree_leaf_base_height_spin.value(),
                 "roof_type": self.roof_combo.currentText(),
                 "parapet_inset": self.inset_spin.value(),
                 "parapet_height": self.roof_height_spin.value(),
@@ -686,6 +772,8 @@ def build_window():
                 "roof_color_dark": self.roof_dark_picker.color_index(),
                 "side_color_bright": self.side_bright_picker.color_index(),
                 "side_color_dark": self.side_dark_picker.color_index(),
+                "tree_trunk_color": self.tree_trunk_picker.color_index(),
+                "tree_leaves_color": self.tree_leaves_picker.color_index(),
             }
 
         def apply_values(self, values):
@@ -696,6 +784,8 @@ def build_window():
             self.diameter_spin.setValue(int(values.get("diameter", self.diameter_spin.value())))
             self.sides_spin.setValue(int(values.get("num_sides", self.sides_spin.value())))
             self.height_spin.setValue(int(values.get("height", self.height_spin.value())))
+            self.tree_trunk_width_spin.setValue(int(values.get("tree_trunk_width", self.tree_trunk_width_spin.value())))
+            self.tree_leaf_base_height_spin.setValue(int(values.get("tree_leaf_base_height", self.tree_leaf_base_height_spin.value())))
             self.roof_combo.setCurrentText(values.get("roof_type", self.roof_combo.currentText()))
             self.inset_spin.setValue(int(values.get("parapet_inset", self.inset_spin.value())))
             self.roof_height_spin.setValue(int(values.get("parapet_height", self.roof_height_spin.value())))
@@ -709,6 +799,8 @@ def build_window():
             self.roof_dark_picker.set_color_index(int(values.get("roof_color_dark", 0)))
             self.side_bright_picker.set_color_index(int(values.get("side_color_bright", 0)))
             self.side_dark_picker.set_color_index(int(values.get("side_color_dark", 0)))
+            self.tree_trunk_picker.set_color_index(int(values.get("tree_trunk_color", 0)))
+            self.tree_leaves_picker.set_color_index(int(values.get("tree_leaves_color", 0)))
 
             path = self.sunny_edit.text().strip()
             if path:
@@ -752,7 +844,7 @@ def build_window():
             self.refresh_templates()
 
         def refresh_color_combos(self, defaults=None):
-            defaults = defaults or (0, 1, 2, 3)
+            defaults = defaults or (0, 1, 2, 3, 96, 120)
             for picker, selected in zip(self.color_pickers, defaults):
                 picker.set_palette(self.palette)
                 picker.set_color_index(int(selected))
@@ -804,6 +896,8 @@ def build_window():
                     values["dome_layers"],
                     values["dome_roundness"],
                     values["rect_center_origin"],
+                    values["tree_trunk_width"],
+                    values["tree_leaf_base_height"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
