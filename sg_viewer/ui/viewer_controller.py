@@ -2033,6 +2033,7 @@ class SGViewerController:
                 description=obj.description,
                 bbox_length=obj.bbox_length,
                 bbox_width=obj.bbox_width,
+                rotation_point=obj.rotation_point,
             )
             moved = True
         if not moved:
@@ -2066,6 +2067,7 @@ class SGViewerController:
                 description="",
                 bbox_length=0,
                 bbox_width=0,
+                rotation_point="center",
             )
         )
         self._selected_trackside_object_indices = [len(self._trackside_objects) - 1]
@@ -2143,6 +2145,7 @@ class SGViewerController:
                 description=existing.description,
                 bbox_length=max(0, int(existing.bbox_length)),
                 bbox_width=max(0, int(existing.bbox_width)),
+                rotation_point=existing.rotation_point,
             )
         except ValueError:
             self._refresh_tso_table()

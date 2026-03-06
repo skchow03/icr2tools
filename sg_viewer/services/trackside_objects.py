@@ -3,6 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+ROTATION_POINT_CENTER = "center"
+ROTATION_POINT_TOP_LEFT = "top_left"
+ROTATION_POINT_TOP_RIGHT = "top_right"
+ROTATION_POINT_BOTTOM_LEFT = "bottom_left"
+ROTATION_POINT_BOTTOM_RIGHT = "bottom_right"
+
+ROTATION_POINTS = (
+    ROTATION_POINT_CENTER,
+    ROTATION_POINT_TOP_LEFT,
+    ROTATION_POINT_TOP_RIGHT,
+    ROTATION_POINT_BOTTOM_LEFT,
+    ROTATION_POINT_BOTTOM_RIGHT,
+)
+
+
 @dataclass(frozen=True)
 class TracksideObject:
     filename: str
@@ -15,6 +30,7 @@ class TracksideObject:
     description: str = ""
     bbox_length: int = 0
     bbox_width: int = 0
+    rotation_point: str = ROTATION_POINT_CENTER
 
     def to_objects_txt_line(self, index: int) -> str:
         return (
@@ -42,6 +58,7 @@ def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
         "description": obj.description,
         "bbox_length": obj.bbox_length,
         "bbox_width": obj.bbox_width,
+        "rotation_point": normalize_rotation_point(obj.rotation_point),
     }
 
 
@@ -60,7 +77,15 @@ def trackside_object_from_payload(payload: dict[str, object]) -> TracksideObject
         description=str(payload.get("description", "")),
         bbox_length=max(0, int(payload.get("bbox_length", 0))),
         bbox_width=max(0, int(payload.get("bbox_width", 0))),
+        rotation_point=normalize_rotation_point(str(payload.get("rotation_point", ROTATION_POINT_CENTER))),
     )
+
+
+def normalize_rotation_point(rotation_point: str) -> str:
+    normalized = rotation_point.strip().lower()
+    if normalized not in ROTATION_POINTS:
+        return ROTATION_POINT_CENTER
+    return normalized
 
 
 def serialize_objects_txt(objects: list[TracksideObject]) -> str:
