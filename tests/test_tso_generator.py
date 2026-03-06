@@ -207,3 +207,25 @@ def test_circular_dome_roundness_changes_dome_height():
     )
 
     assert flat_verts["dome_top"][2] < round_verts["dome_top"][2]
+
+
+def test_circular_dome_roundness_still_curves_to_top():
+    verts, _ = generate_building(
+        0,
+        0,
+        120,
+        "dome",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=12,
+        dome_layers=4,
+        dome_roundness=25,
+    )
+
+    # Even when flattened, the roof should keep curving inward instead of
+    # staying near full radius with a sudden top cap.
+    assert verts["dr4_0"][0] < 150
