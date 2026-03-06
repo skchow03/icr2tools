@@ -5,15 +5,18 @@ ICR2 Building Generator (UI + .3D writer)
 PyQt5 application that generates Papyrus/ICR2 .3D building objects.
 
 Supported roof types
+- none (no roof)
 - flat
 - parapet (inset roof cap)
 - gable (simple pitched roof)
 - pyramid (4-sided pitched roof)
+- dome (for circular buildings)
 """
 
 from __future__ import annotations
 
 import configparser
+import math
 import sys
 from pathlib import Path
 
@@ -22,14 +25,18 @@ INI_PATH = Path(__file__).with_suffix(".ini")
 TEMPLATE_SECTION_PREFIX = "template:"
 
 TEMPLATE_FIELDS = (
+    "building_shape",
     "width",
     "depth",
     "height",
+    "diameter",
+    "num_sides",
     "roof_type",
     "parapet_inset",
     "parapet_height",
     "gable_rise",
     "pyramid_rise",
+    "dome_layers",
     "sunny_pcx",
     "roof_color_bright",
     "roof_color_dark",
@@ -111,7 +118,94 @@ def add_pyramid_roof(verts, faces, width, depth, height, rise):
     ]
 
 
-def generate_building(width, depth, height, roof_type, inset, roof_height, gable_rise, pyramid_rise):
+def generate_circular_base(diameter, sides, height):
+    verts = {}
+    faces = []
+    radius = diameter / 2.0
+    cx = radius
+    cy = radius
+
+    for i in range(sides):
+        angle = (2.0 * math.pi * i) / sides
+        x = cx + (radius * math.cos(angle))
+        y = cy + (radius * math.sin(angle))
+        verts[f"cb{i}"] = (int(round(x)), int(round(y)), 0)
+        verts[f"ct{i}"] = (int(round(x)), int(round(y)), height)
+
+    for i in range(sides):
+        nxt = (i + 1) % sides
+        theta = (2.0 * math.pi * (i + 0.5)) / sides
+        side_prefix = "sideB" if (math.cos(theta) - math.sin(theta)) >= 0 else "sideD"
+        faces.append((f"{side_prefix}{i}", [f"ct{i}", f"cb{i}", f"cb{nxt}", f"ct{nxt}"]))
+
+    return verts, faces
+
+
+def add_circular_flat_roof(verts, faces, sides, diameter, height):
+    radius = diameter / 2.0
+    verts["ctp"] = (int(round(radius)), int(round(radius)), height)
+    for i in range(sides):
+        nxt = (i + 1) % sides
+        theta = (2.0 * math.pi * (i + 0.5)) / sides
+        roof_prefix = "roofB" if (math.cos(theta) - math.sin(theta)) >= 0 else "roofD"
+        faces.append((f"{roof_prefix}{i}", [f"ct{i}", f"ct{nxt}", "ctp"]))
+
+
+def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers):
+    radius = diameter / 2.0
+    prev_ring = [f"ct{i}" for i in range(sides)]
+
+    for layer in range(1, dome_layers + 1):
+        t = layer / (dome_layers + 1)
+        ring_radius = radius * (1.0 - t)
+        ring_z = height + int(round(radius * t))
+        ring_names = []
+        for i in range(sides):
+            angle = (2.0 * math.pi * i) / sides
+            x = radius + (ring_radius * math.cos(angle))
+            y = radius + (ring_radius * math.sin(angle))
+            name = f"dr{layer}_{i}"
+            verts[name] = (int(round(x)), int(round(y)), int(round(ring_z)))
+            ring_names.append(name)
+
+        for i in range(sides):
+            nxt = (i + 1) % sides
+            theta = (2.0 * math.pi * (i + 0.5)) / sides
+            roof_prefix = "roofB" if (math.cos(theta) - math.sin(theta)) >= 0 else "roofD"
+            faces.append((f"{roof_prefix}L{layer}_{i}", [prev_ring[i], prev_ring[nxt], ring_names[nxt], ring_names[i]]))
+
+        prev_ring = ring_names
+
+    verts["dome_top"] = (int(round(radius)), int(round(radius)), height + int(round(radius)))
+    for i in range(sides):
+        nxt = (i + 1) % sides
+        theta = (2.0 * math.pi * (i + 0.5)) / sides
+        roof_prefix = "roofB" if (math.cos(theta) - math.sin(theta)) >= 0 else "roofD"
+        faces.append((f"{roof_prefix}Top{i}", [prev_ring[i], prev_ring[nxt], "dome_top"]))
+
+
+def generate_building(
+    width,
+    depth,
+    height,
+    roof_type,
+    inset,
+    roof_height,
+    gable_rise,
+    pyramid_rise,
+    building_shape="rectangular",
+    diameter=320,
+    num_sides=12,
+    dome_layers=4,
+):
+    if building_shape == "circular":
+        verts, faces = generate_circular_base(diameter, num_sides, height)
+        if roof_type == "flat":
+            add_circular_flat_roof(verts, faces, num_sides, diameter, height)
+        elif roof_type == "dome":
+            add_circular_dome_roof(verts, faces, diameter, num_sides, height, dome_layers)
+        return verts, faces
+
     verts, faces = generate_base(width, depth, height)
 
     if roof_type == "flat":
@@ -146,13 +240,13 @@ def write_3d(path, verts, faces, parameters):
         side_bright_faces = {"ls1", "fr1", "ls2", "fr2", "gableF"}
         side_dark_faces = {"rs1", "bk1", "rs2", "bk2", "gableB"}
 
-        if name in roof_bright_faces:
+        if name in roof_bright_faces or name.startswith("roofB"):
             return roof_bright
-        if name in roof_dark_faces:
+        if name in roof_dark_faces or name.startswith("roofD"):
             return roof_dark
-        if name in side_bright_faces:
+        if name in side_bright_faces or name.startswith("sideB"):
             return side_bright
-        if name in side_dark_faces:
+        if name in side_dark_faces or name.startswith("sideD"):
             return side_dark
         return side_bright
 
@@ -393,8 +487,11 @@ def build_window():
             self.height_spin.setRange(1, 50000)
             self.height_spin.setValue(100)
 
+            self.shape_combo = QtWidgets.QComboBox()
+            self.shape_combo.addItems(["rectangular", "circular"])
+            self.shape_combo.currentTextChanged.connect(self.update_shape_field_visibility)
+
             self.roof_combo = QtWidgets.QComboBox()
-            self.roof_combo.addItems(["flat", "parapet", "gable", "pyramid"])
             self.roof_combo.currentTextChanged.connect(self.update_roof_field_visibility)
 
             self.inset_spin = QtWidgets.QSpinBox()
@@ -412,6 +509,18 @@ def build_window():
             self.pyramid_spin = QtWidgets.QSpinBox()
             self.pyramid_spin.setRange(0, 50000)
             self.pyramid_spin.setValue(50)
+
+            self.diameter_spin = QtWidgets.QSpinBox()
+            self.diameter_spin.setRange(1, 50000)
+            self.diameter_spin.setValue(320)
+
+            self.sides_spin = QtWidgets.QSpinBox()
+            self.sides_spin.setRange(3, 256)
+            self.sides_spin.setValue(16)
+
+            self.dome_layers_spin = QtWidgets.QSpinBox()
+            self.dome_layers_spin.setRange(1, 256)
+            self.dome_layers_spin.setValue(4)
 
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
@@ -440,14 +549,18 @@ def build_window():
                 self.form_rows[field_name] = (label, widget)
 
             row_specs = [
+                ("building_shape", "Building Shape", self.shape_combo),
                 ("width", "Width", self.width_spin),
                 ("depth", "Depth", self.depth_spin),
+                ("diameter", "Diameter", self.diameter_spin),
+                ("num_sides", "Number of Sides", self.sides_spin),
                 ("height", "Height", self.height_spin),
                 ("roof_type", "Roof Type", self.roof_combo),
                 ("parapet_inset", "Parapet Inset", self.inset_spin),
                 ("parapet_height", "Parapet Height", self.roof_height_spin),
                 ("gable_rise", "Gable Rise", self.gable_spin),
                 ("pyramid_rise", "Pyramid Rise", self.pyramid_spin),
+                ("dome_layers", "Dome Layers", self.dome_layers_spin),
                 ("roof_color_bright", "Roof Color (Bright)", self.roof_bright_picker),
                 ("roof_color_dark", "Roof Color (Dark)", self.roof_dark_picker),
                 ("side_color_bright", "Side Color (Bright)", self.side_bright_picker),
@@ -473,31 +586,58 @@ def build_window():
             if self.sunny_edit.text().strip():
                 self.try_load_palette(self.sunny_edit.text().strip(), preserve_selection=True)
             self.refresh_templates()
-            self.update_roof_field_visibility(self.roof_combo.currentText())
+            self.update_shape_field_visibility(self.shape_combo.currentText())
 
         def _set_row_visible(self, field_name, is_visible: bool):
             label, widget = self.form_rows[field_name]
             label.setVisible(is_visible)
             widget.setVisible(is_visible)
 
+        def _set_roof_options_for_shape(self, shape: str):
+            shape = str(shape)
+            options = ["none", "flat", "parapet", "gable", "pyramid"] if shape == "rectangular" else ["none", "flat", "dome"]
+            current = self.roof_combo.currentText()
+            self.roof_combo.blockSignals(True)
+            self.roof_combo.clear()
+            self.roof_combo.addItems(options)
+            self.roof_combo.setCurrentText(current if current in options else options[0])
+            self.roof_combo.blockSignals(False)
+
+        def update_shape_field_visibility(self, shape: str):
+            shape = str(shape)
+            is_rectangular = shape == "rectangular"
+            self._set_roof_options_for_shape(shape)
+            self._set_row_visible("width", is_rectangular)
+            self._set_row_visible("depth", is_rectangular)
+            self._set_row_visible("diameter", not is_rectangular)
+            self._set_row_visible("num_sides", not is_rectangular)
+            self.update_roof_field_visibility(self.roof_combo.currentText())
+
         def update_roof_field_visibility(self, roof_type: str):
             roof_type = str(roof_type)
-            self._set_row_visible("roof_color_dark", roof_type != "flat")
-            self._set_row_visible("parapet_inset", roof_type == "parapet")
-            self._set_row_visible("parapet_height", roof_type == "parapet")
-            self._set_row_visible("gable_rise", roof_type == "gable")
-            self._set_row_visible("pyramid_rise", roof_type == "pyramid")
+            shape = self.shape_combo.currentText()
+            is_rectangular = shape == "rectangular"
+            self._set_row_visible("roof_color_dark", roof_type not in {"none", "flat"})
+            self._set_row_visible("parapet_inset", is_rectangular and roof_type == "parapet")
+            self._set_row_visible("parapet_height", is_rectangular and roof_type == "parapet")
+            self._set_row_visible("gable_rise", is_rectangular and roof_type == "gable")
+            self._set_row_visible("pyramid_rise", is_rectangular and roof_type == "pyramid")
+            self._set_row_visible("dome_layers", (not is_rectangular) and roof_type == "dome")
 
         def collect_current_values(self):
             return {
+                "building_shape": self.shape_combo.currentText(),
                 "width": self.width_spin.value(),
                 "depth": self.depth_spin.value(),
+                "diameter": self.diameter_spin.value(),
+                "num_sides": self.sides_spin.value(),
                 "height": self.height_spin.value(),
                 "roof_type": self.roof_combo.currentText(),
                 "parapet_inset": self.inset_spin.value(),
                 "parapet_height": self.roof_height_spin.value(),
                 "gable_rise": self.gable_spin.value(),
                 "pyramid_rise": self.pyramid_spin.value(),
+                "dome_layers": self.dome_layers_spin.value(),
                 "sunny_pcx": self.sunny_edit.text().strip(),
                 "roof_color_bright": self.roof_bright_picker.color_index(),
                 "roof_color_dark": self.roof_dark_picker.color_index(),
@@ -506,14 +646,18 @@ def build_window():
             }
 
         def apply_values(self, values):
+            self.shape_combo.setCurrentText(values.get("building_shape", self.shape_combo.currentText()))
             self.width_spin.setValue(int(values.get("width", self.width_spin.value())))
             self.depth_spin.setValue(int(values.get("depth", self.depth_spin.value())))
+            self.diameter_spin.setValue(int(values.get("diameter", self.diameter_spin.value())))
+            self.sides_spin.setValue(int(values.get("num_sides", self.sides_spin.value())))
             self.height_spin.setValue(int(values.get("height", self.height_spin.value())))
             self.roof_combo.setCurrentText(values.get("roof_type", self.roof_combo.currentText()))
             self.inset_spin.setValue(int(values.get("parapet_inset", self.inset_spin.value())))
             self.roof_height_spin.setValue(int(values.get("parapet_height", self.roof_height_spin.value())))
             self.gable_spin.setValue(int(values.get("gable_rise", self.gable_spin.value())))
             self.pyramid_spin.setValue(int(values.get("pyramid_rise", self.pyramid_spin.value())))
+            self.dome_layers_spin.setValue(int(values.get("dome_layers", self.dome_layers_spin.value())))
             self.sunny_edit.setText(values.get("sunny_pcx", self.sunny_edit.text().strip()))
 
             self.roof_bright_picker.set_color_index(int(values.get("roof_color_bright", 0)))
@@ -609,6 +753,10 @@ def build_window():
                     values["parapet_height"],
                     values["gable_rise"],
                     values["pyramid_rise"],
+                    values["building_shape"],
+                    values["diameter"],
+                    values["num_sides"],
+                    values["dome_layers"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(

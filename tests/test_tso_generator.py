@@ -14,14 +14,18 @@ from tso_generator.tso_generator import (
 
 def _base_parameters():
     return {
+        "building_shape": "rectangular",
         "width": 320,
         "depth": 1042,
         "height": 100,
+        "diameter": 320,
+        "num_sides": 12,
         "roof_type": "flat",
         "parapet_inset": 30,
         "parapet_height": 15,
         "gable_rise": 50,
         "pyramid_rise": 50,
+        "dome_layers": 4,
         "sunny_pcx": "C:/game/sunny.pcx",
         "roof_color_bright": 200,
         "roof_color_dark": 201,
@@ -43,7 +47,7 @@ def test_write_3d_puts_comments_after_header_and_colors_polys(tmp_path: Path):
 
     poly_lines = [line for line in lines if ": POLY <" in line]
     assert any("topB: POLY <200>" in line for line in poly_lines)
-    assert any("topD: POLY <201>" in line for line in poly_lines)
+    assert any("topD: POLY <200>" in line for line in poly_lines)
     assert any("ls1: POLY <202>" in line for line in poly_lines)
     assert any("rs1: POLY <203>" in line for line in poly_lines)
 
@@ -65,17 +69,54 @@ def test_gable_uses_roof_colors_for_slopes_and_side_colors_for_end_walls(tmp_pat
 
 def test_template_roundtrip_and_listing_order():
     cfg = configparser.ConfigParser()
-    save_template(cfg, "B Tower", {"width": 123, "roof_type": "gable", "side_color_dark": 222})
+    save_template(
+        cfg,
+        "B Tower",
+        {"building_shape": "rectangular", "width": 123, "roof_type": "gable", "side_color_dark": 222},
+    )
     save_template(cfg, "A Tower", {"depth": 456, "roof_type": "flat"})
 
     assert list_template_names(cfg) == ["A Tower", "B Tower"]
 
     values = get_template_values(cfg, "B Tower")
     assert values is not None
+    assert values["building_shape"] == "rectangular"
     assert values["width"] == "123"
     assert values["roof_type"] == "gable"
     assert values["side_color_dark"] == "222"
     assert values["depth"] == ""
+
+
+def test_none_roof_omits_roof_faces():
+    _verts, faces = generate_building(320, 1042, 100, "none", 30, 15, 50, 50)
+    names = {name for name, _ in faces}
+    assert not names.intersection({"topB", "topD", "roofB", "roofD", "roofL", "roofR", "pyrF"})
+
+
+def test_circular_dome_building_uses_requested_sides_and_layers(tmp_path: Path):
+    verts, faces = generate_building(
+        0,
+        0,
+        120,
+        "dome",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=8,
+        dome_layers=3,
+    )
+    out = tmp_path / "circular_dome.3D"
+    params = _base_parameters()
+    params.update({"building_shape": "circular", "roof_type": "dome"})
+
+    write_3d(out, verts, faces, params)
+    text = out.read_text(encoding="utf-8")
+    assert "dome_top:" in text
+    assert any(name.startswith("sideB") or name.startswith("sideD") for name, _ in faces)
+    assert any(name.startswith("roofB") or name.startswith("roofD") for name, _ in faces)
 
 
 def test_remove_template_deletes_section():
