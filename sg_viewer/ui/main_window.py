@@ -163,7 +163,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_table.setHorizontalHeaderLabels([
             "Move",
             "Name",
-            "Filename (.3do)",
+            "Filename",
             "X (500ths)",
             "Y (500ths)",
             "Z (500ths)",

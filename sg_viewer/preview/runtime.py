@@ -241,24 +241,28 @@ class PreviewRuntime(PreviewRuntimeOps):
             for index in getattr(self, "_selected_trackside_object_indices", ())
             if 0 <= index < len(self._trackside_objects)
         )
-        move_enabled_indices = set(
+        move_enabled_indices = tuple(
             index
             for index in getattr(self, "_trackside_move_enabled_indices", ())
             if 0 <= index < len(self._trackside_objects)
         )
         if not selected_indices:
             selected = self._selected_trackside_object_index
-            if selected is None:
-                return None
-            selected_indices = (selected,)
-        if not any(index in move_enabled_indices for index in selected_indices):
+            if selected is not None:
+                selected_indices = (selected,)
+        candidate_indices = tuple(
+            index for index in selected_indices if index in move_enabled_indices
+        )
+        if not candidate_indices:
+            candidate_indices = move_enabled_indices
+        if not candidate_indices:
             return None
         transform = self.current_transform(self._widget_size())
         if transform is None:
             return None
         scale, offsets = transform
         hit_tolerance = 8.0
-        for selected in selected_indices:
+        for selected in candidate_indices:
             obj = self._trackside_objects[selected]
             sx = offsets[0] + float(obj.x) * scale
             sy = offsets[1] - float(obj.y) * scale
