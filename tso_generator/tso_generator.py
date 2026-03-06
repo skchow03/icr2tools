@@ -219,12 +219,6 @@ def generate_building(
 
     verts, faces = generate_base(width, depth, height)
 
-    if rect_center_origin:
-        x_offset = -(width // 2)
-        y_offset = -(depth // 2)
-        for name, (x, y, z) in list(verts.items()):
-            verts[name] = (x + x_offset, y + y_offset, z)
-
     if roof_type == "flat":
         add_flat_roof(faces)
     elif roof_type == "parapet":
@@ -233,6 +227,12 @@ def generate_building(
         add_gable_roof(verts, faces, width, depth, height, gable_rise)
     elif roof_type == "pyramid":
         add_pyramid_roof(verts, faces, width, depth, height, pyramid_rise)
+
+    if rect_center_origin:
+        x_offset = -(width // 2)
+        y_offset = -(depth // 2)
+        for name, (x, y, z) in list(verts.items()):
+            verts[name] = (x + x_offset, y + y_offset, z)
 
     return verts, faces
 

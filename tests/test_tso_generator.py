@@ -229,3 +229,24 @@ def test_circular_dome_roundness_still_curves_to_top():
     # Even when flattened, the roof should keep curving inward instead of
     # staying near full radius with a sudden top cap.
     assert verts["dr4_0"][0] < 150
+
+
+def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
+    verts, _faces = generate_building(
+        320,
+        1042,
+        100,
+        "gable",
+        30,
+        15,
+        50,
+        50,
+        rect_center_origin=True,
+    )
+
+    assert verts["a1"][0] == -160
+    assert verts["a1"][1] == 521
+    assert verts["r0"][0] == 0
+    assert verts["r1"][0] == 0
+    assert verts["r0"][1] == -521
+    assert verts["r1"][1] == 521
