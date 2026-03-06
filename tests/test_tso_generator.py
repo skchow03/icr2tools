@@ -26,6 +26,7 @@ def _base_parameters():
         "gable_rise": 50,
         "pyramid_rise": 50,
         "dome_layers": 4,
+        "dome_roundness": 100,
         "sunny_pcx": "C:/game/sunny.pcx",
         "roof_color_bright": 200,
         "roof_color_dark": 201,
@@ -149,3 +150,60 @@ def test_remove_template_deletes_section():
 
     assert not cfg.has_section(f"{TEMPLATE_SECTION_PREFIX}Warehouse")
     assert get_template_values(cfg, "Warehouse") is None
+
+
+def test_circular_dome_roundness_zero_uses_flat_roof():
+    verts, faces = generate_building(
+        0,
+        0,
+        120,
+        "dome",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=12,
+        dome_layers=4,
+        dome_roundness=0,
+    )
+
+    assert "dome_top" not in verts
+    assert "ctp" in verts
+    assert any(name.startswith("roofB") or name.startswith("roofD") for name, _ in faces)
+
+
+def test_circular_dome_roundness_changes_dome_height():
+    flat_verts, _ = generate_building(
+        0,
+        0,
+        120,
+        "dome",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=12,
+        dome_layers=4,
+        dome_roundness=25,
+    )
+    round_verts, _ = generate_building(
+        0,
+        0,
+        120,
+        "dome",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=12,
+        dome_layers=4,
+        dome_roundness=100,
+    )
+
+    assert flat_verts["dome_top"][2] < round_verts["dome_top"][2]

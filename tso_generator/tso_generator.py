@@ -37,6 +37,7 @@ TEMPLATE_FIELDS = (
     "gable_rise",
     "pyramid_rise",
     "dome_layers",
+    "dome_roundness",
     "sunny_pcx",
     "roof_color_bright",
     "roof_color_dark",
@@ -151,8 +152,9 @@ def add_circular_flat_roof(verts, faces, sides, diameter, height):
         faces.append((f"{roof_prefix}{i}", [f"ct{i}", f"ct{nxt}", "ctp"]))
 
 
-def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers):
+def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, dome_roundness):
     radius = diameter / 2.0
+    roundness = max(0.0, min(100.0, float(dome_roundness))) / 100.0
     prev_ring = [f"ct{i}" for i in range(sides)]
 
     for layer in range(1, dome_layers + 1):
@@ -160,8 +162,8 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers):
         # Use a quarter-circle profile so dome sides curve upward like a capitol dome,
         # instead of tapering linearly into a cone.
         profile_angle = (math.pi / 2.0) * t
-        ring_radius = radius * math.cos(profile_angle)
-        ring_z = height + (radius * math.sin(profile_angle))
+        ring_radius = radius * ((1.0 - roundness) + (roundness * math.cos(profile_angle)))
+        ring_z = height + (radius * roundness * math.sin(profile_angle))
         ring_names = []
         for i in range(sides):
             angle = (2.0 * math.pi * i) / sides
@@ -179,7 +181,8 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers):
 
         prev_ring = ring_names
 
-    verts["dome_top"] = (int(round(radius)), int(round(radius)), height + int(round(radius)))
+    top_z = height + int(round(radius * roundness))
+    verts["dome_top"] = (int(round(radius)), int(round(radius)), top_z)
     for i in range(sides):
         nxt = (i + 1) % sides
         theta = (2.0 * math.pi * (i + 0.5)) / sides
@@ -200,13 +203,17 @@ def generate_building(
     diameter=320,
     num_sides=12,
     dome_layers=4,
+    dome_roundness=100,
 ):
     if building_shape == "circular":
         verts, faces = generate_circular_base(diameter, num_sides, height)
         if roof_type == "flat":
             add_circular_flat_roof(verts, faces, num_sides, diameter, height)
         elif roof_type == "dome":
-            add_circular_dome_roof(verts, faces, diameter, num_sides, height, dome_layers)
+            if int(dome_roundness) <= 0:
+                add_circular_flat_roof(verts, faces, num_sides, diameter, height)
+            else:
+                add_circular_dome_roof(verts, faces, diameter, num_sides, height, dome_layers, dome_roundness)
         return verts, faces
 
     verts, faces = generate_base(width, depth, height)
@@ -525,6 +532,11 @@ def build_window():
             self.dome_layers_spin.setRange(1, 256)
             self.dome_layers_spin.setValue(4)
 
+            self.dome_roundness_spin = QtWidgets.QSpinBox()
+            self.dome_roundness_spin.setRange(0, 100)
+            self.dome_roundness_spin.setSuffix("%")
+            self.dome_roundness_spin.setValue(100)
+
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
             self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
@@ -564,6 +576,7 @@ def build_window():
                 ("gable_rise", "Gable Rise", self.gable_spin),
                 ("pyramid_rise", "Pyramid Rise", self.pyramid_spin),
                 ("dome_layers", "Dome Layers", self.dome_layers_spin),
+                ("dome_roundness", "Dome Roundness", self.dome_roundness_spin),
                 ("roof_color_bright", "Roof Color (Bright)", self.roof_bright_picker),
                 ("roof_color_dark", "Roof Color (Dark)", self.roof_dark_picker),
                 ("side_color_bright", "Side Color (Bright)", self.side_bright_picker),
@@ -625,7 +638,9 @@ def build_window():
             self._set_row_visible("parapet_height", is_rectangular and roof_type == "parapet")
             self._set_row_visible("gable_rise", is_rectangular and roof_type == "gable")
             self._set_row_visible("pyramid_rise", is_rectangular and roof_type == "pyramid")
-            self._set_row_visible("dome_layers", (not is_rectangular) and roof_type == "dome")
+            is_dome = (not is_rectangular) and roof_type == "dome"
+            self._set_row_visible("dome_layers", is_dome)
+            self._set_row_visible("dome_roundness", is_dome)
 
         def collect_current_values(self):
             return {
@@ -641,6 +656,7 @@ def build_window():
                 "gable_rise": self.gable_spin.value(),
                 "pyramid_rise": self.pyramid_spin.value(),
                 "dome_layers": self.dome_layers_spin.value(),
+                "dome_roundness": self.dome_roundness_spin.value(),
                 "sunny_pcx": self.sunny_edit.text().strip(),
                 "roof_color_bright": self.roof_bright_picker.color_index(),
                 "roof_color_dark": self.roof_dark_picker.color_index(),
@@ -661,6 +677,7 @@ def build_window():
             self.gable_spin.setValue(int(values.get("gable_rise", self.gable_spin.value())))
             self.pyramid_spin.setValue(int(values.get("pyramid_rise", self.pyramid_spin.value())))
             self.dome_layers_spin.setValue(int(values.get("dome_layers", self.dome_layers_spin.value())))
+            self.dome_roundness_spin.setValue(int(values.get("dome_roundness", self.dome_roundness_spin.value())))
             self.sunny_edit.setText(values.get("sunny_pcx", self.sunny_edit.text().strip()))
 
             self.roof_bright_picker.set_color_index(int(values.get("roof_color_bright", 0)))
@@ -760,6 +777,7 @@ def build_window():
                     values["diameter"],
                     values["num_sides"],
                     values["dome_layers"],
+                    values["dome_roundness"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
