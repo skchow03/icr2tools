@@ -257,6 +257,18 @@ def write_3d(path, verts, faces, parameters):
         side_bright_faces = {"ls1", "fr1", "ls2", "fr2", "gableF"}
         side_dark_faces = {"rs1", "bk1", "rs2", "bk2", "gableB"}
 
+        if roof_type == "parapet":
+            parapet_side_bright_faces = {"ls2", "fr2"}
+            parapet_side_dark_faces = {"rs2", "bk2"}
+            parapet_top_faces = {"roofB", "roofD"}
+
+            if name in parapet_side_bright_faces:
+                return roof_bright
+            if name in parapet_side_dark_faces:
+                return roof_dark
+            if name in parapet_top_faces:
+                return roof_bright
+
         if name in roof_bright_faces or name.startswith("roofB"):
             return roof_bright
         if name in roof_dark_faces or name.startswith("roofD"):

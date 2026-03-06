@@ -68,6 +68,23 @@ def test_gable_uses_roof_colors_for_slopes_and_side_colors_for_end_walls(tmp_pat
     assert "gableB: POLY <203>" in text
 
 
+def test_parapet_uses_roof_colors_for_upper_sides_and_bright_top(tmp_path: Path):
+    verts, faces = generate_building(320, 1042, 100, "parapet", 30, 15, 50, 50)
+    out = tmp_path / "parapet.3D"
+
+    params = _base_parameters()
+    params["roof_type"] = "parapet"
+    write_3d(out, verts, faces, params)
+
+    text = out.read_text(encoding="utf-8")
+    assert "ls2: POLY <200>" in text
+    assert "fr2: POLY <200>" in text
+    assert "rs2: POLY <201>" in text
+    assert "bk2: POLY <201>" in text
+    assert "roofB: POLY <200>" in text
+    assert "roofD: POLY <200>" in text
+
+
 def test_template_roundtrip_and_listing_order():
     cfg = configparser.ConfigParser()
     save_template(
