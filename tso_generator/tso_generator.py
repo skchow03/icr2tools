@@ -155,6 +155,7 @@ def add_circular_flat_roof(verts, faces, sides, diameter, height):
 def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, dome_roundness):
     radius = diameter / 2.0
     roundness = max(0.0, min(100.0, float(dome_roundness))) / 100.0
+    dome_height = radius * roundness
     prev_ring = [f"ct{i}" for i in range(sides)]
 
     for layer in range(1, dome_layers + 1):
@@ -162,8 +163,10 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
         # Use a quarter-circle profile so dome sides curve upward like a capitol dome,
         # instead of tapering linearly into a cone.
         profile_angle = (math.pi / 2.0) * t
-        ring_radius = radius * ((1.0 - roundness) + (roundness * math.cos(profile_angle)))
-        ring_z = height + (radius * roundness * math.sin(profile_angle))
+        # Keep the profile curved all the way to the top, while lowering total
+        # dome height for flatter stadium-like roofs.
+        ring_radius = radius * math.cos(profile_angle)
+        ring_z = height + (dome_height * math.sin(profile_angle))
         ring_names = []
         for i in range(sides):
             angle = (2.0 * math.pi * i) / sides
@@ -181,7 +184,7 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
 
         prev_ring = ring_names
 
-    top_z = height + int(round(radius * roundness))
+    top_z = height + int(round(dome_height))
     verts["dome_top"] = (int(round(radius)), int(round(radius)), top_z)
     for i in range(sides):
         nxt = (i + 1) % sides
