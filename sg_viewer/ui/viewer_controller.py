@@ -35,6 +35,7 @@ from sg_viewer.services.tsd_objects import (
 )
 from sg_viewer.services.trackside_objects import (
     TracksideObject,
+    normalize_trackside_filename,
     serialize_objects_txt,
     trackside_object_from_payload,
     trackside_object_to_payload,
@@ -1932,7 +1933,7 @@ class SGViewerController:
 
                 values = [
                     f"__TSO{row}",
-                    obj.filename,
+                    normalize_trackside_filename(obj.filename),
                     str(obj.x),
                     str(obj.y),
                     str(obj.z),
@@ -2055,7 +2056,7 @@ class SGViewerController:
             center_y = int(round(world_center[1]))
         self._trackside_objects.append(
             TracksideObject(
-                filename="object.3do",
+                filename="object",
                 x=center_x,
                 y=center_y,
                 z=0,
@@ -2127,7 +2128,7 @@ class SGViewerController:
             self._persist_tsd_state_for_current_track()
             return
         try:
-            filename = (table.item(row, 2).text() if table.item(row, 2) else "").strip()
+            filename = normalize_trackside_filename((table.item(row, 2).text() if table.item(row, 2) else ""))
             if not filename:
                 raise ValueError
             existing = self._trackside_objects[row]

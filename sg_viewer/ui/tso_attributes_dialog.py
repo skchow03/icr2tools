@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.services.trackside_objects import TracksideObject
+from sg_viewer.services.trackside_objects import TracksideObject, normalize_trackside_filename
 
 
 class TracksideObjectAttributesDialog(QtWidgets.QDialog):
@@ -39,7 +39,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         for spin in (self._bbox_length_spin, self._bbox_width_spin):
             spin.setRange(0, 1_000_000_000)
 
-        form.addRow("Filename (.3do)", self._filename_edit)
+        form.addRow("Filename", self._filename_edit)
         form.addRow("X (500ths)", self._x_spin)
         form.addRow("Y (500ths)", self._y_spin)
         form.addRow("Z (500ths)", self._z_spin)
@@ -62,7 +62,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
 
     def edit_object(self, row_index: int, obj: TracksideObject) -> None:
         self._row_index = row_index
-        self._filename_edit.setText(obj.filename)
+        self._filename_edit.setText(normalize_trackside_filename(obj.filename))
         self._x_spin.setValue(int(obj.x))
         self._y_spin.setValue(int(obj.y))
         self._z_spin.setValue(int(obj.z))
@@ -77,9 +77,9 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
     def _apply_changes(self) -> None:
         if self._row_index is None:
             return
-        filename = self._filename_edit.text().strip()
+        filename = normalize_trackside_filename(self._filename_edit.text())
         if not filename:
-            QtWidgets.QMessageBox.warning(self, "TSO Attributes", "Filename (.3do) is required.")
+            QtWidgets.QMessageBox.warning(self, "TSO Attributes", "Filename is required.")
             return
         obj = TracksideObject(
             filename=filename,

@@ -19,13 +19,20 @@ class TracksideObject:
     def to_objects_txt_line(self, index: int) -> str:
         return (
             f'__TSO{index}: DYNAMIC {self.x}, {self.y}, {self.z}, {self.yaw}, '
-            f'{self.pitch}, {self.tilt}, 1, EXTERN "{self.filename}";'
+            f'{self.pitch}, {self.tilt}, 1, EXTERN "{normalize_trackside_filename(self.filename)}";'
         )
+
+
+def normalize_trackside_filename(filename: str) -> str:
+    normalized = filename.strip()
+    if normalized.lower().endswith(".3do"):
+        normalized = normalized[:-4]
+    return normalized
 
 
 def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
     return {
-        "filename": obj.filename,
+        "filename": normalize_trackside_filename(obj.filename),
         "x": obj.x,
         "y": obj.y,
         "z": obj.z,
@@ -39,7 +46,7 @@ def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
 
 
 def trackside_object_from_payload(payload: dict[str, object]) -> TracksideObject:
-    filename = str(payload.get("filename", "")).strip()
+    filename = normalize_trackside_filename(str(payload.get("filename", "")))
     if not filename:
         raise ValueError("Trackside object filename is required.")
     return TracksideObject(
