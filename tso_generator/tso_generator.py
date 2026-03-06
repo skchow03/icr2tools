@@ -26,6 +26,7 @@ TEMPLATE_SECTION_PREFIX = "template:"
 
 TEMPLATE_FIELDS = (
     "building_shape",
+    "rect_center_origin",
     "width",
     "depth",
     "height",
@@ -123,13 +124,10 @@ def generate_circular_base(diameter, sides, height):
     verts = {}
     faces = []
     radius = diameter / 2.0
-    cx = radius
-    cy = radius
-
     for i in range(sides):
         angle = (2.0 * math.pi * i) / sides
-        x = cx + (radius * math.cos(angle))
-        y = cy + (radius * math.sin(angle))
+        x = radius * math.cos(angle)
+        y = radius * math.sin(angle)
         verts[f"cb{i}"] = (int(round(x)), int(round(y)), 0)
         verts[f"ct{i}"] = (int(round(x)), int(round(y)), height)
 
@@ -143,8 +141,7 @@ def generate_circular_base(diameter, sides, height):
 
 
 def add_circular_flat_roof(verts, faces, sides, diameter, height):
-    radius = diameter / 2.0
-    verts["ctp"] = (int(round(radius)), int(round(radius)), height)
+    verts["ctp"] = (0, 0, height)
     for i in range(sides):
         nxt = (i + 1) % sides
         theta = (2.0 * math.pi * (i + 0.5)) / sides
@@ -170,8 +167,8 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
         ring_names = []
         for i in range(sides):
             angle = (2.0 * math.pi * i) / sides
-            x = radius + (ring_radius * math.cos(angle))
-            y = radius + (ring_radius * math.sin(angle))
+            x = ring_radius * math.cos(angle)
+            y = ring_radius * math.sin(angle)
             name = f"dr{layer}_{i}"
             verts[name] = (int(round(x)), int(round(y)), int(round(ring_z)))
             ring_names.append(name)
@@ -185,7 +182,7 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
         prev_ring = ring_names
 
     top_z = height + int(round(dome_height))
-    verts["dome_top"] = (int(round(radius)), int(round(radius)), top_z)
+    verts["dome_top"] = (0, 0, top_z)
     for i in range(sides):
         nxt = (i + 1) % sides
         theta = (2.0 * math.pi * (i + 0.5)) / sides
@@ -207,6 +204,7 @@ def generate_building(
     num_sides=12,
     dome_layers=4,
     dome_roundness=100,
+    rect_center_origin=False,
 ):
     if building_shape == "circular":
         verts, faces = generate_circular_base(diameter, num_sides, height)
@@ -220,6 +218,12 @@ def generate_building(
         return verts, faces
 
     verts, faces = generate_base(width, depth, height)
+
+    if rect_center_origin:
+        x_offset = -(width // 2)
+        y_offset = -(depth // 2)
+        for name, (x, y, z) in list(verts.items()):
+            verts[name] = (x + x_offset, y + y_offset, z)
 
     if roof_type == "flat":
         add_flat_roof(faces)
@@ -540,6 +544,8 @@ def build_window():
             self.dome_roundness_spin.setSuffix("%")
             self.dome_roundness_spin.setValue(100)
 
+            self.rect_center_check = QtWidgets.QCheckBox("Center rectangular building at (0,0)")
+
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
             self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
@@ -568,6 +574,7 @@ def build_window():
 
             row_specs = [
                 ("building_shape", "Building Shape", self.shape_combo),
+                ("rect_center_origin", "Rect Origin", self.rect_center_check),
                 ("width", "Width", self.width_spin),
                 ("depth", "Depth", self.depth_spin),
                 ("diameter", "Diameter", self.diameter_spin),
@@ -628,6 +635,7 @@ def build_window():
             self._set_roof_options_for_shape(shape)
             self._set_row_visible("width", is_rectangular)
             self._set_row_visible("depth", is_rectangular)
+            self._set_row_visible("rect_center_origin", is_rectangular)
             self._set_row_visible("diameter", not is_rectangular)
             self._set_row_visible("num_sides", not is_rectangular)
             self.update_roof_field_visibility(self.roof_combo.currentText())
@@ -650,6 +658,7 @@ def build_window():
                 "building_shape": self.shape_combo.currentText(),
                 "width": self.width_spin.value(),
                 "depth": self.depth_spin.value(),
+                "rect_center_origin": self.rect_center_check.isChecked(),
                 "diameter": self.diameter_spin.value(),
                 "num_sides": self.sides_spin.value(),
                 "height": self.height_spin.value(),
@@ -671,6 +680,7 @@ def build_window():
             self.shape_combo.setCurrentText(values.get("building_shape", self.shape_combo.currentText()))
             self.width_spin.setValue(int(values.get("width", self.width_spin.value())))
             self.depth_spin.setValue(int(values.get("depth", self.depth_spin.value())))
+            self.rect_center_check.setChecked(str(values.get("rect_center_origin", "False")).lower() in {"1", "true", "yes", "on"})
             self.diameter_spin.setValue(int(values.get("diameter", self.diameter_spin.value())))
             self.sides_spin.setValue(int(values.get("num_sides", self.sides_spin.value())))
             self.height_spin.setValue(int(values.get("height", self.height_spin.value())))
@@ -781,6 +791,7 @@ def build_window():
                     values["num_sides"],
                     values["dome_layers"],
                     values["dome_roundness"],
+                    values["rect_center_origin"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
