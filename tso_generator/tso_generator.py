@@ -252,6 +252,96 @@ def _ui_imports():
 def build_window():
     QtCore, QtGui, QtWidgets = _ui_imports()
 
+    class PaletteMatrixDialog(QtWidgets.QDialog):
+        def __init__(self, parent, palette, selected_index: int):
+            super().__init__(parent)
+            self.setWindowTitle("Pick Palette Color")
+            self.selected_index = int(max(0, min(255, selected_index)))
+
+            layout = QtWidgets.QVBoxLayout(self)
+            info = QtWidgets.QLabel("Select a palette index (0-255):")
+            layout.addWidget(info)
+
+            grid = QtWidgets.QGridLayout()
+            grid.setSpacing(2)
+            self._tiles = {}
+
+            for index, (r, g, b) in enumerate(palette[:256]):
+                tile = QtWidgets.QPushButton(f"{index}")
+                tile.setFixedSize(34, 24)
+                tile.setToolTip(f"Index {index}: rgb({r}, {g}, {b})")
+                tile.setStyleSheet(
+                    "QPushButton {"
+                    f"background-color: rgb({r}, {g}, {b});"
+                    "color: #000;"
+                    "border: 1px solid #444;"
+                    "font-size: 10px;"
+                    "padding: 0px;"
+                    "}"
+                )
+                tile.clicked.connect(lambda _checked=False, idx=index: self._choose(idx))
+                grid.addWidget(tile, index // 16, index % 16)
+                self._tiles[index] = tile
+
+            layout.addLayout(grid)
+            self._apply_selection_outline()
+
+        def _apply_selection_outline(self):
+            for index, tile in self._tiles.items():
+                if index == self.selected_index:
+                    tile.setStyleSheet(tile.styleSheet() + "QPushButton { border: 2px solid #fff; }")
+
+        def _choose(self, index: int):
+            self.selected_index = int(index)
+            self.accept()
+
+    class PaletteIndexPicker(QtWidgets.QWidget):
+        def __init__(self, parent, palette, initial_index: int):
+            super().__init__(parent)
+            self._palette = list(palette)
+            self._index = int(max(0, min(255, initial_index)))
+
+            layout = QtWidgets.QHBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+
+            self._preview = QtWidgets.QLabel()
+            self._preview.setFixedWidth(90)
+            self._button = QtWidgets.QPushButton("Pick...")
+            self._button.clicked.connect(self._open_picker)
+
+            layout.addWidget(self._preview)
+            layout.addWidget(self._button)
+            self._refresh_preview()
+
+        def _refresh_preview(self):
+            r, g, b = self._palette[self._index]
+            self._preview.setText(f"{self._index:>3} ({r},{g},{b})")
+            self._preview.setStyleSheet(
+                "QLabel {"
+                f"background-color: rgb({r}, {g}, {b});"
+                "border: 1px solid #222;"
+                "padding: 2px;"
+                "}"
+            )
+
+        def _open_picker(self):
+            dialog = PaletteMatrixDialog(self, self._palette, self._index)
+            if dialog.exec_() != QtWidgets.QDialog.Accepted:
+                return
+            self._index = dialog.selected_index
+            self._refresh_preview()
+
+        def set_palette(self, palette):
+            self._palette = list(palette)
+            self._refresh_preview()
+
+        def set_color_index(self, index: int):
+            self._index = int(max(0, min(255, index)))
+            self._refresh_preview()
+
+        def color_index(self):
+            return self._index
+
     class MainWindow(QtWidgets.QMainWindow):
         def __init__(self):
             super().__init__()
@@ -318,19 +408,16 @@ def build_window():
             self.pyramid_spin.setRange(0, 50000)
             self.pyramid_spin.setValue(50)
 
-            self.roof_bright_combo = QtWidgets.QComboBox()
-            self.roof_dark_combo = QtWidgets.QComboBox()
-            self.side_bright_combo = QtWidgets.QComboBox()
-            self.side_dark_combo = QtWidgets.QComboBox()
-            self.color_combos = [
-                self.roof_bright_combo,
-                self.roof_dark_combo,
-                self.side_bright_combo,
-                self.side_dark_combo,
+            self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
+            self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
+            self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
+            self.side_dark_picker = PaletteIndexPicker(self, self.palette, 203)
+            self.color_pickers = [
+                self.roof_bright_picker,
+                self.roof_dark_picker,
+                self.side_bright_picker,
+                self.side_dark_picker,
             ]
-
-            for combo in self.color_combos:
-                combo.setMaxVisibleItems(20)
 
             self.sunny_edit = QtWidgets.QLineEdit(self.settings.get("paths", "sunny_pcx", fallback=""))
             self.sunny_browse = QtWidgets.QPushButton("Browse...")
@@ -348,10 +435,10 @@ def build_window():
                 ("Parapet Height", self.roof_height_spin),
                 ("Gable Rise", self.gable_spin),
                 ("Pyramid Rise", self.pyramid_spin),
-                ("Roof Color (Bright)", self.roof_bright_combo),
-                ("Roof Color (Dark)", self.roof_dark_combo),
-                ("Side Color (Bright)", self.side_bright_combo),
-                ("Side Color (Dark)", self.side_dark_combo),
+                ("Roof Color (Bright)", self.roof_bright_picker),
+                ("Roof Color (Dark)", self.roof_dark_picker),
+                ("Side Color (Bright)", self.side_bright_picker),
+                ("Side Color (Dark)", self.side_dark_picker),
             ]
             for row, (label, widget) in enumerate(rows):
                 layout.addWidget(QtWidgets.QLabel(label), row, 0)
@@ -386,10 +473,10 @@ def build_window():
                 "gable_rise": self.gable_spin.value(),
                 "pyramid_rise": self.pyramid_spin.value(),
                 "sunny_pcx": self.sunny_edit.text().strip(),
-                "roof_color_bright": self.selected_color_index(self.roof_bright_combo),
-                "roof_color_dark": self.selected_color_index(self.roof_dark_combo),
-                "side_color_bright": self.selected_color_index(self.side_bright_combo),
-                "side_color_dark": self.selected_color_index(self.side_dark_combo),
+                "roof_color_bright": self.roof_bright_picker.color_index(),
+                "roof_color_dark": self.roof_dark_picker.color_index(),
+                "side_color_bright": self.side_bright_picker.color_index(),
+                "side_color_dark": self.side_dark_picker.color_index(),
             }
 
         def apply_values(self, values):
@@ -403,10 +490,10 @@ def build_window():
             self.pyramid_spin.setValue(int(values.get("pyramid_rise", self.pyramid_spin.value())))
             self.sunny_edit.setText(values.get("sunny_pcx", self.sunny_edit.text().strip()))
 
-            self.roof_bright_combo.setCurrentIndex(max(0, min(255, int(values.get("roof_color_bright", 0)))))
-            self.roof_dark_combo.setCurrentIndex(max(0, min(255, int(values.get("roof_color_dark", 0)))))
-            self.side_bright_combo.setCurrentIndex(max(0, min(255, int(values.get("side_color_bright", 0)))))
-            self.side_dark_combo.setCurrentIndex(max(0, min(255, int(values.get("side_color_dark", 0)))))
+            self.roof_bright_picker.set_color_index(int(values.get("roof_color_bright", 0)))
+            self.roof_dark_picker.set_color_index(int(values.get("roof_color_dark", 0)))
+            self.side_bright_picker.set_color_index(int(values.get("side_color_bright", 0)))
+            self.side_dark_picker.set_color_index(int(values.get("side_color_dark", 0)))
 
             path = self.sunny_edit.text().strip()
             if path:
@@ -451,22 +538,9 @@ def build_window():
 
         def refresh_color_combos(self, defaults=None):
             defaults = defaults or (0, 1, 2, 3)
-            for combo, selected in zip(self.color_combos, defaults):
-                combo.blockSignals(True)
-                combo.clear()
-                for index, (r, g, b) in enumerate(self.palette):
-                    pixmap = QtGui.QPixmap(18, 18)
-                    pixmap.fill(QtGui.QColor(r, g, b))
-                    icon = QtGui.QIcon(pixmap)
-                    combo.addItem(icon, f"{index} ({r},{g},{b})", index)
-                combo.setCurrentIndex(max(0, min(255, int(selected))))
-                combo.blockSignals(False)
-
-        def selected_color_index(self, combo):
-            value = combo.currentData()
-            if value is None:
-                return int(combo.currentIndex())
-            return int(value)
+            for picker, selected in zip(self.color_pickers, defaults):
+                picker.set_palette(self.palette)
+                picker.set_color_index(int(selected))
 
         def load_sunny_pcx_clicked(self):
             path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -483,7 +557,7 @@ def build_window():
             save_settings(self.settings)
 
         def try_load_palette(self, path: str, preserve_selection: bool):
-            selections = [self.selected_color_index(c) for c in self.color_combos]
+            selections = [picker.color_index() for picker in self.color_pickers]
             try:
                 self.palette = load_sunny_palette(path)
                 self.refresh_color_combos(defaults=selections if preserve_selection else None)
