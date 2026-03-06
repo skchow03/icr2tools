@@ -19,6 +19,7 @@ from sg_viewer.model.preview_state import SgPreviewModel, SgPreviewViewState
 from sg_viewer.preview.render_state import split_nodes_by_status
 from sg_viewer.preview.transform import ViewTransform
 from sg_viewer.services import sg_rendering
+from sg_viewer.services.trackside_objects import normalize_rotation_point
 
 Point = Tuple[float, float]
 Transform = tuple[float, tuple[float, float]]
@@ -821,13 +822,33 @@ def _draw_trackside_objects(
             (-half_length, -half_width),
             (-half_length, half_width),
         )
+        pivot_local_x, pivot_local_y = _rotation_pivot_local_offsets(
+            normalize_rotation_point(str(getattr(obj, "rotation_point", "center"))),
+            half_length,
+            half_width,
+        )
+        center_x = float(obj.x) - (pivot_local_x * cos_yaw - pivot_local_y * sin_yaw)
+        center_y = float(obj.y) - (pivot_local_x * sin_yaw + pivot_local_y * cos_yaw)
         polygon = QtGui.QPolygonF()
         for local_x, local_y in corners:
-            wx = float(obj.x) + local_x * cos_yaw - local_y * sin_yaw
-            wy = float(obj.y) + local_x * sin_yaw + local_y * cos_yaw
+            wx = center_x + local_x * cos_yaw - local_y * sin_yaw
+            wy = center_y + local_x * sin_yaw + local_y * cos_yaw
             polygon.append(sg_rendering.map_point(wx, wy, transform, widget_height))
         painter.drawPolygon(polygon)
         painter.restore()
+
+
+def _rotation_pivot_local_offsets(rotation_point: str, half_length: float, half_width: float) -> tuple[float, float]:
+    if rotation_point == "top_left":
+        return -half_length, half_width
+    if rotation_point == "top_right":
+        return half_length, half_width
+    if rotation_point == "bottom_left":
+        return -half_length, -half_width
+    if rotation_point == "bottom_right":
+        return half_length, -half_width
+    return 0.0, 0.0
+
 
 def _draw_centerlines(
     painter: QtGui.QPainter,

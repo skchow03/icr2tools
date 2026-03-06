@@ -21,7 +21,7 @@ from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.services.trackside_objects import TracksideObject
+from sg_viewer.services.trackside_objects import TracksideObject, normalize_rotation_point
 from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
@@ -264,17 +264,24 @@ class PreviewRuntime(PreviewRuntimeOps):
         hit_tolerance = 8.0
         for selected in candidate_indices:
             obj = self._trackside_objects[selected]
-            sx = offsets[0] + float(obj.x) * scale
-            sy = offsets[1] - float(obj.y) * scale
+            yaw_radians = math.radians(float(obj.yaw) / 10.0)
+            half_length = max(4.0 / max(scale, 1e-9), float(obj.bbox_length) * 0.5)
+            half_width = max(4.0 / max(scale, 1e-9), float(obj.bbox_width) * 0.5)
+            pivot_local_x, pivot_local_y = _rotation_pivot_local_offsets(
+                normalize_rotation_point(str(getattr(obj, "rotation_point", "center"))),
+                half_length,
+                half_width,
+            )
+            center_x = float(obj.x) - (pivot_local_x * math.cos(yaw_radians) - pivot_local_y * math.sin(yaw_radians))
+            center_y = float(obj.y) - (pivot_local_x * math.sin(yaw_radians) + pivot_local_y * math.cos(yaw_radians))
+            sx = offsets[0] + center_x * scale
+            sy = offsets[1] - center_y * scale
             dx = float(screen_pos.x()) - sx
             dy = float(screen_pos.y()) - sy
-            yaw_radians = math.radians(float(obj.yaw) / 10.0)
             cos_yaw = math.cos(-yaw_radians)
             sin_yaw = math.sin(-yaw_radians)
             local_x = dx * cos_yaw - dy * sin_yaw
             local_y = dx * sin_yaw + dy * cos_yaw
-            half_length = max(4.0 / max(scale, 1e-9), float(obj.bbox_length) * 0.5)
-            half_width = max(4.0 / max(scale, 1e-9), float(obj.bbox_width) * 0.5)
             near_length = half_length + (hit_tolerance / max(scale, 1e-9))
             near_width = half_width + (hit_tolerance / max(scale, 1e-9))
             if abs(local_x) <= near_length and abs(local_y) <= near_width:
@@ -483,3 +490,15 @@ class PreviewRuntime(PreviewRuntimeOps):
             return
         if intent.kind == "consume":
             event.accept()
+
+
+def _rotation_pivot_local_offsets(rotation_point: str, half_length: float, half_width: float) -> tuple[float, float]:
+    if rotation_point == "top_left":
+        return -half_length, half_width
+    if rotation_point == "top_right":
+        return half_length, half_width
+    if rotation_point == "bottom_left":
+        return -half_length, -half_width
+    if rotation_point == "bottom_right":
+        return half_length, -half_width
+    return 0.0, 0.0

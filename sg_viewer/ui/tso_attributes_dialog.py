@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.services.trackside_objects import TracksideObject, normalize_trackside_filename
+from sg_viewer.services.trackside_objects import (
+    ROTATION_POINT_BOTTOM_LEFT,
+    ROTATION_POINT_BOTTOM_RIGHT,
+    ROTATION_POINT_CENTER,
+    ROTATION_POINT_TOP_LEFT,
+    ROTATION_POINT_TOP_RIGHT,
+    TracksideObject,
+    normalize_rotation_point,
+    normalize_trackside_filename,
+)
 
 
 class TracksideObjectAttributesDialog(QtWidgets.QDialog):
@@ -20,35 +29,59 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._x_spin = QtWidgets.QSpinBox()
         self._y_spin = QtWidgets.QSpinBox()
         self._z_spin = QtWidgets.QSpinBox()
+        self._yaw_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._yaw_spin = QtWidgets.QSpinBox()
         self._pitch_spin = QtWidgets.QSpinBox()
         self._tilt_spin = QtWidgets.QSpinBox()
         self._description_edit = QtWidgets.QLineEdit()
         self._bbox_length_spin = QtWidgets.QSpinBox()
         self._bbox_width_spin = QtWidgets.QSpinBox()
+        self._rotation_point_combo = QtWidgets.QComboBox()
 
         for spin in (
             self._x_spin,
             self._y_spin,
             self._z_spin,
-            self._yaw_spin,
             self._pitch_spin,
             self._tilt_spin,
         ):
             spin.setRange(-1_000_000_000, 1_000_000_000)
+        self._yaw_spin.setRange(-1800, 1800)
+        self._yaw_slider.setRange(-1800, 1800)
+        self._yaw_slider.setSingleStep(1)
+        self._yaw_slider.setPageStep(10)
+        self._yaw_slider.setTickInterval(100)
+        self._yaw_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._yaw_slider.valueChanged.connect(self._yaw_spin.setValue)
+        self._yaw_spin.valueChanged.connect(self._yaw_slider.setValue)
+
         for spin in (self._bbox_length_spin, self._bbox_width_spin):
             spin.setRange(0, 1_000_000_000)
+
+        self._rotation_point_combo.addItem("Center", ROTATION_POINT_CENTER)
+        self._rotation_point_combo.addItem("Top-left corner", ROTATION_POINT_TOP_LEFT)
+        self._rotation_point_combo.addItem("Top-right corner", ROTATION_POINT_TOP_RIGHT)
+        self._rotation_point_combo.addItem("Bottom-left corner", ROTATION_POINT_BOTTOM_LEFT)
+        self._rotation_point_combo.addItem("Bottom-right corner", ROTATION_POINT_BOTTOM_RIGHT)
+
+        yaw_layout = QtWidgets.QHBoxLayout()
+        yaw_layout.setContentsMargins(0, 0, 0, 0)
+        yaw_layout.addWidget(self._yaw_slider)
+        yaw_layout.addWidget(self._yaw_spin)
+        yaw_widget = QtWidgets.QWidget()
+        yaw_widget.setLayout(yaw_layout)
 
         form.addRow("Filename", self._filename_edit)
         form.addRow("X (500ths)", self._x_spin)
         form.addRow("Y (500ths)", self._y_spin)
         form.addRow("Z (500ths)", self._z_spin)
-        form.addRow("Yaw (tenths)", self._yaw_spin)
+        form.addRow("Yaw (tenths)", yaw_widget)
         form.addRow("Pitch (tenths)", self._pitch_spin)
         form.addRow("Tilt (tenths)", self._tilt_spin)
         form.addRow("Description", self._description_edit)
         form.addRow("BBox Length", self._bbox_length_spin)
         form.addRow("BBox Width", self._bbox_width_spin)
+        form.addRow("Rotation point", self._rotation_point_combo)
 
         buttons = QtWidgets.QDialogButtonBox()
         apply_button = buttons.addButton("Apply", QtWidgets.QDialogButtonBox.ApplyRole)
@@ -72,6 +105,9 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._description_edit.setText(obj.description)
         self._bbox_length_spin.setValue(int(obj.bbox_length))
         self._bbox_width_spin.setValue(int(obj.bbox_width))
+        rotation_point = normalize_rotation_point(obj.rotation_point)
+        index = self._rotation_point_combo.findData(rotation_point)
+        self._rotation_point_combo.setCurrentIndex(index if index >= 0 else 0)
         self.setWindowTitle(f"TSO Attributes — __TSO{row_index}")
 
     def _apply_changes(self) -> None:
@@ -92,5 +128,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             description=self._description_edit.text().strip(),
             bbox_length=int(self._bbox_length_spin.value()),
             bbox_width=int(self._bbox_width_spin.value()),
+            rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
         )
         self.objectUpdated.emit(int(self._row_index), obj)
