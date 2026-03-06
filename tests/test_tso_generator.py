@@ -1,6 +1,15 @@
+import configparser
 from pathlib import Path
 
-from tso_generator.tso_generator import generate_building, write_3d
+from tso_generator.tso_generator import (
+    TEMPLATE_SECTION_PREFIX,
+    generate_building,
+    get_template_values,
+    list_template_names,
+    remove_template,
+    save_template,
+    write_3d,
+)
 
 
 def _base_parameters():
@@ -50,3 +59,28 @@ def test_gable_uses_bright_and_dark_roof_sides(tmp_path: Path):
     text = out.read_text(encoding="utf-8")
     assert "roofL: POLY <200>" in text
     assert "roofR: POLY <201>" in text
+
+
+def test_template_roundtrip_and_listing_order():
+    cfg = configparser.ConfigParser()
+    save_template(cfg, "B Tower", {"width": 123, "roof_type": "gable", "side_color_dark": 222})
+    save_template(cfg, "A Tower", {"depth": 456, "roof_type": "flat"})
+
+    assert list_template_names(cfg) == ["A Tower", "B Tower"]
+
+    values = get_template_values(cfg, "B Tower")
+    assert values is not None
+    assert values["width"] == "123"
+    assert values["roof_type"] == "gable"
+    assert values["side_color_dark"] == "222"
+    assert values["depth"] == ""
+
+
+def test_remove_template_deletes_section():
+    cfg = configparser.ConfigParser()
+    save_template(cfg, "Warehouse", {"width": 200})
+
+    remove_template(cfg, "Warehouse")
+
+    assert not cfg.has_section(f"{TEMPLATE_SECTION_PREFIX}Warehouse")
+    assert get_template_values(cfg, "Warehouse") is None

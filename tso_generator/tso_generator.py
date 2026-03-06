@@ -19,6 +19,23 @@ from pathlib import Path
 
 
 INI_PATH = Path(__file__).with_suffix(".ini")
+TEMPLATE_SECTION_PREFIX = "template:"
+
+TEMPLATE_FIELDS = (
+    "width",
+    "depth",
+    "height",
+    "roof_type",
+    "parapet_inset",
+    "parapet_height",
+    "gable_rise",
+    "pyramid_rise",
+    "sunny_pcx",
+    "roof_color_bright",
+    "roof_color_dark",
+    "side_color_bright",
+    "side_color_dark",
+)
 
 
 # ------------------------------------------------------------
@@ -180,11 +197,42 @@ def load_settings():
     return config
 
 
-def save_settings(sunny_pcx_path: str):
-    config = configparser.ConfigParser()
-    config["paths"] = {"sunny_pcx": sunny_pcx_path}
+def save_settings(config: configparser.ConfigParser):
     with open(INI_PATH, "w", encoding="utf-8") as ini_file:
         config.write(ini_file)
+
+
+def set_sunny_path(config: configparser.ConfigParser, sunny_pcx_path: str):
+    if not config.has_section("paths"):
+        config.add_section("paths")
+    config["paths"]["sunny_pcx"] = sunny_pcx_path
+
+
+def list_template_names(config: configparser.ConfigParser):
+    return sorted(
+        section[len(TEMPLATE_SECTION_PREFIX):]
+        for section in config.sections()
+        if section.startswith(TEMPLATE_SECTION_PREFIX)
+    )
+
+
+def get_template_values(config: configparser.ConfigParser, name: str):
+    section = f"{TEMPLATE_SECTION_PREFIX}{name}"
+    if not config.has_section(section):
+        return None
+    return {field: config.get(section, field, fallback="") for field in TEMPLATE_FIELDS}
+
+
+def save_template(config: configparser.ConfigParser, name: str, values):
+    section = f"{TEMPLATE_SECTION_PREFIX}{name}"
+    if not config.has_section(section):
+        config.add_section(section)
+    for field in TEMPLATE_FIELDS:
+        config[section][field] = str(values.get(field, ""))
+
+
+def remove_template(config: configparser.ConfigParser, name: str):
+    config.remove_section(f"{TEMPLATE_SECTION_PREFIX}{name}")
 
 
 def load_sunny_palette(path: str | Path):
@@ -215,7 +263,29 @@ def build_window():
         def _build_ui(self):
             central = QtWidgets.QWidget(self)
             self.setCentralWidget(central)
-            layout = QtWidgets.QGridLayout(central)
+            root_layout = QtWidgets.QHBoxLayout(central)
+
+            self.template_list = QtWidgets.QListWidget()
+            self.template_list.setMinimumWidth(220)
+            self.save_template_btn = QtWidgets.QPushButton("Save Template")
+            self.load_template_btn = QtWidgets.QPushButton("Load Selected")
+            self.remove_template_btn = QtWidgets.QPushButton("Remove Selected")
+
+            self.save_template_btn.clicked.connect(self.save_template_clicked)
+            self.load_template_btn.clicked.connect(self.load_template_clicked)
+            self.remove_template_btn.clicked.connect(self.remove_template_clicked)
+
+            template_layout = QtWidgets.QVBoxLayout()
+            template_layout.addWidget(QtWidgets.QLabel("Templates"))
+            template_layout.addWidget(self.template_list, 1)
+            template_layout.addWidget(self.save_template_btn)
+            template_layout.addWidget(self.load_template_btn)
+            template_layout.addWidget(self.remove_template_btn)
+
+            form_widget = QtWidgets.QWidget()
+            layout = QtWidgets.QGridLayout(form_widget)
+            root_layout.addLayout(template_layout)
+            root_layout.addWidget(form_widget, 1)
 
             self.width_spin = QtWidgets.QSpinBox()
             self.width_spin.setRange(1, 50000)
@@ -303,6 +373,81 @@ def build_window():
             self.refresh_color_combos(defaults=(200, 201, 202, 203))
             if self.sunny_edit.text().strip():
                 self.try_load_palette(self.sunny_edit.text().strip(), preserve_selection=True)
+            self.refresh_templates()
+
+        def collect_current_values(self):
+            return {
+                "width": self.width_spin.value(),
+                "depth": self.depth_spin.value(),
+                "height": self.height_spin.value(),
+                "roof_type": self.roof_combo.currentText(),
+                "parapet_inset": self.inset_spin.value(),
+                "parapet_height": self.roof_height_spin.value(),
+                "gable_rise": self.gable_spin.value(),
+                "pyramid_rise": self.pyramid_spin.value(),
+                "sunny_pcx": self.sunny_edit.text().strip(),
+                "roof_color_bright": self.selected_color_index(self.roof_bright_combo),
+                "roof_color_dark": self.selected_color_index(self.roof_dark_combo),
+                "side_color_bright": self.selected_color_index(self.side_bright_combo),
+                "side_color_dark": self.selected_color_index(self.side_dark_combo),
+            }
+
+        def apply_values(self, values):
+            self.width_spin.setValue(int(values.get("width", self.width_spin.value())))
+            self.depth_spin.setValue(int(values.get("depth", self.depth_spin.value())))
+            self.height_spin.setValue(int(values.get("height", self.height_spin.value())))
+            self.roof_combo.setCurrentText(values.get("roof_type", self.roof_combo.currentText()))
+            self.inset_spin.setValue(int(values.get("parapet_inset", self.inset_spin.value())))
+            self.roof_height_spin.setValue(int(values.get("parapet_height", self.roof_height_spin.value())))
+            self.gable_spin.setValue(int(values.get("gable_rise", self.gable_spin.value())))
+            self.pyramid_spin.setValue(int(values.get("pyramid_rise", self.pyramid_spin.value())))
+            self.sunny_edit.setText(values.get("sunny_pcx", self.sunny_edit.text().strip()))
+
+            self.roof_bright_combo.setCurrentIndex(max(0, min(255, int(values.get("roof_color_bright", 0)))))
+            self.roof_dark_combo.setCurrentIndex(max(0, min(255, int(values.get("roof_color_dark", 0)))))
+            self.side_bright_combo.setCurrentIndex(max(0, min(255, int(values.get("side_color_bright", 0)))))
+            self.side_dark_combo.setCurrentIndex(max(0, min(255, int(values.get("side_color_dark", 0)))))
+
+            path = self.sunny_edit.text().strip()
+            if path:
+                self.try_load_palette(path, preserve_selection=True)
+
+        def refresh_templates(self):
+            current_name = self.template_list.currentItem().text() if self.template_list.currentItem() else ""
+            names = list_template_names(self.settings)
+            self.template_list.clear()
+            self.template_list.addItems(names)
+            if current_name in names:
+                matches = self.template_list.findItems(current_name, QtCore.Qt.MatchExactly)
+                if matches:
+                    self.template_list.setCurrentItem(matches[0])
+
+        def save_template_clicked(self):
+            name, ok = QtWidgets.QInputDialog.getText(self, "Save Template", "Template name:")
+            template_name = name.strip()
+            if not ok or not template_name:
+                return
+            save_template(self.settings, template_name, self.collect_current_values())
+            save_settings(self.settings)
+            self.refresh_templates()
+
+        def load_template_clicked(self):
+            item = self.template_list.currentItem()
+            if not item:
+                return
+            values = get_template_values(self.settings, item.text())
+            if values is None:
+                QtWidgets.QMessageBox.warning(self, "Template", "Template not found in settings file.")
+                return
+            self.apply_values(values)
+
+        def remove_template_clicked(self):
+            item = self.template_list.currentItem()
+            if not item:
+                return
+            remove_template(self.settings, item.text())
+            save_settings(self.settings)
+            self.refresh_templates()
 
         def refresh_color_combos(self, defaults=None):
             defaults = defaults or (0, 1, 2, 3)
@@ -334,7 +479,8 @@ def build_window():
                 return
             self.try_load_palette(path, preserve_selection=True)
             self.sunny_edit.setText(path)
-            save_settings(path)
+            set_sunny_path(self.settings, path)
+            save_settings(self.settings)
 
         def try_load_palette(self, path: str, preserve_selection: bool):
             selections = [self.selected_color_index(c) for c in self.color_combos]
@@ -350,17 +496,19 @@ def build_window():
                 path = self.sunny_edit.text().strip()
                 if path:
                     self.try_load_palette(path, preserve_selection=True)
-                    save_settings(path)
+                    set_sunny_path(self.settings, path)
+                    save_settings(self.settings)
 
+                values = self.collect_current_values()
                 verts, faces = generate_building(
-                    self.width_spin.value(),
-                    self.depth_spin.value(),
-                    self.height_spin.value(),
+                    values["width"],
+                    values["depth"],
+                    values["height"],
                     roof,
-                    self.inset_spin.value(),
-                    self.roof_height_spin.value(),
-                    self.gable_spin.value(),
-                    self.pyramid_spin.value(),
+                    values["parapet_inset"],
+                    values["parapet_height"],
+                    values["gable_rise"],
+                    values["pyramid_rise"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -372,21 +520,8 @@ def build_window():
                 if not out_path:
                     return
 
-                params = {
-                    "width": self.width_spin.value(),
-                    "depth": self.depth_spin.value(),
-                    "height": self.height_spin.value(),
-                    "roof_type": roof,
-                    "parapet_inset": self.inset_spin.value(),
-                    "parapet_height": self.roof_height_spin.value(),
-                    "gable_rise": self.gable_spin.value(),
-                    "pyramid_rise": self.pyramid_spin.value(),
-                    "sunny_pcx": path,
-                    "roof_color_bright": self.selected_color_index(self.roof_bright_combo),
-                    "roof_color_dark": self.selected_color_index(self.roof_dark_combo),
-                    "side_color_bright": self.selected_color_index(self.side_bright_combo),
-                    "side_color_dark": self.selected_color_index(self.side_dark_combo),
-                }
+                params = dict(values)
+                params["roof_type"] = roof
 
                 write_3d(out_path, verts, faces, params)
                 QtWidgets.QMessageBox.information(self, "Success", "Building generated successfully.")
