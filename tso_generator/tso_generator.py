@@ -135,6 +135,10 @@ def write_3d(path, verts, faces, parameters):
     roof_dark = int(parameters["roof_color_dark"])
     side_bright = int(parameters["side_color_bright"])
     side_dark = int(parameters["side_color_dark"])
+    roof_type = str(parameters.get("roof_type", ""))
+
+    if roof_type == "flat":
+        roof_dark = roof_bright
 
     def color_for_face(name):
         roof_bright_faces = {"topB", "roofB", "roofL", "pyrF", "pyrL"}
@@ -391,6 +395,7 @@ def build_window():
 
             self.roof_combo = QtWidgets.QComboBox()
             self.roof_combo.addItems(["flat", "parapet", "gable", "pyramid"])
+            self.roof_combo.currentTextChanged.connect(self.update_roof_field_visibility)
 
             self.inset_spin = QtWidgets.QSpinBox()
             self.inset_spin.setRange(0, 50000)
@@ -426,25 +431,32 @@ def build_window():
             self.generate_btn = QtWidgets.QPushButton("Generate .3D")
             self.generate_btn.clicked.connect(self.generate_clicked)
 
-            rows = [
-                ("Width", self.width_spin),
-                ("Depth", self.depth_spin),
-                ("Height", self.height_spin),
-                ("Roof Type", self.roof_combo),
-                ("Parapet Inset", self.inset_spin),
-                ("Parapet Height", self.roof_height_spin),
-                ("Gable Rise", self.gable_spin),
-                ("Pyramid Rise", self.pyramid_spin),
-                ("Roof Color (Bright)", self.roof_bright_picker),
-                ("Roof Color (Dark)", self.roof_dark_picker),
-                ("Side Color (Bright)", self.side_bright_picker),
-                ("Side Color (Dark)", self.side_dark_picker),
-            ]
-            for row, (label, widget) in enumerate(rows):
-                layout.addWidget(QtWidgets.QLabel(label), row, 0)
-                layout.addWidget(widget, row, 1)
+            self.form_rows = {}
 
-            sunny_row = len(rows)
+            def add_form_row(row, field_name, label_text, widget):
+                label = QtWidgets.QLabel(label_text)
+                layout.addWidget(label, row, 0)
+                layout.addWidget(widget, row, 1)
+                self.form_rows[field_name] = (label, widget)
+
+            row_specs = [
+                ("width", "Width", self.width_spin),
+                ("depth", "Depth", self.depth_spin),
+                ("height", "Height", self.height_spin),
+                ("roof_type", "Roof Type", self.roof_combo),
+                ("parapet_inset", "Parapet Inset", self.inset_spin),
+                ("parapet_height", "Parapet Height", self.roof_height_spin),
+                ("gable_rise", "Gable Rise", self.gable_spin),
+                ("pyramid_rise", "Pyramid Rise", self.pyramid_spin),
+                ("roof_color_bright", "Roof Color (Bright)", self.roof_bright_picker),
+                ("roof_color_dark", "Roof Color (Dark)", self.roof_dark_picker),
+                ("side_color_bright", "Side Color (Bright)", self.side_bright_picker),
+                ("side_color_dark", "Side Color (Dark)", self.side_dark_picker),
+            ]
+            for row, (field_name, label, widget) in enumerate(row_specs):
+                add_form_row(row, field_name, label, widget)
+
+            sunny_row = len(row_specs)
             layout.addWidget(QtWidgets.QLabel("sunny.pcx"), sunny_row, 0)
             path_layout = QtWidgets.QHBoxLayout()
             path_layout.addWidget(self.sunny_edit)
@@ -461,6 +473,20 @@ def build_window():
             if self.sunny_edit.text().strip():
                 self.try_load_palette(self.sunny_edit.text().strip(), preserve_selection=True)
             self.refresh_templates()
+            self.update_roof_field_visibility(self.roof_combo.currentText())
+
+        def _set_row_visible(self, field_name, is_visible: bool):
+            label, widget = self.form_rows[field_name]
+            label.setVisible(is_visible)
+            widget.setVisible(is_visible)
+
+        def update_roof_field_visibility(self, roof_type: str):
+            roof_type = str(roof_type)
+            self._set_row_visible("roof_color_dark", roof_type != "flat")
+            self._set_row_visible("parapet_inset", roof_type == "parapet")
+            self._set_row_visible("parapet_height", roof_type == "parapet")
+            self._set_row_visible("gable_rise", roof_type == "gable")
+            self._set_row_visible("pyramid_rise", roof_type == "pyramid")
 
         def collect_current_values(self):
             return {
