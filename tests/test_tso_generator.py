@@ -119,6 +119,28 @@ def test_circular_dome_building_uses_requested_sides_and_layers(tmp_path: Path):
     assert any(name.startswith("roofB") or name.startswith("roofD") for name, _ in faces)
 
 
+def test_circular_dome_profile_is_curved_not_linear():
+    verts, _faces = generate_building(
+        0,
+        0,
+        120,
+        "dome",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=8,
+        dome_layers=3,
+    )
+
+    # With a curved (quarter-circle) profile, the first ring keeps more radius
+    # while also rising more than a linear cone profile.
+    assert verts["dr1_0"][0] > 175
+    assert verts["dr1_0"][2] > 145
+
+
 def test_remove_template_deletes_section():
     cfg = configparser.ConfigParser()
     save_template(cfg, "Warehouse", {"width": 200})
