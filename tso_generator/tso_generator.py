@@ -2,21 +2,20 @@
 """
 ICR2 Building Generator (UI + .3D writer)
 
-Standalone Tkinter application that generates Papyrus/Icr2 .3D building objects.
+PyQt5 application that generates Papyrus/ICR2 .3D building objects.
 
 Supported roof types
 - flat
 - parapet (inset roof cap)
 - gable (simple pitched roof)
 - pyramid (4-sided pitched roof)
-
-No external libraries required.
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from pathlib import Path
+from __future__ import annotations
+
 import configparser
+import sys
+from pathlib import Path
 
 
 INI_PATH = Path(__file__).with_suffix(".ini")
@@ -40,10 +39,10 @@ def generate_base(width, depth, height):
     verts["d1"] = (width, depth, height)
 
     faces = [
-        ("ls1", ["a1","a0","b0","b1"]),
-        ("fr1", ["b1","b0","c0","c1"]),
-        ("rs1", ["c1","c0","d0","d1"]),
-        ("bk1", ["d1","d0","a0","a1"]),
+        ("ls1", ["a1", "a0", "b0", "b1"]),
+        ("fr1", ["b1", "b0", "c0", "c1"]),
+        ("rs1", ["c1", "c0", "d0", "d1"]),
+        ("bk1", ["d1", "d0", "a0", "a1"]),
     ]
 
     return verts, faces
@@ -57,37 +56,34 @@ def add_flat_roof(faces):
 
 
 def add_parapet_roof(verts, faces, width, depth, height, inset, roof_height):
-
-    verts["a2"] = (inset, depth-inset, height+roof_height)
-    verts["b2"] = (inset, inset, height+roof_height)
-    verts["c2"] = (width-inset, inset, height+roof_height)
-    verts["d2"] = (width-inset, depth-inset, height+roof_height)
+    verts["a2"] = (inset, depth - inset, height + roof_height)
+    verts["b2"] = (inset, inset, height + roof_height)
+    verts["c2"] = (width - inset, inset, height + roof_height)
+    verts["d2"] = (width - inset, depth - inset, height + roof_height)
 
     faces += [
-        ("ls2", ["a2","a1","b1","b2"]),
-        ("fr2", ["b2","b1","c1","c2"]),
-        ("rs2", ["c2","c1","d1","d2"]),
-        ("bk2", ["d2","d1","a1","a2"]),
+        ("ls2", ["a2", "a1", "b1", "b2"]),
+        ("fr2", ["b2", "b1", "c1", "c2"]),
+        ("rs2", ["c2", "c1", "d1", "d2"]),
+        ("bk2", ["d2", "d1", "a1", "a2"]),
         ("roofB", ["a2", "b2", "c2"]),
         ("roofD", ["a2", "c2", "d2"]),
     ]
 
 
 def add_gable_roof(verts, faces, width, depth, height, rise):
-
-    verts["r0"] = (width//2, 0, height+rise)
-    verts["r1"] = (width//2, depth, height+rise)
+    verts["r0"] = (width // 2, 0, height + rise)
+    verts["r1"] = (width // 2, depth, height + rise)
 
     faces += [
-        ("roofL", ["a1","b1","r0","r1"]),
-        ("roofR", ["c1","d1","r1","r0"]),
-        ("gableF",["b1","c1","r0"]),
-        ("gableB",["d1","a1","r1"])
+        ("roofL", ["a1", "b1", "r0", "r1"]),
+        ("roofR", ["c1", "d1", "r1", "r0"]),
+        ("gableF", ["b1", "c1", "r0"]),
+        ("gableB", ["d1", "a1", "r1"]),
     ]
 
 
 def add_pyramid_roof(verts, faces, width, depth, height, rise):
-
     verts["p0"] = (width // 2, depth // 2, height + rise)
 
     faces += [
@@ -99,18 +95,14 @@ def add_pyramid_roof(verts, faces, width, depth, height, rise):
 
 
 def generate_building(width, depth, height, roof_type, inset, roof_height, gable_rise, pyramid_rise):
-
     verts, faces = generate_base(width, depth, height)
 
     if roof_type == "flat":
         add_flat_roof(faces)
-
     elif roof_type == "parapet":
         add_parapet_roof(verts, faces, width, depth, height, inset, roof_height)
-
     elif roof_type == "gable":
         add_gable_roof(verts, faces, width, depth, height, gable_rise)
-
     elif roof_type == "pyramid":
         add_pyramid_roof(verts, faces, width, depth, height, pyramid_rise)
 
@@ -122,7 +114,6 @@ def generate_building(width, depth, height, roof_type, inset, roof_height, gable
 # ------------------------------------------------------------
 
 def write_3d(path, verts, faces, parameters):
-
     roof_bright = int(parameters["roof_color_bright"])
     roof_dark = int(parameters["roof_color_dark"])
     side_bright = int(parameters["side_color_bright"])
@@ -153,12 +144,12 @@ def write_3d(path, verts, faces, parameters):
     lines.append("nil: NIL;")
 
     for name in verts:
-        x,y,z = verts[name]
+        x, y, z = verts[name]
         lines.append(f"{name}: [<{x}, {y}, {z}>];")
 
     lines.append("")
 
-    for name,vs in faces:
+    for name, vs in faces:
         v = ", ".join(vs)
         lines.append(f"{name}: POLY <{color_for_face(name)}> {{{v}}};")
 
@@ -166,82 +157,22 @@ def write_3d(path, verts, faces, parameters):
 
     prev = "nil"
 
-    for i,(name,vs) in enumerate(faces):
-        v1,v2,v3 = vs[:3]
+    for i, (name, vs) in enumerate(faces):
+        v1, v2, v3 = vs[:3]
         node = f"o{i}"
         lines.append(f"{node}: BSPF ({v1}, {v2}, {v3}), nil, {name}, {prev};")
         prev = node
 
-    v1,v2,v3 = faces[-1][1][:3]
+    v1, v2, v3 = faces[-1][1][:3]
     lines.append(f"root: BSPF ({v1}, {v2}, {v3}), nil, {faces[-1][0]}, {prev};")
 
-    with open(path,"w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
 
 # ------------------------------------------------------------
-# UI
+# UI helpers
 # ------------------------------------------------------------
-
-def generate_clicked():
-
-    try:
-
-        width = int(width_var.get())
-        depth = int(depth_var.get())
-        height = int(height_var.get())
-
-        inset = int(inset_var.get())
-        roof_height = int(roof_height_var.get())
-        gable_rise = int(gable_var.get())
-        pyramid_rise = int(pyramid_var.get())
-
-        roof = roof_var.get()
-
-        save_settings()
-
-        verts,faces = generate_building(
-            width,
-            depth,
-            height,
-            roof,
-            inset,
-            roof_height,
-            gable_rise,
-            pyramid_rise,
-        )
-
-        path = filedialog.asksaveasfilename(
-            defaultextension=".3D",
-            filetypes=[("3D files","*.3D")]
-        )
-
-        if not path:
-            return
-
-        params = {
-            "width": width,
-            "depth": depth,
-            "height": height,
-            "roof_type": roof,
-            "parapet_inset": inset,
-            "parapet_height": roof_height,
-            "gable_rise": gable_rise,
-            "pyramid_rise": pyramid_rise,
-            "sunny_pcx": sunny_var.get(),
-            "roof_color_bright": int(roof_bright_var.get()),
-            "roof_color_dark": int(roof_dark_var.get()),
-            "side_color_bright": int(side_bright_var.get()),
-            "side_color_dark": int(side_dark_var.get()),
-        }
-
-        write_3d(path, verts, faces, params)
-
-        messagebox.showinfo("Success","Building generated successfully.")
-
-    except Exception as e:
-        messagebox.showerror("Error",str(e))
-
 
 def load_settings():
     config = configparser.ConfigParser()
@@ -249,120 +180,223 @@ def load_settings():
     return config
 
 
-def save_settings():
+def save_settings(sunny_pcx_path: str):
     config = configparser.ConfigParser()
-    config["paths"] = {"sunny_pcx": sunny_var.get()}
+    config["paths"] = {"sunny_pcx": sunny_pcx_path}
     with open(INI_PATH, "w", encoding="utf-8") as ini_file:
         config.write(ini_file)
 
 
-def load_sunny_pcx_clicked():
-    path = filedialog.askopenfilename(
-        title="Select sunny.pcx",
-        filetypes=[("PCX files", "*.pcx"), ("All files", "*.*")],
-    )
-    if not path:
-        return
-    sunny_var.set(path)
-    save_settings()
+def load_sunny_palette(path: str | Path):
+    data = Path(path).read_bytes()
+    if len(data) < 769 or data[-769] != 0x0C:
+        raise ValueError("Invalid or missing 256-color PCX palette marker")
+    raw = data[-768:]
+    return [(raw[i], raw[i + 1], raw[i + 2]) for i in range(0, 768, 3)]
 
 
-# ------------------------------------------------------------
-# Build window
-# ------------------------------------------------------------
+def _ui_imports():
+    from PyQt5 import QtCore, QtGui, QtWidgets
+
+    return QtCore, QtGui, QtWidgets
+
 
 def build_window():
+    QtCore, QtGui, QtWidgets = _ui_imports()
 
-    global root
-    global frame
-    global width_var
-    global depth_var
-    global height_var
-    global inset_var
-    global roof_height_var
-    global gable_var
-    global pyramid_var
-    global roof_var
-    global sunny_var
-    global roof_bright_var
-    global roof_dark_var
-    global side_bright_var
-    global side_dark_var
-    global row
+    class MainWindow(QtWidgets.QMainWindow):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("ICR2 Building Generator")
+            self.palette = [(0, 0, 0)] * 256
+            self.settings = load_settings()
+            self._build_ui()
 
-    root = tk.Tk()
-    root.title("ICR2 Building Generator")
+        def _build_ui(self):
+            central = QtWidgets.QWidget(self)
+            self.setCentralWidget(central)
+            layout = QtWidgets.QGridLayout(central)
 
-    settings = load_settings()
-    sunny_default = settings.get("paths", "sunny_pcx", fallback="")
+            self.width_spin = QtWidgets.QSpinBox()
+            self.width_spin.setRange(1, 50000)
+            self.width_spin.setValue(320)
 
-    menu_bar = tk.Menu(root)
-    file_menu = tk.Menu(menu_bar, tearoff=0)
-    file_menu.add_command(label="Load sunny.pcx...", command=load_sunny_pcx_clicked)
-    menu_bar.add_cascade(label="File", menu=file_menu)
-    root.config(menu=menu_bar)
+            self.depth_spin = QtWidgets.QSpinBox()
+            self.depth_spin.setRange(1, 50000)
+            self.depth_spin.setValue(1042)
 
-    frame = ttk.Frame(root,padding=15)
-    frame.pack()
+            self.height_spin = QtWidgets.QSpinBox()
+            self.height_spin.setRange(1, 50000)
+            self.height_spin.setValue(100)
 
-    width_var = tk.StringVar(value="320")
-    depth_var = tk.StringVar(value="1042")
-    height_var = tk.StringVar(value="100")
+            self.roof_combo = QtWidgets.QComboBox()
+            self.roof_combo.addItems(["flat", "parapet", "gable", "pyramid"])
 
-    inset_var = tk.StringVar(value="30")
-    roof_height_var = tk.StringVar(value="15")
+            self.inset_spin = QtWidgets.QSpinBox()
+            self.inset_spin.setRange(0, 50000)
+            self.inset_spin.setValue(30)
 
-    gable_var = tk.StringVar(value="50")
-    pyramid_var = tk.StringVar(value="50")
+            self.roof_height_spin = QtWidgets.QSpinBox()
+            self.roof_height_spin.setRange(0, 50000)
+            self.roof_height_spin.setValue(15)
 
-    roof_var = tk.StringVar(value="flat")
-    sunny_var = tk.StringVar(value=sunny_default)
-    roof_bright_var = tk.StringVar(value="200")
-    roof_dark_var = tk.StringVar(value="201")
-    side_bright_var = tk.StringVar(value="202")
-    side_dark_var = tk.StringVar(value="203")
+            self.gable_spin = QtWidgets.QSpinBox()
+            self.gable_spin.setRange(0, 50000)
+            self.gable_spin.setValue(50)
 
-    row = 0
+            self.pyramid_spin = QtWidgets.QSpinBox()
+            self.pyramid_spin.setRange(0, 50000)
+            self.pyramid_spin.setValue(50)
 
-    def field(label,var):
+            self.roof_bright_combo = QtWidgets.QComboBox()
+            self.roof_dark_combo = QtWidgets.QComboBox()
+            self.side_bright_combo = QtWidgets.QComboBox()
+            self.side_dark_combo = QtWidgets.QComboBox()
+            self.color_combos = [
+                self.roof_bright_combo,
+                self.roof_dark_combo,
+                self.side_bright_combo,
+                self.side_dark_combo,
+            ]
 
-        global row
+            for combo in self.color_combos:
+                combo.setMaxVisibleItems(20)
 
-        ttk.Label(frame,text=label).grid(row=row,column=0,sticky="w",padx=5,pady=4)
-        ttk.Entry(frame,textvariable=var,width=10).grid(row=row,column=1)
+            self.sunny_edit = QtWidgets.QLineEdit(self.settings.get("paths", "sunny_pcx", fallback=""))
+            self.sunny_browse = QtWidgets.QPushButton("Browse...")
+            self.sunny_browse.clicked.connect(self.load_sunny_pcx_clicked)
 
-        row+=1
+            self.generate_btn = QtWidgets.QPushButton("Generate .3D")
+            self.generate_btn.clicked.connect(self.generate_clicked)
 
+            rows = [
+                ("Width", self.width_spin),
+                ("Depth", self.depth_spin),
+                ("Height", self.height_spin),
+                ("Roof Type", self.roof_combo),
+                ("Parapet Inset", self.inset_spin),
+                ("Parapet Height", self.roof_height_spin),
+                ("Gable Rise", self.gable_spin),
+                ("Pyramid Rise", self.pyramid_spin),
+                ("Roof Color (Bright)", self.roof_bright_combo),
+                ("Roof Color (Dark)", self.roof_dark_combo),
+                ("Side Color (Bright)", self.side_bright_combo),
+                ("Side Color (Dark)", self.side_dark_combo),
+            ]
+            for row, (label, widget) in enumerate(rows):
+                layout.addWidget(QtWidgets.QLabel(label), row, 0)
+                layout.addWidget(widget, row, 1)
 
-    field("Width",width_var)
-    field("Depth",depth_var)
-    field("Height",height_var)
+            sunny_row = len(rows)
+            layout.addWidget(QtWidgets.QLabel("sunny.pcx"), sunny_row, 0)
+            path_layout = QtWidgets.QHBoxLayout()
+            path_layout.addWidget(self.sunny_edit)
+            path_layout.addWidget(self.sunny_browse)
+            layout.addLayout(path_layout, sunny_row, 1)
+            layout.addWidget(self.generate_btn, sunny_row + 1, 0, 1, 2)
 
-    ttk.Label(frame,text="Roof Type").grid(row=row,column=0,sticky="w",padx=5)
-    ttk.OptionMenu(frame,roof_var,"flat","flat","parapet","gable","pyramid").grid(row=row,column=1)
-    row+=1
+            file_menu = self.menuBar().addMenu("File")
+            load_action = QtWidgets.QAction("Load sunny.pcx...", self)
+            load_action.triggered.connect(self.load_sunny_pcx_clicked)
+            file_menu.addAction(load_action)
 
-    field("Parapet Inset",inset_var)
-    field("Parapet Height",roof_height_var)
+            self.refresh_color_combos(defaults=(200, 201, 202, 203))
+            if self.sunny_edit.text().strip():
+                self.try_load_palette(self.sunny_edit.text().strip(), preserve_selection=True)
 
-    field("Gable Rise",gable_var)
-    field("Pyramid Rise",pyramid_var)
-    field("Roof Color (Bright)", roof_bright_var)
-    field("Roof Color (Dark)", roof_dark_var)
-    field("Side Color (Bright)", side_bright_var)
-    field("Side Color (Dark)", side_dark_var)
+        def refresh_color_combos(self, defaults=None):
+            defaults = defaults or (0, 1, 2, 3)
+            for combo, selected in zip(self.color_combos, defaults):
+                combo.blockSignals(True)
+                combo.clear()
+                for index, (r, g, b) in enumerate(self.palette):
+                    pixmap = QtGui.QPixmap(18, 18)
+                    pixmap.fill(QtGui.QColor(r, g, b))
+                    icon = QtGui.QIcon(pixmap)
+                    combo.addItem(icon, f"{index} ({r},{g},{b})", index)
+                combo.setCurrentIndex(max(0, min(255, int(selected))))
+                combo.blockSignals(False)
 
-    ttk.Label(frame,text="sunny.pcx").grid(row=row,column=0,sticky="w",padx=5,pady=4)
-    ttk.Entry(frame,textvariable=sunny_var,width=30).grid(row=row,column=1)
-    row += 1
+        def selected_color_index(self, combo):
+            value = combo.currentData()
+            if value is None:
+                return int(combo.currentIndex())
+            return int(value)
 
-    ttk.Button(
-        frame,
-        text="Generate .3D",
-        command=generate_clicked
-    ).grid(row=row,columnspan=2,pady=15)
+        def load_sunny_pcx_clicked(self):
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Select sunny.pcx",
+                self.sunny_edit.text().strip(),
+                "PCX files (*.pcx);;All files (*.*)",
+            )
+            if not path:
+                return
+            self.try_load_palette(path, preserve_selection=True)
+            self.sunny_edit.setText(path)
+            save_settings(path)
 
-    root.mainloop()
+        def try_load_palette(self, path: str, preserve_selection: bool):
+            selections = [self.selected_color_index(c) for c in self.color_combos]
+            try:
+                self.palette = load_sunny_palette(path)
+                self.refresh_color_combos(defaults=selections if preserve_selection else None)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Palette Load Error", str(exc))
+
+        def generate_clicked(self):
+            try:
+                roof = self.roof_combo.currentText()
+                path = self.sunny_edit.text().strip()
+                if path:
+                    self.try_load_palette(path, preserve_selection=True)
+                    save_settings(path)
+
+                verts, faces = generate_building(
+                    self.width_spin.value(),
+                    self.depth_spin.value(),
+                    self.height_spin.value(),
+                    roof,
+                    self.inset_spin.value(),
+                    self.roof_height_spin.value(),
+                    self.gable_spin.value(),
+                    self.pyramid_spin.value(),
+                )
+
+                out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                    self,
+                    "Save .3D",
+                    "",
+                    "3D files (*.3D)",
+                )
+                if not out_path:
+                    return
+
+                params = {
+                    "width": self.width_spin.value(),
+                    "depth": self.depth_spin.value(),
+                    "height": self.height_spin.value(),
+                    "roof_type": roof,
+                    "parapet_inset": self.inset_spin.value(),
+                    "parapet_height": self.roof_height_spin.value(),
+                    "gable_rise": self.gable_spin.value(),
+                    "pyramid_rise": self.pyramid_spin.value(),
+                    "sunny_pcx": path,
+                    "roof_color_bright": self.selected_color_index(self.roof_bright_combo),
+                    "roof_color_dark": self.selected_color_index(self.roof_dark_combo),
+                    "side_color_bright": self.selected_color_index(self.side_bright_combo),
+                    "side_color_dark": self.selected_color_index(self.side_dark_combo),
+                }
+
+                write_3d(out_path, verts, faces, params)
+                QtWidgets.QMessageBox.information(self, "Success", "Building generated successfully.")
+            except Exception as exc:
+                QtWidgets.QMessageBox.critical(self, "Error", str(exc))
+
+    app = QtWidgets.QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    app.exec_()
 
 
 if __name__ == "__main__":
