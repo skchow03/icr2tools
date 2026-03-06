@@ -157,8 +157,11 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers):
 
     for layer in range(1, dome_layers + 1):
         t = layer / (dome_layers + 1)
-        ring_radius = radius * (1.0 - t)
-        ring_z = height + int(round(radius * t))
+        # Use a quarter-circle profile so dome sides curve upward like a capitol dome,
+        # instead of tapering linearly into a cone.
+        profile_angle = (math.pi / 2.0) * t
+        ring_radius = radius * math.cos(profile_angle)
+        ring_z = height + (radius * math.sin(profile_angle))
         ring_names = []
         for i in range(sides):
             angle = (2.0 * math.pi * i) / sides
