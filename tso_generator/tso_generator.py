@@ -47,6 +47,7 @@ TEMPLATE_FIELDS = (
     "tree_trunk_width",
     "tree_leaf_base_height",
     "tree_num_sides",
+    "tree_profile",
     "tree_trunk_color",
     "tree_leaves_color",
     "tree_trunk_color_bright",
@@ -199,7 +200,7 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
         faces.append((f"{roof_prefix}Top{i}", [prev_ring[i], prev_ring[nxt], "dome_top"]))
 
 
-def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=10):
+def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=10, tree_profile="pointy"):
     width = max(1, int(width))
     height = max(1, int(height))
     trunk_width = max(1, min(int(trunk_width), width))
@@ -260,34 +261,67 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
 
     leaf_bottom_z = leaf_base_height
     leaf_top_z = height
-    leaf_mid_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.72)))
-    leaf_mid_radius = leaf_radius * 0.58
-    leaf_bottom_center_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.12)))
-    verts["leaf_bottom_center"] = (0, 0, leaf_bottom_center_z)
-    verts["leaf_top_center"] = (0, 0, leaf_top_z)
+    profile = str(tree_profile or "pointy").strip().lower()
 
-    leaf_bottom_ring = []
-    leaf_mid_ring = []
-    for i in range(sides):
-        angle = (2.0 * math.pi * i) / sides
-        x0 = leaf_radius * math.cos(angle)
-        y0 = leaf_radius * math.sin(angle)
-        x1 = leaf_mid_radius * math.cos(angle)
-        y1 = leaf_mid_radius * math.sin(angle)
-        b_name = f"lb{i}"
-        m_name = f"lm{i}"
-        verts[b_name] = (int(round(x0)), int(round(y0)), leaf_bottom_z)
-        verts[m_name] = (int(round(x1)), int(round(y1)), leaf_mid_z)
-        leaf_bottom_ring.append(b_name)
-        leaf_mid_ring.append(m_name)
+    if profile == "round":
+        verts["leaf_bottom_center"] = (0, 0, leaf_bottom_z)
+        verts["leaf_top_center"] = (0, 0, leaf_top_z)
+        canopy_rings = []
+        ring_count = 4
+        for ring_index in range(1, ring_count + 1):
+            t = ring_index / (ring_count + 1)
+            ring_radius = leaf_radius * math.sin(math.pi * t)
+            ring_z = int(round(leaf_bottom_z + ((leaf_top_z - leaf_bottom_z) * t)))
+            ring_names = []
+            for i in range(sides):
+                angle = (2.0 * math.pi * i) / sides
+                x = int(round(ring_radius * math.cos(angle)))
+                y = int(round(ring_radius * math.sin(angle)))
+                name = f"lr{ring_index}_{i}"
+                verts[name] = (x, y, ring_z)
+                ring_names.append(name)
+            canopy_rings.append(ring_names)
 
-    for i in range(sides):
-        nxt = (i + 1) % sides
-        theta = (2.0 * math.pi * (i + 0.5)) / sides
-        leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
-        faces.append((f"{leaf_prefix}S{i}", [leaf_bottom_ring[i], leaf_bottom_ring[nxt], leaf_mid_ring[nxt], leaf_mid_ring[i]]))
-        faces.append((f"{leaf_prefix}T{i}", [leaf_mid_ring[i], leaf_mid_ring[nxt], "leaf_top_center"]))
-        faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", leaf_bottom_ring[i], leaf_bottom_ring[nxt]]))
+        for i in range(sides):
+            nxt = (i + 1) % sides
+            theta = (2.0 * math.pi * (i + 0.5)) / sides
+            leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
+            faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", canopy_rings[0][i], canopy_rings[0][nxt]]))
+            for ring_index in range(len(canopy_rings) - 1):
+                lower = canopy_rings[ring_index]
+                upper = canopy_rings[ring_index + 1]
+                faces.append((f"{leaf_prefix}S{ring_index}_{i}", [lower[i], lower[nxt], upper[nxt], upper[i]]))
+            top_ring = canopy_rings[-1]
+            faces.append((f"{leaf_prefix}T{i}", [top_ring[i], top_ring[nxt], "leaf_top_center"]))
+    else:
+        leaf_mid_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.72)))
+        leaf_mid_radius = leaf_radius * 0.58
+        leaf_bottom_center_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.12)))
+        verts["leaf_bottom_center"] = (0, 0, leaf_bottom_center_z)
+        verts["leaf_top_center"] = (0, 0, leaf_top_z)
+
+        leaf_bottom_ring = []
+        leaf_mid_ring = []
+        for i in range(sides):
+            angle = (2.0 * math.pi * i) / sides
+            x0 = leaf_radius * math.cos(angle)
+            y0 = leaf_radius * math.sin(angle)
+            x1 = leaf_mid_radius * math.cos(angle)
+            y1 = leaf_mid_radius * math.sin(angle)
+            b_name = f"lb{i}"
+            m_name = f"lm{i}"
+            verts[b_name] = (int(round(x0)), int(round(y0)), leaf_bottom_z)
+            verts[m_name] = (int(round(x1)), int(round(y1)), leaf_mid_z)
+            leaf_bottom_ring.append(b_name)
+            leaf_mid_ring.append(m_name)
+
+        for i in range(sides):
+            nxt = (i + 1) % sides
+            theta = (2.0 * math.pi * (i + 0.5)) / sides
+            leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
+            faces.append((f"{leaf_prefix}S{i}", [leaf_bottom_ring[i], leaf_bottom_ring[nxt], leaf_mid_ring[nxt], leaf_mid_ring[i]]))
+            faces.append((f"{leaf_prefix}T{i}", [leaf_mid_ring[i], leaf_mid_ring[nxt], "leaf_top_center"]))
+            faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", leaf_bottom_ring[i], leaf_bottom_ring[nxt]]))
 
     return verts, faces
 
@@ -310,9 +344,10 @@ def generate_building(
     tree_trunk_width=30,
     tree_leaf_base_height=100,
     tree_num_sides=12,
+    tree_profile="pointy",
 ):
     if building_shape == "tree":
-        return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides)
+        return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides, tree_profile)
 
     if building_shape == "circular":
         verts, faces = generate_circular_base(diameter, num_sides, height)
@@ -664,6 +699,9 @@ def build_window():
             self.tree_sides_spin.setRange(3, 256)
             self.tree_sides_spin.setValue(12)
 
+            self.tree_profile_combo = QtWidgets.QComboBox()
+            self.tree_profile_combo.addItems(["pointy", "round"])
+
             self.shape_combo = QtWidgets.QComboBox()
             self.shape_combo.addItems(["rectangular", "circular", "tree"])
             self.shape_combo.currentTextChanged.connect(self.update_shape_field_visibility)
@@ -751,6 +789,7 @@ def build_window():
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
+                ("tree_profile", "Tree Profile", self.tree_profile_combo),
                 ("roof_type", "Roof Type", self.roof_combo),
                 ("parapet_inset", "Parapet Inset", self.inset_spin),
                 ("parapet_height", "Parapet Height", self.roof_height_spin),
@@ -822,6 +861,7 @@ def build_window():
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
+            self._set_row_visible("tree_profile", is_tree)
             self.update_roof_field_visibility(self.roof_combo.currentText())
 
         def update_roof_field_visibility(self, roof_type: str):
@@ -858,6 +898,7 @@ def build_window():
                 "tree_trunk_width": self.tree_trunk_width_spin.value(),
                 "tree_leaf_base_height": self.tree_leaf_base_height_spin.value(),
                 "tree_num_sides": self.tree_sides_spin.value(),
+                "tree_profile": self.tree_profile_combo.currentText(),
                 "roof_type": self.roof_combo.currentText(),
                 "parapet_inset": self.inset_spin.value(),
                 "parapet_height": self.roof_height_spin.value(),
@@ -887,6 +928,7 @@ def build_window():
             self.tree_trunk_width_spin.setValue(int_or_default(values.get("tree_trunk_width"), self.tree_trunk_width_spin.value()))
             self.tree_leaf_base_height_spin.setValue(int_or_default(values.get("tree_leaf_base_height"), self.tree_leaf_base_height_spin.value()))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
+            self.tree_profile_combo.setCurrentText(str(values.get("tree_profile", self.tree_profile_combo.currentText()) or "pointy"))
             self.roof_combo.setCurrentText(values.get("roof_type", self.roof_combo.currentText()))
             self.inset_spin.setValue(int_or_default(values.get("parapet_inset"), self.inset_spin.value()))
             self.roof_height_spin.setValue(int_or_default(values.get("parapet_height"), self.roof_height_spin.value()))
@@ -1006,6 +1048,7 @@ def build_window():
                     values["tree_trunk_width"],
                     values["tree_leaf_base_height"],
                     values["tree_num_sides"],
+                    values["tree_profile"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
