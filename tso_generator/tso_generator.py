@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""
+ICR2 Building Generator (UI + .3D writer)
+
+Standalone Tkinter application that generates Papyrus/Icr2 .3D building objects.
+
+Supported roof types
+- flat
+- parapet (inset roof cap)
+- gable (simple pitched roof)
+
+No external libraries required.
+"""
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+
+# ------------------------------------------------------------
+# Geometry generation
+# ------------------------------------------------------------
+
+def generate_base(width, depth, height):
+    verts = {}
+
+    verts["a0"] = (0, depth, 0)
+    verts["b0"] = (0, 0, 0)
+    verts["c0"] = (width, 0, 0)
+    verts["d0"] = (width, depth, 0)
+
+    verts["a1"] = (0, depth, height)
+    verts["b1"] = (0, 0, height)
+    verts["c1"] = (width, 0, height)
+    verts["d1"] = (width, depth, height)
+
+    faces = [
+        ("ls1", ["a1","a0","b0","b1"]),
+        ("fr1", ["b1","b0","c0","c1"]),
+        ("rs1", ["c1","c0","d0","d1"]),
+        ("bk1", ["d1","d0","a0","a1"]),
+    ]
+
+    return verts, faces
+
+
+def add_flat_roof(faces):
+    faces.append(("top", ["a1","b1","c1","d1"]))
+
+
+def add_parapet_roof(verts, faces, width, depth, height, inset, roof_height):
+
+    verts["a2"] = (inset, depth-inset, height+roof_height)
+    verts["b2"] = (inset, inset, height+roof_height)
+    verts["c2"] = (width-inset, inset, height+roof_height)
+    verts["d2"] = (width-inset, depth-inset, height+roof_height)
+
+    faces += [
+        ("ls2", ["a2","a1","b1","b2"]),
+        ("fr2", ["b2","b1","c1","c2"]),
+        ("rs2", ["c2","c1","d1","d2"]),
+        ("bk2", ["d2","d1","a1","a2"]),
+        ("roof",["a2","b2","c2","d2"])
+    ]
+
+
+def add_gable_roof(verts, faces, width, depth, height, rise):
+
+    verts["r0"] = (width//2, 0, height+rise)
+    verts["r1"] = (width//2, depth, height+rise)
+
+    faces += [
+        ("roofL", ["a1","b1","r0","r1"]),
+        ("roofR", ["c1","d1","r1","r0"]),
+        ("gableF",["b1","c1","r0"]),
+        ("gableB",["d1","a1","r1"])
+    ]
+
+
+def generate_building(width, depth, height, roof_type, inset, roof_height, gable_rise):
+
+    verts, faces = generate_base(width, depth, height)
+
+    if roof_type == "flat":
+        add_flat_roof(faces)
+
+    elif roof_type == "parapet":
+        add_parapet_roof(verts, faces, width, depth, height, inset, roof_height)
+
+    elif roof_type == "gable":
+        add_gable_roof(verts, faces, width, depth, height, gable_rise)
+
+    return verts, faces
+
+
+# ------------------------------------------------------------
+# .3D writer
+# ------------------------------------------------------------
+
+def write_3d(path, verts, faces):
+
+    lines = []
+    lines.append("3D VERSION 3.0;")
+    lines.append("nil: NIL;")
+
+    for name in verts:
+        x,y,z = verts[name]
+        lines.append(f"{name}: [<{x}, {y}, {z}>];")
+
+    lines.append("")
+
+    for name,vs in faces:
+        v = ", ".join(vs)
+        lines.append(f"{name}: POLY <200> {{{v}}};")
+
+    lines.append("")
+
+    prev = "nil"
+
+    for i,(name,vs) in enumerate(faces):
+        v1,v2,v3 = vs[:3]
+        node = f"o{i}"
+        lines.append(f"{node}: BSPF ({v1}, {v2}, {v3}), nil, {name}, {prev};")
+        prev = node
+
+    v1,v2,v3 = faces[-1][1][:3]
+    lines.append(f"root: BSPF ({v1}, {v2}, {v3}), nil, {faces[-1][0]}, {prev};")
+
+    with open(path,"w") as f:
+        f.write("\n".join(lines))
+
+
+# ------------------------------------------------------------
+# UI
+# ------------------------------------------------------------
+
+def generate_clicked():
+
+    try:
+
+        width = int(width_var.get())
+        depth = int(depth_var.get())
+        height = int(height_var.get())
+
+        inset = int(inset_var.get())
+        roof_height = int(roof_height_var.get())
+        gable_rise = int(gable_var.get())
+
+        roof = roof_var.get()
+
+        verts,faces = generate_building(
+            width,
+            depth,
+            height,
+            roof,
+            inset,
+            roof_height,
+            gable_rise
+        )
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".3D",
+            filetypes=[("3D files","*.3D")]
+        )
+
+        if not path:
+            return
+
+        write_3d(path,verts,faces)
+
+        messagebox.showinfo("Success","Building generated successfully.")
+
+    except Exception as e:
+        messagebox.showerror("Error",str(e))
+
+
+# ------------------------------------------------------------
+# Build window
+# ------------------------------------------------------------
+
+root = tk.Tk()
+root.title("ICR2 Building Generator")
+
+frame = ttk.Frame(root,padding=15)
+frame.pack()
+
+width_var = tk.StringVar(value="320")
+depth_var = tk.StringVar(value="1042")
+height_var = tk.StringVar(value="100")
+
+inset_var = tk.StringVar(value="30")
+roof_height_var = tk.StringVar(value="15")
+
+gable_var = tk.StringVar(value="50")
+
+roof_var = tk.StringVar(value="flat")
+
+row = 0
+
+def field(label,var):
+
+    global row
+
+    ttk.Label(frame,text=label).grid(row=row,column=0,sticky="w",padx=5,pady=4)
+    ttk.Entry(frame,textvariable=var,width=10).grid(row=row,column=1)
+
+    row+=1
+
+
+field("Width",width_var)
+field("Depth",depth_var)
+field("Height",height_var)
+
+ttk.Label(frame,text="Roof Type").grid(row=row,column=0,sticky="w",padx=5)
+ttk.OptionMenu(frame,roof_var,"flat","flat","parapet","gable").grid(row=row,column=1)
+row+=1
+
+field("Parapet Inset",inset_var)
+field("Parapet Height",roof_height_var)
+
+field("Gable Rise",gable_var)
+
+ttk.Button(
+    frame,
+    text="Generate .3D",
+    command=generate_clicked
+).grid(row=row,columnspan=2,pady=15)
+
+
+root.mainloop()
