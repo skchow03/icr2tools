@@ -1991,6 +1991,8 @@ class SGViewerController:
         if self._tso_attributes_dialog is None:
             self._tso_attributes_dialog = TracksideObjectAttributesDialog(self._window)
             self._tso_attributes_dialog.objectUpdated.connect(self._on_tso_attributes_updated)
+            self._tso_attributes_dialog.objectPreviewUpdated.connect(self._on_tso_attributes_preview_updated)
+            self._tso_attributes_dialog.previewEnded.connect(self._on_tso_attributes_preview_ended)
         self._tso_attributes_dialog.edit_object(row, self._trackside_objects[row])
         self._tso_attributes_dialog.show()
         self._tso_attributes_dialog.raise_()
@@ -2006,6 +2008,18 @@ class SGViewerController:
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _on_tso_attributes_preview_updated(self, row: int, obj: object) -> None:
+        if not isinstance(obj, TracksideObject):
+            return
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        preview_objects = list(self._trackside_objects)
+        preview_objects[row] = obj
+        self._window.preview.set_trackside_objects(tuple(preview_objects))
+
+    def _on_tso_attributes_preview_ended(self) -> None:
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
 
     def _on_preview_tso_dragged(self, anchor_index: int, delta_x: int, delta_y: int) -> None:
         move_indices = sorted(
