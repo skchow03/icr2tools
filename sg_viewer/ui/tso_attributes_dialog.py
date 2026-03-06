@@ -16,6 +16,8 @@ from sg_viewer.services.trackside_objects import (
 
 class TracksideObjectAttributesDialog(QtWidgets.QDialog):
     objectUpdated = QtCore.pyqtSignal(int, object)
+    objectPreviewUpdated = QtCore.pyqtSignal(int, object)
+    previewEnded = QtCore.pyqtSignal()
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -23,6 +25,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self.setModal(False)
         self.setWindowModality(QtCore.Qt.NonModal)
         self._row_index: int | None = None
+        self._applying_changes = False
 
         form = QtWidgets.QFormLayout()
         self._filename_edit = QtWidgets.QLineEdit()
@@ -54,6 +57,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._yaw_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self._yaw_slider.valueChanged.connect(self._yaw_spin.setValue)
         self._yaw_spin.valueChanged.connect(self._yaw_slider.setValue)
+        self._yaw_spin.valueChanged.connect(self._emit_preview_update)
 
         for spin in (self._bbox_length_spin, self._bbox_width_spin):
             spin.setRange(0, 1_000_000_000)
@@ -130,4 +134,32 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             bbox_width=int(self._bbox_width_spin.value()),
             rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
         )
+        self._applying_changes = True
         self.objectUpdated.emit(int(self._row_index), obj)
+        self._applying_changes = False
+
+    def _emit_preview_update(self) -> None:
+        if self._row_index is None:
+            return
+        filename = normalize_trackside_filename(self._filename_edit.text())
+        if not filename:
+            return
+        obj = TracksideObject(
+            filename=filename,
+            x=int(self._x_spin.value()),
+            y=int(self._y_spin.value()),
+            z=int(self._z_spin.value()),
+            yaw=int(self._yaw_spin.value()),
+            pitch=int(self._pitch_spin.value()),
+            tilt=int(self._tilt_spin.value()),
+            description=self._description_edit.text().strip(),
+            bbox_length=int(self._bbox_length_spin.value()),
+            bbox_width=int(self._bbox_width_spin.value()),
+            rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
+        )
+        self.objectPreviewUpdated.emit(int(self._row_index), obj)
+
+    def closeEvent(self, event: QtCore.QEvent) -> None:
+        if not self._applying_changes:
+            self.previewEnded.emit()
+        super().closeEvent(event)
