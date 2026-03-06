@@ -36,6 +36,11 @@ def _base_parameters():
         "tree_leaf_base_height": 100,
         "tree_trunk_color": 96,
         "tree_leaves_color": 120,
+        "tree_num_sides": 12,
+        "tree_trunk_color_bright": 96,
+        "tree_trunk_color_dark": 97,
+        "tree_leaves_color_bright": 120,
+        "tree_leaves_color_dark": 121,
     }
 
 
@@ -267,13 +272,17 @@ def test_tree_shape_generates_trunk_and_leaf_faces():
         building_shape="tree",
         tree_trunk_width=40,
         tree_leaf_base_height=120,
+        tree_num_sides=10,
     )
 
-    assert verts["tb0"] == (-20, 0, 0)
-    assert verts["tb1"] == (20, 0, 0)
-    assert verts["tt0"] == (0, 0, 120)
-    assert any(name.startswith("trunk") for name, _ in faces)
-    assert any(name.startswith("leaf") for name, _ in faces)
+    assert verts["tb0"] == (20, 0, 0)
+    assert verts["tt0"] == (20, 0, 120)
+    assert verts["tb1"][2] == 0
+    assert verts["tt1"][2] == 120
+    assert any(name.startswith("trunkB") for name, _ in faces)
+    assert any(name.startswith("trunkD") for name, _ in faces)
+    assert any(name.startswith("leafB") for name, _ in faces)
+    assert any(name.startswith("leafD") for name, _ in faces)
 
 
 def test_tree_shape_uses_tree_colors(tmp_path: Path):
@@ -289,6 +298,7 @@ def test_tree_shape_uses_tree_colors(tmp_path: Path):
         building_shape="tree",
         tree_trunk_width=50,
         tree_leaf_base_height=140,
+        tree_num_sides=9,
     )
     out = tmp_path / "tree.3D"
 
@@ -297,15 +307,42 @@ def test_tree_shape_uses_tree_colors(tmp_path: Path):
         {
             "building_shape": "tree",
             "roof_type": "none",
-            "tree_trunk_color": 88,
-            "tree_leaves_color": 132,
+            "tree_trunk_color_bright": 88,
+            "tree_trunk_color_dark": 66,
+            "tree_leaves_color_bright": 132,
+            "tree_leaves_color_dark": 111,
         }
     )
     write_3d(out, verts, faces, params)
 
     text = out.read_text(encoding="utf-8")
-    assert "trunk0: POLY <88>" in text
-    assert "leaf0: POLY <132>" in text
+    assert "trunkB0: POLY <88>" in text
+    assert "trunkD" in text and "POLY <66>" in text
+    assert "leafB" in text and "POLY <132>" in text
+    assert "leafD" in text and "POLY <111>" in text
+
+
+def test_tree_shape_respects_requested_sides_for_circular_profile():
+    _verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=7,
+    )
+
+    trunk_faces = [name for name, _ in faces if name.startswith("trunk")]
+    leaf_side_faces = [name for name, _ in faces if name.startswith("leaf") and "S" in name]
+    assert len(trunk_faces) == 7
+    assert len(leaf_side_faces) == 7
+
 
 def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     verts, _faces = generate_building(
