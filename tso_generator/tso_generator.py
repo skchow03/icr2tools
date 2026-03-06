@@ -137,10 +137,10 @@ def write_3d(path, verts, faces, parameters):
     side_dark = int(parameters["side_color_dark"])
 
     def color_for_face(name):
-        roof_bright_faces = {"topB", "roofB", "roofL", "gableF", "pyrF", "pyrL"}
-        roof_dark_faces = {"topD", "roofD", "roofR", "gableB", "pyrR", "pyrB"}
-        side_bright_faces = {"ls1", "fr1", "ls2", "fr2"}
-        side_dark_faces = {"rs1", "bk1", "rs2", "bk2"}
+        roof_bright_faces = {"topB", "roofB", "roofL", "pyrF", "pyrL"}
+        roof_dark_faces = {"topD", "roofD", "roofR", "pyrR", "pyrB"}
+        side_bright_faces = {"ls1", "fr1", "ls2", "fr2", "gableF"}
+        side_dark_faces = {"rs1", "bk1", "rs2", "bk2", "gableB"}
 
         if name in roof_bright_faces:
             return roof_bright

@@ -48,7 +48,7 @@ def test_write_3d_puts_comments_after_header_and_colors_polys(tmp_path: Path):
     assert any("rs1: POLY <203>" in line for line in poly_lines)
 
 
-def test_gable_uses_bright_and_dark_roof_sides(tmp_path: Path):
+def test_gable_uses_roof_colors_for_slopes_and_side_colors_for_end_walls(tmp_path: Path):
     verts, faces = generate_building(320, 1042, 100, "gable", 30, 15, 50, 50)
     out = tmp_path / "gable.3D"
 
@@ -59,6 +59,8 @@ def test_gable_uses_bright_and_dark_roof_sides(tmp_path: Path):
     text = out.read_text(encoding="utf-8")
     assert "roofL: POLY <200>" in text
     assert "roofR: POLY <201>" in text
+    assert "gableF: POLY <202>" in text
+    assert "gableB: POLY <203>" in text
 
 
 def test_template_roundtrip_and_listing_order():
