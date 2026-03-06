@@ -413,6 +413,50 @@ def test_tree_shape_unknown_profile_falls_back_to_pointy():
     assert "lm0" in verts
 
 
+def test_tree_pointy_profile_leaf_bottom_faces_wind_downward():
+    _verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=8,
+        tree_profile="pointy",
+    )
+
+    face_lookup = {name: vs for name, vs in faces}
+    assert face_lookup["leafBB0"] == ["leaf_bottom_center", "lb1", "lb0"]
+    assert face_lookup["leafDB4"] == ["leaf_bottom_center", "lb5", "lb4"]
+
+
+def test_tree_round_profile_leaf_bottom_faces_wind_downward():
+    _verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=8,
+        tree_profile="round",
+    )
+
+    face_lookup = {name: vs for name, vs in faces}
+    assert face_lookup["leafBB0"] == ["leaf_bottom_center", "lr1_1", "lr1_0"]
+    assert face_lookup["leafDB4"] == ["leaf_bottom_center", "lr1_5", "lr1_4"]
+
+
 def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     verts, _faces = generate_building(
         320,

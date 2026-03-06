@@ -286,7 +286,9 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
             nxt = (i + 1) % sides
             theta = (2.0 * math.pi * (i + 0.5)) / sides
             leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
-            faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", canopy_rings[0][i], canopy_rings[0][nxt]]))
+            # Keep the underside winding oriented outward (downward normal)
+            # so these faces remain visible from outside the tree canopy.
+            faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", canopy_rings[0][nxt], canopy_rings[0][i]]))
             for ring_index in range(len(canopy_rings) - 1):
                 lower = canopy_rings[ring_index]
                 upper = canopy_rings[ring_index + 1]
@@ -321,7 +323,9 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
             leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
             faces.append((f"{leaf_prefix}S{i}", [leaf_bottom_ring[i], leaf_bottom_ring[nxt], leaf_mid_ring[nxt], leaf_mid_ring[i]]))
             faces.append((f"{leaf_prefix}T{i}", [leaf_mid_ring[i], leaf_mid_ring[nxt], "leaf_top_center"]))
-            faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", leaf_bottom_ring[i], leaf_bottom_ring[nxt]]))
+            # Keep the underside winding oriented outward (downward normal)
+            # so these faces remain visible from outside the tree canopy.
+            faces.append((f"{leaf_prefix}B{i}", ["leaf_bottom_center", leaf_bottom_ring[nxt], leaf_bottom_ring[i]]))
 
     return verts, faces
 
