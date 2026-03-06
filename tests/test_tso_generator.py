@@ -368,6 +368,51 @@ def test_tree_shape_avoids_degenerate_trunk_faces_with_small_radius():
         assert len(unique_coords) >= 3
 
 
+def test_tree_shape_round_profile_creates_multi_ring_canopy():
+    verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=8,
+        tree_profile="round",
+    )
+
+    assert verts["leaf_bottom_center"][2] == 120
+    assert verts["leaf_top_center"][2] == 300
+    assert "lr1_0" in verts
+    assert "lr4_0" in verts
+    assert any(name.startswith("leafB") and "S0_" in name for name, _ in faces)
+
+
+def test_tree_shape_unknown_profile_falls_back_to_pointy():
+    verts, _faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=8,
+        tree_profile="unknown-profile",
+    )
+
+    assert "lb0" in verts
+    assert "lm0" in verts
+
+
 def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     verts, _faces = generate_building(
         320,
