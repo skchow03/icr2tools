@@ -345,6 +345,29 @@ def test_tree_shape_respects_requested_sides_for_circular_profile():
     assert len(leaf_side_faces) == 7
 
 
+def test_tree_shape_avoids_degenerate_trunk_faces_with_small_radius():
+    verts, faces = generate_building(
+        20,
+        0,
+        30,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=2,
+        tree_leaf_base_height=5,
+        tree_num_sides=12,
+    )
+
+    trunk_faces = [vs for name, vs in faces if name.startswith("trunk")]
+    assert trunk_faces
+    for vs in trunk_faces:
+        unique_coords = {verts[v] for v in vs}
+        assert len(unique_coords) >= 3
+
+
 def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     verts, _faces = generate_building(
         320,

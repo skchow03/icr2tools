@@ -212,18 +212,45 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
     verts = {}
     faces = []
 
-    trunk_bottom_ring = []
-    trunk_top_ring = []
-    for i in range(sides):
-        angle = (2.0 * math.pi * i) / sides
-        x = trunk_radius * math.cos(angle)
-        y = trunk_radius * math.sin(angle)
-        b_name = f"tb{i}"
-        t_name = f"tt{i}"
-        verts[b_name] = (int(round(x)), int(round(y)), 0)
-        verts[t_name] = (int(round(x)), int(round(y)), leaf_base_height)
-        trunk_bottom_ring.append(b_name)
-        trunk_top_ring.append(t_name)
+    def _rounded(value, decimals):
+        if decimals <= 0:
+            return int(round(value))
+        return round(value, decimals)
+
+    def _build_ring(radius, sides, z, name_prefix):
+        best_names = []
+        # Try coarse integer coordinates first (for compact output), then add
+        # decimal precision when needed so tiny trunks don't collapse into
+        # degenerate faces with fewer than 3 unique points.
+        for decimals in (0, 1, 2, 3):
+            trial_names = []
+            trial_coords = []
+            for i in range(sides):
+                angle = (2.0 * math.pi * i) / sides
+                x = _rounded(radius * math.cos(angle), decimals)
+                y = _rounded(radius * math.sin(angle), decimals)
+                name = f"{name_prefix}{i}"
+                trial_names.append(name)
+                trial_coords.append((x, y, z))
+
+            has_adjacent_duplicates = any(
+                trial_coords[i][:2] == trial_coords[(i + 1) % sides][:2]
+                for i in range(sides)
+            )
+            if not has_adjacent_duplicates and len(set(trial_coords)) >= 3:
+                best_names = trial_names
+                for name, coord in zip(trial_names, trial_coords):
+                    verts[name] = coord
+                return best_names
+
+            best_names = trial_names
+            for name, coord in zip(trial_names, trial_coords):
+                verts[name] = coord
+
+        return best_names
+
+    trunk_bottom_ring = _build_ring(trunk_radius, sides, 0, "tb")
+    trunk_top_ring = _build_ring(trunk_radius, sides, leaf_base_height, "tt")
 
     for i in range(sides):
         nxt = (i + 1) % sides
