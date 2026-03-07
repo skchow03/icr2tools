@@ -54,6 +54,10 @@ TEMPLATE_FIELDS = (
     "tree_trunk_color_dark",
     "tree_leaves_color_bright",
     "tree_leaves_color_dark",
+    "bridge_length",
+    "bridge_width",
+    "bridge_clearance",
+    "bridge_height",
 )
 
 
@@ -330,6 +334,54 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
     return verts, faces
 
 
+def generate_bridge(length, width, clearance, bridge_height):
+    length = max(1, int(length))
+    width = max(1, int(width))
+    clearance = max(1, int(clearance))
+    bridge_height = max(1, int(bridge_height))
+
+    x0 = 0
+    x1 = clearance
+    x2 = x1 + length
+    x3 = x2 + clearance
+
+    z0 = 0
+    z1 = clearance
+    z2 = clearance + bridge_height
+    z3 = bridge_height
+
+    profile = [
+        (x0, z0),
+        (x1, z1),
+        (x2, z1),
+        (x3, z0),
+        (x3, z3),
+        (x2, z2),
+        (x1, z2),
+        (x0, z3),
+    ]
+
+    verts = {}
+    for index, (x, z) in enumerate(profile):
+        verts[f"f{index}"] = (x, 0, z)
+        verts[f"b{index}"] = (x, width, z)
+
+    faces = [
+        ("ls1", [f"b{i}" for i in range(8)]),
+        ("rs1", [f"f{i}" for i in range(7, -1, -1)]),
+        ("fr1", ["f0", "f7", "b7", "b0"]),
+        ("bk1", ["f4", "f3", "b3", "b4"]),
+        ("topRampL", ["f7", "f6", "b6", "b7"]),
+        ("topBridge", ["f6", "f5", "b5", "b6"]),
+        ("topRampR", ["f5", "f4", "b4", "b5"]),
+        ("botRampL", ["f0", "f1", "b1", "b0"]),
+        ("botBridge", ["f1", "f2", "b2", "b1"]),
+        ("botRampR", ["f2", "f3", "b3", "b2"]),
+    ]
+
+    return verts, faces
+
+
 def generate_building(
     width,
     depth,
@@ -349,6 +401,10 @@ def generate_building(
     tree_leaf_base_height=100,
     tree_num_sides=12,
     tree_profile="pointy",
+    bridge_length=320,
+    bridge_width=80,
+    bridge_clearance=100,
+    bridge_height=20,
 ):
     if building_shape == "tree":
         return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides, tree_profile)
@@ -363,6 +419,9 @@ def generate_building(
             else:
                 add_circular_dome_roof(verts, faces, diameter, num_sides, height, dome_layers, dome_roundness)
         return verts, faces
+
+    if building_shape == "bridge":
+        return generate_bridge(bridge_length, bridge_width, bridge_clearance, bridge_height)
 
     verts, faces = generate_base(width, depth, height)
 
@@ -435,7 +494,11 @@ def write_3d(path, verts, faces, parameters):
 
         if name in roof_bright_faces or name.startswith("roofB"):
             return roof_bright
+        if name.startswith("top"):
+            return roof_bright
         if name in roof_dark_faces or name.startswith("roofD"):
+            return roof_dark
+        if name.startswith("bot"):
             return roof_dark
         if name in side_bright_faces or name.startswith("sideB"):
             return side_bright
@@ -707,7 +770,7 @@ def build_window():
             self.tree_profile_combo.addItems(["pointy", "round"])
 
             self.shape_combo = QtWidgets.QComboBox()
-            self.shape_combo.addItems(["rectangular", "circular", "tree"])
+            self.shape_combo.addItems(["rectangular", "circular", "tree", "bridge"])
             self.shape_combo.currentTextChanged.connect(self.update_shape_field_visibility)
 
             self.roof_combo = QtWidgets.QComboBox()
@@ -747,6 +810,22 @@ def build_window():
             self.dome_roundness_spin.setValue(100)
 
             self.rect_center_check = QtWidgets.QCheckBox("Center rectangular building at (0,0)")
+
+            self.bridge_length_spin = QtWidgets.QSpinBox()
+            self.bridge_length_spin.setRange(1, 50000)
+            self.bridge_length_spin.setValue(320)
+
+            self.bridge_width_spin = QtWidgets.QSpinBox()
+            self.bridge_width_spin.setRange(1, 50000)
+            self.bridge_width_spin.setValue(80)
+
+            self.bridge_clearance_spin = QtWidgets.QSpinBox()
+            self.bridge_clearance_spin.setRange(1, 50000)
+            self.bridge_clearance_spin.setValue(100)
+
+            self.bridge_height_spin = QtWidgets.QSpinBox()
+            self.bridge_height_spin.setRange(1, 50000)
+            self.bridge_height_spin.setValue(20)
 
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
@@ -790,6 +869,10 @@ def build_window():
                 ("diameter", "Diameter", self.diameter_spin),
                 ("num_sides", "Number of Sides", self.sides_spin),
                 ("height", "Height", self.height_spin),
+                ("bridge_length", "Bridge Length", self.bridge_length_spin),
+                ("bridge_width", "Bridge Width", self.bridge_width_spin),
+                ("bridge_clearance", "Bridge Ground Clearance", self.bridge_clearance_spin),
+                ("bridge_height", "Bridge Height", self.bridge_height_spin),
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
@@ -843,6 +926,8 @@ def build_window():
                 options = ["none", "flat", "parapet", "gable", "pyramid"]
             elif shape == "circular":
                 options = ["none", "flat", "dome"]
+            elif shape == "bridge":
+                options = ["none"]
             else:
                 options = ["none"]
             current = self.roof_combo.currentText()
@@ -856,12 +941,17 @@ def build_window():
             shape = str(shape)
             is_rectangular = shape == "rectangular"
             is_tree = shape == "tree"
+            is_bridge = shape == "bridge"
             self._set_roof_options_for_shape(shape)
             self._set_row_visible("width", is_rectangular or is_tree)
             self._set_row_visible("depth", is_rectangular)
             self._set_row_visible("rect_center_origin", is_rectangular)
             self._set_row_visible("diameter", shape == "circular")
             self._set_row_visible("num_sides", shape == "circular")
+            self._set_row_visible("bridge_length", is_bridge)
+            self._set_row_visible("bridge_width", is_bridge)
+            self._set_row_visible("bridge_clearance", is_bridge)
+            self._set_row_visible("bridge_height", is_bridge)
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
@@ -873,15 +963,16 @@ def build_window():
             shape = self.shape_combo.currentText()
             is_rectangular = shape == "rectangular"
             is_tree = shape == "tree"
+            is_bridge = shape == "bridge"
             self._set_row_visible("roof_color_bright", not is_tree)
-            self._set_row_visible("roof_color_dark", (roof_type not in {"none", "flat"}) and (not is_tree))
+            self._set_row_visible("roof_color_dark", is_bridge or ((roof_type not in {"none", "flat"}) and (not is_tree)))
             self._set_row_visible("side_color_bright", not is_tree)
             self._set_row_visible("side_color_dark", not is_tree)
             self._set_row_visible("tree_trunk_color_bright", is_tree)
             self._set_row_visible("tree_trunk_color_dark", is_tree)
             self._set_row_visible("tree_leaves_color_bright", is_tree)
             self._set_row_visible("tree_leaves_color_dark", is_tree)
-            self._set_row_visible("roof_type", not is_tree)
+            self._set_row_visible("roof_type", (not is_tree) and (not is_bridge))
             self._set_row_visible("parapet_inset", is_rectangular and roof_type == "parapet")
             self._set_row_visible("parapet_height", is_rectangular and roof_type == "parapet")
             self._set_row_visible("gable_rise", is_rectangular and roof_type == "gable")
@@ -899,6 +990,10 @@ def build_window():
                 "diameter": self.diameter_spin.value(),
                 "num_sides": self.sides_spin.value(),
                 "height": self.height_spin.value(),
+                "bridge_length": self.bridge_length_spin.value(),
+                "bridge_width": self.bridge_width_spin.value(),
+                "bridge_clearance": self.bridge_clearance_spin.value(),
+                "bridge_height": self.bridge_height_spin.value(),
                 "tree_trunk_width": self.tree_trunk_width_spin.value(),
                 "tree_leaf_base_height": self.tree_leaf_base_height_spin.value(),
                 "tree_num_sides": self.tree_sides_spin.value(),
@@ -929,6 +1024,10 @@ def build_window():
             self.diameter_spin.setValue(int_or_default(values.get("diameter"), self.diameter_spin.value()))
             self.sides_spin.setValue(int_or_default(values.get("num_sides"), self.sides_spin.value()))
             self.height_spin.setValue(int_or_default(values.get("height"), self.height_spin.value()))
+            self.bridge_length_spin.setValue(int_or_default(values.get("bridge_length"), self.bridge_length_spin.value()))
+            self.bridge_width_spin.setValue(int_or_default(values.get("bridge_width"), self.bridge_width_spin.value()))
+            self.bridge_clearance_spin.setValue(int_or_default(values.get("bridge_clearance"), self.bridge_clearance_spin.value()))
+            self.bridge_height_spin.setValue(int_or_default(values.get("bridge_height"), self.bridge_height_spin.value()))
             self.tree_trunk_width_spin.setValue(int_or_default(values.get("tree_trunk_width"), self.tree_trunk_width_spin.value()))
             self.tree_leaf_base_height_spin.setValue(int_or_default(values.get("tree_leaf_base_height"), self.tree_leaf_base_height_spin.value()))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
@@ -1053,6 +1152,10 @@ def build_window():
                     values["tree_leaf_base_height"],
                     values["tree_num_sides"],
                     values["tree_profile"],
+                    values["bridge_length"],
+                    values["bridge_width"],
+                    values["bridge_clearance"],
+                    values["bridge_height"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
