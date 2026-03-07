@@ -58,6 +58,7 @@ TEMPLATE_FIELDS = (
     "bridge_width",
     "bridge_clearance",
     "bridge_height",
+    "bridge_half",
 )
 
 
@@ -334,7 +335,7 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
     return verts, faces
 
 
-def generate_bridge(length, width, clearance, bridge_height):
+def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
     length = max(1, int(length))
     width = max(1, int(width))
     clearance = max(1, int(clearance))
@@ -342,42 +343,71 @@ def generate_bridge(length, width, clearance, bridge_height):
 
     x0 = 0
     x1 = clearance
-    x2 = x1 + length
-    x3 = x2 + clearance
 
     z0 = 0
     z1 = clearance
     z2 = clearance + bridge_height
     z3 = bridge_height
 
-    profile = [
-        (x0, z0),
-        (x1, z1),
-        (x2, z1),
-        (x3, z0),
-        (x3, z3),
-        (x2, z2),
-        (x1, z2),
-        (x0, z3),
-    ]
+    if bridge_half:
+        x2 = x1 + max(1, int(round(length / 2.0)))
+        profile = [
+            (x0, z0),
+            (x1, z1),
+            (x2, z1),
+            (x2, z2),
+            (x1, z2),
+            (x0, z3),
+        ]
+    else:
+        x2 = x1 + length
+        x3 = x2 + clearance
+        profile = [
+            (x0, z0),
+            (x1, z1),
+            (x2, z1),
+            (x3, z0),
+            (x3, z3),
+            (x2, z2),
+            (x1, z2),
+            (x0, z3),
+        ]
 
     verts = {}
     for index, (x, z) in enumerate(profile):
         verts[f"f{index}"] = (x, 0, z)
         verts[f"b{index}"] = (x, width, z)
 
-    faces = [
-        ("ls1", [f"b{i}" for i in range(8)]),
-        ("rs1", [f"f{i}" for i in range(7, -1, -1)]),
-        ("fr1", ["f0", "f7", "b7", "b0"]),
-        ("bk1", ["f4", "f3", "b3", "b4"]),
-        ("topRampL", ["f7", "f6", "b6", "b7"]),
-        ("topBridge", ["f6", "f5", "b5", "b6"]),
-        ("topRampR", ["f5", "f4", "b4", "b5"]),
-        ("botRampL", ["f0", "f1", "b1", "b0"]),
-        ("botBridge", ["f1", "f2", "b2", "b1"]),
-        ("botRampR", ["f2", "f3", "b3", "b2"]),
-    ]
+    if bridge_half:
+        faces = [
+            ("lsLeft", ["b0", "b1", "b4", "b5"]),
+            ("lsCenter", ["b1", "b2", "b3", "b4"]),
+            ("rsLeft", ["f5", "f4", "f1", "f0"]),
+            ("rsCenter", ["f4", "f3", "f2", "f1"]),
+            ("fr1", ["f0", "f5", "b5", "b0"]),
+            ("bk1", ["f3", "f2", "b2", "b3"]),
+            ("topRampL", ["f5", "f4", "b4", "b5"]),
+            ("topBridge", ["f4", "f3", "b3", "b4"]),
+            ("botRampL", ["f0", "f1", "b1", "b0"]),
+            ("botBridge", ["f1", "f2", "b2", "b1"]),
+        ]
+    else:
+        faces = [
+            ("lsLeft", ["b0", "b1", "b6", "b7"]),
+            ("lsCenter", ["b1", "b2", "b5", "b6"]),
+            ("lsRight", ["b2", "b3", "b4", "b5"]),
+            ("rsLeft", ["f7", "f6", "f1", "f0"]),
+            ("rsCenter", ["f6", "f5", "f2", "f1"]),
+            ("rsRight", ["f5", "f4", "f3", "f2"]),
+            ("fr1", ["f0", "f7", "b7", "b0"]),
+            ("bk1", ["f4", "f3", "b3", "b4"]),
+            ("topRampL", ["f7", "f6", "b6", "b7"]),
+            ("topBridge", ["f6", "f5", "b5", "b6"]),
+            ("topRampR", ["f5", "f4", "b4", "b5"]),
+            ("botRampL", ["f0", "f1", "b1", "b0"]),
+            ("botBridge", ["f1", "f2", "b2", "b1"]),
+            ("botRampR", ["f2", "f3", "b3", "b2"]),
+        ]
 
     return verts, faces
 
@@ -405,6 +435,7 @@ def generate_building(
     bridge_width=80,
     bridge_clearance=100,
     bridge_height=20,
+    bridge_half=False,
 ):
     if building_shape == "tree":
         return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides, tree_profile)
@@ -421,7 +452,7 @@ def generate_building(
         return verts, faces
 
     if building_shape == "bridge":
-        return generate_bridge(bridge_length, bridge_width, bridge_clearance, bridge_height)
+        return generate_bridge(bridge_length, bridge_width, bridge_clearance, bridge_height, bridge_half=bridge_half)
 
     verts, faces = generate_base(width, depth, height)
 
@@ -500,9 +531,9 @@ def write_3d(path, verts, faces, parameters):
             return roof_dark
         if name.startswith("bot"):
             return roof_dark
-        if name in side_bright_faces or name.startswith("sideB"):
+        if name in side_bright_faces or name.startswith("sideB") or name.startswith("ls"):
             return side_bright
-        if name in side_dark_faces or name.startswith("sideD"):
+        if name in side_dark_faces or name.startswith("sideD") or name.startswith("rs"):
             return side_dark
         return side_bright
 
@@ -827,6 +858,8 @@ def build_window():
             self.bridge_height_spin.setRange(1, 50000)
             self.bridge_height_spin.setValue(20)
 
+            self.bridge_half_check = QtWidgets.QCheckBox("Generate half bridge")
+
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
             self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
@@ -873,6 +906,7 @@ def build_window():
                 ("bridge_width", "Bridge Width", self.bridge_width_spin),
                 ("bridge_clearance", "Bridge Ground Clearance", self.bridge_clearance_spin),
                 ("bridge_height", "Bridge Height", self.bridge_height_spin),
+                ("bridge_half", "Bridge Half", self.bridge_half_check),
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
@@ -952,6 +986,7 @@ def build_window():
             self._set_row_visible("bridge_width", is_bridge)
             self._set_row_visible("bridge_clearance", is_bridge)
             self._set_row_visible("bridge_height", is_bridge)
+            self._set_row_visible("bridge_half", is_bridge)
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
@@ -994,6 +1029,7 @@ def build_window():
                 "bridge_width": self.bridge_width_spin.value(),
                 "bridge_clearance": self.bridge_clearance_spin.value(),
                 "bridge_height": self.bridge_height_spin.value(),
+                "bridge_half": self.bridge_half_check.isChecked(),
                 "tree_trunk_width": self.tree_trunk_width_spin.value(),
                 "tree_leaf_base_height": self.tree_leaf_base_height_spin.value(),
                 "tree_num_sides": self.tree_sides_spin.value(),
@@ -1028,6 +1064,7 @@ def build_window():
             self.bridge_width_spin.setValue(int_or_default(values.get("bridge_width"), self.bridge_width_spin.value()))
             self.bridge_clearance_spin.setValue(int_or_default(values.get("bridge_clearance"), self.bridge_clearance_spin.value()))
             self.bridge_height_spin.setValue(int_or_default(values.get("bridge_height"), self.bridge_height_spin.value()))
+            self.bridge_half_check.setChecked(str(values.get("bridge_half", "False")).lower() in {"1", "true", "yes", "on"})
             self.tree_trunk_width_spin.setValue(int_or_default(values.get("tree_trunk_width"), self.tree_trunk_width_spin.value()))
             self.tree_leaf_base_height_spin.setValue(int_or_default(values.get("tree_leaf_base_height"), self.tree_leaf_base_height_spin.value()))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
@@ -1156,6 +1193,7 @@ def build_window():
                     values["bridge_width"],
                     values["bridge_clearance"],
                     values["bridge_height"],
+                    values["bridge_half"],
                 )
 
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
