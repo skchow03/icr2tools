@@ -106,6 +106,7 @@ class _RuntimeCoreBaseMixin:
         self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
+        self._trackside_map_click_callback = None
         self._active_trackside_drag_index: int | None = None
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
