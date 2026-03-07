@@ -138,6 +138,7 @@ class _RuntimeCoreBaseMixin:
 
         self._show_curve_markers = True
         self._show_axes = False
+        self._show_crosshair = False
         self._show_background_image = True
         self._track_opacity = 1.0
         self._integrity_boundary_violation_points: tuple[Point, ...] = ()
