@@ -103,6 +103,7 @@ class PreviewPresenter:
                 selected_section_index=selection.selected_section_index,
                 show_curve_markers=self._runtime.show_curve_markers,
                 show_axes=self._runtime.show_axes,
+                show_crosshair=self._runtime.show_crosshair,
                 sections=section_manager.sections,
                 selected_curve_index=selection.selected_curve_index,
                 start_finish_mapping=self._runtime.start_finish_mapping,

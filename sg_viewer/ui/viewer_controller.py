@@ -332,6 +332,10 @@ class SGViewerController:
         self._show_axes_action.setCheckable(True)
         self._show_axes_action.setChecked(self._window.axes_button.isChecked())
 
+        self._show_crosshair_action = QtWidgets.QAction("Show Crosshair", self._window)
+        self._show_crosshair_action.setCheckable(True)
+        self._show_crosshair_action.setChecked(self._window.crosshair_button.isChecked())
+
         self._show_background_image_action = QtWidgets.QAction(
             "Show Background Image", self._window
         )
@@ -486,6 +490,7 @@ class SGViewerController:
         view_menu.addSeparator()
         view_menu.addAction(self._show_radii_action)
         view_menu.addAction(self._show_axes_action)
+        view_menu.addAction(self._show_crosshair_action)
         view_menu.addAction(self._show_background_image_action)
 
         tools_menu = self._window.menuBar().addMenu("Tools")
@@ -772,11 +777,13 @@ class SGViewerController:
         self._delete_shortcut.activated.connect(self._handle_delete_shortcut)
         self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
         self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
+        self._window.crosshair_button.toggled.connect(self._window.preview.set_show_crosshair)
         self._window.background_image_checkbox.toggled.connect(
             self._window.preview.set_show_background_image
         )
         self._show_radii_action.toggled.connect(self._window.radii_button.setChecked)
         self._show_axes_action.toggled.connect(self._window.axes_button.setChecked)
+        self._show_crosshair_action.toggled.connect(self._window.crosshair_button.setChecked)
         self._show_background_image_action.toggled.connect(
             self._window.background_image_checkbox.setChecked
         )
@@ -797,6 +804,7 @@ class SGViewerController:
         )
         self._window.radii_button.toggled.connect(self._show_radii_action.setChecked)
         self._window.axes_button.toggled.connect(self._show_axes_action.setChecked)
+        self._window.crosshair_button.toggled.connect(self._show_crosshair_action.setChecked)
         self._window.background_image_checkbox.toggled.connect(
             self._show_background_image_action.setChecked
         )

@@ -78,6 +78,7 @@ class BasePreviewState:
     selected_section_index: int | None
     show_curve_markers: bool
     show_axes: bool
+    show_crosshair: bool
     sections: Iterable
     selected_curve_index: int | None
     start_finish_mapping: tuple[Point, Point, Point] | None
@@ -304,7 +305,36 @@ def paint_preview(
         widget_height,
     )
     _draw_nodes(painter, node_state, transform, widget_height)
+    _draw_center_crosshair(painter, base_state.rect, base_state.show_crosshair)
     _draw_status_overlay(painter, base_state.rect, base_state.status_message)
+
+
+def _draw_center_crosshair(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRect,
+    show_crosshair: bool,
+) -> None:
+    if not show_crosshair:
+        return
+
+    center = rect.center()
+    crosshair_half_size_px = 5
+    painter.save()
+    painter.setRenderHint(type(painter).Antialiasing, False)
+    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 220), 1.0))
+    painter.drawLine(
+        center.x() - crosshair_half_size_px,
+        center.y(),
+        center.x() + crosshair_half_size_px,
+        center.y(),
+    )
+    painter.drawLine(
+        center.x(),
+        center.y() - crosshair_half_size_px,
+        center.x(),
+        center.y() + crosshair_half_size_px,
+    )
+    painter.restore()
 
 
 def render_sg_preview(

@@ -190,6 +190,10 @@ class _RuntimeCorePreviewMixin:
         return self._show_axes
 
     @property
+    def show_crosshair(self) -> bool:
+        return self._show_crosshair
+
+    @property
     def show_sg_fsects(self) -> bool:
         return self._show_sg_fsects
 
@@ -388,6 +392,10 @@ class _RuntimeCorePreviewMixin:
 
     def set_show_axes(self, visible: bool) -> None:
         self._show_axes = visible
+        self._context.request_repaint()
+
+    def set_show_crosshair(self, visible: bool) -> None:
+        self._show_crosshair = visible
         self._context.request_repaint()
 
     def set_show_background_image(self, visible: bool) -> None:

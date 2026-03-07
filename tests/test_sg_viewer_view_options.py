@@ -200,6 +200,34 @@ def test_view_options_expose_color_controls(qapp):
         window.close()
 
 
+def test_crosshair_view_menu_toggle_updates_preview(qapp):
+    window = SGViewerWindow()
+    try:
+        assert window.crosshair_button.isChecked() is False
+        assert window.preview.show_crosshair is False
+
+        view_menu = next(
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "View"
+        )
+        crosshair_action = next(
+            action for action in view_menu.actions() if action.text() == "Show Crosshair"
+        )
+
+        crosshair_action.trigger()
+
+        assert window.crosshair_button.isChecked() is True
+        assert window.preview.show_crosshair is True
+
+        window.crosshair_button.setChecked(False)
+
+        assert crosshair_action.isChecked() is False
+        assert window.preview.show_crosshair is False
+    finally:
+        window.close()
+
+
 def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
@@ -1333,6 +1361,7 @@ def test_paint_preview_passes_mrk_highlight_walls_to_renderer(monkeypatch):
                 selected_section_index=None,
                 show_curve_markers=False,
                 show_axes=False,
+                show_crosshair=False,
                 sections=(),
                 selected_curve_index=None,
                 start_finish_mapping=None,
@@ -1405,6 +1434,7 @@ def test_paint_preview_draws_tsd_before_sg_fsects(monkeypatch):
                 selected_section_index=0,
                 show_curve_markers=False,
                 show_axes=False,
+                show_crosshair=False,
                 sections=(),
                 selected_curve_index=None,
                 start_finish_mapping=None,

@@ -257,6 +257,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radii_button.setChecked(True)
         self._axes_button = QtWidgets.QCheckBox("Show Axes")
         self._axes_button.setChecked(False)
+        self._crosshair_button = QtWidgets.QCheckBox("Show Crosshair")
+        self._crosshair_button.setChecked(False)
         self._background_image_checkbox = QtWidgets.QCheckBox("Show Background Image")
         self._background_image_checkbox.setChecked(True)
         self._background_brightness_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -546,6 +548,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         view_options_layout.addLayout(background_brightness_layout)
         view_options_layout.addWidget(self._radii_button)
         view_options_layout.addWidget(self._axes_button)
+        view_options_layout.addWidget(self._crosshair_button)
         color_group = QtWidgets.QGroupBox("Preview Colors")
         color_form = QtWidgets.QFormLayout()
         for key, label in self._preview_color_labels.items():
@@ -775,6 +778,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def axes_button(self) -> QtWidgets.QCheckBox:
         return self._axes_button
+
+    @property
+    def crosshair_button(self) -> QtWidgets.QCheckBox:
+        return self._crosshair_button
 
     @property
     def background_image_checkbox(self) -> QtWidgets.QCheckBox:
