@@ -12,6 +12,12 @@ from sg_viewer.services.trackside_objects import (
     normalize_rotation_point,
     normalize_trackside_filename,
 )
+from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
+from sg_viewer.ui.presentation.units_presenter import (
+    measurement_unit_decimals,
+    measurement_unit_label,
+    measurement_unit_step,
+)
 
 
 class TracksideObjectAttributesDialog(QtWidgets.QDialog):
@@ -26,6 +32,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self.setWindowModality(QtCore.Qt.NonModal)
         self._row_index: int | None = None
         self._applying_changes = False
+        self._measurement_unit = "500ths"
 
         form = QtWidgets.QFormLayout()
         self._filename_edit = QtWidgets.QLineEdit()
@@ -37,8 +44,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._pitch_spin = QtWidgets.QSpinBox()
         self._tilt_spin = QtWidgets.QSpinBox()
         self._description_edit = QtWidgets.QLineEdit()
-        self._bbox_length_spin = QtWidgets.QSpinBox()
-        self._bbox_width_spin = QtWidgets.QSpinBox()
+        self._bbox_length_spin = QtWidgets.QDoubleSpinBox()
+        self._bbox_width_spin = QtWidgets.QDoubleSpinBox()
         self._rotation_point_combo = QtWidgets.QComboBox()
 
         for spin in (
@@ -83,8 +90,10 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow("Pitch (tenths)", self._pitch_spin)
         form.addRow("Tilt (tenths)", self._tilt_spin)
         form.addRow("Description", self._description_edit)
-        form.addRow("BBox Length", self._bbox_length_spin)
-        form.addRow("BBox Width", self._bbox_width_spin)
+        self._bbox_length_label = QtWidgets.QLabel()
+        self._bbox_width_label = QtWidgets.QLabel()
+        form.addRow(self._bbox_length_label, self._bbox_length_spin)
+        form.addRow(self._bbox_width_label, self._bbox_width_spin)
         form.addRow("Rotation point", self._rotation_point_combo)
 
         buttons = QtWidgets.QDialogButtonBox()
@@ -96,6 +105,25 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(buttons)
+        self.set_measurement_unit(self._measurement_unit)
+
+    def set_measurement_unit(self, unit: str) -> None:
+        previous_unit = self._measurement_unit
+        bbox_length_500ths = units_to_500ths(float(self._bbox_length_spin.value()), previous_unit)
+        bbox_width_500ths = units_to_500ths(float(self._bbox_width_spin.value()), previous_unit)
+
+        self._measurement_unit = unit
+        unit_label = measurement_unit_label(unit)
+        decimals = max(4, measurement_unit_decimals(unit))
+        step = measurement_unit_step(unit)
+        self._bbox_length_label.setText(f"BBox Length ({unit_label})")
+        self._bbox_width_label.setText(f"BBox Width ({unit_label})")
+        for spin in (self._bbox_length_spin, self._bbox_width_spin):
+            spin.setDecimals(decimals)
+            spin.setSingleStep(step)
+
+        self._bbox_length_spin.setValue(units_from_500ths(float(bbox_length_500ths), unit))
+        self._bbox_width_spin.setValue(units_from_500ths(float(bbox_width_500ths), unit))
 
     def edit_object(self, row_index: int, obj: TracksideObject) -> None:
         self._row_index = row_index
@@ -107,8 +135,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._pitch_spin.setValue(int(obj.pitch))
         self._tilt_spin.setValue(int(obj.tilt))
         self._description_edit.setText(obj.description)
-        self._bbox_length_spin.setValue(int(obj.bbox_length))
-        self._bbox_width_spin.setValue(int(obj.bbox_width))
+        self._bbox_length_spin.setValue(units_from_500ths(float(obj.bbox_length), self._measurement_unit))
+        self._bbox_width_spin.setValue(units_from_500ths(float(obj.bbox_width), self._measurement_unit))
         rotation_point = normalize_rotation_point(obj.rotation_point)
         index = self._rotation_point_combo.findData(rotation_point)
         self._rotation_point_combo.setCurrentIndex(index if index >= 0 else 0)
@@ -130,8 +158,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             pitch=int(self._pitch_spin.value()),
             tilt=int(self._tilt_spin.value()),
             description=self._description_edit.text().strip(),
-            bbox_length=int(self._bbox_length_spin.value()),
-            bbox_width=int(self._bbox_width_spin.value()),
+            bbox_length=max(0, units_to_500ths(float(self._bbox_length_spin.value()), self._measurement_unit)),
+            bbox_width=max(0, units_to_500ths(float(self._bbox_width_spin.value()), self._measurement_unit)),
             rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
         )
         self._applying_changes = True
@@ -153,8 +181,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             pitch=int(self._pitch_spin.value()),
             tilt=int(self._tilt_spin.value()),
             description=self._description_edit.text().strip(),
-            bbox_length=int(self._bbox_length_spin.value()),
-            bbox_width=int(self._bbox_width_spin.value()),
+            bbox_length=max(0, units_to_500ths(float(self._bbox_length_spin.value()), self._measurement_unit)),
+            bbox_width=max(0, units_to_500ths(float(self._bbox_width_spin.value()), self._measurement_unit)),
             rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
         )
         self.objectPreviewUpdated.emit(int(self._row_index), obj)
