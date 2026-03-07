@@ -27,6 +27,8 @@ class SectionSelection:
     length: float
     previous_id: int
     next_id: int
+    previous_length: float | None = None
+    next_length: float | None = None
     start_point: Point | None = None
     end_point: Point | None = None
     start_heading: tuple[float, float] | None = None
@@ -291,6 +293,9 @@ class SelectionManager(QtCore.QObject):
     def _build_section_selection(self, section: SectionPreview) -> SectionSelection:
         length = float(section.length)
         sg_values = self._compute_sg_save_values(section)
+        sections_by_id = {sect.section_id: sect for sect in self._sections}
+        previous_section = sections_by_id.get(section.previous_id)
+        next_section = sections_by_id.get(section.next_id)
         return SectionSelection(
             index=section.section_id,
             type_name=section.type_name,
@@ -299,6 +304,16 @@ class SelectionManager(QtCore.QObject):
             length=length,
             previous_id=section.previous_id,
             next_id=section.next_id,
+            previous_length=(
+                float(previous_section.length)
+                if previous_section is not None
+                else None
+            ),
+            next_length=(
+                float(next_section.length)
+                if next_section is not None
+                else None
+            ),
             start_point=section.start,
             end_point=section.end,
             center=section.center,

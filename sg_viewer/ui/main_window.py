@@ -329,6 +329,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._previous_label = QtWidgets.QLabel("Previous Section: –")
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._section_length_label = QtWidgets.QLabel("Section Length: –")
+        self._previous_section_length_label = QtWidgets.QLabel(
+            "Previous Section Length: –"
+        )
+        self._next_section_length_label = QtWidgets.QLabel("Next Section Length: –")
         self._adjusted_section_start_dlong_label = QtWidgets.QLabel(
             "Adjusted Starting DLONG: –"
         )
@@ -702,6 +706,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._previous_label,
             self._next_label,
             self._section_length_label,
+            self._previous_section_length_label,
+            self._next_section_length_label,
             self._adjusted_section_start_dlong_label,
             self._adjusted_section_end_dlong_label,
             self._adjusted_section_length_label,
@@ -1500,6 +1506,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._previous_label.setText("Previous Section: –")
             self._next_label.setText("Next Section: –")
             self._section_length_label.setText("Section Length: –")
+            self._previous_section_length_label.setText("Previous Section Length: –")
+            self._next_section_length_label.setText("Next Section Length: –")
             self._set_adjusted_dlong_labels(None)
             self._profile_widget.set_selected_range(None)
             self._update_fsect_table(None)
@@ -1516,6 +1524,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_length_label.setText(
             f"Section Length: {self.format_length_with_secondary(selection.length)}"
         )
+        self._previous_section_length_label.setText(
+            self._format_section_length("Previous", selection.previous_length)
+        )
+        self._next_section_length_label.setText(
+            self._format_section_length("Next", selection.next_length)
+        )
         self._update_adjusted_dlong_labels(selection)
 
         radius_value = selection.sg_radius
@@ -1528,6 +1542,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
         self._update_fsect_table(selection.index)
+
+
+    def _format_section_length(self, prefix: str, length: float | None) -> str:
+        value = "–" if length is None else self.format_length_with_secondary(length)
+        return f"{prefix} Section Length: {value}"
 
     @staticmethod
     def _format_section_link(prefix: str, section_id: int) -> str:
