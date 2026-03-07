@@ -46,6 +46,7 @@ def _base_parameters():
         "bridge_width": 80,
         "bridge_clearance": 100,
         "bridge_height": 20,
+        "bridge_half": False,
     }
 
 
@@ -551,7 +552,67 @@ def test_bridge_shape_uses_side_top_and_bottom_colors(tmp_path: Path):
     write_3d(out, verts, faces, params)
 
     text = out.read_text(encoding="utf-8")
-    assert "ls1: POLY <18>" in text
-    assert "rs1: POLY <19>" in text
+    assert "lsLeft: POLY <18>" in text
+    assert "lsCenter: POLY <18>" in text
+    assert "lsRight: POLY <18>" in text
+    assert "rsLeft: POLY <19>" in text
+    assert "rsCenter: POLY <19>" in text
+    assert "rsRight: POLY <19>" in text
     assert "topBridge: POLY <140>" in text
     assert "botBridge: POLY <141>" in text
+
+
+def test_bridge_sides_are_split_into_three_quads_per_side():
+    _verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="bridge",
+        bridge_length=320,
+        bridge_width=80,
+        bridge_clearance=100,
+        bridge_height=20,
+    )
+
+    face_map = {name: points for name, points in faces}
+    for side_name in ("lsLeft", "lsCenter", "lsRight", "rsLeft", "rsCenter", "rsRight"):
+        assert side_name in face_map
+        assert len(face_map[side_name]) == 4
+
+    assert "ls1" not in face_map
+    assert "rs1" not in face_map
+
+    assert all(len(points) <= 4 for _name, points in faces)
+
+
+def test_bridge_half_generates_center_chop_face_and_quad_sides_only():
+    _verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="bridge",
+        bridge_length=320,
+        bridge_width=80,
+        bridge_clearance=100,
+        bridge_height=20,
+        bridge_half=True,
+    )
+
+    face_map = {name: points for name, points in faces}
+    assert "bk1" in face_map
+    assert len(face_map["bk1"]) == 4
+
+    assert "lsRight" not in face_map
+    assert "rsRight" not in face_map
+
+    assert all(len(points) <= 4 for _name, points in faces)
