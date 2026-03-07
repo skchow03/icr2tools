@@ -341,8 +341,8 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
     clearance = max(1, int(clearance))
     bridge_height = max(1, int(bridge_height))
 
-    x0 = 0
-    x1 = clearance
+    y0 = -(width / 2.0)
+    y1 = width / 2.0
 
     z0 = 0
     z1 = clearance
@@ -350,7 +350,12 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
     z3 = bridge_height
 
     if bridge_half:
-        x2 = x1 + max(1, int(round(length / 2.0)))
+        half_length = max(1, int(round(length / 2.0)))
+        # Keep the chopped side on the world vertical axis so mirrored/swiveled
+        # halves can meet cleanly without extra translation.
+        x2 = 0
+        x1 = -half_length
+        x0 = -(half_length + clearance)
         profile = [
             (x0, z0),
             (x1, z1),
@@ -360,6 +365,9 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
             (x0, z3),
         ]
     else:
+        total_span = length + (2 * clearance)
+        x0 = -(total_span / 2.0)
+        x1 = x0 + clearance
         x2 = x1 + length
         x3 = x2 + clearance
         profile = [
@@ -375,8 +383,8 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
 
     verts = {}
     for index, (x, z) in enumerate(profile):
-        verts[f"f{index}"] = (x, 0, z)
-        verts[f"b{index}"] = (x, width, z)
+        verts[f"f{index}"] = (x, y0, z)
+        verts[f"b{index}"] = (x, y1, z)
 
     if bridge_half:
         faces = [
@@ -385,7 +393,6 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
             ("rsLeft", ["f5", "f4", "f1", "f0"]),
             ("rsCenter", ["f4", "f3", "f2", "f1"]),
             ("fr1", ["f0", "f5", "b5", "b0"]),
-            ("bk1", ["f3", "f2", "b2", "b3"]),
             ("topRampL", ["f5", "f4", "b4", "b5"]),
             ("topBridge", ["f4", "f3", "b3", "b4"]),
             ("botRampL", ["f0", "f1", "b1", "b0"]),
