@@ -608,6 +608,12 @@ def set_sunny_path(config: configparser.ConfigParser, sunny_pcx_path: str):
     config["paths"]["sunny_pcx"] = sunny_pcx_path
 
 
+def set_last_3d_dir(config: configparser.ConfigParser, directory: str):
+    if not config.has_section("paths"):
+        config.add_section("paths")
+    config["paths"]["last_3d_dir"] = directory
+
+
 def list_template_names(config: configparser.ConfigParser):
     return sorted(
         section[len(TEMPLATE_SECTION_PREFIX):]
@@ -1211,14 +1217,18 @@ def build_window():
                     values["bridge_half"],
                 )
 
+                default_save_dir = self.settings.get("paths", "last_3d_dir", fallback="")
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
                     self,
                     "Save .3D",
-                    "",
+                    default_save_dir,
                     "3D files (*.3D)",
                 )
                 if not out_path:
                     return
+
+                set_last_3d_dir(self.settings, str(Path(out_path).parent))
+                save_settings(self.settings)
 
                 params = dict(values)
                 params["roof_type"] = roof
