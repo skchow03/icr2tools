@@ -42,6 +42,10 @@ def _base_parameters():
         "tree_trunk_color_dark": 97,
         "tree_leaves_color_bright": 120,
         "tree_leaves_color_dark": 121,
+        "bridge_length": 320,
+        "bridge_width": 80,
+        "bridge_clearance": 100,
+        "bridge_height": 20,
     }
 
 
@@ -484,3 +488,70 @@ def test_int_or_default_uses_default_for_blank_and_invalid_values():
     assert int_or_default(None, 9) == 9
     assert int_or_default("abc", 10) == 10
     assert int_or_default("12", 0) == 12
+
+
+def test_bridge_shape_generates_walkway_and_45_degree_slopes():
+    verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="bridge",
+        bridge_length=300,
+        bridge_width=70,
+        bridge_clearance=120,
+        bridge_height=24,
+    )
+
+    assert verts["f1"] == (120, 0, 120)
+    assert verts["f2"] == (420, 0, 120)
+    assert verts["f6"] == (120, 0, 144)
+    assert verts["f0"] == (0, 0, 0)
+    assert verts["f1"][2] - verts["f0"][2] == verts["f1"][0] - verts["f0"][0]
+    assert verts["f3"][2] - verts["f2"][2] == -(verts["f3"][0] - verts["f2"][0])
+
+    names = {name for name, _ in faces}
+    assert {"topRampL", "topBridge", "topRampR", "botRampL", "botBridge", "botRampR"}.issubset(names)
+
+
+def test_bridge_shape_uses_side_top_and_bottom_colors(tmp_path: Path):
+    verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="bridge",
+        bridge_length=300,
+        bridge_width=70,
+        bridge_clearance=120,
+        bridge_height=24,
+    )
+    out = tmp_path / "bridge.3D"
+
+    params = _base_parameters()
+    params.update(
+        {
+            "building_shape": "bridge",
+            "roof_type": "none",
+            "roof_color_bright": 140,
+            "roof_color_dark": 141,
+            "side_color_bright": 18,
+            "side_color_dark": 19,
+        }
+    )
+
+    write_3d(out, verts, faces, params)
+
+    text = out.read_text(encoding="utf-8")
+    assert "ls1: POLY <18>" in text
+    assert "rs1: POLY <19>" in text
+    assert "topBridge: POLY <140>" in text
+    assert "botBridge: POLY <141>" in text
