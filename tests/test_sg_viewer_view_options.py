@@ -12,6 +12,7 @@ try:
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
+    from sg_viewer.services.trackside_objects import TracksideObject
     from icr2_core.trk.sg_classes import SGFile
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -1976,6 +1977,31 @@ def test_add_tso_updates_preview_overlay_and_selection(qapp):
         window.controller._on_tso_selection_changed()
 
         assert window.preview.selected_trackside_object_index == 0
+    finally:
+        window.close()
+
+
+def test_add_tso_defaults_filename_to_previous_tso(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._on_tso_add_requested()
+        window.controller._trackside_objects[0] = TracksideObject(
+            filename="grandstand.3do",
+            x=0,
+            y=0,
+            z=0,
+            yaw=0,
+            pitch=0,
+            tilt=0,
+            description="",
+            bbox_length=0,
+            bbox_width=0,
+            rotation_point="center",
+        )
+
+        window.controller._on_tso_add_requested()
+
+        assert window.controller._trackside_objects[1].filename == "grandstand"
     finally:
         window.close()
 

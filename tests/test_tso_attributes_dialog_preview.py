@@ -52,3 +52,42 @@ def test_yaw_slider_emits_preview_update_and_close_resets_preview(qapp):
         assert preview_ended == [True]
     finally:
         dialog.close()
+
+
+def test_bbox_values_follow_current_measurement_unit(qapp):
+    dialog = TracksideObjectAttributesDialog()
+    try:
+        obj = TracksideObject(
+            filename="tower.3do",
+            x=1,
+            y=2,
+            z=3,
+            yaw=0,
+            pitch=0,
+            tilt=0,
+            description="",
+            bbox_length=6000,
+            bbox_width=12000,
+            rotation_point="center",
+        )
+        updates: list[tuple[int, TracksideObject]] = []
+        dialog.objectUpdated.connect(lambda row, updated: updates.append((row, updated)))
+
+        dialog.set_measurement_unit("feet")
+        dialog.edit_object(0, obj)
+
+        assert dialog._bbox_length_label.text() == "BBox Length (ft)"
+        assert dialog._bbox_width_label.text() == "BBox Width (ft)"
+        assert dialog._bbox_length_spin.value() == pytest.approx(1.0)
+        assert dialog._bbox_width_spin.value() == pytest.approx(2.0)
+
+        dialog._bbox_length_spin.setValue(1.5)
+        dialog._bbox_width_spin.setValue(2.25)
+        dialog._apply_changes()
+
+        assert updates
+        _row, updated = updates[-1]
+        assert updated.bbox_length == 9000
+        assert updated.bbox_width == 13500
+    finally:
+        dialog.close()

@@ -2001,6 +2001,7 @@ class SGViewerController:
             self._tso_attributes_dialog.objectUpdated.connect(self._on_tso_attributes_updated)
             self._tso_attributes_dialog.objectPreviewUpdated.connect(self._on_tso_attributes_preview_updated)
             self._tso_attributes_dialog.previewEnded.connect(self._on_tso_attributes_preview_ended)
+        self._tso_attributes_dialog.set_measurement_unit(self._window.current_measurement_unit())
         self._tso_attributes_dialog.edit_object(row, self._trackside_objects[row])
         self._tso_attributes_dialog.show()
         self._tso_attributes_dialog.raise_()
@@ -2077,9 +2078,12 @@ class SGViewerController:
         if world_center is not None:
             center_x = int(round(world_center[0]))
             center_y = int(round(world_center[1]))
+        default_filename = "object"
+        if self._trackside_objects:
+            default_filename = normalize_trackside_filename(self._trackside_objects[-1].filename) or "object"
         self._trackside_objects.append(
             TracksideObject(
-                filename="object",
+                filename=default_filename,
                 x=center_x,
                 y=center_y,
                 z=0,
@@ -3541,6 +3545,8 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
         self._update_track_length_display()
         self._window.update_selection_sidebar(self._active_selection)
+        if self._tso_attributes_dialog is not None:
+            self._tso_attributes_dialog.set_measurement_unit(self._window.current_measurement_unit())
 
     def _on_measurement_units_changed(self) -> None:
         self._elevation_ui_coordinator.on_measurement_units_changed()
