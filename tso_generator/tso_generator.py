@@ -139,12 +139,16 @@ def generate_circular_base(diameter, sides, height):
     verts = {}
     faces = []
     radius = diameter / 2.0
+
+    def _round_point(value):
+        return round(value, 2)
+
     for i in range(sides):
         angle = (2.0 * math.pi * i) / sides
         x = radius * math.cos(angle)
         y = radius * math.sin(angle)
-        verts[f"cb{i}"] = (int(round(x)), int(round(y)), 0)
-        verts[f"ct{i}"] = (int(round(x)), int(round(y)), height)
+        verts[f"cb{i}"] = (_round_point(x), _round_point(y), 0)
+        verts[f"ct{i}"] = (_round_point(x), _round_point(y), height)
 
     for i in range(sides):
         nxt = (i + 1) % sides
@@ -166,6 +170,10 @@ def add_circular_flat_roof(verts, faces, sides, diameter, height):
 
 def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, dome_roundness):
     radius = diameter / 2.0
+
+    def _round_point(value):
+        return round(value, 2)
+
     roundness = max(0.0, min(100.0, float(dome_roundness))) / 100.0
     dome_height = radius * roundness
     prev_ring = [f"ct{i}" for i in range(sides)]
@@ -185,7 +193,7 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
             x = ring_radius * math.cos(angle)
             y = ring_radius * math.sin(angle)
             name = f"dr{layer}_{i}"
-            verts[name] = (int(round(x)), int(round(y)), int(round(ring_z)))
+            verts[name] = (_round_point(x), _round_point(y), _round_point(ring_z))
             ring_names.append(name)
 
         for i in range(sides):
@@ -196,7 +204,7 @@ def add_circular_dome_roof(verts, faces, diameter, sides, height, dome_layers, d
 
         prev_ring = ring_names
 
-    top_z = height + int(round(dome_height))
+    top_z = _round_point(height + dome_height)
     verts["dome_top"] = (0, 0, top_z)
     for i in range(sides):
         nxt = (i + 1) % sides
