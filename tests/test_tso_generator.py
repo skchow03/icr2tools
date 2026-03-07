@@ -508,10 +508,11 @@ def test_bridge_shape_generates_walkway_and_45_degree_slopes():
         bridge_height=24,
     )
 
-    assert verts["f1"] == (120, 0, 120)
-    assert verts["f2"] == (420, 0, 120)
-    assert verts["f6"] == (120, 0, 144)
-    assert verts["f0"] == (0, 0, 0)
+    assert verts["f1"] == (-150.0, -35.0, 120)
+    assert verts["f2"] == (150.0, -35.0, 120)
+    assert verts["f6"] == (-150.0, -35.0, 144)
+    assert verts["f0"] == (-270.0, -35.0, 0)
+    assert verts["b0"] == (-270.0, 35.0, 0)
     assert verts["f1"][2] - verts["f0"][2] == verts["f1"][0] - verts["f0"][0]
     assert verts["f3"][2] - verts["f2"][2] == -(verts["f3"][0] - verts["f2"][0])
 
@@ -590,8 +591,8 @@ def test_bridge_sides_are_split_into_three_quads_per_side():
     assert all(len(points) <= 4 for _name, points in faces)
 
 
-def test_bridge_half_generates_center_chop_face_and_quad_sides_only():
-    _verts, faces = generate_building(
+def test_bridge_half_is_open_on_chopped_side_and_aligned_to_vertical_axis():
+    verts, faces = generate_building(
         0,
         0,
         0,
@@ -609,10 +610,20 @@ def test_bridge_half_generates_center_chop_face_and_quad_sides_only():
     )
 
     face_map = {name: points for name, points in faces}
-    assert "bk1" in face_map
-    assert len(face_map["bk1"]) == 4
+    assert "bk1" not in face_map
 
     assert "lsRight" not in face_map
     assert "rsRight" not in face_map
+
+    # Chopped opening lies on x=0 for easy mirrored placement.
+    assert verts["f2"][0] == 0
+    assert verts["f3"][0] == 0
+    assert verts["b2"][0] == 0
+    assert verts["b3"][0] == 0
+
+    # Bridge remains centered about y=0 while keeping ground at z=0.
+    assert verts["f0"][1] == -40.0
+    assert verts["b0"][1] == 40.0
+    assert min(point[2] for point in verts.values()) == 0
 
     assert all(len(points) <= 4 for _name, points in faces)
