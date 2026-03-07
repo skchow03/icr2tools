@@ -788,6 +788,7 @@ def _draw_axes(
     if not show_axes:
         return
 
+    scale, offsets = transform
     if scale == 0:
         return
 
