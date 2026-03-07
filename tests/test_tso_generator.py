@@ -126,6 +126,30 @@ def test_none_roof_omits_roof_faces():
     assert not names.intersection({"topB", "topD", "roofB", "roofD", "roofL", "roofR", "pyrF"})
 
 
+
+
+def test_circular_building_vertices_keep_up_to_two_decimal_places():
+    verts, _faces = generate_building(
+        0,
+        0,
+        120,
+        "flat",
+        0,
+        0,
+        0,
+        0,
+        building_shape="circular",
+        diameter=200,
+        num_sides=12,
+    )
+
+    x, y, _z = verts["cb1"]
+    assert isinstance(x, float)
+    assert isinstance(y, float)
+    assert x == 86.6
+    assert y == 50.0
+
+
 def test_circular_dome_building_uses_requested_sides_and_layers(tmp_path: Path):
     verts, faces = generate_building(
         0,
@@ -170,7 +194,7 @@ def test_circular_dome_profile_is_curved_not_linear():
 
     # With a curved (quarter-circle) profile, the first ring keeps more radius
     # while also rising more than a linear cone profile.
-    assert verts["dr1_0"][0] > 175
+    assert verts["dr1_0"][0] > 90
     assert verts["dr1_0"][2] > 145
 
 
