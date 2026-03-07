@@ -142,6 +142,9 @@ class SGViewerController:
         self._trackside_objects: list[TracksideObject] = []
         self._selected_trackside_object_indices: list[int] = []
         self._trackside_move_enabled_indices: set[int] = set()
+        self._tso_add_mode_active = False
+        self._tso_stamp_mode_active = False
+        self._tso_stamp_filename: str | None = None
         self._active_tsd_file_index: int | None = None
         self._suspend_tsd_preview_refresh = False
         self._debug_tsd_perf = False
@@ -158,6 +161,7 @@ class SGViewerController:
         self._create_menus()
         self._connect_signals()
         self._window.preview.set_trackside_object_drag_callback(self._on_preview_tso_dragged)
+        self._window.preview.set_trackside_map_click_callback(self._on_preview_tso_map_clicked)
         self._on_track_opacity_changed(self._window.track_opacity_slider.value())
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
@@ -872,6 +876,7 @@ class SGViewerController:
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
         self._window.tsd_objects_table.itemChanged.connect(self._on_tsd_object_item_changed)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
+        self._window.tso_stamp_button.clicked.connect(self._on_tso_stamp_requested)
         self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
         self._window.tso_move_up_button.clicked.connect(self._on_tso_move_up_requested)
         self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
@@ -2066,40 +2071,88 @@ class SGViewerController:
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
 
-    def _on_tso_add_requested(self) -> None:
-        center_x = 0
-        center_y = 0
-        preview = self._window.preview
-        world_center = preview.map_to_track(
-            (preview.width() * 0.5, preview.height() * 0.5),
-            (preview.width(), preview.height()),
-            preview.height(),
-        )
-        if world_center is not None:
-            center_x = int(round(world_center[0]))
-            center_y = int(round(world_center[1]))
-        default_filename = "object"
-        if self._trackside_objects:
+    def _build_default_tso(self, *, x: int, y: int, filename: str | None = None) -> TracksideObject:
+        default_filename = filename or "object"
+        if filename is None and self._trackside_objects:
             default_filename = normalize_trackside_filename(self._trackside_objects[-1].filename) or "object"
-        self._trackside_objects.append(
-            TracksideObject(
-                filename=default_filename,
-                x=center_x,
-                y=center_y,
-                z=0,
-                yaw=0,
-                pitch=0,
-                tilt=0,
-                description="",
-                bbox_length=0,
-                bbox_width=0,
-                rotation_point="center",
-            )
+        return TracksideObject(
+            filename=default_filename,
+            x=x,
+            y=y,
+            z=0,
+            yaw=0,
+            pitch=0,
+            tilt=0,
+            description="",
+            bbox_length=0,
+            bbox_width=0,
+            rotation_point="center",
         )
+
+    def _set_tso_add_mode_active(self, active: bool) -> None:
+        self._tso_add_mode_active = bool(active)
+        self._window.tso_add_button.blockSignals(True)
+        self._window.tso_add_button.setChecked(self._tso_add_mode_active)
+        self._window.tso_add_button.blockSignals(False)
+        if self._tso_add_mode_active and self._tso_stamp_mode_active:
+            self._set_tso_stamp_mode_active(False)
+
+    def _set_tso_stamp_mode_active(self, active: bool, *, filename: str | None = None) -> None:
+        self._tso_stamp_mode_active = bool(active)
+        if self._tso_stamp_mode_active:
+            self._tso_stamp_filename = normalize_trackside_filename(filename or "") or "object"
+            if self._tso_add_mode_active:
+                self._set_tso_add_mode_active(False)
+        else:
+            self._tso_stamp_filename = None
+        self._window.tso_stamp_button.blockSignals(True)
+        self._window.tso_stamp_button.setChecked(self._tso_stamp_mode_active)
+        self._window.tso_stamp_button.blockSignals(False)
+
+    def _on_tso_add_requested(self) -> None:
+        self._set_tso_add_mode_active(self._window.tso_add_button.isChecked())
+        if self._tso_add_mode_active:
+            self._window.show_status_message("Add TSO active: click on the map to place one TSO.")
+
+    def _on_tso_stamp_requested(self) -> None:
+        if self._tso_stamp_mode_active:
+            self._set_tso_stamp_mode_active(False)
+            self._window.show_status_message("Stamp mode deactivated.")
+            return
+        text, ok = QtWidgets.QInputDialog.getText(
+            self._window,
+            "Stamp TSOs",
+            "Filename:",
+            text=self._tso_stamp_filename or "object",
+        )
+        if not ok:
+            self._window.tso_stamp_button.blockSignals(True)
+            self._window.tso_stamp_button.setChecked(False)
+            self._window.tso_stamp_button.blockSignals(False)
+            return
+        normalized = normalize_trackside_filename(text)
+        if not normalized:
+            QtWidgets.QMessageBox.warning(self._window, "Stamp TSOs", "Filename is required.")
+            self._window.tso_stamp_button.blockSignals(True)
+            self._window.tso_stamp_button.setChecked(False)
+            self._window.tso_stamp_button.blockSignals(False)
+            return
+        self._set_tso_stamp_mode_active(True, filename=normalized)
+        self._window.show_status_message("Stamp mode active: click the map to place TSOs. Click Stamp again to stop.")
+
+    def _on_preview_tso_map_clicked(self, x: int, y: int) -> bool:
+        if not self._tso_add_mode_active and not self._tso_stamp_mode_active:
+            return False
+        filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
+        self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
         self._selected_trackside_object_indices = [len(self._trackside_objects) - 1]
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
+        if self._tso_add_mode_active:
+            self._set_tso_add_mode_active(False)
+        return True
+
 
     def _on_tso_delete_requested(self) -> None:
         table = self._window.tso_table

@@ -1965,13 +1965,23 @@ def test_set_trackside_objects_tolerates_missing_selected_index_attr(qapp):
         window.close()
 
 
-def test_add_tso_updates_preview_overlay_and_selection(qapp):
+def test_add_tso_mode_places_object_on_map_click(qapp):
     window = SGViewerWindow()
     try:
+        window.tso_add_button.setChecked(True)
         window.controller._on_tso_add_requested()
 
+        assert window.tso_table.rowCount() == 0
+        assert len(window.preview.trackside_objects) == 0
+
+        consumed = window.controller._on_preview_tso_map_clicked(123, -456)
+
+        assert consumed is True
         assert window.tso_table.rowCount() == 1
         assert len(window.preview.trackside_objects) == 1
+        assert window.controller._trackside_objects[0].x == 123
+        assert window.controller._trackside_objects[0].y == -456
+        assert window.tso_add_button.isChecked() is False
 
         window.tso_table.selectRow(0)
         window.controller._on_tso_selection_changed()
@@ -1984,8 +1994,7 @@ def test_add_tso_updates_preview_overlay_and_selection(qapp):
 def test_add_tso_defaults_filename_to_previous_tso(qapp):
     window = SGViewerWindow()
     try:
-        window.controller._on_tso_add_requested()
-        window.controller._trackside_objects[0] = TracksideObject(
+        window.controller._trackside_objects.append(TracksideObject(
             filename="grandstand.3do",
             x=0,
             y=0,
@@ -1997,11 +2006,41 @@ def test_add_tso_defaults_filename_to_previous_tso(qapp):
             bbox_length=0,
             bbox_width=0,
             rotation_point="center",
-        )
+        ))
 
+        window.tso_add_button.setChecked(True)
         window.controller._on_tso_add_requested()
+        window.controller._on_preview_tso_map_clicked(10, 20)
 
         assert window.controller._trackside_objects[1].filename == "grandstand"
+    finally:
+        window.close()
+
+
+def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog,
+            "getText",
+            lambda *args, **kwargs: ("cone.3do", True),
+        )
+
+        window.controller._on_tso_stamp_requested()
+
+        assert window.tso_stamp_button.isChecked() is True
+
+        assert window.controller._on_preview_tso_map_clicked(50, 60) is True
+        assert window.controller._on_preview_tso_map_clicked(70, 80) is True
+        assert len(window.controller._trackside_objects) == 2
+        assert window.controller._trackside_objects[0].filename == "cone"
+        assert window.controller._trackside_objects[1].filename == "cone"
+
+        window.controller._on_tso_stamp_requested()
+
+        assert window.tso_stamp_button.isChecked() is False
+        assert window.controller._on_preview_tso_map_clicked(90, 100) is False
+        assert len(window.controller._trackside_objects) == 2
     finally:
         window.close()
 
@@ -2013,7 +2052,9 @@ def test_preview_tso_drag_updates_table_and_state(qapp, tmp_path):
         sg_path.write_bytes(b"")
         window.controller._current_path = sg_path
 
+        window.tso_add_button.setChecked(True)
         window.controller._on_tso_add_requested()
+        window.controller._on_preview_tso_map_clicked(0, 0)
         window.controller._on_preview_tso_dragged(0, 123, -456)
 
         assert window.controller._trackside_objects[0].x == 123

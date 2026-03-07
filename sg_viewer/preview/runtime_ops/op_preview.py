@@ -490,6 +490,9 @@ class _RuntimeCorePreviewMixin:
     def set_trackside_object_drag_callback(self, callback) -> None:
         self._trackside_object_drag_callback = callback
 
+    def set_trackside_map_click_callback(self, callback) -> None:
+        self._trackside_map_click_callback = callback
+
     def set_selected_mrk_wall(self, boundary_index: int, section_index: int, wall_index: int) -> None:
         self._selected_mrk_wall = (
             max(0, int(boundary_index)),
