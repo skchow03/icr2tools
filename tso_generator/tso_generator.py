@@ -308,6 +308,51 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
                 faces.append((f"{leaf_prefix}S{ring_index}_{i}", [lower[i], lower[nxt], upper[nxt], upper[i]]))
             top_ring = canopy_rings[-1]
             faces.append((f"{leaf_prefix}T{i}", [top_ring[i], top_ring[nxt], "leaf_top_center"]))
+    elif profile == "palm":
+        crown_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.72)))
+        crown_radius = leaf_radius * 0.16
+        frond_count = max(5, min(10, sides))
+
+        verts["leaf_crown_center"] = (0, 0, crown_z)
+
+        for i in range(frond_count):
+            angle = (2.0 * math.pi * i) / frond_count
+            radial_x = math.cos(angle)
+            radial_y = math.sin(angle)
+            tangent_x = -radial_y
+            tangent_y = radial_x
+
+            base_x = crown_radius * radial_x
+            base_y = crown_radius * radial_y
+
+            mid_radius = leaf_radius * 0.62
+            tip_radius = leaf_radius * 0.96
+            blade_half_width = leaf_radius * 0.16
+
+            mid_z = int(round(crown_z - ((height - leaf_base_height) * 0.16)))
+            tip_z = int(round(crown_z - ((height - leaf_base_height) * 0.30)))
+
+            base_name = f"pfb{i}"
+            left_name = f"pfl{i}"
+            right_name = f"pfr{i}"
+            tip_name = f"pft{i}"
+            verts[base_name] = (int(round(base_x)), int(round(base_y)), crown_z)
+            verts[left_name] = (
+                int(round((mid_radius * radial_x) + (blade_half_width * tangent_x))),
+                int(round((mid_radius * radial_y) + (blade_half_width * tangent_y))),
+                mid_z,
+            )
+            verts[right_name] = (
+                int(round((mid_radius * radial_x) - (blade_half_width * tangent_x))),
+                int(round((mid_radius * radial_y) - (blade_half_width * tangent_y))),
+                mid_z,
+            )
+            verts[tip_name] = (int(round(tip_radius * radial_x)), int(round(tip_radius * radial_y)), tip_z)
+
+            theta = (2.0 * math.pi * (i + 0.5)) / frond_count
+            leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
+            faces.append((f"{leaf_prefix}PalmStem{i}", ["leaf_crown_center", right_name, base_name, left_name]))
+            faces.append((f"{leaf_prefix}PalmBlade{i}", [left_name, right_name, tip_name]))
     else:
         leaf_mid_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.72)))
         leaf_mid_radius = leaf_radius * 0.58
@@ -819,7 +864,7 @@ def build_window():
             self.tree_sides_spin.setValue(12)
 
             self.tree_profile_combo = QtWidgets.QComboBox()
-            self.tree_profile_combo.addItems(["pointy", "round"])
+            self.tree_profile_combo.addItems(["pointy", "round", "palm"])
 
             self.shape_combo = QtWidgets.QComboBox()
             self.shape_combo.addItems(["rectangular", "circular", "tree", "bridge"])
