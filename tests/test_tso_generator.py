@@ -735,7 +735,8 @@ def test_grandstand_shape_generates_simple_sloped_building_faces():
     assert names == {"seatB", "seatD", "seatBack", "seatLs", "seatRs"}
 
     assert verts["gs_tb_l"][2] == 90
-    assert verts["gs_bb_l"][2] < verts["gs_tb_l"][2]
+    assert verts["gs_bb_l"][2] == 0
+    assert all(verts[name][2] == 0 for name in {"gs_tf_l", "gs_tf_r", "gs_bf_l", "gs_bf_r", "gs_bb_l", "gs_bb_r"})
 
 
 def test_grandstand_uses_user_colors_for_seats_and_sides(tmp_path: Path):

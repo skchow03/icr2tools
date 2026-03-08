@@ -495,8 +495,6 @@ def generate_grandstand(length, width, height):
     length = max(1, int(length))
     width = max(1, int(width))
     height = max(1, int(height))
-    slope_thickness = max(1, int(round(height * 0.12)))
-    rear_under_z = max(1, height - slope_thickness)
 
     verts = {
         "gs_tf_l": (0, 0, 0),
@@ -505,8 +503,8 @@ def generate_grandstand(length, width, height):
         "gs_tb_r": (length, width, height),
         "gs_bf_l": (0, 0, 0),
         "gs_bf_r": (length, 0, 0),
-        "gs_bb_l": (0, width, rear_under_z),
-        "gs_bb_r": (length, width, rear_under_z),
+        "gs_bb_l": (0, width, 0),
+        "gs_bb_r": (length, width, 0),
     }
 
     faces = [
@@ -1120,9 +1118,11 @@ def build_window():
             is_tree = shape == "tree"
             is_bridge = shape == "bridge"
             is_grandstand = shape == "grandstand"
+            uses_standard_height = shape in {"rectangular", "circular", "tree"}
             self._set_roof_options_for_shape(shape)
             self._set_row_visible("width", is_rectangular or is_tree)
             self._set_row_visible("depth", is_rectangular)
+            self._set_row_visible("height", uses_standard_height)
             self._set_row_visible("rect_center_origin", is_rectangular)
             self._set_row_visible("diameter", shape == "circular")
             self._set_row_visible("num_sides", shape == "circular")
