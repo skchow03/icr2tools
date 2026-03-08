@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import subprocess
+import sys
 from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
@@ -328,6 +330,13 @@ class SGViewerController:
             self._launch_background_calibrator
         )
 
+        self._launch_tso_generator_action = QtWidgets.QAction(
+            "Open TSO Generator", self._window
+        )
+        self._launch_tso_generator_action.triggered.connect(
+            self._launch_tso_generator
+        )
+
         self._show_radii_action = QtWidgets.QAction("Show Radii", self._window)
         self._show_radii_action.setCheckable(True)
         self._show_radii_action.setChecked(self._window.radii_button.isChecked())
@@ -551,6 +560,7 @@ class SGViewerController:
         tools_menu.addAction(self._run_integrity_checks_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._calibrate_background_action)
+        tools_menu.addAction(self._launch_tso_generator_action)
 
         window_menu = self._window.menuBar().addMenu("Window")
         window_menu.addAction(self._section_table_action)
@@ -3038,6 +3048,28 @@ class SGViewerController:
 
     def _launch_background_calibrator(self) -> None:
         self._background_ui_coordinator.launch_background_calibrator()
+
+    def _launch_tso_generator(self) -> None:
+        script_path = Path(__file__).resolve().parents[2] / "tso_generator" / "tso_generator.py"
+        if not script_path.is_file():
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Open TSO Generator",
+                f"Could not find tso_generator.py at:\n{script_path}",
+            )
+            return
+
+        try:
+            subprocess.Popen([sys.executable, str(script_path)])
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Open TSO Generator",
+                f"Failed to open TSO Generator:\n{exc}",
+            )
+            return
+
+        self._window.show_status_message("Opened TSO Generator")
 
     def _apply_calibrator_values(self, data: dict) -> None:
         self._background_ui_coordinator.apply_calibrator_values(data)

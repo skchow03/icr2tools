@@ -257,6 +257,33 @@ def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
         window.close()
 
 
+def test_tools_menu_can_launch_tso_generator(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        popen_calls: list[list[str]] = []
+
+        class _DummyPopen:
+            def __init__(self, args):
+                popen_calls.append(args)
+
+        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+
+        tools_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+        )
+        tso_generator_action = next(
+            action for action in tools_menu.actions() if action.text() == "Open TSO Generator"
+        )
+
+        tso_generator_action.trigger()
+
+        assert len(popen_calls) == 1
+        assert popen_calls[0][0]
+        assert popen_calls[0][1].endswith("tso_generator.py")
+    finally:
+        window.close()
+
+
 def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
     window = SGViewerWindow()
     try:
