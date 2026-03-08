@@ -312,6 +312,8 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
         crown_z = leaf_base_height
         crown_radius = trunk_radius * 0.75
         frond_count = max(5, min(10, sides))
+        inner_leaf_faces = []
+        outer_leaf_faces = []
 
         verts["leaf_crown_center"] = (0, 0, crown_z)
 
@@ -358,8 +360,15 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
 
             theta = (2.0 * math.pi * (i + 0.5)) / frond_count
             leaf_prefix = "leafB" if (math.cos(theta) - math.sin(theta)) >= 0 else "leafD"
-            faces.append((f"{leaf_prefix}PalmStem{i}", ["leaf_crown_center", right_name, base_name, left_name]))
-            faces.append((f"{leaf_prefix}PalmBlade{i}", [left_name, right_name, tip_name]))
+            stem_outer = ["leaf_crown_center", right_name, base_name, left_name]
+            blade_outer = [left_name, right_name, tip_name]
+            inner_leaf_faces.append((f"{leaf_prefix}PalmStemInner{i}", list(reversed(stem_outer))))
+            inner_leaf_faces.append((f"{leaf_prefix}PalmBladeInner{i}", list(reversed(blade_outer))))
+            outer_leaf_faces.append((f"{leaf_prefix}PalmStemOuter{i}", stem_outer))
+            outer_leaf_faces.append((f"{leaf_prefix}PalmBladeOuter{i}", blade_outer))
+
+        faces.extend(inner_leaf_faces)
+        faces.extend(outer_leaf_faces)
     else:
         leaf_mid_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.72)))
         leaf_mid_radius = leaf_radius * 0.58
