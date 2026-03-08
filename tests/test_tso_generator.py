@@ -507,8 +507,19 @@ def test_tree_palm_profile_generates_fronds_from_trunk_top_with_mixed_curves():
     assert "leaf_crown_center" in verts
     assert verts["leaf_crown_center"][2] == leaf_base_height
     assert any(name.startswith("pfb") for name in verts)
-    assert any(name.startswith("leafB") and "PalmStem" in name for name, _ in faces)
-    assert any(name.startswith("leaf") and "PalmBlade" in name for name, _ in faces)
+    stem_inner_names = [name for name, _ in faces if "PalmStemInner" in name]
+    blade_inner_names = [name for name, _ in faces if "PalmBladeInner" in name]
+    stem_outer_names = [name for name, _ in faces if "PalmStemOuter" in name]
+    blade_outer_names = [name for name, _ in faces if "PalmBladeOuter" in name]
+    assert stem_inner_names and blade_inner_names and stem_outer_names and blade_outer_names
+
+    first_outer_index = min(
+        idx for idx, (name, _vs) in enumerate(faces) if "PalmStemOuter" in name or "PalmBladeOuter" in name
+    )
+    last_inner_index = max(
+        idx for idx, (name, _vs) in enumerate(faces) if "PalmStemInner" in name or "PalmBladeInner" in name
+    )
+    assert last_inner_index < first_outer_index
 
     assert verts["pft0"][2] < verts["pfb0"][2]
     assert verts["pfl0"][2] > verts["pfb0"][2]
