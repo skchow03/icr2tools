@@ -713,3 +713,67 @@ def test_bridge_half_is_open_on_chopped_side_and_aligned_to_vertical_axis():
     assert min(point[2] for point in verts.values()) == 0
 
     assert all(len(points) <= 4 for _name, points in faces)
+
+
+def test_grandstand_shape_generates_sloped_seating_and_scaffolding_faces():
+    verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="grandstand",
+        grandstand_length=300,
+        grandstand_width=120,
+        grandstand_height=90,
+    )
+
+    names = {name for name, _ in faces}
+    assert {"seatB", "seatD", "seatBack", "seatLs", "seatRs"}.issubset(names)
+    assert any(name.startswith("scaffoldB") for name in names)
+    assert any(name.startswith("scaffoldD") for name in names)
+    assert any(name.endswith("Inner") for name in names)
+
+    assert verts["gs_tb_l"][2] == 90
+    assert verts["gs_bb_l"][2] < verts["gs_tb_l"][2]
+
+
+def test_grandstand_uses_user_colors_for_seats_and_scaffolding(tmp_path: Path):
+    verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="grandstand",
+        grandstand_length=280,
+        grandstand_width=110,
+        grandstand_height=80,
+    )
+    out = tmp_path / "grandstand.3D"
+
+    params = _base_parameters()
+    params.update(
+        {
+            "building_shape": "grandstand",
+            "roof_type": "none",
+            "roof_color_bright": 44,
+            "roof_color_dark": 45,
+            "side_color_bright": 46,
+            "side_color_dark": 47,
+        }
+    )
+
+    write_3d(out, verts, faces, params)
+
+    text = out.read_text(encoding="utf-8")
+    assert "seatB: POLY <44>" in text
+    assert "seatD: POLY <45>" in text
+    assert "scaffoldBPost0: POLY <46>" in text
+    assert "scaffoldD" in text and "POLY <47>" in text

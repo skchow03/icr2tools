@@ -59,6 +59,9 @@ TEMPLATE_FIELDS = (
     "bridge_clearance",
     "bridge_height",
     "bridge_half",
+    "grandstand_length",
+    "grandstand_width",
+    "grandstand_height",
 )
 
 
@@ -488,6 +491,73 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
     return verts, faces
 
 
+def generate_grandstand(length, width, height):
+    length = max(1, int(length))
+    width = max(1, int(width))
+    height = max(1, int(height))
+    slope_thickness = max(1, int(round(height * 0.12)))
+    rear_under_z = max(1, height - slope_thickness)
+
+    verts = {
+        "gs_tf_l": (0, 0, 0),
+        "gs_tf_r": (length, 0, 0),
+        "gs_tb_l": (0, width, height),
+        "gs_tb_r": (length, width, height),
+        "gs_bf_l": (0, 0, 0),
+        "gs_bf_r": (length, 0, 0),
+        "gs_bb_l": (0, width, rear_under_z),
+        "gs_bb_r": (length, width, rear_under_z),
+    }
+
+    faces = [
+        ("seatB", ["gs_tf_l", "gs_tf_r", "gs_tb_r", "gs_tb_l"]),
+        ("seatD", ["gs_bf_l", "gs_bb_l", "gs_bb_r", "gs_bf_r"]),
+        ("seatBack", ["gs_tb_l", "gs_tb_r", "gs_bb_r", "gs_bb_l"]),
+        ("seatLs", ["gs_tf_l", "gs_tb_l", "gs_bb_l", "gs_bf_l"]),
+        ("seatRs", ["gs_tf_r", "gs_bf_r", "gs_bb_r", "gs_tb_r"]),
+    ]
+
+    # Add simple scaffold braces under the sloped seating slab.
+    frame_count = 4
+    frame_positions = [int(round(length * i / (frame_count + 1))) for i in range(1, frame_count + 1)]
+    frame_half_width = max(1, min(length // 20, max(1, length // (frame_count * 4))))
+    mid_y = int(round(width * 0.55))
+    mid_z = max(1, int(round(rear_under_z * 0.55)))
+
+    for i, x in enumerate(frame_positions):
+        x0 = max(0, x - frame_half_width)
+        x1 = min(length, x + frame_half_width)
+        verts[f"gs_scaf_post_bl_{i}"] = (x0, width, 0)
+        verts[f"gs_scaf_post_br_{i}"] = (x1, width, 0)
+        verts[f"gs_scaf_post_tr_{i}"] = (x1, width, rear_under_z)
+        verts[f"gs_scaf_post_tl_{i}"] = (x0, width, rear_under_z)
+        verts[f"gs_scaf_mid_l_{i}"] = (x0, mid_y, mid_z)
+        verts[f"gs_scaf_mid_r_{i}"] = (x1, mid_y, mid_z)
+        verts[f"gs_scaf_front_l_{i}"] = (x0, 0, 0)
+        verts[f"gs_scaf_front_r_{i}"] = (x1, 0, 0)
+
+        scaffold_faces = [
+            (
+                f"scaffoldBPost{i}",
+                [f"gs_scaf_post_bl_{i}", f"gs_scaf_post_br_{i}", f"gs_scaf_post_tr_{i}", f"gs_scaf_post_tl_{i}"],
+            ),
+            (
+                f"scaffoldBDiag{i}",
+                [f"gs_scaf_front_l_{i}", f"gs_scaf_front_r_{i}", f"gs_scaf_mid_r_{i}", f"gs_scaf_mid_l_{i}"],
+            ),
+            (
+                f"scaffoldDDiag{i}",
+                [f"gs_scaf_mid_l_{i}", f"gs_scaf_mid_r_{i}", f"gs_scaf_post_br_{i}", f"gs_scaf_post_bl_{i}"],
+            ),
+        ]
+
+        for name, poly_verts in scaffold_faces:
+            faces.append((name, poly_verts))
+            faces.append((f"{name}Inner", list(reversed(poly_verts))))
+
+    return verts, faces
+
+
 def generate_building(
     width,
     depth,
@@ -512,6 +582,9 @@ def generate_building(
     bridge_clearance=100,
     bridge_height=20,
     bridge_half=False,
+    grandstand_length=320,
+    grandstand_width=120,
+    grandstand_height=100,
 ):
     if building_shape == "tree":
         return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides, tree_profile)
@@ -529,6 +602,9 @@ def generate_building(
 
     if building_shape == "bridge":
         return generate_bridge(bridge_length, bridge_width, bridge_clearance, bridge_height, bridge_half=bridge_half)
+
+    if building_shape == "grandstand":
+        return generate_grandstand(grandstand_length, grandstand_width, grandstand_height)
 
     verts, faces = generate_base(width, depth, height)
 
@@ -601,6 +677,14 @@ def write_3d(path, verts, faces, parameters):
 
         if name in roof_bright_faces or name.startswith("roofB"):
             return roof_bright
+        if name.startswith("seatB"):
+            return roof_bright
+        if name.startswith("seatD"):
+            return roof_dark
+        if name.startswith("scaffoldB"):
+            return side_bright
+        if name.startswith("scaffoldD"):
+            return side_dark
         if name.startswith("top"):
             return roof_bright
         if name in roof_dark_faces or name.startswith("roofD"):
@@ -883,7 +967,7 @@ def build_window():
             self.tree_profile_combo.addItems(["pointy", "round", "palm"])
 
             self.shape_combo = QtWidgets.QComboBox()
-            self.shape_combo.addItems(["rectangular", "circular", "tree", "bridge"])
+            self.shape_combo.addItems(["rectangular", "circular", "tree", "bridge", "grandstand"])
             self.shape_combo.currentTextChanged.connect(self.update_shape_field_visibility)
 
             self.roof_combo = QtWidgets.QComboBox()
@@ -942,6 +1026,18 @@ def build_window():
 
             self.bridge_half_check = QtWidgets.QCheckBox("Generate half bridge")
 
+            self.grandstand_length_spin = QtWidgets.QSpinBox()
+            self.grandstand_length_spin.setRange(1, 50000)
+            self.grandstand_length_spin.setValue(320)
+
+            self.grandstand_width_spin = QtWidgets.QSpinBox()
+            self.grandstand_width_spin.setRange(1, 50000)
+            self.grandstand_width_spin.setValue(120)
+
+            self.grandstand_height_spin = QtWidgets.QSpinBox()
+            self.grandstand_height_spin.setRange(1, 50000)
+            self.grandstand_height_spin.setValue(100)
+
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
             self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
@@ -989,6 +1085,9 @@ def build_window():
                 ("bridge_clearance", "Bridge Ground Clearance", self.bridge_clearance_spin),
                 ("bridge_height", "Bridge Height", self.bridge_height_spin),
                 ("bridge_half", "Bridge Half", self.bridge_half_check),
+                ("grandstand_length", "Grandstand Length", self.grandstand_length_spin),
+                ("grandstand_width", "Grandstand Width", self.grandstand_width_spin),
+                ("grandstand_height", "Grandstand Height", self.grandstand_height_spin),
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
@@ -1042,7 +1141,7 @@ def build_window():
                 options = ["none", "flat", "parapet", "gable", "pyramid"]
             elif shape == "circular":
                 options = ["none", "flat", "dome"]
-            elif shape == "bridge":
+            elif shape in {"bridge", "grandstand"}:
                 options = ["none"]
             else:
                 options = ["none"]
@@ -1058,6 +1157,7 @@ def build_window():
             is_rectangular = shape == "rectangular"
             is_tree = shape == "tree"
             is_bridge = shape == "bridge"
+            is_grandstand = shape == "grandstand"
             self._set_roof_options_for_shape(shape)
             self._set_row_visible("width", is_rectangular or is_tree)
             self._set_row_visible("depth", is_rectangular)
@@ -1069,6 +1169,9 @@ def build_window():
             self._set_row_visible("bridge_clearance", is_bridge)
             self._set_row_visible("bridge_height", is_bridge)
             self._set_row_visible("bridge_half", is_bridge)
+            self._set_row_visible("grandstand_length", is_grandstand)
+            self._set_row_visible("grandstand_width", is_grandstand)
+            self._set_row_visible("grandstand_height", is_grandstand)
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
@@ -1081,15 +1184,16 @@ def build_window():
             is_rectangular = shape == "rectangular"
             is_tree = shape == "tree"
             is_bridge = shape == "bridge"
+            is_grandstand = shape == "grandstand"
             self._set_row_visible("roof_color_bright", not is_tree)
-            self._set_row_visible("roof_color_dark", is_bridge or ((roof_type not in {"none", "flat"}) and (not is_tree)))
+            self._set_row_visible("roof_color_dark", is_bridge or is_grandstand or ((roof_type not in {"none", "flat"}) and (not is_tree)))
             self._set_row_visible("side_color_bright", not is_tree)
             self._set_row_visible("side_color_dark", not is_tree)
             self._set_row_visible("tree_trunk_color_bright", is_tree)
             self._set_row_visible("tree_trunk_color_dark", is_tree)
             self._set_row_visible("tree_leaves_color_bright", is_tree)
             self._set_row_visible("tree_leaves_color_dark", is_tree)
-            self._set_row_visible("roof_type", (not is_tree) and (not is_bridge))
+            self._set_row_visible("roof_type", (not is_tree) and (not is_bridge) and (not is_grandstand))
             self._set_row_visible("parapet_inset", is_rectangular and roof_type == "parapet")
             self._set_row_visible("parapet_height", is_rectangular and roof_type == "parapet")
             self._set_row_visible("gable_rise", is_rectangular and roof_type == "gable")
@@ -1112,6 +1216,9 @@ def build_window():
                 "bridge_clearance": self.bridge_clearance_spin.value(),
                 "bridge_height": self.bridge_height_spin.value(),
                 "bridge_half": self.bridge_half_check.isChecked(),
+                "grandstand_length": self.grandstand_length_spin.value(),
+                "grandstand_width": self.grandstand_width_spin.value(),
+                "grandstand_height": self.grandstand_height_spin.value(),
                 "tree_trunk_width": self.tree_trunk_width_spin.value(),
                 "tree_leaf_base_height": self.tree_leaf_base_height_spin.value(),
                 "tree_num_sides": self.tree_sides_spin.value(),
@@ -1147,6 +1254,9 @@ def build_window():
             self.bridge_clearance_spin.setValue(int_or_default(values.get("bridge_clearance"), self.bridge_clearance_spin.value()))
             self.bridge_height_spin.setValue(int_or_default(values.get("bridge_height"), self.bridge_height_spin.value()))
             self.bridge_half_check.setChecked(str(values.get("bridge_half", "False")).lower() in {"1", "true", "yes", "on"})
+            self.grandstand_length_spin.setValue(int_or_default(values.get("grandstand_length"), self.grandstand_length_spin.value()))
+            self.grandstand_width_spin.setValue(int_or_default(values.get("grandstand_width"), self.grandstand_width_spin.value()))
+            self.grandstand_height_spin.setValue(int_or_default(values.get("grandstand_height"), self.grandstand_height_spin.value()))
             self.tree_trunk_width_spin.setValue(int_or_default(values.get("tree_trunk_width"), self.tree_trunk_width_spin.value()))
             self.tree_leaf_base_height_spin.setValue(int_or_default(values.get("tree_leaf_base_height"), self.tree_leaf_base_height_spin.value()))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
@@ -1276,6 +1386,9 @@ def build_window():
                     values["bridge_clearance"],
                     values["bridge_height"],
                     values["bridge_half"],
+                    values["grandstand_length"],
+                    values["grandstand_width"],
+                    values["grandstand_height"],
                 )
 
                 default_save_dir = self.settings.get("paths", "last_3d_dir", fallback="")
