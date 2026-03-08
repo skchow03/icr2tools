@@ -486,7 +486,8 @@ def test_tree_round_profile_leaf_bottom_faces_wind_downward():
     assert face_lookup["leafDB4"] == ["leaf_bottom_center", "lr1_5", "lr1_4"]
 
 
-def test_tree_palm_profile_generates_fronds_from_crown():
+def test_tree_palm_profile_generates_fronds_from_trunk_top_with_mixed_curves():
+    leaf_base_height = 120
     verts, faces = generate_building(
         180,
         0,
@@ -498,15 +499,20 @@ def test_tree_palm_profile_generates_fronds_from_crown():
         0,
         building_shape="tree",
         tree_trunk_width=40,
-        tree_leaf_base_height=120,
+        tree_leaf_base_height=leaf_base_height,
         tree_num_sides=8,
         tree_profile="palm",
     )
 
     assert "leaf_crown_center" in verts
+    assert verts["leaf_crown_center"][2] == leaf_base_height
     assert any(name.startswith("pfb") for name in verts)
     assert any(name.startswith("leafB") and "PalmStem" in name for name, _ in faces)
     assert any(name.startswith("leaf") and "PalmBlade" in name for name, _ in faces)
+
+    assert verts["pft0"][2] < verts["pfb0"][2]
+    assert verts["pfl0"][2] > verts["pfb0"][2]
+    assert verts["pft1"][2] < verts["pfl1"][2] < verts["pfb1"][2]
 
 
 def test_tree_unknown_profile_still_falls_back_to_pointy_not_palm():
