@@ -517,44 +517,6 @@ def generate_grandstand(length, width, height):
         ("seatRs", ["gs_tf_r", "gs_bf_r", "gs_bb_r", "gs_tb_r"]),
     ]
 
-    # Add simple scaffold braces under the sloped seating slab.
-    frame_count = 4
-    frame_positions = [int(round(length * i / (frame_count + 1))) for i in range(1, frame_count + 1)]
-    frame_half_width = max(1, min(length // 20, max(1, length // (frame_count * 4))))
-    mid_y = int(round(width * 0.55))
-    mid_z = max(1, int(round(rear_under_z * 0.55)))
-
-    for i, x in enumerate(frame_positions):
-        x0 = max(0, x - frame_half_width)
-        x1 = min(length, x + frame_half_width)
-        verts[f"gs_scaf_post_bl_{i}"] = (x0, width, 0)
-        verts[f"gs_scaf_post_br_{i}"] = (x1, width, 0)
-        verts[f"gs_scaf_post_tr_{i}"] = (x1, width, rear_under_z)
-        verts[f"gs_scaf_post_tl_{i}"] = (x0, width, rear_under_z)
-        verts[f"gs_scaf_mid_l_{i}"] = (x0, mid_y, mid_z)
-        verts[f"gs_scaf_mid_r_{i}"] = (x1, mid_y, mid_z)
-        verts[f"gs_scaf_front_l_{i}"] = (x0, 0, 0)
-        verts[f"gs_scaf_front_r_{i}"] = (x1, 0, 0)
-
-        scaffold_faces = [
-            (
-                f"scaffoldBPost{i}",
-                [f"gs_scaf_post_bl_{i}", f"gs_scaf_post_br_{i}", f"gs_scaf_post_tr_{i}", f"gs_scaf_post_tl_{i}"],
-            ),
-            (
-                f"scaffoldBDiag{i}",
-                [f"gs_scaf_front_l_{i}", f"gs_scaf_front_r_{i}", f"gs_scaf_mid_r_{i}", f"gs_scaf_mid_l_{i}"],
-            ),
-            (
-                f"scaffoldDDiag{i}",
-                [f"gs_scaf_mid_l_{i}", f"gs_scaf_mid_r_{i}", f"gs_scaf_post_br_{i}", f"gs_scaf_post_bl_{i}"],
-            ),
-        ]
-
-        for name, poly_verts in scaffold_faces:
-            faces.append((name, poly_verts))
-            faces.append((f"{name}Inner", list(reversed(poly_verts))))
-
     return verts, faces
 
 
@@ -1185,10 +1147,11 @@ def build_window():
             is_tree = shape == "tree"
             is_bridge = shape == "bridge"
             is_grandstand = shape == "grandstand"
-            self._set_row_visible("roof_color_bright", not is_tree)
-            self._set_row_visible("roof_color_dark", is_bridge or is_grandstand or ((roof_type not in {"none", "flat"}) and (not is_tree)))
-            self._set_row_visible("side_color_bright", not is_tree)
-            self._set_row_visible("side_color_dark", not is_tree)
+            show_building_colors = (not is_tree) and (not is_grandstand)
+            self._set_row_visible("roof_color_bright", show_building_colors)
+            self._set_row_visible("roof_color_dark", is_bridge or ((roof_type not in {"none", "flat"}) and show_building_colors))
+            self._set_row_visible("side_color_bright", show_building_colors)
+            self._set_row_visible("side_color_dark", show_building_colors)
             self._set_row_visible("tree_trunk_color_bright", is_tree)
             self._set_row_visible("tree_trunk_color_dark", is_tree)
             self._set_row_visible("tree_leaves_color_bright", is_tree)
