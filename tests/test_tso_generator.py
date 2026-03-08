@@ -715,7 +715,7 @@ def test_bridge_half_is_open_on_chopped_side_and_aligned_to_vertical_axis():
     assert all(len(points) <= 4 for _name, points in faces)
 
 
-def test_grandstand_shape_generates_sloped_seating_and_scaffolding_faces():
+def test_grandstand_shape_generates_simple_sloped_building_faces():
     verts, faces = generate_building(
         0,
         0,
@@ -732,16 +732,13 @@ def test_grandstand_shape_generates_sloped_seating_and_scaffolding_faces():
     )
 
     names = {name for name, _ in faces}
-    assert {"seatB", "seatD", "seatBack", "seatLs", "seatRs"}.issubset(names)
-    assert any(name.startswith("scaffoldB") for name in names)
-    assert any(name.startswith("scaffoldD") for name in names)
-    assert any(name.endswith("Inner") for name in names)
+    assert names == {"seatB", "seatD", "seatBack", "seatLs", "seatRs"}
 
     assert verts["gs_tb_l"][2] == 90
     assert verts["gs_bb_l"][2] < verts["gs_tb_l"][2]
 
 
-def test_grandstand_uses_user_colors_for_seats_and_scaffolding(tmp_path: Path):
+def test_grandstand_uses_user_colors_for_seats_and_sides(tmp_path: Path):
     verts, faces = generate_building(
         0,
         0,
@@ -775,5 +772,6 @@ def test_grandstand_uses_user_colors_for_seats_and_scaffolding(tmp_path: Path):
     text = out.read_text(encoding="utf-8")
     assert "seatB: POLY <44>" in text
     assert "seatD: POLY <45>" in text
-    assert "scaffoldBPost0: POLY <46>" in text
-    assert "scaffoldD" in text and "POLY <47>" in text
+    assert "seatBack: POLY <44>" in text
+    assert "seatLs: POLY <46>" in text
+    assert "seatRs: POLY <46>" in text
