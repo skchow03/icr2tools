@@ -309,8 +309,8 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
             top_ring = canopy_rings[-1]
             faces.append((f"{leaf_prefix}T{i}", [top_ring[i], top_ring[nxt], "leaf_top_center"]))
     elif profile == "palm":
-        crown_z = int(round(leaf_base_height + ((height - leaf_base_height) * 0.72)))
-        crown_radius = leaf_radius * 0.16
+        crown_z = leaf_base_height
+        crown_radius = trunk_radius * 0.75
         frond_count = max(5, min(10, sides))
 
         verts["leaf_crown_center"] = (0, 0, crown_z)
@@ -328,9 +328,16 @@ def generate_tree(width, height, trunk_width, leaf_base_height, tree_num_sides=1
             mid_radius = leaf_radius * 0.62
             tip_radius = leaf_radius * 0.96
             blade_half_width = leaf_radius * 0.16
+            canopy_height = height - leaf_base_height
 
-            mid_z = int(round(crown_z - ((height - leaf_base_height) * 0.16)))
-            tip_z = int(round(crown_z - ((height - leaf_base_height) * 0.30)))
+            if i % 2 == 0:
+                # Arching fronds first rise above the trunk top and then dip.
+                mid_z = int(round(crown_z + (canopy_height * 0.22)))
+                tip_z = int(round(crown_z - (canopy_height * 0.14)))
+            else:
+                # Drooping fronds hang downward from the crown.
+                mid_z = int(round(crown_z - (canopy_height * 0.12)))
+                tip_z = int(round(crown_z - (canopy_height * 0.34)))
 
             base_name = f"pfb{i}"
             left_name = f"pfl{i}"
