@@ -486,6 +486,51 @@ def test_tree_round_profile_leaf_bottom_faces_wind_downward():
     assert face_lookup["leafDB4"] == ["leaf_bottom_center", "lr1_5", "lr1_4"]
 
 
+def test_tree_palm_profile_generates_fronds_from_crown():
+    verts, faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=8,
+        tree_profile="palm",
+    )
+
+    assert "leaf_crown_center" in verts
+    assert any(name.startswith("pfb") for name in verts)
+    assert any(name.startswith("leafB") and "PalmStem" in name for name, _ in faces)
+    assert any(name.startswith("leaf") and "PalmBlade" in name for name, _ in faces)
+
+
+def test_tree_unknown_profile_still_falls_back_to_pointy_not_palm():
+    verts, _faces = generate_building(
+        180,
+        0,
+        300,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="tree",
+        tree_trunk_width=40,
+        tree_leaf_base_height=120,
+        tree_num_sides=8,
+        tree_profile="something-else",
+    )
+
+    assert "leaf_crown_center" not in verts
+    assert "lb0" in verts
+    assert "lm0" in verts
+
+
 def test_rect_center_origin_offsets_gable_roof_vertices_consistently():
     verts, _faces = generate_building(
         320,
