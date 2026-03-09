@@ -3,6 +3,7 @@ from pathlib import Path
 
 from tso_generator.tso_generator import (
     TEMPLATE_SECTION_PREFIX,
+    calculate_grandstand_height,
     generate_building,
     get_template_values,
     int_or_default,
@@ -714,6 +715,32 @@ def test_bridge_half_is_open_on_chopped_side_and_aligned_to_vertical_axis():
 
     assert all(len(points) <= 4 for _name, points in faces)
 
+
+def test_grandstand_height_calculates_from_angle_and_front_height():
+    assert calculate_grandstand_height(120, 39.8, 0) == 100
+    assert calculate_grandstand_height(120, 39.8, 25) == 125
+
+
+def test_grandstand_supports_front_height_offset():
+    verts, _faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="grandstand",
+        grandstand_length=300,
+        grandstand_width=120,
+        grandstand_height=140,
+        grandstand_front_height=40,
+    )
+
+    assert verts["gs_tf_l"][2] == 40
+    assert verts["gs_tb_l"][2] == 140
+    assert verts["gs_bf_l"][2] == 0
 
 def test_grandstand_shape_generates_simple_sloped_building_faces():
     verts, faces = generate_building(

@@ -62,6 +62,8 @@ TEMPLATE_FIELDS = (
     "grandstand_length",
     "grandstand_width",
     "grandstand_height",
+    "grandstand_angle",
+    "grandstand_front_height",
 )
 
 
@@ -491,14 +493,23 @@ def generate_bridge(length, width, clearance, bridge_height, bridge_half=False):
     return verts, faces
 
 
-def generate_grandstand(length, width, height):
+def calculate_grandstand_height(width, angle_degrees, front_height=0):
+    width = max(1.0, float(width))
+    angle = max(0.0, min(89.9, float(angle_degrees)))
+    front = max(0, int(front_height))
+    rise = math.tan(math.radians(angle)) * width
+    return max(front, int(round(front + rise)))
+
+
+def generate_grandstand(length, width, height, front_height=0):
     length = max(1, int(length))
     width = max(1, int(width))
-    height = max(1, int(height))
+    front_height = max(0, int(front_height))
+    height = max(front_height, int(height))
 
     verts = {
-        "gs_tf_l": (0, 0, 0),
-        "gs_tf_r": (length, 0, 0),
+        "gs_tf_l": (0, 0, front_height),
+        "gs_tf_r": (length, 0, front_height),
         "gs_tb_l": (0, width, height),
         "gs_tb_r": (length, width, height),
         "gs_bf_l": (0, 0, 0),
@@ -545,6 +556,7 @@ def generate_building(
     grandstand_length=320,
     grandstand_width=120,
     grandstand_height=100,
+    grandstand_front_height=0,
 ):
     if building_shape == "tree":
         return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides, tree_profile)
@@ -564,7 +576,7 @@ def generate_building(
         return generate_bridge(bridge_length, bridge_width, bridge_clearance, bridge_height, bridge_half=bridge_half)
 
     if building_shape == "grandstand":
-        return generate_grandstand(grandstand_length, grandstand_width, grandstand_height)
+        return generate_grandstand(grandstand_length, grandstand_width, grandstand_height, grandstand_front_height)
 
     verts, faces = generate_base(width, depth, height)
 
@@ -753,6 +765,17 @@ def int_or_default(raw_value, default):
         return default
     try:
         return int(raw_value)
+    except (TypeError, ValueError):
+        return default
+
+
+def float_or_default(raw_value, default):
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, str) and not raw_value.strip():
+        return default
+    try:
+        return float(raw_value)
     except (TypeError, ValueError):
         return default
 
@@ -995,8 +1018,22 @@ def build_window():
             self.grandstand_width_spin.setValue(120)
 
             self.grandstand_height_spin = QtWidgets.QSpinBox()
-            self.grandstand_height_spin.setRange(1, 50000)
+            self.grandstand_height_spin.setRange(0, 50000)
             self.grandstand_height_spin.setValue(100)
+
+            self.grandstand_angle_spin = QtWidgets.QDoubleSpinBox()
+            self.grandstand_angle_spin.setRange(0.0, 89.9)
+            self.grandstand_angle_spin.setDecimals(1)
+            self.grandstand_angle_spin.setSuffix("°")
+            self.grandstand_angle_spin.setSingleStep(0.5)
+            self.grandstand_angle_spin.setValue(39.8)
+
+            self.grandstand_front_height_spin = QtWidgets.QSpinBox()
+            self.grandstand_front_height_spin.setRange(0, 50000)
+            self.grandstand_front_height_spin.setValue(0)
+            self.grandstand_angle_spin.valueChanged.connect(self.update_grandstand_height_from_angle)
+            self.grandstand_width_spin.valueChanged.connect(self.update_grandstand_height_from_angle)
+            self.grandstand_front_height_spin.valueChanged.connect(self.update_grandstand_height_from_angle)
 
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
@@ -1048,6 +1085,8 @@ def build_window():
                 ("grandstand_length", "Grandstand Length", self.grandstand_length_spin),
                 ("grandstand_width", "Grandstand Width", self.grandstand_width_spin),
                 ("grandstand_height", "Grandstand Height", self.grandstand_height_spin),
+                ("grandstand_angle", "Grandstand Angle", self.grandstand_angle_spin),
+                ("grandstand_front_height", "Grandstand Front Height", self.grandstand_front_height_spin),
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
@@ -1089,6 +1128,7 @@ def build_window():
                 self.try_load_palette(self.sunny_edit.text().strip(), preserve_selection=True)
             self.refresh_templates()
             self.update_shape_field_visibility(self.shape_combo.currentText())
+            self.update_grandstand_height_from_angle()
 
         def _set_row_visible(self, field_name, is_visible: bool):
             label, widget = self.form_rows[field_name]
@@ -1112,6 +1152,16 @@ def build_window():
             self.roof_combo.setCurrentText(current if current in options else options[0])
             self.roof_combo.blockSignals(False)
 
+        def update_grandstand_height_from_angle(self, _value=None):
+            if self.shape_combo.currentText() != "grandstand":
+                return
+            calculated_height = calculate_grandstand_height(
+                self.grandstand_width_spin.value(),
+                self.grandstand_angle_spin.value(),
+                self.grandstand_front_height_spin.value(),
+            )
+            self.grandstand_height_spin.setValue(calculated_height)
+
         def update_shape_field_visibility(self, shape: str):
             shape = str(shape)
             is_rectangular = shape == "rectangular"
@@ -1134,6 +1184,8 @@ def build_window():
             self._set_row_visible("grandstand_length", is_grandstand)
             self._set_row_visible("grandstand_width", is_grandstand)
             self._set_row_visible("grandstand_height", is_grandstand)
+            self._set_row_visible("grandstand_angle", is_grandstand)
+            self._set_row_visible("grandstand_front_height", is_grandstand)
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
@@ -1182,6 +1234,8 @@ def build_window():
                 "grandstand_length": self.grandstand_length_spin.value(),
                 "grandstand_width": self.grandstand_width_spin.value(),
                 "grandstand_height": self.grandstand_height_spin.value(),
+                "grandstand_angle": self.grandstand_angle_spin.value(),
+                "grandstand_front_height": self.grandstand_front_height_spin.value(),
                 "tree_trunk_width": self.tree_trunk_width_spin.value(),
                 "tree_leaf_base_height": self.tree_leaf_base_height_spin.value(),
                 "tree_num_sides": self.tree_sides_spin.value(),
@@ -1220,6 +1274,8 @@ def build_window():
             self.grandstand_length_spin.setValue(int_or_default(values.get("grandstand_length"), self.grandstand_length_spin.value()))
             self.grandstand_width_spin.setValue(int_or_default(values.get("grandstand_width"), self.grandstand_width_spin.value()))
             self.grandstand_height_spin.setValue(int_or_default(values.get("grandstand_height"), self.grandstand_height_spin.value()))
+            self.grandstand_angle_spin.setValue(float_or_default(values.get("grandstand_angle"), self.grandstand_angle_spin.value()))
+            self.grandstand_front_height_spin.setValue(int_or_default(values.get("grandstand_front_height"), self.grandstand_front_height_spin.value()))
             self.tree_trunk_width_spin.setValue(int_or_default(values.get("tree_trunk_width"), self.tree_trunk_width_spin.value()))
             self.tree_leaf_base_height_spin.setValue(int_or_default(values.get("tree_leaf_base_height"), self.tree_leaf_base_height_spin.value()))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
@@ -1352,6 +1408,7 @@ def build_window():
                     values["grandstand_length"],
                     values["grandstand_width"],
                     values["grandstand_height"],
+                    values["grandstand_front_height"],
                 )
 
                 default_save_dir = self.settings.get("paths", "last_3d_dir", fallback="")
