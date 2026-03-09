@@ -70,6 +70,54 @@ def test_write_3d_puts_comments_after_header_and_colors_polys(tmp_path: Path):
     assert any("rs1: POLY <203>" in line for line in poly_lines)
 
 
+
+
+def test_write_3d_only_comments_used_rectangular_attributes(tmp_path: Path):
+    verts, faces = generate_building(320, 1042, 100, "flat", 30, 15, 50, 50)
+    out = tmp_path / "rect.3D"
+
+    write_3d(out, verts, faces, _base_parameters())
+
+    comments = [
+        line for line in out.read_text(encoding="utf-8").splitlines()
+        if line.startswith("% ") and not line.startswith("% Generated")
+    ]
+    assert any(line.startswith("% width:") for line in comments)
+    assert any(line.startswith("% roof_type:") for line in comments)
+    assert not any(line.startswith("% tree_trunk_width:") for line in comments)
+    assert not any(line.startswith("% bridge_length:") for line in comments)
+
+
+def test_write_3d_only_comments_used_tree_attributes(tmp_path: Path):
+    params = _base_parameters()
+    params.update({"building_shape": "tree", "roof_type": "none", "tree_profile": "pointy"})
+    verts, faces = generate_building(
+        params["width"],
+        params["depth"],
+        params["height"],
+        params["roof_type"],
+        params["parapet_inset"],
+        params["parapet_height"],
+        params["gable_rise"],
+        params["pyramid_rise"],
+        building_shape="tree",
+        tree_trunk_width=params["tree_trunk_width"],
+        tree_leaf_base_height=params["tree_leaf_base_height"],
+        tree_num_sides=params["tree_num_sides"],
+    )
+    out = tmp_path / "tree.3D"
+
+    write_3d(out, verts, faces, params)
+
+    comments = [
+        line for line in out.read_text(encoding="utf-8").splitlines()
+        if line.startswith("% ") and not line.startswith("% Generated")
+    ]
+    assert any(line.startswith("% tree_trunk_width:") for line in comments)
+    assert any(line.startswith("% tree_profile:") for line in comments)
+    assert not any(line.startswith("% depth:") for line in comments)
+    assert not any(line.startswith("% bridge_width:") for line in comments)
+
 def test_gable_uses_roof_colors_for_slopes_and_side_colors_for_end_walls(tmp_path: Path):
     verts, faces = generate_building(320, 1042, 100, "gable", 30, 15, 50, 50)
     out = tmp_path / "gable.3D"
