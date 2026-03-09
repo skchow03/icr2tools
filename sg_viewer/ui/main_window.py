@@ -161,6 +161,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_delete_button = QtWidgets.QPushButton("Delete TSO")
         self._tso_move_up_button = QtWidgets.QPushButton("Move Up")
         self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
+        self._tso_modify_elevations_button = QtWidgets.QPushButton("Modify elevations...")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
         self._tso_table = QtWidgets.QTableWidget(0, 7)
         self._tso_table.setHorizontalHeaderLabels([
@@ -675,6 +676,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_buttons.addWidget(self._tso_delete_button)
         tso_buttons.addWidget(self._tso_move_up_button)
         tso_buttons.addWidget(self._tso_move_down_button)
+        tso_buttons.addWidget(self._tso_modify_elevations_button)
         tso_layout.addLayout(tso_buttons)
         tso_layout.addWidget(self._tso_generate_file_button)
         tso_layout.addWidget(self._tso_table)
@@ -1002,6 +1004,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_generate_file_button(self) -> QtWidgets.QPushButton:
         return self._tso_generate_file_button
+
+    @property
+    def tso_modify_elevations_button(self) -> QtWidgets.QPushButton:
+        return self._tso_modify_elevations_button
 
     @property
     def tso_table(self) -> QtWidgets.QTableWidget:
