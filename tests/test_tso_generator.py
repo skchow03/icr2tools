@@ -3,6 +3,7 @@ from pathlib import Path
 
 from tso_generator.tso_generator import (
     TEMPLATE_SECTION_PREFIX,
+    calculate_grandstand_angle,
     calculate_grandstand_height,
     generate_building,
     get_template_values,
@@ -721,6 +722,10 @@ def test_grandstand_height_calculates_from_angle_and_front_height():
     assert calculate_grandstand_height(120, 39.8, 25) == 125
 
 
+def test_grandstand_angle_calculates_from_width_height_and_front_height():
+    assert round(calculate_grandstand_angle(120, 100, 0), 1) == 39.8
+    assert round(calculate_grandstand_angle(120, 125, 25), 1) == 39.8
+
 def test_grandstand_supports_front_height_offset():
     verts, _faces = generate_building(
         0,
@@ -803,3 +808,26 @@ def test_grandstand_uses_user_colors_for_seats_and_sides(tmp_path: Path):
     assert "seatBack: POLY <44>" in text
     assert "seatLs: POLY <46>" in text
     assert "seatRs: POLY <46>" in text
+
+
+def test_grandstand_adds_front_face_when_front_height_is_nonzero():
+    _verts, faces = generate_building(
+        0,
+        0,
+        0,
+        "none",
+        0,
+        0,
+        0,
+        0,
+        building_shape="grandstand",
+        grandstand_length=300,
+        grandstand_width=120,
+        grandstand_height=140,
+        grandstand_front_height=40,
+    )
+
+    face_map = {name: points for name, points in faces}
+    assert "seatFront" in face_map
+    assert face_map["seatFront"] == ["gs_tf_l", "gs_bf_l", "gs_bf_r", "gs_tf_r"]
+

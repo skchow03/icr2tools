@@ -501,6 +501,14 @@ def calculate_grandstand_height(width, angle_degrees, front_height=0):
     return max(front, int(round(front + rise)))
 
 
+def calculate_grandstand_angle(width, height, front_height=0):
+    width = max(1.0, float(width))
+    back_height = max(0.0, float(height))
+    front = max(0.0, float(front_height))
+    rise = max(0.0, back_height - front)
+    return max(0.0, min(89.9, math.degrees(math.atan(rise / width))))
+
+
 def generate_grandstand(length, width, height, front_height=0):
     length = max(1, int(length))
     width = max(1, int(width))
@@ -525,6 +533,9 @@ def generate_grandstand(length, width, height, front_height=0):
         ("seatLs", ["gs_tf_l", "gs_tb_l", "gs_bb_l", "gs_bf_l"]),
         ("seatRs", ["gs_tf_r", "gs_bf_r", "gs_bb_r", "gs_tb_r"]),
     ]
+
+    if front_height > 0:
+        faces.append(("seatFront", ["gs_tf_l", "gs_bf_l", "gs_bf_r", "gs_tf_r"]))
 
     return verts, faces
 
@@ -893,6 +904,7 @@ def build_window():
             self.setWindowTitle("ICR2 Building Generator")
             self.palette = [(0, 0, 0)] * 256
             self.settings = load_settings()
+            self._updating_grandstand_fields = False
             self._build_ui()
 
         def _build_ui(self):
@@ -1032,8 +1044,9 @@ def build_window():
             self.grandstand_front_height_spin.setRange(0, 50000)
             self.grandstand_front_height_spin.setValue(0)
             self.grandstand_angle_spin.valueChanged.connect(self.update_grandstand_height_from_angle)
-            self.grandstand_width_spin.valueChanged.connect(self.update_grandstand_height_from_angle)
-            self.grandstand_front_height_spin.valueChanged.connect(self.update_grandstand_height_from_angle)
+            self.grandstand_height_spin.valueChanged.connect(self.update_grandstand_angle_from_height)
+            self.grandstand_width_spin.valueChanged.connect(self.update_grandstand_angle_from_height)
+            self.grandstand_front_height_spin.valueChanged.connect(self.update_grandstand_angle_from_height)
 
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
@@ -1153,14 +1166,28 @@ def build_window():
             self.roof_combo.blockSignals(False)
 
         def update_grandstand_height_from_angle(self, _value=None):
-            if self.shape_combo.currentText() != "grandstand":
+            if self.shape_combo.currentText() != "grandstand" or self._updating_grandstand_fields:
                 return
+            self._updating_grandstand_fields = True
             calculated_height = calculate_grandstand_height(
                 self.grandstand_width_spin.value(),
                 self.grandstand_angle_spin.value(),
                 self.grandstand_front_height_spin.value(),
             )
             self.grandstand_height_spin.setValue(calculated_height)
+            self._updating_grandstand_fields = False
+
+        def update_grandstand_angle_from_height(self, _value=None):
+            if self.shape_combo.currentText() != "grandstand" or self._updating_grandstand_fields:
+                return
+            self._updating_grandstand_fields = True
+            calculated_angle = calculate_grandstand_angle(
+                self.grandstand_width_spin.value(),
+                self.grandstand_height_spin.value(),
+                self.grandstand_front_height_spin.value(),
+            )
+            self.grandstand_angle_spin.setValue(calculated_angle)
+            self._updating_grandstand_fields = False
 
         def update_shape_field_visibility(self, shape: str):
             shape = str(shape)
