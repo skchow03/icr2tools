@@ -842,6 +842,10 @@ def _draw_trackside_objects(
             sy = float(point.y())
             marker_size = 4.0
             painter.drawRect(QtCore.QRectF(sx - marker_size, sy - marker_size, marker_size * 2.0, marker_size * 2.0))
+            if selected_index is not None and index == int(selected_index):
+                painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
+                painter.setBrush(QtGui.QBrush(QtGui.QColor("#FF2A2A")))
+                painter.drawEllipse(point, 4.0, 4.0)
             painter.restore()
             continue
 
@@ -866,6 +870,12 @@ def _draw_trackside_objects(
             wy = center_y + local_x * sin_yaw + local_y * cos_yaw
             polygon.append(sg_rendering.map_point(wx, wy, transform, widget_height))
         painter.drawPolygon(polygon)
+
+        if selected_index is not None and index == int(selected_index):
+            anchor = sg_rendering.map_point(float(obj.x), float(obj.y), transform, widget_height)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
+            painter.setBrush(QtGui.QBrush(QtGui.QColor("#FF2A2A")))
+            painter.drawEllipse(anchor, 4.0, 4.0)
         painter.restore()
 
 
