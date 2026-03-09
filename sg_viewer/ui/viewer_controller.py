@@ -890,6 +890,7 @@ class SGViewerController:
         self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
         self._window.tso_move_up_button.clicked.connect(self._on_tso_move_up_requested)
         self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
+        self._window.tso_modify_elevations_button.clicked.connect(self._on_tso_modify_elevations_requested)
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
         self._window.tso_table.itemSelectionChanged.connect(self._on_tso_selection_changed)
@@ -2203,6 +2204,59 @@ class SGViewerController:
 
     def _on_tso_move_down_requested(self) -> None:
         self._move_tso(direction=1)
+
+    def _on_tso_modify_elevations_requested(self) -> None:
+        table = self._window.tso_table
+        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        rows = sorted({model_index.row() for model_index in selected_rows if model_index.row() >= 0})
+        if not rows:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Modify elevations",
+                "Select one or more TSOs in the table first.",
+            )
+            return
+
+        current_z = self._trackside_objects[rows[0]].z if 0 <= rows[0] < len(self._trackside_objects) else 0
+        z_value, ok = QtWidgets.QInputDialog.getInt(
+            self._window,
+            "Modify elevations",
+            "New Z position (500ths):",
+            value=current_z,
+            min=-2147483648,
+            max=2147483647,
+        )
+        if not ok:
+            return
+
+        changed = False
+        for row in rows:
+            if 0 <= row < len(self._trackside_objects):
+                obj = self._trackside_objects[row]
+                if obj.z == z_value:
+                    continue
+                self._trackside_objects[row] = TracksideObject(
+                    filename=obj.filename,
+                    x=obj.x,
+                    y=obj.y,
+                    z=z_value,
+                    yaw=obj.yaw,
+                    pitch=obj.pitch,
+                    tilt=obj.tilt,
+                    description=obj.description,
+                    bbox_length=obj.bbox_length,
+                    bbox_width=obj.bbox_width,
+                    rotation_point=obj.rotation_point,
+                )
+                changed = True
+
+        if not changed:
+            return
+
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+        self._window.show_status_message(f"Updated Z position for {len(rows)} selected TSO(s).")
 
     def _on_tso_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         row = item.row()
