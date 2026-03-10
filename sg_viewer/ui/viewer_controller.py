@@ -93,6 +93,7 @@ class LoadedTsdFile:
 
 class SGViewerController:
     _TSD_SHOW_ALL_LABEL = "Show all TSDs"
+    _ELEVATION_TAB_BASE_LABEL = "Elevation/Grade"
 
     """Coordinates actions, menus, and dialogs for the SG viewer window."""
 
@@ -2873,6 +2874,8 @@ class SGViewerController:
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index).rstrip("*")
+        if tab_name != self._ELEVATION_TAB_BASE_LABEL:
+            self._elevation_panel_controller.cancel_live_edits()
         if tab_name in {"Fsects", "Walls"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
         is_mrk_tab = tab_name == "Walls"
@@ -3477,6 +3480,8 @@ class SGViewerController:
             self._refresh_xsect_elevation_table()
 
     def _apply_altitude_edit(self, live: bool = False, slider_value: int | None = None) -> None:
+        if not self._is_elevation_tab_active():
+            return
         selection = self._active_selection
         xsect_index = self._current_xsect_index()
         if selection is None or xsect_index is None:
@@ -3496,6 +3501,8 @@ class SGViewerController:
                 self._sync_after_xsect_value_change()
 
     def _apply_grade_edit(self, live: bool = False, grade_value: int | None = None) -> None:
+        if not self._is_elevation_tab_active():
+            return
         selection = self._active_selection
         xsect_index = self._current_xsect_index()
         if selection is None or xsect_index is None:
@@ -3527,6 +3534,13 @@ class SGViewerController:
 
     def _on_grade_edit_finished(self) -> None:
         self._elevation_panel_controller.on_grade_edit_finished()
+
+    def _is_elevation_tab_active(self) -> bool:
+        current_index = self._window.right_sidebar_tabs.currentIndex()
+        if current_index < 0:
+            return False
+        tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+        return tab_name == self._ELEVATION_TAB_BASE_LABEL
 
     def _refresh_xsect_elevation_panel(self) -> None:
         self._elevation_panel_controller.refresh_xsect_elevation_panel()
