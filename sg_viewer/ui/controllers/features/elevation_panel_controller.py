@@ -146,6 +146,12 @@ class ElevationPanelController:
         if self._host._elevation_controller.end_edit():
             self._host._sync_after_xsect_value_change()
 
+    def cancel_live_edits(self) -> None:
+        """Cancel pending live slider updates and restore elevation signal state."""
+        self._flush_pending_altitude_live_edit()
+        self._flush_pending_grade_live_edit()
+        self._end_live_slider_edit()
+
     def _apply_pending_altitude_live_edit(self) -> None:
         if self._pending_altitude_value is None:
             return
