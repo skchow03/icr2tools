@@ -131,9 +131,15 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._tsd_palette: tuple[QtGui.QColor, ...] = ()
         self._trackside_objects: tuple[TracksideObject, ...] = ()
         self._selected_trackside_object_index: int | None = None
+        self._selected_trackside_object_indices: tuple[int, ...] = ()
+        self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
         self._trackside_map_click_callback = None
+        self._trackside_box_select_callback = None
+        self._trackside_box_select_enabled = False
+        self._trackside_box_select_drag_start_screen: QtCore.QPointF | None = None
+        self._trackside_box_select_drag_current_screen: QtCore.QPointF | None = None
         self._active_trackside_drag_index: int | None = None
         self._active_trackside_drag_origin: tuple[float, float] | None = None
         self._show_xsect_dlat_line = False
