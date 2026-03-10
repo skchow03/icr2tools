@@ -317,7 +317,21 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._active_trackside_drag_origin = (world_pos[0], world_pos[1])
         return True
 
+    def _trackside_box_select_screen_rect(self) -> QtCore.QRectF | None:
+        start = self._trackside_box_select_drag_start_screen
+        current = self._trackside_box_select_drag_current_screen
+        if start is None or current is None:
+            return None
+        return QtCore.QRectF(start, current).normalized()
+
     def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if event.button() == QtCore.Qt.LeftButton and self._trackside_box_select_enabled:
+            self._trackside_box_select_drag_start_screen = QtCore.QPointF(event.localPos())
+            self._trackside_box_select_drag_current_screen = QtCore.QPointF(event.localPos())
+            event.accept()
+            self._request_interaction_repaint()
+            return
+
         if event.button() == QtCore.Qt.LeftButton and bool(event.modifiers() & QtCore.Qt.ShiftModifier):
             hit_index = self._trackside_drag_hit_test(event.localPos())
             if hit_index is not None:
@@ -370,6 +384,12 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._apply_mouse_intent(intent, event)
 
     def on_mouse_move(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._trackside_box_select_drag_start_screen is not None:
+            self._trackside_box_select_drag_current_screen = QtCore.QPointF(event.localPos())
+            event.accept()
+            self._request_interaction_repaint()
+            return
+
         if self._active_trackside_drag_index is not None:
             if self._drag_trackside_object_to(event.localPos()):
                 event.accept()
@@ -404,6 +424,37 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._apply_mouse_intent(intent, event)
 
     def on_mouse_release(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
+        if self._trackside_box_select_drag_start_screen is not None and event.button() == QtCore.Qt.LeftButton:
+            start_screen = self._trackside_box_select_drag_start_screen
+            end_screen = QtCore.QPointF(event.localPos())
+            self._trackside_box_select_drag_start_screen = None
+            self._trackside_box_select_drag_current_screen = None
+            callback = self._trackside_box_select_callback
+            transform = self.current_transform(self._widget_size())
+            if callable(callback) and transform is not None:
+                start_world = self.map_to_track(
+                    (float(start_screen.x()), float(start_screen.y())),
+                    self._widget_size(),
+                    self._widget_height(),
+                    transform,
+                )
+                end_world = self.map_to_track(
+                    (float(end_screen.x()), float(end_screen.y())),
+                    self._widget_size(),
+                    self._widget_height(),
+                    transform,
+                )
+                if start_world is not None and end_world is not None:
+                    callback(
+                        int(round(min(start_world[0], end_world[0]))),
+                        int(round(min(start_world[1], end_world[1]))),
+                        int(round(max(start_world[0], end_world[0]))),
+                        int(round(max(start_world[1], end_world[1]))),
+                    )
+            event.accept()
+            self._request_interaction_repaint()
+            return
+
         if self._active_trackside_drag_index is not None and event.button() == QtCore.Qt.LeftButton:
             self._drag_trackside_object_to(event.localPos())
             self._active_trackside_drag_index = None

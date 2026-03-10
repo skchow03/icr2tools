@@ -107,6 +107,10 @@ class _RuntimeCoreBaseMixin:
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
         self._trackside_map_click_callback = None
+        self._trackside_box_select_callback = None
+        self._trackside_box_select_enabled = False
+        self._trackside_box_select_drag_start_screen: QtCore.QPointF | None = None
+        self._trackside_box_select_drag_current_screen: QtCore.QPointF | None = None
         self._active_trackside_drag_index: int | None = None
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None

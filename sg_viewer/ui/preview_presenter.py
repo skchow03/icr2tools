@@ -140,3 +140,11 @@ class PreviewPresenter:
             transform,
             self._context.widget_height(),
         )
+
+        box_rect = self._runtime._trackside_box_select_screen_rect()
+        if box_rect is not None and box_rect.width() > 0.0 and box_rect.height() > 0.0:
+            pen = QtGui.QPen(QtGui.QColor(80, 170, 255, 220))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            painter.setBrush(QtGui.QColor(80, 170, 255, 60))
+            painter.drawRect(box_rect)
