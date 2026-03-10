@@ -143,6 +143,7 @@ class SgPreviewState:
     tsd_palette: tuple[QtGui.QColor, ...] = ()
     trackside_objects: tuple[object, ...] = ()
     selected_trackside_object_index: int | None = None
+    selected_trackside_object_indices: tuple[int, ...] = ()
     trackside_move_enabled_indices: tuple[int, ...] = ()
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
@@ -237,6 +238,7 @@ def paint_preview(
                 transform,
                 widget_height,
                 selected_index=sg_preview_state.selected_trackside_object_index,
+                selected_indices=sg_preview_state.selected_trackside_object_indices,
                 move_enabled_indices=sg_preview_state.trackside_move_enabled_indices,
             )
         _draw_centerlines(
@@ -823,9 +825,11 @@ def _draw_trackside_objects(
     widget_height: int,
     *,
     selected_index: int | None,
+    selected_indices: tuple[int, ...],
     move_enabled_indices: tuple[int, ...],
 ) -> None:
     highlighted_indices = set(int(i) for i in move_enabled_indices)
+    highlighted_indices.update(int(i) for i in selected_indices)
     for index, obj in enumerate(trackside_objects):
         yaw_radians = math.radians(float(getattr(obj, "yaw", 0.0)) / 10.0)
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)

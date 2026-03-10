@@ -1497,6 +1497,83 @@ def test_paint_preview_draws_tsd_before_sg_fsects(monkeypatch):
 
     assert call_order == ["tsd", "sg"]
 
+
+
+def test_paint_preview_passes_selected_trackside_object_indices(monkeypatch):
+    from sg_viewer.services import preview_painter
+
+    captured: dict[str, object] = {}
+
+    def _fake_draw_trackside_objects(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(preview_painter, "_draw_trackside_objects", _fake_draw_trackside_objects)
+
+    image = QtGui.QImage(8, 8, QtGui.QImage.Format_ARGB32)
+    painter = QtGui.QPainter(image)
+    try:
+        preview_painter.paint_preview(
+            painter,
+            preview_painter.BasePreviewState(
+                rect=QtCore.QRect(0, 0, 8, 8),
+                background_color=QtGui.QColor("black"),
+                background_image=None,
+                background_brightness=0,
+                background_scale_500ths_per_px=None,
+                background_origin=None,
+                track_opacity=1.0,
+                sampled_centerline=[(0.0, 0.0), (1.0, 0.0)],
+                selected_section_points=(),
+                section_endpoints=(),
+                selected_section_index=None,
+                show_curve_markers=False,
+                show_axes=False,
+                show_crosshair=False,
+                sections=(),
+                selected_curve_index=None,
+                start_finish_mapping=None,
+                status_message="",
+                split_section_mode=False,
+                split_hover_point=None,
+                xsect_dlat=None,
+                show_xsect_dlat_line=False,
+                centerline_unselected_color=QtGui.QColor("white"),
+                centerline_selected_color=QtGui.QColor("white"),
+                centerline_long_curve_color=QtGui.QColor("white"),
+                radii_unselected_color=QtGui.QColor("white"),
+                radii_selected_color=QtGui.QColor("white"),
+                xsect_dlat_line_color=QtGui.QColor("white"),
+                integrity_boundary_violation_points=(),
+            ),
+            preview_painter.CreationOverlayState(),
+            node_state=None,
+            drag_heading_state=None,
+            sg_preview_state=preview_painter.SgPreviewState(
+                model=SimpleNamespace(fsects=[]),
+                transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
+                view_state=SimpleNamespace(show_surfaces=False, show_boundaries=False),
+                enabled=True,
+                trackside_objects=(SimpleNamespace(x=0, y=0, yaw=0, bbox_length=0, bbox_width=0, rotation_point="center"),),
+                selected_trackside_object_indices=(0,),
+            ),
+            transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
+            widget_height=8,
+        )
+    finally:
+        painter.end()
+
+    assert captured["selected_indices"] == (0,)
+
+
+def test_preview_runtime_exposes_selected_trackside_object_indices(qapp):
+    window = SGViewerWindow()
+    try:
+        window.preview.set_trackside_objects(())
+        window.preview.set_selected_trackside_object_indices((1, 2, 1))
+        assert window.preview.selected_trackside_object_indices == ()
+    finally:
+        window.close()
+
 def test_background_calibrator_receives_loaded_background_image_path(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:
