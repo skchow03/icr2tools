@@ -493,6 +493,16 @@ class _RuntimeCorePreviewMixin:
     def set_trackside_map_click_callback(self, callback) -> None:
         self._trackside_map_click_callback = callback
 
+    def set_trackside_box_select_callback(self, callback) -> None:
+        self._trackside_box_select_callback = callback
+
+    def set_trackside_box_select_enabled(self, enabled: bool) -> None:
+        self._trackside_box_select_enabled = bool(enabled)
+        if not self._trackside_box_select_enabled:
+            self._trackside_box_select_drag_start_screen = None
+            self._trackside_box_select_drag_current_screen = None
+        self._context.request_repaint()
+
     def set_selected_mrk_wall(self, boundary_index: int, section_index: int, wall_index: int) -> None:
         self._selected_mrk_wall = (
             max(0, int(boundary_index)),

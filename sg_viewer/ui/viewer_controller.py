@@ -147,6 +147,7 @@ class SGViewerController:
         self._trackside_move_enabled_indices: set[int] = set()
         self._tso_add_mode_active = False
         self._tso_stamp_mode_active = False
+        self._tso_box_select_mode_active = False
         self._tso_stamp_filename: str | None = None
         self._active_tsd_file_index: int | None = None
         self._suspend_tsd_preview_refresh = False
@@ -165,6 +166,7 @@ class SGViewerController:
         self._connect_signals()
         self._window.preview.set_trackside_object_drag_callback(self._on_preview_tso_dragged)
         self._window.preview.set_trackside_map_click_callback(self._on_preview_tso_map_clicked)
+        self._window.preview.set_trackside_box_select_callback(self._on_preview_tso_box_selected)
         self._on_track_opacity_changed(self._window.track_opacity_slider.value())
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
@@ -888,6 +890,7 @@ class SGViewerController:
         self._window.tsd_objects_table.itemChanged.connect(self._on_tsd_object_item_changed)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
         self._window.tso_stamp_button.clicked.connect(self._on_tso_stamp_requested)
+        self._window.tso_box_select_button.clicked.connect(self._on_tso_box_select_requested)
         self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
         self._window.tso_move_up_button.clicked.connect(self._on_tso_move_up_requested)
         self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
@@ -2108,6 +2111,8 @@ class SGViewerController:
         self._window.tso_add_button.blockSignals(False)
         if self._tso_add_mode_active and self._tso_stamp_mode_active:
             self._set_tso_stamp_mode_active(False)
+        if self._tso_add_mode_active and self._tso_box_select_mode_active:
+            self._set_tso_box_select_mode_active(False)
 
     def _set_tso_stamp_mode_active(self, active: bool, *, filename: str | None = None) -> None:
         self._tso_stamp_mode_active = bool(active)
@@ -2115,11 +2120,24 @@ class SGViewerController:
             self._tso_stamp_filename = normalize_trackside_filename(filename or "") or "object"
             if self._tso_add_mode_active:
                 self._set_tso_add_mode_active(False)
+            if self._tso_box_select_mode_active:
+                self._set_tso_box_select_mode_active(False)
         else:
             self._tso_stamp_filename = None
         self._window.tso_stamp_button.blockSignals(True)
         self._window.tso_stamp_button.setChecked(self._tso_stamp_mode_active)
         self._window.tso_stamp_button.blockSignals(False)
+
+    def _set_tso_box_select_mode_active(self, active: bool) -> None:
+        self._tso_box_select_mode_active = bool(active)
+        self._window.tso_box_select_button.blockSignals(True)
+        self._window.tso_box_select_button.setChecked(self._tso_box_select_mode_active)
+        self._window.tso_box_select_button.blockSignals(False)
+        self._window.preview.set_trackside_box_select_enabled(self._tso_box_select_mode_active)
+        if self._tso_box_select_mode_active and self._tso_add_mode_active:
+            self._set_tso_add_mode_active(False)
+        if self._tso_box_select_mode_active and self._tso_stamp_mode_active:
+            self._set_tso_stamp_mode_active(False)
 
     def _on_tso_add_requested(self) -> None:
         self._set_tso_add_mode_active(self._window.tso_add_button.isChecked())
@@ -2152,6 +2170,13 @@ class SGViewerController:
         self._set_tso_stamp_mode_active(True, filename=normalized)
         self._window.show_status_message("Stamp mode active: click the map to place TSOs. Click Stamp again to stop.")
 
+    def _on_tso_box_select_requested(self) -> None:
+        self._set_tso_box_select_mode_active(self._window.tso_box_select_button.isChecked())
+        if self._tso_box_select_mode_active:
+            self._window.show_status_message("Box Select active: drag a rectangle on the track diagram to select TSOs.")
+        else:
+            self._window.show_status_message("Box Select deactivated.")
+
     def _on_preview_tso_map_clicked(self, x: int, y: int) -> bool:
         if not self._tso_add_mode_active and not self._tso_stamp_mode_active:
             return False
@@ -2164,6 +2189,16 @@ class SGViewerController:
         if self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
         return True
+
+    def _on_preview_tso_box_selected(self, min_x: int, min_y: int, max_x: int, max_y: int) -> None:
+        selected_indices = [
+            index
+            for index, obj in enumerate(self._trackside_objects)
+            if min_x <= int(obj.x) <= max_x and min_y <= int(obj.y) <= max_y
+        ]
+        self._selected_trackside_object_indices = selected_indices
+        self._refresh_tso_table()
+        self._window.show_status_message(f"Selected {len(selected_indices)} TSO(s) with box selection.")
 
 
     def _on_tso_delete_requested(self) -> None:

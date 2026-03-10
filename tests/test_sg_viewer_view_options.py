@@ -2072,6 +2072,66 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         window.close()
 
 
+def test_tso_box_select_selects_rows_and_preview_selection(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="one",
+                x=10,
+                y=10,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+            TracksideObject(
+                filename="two",
+                x=40,
+                y=30,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+            TracksideObject(
+                filename="three",
+                x=200,
+                y=200,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+        ]
+        window.controller._refresh_tso_table()
+
+        window.tso_box_select_button.setChecked(True)
+        window.controller._on_tso_box_select_requested()
+        assert window.preview._trackside_box_select_enabled is True
+
+        window.controller._on_preview_tso_box_selected(0, 0, 100, 100)
+
+        assert window.controller._selected_trackside_object_indices == [0, 1]
+        selected_rows = window.tso_table.selectionModel().selectedRows()
+        assert sorted(index.row() for index in selected_rows) == [0, 1]
+        assert window.preview.selected_trackside_object_index == 0
+    finally:
+        window.close()
+
+
 def test_preview_tso_drag_updates_table_and_state(qapp, tmp_path):
     window = SGViewerWindow()
     try:
