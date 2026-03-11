@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QMessageBox,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -17,7 +18,11 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from sg_viewer.io.track3d_parser import Track3DObjectList, parse_track3d
+from sg_viewer.io.track3d_parser import (
+    Track3DObjectList,
+    parse_track3d,
+    save_object_lists_to_track3d,
+)
 
 
 class TSOVisibilityListWidget(QListWidget):
@@ -73,6 +78,7 @@ class TSOVisibilityTab(QWidget):
         self.delete_tso_button = QPushButton("Delete TSO")
         self.copy_prev_button = QPushButton("Copy from Previous")
         self.export_button = QPushButton("Export ObjectLists")
+        self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
 
         button_row = QHBoxLayout()
         button_row.addWidget(self.load_button)
@@ -80,6 +86,7 @@ class TSOVisibilityTab(QWidget):
         button_row.addWidget(self.delete_tso_button)
         button_row.addWidget(self.copy_prev_button)
         button_row.addWidget(self.export_button)
+        button_row.addWidget(self.save_to_track3d_button)
         layout.addLayout(button_row)
 
         self.table = QTableWidget()
@@ -92,6 +99,7 @@ class TSOVisibilityTab(QWidget):
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.export_button.clicked.connect(self._on_export_requested)
+        self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
         self.table.itemSelectionChanged.connect(self._emit_selected_tsos)
         self.table.horizontalHeader().sectionResized.connect(self._on_column_resized)
 
@@ -391,6 +399,38 @@ class TSOVisibilityTab(QWidget):
             )
         with open(path, "w", encoding="utf-8") as output_file:
             output_file.write("\n".join(lines) + "\n")
+
+
+    def _on_save_to_track3d_requested(self) -> None:
+        if not self.object_lists:
+            QMessageBox.information(self, "Save ObjectLists", "No ObjectLists to save.")
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select track.3D to update",
+            "",
+            "3D Files (*.3D *.3d);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            backup_path = save_object_lists_to_track3d(path, self.object_lists)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Save ObjectLists",
+                f"Failed to update track.3D:\n{exc}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Save ObjectLists",
+            "Updated track.3D with current ObjectList rows.\n"
+            f"Backup created at:\n{backup_path}",
+        )
 
     def _on_copy_from_previous_requested(self) -> None:
         row = self.table.currentRow()
