@@ -57,6 +57,7 @@ from sg_viewer.ui.presentation.window_panels import (
     create_stats_sidebar_panel,
     create_toolbar_navigation_panel,
 )
+from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 
 
 class SGViewerWindow(QtWidgets.QMainWindow):
@@ -119,6 +120,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Walls": "Walls",
             "TSD": "TSD",
             "Objects": "Objects",
+            "TSO Visibility": "TSO Visibility",
         }
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
@@ -684,12 +686,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_layout.addWidget(self._tso_generate_file_button)
         tso_layout.addWidget(self._tso_table)
         self._tso_sidebar.setLayout(tso_layout)
+        self._tso_visibility_sidebar = TSOVisibilityTab()
 
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
         self._right_sidebar_tabs.addTab(self._mrk_sidebar, "Walls")
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         self._right_sidebar_tabs.addTab(self._tso_sidebar, "Objects")
+        self._right_sidebar_tabs.addTab(self._tso_visibility_sidebar, "TSO Visibility")
         # Avoid locking the splitter to the tabs' initial size hint (which can become
         # very wide due to table content) so users can shrink the right sidebar.
         self._right_sidebar_tabs.setMinimumWidth(260)
