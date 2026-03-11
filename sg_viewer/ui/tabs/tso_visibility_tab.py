@@ -1,6 +1,8 @@
 from PyQt5 import QtCore
+from PyQt5.QtGui import QResizeEvent
 from PyQt5.QtWidgets import (
     QFileDialog,
+    QHeaderView,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -15,10 +17,41 @@ from sg_viewer.io.track3d_parser import parse_track3d
 
 class TSOVisibilityListWidget(QListWidget):
     orderChanged = QtCore.pyqtSignal()
+    contentHeightChanged = QtCore.pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.setFlow(QListWidget.TopToBottom)
+        self.setWrapping(False)
+        self.setSpacing(4)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.update_item_widths()
+
+    def update_item_widths(self) -> None:
+        viewport_width = max(self.viewport().width() - 2, 0)
+        pill_height = self.fontMetrics().height() + 8
+        for index in range(self.count()):
+            item = self.item(index)
+            if item is None:
+                continue
+            item.setSizeHint(QtCore.QSize(viewport_width, pill_height))
+        self.contentHeightChanged.emit()
+
+    def content_height(self) -> int:
+        if self.count() == 0:
+            return self.frameWidth() * 2 + 4
+        item_height = self.sizeHintForRow(0)
+        spacing_total = self.spacing() * max(self.count() - 1, 0)
+        return (item_height * self.count()) + spacing_total + (self.frameWidth() * 2) + 4
 
     def dropEvent(self, event):
         super().dropEvent(event)
         self.orderChanged.emit()
+        self.contentHeightChanged.emit()
 
 
 class TSOVisibilityTab(QWidget):
@@ -40,6 +73,7 @@ class TSOVisibilityTab(QWidget):
 
         self.load_button.clicked.connect(self.load_file)
         self.table.itemSelectionChanged.connect(self._emit_selected_tsos)
+        self.table.horizontalHeader().sectionResized.connect(self._on_column_resized)
 
         self.object_lists = []
 
@@ -70,13 +104,8 @@ class TSOVisibilityTab(QWidget):
             self.table.setItem(row, 2, QTableWidgetItem(str(entry.sub_index)))
 
             tso_list = TSOVisibilityListWidget()
-            tso_list.setFlow(QListWidget.LeftToRight)
             tso_list.setDragDropMode(QListWidget.InternalMove)
             tso_list.setDefaultDropAction(QtCore.Qt.MoveAction)
-            tso_list.setWrapping(True)
-            tso_list.setSpacing(4)
-            tso_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-            tso_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
             tso_list.setStyleSheet(
                 "QListWidget::item {"
                 "  border: 1px solid palette(mid);"
@@ -95,15 +124,21 @@ class TSOVisibilityTab(QWidget):
             tso_list.orderChanged.connect(
                 lambda row_index=row, widget=tso_list: self._on_tso_order_changed(row_index, widget)
             )
+            tso_list.contentHeightChanged.connect(
+                lambda row_index=row, widget=tso_list: self._update_row_height(row_index, widget)
+            )
             tso_list.itemClicked.connect(
                 lambda item, row_index=row: self._on_tso_pill_selected(row_index, item)
             )
             self.table.setCellWidget(row, 3, tso_list)
+            tso_list.update_item_widths()
+            self._update_row_height(row, tso_list)
 
-        self.table.resizeRowsToContents()
-        self.table.resizeColumnToContents(0)
-        self.table.resizeColumnToContents(1)
-        self.table.resizeColumnToContents(2)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
 
     def _on_tso_order_changed(self, row: int, widget: QListWidget) -> None:
         if row < 0 or row >= len(self.object_lists):
@@ -150,3 +185,25 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOPillChanged.emit(None)
             return
         self.selectedTSOPillChanged.emit(tso_id)
+
+    def _on_column_resized(self, column: int, _old_size: int, _new_size: int) -> None:
+        if column != 3:
+            return
+        self._refresh_visible_tso_column()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._refresh_visible_tso_column()
+
+    def _refresh_visible_tso_column(self) -> None:
+        for row in range(self.table.rowCount()):
+            widget = self.table.cellWidget(row, 3)
+            if not isinstance(widget, TSOVisibilityListWidget):
+                continue
+            widget.update_item_widths()
+            self._update_row_height(row, widget)
+
+    def _update_row_height(self, row: int, widget: TSOVisibilityListWidget) -> None:
+        if row < 0 or row >= self.table.rowCount():
+            return
+        self.table.setRowHeight(row, max(widget.content_height(), 24))
