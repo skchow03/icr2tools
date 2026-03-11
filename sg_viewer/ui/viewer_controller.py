@@ -899,6 +899,7 @@ class SGViewerController:
         self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
         self._window.tso_table.itemSelectionChanged.connect(self._on_tso_selection_changed)
         self._window.tso_table.cellClicked.connect(self._on_tso_table_cell_clicked)
+        self._window.tso_visibility_sidebar.selectedTSOsChanged.connect(self._on_tso_visibility_row_selected)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -2008,6 +2009,24 @@ class SGViewerController:
         self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
         if selected_indices:
             self._window.show_status_message("TSO selected: hold Shift and drag in the preview to move selected TSOs.")
+
+    def _on_tso_visibility_row_selected(self, tso_ids: tuple[int, ...]) -> None:
+        selected_indices = sorted({index for index in tso_ids if 0 <= index < len(self._trackside_objects)})
+        self._selected_trackside_object_indices = selected_indices
+        selected_index = selected_indices[0] if selected_indices else None
+        self._window.preview.set_selected_trackside_object_index(selected_index)
+        self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+
+        table = self._window.tso_table
+        selection_model = table.selectionModel()
+        if selection_model is not None:
+            selection_model.clearSelection()
+            for index in selected_indices:
+                row_index = table.model().index(index, 0)
+                selection_model.select(
+                    row_index,
+                    QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+                )
 
     def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
         if column == 6:

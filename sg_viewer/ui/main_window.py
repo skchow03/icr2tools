@@ -1024,6 +1024,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def tso_table(self) -> QtWidgets.QTableWidget:
         return self._tso_table
 
+    @property
+    def tso_visibility_sidebar(self) -> TSOVisibilityTab:
+        return self._tso_visibility_sidebar
+
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action
 
