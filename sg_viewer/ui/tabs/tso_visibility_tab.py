@@ -71,12 +71,14 @@ class TSOVisibilityTab(QWidget):
         self.load_button = QPushButton("Load track.3D")
         self.add_tso_button = QPushButton("Add TSO")
         self.delete_tso_button = QPushButton("Delete TSO")
+        self.copy_prev_button = QPushButton("Copy from Previous")
         self.export_button = QPushButton("Export ObjectLists")
 
         button_row = QHBoxLayout()
         button_row.addWidget(self.load_button)
         button_row.addWidget(self.add_tso_button)
         button_row.addWidget(self.delete_tso_button)
+        button_row.addWidget(self.copy_prev_button)
         button_row.addWidget(self.export_button)
         layout.addLayout(button_row)
 
@@ -88,6 +90,7 @@ class TSOVisibilityTab(QWidget):
         self.load_button.clicked.connect(self.load_file)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
+        self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.export_button.clicked.connect(self._on_export_requested)
         self.table.itemSelectionChanged.connect(self._emit_selected_tsos)
         self.table.horizontalHeader().sectionResized.connect(self._on_column_resized)
@@ -388,3 +391,22 @@ class TSOVisibilityTab(QWidget):
             )
         with open(path, "w", encoding="utf-8") as output_file:
             output_file.write("\n".join(lines) + "\n")
+
+    def _on_copy_from_previous_requested(self) -> None:
+        row = self.table.currentRow()
+        if row <= 0 or row >= len(self.object_lists):
+            return
+
+        copied_ids = list(self.object_lists[row - 1].tso_ids)
+        self.object_lists[row].tso_ids = copied_ids
+
+        widget = self.table.cellWidget(row, 3)
+        if isinstance(widget, TSOVisibilityListWidget):
+            widget.clear()
+            for tso_id in copied_ids:
+                widget.addItem(QListWidgetItem(f"__TSO{tso_id}"))
+            widget.update_item_widths()
+            self._update_row_height(row, widget)
+
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTSOsChanged.emit(tuple(copied_ids))
