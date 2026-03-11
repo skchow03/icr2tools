@@ -187,6 +187,24 @@ class SGSettingsStore:
     def set_trackside_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
         self.update(sg_path, trackside_objects=objects)
 
+
+    def get_tso_visibility_object_lists(self, sg_path: Path) -> list[dict[str, object]]:
+        payload = self.load(sg_path)
+        raw = payload.get("tso_visibility")
+        if not isinstance(raw, dict):
+            return []
+        object_lists = raw.get("object_lists")
+        if not isinstance(object_lists, list):
+            return []
+        return [entry for entry in object_lists if isinstance(entry, dict)]
+
+    def set_tso_visibility_object_lists(self, sg_path: Path, object_lists: list[dict[str, object]]) -> None:
+        payload = self.load(sg_path)
+        raw_visibility = payload.get("tso_visibility")
+        visibility_state = dict(raw_visibility) if isinstance(raw_visibility, dict) else {}
+        visibility_state["object_lists"] = object_lists
+        self.update(sg_path, tso_visibility=visibility_state)
+
     def get_mrk_wall_heights(self, sg_path: Path) -> tuple[float, float, float] | None:
         payload = self.load(sg_path)
         raw = payload.get("mrk_wall_heights")

@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from sg_viewer.io.track3d_parser import parse_track3d
+from sg_viewer.io.track3d_parser import Track3DObjectList, parse_track3d
 
 
 class TSOVisibilityListWidget(QListWidget):
@@ -94,6 +94,70 @@ class TSOVisibilityTab(QWidget):
 
         self.object_lists = []
         self.available_tso_ids: list[int] = []
+
+    def clear_object_lists(self) -> None:
+        self.object_lists = []
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        self.selectedTSOsChanged.emit(tuple())
+        self.selectedTSOPillChanged.emit(None)
+
+    def set_object_lists(self, object_lists: list[Track3DObjectList]) -> None:
+        self.object_lists = list(object_lists)
+        self.populate_table()
+        self.selectedTSOsChanged.emit(tuple())
+        self.selectedTSOPillChanged.emit(None)
+
+    def serialize_object_lists(self) -> list[dict[str, object]]:
+        payload: list[dict[str, object]] = []
+        for entry in self.object_lists:
+            payload.append(
+                {
+                    "side": str(entry.side),
+                    "section": int(entry.section),
+                    "sub_index": int(entry.sub_index),
+                    "tso_ids": [int(tso_id) for tso_id in entry.tso_ids],
+                }
+            )
+        return payload
+
+    def load_object_lists_from_payload(self, payload: object) -> None:
+        if not isinstance(payload, list):
+            self.clear_object_lists()
+            return
+
+        parsed_lists = []
+        for raw_entry in payload:
+            if not isinstance(raw_entry, dict):
+                continue
+            side = str(raw_entry.get("side", "")).strip().upper()
+            if side not in {"L", "R"}:
+                continue
+            try:
+                section = int(raw_entry.get("section", 0))
+                sub_index = int(raw_entry.get("sub_index", 0))
+            except (TypeError, ValueError):
+                continue
+            raw_tso_ids = raw_entry.get("tso_ids", [])
+            tso_ids: list[int] = []
+            if isinstance(raw_tso_ids, list):
+                for tso_id in raw_tso_ids:
+                    try:
+                        parsed_id = int(tso_id)
+                    except (TypeError, ValueError):
+                        continue
+                    if parsed_id >= 0:
+                        tso_ids.append(parsed_id)
+            parsed_lists.append(
+                Track3DObjectList(
+                    side=side,
+                    section=section,
+                    sub_index=sub_index,
+                    tso_ids=tso_ids,
+                )
+            )
+
+        self.set_object_lists(parsed_lists)
 
     def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
         self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})

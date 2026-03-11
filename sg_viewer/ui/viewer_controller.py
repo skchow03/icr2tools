@@ -1151,6 +1151,10 @@ class SGViewerController:
             self._current_path,
             [trackside_object_to_payload(obj) for obj in self._trackside_objects],
         )
+        self._sg_settings_store.set_tso_visibility_object_lists(
+            self._current_path,
+            self._window.tso_visibility_sidebar.serialize_object_lists(),
+        )
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
@@ -1172,6 +1176,9 @@ class SGViewerController:
             except ValueError:
                 continue
         self._refresh_tso_table()
+        self._window.tso_visibility_sidebar.load_object_lists_from_payload(
+            self._sg_settings_store.get_tso_visibility_object_lists(self._current_path)
+        )
         for path in files:
             if not path.exists():
                 continue
@@ -1412,6 +1419,7 @@ class SGViewerController:
         self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
         self._refresh_tsd_objects_table()
         self._refresh_tso_table()
+        self._window.tso_visibility_sidebar.clear_object_lists()
         self._set_tsd_dirty(False)
         self._set_trackside_objects_dirty(False)
 
