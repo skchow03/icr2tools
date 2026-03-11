@@ -1,8 +1,13 @@
 from PyQt5 import QtCore
 from PyQt5.QtGui import QResizeEvent
 from PyQt5.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QHeaderView,
+    QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -64,7 +69,16 @@ class TSOVisibilityTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.load_button = QPushButton("Load track.3D")
-        layout.addWidget(self.load_button)
+        self.add_tso_button = QPushButton("Add TSO")
+        self.delete_tso_button = QPushButton("Delete TSO")
+        self.export_button = QPushButton("Export ObjectLists")
+
+        button_row = QHBoxLayout()
+        button_row.addWidget(self.load_button)
+        button_row.addWidget(self.add_tso_button)
+        button_row.addWidget(self.delete_tso_button)
+        button_row.addWidget(self.export_button)
+        layout.addLayout(button_row)
 
         self.table = QTableWidget()
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -72,10 +86,17 @@ class TSOVisibilityTab(QWidget):
         layout.addWidget(self.table)
 
         self.load_button.clicked.connect(self.load_file)
+        self.add_tso_button.clicked.connect(self._on_add_tso_requested)
+        self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
+        self.export_button.clicked.connect(self._on_export_requested)
         self.table.itemSelectionChanged.connect(self._emit_selected_tsos)
         self.table.horizontalHeader().sectionResized.connect(self._on_column_resized)
 
         self.object_lists = []
+        self.available_tso_ids: list[int] = []
+
+    def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
+        self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})
 
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -89,6 +110,15 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists = parse_track3d(path)
+        if not self.available_tso_ids:
+            self.available_tso_ids = sorted(
+                {
+                    tso_id
+                    for object_list in self.object_lists
+                    for tso_id in object_list.tso_ids
+                    if tso_id >= 0
+                }
+            )
 
         self.populate_table()
 
@@ -207,3 +237,90 @@ class TSOVisibilityTab(QWidget):
         if row < 0 or row >= self.table.rowCount():
             return
         self.table.setRowHeight(row, max(widget.content_height(), 24))
+
+    def _on_add_tso_requested(self) -> None:
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.object_lists):
+            return
+        available_ids = self.available_tso_ids or sorted(
+            {
+                tso_id
+                for object_list in self.object_lists
+                for tso_id in object_list.tso_ids
+                if tso_id >= 0
+            }
+        )
+        if not available_ids:
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add TSO")
+        dialog_layout = QVBoxLayout(dialog)
+        dialog_layout.addWidget(QLabel("Choose a TSO to add:"))
+        combo = QComboBox(dialog)
+        for tso_id in available_ids:
+            combo.addItem(f"__TSO{tso_id}", tso_id)
+        dialog_layout.addWidget(combo)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        dialog_layout.addWidget(buttons)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        tso_id = combo.currentData()
+        if not isinstance(tso_id, int):
+            return
+
+        self.object_lists[row].tso_ids.append(tso_id)
+        widget = self.table.cellWidget(row, 3)
+        if isinstance(widget, TSOVisibilityListWidget):
+            item = QListWidgetItem(f"__TSO{tso_id}")
+            widget.addItem(item)
+            widget.setCurrentItem(item)
+            widget.update_item_widths()
+            self._update_row_height(row, widget)
+        self.selectedTSOPillChanged.emit(tso_id)
+        self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+
+    def _on_delete_tso_requested(self) -> None:
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.object_lists):
+            return
+        widget = self.table.cellWidget(row, 3)
+        if not isinstance(widget, TSOVisibilityListWidget):
+            return
+        item = widget.currentItem()
+        if item is None:
+            return
+        item_row = widget.row(item)
+        if item_row < 0:
+            return
+        widget.takeItem(item_row)
+        if item_row < len(self.object_lists[row].tso_ids):
+            del self.object_lists[row].tso_ids[item_row]
+        widget.update_item_widths()
+        self._update_row_height(row, widget)
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+
+    def _on_export_requested(self) -> None:
+        if not self.object_lists:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export ObjectLists",
+            "object_lists.txt",
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not path:
+            return
+
+        lines: list[str] = []
+        for entry in self.object_lists:
+            tso_parts = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids)
+            lines.append(
+                f"ObjectList_{entry.side}{entry.section}_{entry.sub_index}: LIST {{ {tso_parts} }};"
+            )
+        with open(path, "w", encoding="utf-8") as output_file:
+            output_file.write("\n".join(lines) + "\n")

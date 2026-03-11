@@ -1999,6 +1999,7 @@ class SGViewerController:
         self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
         selected_index = self._selected_trackside_object_indices[0] if self._selected_trackside_object_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
+        self._window.tso_visibility_sidebar.set_available_tso_ids(list(range(len(self._trackside_objects))))
 
     def _on_tso_selection_changed(self) -> None:
         table = self._window.tso_table
