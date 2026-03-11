@@ -144,6 +144,7 @@ class SgPreviewState:
     trackside_objects: tuple[object, ...] = ()
     selected_trackside_object_index: int | None = None
     selected_trackside_object_indices: tuple[int, ...] = ()
+    focused_trackside_object_index: int | None = None
     trackside_move_enabled_indices: tuple[int, ...] = ()
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
@@ -239,6 +240,7 @@ def paint_preview(
                 widget_height,
                 selected_index=sg_preview_state.selected_trackside_object_index,
                 selected_indices=sg_preview_state.selected_trackside_object_indices,
+                focused_index=sg_preview_state.focused_trackside_object_index,
                 move_enabled_indices=sg_preview_state.trackside_move_enabled_indices,
             )
         _draw_centerlines(
@@ -826,6 +828,7 @@ def _draw_trackside_objects(
     *,
     selected_index: int | None,
     selected_indices: tuple[int, ...],
+    focused_index: int | None,
     move_enabled_indices: tuple[int, ...],
 ) -> None:
     highlighted_indices = set(int(i) for i in move_enabled_indices)
@@ -835,7 +838,8 @@ def _draw_trackside_objects(
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
         half_width = max(0.0, float(getattr(obj, "bbox_width", 0.0)) * 0.5)
         is_highlighted = index in highlighted_indices
-        color = QtGui.QColor("#FFD54A") if is_highlighted else QtGui.QColor("#44CCFF")
+        is_focused = focused_index is not None and index == int(focused_index)
+        color = QtGui.QColor("#FF7A1A") if is_focused else (QtGui.QColor("#FFD54A") if is_highlighted else QtGui.QColor("#44CCFF"))
         painter.save()
         painter.setPen(QtGui.QPen(color, 2.0 if is_highlighted else 1.25))
         painter.setBrush(QtCore.Qt.NoBrush)

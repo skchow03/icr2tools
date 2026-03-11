@@ -250,6 +250,10 @@ class _RuntimeCorePreviewMixin:
         return tuple(self._selected_trackside_object_indices)
 
     @property
+    def focused_trackside_object_index(self) -> int | None:
+        return self._focused_trackside_object_index
+
+    @property
     def trackside_move_enabled_indices(self) -> tuple[int, ...]:
         return tuple(self._trackside_move_enabled_indices)
 
@@ -443,6 +447,9 @@ class _RuntimeCorePreviewMixin:
         self._selected_trackside_object_indices = tuple(
             index for index in selected_indices if 0 <= index < len(self._trackside_objects)
         )
+        focused_index = getattr(self, "_focused_trackside_object_index", None)
+        if focused_index is not None and (focused_index < 0 or focused_index >= len(self._trackside_objects)):
+            self._focused_trackside_object_index = None
         move_enabled_indices = getattr(self, "_trackside_move_enabled_indices", ())
         self._trackside_move_enabled_indices = tuple(
             index
@@ -473,6 +480,17 @@ class _RuntimeCorePreviewMixin:
             seen.add(value)
             normalized.append(value)
         self._selected_trackside_object_indices = tuple(normalized)
+        self._context.request_repaint()
+
+    def set_focused_trackside_object_index(self, index: int | None) -> None:
+        if index is None:
+            self._focused_trackside_object_index = None
+        else:
+            value = int(index)
+            if value < 0 or value >= len(self._trackside_objects):
+                self._focused_trackside_object_index = None
+            else:
+                self._focused_trackside_object_index = value
         self._context.request_repaint()
 
     def set_trackside_move_enabled_indices(self, indices: tuple[int, ...]) -> None:
