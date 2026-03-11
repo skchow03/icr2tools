@@ -23,6 +23,7 @@ class TSOVisibilityListWidget(QListWidget):
 
 class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
+    selectedTSOPillChanged = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -82,12 +83,20 @@ class TSOVisibilityTab(QWidget):
                 "  border-radius: 10px;"
                 "  padding: 2px 8px;"
                 "  background: palette(button);"
+                "  color: palette(text);"
+                "}"
+                "QListWidget::item:selected {"
+                "  background: palette(light);"
+                "  color: palette(text);"
                 "}"
             )
             for tso_id in entry.tso_ids:
                 tso_list.addItem(QListWidgetItem(f"__TSO{tso_id}"))
             tso_list.orderChanged.connect(
                 lambda row_index=row, widget=tso_list: self._on_tso_order_changed(row_index, widget)
+            )
+            tso_list.itemClicked.connect(
+                lambda item, row_index=row: self._on_tso_pill_selected(row_index, item)
             )
             self.table.setCellWidget(row, 3, tso_list)
 
@@ -118,5 +127,26 @@ class TSOVisibilityTab(QWidget):
         row = self.table.currentRow()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOsChanged.emit(tuple())
+            self.selectedTSOPillChanged.emit(None)
             return
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+        self.selectedTSOPillChanged.emit(None)
+
+    def _on_tso_pill_selected(self, row: int, item: QListWidgetItem | None) -> None:
+        if row < 0 or row >= len(self.object_lists):
+            self.selectedTSOPillChanged.emit(None)
+            return
+        self.table.selectRow(row)
+        if item is None:
+            self.selectedTSOPillChanged.emit(None)
+            return
+        text = item.text().strip()
+        if not text.startswith("__TSO"):
+            self.selectedTSOPillChanged.emit(None)
+            return
+        try:
+            tso_id = int(text.replace("__TSO", "", 1))
+        except ValueError:
+            self.selectedTSOPillChanged.emit(None)
+            return
+        self.selectedTSOPillChanged.emit(tso_id)
