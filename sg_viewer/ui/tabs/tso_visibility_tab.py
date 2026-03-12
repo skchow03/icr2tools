@@ -105,6 +105,24 @@ class TSOVisibilityTab(QWidget):
 
         self.object_lists = []
         self.available_tso_ids: list[int] = []
+        self._tso_display_metadata: dict[int, tuple[str, str]] = {}
+
+    def _build_tso_pill_text(self, tso_id: int) -> str:
+        label = f"__TSO{tso_id}"
+        filename, description = self._tso_display_metadata.get(tso_id, ("", ""))
+        details: list[str] = []
+        if filename:
+            details.append(filename)
+        if description:
+            details.append(description)
+        if details:
+            return f"{label} ({' — '.join(details)})"
+        return label
+
+    def _make_tso_list_item(self, tso_id: int) -> QListWidgetItem:
+        item = QListWidgetItem(self._build_tso_pill_text(tso_id))
+        item.setData(QtCore.Qt.UserRole, tso_id)
+        return item
 
     def clear_object_lists(self) -> None:
         self.object_lists = []
@@ -173,6 +191,20 @@ class TSOVisibilityTab(QWidget):
     def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
         self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})
 
+    def set_tso_display_metadata(self, metadata: dict[int, tuple[str, str]]) -> None:
+        normalized: dict[int, tuple[str, str]] = {}
+        for tso_id, values in metadata.items():
+            if not isinstance(tso_id, int) or tso_id < 0:
+                continue
+            filename = ""
+            description = ""
+            if isinstance(values, tuple) and len(values) == 2:
+                filename = str(values[0]).strip()
+                description = str(values[1]).strip()
+            normalized[tso_id] = (filename, description)
+        self._tso_display_metadata = normalized
+        self._refresh_visible_tso_column()
+
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -225,7 +257,7 @@ class TSOVisibilityTab(QWidget):
                 "}"
             )
             for tso_id in entry.tso_ids:
-                tso_list.addItem(QListWidgetItem(f"__TSO{tso_id}"))
+                tso_list.addItem(self._make_tso_list_item(tso_id))
             tso_list.orderChanged.connect(
                 lambda row_index=row, widget=tso_list: self._on_tso_order_changed(row_index, widget)
             )
@@ -254,7 +286,10 @@ class TSOVisibilityTab(QWidget):
             if item is None:
                 continue
             text = item.text().strip()
-            if text.startswith("__TSO"):
+            item_tso_id = item.data(QtCore.Qt.UserRole)
+            if isinstance(item_tso_id, int):
+                reordered_ids.append(item_tso_id)
+            elif text.startswith("__TSO"):
                 try:
                     reordered_ids.append(int(text.replace("__TSO", "", 1)))
                 except ValueError:
@@ -281,14 +316,18 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOPillChanged.emit(None)
             return
         text = item.text().strip()
-        if not text.startswith("__TSO"):
-            self.selectedTSOPillChanged.emit(None)
-            return
-        try:
-            tso_id = int(text.replace("__TSO", "", 1))
-        except ValueError:
-            self.selectedTSOPillChanged.emit(None)
-            return
+        item_tso_id = item.data(QtCore.Qt.UserRole)
+        if isinstance(item_tso_id, int):
+            tso_id = item_tso_id
+        else:
+            if not text.startswith("__TSO"):
+                self.selectedTSOPillChanged.emit(None)
+                return
+            try:
+                tso_id = int(text.replace("__TSO", "", 1))
+            except ValueError:
+                self.selectedTSOPillChanged.emit(None)
+                return
         self.selectedTSOPillChanged.emit(tso_id)
 
     def _on_column_resized(self, column: int, _old_size: int, _new_size: int) -> None:
@@ -334,7 +373,7 @@ class TSOVisibilityTab(QWidget):
         dialog_layout.addWidget(QLabel("Choose a TSO to add:"))
         combo = QComboBox(dialog)
         for tso_id in available_ids:
-            combo.addItem(f"__TSO{tso_id}", tso_id)
+            combo.addItem(self._build_tso_pill_text(tso_id), tso_id)
         dialog_layout.addWidget(combo)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
@@ -350,7 +389,7 @@ class TSOVisibilityTab(QWidget):
         self.object_lists[row].tso_ids.append(tso_id)
         widget = self.table.cellWidget(row, 3)
         if isinstance(widget, TSOVisibilityListWidget):
-            item = QListWidgetItem(f"__TSO{tso_id}")
+            item = self._make_tso_list_item(tso_id)
             widget.addItem(item)
             widget.setCurrentItem(item)
             widget.update_item_widths()
@@ -444,7 +483,7 @@ class TSOVisibilityTab(QWidget):
         if isinstance(widget, TSOVisibilityListWidget):
             widget.clear()
             for tso_id in copied_ids:
-                widget.addItem(QListWidgetItem(f"__TSO{tso_id}"))
+                widget.addItem(self._make_tso_list_item(tso_id))
             widget.update_item_widths()
             self._update_row_height(row, widget)
 
