@@ -46,3 +46,21 @@ def test_row_selection_emits_track_section_and_order():
 
     assert sections[-1] == 4
     assert orders[-1] == {7: 3, 2: 2}
+
+
+def test_assigned_tso_ids_and_add_dialog_asterisk_labels():
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_tso_display_metadata({1: ("tree", "oak")})
+    tab.set_object_lists(
+        [
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 3]),
+            Track3DObjectList(side="R", section=2, sub_index=0, tso_ids=[3, 4]),
+        ]
+    )
+
+    assigned = tab._assigned_tso_ids()
+    assert assigned == {1, 3, 4}
+
+    assert tab._build_add_tso_dialog_label(1, assigned) == "__TSO1 (tree — oak)"
+    assert tab._build_add_tso_dialog_label(2, assigned) == "__TSO2 *"
