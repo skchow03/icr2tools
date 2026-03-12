@@ -125,6 +125,20 @@ class TSOVisibilityTab(QWidget):
         item.setData(QtCore.Qt.UserRole, tso_id)
         return item
 
+    def _assigned_tso_ids(self) -> set[int]:
+        return {
+            tso_id
+            for object_list in self.object_lists
+            for tso_id in object_list.tso_ids
+            if tso_id >= 0
+        }
+
+    def _build_add_tso_dialog_label(self, tso_id: int, assigned_ids: set[int]) -> str:
+        label = self._build_tso_pill_text(tso_id)
+        if tso_id not in assigned_ids:
+            return f"{label} *"
+        return label
+
     def clear_object_lists(self) -> None:
         self.object_lists = []
         self.table.clearContents()
@@ -395,12 +409,16 @@ class TSOVisibilityTab(QWidget):
         dialog.resize(500, 420)
         dialog_layout = QVBoxLayout(dialog)
         dialog_layout.addWidget(QLabel("Choose a TSO to add:"))
+        dialog_layout.addWidget(
+            QLabel("* indicates this TSO is not assigned to any visibility row yet.")
+        )
 
         list_widget = QListWidget(dialog)
         list_widget.setSelectionMode(QListWidget.SingleSelection)
         list_widget.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        assigned_ids = self._assigned_tso_ids()
         for tso_id in available_ids:
-            item = QListWidgetItem(self._build_tso_pill_text(tso_id))
+            item = QListWidgetItem(self._build_add_tso_dialog_label(tso_id, assigned_ids))
             item.setData(QtCore.Qt.UserRole, tso_id)
             list_widget.addItem(item)
         if list_widget.count() > 0:
