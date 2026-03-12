@@ -901,6 +901,8 @@ class SGViewerController:
         self._window.tso_table.cellClicked.connect(self._on_tso_table_cell_clicked)
         self._window.tso_visibility_sidebar.selectedTSOsChanged.connect(self._on_tso_visibility_row_selected)
         self._window.tso_visibility_sidebar.selectedTSOPillChanged.connect(self._on_tso_visibility_pill_selected)
+        self._window.tso_visibility_sidebar.selectedTrackSectionChanged.connect(self._on_tso_visibility_track_section_selected)
+        self._window.tso_visibility_sidebar.selectedTSOOrderChanged.connect(self._on_tso_visibility_order_changed)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -2046,6 +2048,14 @@ class SGViewerController:
 
     def _on_tso_visibility_pill_selected(self, tso_id: int | None) -> None:
         self._window.preview.set_focused_trackside_object_index(tso_id)
+
+    def _on_tso_visibility_track_section_selected(self, section_index: int | None) -> None:
+        if section_index is None:
+            return
+        self._window.preview.selection_manager.set_selected_section(int(section_index))
+
+    def _on_tso_visibility_order_changed(self, order_map: dict[int, int]) -> None:
+        self._window.preview.set_trackside_order_labels(order_map)
 
     def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
         if column == 6:

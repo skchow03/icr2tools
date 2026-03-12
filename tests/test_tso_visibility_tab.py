@@ -28,3 +28,21 @@ def test_pills_include_filename_and_description_metadata():
     assert widget.item(1).text() == "__TSO2 (house)"
     assert widget.item(2).text() == "__TSO3"
     assert widget.item(0).data(QtCore.Qt.UserRole) == 1
+
+
+def test_row_selection_emits_track_section_and_order():
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists([
+        Track3DObjectList(side="L", section=4, sub_index=0, tso_ids=[7, 2, 7]),
+    ])
+
+    sections: list[object] = []
+    orders: list[object] = []
+    tab.selectedTrackSectionChanged.connect(sections.append)
+    tab.selectedTSOOrderChanged.connect(orders.append)
+
+    tab.table.selectRow(0)
+
+    assert sections[-1] == 4
+    assert orders[-1] == {7: 3, 2: 2}

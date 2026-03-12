@@ -258,6 +258,10 @@ class _RuntimeCorePreviewMixin:
         return tuple(self._trackside_move_enabled_indices)
 
     @property
+    def trackside_order_labels(self) -> tuple[tuple[int, int], ...]:
+        return tuple(self._trackside_order_labels)
+
+    @property
     def show_trackside_objects(self) -> bool:
         return bool(self._show_trackside_objects)
 
@@ -456,6 +460,11 @@ class _RuntimeCorePreviewMixin:
             for index in move_enabled_indices
             if 0 <= index < len(self._trackside_objects)
         )
+        self._trackside_order_labels = tuple(
+            (index, order)
+            for index, order in getattr(self, "_trackside_order_labels", ())
+            if 0 <= index < len(self._trackside_objects) and order > 0
+        )
         self._context.request_repaint()
 
     def set_selected_trackside_object_index(self, index: int | None) -> None:
@@ -491,6 +500,22 @@ class _RuntimeCorePreviewMixin:
                 self._focused_trackside_object_index = None
             else:
                 self._focused_trackside_object_index = value
+        self._context.request_repaint()
+
+    def set_trackside_order_labels(self, labels: dict[int, int] | tuple[tuple[int, int], ...]) -> None:
+        entries = labels.items() if isinstance(labels, dict) else labels
+        normalized: list[tuple[int, int]] = []
+        seen: set[int] = set()
+        for raw_index, raw_order in entries:
+            index = int(raw_index)
+            order = int(raw_order)
+            if index in seen or order <= 0:
+                continue
+            if index < 0 or index >= len(self._trackside_objects):
+                continue
+            seen.add(index)
+            normalized.append((index, order))
+        self._trackside_order_labels = tuple(normalized)
         self._context.request_repaint()
 
     def set_trackside_move_enabled_indices(self, indices: tuple[int, ...]) -> None:

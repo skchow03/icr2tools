@@ -83,6 +83,7 @@ class PreviewPresenter:
             selected_trackside_object_indices=self._runtime.selected_trackside_object_indices,
             focused_trackside_object_index=self._runtime.focused_trackside_object_index,
             trackside_move_enabled_indices=self._runtime.trackside_move_enabled_indices,
+            trackside_order_labels=self._runtime.trackside_order_labels,
             section_geometry_version=self._runtime.section_geometry_version,
             tsd_lines_version=self._runtime.tsd_lines_version,
         )

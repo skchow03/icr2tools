@@ -146,6 +146,7 @@ class SgPreviewState:
     selected_trackside_object_indices: tuple[int, ...] = ()
     focused_trackside_object_index: int | None = None
     trackside_move_enabled_indices: tuple[int, ...] = ()
+    trackside_order_labels: tuple[tuple[int, int], ...] = ()
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
 
@@ -242,6 +243,7 @@ def paint_preview(
                 selected_indices=sg_preview_state.selected_trackside_object_indices,
                 focused_index=sg_preview_state.focused_trackside_object_index,
                 move_enabled_indices=sg_preview_state.trackside_move_enabled_indices,
+                order_labels=sg_preview_state.trackside_order_labels,
             )
         _draw_centerlines(
             painter,
@@ -830,9 +832,11 @@ def _draw_trackside_objects(
     selected_indices: tuple[int, ...],
     focused_index: int | None,
     move_enabled_indices: tuple[int, ...],
+    order_labels: tuple[tuple[int, int], ...],
 ) -> None:
     highlighted_indices = set(int(i) for i in move_enabled_indices)
     highlighted_indices.update(int(i) for i in selected_indices)
+    order_by_index = {int(index): int(order) for index, order in order_labels}
     for index, obj in enumerate(trackside_objects):
         yaw_radians = math.radians(float(getattr(obj, "yaw", 0.0)) / 10.0)
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
@@ -854,6 +858,10 @@ def _draw_trackside_objects(
                 painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
                 painter.setBrush(QtGui.QBrush(QtGui.QColor("#FF2A2A")))
                 painter.drawEllipse(point, 4.0, 4.0)
+            order = order_by_index.get(index)
+            if order is not None and is_highlighted:
+                painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
+                painter.drawText(QtCore.QPointF(sx - 3.0, sy + marker_size + 14.0), str(order))
             painter.restore()
             continue
 
@@ -884,6 +892,13 @@ def _draw_trackside_objects(
             painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
             painter.setBrush(QtGui.QBrush(QtGui.QColor("#FF2A2A")))
             painter.drawEllipse(anchor, 4.0, 4.0)
+
+        order = order_by_index.get(index)
+        if order is not None and is_highlighted:
+            bounds = polygon.boundingRect()
+            label_point = QtCore.QPointF(bounds.center().x(), bounds.bottom() + 12.0)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
+            painter.drawText(label_point, str(order))
         painter.restore()
 
 
