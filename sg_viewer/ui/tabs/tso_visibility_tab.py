@@ -67,6 +67,8 @@ class TSOVisibilityListWidget(QListWidget):
 class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
+    selectedTrackSectionChanged = QtCore.pyqtSignal(object)
+    selectedTSOOrderChanged = QtCore.pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -130,12 +132,30 @@ class TSOVisibilityTab(QWidget):
         self.table.setRowCount(0)
         self.selectedTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
+        self.selectedTrackSectionChanged.emit(None)
+        self.selectedTSOOrderChanged.emit({})
 
     def set_object_lists(self, object_lists: list[Track3DObjectList]) -> None:
         self.object_lists = list(object_lists)
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
+        self.selectedTrackSectionChanged.emit(None)
+        self.selectedTSOOrderChanged.emit({})
+
+    def _emit_track_section_and_order(self, row: int) -> None:
+        if row < 0 or row >= len(self.object_lists):
+            self.selectedTrackSectionChanged.emit(None)
+            self.selectedTSOOrderChanged.emit({})
+            return
+        entry = self.object_lists[row]
+        self.selectedTrackSectionChanged.emit(int(entry.section))
+        order_map: dict[int, int] = {}
+        for order, tso_id in enumerate(entry.tso_ids, start=1):
+            if tso_id < 0:
+                continue
+            order_map[int(tso_id)] = order
+        self.selectedTSOOrderChanged.emit(order_map)
 
     def serialize_object_lists(self) -> list[dict[str, object]]:
         payload: list[dict[str, object]] = []
@@ -297,15 +317,19 @@ class TSOVisibilityTab(QWidget):
         self.object_lists[row].tso_ids = reordered_ids
         if self.table.currentRow() == row:
             self.selectedTSOsChanged.emit(tuple(reordered_ids))
+            self._emit_track_section_and_order(row)
 
     def _emit_selected_tsos(self) -> None:
         row = self.table.currentRow()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
+            self.selectedTrackSectionChanged.emit(None)
+            self.selectedTSOOrderChanged.emit({})
             return
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
         self.selectedTSOPillChanged.emit(None)
+        self._emit_track_section_and_order(row)
 
     def _on_tso_pill_selected(self, row: int, item: QListWidgetItem | None) -> None:
         if row < 0 or row >= len(self.object_lists):
@@ -396,6 +420,7 @@ class TSOVisibilityTab(QWidget):
             self._update_row_height(row, widget)
         self.selectedTSOPillChanged.emit(tso_id)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+        self._emit_track_section_and_order(row)
 
     def _on_delete_tso_requested(self) -> None:
         row = self.table.currentRow()
@@ -417,6 +442,7 @@ class TSOVisibilityTab(QWidget):
         self._update_row_height(row, widget)
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+        self._emit_track_section_and_order(row)
 
     def _on_export_requested(self) -> None:
         if not self.object_lists:
@@ -489,3 +515,4 @@ class TSOVisibilityTab(QWidget):
 
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(copied_ids))
+        self._emit_track_section_and_order(row)
