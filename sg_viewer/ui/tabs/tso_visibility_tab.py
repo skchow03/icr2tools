@@ -1,7 +1,6 @@
 from PyQt5 import QtCore
 from PyQt5.QtGui import QResizeEvent
 from PyQt5.QtWidgets import (
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -393,12 +392,22 @@ class TSOVisibilityTab(QWidget):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Add TSO")
+        dialog.resize(500, 420)
         dialog_layout = QVBoxLayout(dialog)
         dialog_layout.addWidget(QLabel("Choose a TSO to add:"))
-        combo = QComboBox(dialog)
+
+        list_widget = QListWidget(dialog)
+        list_widget.setSelectionMode(QListWidget.SingleSelection)
+        list_widget.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         for tso_id in available_ids:
-            combo.addItem(self._build_tso_pill_text(tso_id), tso_id)
-        dialog_layout.addWidget(combo)
+            item = QListWidgetItem(self._build_tso_pill_text(tso_id))
+            item.setData(QtCore.Qt.UserRole, tso_id)
+            list_widget.addItem(item)
+        if list_widget.count() > 0:
+            list_widget.setCurrentRow(0)
+        list_widget.itemDoubleClicked.connect(lambda _item: dialog.accept())
+        dialog_layout.addWidget(list_widget)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -406,7 +415,10 @@ class TSOVisibilityTab(QWidget):
 
         if dialog.exec_() != QDialog.Accepted:
             return
-        tso_id = combo.currentData()
+        selected_items = list_widget.selectedItems()
+        if not selected_items:
+            return
+        tso_id = selected_items[0].data(QtCore.Qt.UserRole)
         if not isinstance(tso_id, int):
             return
 
