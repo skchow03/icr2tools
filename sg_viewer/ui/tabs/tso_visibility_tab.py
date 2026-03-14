@@ -5,14 +5,11 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QMessageBox,
-    QHeaderView,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -63,6 +60,15 @@ class TSOVisibilityListWidget(QListWidget):
         self.contentHeightChanged.emit()
 
 
+class TrackSectionListWidget(QListWidget):
+    selectionChanged = QtCore.pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__()
+        self.setSelectionMode(QListWidget.SingleSelection)
+        self.currentRowChanged.connect(self.selectionChanged.emit)
+
+
 class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
@@ -90,10 +96,36 @@ class TSOVisibilityTab(QWidget):
         button_row.addWidget(self.save_to_track3d_button)
         layout.addLayout(button_row)
 
-        self.table = QTableWidget()
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        layout.addWidget(self.table)
+        lists_row = QHBoxLayout()
+        layout.addLayout(lists_row)
+
+        left_panel = QVBoxLayout()
+        right_panel = QVBoxLayout()
+        lists_row.addLayout(left_panel, 1)
+        lists_row.addLayout(right_panel, 1)
+
+        left_panel.addWidget(QLabel("Sections / Side / SubIndex"))
+        self.section_list = TrackSectionListWidget()
+        left_panel.addWidget(self.section_list)
+
+        right_panel.addWidget(QLabel("Visible TSOs (drag to reorder)"))
+        self.tso_list = TSOVisibilityListWidget()
+        self.tso_list.setDragDropMode(QListWidget.InternalMove)
+        self.tso_list.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self.tso_list.setStyleSheet(
+            "QListWidget::item {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 10px;"
+            "  padding: 2px 8px;"
+            "  background: palette(button);"
+            "  color: palette(text);"
+            "}"
+            "QListWidget::item:selected {"
+            "  background: palette(light);"
+            "  color: palette(text);"
+            "}"
+        )
+        right_panel.addWidget(self.tso_list)
 
         self.load_button.clicked.connect(self.load_file)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
@@ -101,8 +133,9 @@ class TSOVisibilityTab(QWidget):
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.export_button.clicked.connect(self._on_export_requested)
         self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
-        self.table.itemSelectionChanged.connect(self._emit_selected_tsos)
-        self.table.horizontalHeader().sectionResized.connect(self._on_column_resized)
+        self.section_list.selectionChanged.connect(self._emit_selected_tsos)
+        self.tso_list.orderChanged.connect(self._on_tso_order_changed)
+        self.tso_list.itemClicked.connect(self._on_tso_pill_selected)
 
         self.object_lists = []
         self.available_tso_ids: list[int] = []
@@ -141,8 +174,8 @@ class TSOVisibilityTab(QWidget):
 
     def clear_object_lists(self) -> None:
         self.object_lists = []
-        self.table.clearContents()
-        self.table.setRowCount(0)
+        self.section_list.clear()
+        self.tso_list.clear()
         self.selectedTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
@@ -263,59 +296,22 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
 
     def populate_table(self):
-        self.table.setRowCount(len(self.object_lists))
-        self.table.setColumnCount(4)
+        self.section_list.clear()
+        for entry in self.object_lists:
+            label = f"{entry.side} / {entry.section} / {entry.sub_index}"
+            self.section_list.addItem(QListWidgetItem(label))
+        if self.object_lists:
+            self.section_list.setCurrentRow(0)
+        else:
+            self.tso_list.clear()
 
-        self.table.setHorizontalHeaderLabels(["Side", "Section", "SubIndex", "Visible TSOs"])
-
-        for row, entry in enumerate(self.object_lists):
-            self.table.setItem(row, 0, QTableWidgetItem(entry.side))
-            self.table.setItem(row, 1, QTableWidgetItem(str(entry.section)))
-            self.table.setItem(row, 2, QTableWidgetItem(str(entry.sub_index)))
-
-            tso_list = TSOVisibilityListWidget()
-            tso_list.setDragDropMode(QListWidget.InternalMove)
-            tso_list.setDefaultDropAction(QtCore.Qt.MoveAction)
-            tso_list.setStyleSheet(
-                "QListWidget::item {"
-                "  border: 1px solid palette(mid);"
-                "  border-radius: 10px;"
-                "  padding: 2px 8px;"
-                "  background: palette(button);"
-                "  color: palette(text);"
-                "}"
-                "QListWidget::item:selected {"
-                "  background: palette(light);"
-                "  color: palette(text);"
-                "}"
-            )
-            for tso_id in entry.tso_ids:
-                tso_list.addItem(self._make_tso_list_item(tso_id))
-            tso_list.orderChanged.connect(
-                lambda row_index=row, widget=tso_list: self._on_tso_order_changed(row_index, widget)
-            )
-            tso_list.contentHeightChanged.connect(
-                lambda row_index=row, widget=tso_list: self._update_row_height(row_index, widget)
-            )
-            tso_list.itemClicked.connect(
-                lambda item, row_index=row: self._on_tso_pill_selected(row_index, item)
-            )
-            self.table.setCellWidget(row, 3, tso_list)
-            tso_list.update_item_widths()
-            self._update_row_height(row, tso_list)
-
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
-
-    def _on_tso_order_changed(self, row: int, widget: QListWidget) -> None:
+    def _on_tso_order_changed(self) -> None:
+        row = self.section_list.currentRow()
         if row < 0 or row >= len(self.object_lists):
             return
         reordered_ids: list[int] = []
-        for index in range(widget.count()):
-            item = widget.item(index)
+        for index in range(self.tso_list.count()):
+            item = self.tso_list.item(index)
             if item is None:
                 continue
             text = item.text().strip()
@@ -328,12 +324,20 @@ class TSOVisibilityTab(QWidget):
                 except ValueError:
                     continue
         self.object_lists[row].tso_ids = reordered_ids
-        if self.table.currentRow() == row:
-            self.selectedTSOsChanged.emit(tuple(reordered_ids))
-            self._emit_track_section_and_order(row)
+        self.selectedTSOsChanged.emit(tuple(reordered_ids))
+        self._emit_track_section_and_order(row)
+
+    def _refresh_current_tso_list(self) -> None:
+        row = self.section_list.currentRow()
+        self.tso_list.clear()
+        if row < 0 or row >= len(self.object_lists):
+            return
+        for tso_id in self.object_lists[row].tso_ids:
+            self.tso_list.addItem(self._make_tso_list_item(tso_id))
+        self.tso_list.update_item_widths()
 
     def _emit_selected_tsos(self) -> None:
-        row = self.table.currentRow()
+        row = self.section_list.currentRow()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
@@ -343,12 +347,13 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
         self.selectedTSOPillChanged.emit(None)
         self._emit_track_section_and_order(row)
+        self._refresh_current_tso_list()
 
-    def _on_tso_pill_selected(self, row: int, item: QListWidgetItem | None) -> None:
+    def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
+        row = self.section_list.currentRow()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOPillChanged.emit(None)
             return
-        self.table.selectRow(row)
         if item is None:
             self.selectedTSOPillChanged.emit(None)
             return
@@ -367,30 +372,18 @@ class TSOVisibilityTab(QWidget):
                 return
         self.selectedTSOPillChanged.emit(tso_id)
 
-    def _on_column_resized(self, column: int, _old_size: int, _new_size: int) -> None:
-        if column != 3:
-            return
-        self._refresh_visible_tso_column()
-
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self._refresh_visible_tso_column()
+        self.tso_list.update_item_widths()
 
     def _refresh_visible_tso_column(self) -> None:
-        for row in range(self.table.rowCount()):
-            widget = self.table.cellWidget(row, 3)
-            if not isinstance(widget, TSOVisibilityListWidget):
-                continue
-            widget.update_item_widths()
-            self._update_row_height(row, widget)
+        self.tso_list.update_item_widths()
 
     def _update_row_height(self, row: int, widget: TSOVisibilityListWidget) -> None:
-        if row < 0 or row >= self.table.rowCount():
-            return
-        self.table.setRowHeight(row, max(widget.content_height(), 24))
+        _ = (row, widget)
 
     def _on_add_tso_requested(self) -> None:
-        row = self.table.currentRow()
+        row = self.section_list.currentRow()
         if row < 0 or row >= len(self.object_lists):
             return
         available_ids = self.available_tso_ids or sorted(
@@ -441,35 +434,28 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists[row].tso_ids.append(tso_id)
-        widget = self.table.cellWidget(row, 3)
-        if isinstance(widget, TSOVisibilityListWidget):
-            item = self._make_tso_list_item(tso_id)
-            widget.addItem(item)
-            widget.setCurrentItem(item)
-            widget.update_item_widths()
-            self._update_row_height(row, widget)
+        self._refresh_current_tso_list()
+        item = self.tso_list.item(self.tso_list.count() - 1)
+        if item is not None:
+            self.tso_list.setCurrentItem(item)
         self.selectedTSOPillChanged.emit(tso_id)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
         self._emit_track_section_and_order(row)
 
     def _on_delete_tso_requested(self) -> None:
-        row = self.table.currentRow()
+        row = self.section_list.currentRow()
         if row < 0 or row >= len(self.object_lists):
             return
-        widget = self.table.cellWidget(row, 3)
-        if not isinstance(widget, TSOVisibilityListWidget):
-            return
-        item = widget.currentItem()
+        item = self.tso_list.currentItem()
         if item is None:
             return
-        item_row = widget.row(item)
+        item_row = self.tso_list.row(item)
         if item_row < 0:
             return
-        widget.takeItem(item_row)
+        self.tso_list.takeItem(item_row)
         if item_row < len(self.object_lists[row].tso_ids):
             del self.object_lists[row].tso_ids[item_row]
-        widget.update_item_widths()
-        self._update_row_height(row, widget)
+        self.tso_list.update_item_widths()
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
         self._emit_track_section_and_order(row)
@@ -528,20 +514,14 @@ class TSOVisibilityTab(QWidget):
         )
 
     def _on_copy_from_previous_requested(self) -> None:
-        row = self.table.currentRow()
+        row = self.section_list.currentRow()
         if row <= 0 or row >= len(self.object_lists):
             return
 
         copied_ids = list(self.object_lists[row - 1].tso_ids)
         self.object_lists[row].tso_ids = copied_ids
 
-        widget = self.table.cellWidget(row, 3)
-        if isinstance(widget, TSOVisibilityListWidget):
-            widget.clear()
-            for tso_id in copied_ids:
-                widget.addItem(self._make_tso_list_item(tso_id))
-            widget.update_item_widths()
-            self._update_row_height(row, widget)
+        self._refresh_current_tso_list()
 
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(copied_ids))
