@@ -61,12 +61,12 @@ class TSOVisibilityListWidget(QListWidget):
 
 
 class TrackSectionListWidget(QListWidget):
-    selectionChanged = QtCore.pyqtSignal(int)
+    rowSelectionChanged = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
         self.setSelectionMode(QListWidget.SingleSelection)
-        self.currentRowChanged.connect(self.selectionChanged.emit)
+        self.currentRowChanged.connect(self.rowSelectionChanged.emit)
 
 
 class TSOVisibilityTab(QWidget):
@@ -133,7 +133,7 @@ class TSOVisibilityTab(QWidget):
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.export_button.clicked.connect(self._on_export_requested)
         self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
-        self.section_list.selectionChanged.connect(self._emit_selected_tsos)
+        self.section_list.rowSelectionChanged.connect(self._emit_selected_tsos)
         self.tso_list.orderChanged.connect(self._on_tso_order_changed)
         self.tso_list.itemClicked.connect(self._on_tso_pill_selected)
 
