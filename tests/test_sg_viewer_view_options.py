@@ -1931,6 +1931,64 @@ def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
         window.close()
 
 
+
+
+def test_tools_menu_exposes_unique_tso_list_action(qapp):
+    window = SGViewerWindow()
+    try:
+        tools_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+        )
+
+        action = next(
+            candidate
+            for candidate in tools_menu.actions()
+            if candidate.text() == "Show list of unique TSOs"
+        )
+
+        assert action is not None
+    finally:
+        window.close()
+
+
+def test_show_unique_tso_list_dialog_displays_sorted_unique_filenames(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(filename="tree", x=0, y=0, z=0, yaw=0, pitch=0, tilt=0),
+            TracksideObject(filename="cone.3do", x=0, y=0, z=0, yaw=0, pitch=0, tilt=0),
+            TracksideObject(filename="tree.3DO", x=0, y=0, z=0, yaw=0, pitch=0, tilt=0),
+        ]
+
+        window.controller._show_unique_tso_filenames_action.trigger()
+
+        dialog = window.controller._unique_tso_filenames_window
+        assert dialog is not None
+
+        text_edit = dialog.findChild(QtWidgets.QPlainTextEdit, "uniqueTsoFilenamesText")
+        assert text_edit is not None
+        assert text_edit.toPlainText() == "cone\ntree"
+    finally:
+        window.close()
+
+
+def test_show_unique_tso_list_dialog_shows_empty_message_when_no_tsos(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = []
+
+        window.controller._show_unique_tso_filenames_action.trigger()
+
+        dialog = window.controller._unique_tso_filenames_window
+        assert dialog is not None
+
+        text_edit = dialog.findChild(QtWidgets.QPlainTextEdit, "uniqueTsoFilenamesText")
+        assert text_edit is not None
+        assert text_edit.toPlainText() == "No TSOs found."
+    finally:
+        window.close()
+
+
 def test_fsect_diagram_uses_wrapped_neighbor_sections(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
