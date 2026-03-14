@@ -104,6 +104,7 @@ class SGViewerController:
         self._xsect_table_window: XsectTableWindow | None = None
         self._tso_attributes_dialog: TracksideObjectAttributesDialog | None = None
         self._integrity_report_window: QtWidgets.QDialog | None = None
+        self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
         self._history = FileHistory()
         self._sg_settings_store = SGSettingsStore()
@@ -472,6 +473,14 @@ class SGViewerController:
         self._show_palette_colors_action = QtWidgets.QAction("Show SUNNY Palette Colors…", self._window)
         self._show_palette_colors_action.triggered.connect(self._show_palette_colors_dialog)
 
+        self._show_unique_tso_filenames_action = QtWidgets.QAction(
+            "Show list of unique TSOs",
+            self._window,
+        )
+        self._show_unique_tso_filenames_action.triggered.connect(
+            self._show_unique_tso_filenames_dialog
+        )
+
         self._quit_action = QtWidgets.QAction("Quit", self._window)
         self._quit_action.setShortcut("Ctrl+Q")
         self._quit_action.triggered.connect(self._window.close)
@@ -559,6 +568,7 @@ class SGViewerController:
 
         tools_menu.addSeparator()
         tools_menu.addAction(self._show_palette_colors_action)
+        tools_menu.addAction(self._show_unique_tso_filenames_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._run_integrity_checks_action)
         tools_menu.addSeparator()
@@ -655,6 +665,53 @@ class SGViewerController:
         self._palette_colors_dialog.show()
         self._palette_colors_dialog.raise_()
         self._palette_colors_dialog.activateWindow()
+
+    def _show_unique_tso_filenames_dialog(self) -> None:
+        if self._unique_tso_filenames_window is None:
+            self._unique_tso_filenames_window = QtWidgets.QDialog(self._window)
+            self._unique_tso_filenames_window.setWindowTitle("Unique TSO filenames")
+            self._unique_tso_filenames_window.setWindowModality(QtCore.Qt.NonModal)
+            self._unique_tso_filenames_window.setAttribute(
+                QtCore.Qt.WA_DeleteOnClose,
+                False,
+            )
+            self._unique_tso_filenames_window.resize(480, 560)
+
+            layout = QtWidgets.QVBoxLayout(self._unique_tso_filenames_window)
+            text_edit = QtWidgets.QPlainTextEdit(self._unique_tso_filenames_window)
+            text_edit.setObjectName("uniqueTsoFilenamesText")
+            text_edit.setReadOnly(True)
+            text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+            layout.addWidget(text_edit)
+
+            close_button = QtWidgets.QPushButton("Close", self._unique_tso_filenames_window)
+            close_button.clicked.connect(self._unique_tso_filenames_window.close)
+            button_row = QtWidgets.QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+
+        unique_filenames = sorted(
+            {
+                normalize_trackside_filename(obj.filename)
+                for obj in self._trackside_objects
+                if normalize_trackside_filename(obj.filename)
+            }
+        )
+        text = "\n".join(unique_filenames)
+        if not text:
+            text = "No TSOs found."
+
+        text_edit = self._unique_tso_filenames_window.findChild(
+            QtWidgets.QPlainTextEdit,
+            "uniqueTsoFilenamesText",
+        )
+        if text_edit is not None:
+            text_edit.setPlainText(text)
+
+        self._unique_tso_filenames_window.show()
+        self._unique_tso_filenames_window.raise_()
+        self._unique_tso_filenames_window.activateWindow()
 
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
