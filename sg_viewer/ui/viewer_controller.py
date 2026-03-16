@@ -147,6 +147,9 @@ class SGViewerController:
         self._selected_trackside_object_indices: list[int] = []
         self._trackside_move_enabled_indices: set[int] = set()
         self._tso_add_mode_active = False
+        self._tso_add_to_wall_mode_active = False
+        self._tso_snap_preview_point: tuple[int, int] | None = None
+        self._tso_snap_preview_yaw: int | None = None
         self._tso_stamp_mode_active = False
         self._tso_box_select_mode_active = False
         self._tso_stamp_filename: str | None = None
@@ -167,6 +170,7 @@ class SGViewerController:
         self._connect_signals()
         self._window.preview.set_trackside_object_drag_callback(self._on_preview_tso_dragged)
         self._window.preview.set_trackside_map_click_callback(self._on_preview_tso_map_clicked)
+        self._window.preview.set_trackside_hover_callback(self._on_preview_tso_hovered)
         self._window.preview.set_trackside_box_select_callback(self._on_preview_tso_box_selected)
         self._on_track_opacity_changed(self._window.track_opacity_slider.value())
         self._on_background_brightness_changed(
@@ -946,6 +950,7 @@ class SGViewerController:
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
         self._window.tsd_objects_table.itemChanged.connect(self._on_tsd_object_item_changed)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
+        self._window.tso_add_to_wall_button.clicked.connect(self._on_tso_add_to_wall_requested)
         self._window.tso_stamp_button.clicked.connect(self._on_tso_stamp_requested)
         self._window.tso_box_select_button.clicked.connect(self._on_tso_box_select_requested)
         self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
@@ -2214,9 +2219,26 @@ class SGViewerController:
         self._window.tso_add_button.blockSignals(True)
         self._window.tso_add_button.setChecked(self._tso_add_mode_active)
         self._window.tso_add_button.blockSignals(False)
+        if self._tso_add_mode_active and self._tso_add_to_wall_mode_active:
+            self._set_tso_add_to_wall_mode_active(False)
         if self._tso_add_mode_active and self._tso_stamp_mode_active:
             self._set_tso_stamp_mode_active(False)
         if self._tso_add_mode_active and self._tso_box_select_mode_active:
+            self._set_tso_box_select_mode_active(False)
+
+    def _set_tso_add_to_wall_mode_active(self, active: bool) -> None:
+        self._tso_add_to_wall_mode_active = bool(active)
+        self._window.tso_add_to_wall_button.blockSignals(True)
+        self._window.tso_add_to_wall_button.setChecked(self._tso_add_to_wall_mode_active)
+        self._window.tso_add_to_wall_button.blockSignals(False)
+        if not self._tso_add_to_wall_mode_active:
+            self._set_tso_snap_preview(None, None)
+            return
+        if self._tso_add_mode_active:
+            self._set_tso_add_mode_active(False)
+        if self._tso_stamp_mode_active:
+            self._set_tso_stamp_mode_active(False)
+        if self._tso_box_select_mode_active:
             self._set_tso_box_select_mode_active(False)
 
     def _set_tso_stamp_mode_active(self, active: bool, *, filename: str | None = None) -> None:
@@ -2225,6 +2247,8 @@ class SGViewerController:
             self._tso_stamp_filename = normalize_trackside_filename(filename or "") or "object"
             if self._tso_add_mode_active:
                 self._set_tso_add_mode_active(False)
+            if self._tso_add_to_wall_mode_active:
+                self._set_tso_add_to_wall_mode_active(False)
             if self._tso_box_select_mode_active:
                 self._set_tso_box_select_mode_active(False)
         else:
@@ -2241,6 +2265,8 @@ class SGViewerController:
         self._window.preview.set_trackside_box_select_enabled(self._tso_box_select_mode_active)
         if self._tso_box_select_mode_active and self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
+        if self._tso_box_select_mode_active and self._tso_add_to_wall_mode_active:
+            self._set_tso_add_to_wall_mode_active(False)
         if self._tso_box_select_mode_active and self._tso_stamp_mode_active:
             self._set_tso_stamp_mode_active(False)
 
@@ -2248,6 +2274,13 @@ class SGViewerController:
         self._set_tso_add_mode_active(self._window.tso_add_button.isChecked())
         if self._tso_add_mode_active:
             self._window.show_status_message("Add TSO active: click on the map to place one TSO.")
+
+    def _on_tso_add_to_wall_requested(self) -> None:
+        self._set_tso_add_to_wall_mode_active(self._window.tso_add_to_wall_button.isChecked())
+        if self._tso_add_to_wall_mode_active:
+            self._window.show_status_message("Add TSO to wall active: move mouse to preview nearest wall, left click to place.")
+        else:
+            self._window.show_status_message("Add TSO to wall deactivated.")
 
     def _on_tso_stamp_requested(self) -> None:
         if self._tso_stamp_mode_active:
@@ -2283,17 +2316,159 @@ class SGViewerController:
             self._window.show_status_message("Box Select deactivated.")
 
     def _on_preview_tso_map_clicked(self, x: int, y: int) -> bool:
-        if not self._tso_add_mode_active and not self._tso_stamp_mode_active:
+        if not self._tso_add_mode_active and not self._tso_add_to_wall_mode_active and not self._tso_stamp_mode_active:
             return False
-        filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
-        self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
+        if self._tso_add_to_wall_mode_active:
+            if self._tso_snap_preview_point is None or self._tso_snap_preview_yaw is None:
+                return False
+            snapped_x, snapped_y = self._tso_snap_preview_point
+            obj = self._build_default_tso(x=snapped_x, y=snapped_y)
+            self._trackside_objects.append(TracksideObject(
+                filename=obj.filename,
+                x=obj.x,
+                y=obj.y,
+                z=obj.z,
+                yaw=self._tso_snap_preview_yaw,
+                pitch=obj.pitch,
+                tilt=obj.tilt,
+                description=obj.description,
+                bbox_length=obj.bbox_length,
+                bbox_width=obj.bbox_width,
+                rotation_point=obj.rotation_point,
+            ))
+        else:
+            filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
+            self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
         self._selected_trackside_object_indices = [len(self._trackside_objects) - 1]
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
         if self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
+        if self._tso_add_to_wall_mode_active:
+            self._set_tso_add_to_wall_mode_active(False)
         return True
+
+    def _set_tso_snap_preview(self, point: tuple[int, int] | None, yaw: int | None) -> None:
+        self._tso_snap_preview_point = point
+        self._tso_snap_preview_yaw = yaw
+        self._window.preview.set_trackside_snap_preview_point(point)
+
+    def _on_preview_tso_hovered(self, x: int | None, y: int | None) -> None:
+        if not self._tso_add_to_wall_mode_active:
+            self._set_tso_snap_preview(None, None)
+            return
+        if x is None or y is None:
+            self._set_tso_snap_preview(None, None)
+            return
+        snapped = self._nearest_wall_snap((float(x), float(y)))
+        if snapped is None:
+            self._set_tso_snap_preview(None, None)
+            return
+        point, wall_heading = snapped
+        normal_heading = wall_heading + (math.pi / 2.0)
+        yaw = int(round(math.degrees(normal_heading) * 10.0)) % 3600
+        self._set_tso_snap_preview((int(round(point[0])), int(round(point[1]))), yaw)
+
+    def _nearest_wall_snap(self, target: tuple[float, float]) -> tuple[tuple[float, float], float] | None:
+        sections = list(self._window.preview.section_manager.sections)
+        if not sections:
+            return None
+        best_point: tuple[float, float] | None = None
+        best_heading: float | None = None
+        best_dist2: float | None = None
+        for section_index, section in enumerate(sections):
+            wall_ranges = self._wall_dlat_ranges_for_section(section_index)
+            if not wall_ranges:
+                continue
+            samples = max(16, int(math.ceil(max(1.0, float(section.length)) / 500.0)))
+            for sample_index in range(samples + 1):
+                fraction = sample_index / samples
+                section_point = self._point_on_section(section, fraction)
+                heading = self._heading_on_section(section, fraction)
+                if section_point is None or heading is None:
+                    continue
+                nx = -math.sin(heading)
+                ny = math.cos(heading)
+                for dlat_start, dlat_end in wall_ranges:
+                    for dlat in (dlat_start, dlat_end):
+                        wx = section_point[0] + nx * dlat
+                        wy = section_point[1] + ny * dlat
+                        dx = wx - target[0]
+                        dy = wy - target[1]
+                        dist2 = dx * dx + dy * dy
+                        if best_dist2 is None or dist2 < best_dist2:
+                            best_dist2 = dist2
+                            best_point = (wx, wy)
+                            best_heading = heading
+        if best_point is None or best_heading is None:
+            return None
+        return best_point, best_heading
+
+    def _wall_dlat_ranges_for_section(self, section_index: int) -> list[tuple[float, float]]:
+        ranges: list[tuple[float, float]] = []
+        for fsect in self._window.preview.get_section_fsects(section_index):
+            if int(fsect.surface_type) != 7:
+                continue
+            start = float(fsect.start_dlat)
+            end = float(fsect.end_dlat)
+            ranges.append((start, end))
+        return ranges
+
+    def _point_on_section(self, section: SectionPreview, fraction: float) -> tuple[float, float] | None:
+        sx, sy = section.start
+        ex, ey = section.end
+        center = section.center
+        frac = max(0.0, min(1.0, float(fraction)))
+        if center is None:
+            return (sx + (ex - sx) * frac, sy + (ey - sy) * frac)
+        cx, cy = center
+        start_angle = math.atan2(sy - cy, sx - cx)
+        end_angle = math.atan2(ey - cy, ex - cx)
+        ccw = self._is_ccw_turn((sx - cx, sy - cy), (ex - cx, ey - cy), section.start_heading)
+        delta = self._angle_delta(start_angle, end_angle, ccw)
+        angle = start_angle + (delta * frac)
+        radius = math.hypot(sx - cx, sy - cy)
+        return (cx + math.cos(angle) * radius, cy + math.sin(angle) * radius)
+
+    def _heading_on_section(self, section: SectionPreview, fraction: float) -> float | None:
+        if section.center is None:
+            dx = section.end[0] - section.start[0]
+            dy = section.end[1] - section.start[1]
+            if math.hypot(dx, dy) <= 1e-9:
+                return None
+            return math.atan2(dy, dx)
+        center = section.center
+        if center is None:
+            return None
+        point = self._point_on_section(section, fraction)
+        if point is None:
+            return None
+        vx = point[0] - center[0]
+        vy = point[1] - center[1]
+        if math.hypot(vx, vy) <= 1e-9:
+            return None
+        ccw = self._is_ccw_turn((section.start[0] - center[0], section.start[1] - center[1]), (section.end[0] - center[0], section.end[1] - center[1]), section.start_heading)
+        tx, ty = ((-vy, vx) if ccw else (vy, -vx))
+        return math.atan2(ty, tx)
+
+    def _is_ccw_turn(self, start_vec: tuple[float, float], end_vec: tuple[float, float], heading: tuple[float, float] | None) -> bool:
+        if heading is not None:
+            cross = start_vec[0] * heading[1] - start_vec[1] * heading[0]
+            if not math.isclose(cross, 0.0, abs_tol=1e-12):
+                return cross > 0
+        cross = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+        return cross > 0
+
+    def _angle_delta(self, start_angle: float, end_angle: float, ccw: bool) -> float:
+        delta = end_angle - start_angle
+        if ccw:
+            while delta <= 0:
+                delta += math.tau
+        else:
+            while delta >= 0:
+                delta -= math.tau
+        return delta
 
     def _on_preview_tso_box_selected(self, min_x: int, min_y: int, max_x: int, max_y: int) -> None:
         selected_indices = [

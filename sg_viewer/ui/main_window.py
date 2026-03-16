@@ -158,6 +158,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_objects_table.horizontalHeader().setStretchLastSection(True)
         self._tso_add_button = QtWidgets.QPushButton("Add TSO")
         self._tso_add_button.setCheckable(True)
+        self._tso_add_to_wall_button = QtWidgets.QPushButton("Add TSO to wall")
+        self._tso_add_to_wall_button.setCheckable(True)
         self._tso_stamp_button = QtWidgets.QPushButton("Stamp")
         self._tso_stamp_button.setCheckable(True)
         self._tso_box_select_button = QtWidgets.QPushButton("Box Select")
@@ -676,6 +678,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_layout.addWidget(tso_info)
         tso_buttons = QtWidgets.QHBoxLayout()
         tso_buttons.addWidget(self._tso_add_button)
+        tso_buttons.addWidget(self._tso_add_to_wall_button)
         tso_buttons.addWidget(self._tso_stamp_button)
         tso_buttons.addWidget(self._tso_box_select_button)
         tso_buttons.addWidget(self._tso_delete_button)
@@ -995,6 +998,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_delete_button(self) -> QtWidgets.QPushButton:
         return self._tso_delete_button
+
+    @property
+    def tso_add_to_wall_button(self) -> QtWidgets.QPushButton:
+        return self._tso_add_to_wall_button
 
     @property
     def tso_stamp_button(self) -> QtWidgets.QPushButton:

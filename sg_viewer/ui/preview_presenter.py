@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt5 import QtGui
+from PyQt5 import QtCore, QtGui
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.runtime import PreviewRuntime
@@ -143,6 +143,15 @@ class PreviewPresenter:
             transform,
             self._context.widget_height(),
         )
+
+        snap_point = self._runtime.trackside_snap_preview_point
+        if snap_point is not None and transform is not None:
+            scale, offsets = transform
+            screen_x = snap_point[0] * scale + offsets[0]
+            screen_y = self._context.widget_height() - (snap_point[1] * scale + offsets[1])
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QColor(255, 90, 90, 220))
+            painter.drawEllipse(QtCore.QPointF(screen_x, screen_y), 4.5, 4.5)
 
         box_rect = self._runtime._trackside_box_select_screen_rect()
         if box_rect is not None and box_rect.width() > 0.0 and box_rect.height() > 0.0:

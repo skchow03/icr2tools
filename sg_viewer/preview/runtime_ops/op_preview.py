@@ -336,6 +336,10 @@ class _RuntimeCorePreviewMixin:
     def split_hover_point(self) -> Point | None:
         return self._split_hover_point
 
+    @property
+    def trackside_snap_preview_point(self) -> tuple[int, int] | None:
+        return self._trackside_snap_preview_point
+
     def _apply_creation_update(self, update: CreationUpdate) -> None:
         if update is None:
             return
@@ -540,8 +544,15 @@ class _RuntimeCorePreviewMixin:
     def set_trackside_map_click_callback(self, callback) -> None:
         self._trackside_map_click_callback = callback
 
+    def set_trackside_hover_callback(self, callback) -> None:
+        self._trackside_hover_callback = callback
+
     def set_trackside_box_select_callback(self, callback) -> None:
         self._trackside_box_select_callback = callback
+
+    def set_trackside_snap_preview_point(self, point: tuple[int, int] | None) -> None:
+        self._trackside_snap_preview_point = point
+        self._context.request_repaint()
 
     def set_trackside_box_select_enabled(self, enabled: bool) -> None:
         self._trackside_box_select_enabled = bool(enabled)

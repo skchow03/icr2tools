@@ -138,8 +138,10 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
         self._trackside_map_click_callback = None
+        self._trackside_hover_callback = None
         self._trackside_box_select_callback = None
         self._trackside_box_select_enabled = False
+        self._trackside_snap_preview_point: tuple[int, int] | None = None
         self._trackside_box_select_drag_start_screen: QtCore.QPointF | None = None
         self._trackside_box_select_drag_current_screen: QtCore.QPointF | None = None
         self._active_trackside_drag_index: int | None = None
@@ -404,6 +406,8 @@ class PreviewRuntime(PreviewRuntimeOps):
                 self._request_interaction_repaint()
                 return
 
+        self._update_trackside_hover(event.localPos())
+
         if self._handle_creation_mouse_move(event.pos()):
             event.accept()
             return
@@ -509,7 +513,29 @@ class PreviewRuntime(PreviewRuntimeOps):
 
     def on_leave(self, event: QtCore.QEvent) -> None:  # noqa: D401
         _ = event
+        callback = getattr(self, "_trackside_hover_callback", None)
+        if callable(callback):
+            callback(None, None)
         self._clear_split_hover()
+
+    def _update_trackside_hover(self, local_pos: QtCore.QPointF) -> None:
+        callback = getattr(self, "_trackside_hover_callback", None)
+        if not callable(callback):
+            return
+        transform = self.current_transform(self._widget_size())
+        if transform is None:
+            callback(None, None)
+            return
+        world_pos = self.map_to_track(
+            (float(local_pos.x()), float(local_pos.y())),
+            self._widget_size(),
+            self._widget_height(),
+            transform,
+        )
+        if world_pos is None:
+            callback(None, None)
+            return
+        callback(int(round(world_pos[0])), int(round(world_pos[1])))
 
     def _interaction_inputs(
         self, *, has_split_hover_point: bool = False
