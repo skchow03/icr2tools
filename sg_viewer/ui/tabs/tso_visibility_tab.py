@@ -108,6 +108,12 @@ class TSOVisibilityTab(QWidget):
         self.section_list = TrackSectionListWidget()
         left_panel.addWidget(self.section_list)
 
+        left_panel.addWidget(QLabel("Filter by TSO"))
+        self.tso_filter_list = QListWidget()
+        self.tso_filter_list.setSelectionMode(QListWidget.NoSelection)
+        self.tso_filter_list.itemChanged.connect(self._on_tso_filter_changed)
+        left_panel.addWidget(self.tso_filter_list)
+
         right_panel.addWidget(QLabel("Visible TSOs (drag to reorder)"))
         self.tso_list = TSOVisibilityListWidget()
         self.tso_list.setDragDropMode(QListWidget.InternalMove)
@@ -140,6 +146,59 @@ class TSOVisibilityTab(QWidget):
         self.object_lists = []
         self.available_tso_ids: list[int] = []
         self._tso_display_metadata: dict[int, tuple[str, str]] = {}
+
+    def _find_object_list_index_for_current_selection(self) -> int:
+        item = self.section_list.currentItem()
+        if item is None:
+            return -1
+        mapped_index = item.data(QtCore.Qt.UserRole)
+        if isinstance(mapped_index, int) and 0 <= mapped_index < len(self.object_lists):
+            return mapped_index
+        return -1
+
+    def _build_tso_filter_label(self, tso_id: int) -> str:
+        return self._build_tso_pill_text(tso_id)
+
+    def _collect_all_tso_ids(self) -> list[int]:
+        all_ids = {
+            tso_id
+            for object_list in self.object_lists
+            for tso_id in object_list.tso_ids
+            if tso_id >= 0
+        }
+        all_ids.update({tso_id for tso_id in self.available_tso_ids if tso_id >= 0})
+        all_ids.update(
+            {tso_id for tso_id in self._tso_display_metadata.keys() if isinstance(tso_id, int) and tso_id >= 0}
+        )
+        return sorted(all_ids)
+
+    def _selected_filter_tso_ids(self) -> set[int]:
+        selected: set[int] = set()
+        for index in range(self.tso_filter_list.count()):
+            item = self.tso_filter_list.item(index)
+            if item is None or item.checkState() != QtCore.Qt.Checked:
+                continue
+            tso_id = item.data(QtCore.Qt.UserRole)
+            if isinstance(tso_id, int) and tso_id >= 0:
+                selected.add(tso_id)
+        return selected
+
+    def _refresh_tso_filter_list(self) -> None:
+        selected_before = self._selected_filter_tso_ids()
+        all_ids = self._collect_all_tso_ids()
+        self.tso_filter_list.blockSignals(True)
+        self.tso_filter_list.clear()
+        for tso_id in all_ids:
+            item = QListWidgetItem(self._build_tso_filter_label(tso_id))
+            item.setData(QtCore.Qt.UserRole, tso_id)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            check_state = QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked
+            item.setCheckState(check_state)
+            self.tso_filter_list.addItem(item)
+        self.tso_filter_list.blockSignals(False)
+
+    def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
+        self.populate_table()
 
     def _build_tso_pill_text(self, tso_id: int) -> str:
         label = f"__TSO{tso_id}"
@@ -176,6 +235,7 @@ class TSOVisibilityTab(QWidget):
         self.object_lists = []
         self.section_list.clear()
         self.tso_list.clear()
+        self.tso_filter_list.clear()
         self.selectedTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
@@ -183,6 +243,7 @@ class TSOVisibilityTab(QWidget):
 
     def set_object_lists(self, object_lists: list[Track3DObjectList]) -> None:
         self.object_lists = list(object_lists)
+        self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
@@ -256,6 +317,8 @@ class TSOVisibilityTab(QWidget):
 
     def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
         self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})
+        self._refresh_tso_filter_list()
+        self.populate_table()
 
     def set_tso_display_metadata(self, metadata: dict[int, tuple[str, str]]) -> None:
         normalized: dict[int, tuple[str, str]] = {}
@@ -269,6 +332,8 @@ class TSOVisibilityTab(QWidget):
                 description = str(values[1]).strip()
             normalized[tso_id] = (filename, description)
         self._tso_display_metadata = normalized
+        self._refresh_tso_filter_list()
+        self.populate_table()
         self._refresh_visible_tso_column()
 
     def load_file(self):
@@ -283,6 +348,7 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists = parse_track3d(path)
+        self._refresh_tso_filter_list()
         if not self.available_tso_ids:
             self.available_tso_ids = sorted(
                 {
@@ -296,18 +362,39 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
 
     def populate_table(self):
+        current_object_index = self._find_object_list_index_for_current_selection()
+        selected_tso_ids = self._selected_filter_tso_ids()
         self.section_list.clear()
-        for entry in self.object_lists:
+        for object_list_index, entry in enumerate(self.object_lists):
+            if selected_tso_ids and not any(tso_id in selected_tso_ids for tso_id in entry.tso_ids):
+                continue
             label = f"{entry.side} / {entry.section} / {entry.sub_index}"
-            self.section_list.addItem(QListWidgetItem(label))
-        if self.object_lists:
-            self.section_list.setCurrentRow(0)
-        else:
+            item = QListWidgetItem(label)
+            item.setData(QtCore.Qt.UserRole, object_list_index)
+            self.section_list.addItem(item)
+
+        if self.section_list.count() == 0:
             self.tso_list.clear()
+            self.selectedTSOsChanged.emit(tuple())
+            self.selectedTSOPillChanged.emit(None)
+            self.selectedTrackSectionChanged.emit(None)
+            self.selectedTSOOrderChanged.emit({})
+            return
+
+        preferred_row = 0
+        if current_object_index >= 0:
+            for row in range(self.section_list.count()):
+                item = self.section_list.item(row)
+                if item is None:
+                    continue
+                if item.data(QtCore.Qt.UserRole) == current_object_index:
+                    preferred_row = row
+                    break
+        self.section_list.setCurrentRow(preferred_row)
 
     def _on_tso_order_changed(self) -> None:
-        row = self.section_list.currentRow()
-        if row < 0 or row >= len(self.object_lists):
+        object_list_index = self._find_object_list_index_for_current_selection()
+        if object_list_index < 0:
             return
         reordered_ids: list[int] = []
         for index in range(self.tso_list.count()):
@@ -323,12 +410,13 @@ class TSOVisibilityTab(QWidget):
                     reordered_ids.append(int(text.replace("__TSO", "", 1)))
                 except ValueError:
                     continue
-        self.object_lists[row].tso_ids = reordered_ids
+        self.object_lists[object_list_index].tso_ids = reordered_ids
         self.selectedTSOsChanged.emit(tuple(reordered_ids))
-        self._emit_track_section_and_order(row)
+        self._emit_track_section_and_order(object_list_index)
+        self.populate_table()
 
     def _refresh_current_tso_list(self) -> None:
-        row = self.section_list.currentRow()
+        row = self._find_object_list_index_for_current_selection()
         self.tso_list.clear()
         if row < 0 or row >= len(self.object_lists):
             return
@@ -337,7 +425,7 @@ class TSOVisibilityTab(QWidget):
         self.tso_list.update_item_widths()
 
     def _emit_selected_tsos(self) -> None:
-        row = self.section_list.currentRow()
+        row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
@@ -350,7 +438,7 @@ class TSOVisibilityTab(QWidget):
         self._refresh_current_tso_list()
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
-        row = self.section_list.currentRow()
+        row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOPillChanged.emit(None)
             return
@@ -383,7 +471,7 @@ class TSOVisibilityTab(QWidget):
         _ = (row, widget)
 
     def _on_add_tso_requested(self) -> None:
-        row = self.section_list.currentRow()
+        row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             return
         available_ids = self.available_tso_ids or sorted(
@@ -441,9 +529,10 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOPillChanged.emit(tso_id)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
         self._emit_track_section_and_order(row)
+        self.populate_table()
 
     def _on_delete_tso_requested(self) -> None:
-        row = self.section_list.currentRow()
+        row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             return
         item = self.tso_list.currentItem()
@@ -459,6 +548,7 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
         self._emit_track_section_and_order(row)
+        self.populate_table()
 
     def _on_export_requested(self) -> None:
         if not self.object_lists:
@@ -514,7 +604,7 @@ class TSOVisibilityTab(QWidget):
         )
 
     def _on_copy_from_previous_requested(self) -> None:
-        row = self.section_list.currentRow()
+        row = self._find_object_list_index_for_current_selection()
         if row <= 0 or row >= len(self.object_lists):
             return
 
@@ -526,3 +616,4 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(copied_ids))
         self._emit_track_section_and_order(row)
+        self.populate_table()
