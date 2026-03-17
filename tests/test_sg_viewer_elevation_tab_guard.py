@@ -96,3 +96,70 @@ def test_grade_edit_is_ignored_when_elevation_tab_not_active(qapp, monkeypatch):
         assert called["value"] is False
     finally:
         window.close()
+
+
+
+def test_xsect_table_altitude_edit_is_ignored_when_elevation_tab_not_active(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        assert controller is not None
+
+        called = {"value": False}
+        refreshed = {"count": 0}
+
+        def _set_section_xsect_altitude(*_args, **_kwargs):
+            called["value"] = True
+            return True
+
+        monkeypatch.setattr(controller, "_is_elevation_tab_active", lambda: False)
+        monkeypatch.setattr(window.preview, "set_section_xsect_altitude", _set_section_xsect_altitude)
+        monkeypatch.setattr(
+            controller._elevation_panel_controller,
+            "refresh_xsect_elevation_table",
+            lambda: refreshed.__setitem__("count", refreshed["count"] + 1),
+        )
+
+        controller._active_selection = type("Selection", (), {"index": 0})()
+        window.xsect_elevation_table.setRowCount(1)
+        window.xsect_elevation_table.setItem(0, 1, QtWidgets.QTableWidgetItem("123"))
+
+        controller._elevation_panel_controller.on_xsect_table_cell_changed(0, 1)
+
+        assert called["value"] is False
+        assert refreshed["count"] == 1
+    finally:
+        window.close()
+
+
+def test_xsect_table_grade_edit_is_ignored_when_elevation_tab_not_active(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        assert controller is not None
+
+        called = {"value": False}
+        refreshed = {"count": 0}
+
+        def _set_section_xsect_grade(*_args, **_kwargs):
+            called["value"] = True
+            return True
+
+        monkeypatch.setattr(controller, "_is_elevation_tab_active", lambda: False)
+        monkeypatch.setattr(window.preview, "set_section_xsect_grade", _set_section_xsect_grade)
+        monkeypatch.setattr(
+            controller._elevation_panel_controller,
+            "refresh_xsect_elevation_table",
+            lambda: refreshed.__setitem__("count", refreshed["count"] + 1),
+        )
+
+        controller._active_selection = type("Selection", (), {"index": 0})()
+        window.xsect_elevation_table.setRowCount(1)
+        window.xsect_elevation_table.setItem(0, 2, QtWidgets.QTableWidgetItem("4"))
+
+        controller._elevation_panel_controller.on_xsect_table_cell_changed(0, 2)
+
+        assert called["value"] is False
+        assert refreshed["count"] == 1
+    finally:
+        window.close()
