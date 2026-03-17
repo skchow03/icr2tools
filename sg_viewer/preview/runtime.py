@@ -245,16 +245,23 @@ class PreviewRuntime(PreviewRuntimeOps):
     def _trackside_drag_hit_test(self, screen_pos: QtCore.QPointF) -> int | None:
         if not self._show_trackside_objects:
             return None
+        move_enabled_indices = tuple(
+            index
+            for index in getattr(self, "_trackside_move_enabled_indices", ())
+            if 0 <= index < len(self._trackside_objects)
+        )
+        if not move_enabled_indices:
+            return None
         selected_indices = tuple(
             index
             for index in getattr(self, "_selected_trackside_object_indices", ())
-            if 0 <= index < len(self._trackside_objects)
+            if index in move_enabled_indices
         )
         if not selected_indices:
             selected = self._selected_trackside_object_index
-            if selected is not None:
+            if selected is not None and selected in move_enabled_indices:
                 selected_indices = (selected,)
-        candidate_indices = selected_indices
+        candidate_indices = selected_indices or move_enabled_indices
         if not candidate_indices:
             return None
         transform = self.current_transform(self._widget_size())
