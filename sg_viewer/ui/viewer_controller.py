@@ -166,6 +166,7 @@ class SGViewerController:
         self._create_menus()
         self._connect_signals()
         self._window.preview.set_trackside_object_drag_callback(self._on_preview_tso_dragged)
+        self._window.preview.set_trackside_object_drag_end_callback(self._on_preview_tso_drag_ended)
         self._window.preview.set_trackside_map_click_callback(self._on_preview_tso_map_clicked)
         self._window.preview.set_trackside_box_select_callback(self._on_preview_tso_box_selected)
         self._on_track_opacity_changed(self._window.track_opacity_slider.value())
@@ -2164,9 +2165,34 @@ class SGViewerController:
         if not moved:
             return
         self._selected_trackside_object_indices = move_indices
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        self._update_tso_table_position_cells(move_indices)
+
+    def _on_preview_tso_drag_ended(self, _anchor_index: int | None = None) -> None:
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _update_tso_table_position_cells(self, indices: list[int], *, include_z: bool = False) -> None:
+        table = self._window.tso_table
+        previous_state = table.blockSignals(True)
+        try:
+            for index in indices:
+                if index < 0 or index >= len(self._trackside_objects):
+                    continue
+                obj = self._trackside_objects[index]
+                x_item = table.item(index, 2)
+                if x_item is not None:
+                    x_item.setText(str(obj.x))
+                y_item = table.item(index, 3)
+                if y_item is not None:
+                    y_item.setText(str(obj.y))
+                if include_z:
+                    z_item = table.item(index, 4)
+                    if z_item is not None:
+                        z_item.setText(str(obj.z))
+        finally:
+            table.blockSignals(previous_state)
 
     def _build_default_tso(self, *, x: int, y: int, filename: str | None = None) -> TracksideObject:
         default_filename = filename or "object"

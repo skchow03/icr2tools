@@ -136,6 +136,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._trackside_order_labels: tuple[tuple[int, int], ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
+        self._trackside_object_drag_end_callback = None
         self._trackside_map_click_callback = None
         self._trackside_box_select_callback = None
         self._trackside_box_select_enabled = False
@@ -461,9 +462,13 @@ class PreviewRuntime(PreviewRuntimeOps):
             return
 
         if self._active_trackside_drag_index is not None and event.button() == QtCore.Qt.RightButton:
+            active_index = self._active_trackside_drag_index
             self._drag_trackside_object_to(event.localPos())
             self._active_trackside_drag_index = None
             self._active_trackside_drag_origin = None
+            drag_end_callback = getattr(self, "_trackside_object_drag_end_callback", None)
+            if callable(drag_end_callback):
+                drag_end_callback(active_index)
             event.accept()
             return
 
