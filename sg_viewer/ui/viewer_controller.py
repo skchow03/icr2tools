@@ -145,7 +145,6 @@ class SGViewerController:
         self._tsd_objects: list[TsdZebraCrossingObject] = []
         self._trackside_objects: list[TracksideObject] = []
         self._selected_trackside_object_indices: list[int] = []
-        self._trackside_move_enabled_indices: set[int] = set()
         self._tso_add_mode_active = False
         self._tso_stamp_mode_active = False
         self._tso_box_select_mode_active = False
@@ -2014,20 +2013,7 @@ class SGViewerController:
         try:
             table.setRowCount(len(self._trackside_objects))
             self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
-            valid_move_indices = {
-                index for index in self._trackside_move_enabled_indices if 0 <= index < len(self._trackside_objects)
-            }
-            self._trackside_move_enabled_indices = valid_move_indices
             for row, obj in enumerate(self._trackside_objects):
-                checkbox_item = table.item(row, 0)
-                if checkbox_item is None:
-                    checkbox_item = QtWidgets.QTableWidgetItem()
-                    table.setItem(row, 0, checkbox_item)
-                checkbox_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
-                checkbox_item.setCheckState(
-                    QtCore.Qt.Checked if row in self._trackside_move_enabled_indices else QtCore.Qt.Unchecked
-                )
-
                 values = [
                     f"__TSO{row}",
                     normalize_trackside_filename(obj.filename),
@@ -2035,24 +2021,22 @@ class SGViewerController:
                     str(obj.y),
                     str(obj.z),
                 ]
-                for index, value in enumerate(values):
-                    column = index + 1
+                for column, value in enumerate(values):
                     item = table.item(row, column)
                     if item is None:
                         item = QtWidgets.QTableWidgetItem(value)
                         table.setItem(row, column, item)
                     else:
                         item.setText(value)
-                    if column == 1:
+                    if column == 0:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                     else:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
                 button = QtWidgets.QPushButton("Edit…")
                 button.clicked.connect(lambda _checked=False, row_index=row: self._open_tso_attributes_dialog(row_index))
-                table.setCellWidget(row, 6, button)
+                table.setCellWidget(row, 5, button)
         finally:
             table.blockSignals(previous_state)
-        self._window.preview.set_trackside_move_enabled_indices(tuple(sorted(self._trackside_move_enabled_indices)))
         selection_model = table.selectionModel()
         if selection_model is not None:
             selection_model.clearSelection()
@@ -2083,7 +2067,7 @@ class SGViewerController:
         self._window.preview.set_selected_trackside_object_index(selected_index)
         self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
         if selected_indices:
-            self._window.show_status_message("TSO selected: hold Shift and drag in the preview to move selected TSOs.")
+            self._window.show_status_message("TSO selected: right-click and drag in the preview to move selected TSOs.")
 
     def _on_tso_visibility_row_selected(self, tso_ids: tuple[int, ...]) -> None:
         selected_indices = sorted({index for index in tso_ids if 0 <= index < len(self._trackside_objects)})
@@ -2115,7 +2099,7 @@ class SGViewerController:
         self._window.preview.set_trackside_order_labels(order_map)
 
     def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
-        if column == 6:
+        if column == 5:
             self._open_tso_attributes_dialog(row)
 
     def _open_tso_attributes_dialog(self, row: int) -> None:
@@ -2159,12 +2143,10 @@ class SGViewerController:
         move_indices = sorted(
             index
             for index in self._selected_trackside_object_indices
-            if index in self._trackside_move_enabled_indices and 0 <= index < len(self._trackside_objects)
+            if 0 <= index < len(self._trackside_objects)
         )
         if not move_indices:
             if anchor_index < 0 or anchor_index >= len(self._trackside_objects):
-                return
-            if anchor_index not in self._trackside_move_enabled_indices:
                 return
             move_indices = [anchor_index]
         moved = False
@@ -2404,25 +2386,16 @@ class SGViewerController:
         if row < 0 or row >= len(self._trackside_objects):
             return
         table = self._window.tso_table
-        if item.column() == 0:
-            if item.checkState() == QtCore.Qt.Checked:
-                self._trackside_move_enabled_indices.add(row)
-            else:
-                self._trackside_move_enabled_indices.discard(row)
-            self._window.preview.set_trackside_move_enabled_indices(tuple(sorted(self._trackside_move_enabled_indices)))
-            self._set_trackside_objects_dirty(True)
-            self._persist_tsd_state_for_current_track()
-            return
         try:
-            filename = normalize_trackside_filename((table.item(row, 2).text() if table.item(row, 2) else ""))
+            filename = normalize_trackside_filename((table.item(row, 1).text() if table.item(row, 1) else ""))
             if not filename:
                 raise ValueError
             existing = self._trackside_objects[row]
             obj = TracksideObject(
                 filename=filename,
-                x=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
-                y=int((table.item(row, 4).text() if table.item(row, 4) else "0").strip()),
-                z=int((table.item(row, 5).text() if table.item(row, 5) else "0").strip()),
+                x=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
+                y=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
+                z=int((table.item(row, 4).text() if table.item(row, 4) else "0").strip()),
                 yaw=existing.yaw,
                 pitch=existing.pitch,
                 tilt=existing.tilt,
