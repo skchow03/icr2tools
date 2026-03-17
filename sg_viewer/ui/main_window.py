@@ -167,9 +167,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
         self._tso_modify_elevations_button = QtWidgets.QPushButton("Modify elevations...")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
-        self._tso_table = QtWidgets.QTableWidget(0, 7)
+        self._tso_table = QtWidgets.QTableWidget(0, 6)
         self._tso_table.setHorizontalHeaderLabels([
-            "Move",
             "Name",
             "Filename",
             "X (500ths)",

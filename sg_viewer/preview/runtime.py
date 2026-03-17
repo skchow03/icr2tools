@@ -133,7 +133,6 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._selected_trackside_object_index: int | None = None
         self._selected_trackside_object_indices: tuple[int, ...] = ()
         self._focused_trackside_object_index: int | None = None
-        self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._trackside_order_labels: tuple[tuple[int, int], ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
@@ -251,20 +250,11 @@ class PreviewRuntime(PreviewRuntimeOps):
             for index in getattr(self, "_selected_trackside_object_indices", ())
             if 0 <= index < len(self._trackside_objects)
         )
-        move_enabled_indices = tuple(
-            index
-            for index in getattr(self, "_trackside_move_enabled_indices", ())
-            if 0 <= index < len(self._trackside_objects)
-        )
         if not selected_indices:
             selected = self._selected_trackside_object_index
             if selected is not None:
                 selected_indices = (selected,)
-        candidate_indices = tuple(
-            index for index in selected_indices if index in move_enabled_indices
-        )
-        if not candidate_indices:
-            candidate_indices = move_enabled_indices
+        candidate_indices = selected_indices
         if not candidate_indices:
             return None
         transform = self.current_transform(self._widget_size())
@@ -340,7 +330,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._request_interaction_repaint()
             return
 
-        if event.button() == QtCore.Qt.LeftButton and bool(event.modifiers() & QtCore.Qt.ShiftModifier):
+        if event.button() == QtCore.Qt.RightButton:
             hit_index = self._trackside_drag_hit_test(event.localPos())
             if hit_index is not None:
                 transform = self.current_transform(self._widget_size())
@@ -463,7 +453,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._request_interaction_repaint()
             return
 
-        if self._active_trackside_drag_index is not None and event.button() == QtCore.Qt.LeftButton:
+        if self._active_trackside_drag_index is not None and event.button() == QtCore.Qt.RightButton:
             self._drag_trackside_object_to(event.localPos())
             self._active_trackside_drag_index = None
             self._active_trackside_drag_origin = None
