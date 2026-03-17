@@ -145,6 +145,7 @@ class SGViewerController:
         self._tsd_objects: list[TsdZebraCrossingObject] = []
         self._trackside_objects: list[TracksideObject] = []
         self._selected_trackside_object_indices: list[int] = []
+        self._objects_tab_selected_trackside_object_indices: list[int] = []
         self._tso_add_mode_active = False
         self._tso_stamp_mode_active = False
         self._tso_box_select_mode_active = False
@@ -2062,30 +2063,24 @@ class SGViewerController:
         table = self._window.tso_table
         selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
         selected_indices = sorted({model_index.row() for model_index in selected_rows if model_index.row() >= 0})
+        self._objects_tab_selected_trackside_object_indices = selected_indices
         self._selected_trackside_object_indices = selected_indices
         selected_index = selected_indices[0] if selected_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
         self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+        self._apply_trackside_drag_scope()
         if selected_indices:
             self._window.show_status_message("TSO selected: right-click and drag in the preview to move selected TSOs.")
 
     def _on_tso_visibility_row_selected(self, tso_ids: tuple[int, ...]) -> None:
+        if not self._is_tso_visibility_tab_active():
+            return
         selected_indices = sorted({index for index in tso_ids if 0 <= index < len(self._trackside_objects)})
         self._selected_trackside_object_indices = selected_indices
         selected_index = selected_indices[0] if selected_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
         self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
-
-        table = self._window.tso_table
-        selection_model = table.selectionModel()
-        if selection_model is not None:
-            selection_model.clearSelection()
-            for index in selected_indices:
-                row_index = table.model().index(index, 0)
-                selection_model.select(
-                    row_index,
-                    QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
-                )
+        self._apply_trackside_drag_scope()
 
     def _on_tso_visibility_pill_selected(self, tso_id: int | None) -> None:
         self._window.preview.set_focused_trackside_object_index(tso_id)
@@ -2998,10 +2993,33 @@ class SGViewerController:
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab or is_tso_visibility_tab)
         self._window.preview.set_show_trackside_objects(is_objects_tab or is_tso_visibility_tab)
+        self._apply_trackside_drag_scope()
         if is_mrk_tab:
             self._update_mrk_highlights_from_table()
         else:
             self._window.preview.set_highlighted_mrk_walls(())
+
+    def _is_tso_visibility_tab_active(self) -> bool:
+        current_index = self._window.right_sidebar_tabs.currentIndex()
+        if current_index < 0:
+            return False
+        tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+        return tab_name == "TSO Visibility"
+
+    def _is_objects_tab_active(self) -> bool:
+        current_index = self._window.right_sidebar_tabs.currentIndex()
+        if current_index < 0:
+            return False
+        tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+        return tab_name == "Objects"
+
+    def _apply_trackside_drag_scope(self) -> None:
+        if self._is_objects_tab_active():
+            self._window.preview.set_trackside_move_enabled_indices(
+                tuple(self._objects_tab_selected_trackside_object_indices)
+            )
+            return
+        self._window.preview.set_trackside_move_enabled_indices(())
 
     def _on_mrk_wall_height_changed(self, _value: float) -> None:
         self._window.preview.set_mrk_wall_height_500ths(
