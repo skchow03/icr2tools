@@ -2267,7 +2267,7 @@ def test_tso_box_select_selects_rows_and_preview_selection(qapp):
         window.close()
 
 
-def test_preview_tso_drag_updates_table_and_state(qapp, tmp_path):
+def test_preview_tso_drag_updates_table_live_and_persists_on_drag_end(qapp, tmp_path):
     window = SGViewerWindow()
     try:
         sg_path = tmp_path / "track.sg"
@@ -2283,9 +2283,58 @@ def test_preview_tso_drag_updates_table_and_state(qapp, tmp_path):
         assert window.controller._trackside_objects[0].y == -456
         assert window.tso_table.item(0, 2).text() == "123"
         assert window.tso_table.item(0, 3).text() == "-456"
+        assert window.controller._trackside_objects_is_dirty is False
+        assert not (tmp_path / "track.sgc").exists()
 
+        window.controller._on_preview_tso_drag_ended(0)
+
+        assert window.controller._trackside_objects_is_dirty is True
         payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
         assert payload["trackside_objects"][0]["x"] == 123
         assert payload["trackside_objects"][0]["y"] == -456
+    finally:
+        window.close()
+
+
+def test_preview_tso_drag_does_not_rebuild_table_per_move(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="one",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            )
+        ]
+        window.controller._selected_trackside_object_indices = [0]
+        window.controller._refresh_tso_table()
+
+        refresh_calls = {"count": 0}
+        original_refresh = window.controller._refresh_tso_table
+
+        def tracked_refresh():
+            refresh_calls["count"] += 1
+            original_refresh()
+
+        window.controller._refresh_tso_table = tracked_refresh
+
+        window.controller._on_preview_tso_dragged(0, 5, 7)
+        window.controller._on_preview_tso_dragged(0, 5, 7)
+
+        assert refresh_calls["count"] == 0
+        assert window.tso_table.item(0, 2).text() == "10"
+        assert window.tso_table.item(0, 3).text() == "14"
+
+        window.controller._on_preview_tso_drag_ended(0)
+
+        assert refresh_calls["count"] == 1
     finally:
         window.close()

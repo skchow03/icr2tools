@@ -108,6 +108,7 @@ class _RuntimeCoreBaseMixin:
         self._trackside_order_labels: tuple[tuple[int, int], ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
+        self._trackside_object_drag_end_callback = None
         self._trackside_map_click_callback = None
         self._trackside_box_select_callback = None
         self._trackside_box_select_enabled = False
