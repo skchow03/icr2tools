@@ -3,6 +3,7 @@ from pathlib import Path
 from sg_viewer.io.track3d_parser import (
     Track3DObjectList,
     parse_track3d,
+    parse_track3d_section_dlongs,
     save_object_lists_to_track3d,
 )
 
@@ -69,3 +70,36 @@ TailThing: 2;
     assert "ObjectList_R7_3: LIST {  };" in updated
     assert "HeaderThing: 1;" in updated
     assert "TailThing: 2;" in updated
+
+
+def test_parse_track3d_section_dlongs_extracts_data_blocks(tmp_path: Path):
+    sample = """sec0_l0: LIST { sec0_s0_HI, sec0_s1_HI, sec0_s0_MED, sec0_s0_LO, DATA { 0, 10, 20, 30 } };
+sec1_l0: LIST { sec1_s0_HI, nil, nil, nil, sec1_s0_MED, nil, sec1_s0_LO, DATA { 99, 99, 99, 99 } };
+"""
+    path = tmp_path / "track.3d"
+    path.write_text(sample, encoding="utf-8")
+
+    rows = parse_track3d_section_dlongs(path)
+
+    assert len(rows) == 2
+    assert rows[0].section == 0
+    assert rows[0].sub_index == 0
+    assert rows[0].dlongs == (0, 10, 20, 30)
+    assert rows[1].section == 1
+    assert rows[1].sub_index == 0
+    assert rows[1].dlongs == (99, 99, 99, 99)
+
+
+def test_parse_track3d_section_dlongs_skips_missing_or_invalid_data(tmp_path: Path):
+    sample = """sec3_l1: LIST { sec3_s4_HI, sec3_s5_HI };
+sec3_l2: LIST { sec3_s8_HI, DATA { 1, BAD, 2, , 3 } };
+"""
+    path = tmp_path / "track.3d"
+    path.write_text(sample, encoding="utf-8")
+
+    rows = parse_track3d_section_dlongs(path)
+
+    assert len(rows) == 1
+    assert rows[0].section == 3
+    assert rows[0].sub_index == 2
+    assert rows[0].dlongs == (1, 2, 3)

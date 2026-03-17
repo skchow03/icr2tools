@@ -2342,3 +2342,42 @@ def test_preview_tso_drag_does_not_rebuild_table_per_move(qapp):
         assert refresh_calls["count"] == 1
     finally:
         window.close()
+
+
+def test_view_menu_track_section_dlongs_dialog_shows_parsed_rows(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        project_path = tmp_path / "sample.sg"
+        project_path.write_text("", encoding="utf-8")
+        window.controller._current_path = project_path
+
+        parsed_rows = [
+            SimpleNamespace(section=0, sub_index=0, dlongs=(0, 10, 20, 30)),
+            SimpleNamespace(section=2, sub_index=1, dlongs=(100, 200, 300, 400)),
+        ]
+        monkeypatch.setattr(
+            "sg_viewer.ui.viewer_controller.parse_track3d_section_dlongs",
+            lambda path: parsed_rows,
+        )
+
+        view_menu = next(
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "View"
+        )
+        section_dlongs_action = next(
+            action for action in view_menu.actions() if action.text() == "Track Section DLONGs…"
+        )
+
+        section_dlongs_action.trigger()
+
+        dialog = window.controller._section_dlongs_window
+        assert dialog is not None
+        text_edit = dialog.findChild(QtWidgets.QPlainTextEdit, "sectionDlongsText")
+        assert text_edit is not None
+        assert text_edit.toPlainText() == (
+            "sec0_l0: 0, 10, 20, 30\n"
+            "sec2_l1: 100, 200, 300, 400"
+        )
+    finally:
+        window.close()
