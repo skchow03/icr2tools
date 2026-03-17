@@ -1203,8 +1203,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def set_altitude_slider_bounds(self, minimum: int, maximum: int) -> None:
         if minimum >= maximum:
             maximum = minimum + 1
-        self._altitude_slider.setRange(minimum, maximum)
-        self._altitude_slider.setValue(min(max(self._altitude_slider.value(), minimum), maximum))
+        self._altitude_slider.blockSignals(True)
+        try:
+            self._altitude_slider.setRange(minimum, maximum)
+            self._altitude_slider.setValue(
+                min(max(self._altitude_slider.value(), minimum), maximum)
+            )
+        finally:
+            self._altitude_slider.blockSignals(False)
 
     def show_altitude_range_dialog(self) -> bool:
         dialog = QtWidgets.QDialog(self)
