@@ -279,6 +279,9 @@ class ElevationPanelController:
     def on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._host._window.is_updating_xsect_table or column_index not in (1, 2):
             return
+        if not self._host._is_elevation_tab_active():
+            self.refresh_xsect_elevation_table()
+            return
         selection = self._host._active_selection
         if selection is None:
             return
