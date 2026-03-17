@@ -13,7 +13,16 @@ class Track3DObjectList:
     tso_ids: list[int]
 
 
+@dataclass(frozen=True)
+class Track3DSectionDlongList:
+    section: int
+    sub_index: int
+    dlongs: tuple[int, ...]
+
+
 LINE_RE = re.compile(r"ObjectList_([LR])(\d+)_(\d+): LIST\s*\{([^}]*)\};")
+SECTION_LIST_RE = re.compile(r"sec(\d+)_l(\d+):\s*LIST\s*\{(.*?)\};", re.IGNORECASE | re.DOTALL)
+DATA_RE = re.compile(r"DATA\s*\{([^}]*)\}", re.IGNORECASE | re.DOTALL)
 
 
 def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
@@ -45,6 +54,36 @@ def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
                     tso_ids=tso_ids,
                 )
             )
+
+    return results
+
+
+def parse_track3d_section_dlongs(path: str | Path) -> list[Track3DSectionDlongList]:
+    text = Path(path).read_text(encoding="utf-8", errors="ignore")
+    results: list[Track3DSectionDlongList] = []
+
+    for section_match in SECTION_LIST_RE.finditer(text):
+        data_match = DATA_RE.search(section_match.group(3))
+        if data_match is None:
+            continue
+
+        dlongs: list[int] = []
+        for item in data_match.group(1).split(","):
+            value = item.strip()
+            if not value:
+                continue
+            try:
+                dlongs.append(int(value))
+            except ValueError:
+                continue
+
+        results.append(
+            Track3DSectionDlongList(
+                section=int(section_match.group(1)),
+                sub_index=int(section_match.group(2)),
+                dlongs=tuple(dlongs),
+            )
+        )
 
     return results
 

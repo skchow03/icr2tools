@@ -60,6 +60,7 @@ from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
+from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
     MrkTexturePatternDialog,
@@ -105,6 +106,7 @@ class SGViewerController:
         self._tso_attributes_dialog: TracksideObjectAttributesDialog | None = None
         self._integrity_report_window: QtWidgets.QDialog | None = None
         self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
+        self._section_dlongs_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
         self._history = FileHistory()
         self._sg_settings_store = SGSettingsStore()
@@ -365,6 +367,9 @@ class SGViewerController:
         self._view_options_action = QtWidgets.QAction("View Options…", self._window)
         self._view_options_action.triggered.connect(self._window.show_view_options_dialog)
 
+        self._show_section_dlongs_action = QtWidgets.QAction("Track Section DLONGs…", self._window)
+        self._show_section_dlongs_action.triggered.connect(self._show_track_section_dlongs_dialog)
+
         self._section_table_action = QtWidgets.QAction("Section Table", self._window)
         self._section_table_action.setEnabled(False)
         self._section_table_action.triggered.connect(self._section_editing_coordinator.show_section_table)
@@ -513,6 +518,7 @@ class SGViewerController:
         view_menu.addAction(self._open_background_action)
         view_menu.addAction(self._background_settings_action)
         view_menu.addAction(self._view_options_action)
+        view_menu.addAction(self._show_section_dlongs_action)
         view_menu.addSeparator()
         view_menu.addAction(self._show_radii_action)
         view_menu.addAction(self._show_axes_action)
@@ -713,6 +719,73 @@ class SGViewerController:
         self._unique_tso_filenames_window.show()
         self._unique_tso_filenames_window.raise_()
         self._unique_tso_filenames_window.activateWindow()
+
+    def _show_track_section_dlongs_dialog(self) -> None:
+        if self._current_path is None or not self._current_path.exists():
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Track Section DLONGs",
+                "Load a saved project before viewing section DLONGs.",
+            )
+            return
+
+        track3d_path = self._current_path.with_suffix(".3d")
+        if not track3d_path.exists():
+            fallback_path = self._current_path.with_suffix(".3D")
+            track3d_path = fallback_path if fallback_path.exists() else track3d_path
+
+        if not track3d_path.exists():
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Track Section DLONGs",
+                f"No track .3d file was found next to {self._current_path.name}.",
+            )
+            return
+
+        rows = parse_track3d_section_dlongs(track3d_path)
+        if not rows:
+            text = "No section DLONG DATA blocks were found."
+        else:
+            lines = [
+                f"sec{row.section}_l{row.sub_index}: {', '.join(str(value) for value in row.dlongs)}"
+                for row in rows
+            ]
+            text = "\n".join(lines)
+
+        if self._section_dlongs_window is None:
+            self._section_dlongs_window = QtWidgets.QDialog(self._window)
+            self._section_dlongs_window.setWindowTitle("Track Section DLONGs")
+            self._section_dlongs_window.setWindowModality(QtCore.Qt.NonModal)
+            self._section_dlongs_window.setAttribute(
+                QtCore.Qt.WA_DeleteOnClose,
+                False,
+            )
+            self._section_dlongs_window.resize(580, 640)
+
+            layout = QtWidgets.QVBoxLayout(self._section_dlongs_window)
+            text_edit = QtWidgets.QPlainTextEdit(self._section_dlongs_window)
+            text_edit.setObjectName("sectionDlongsText")
+            text_edit.setReadOnly(True)
+            text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+            layout.addWidget(text_edit)
+
+            close_button = QtWidgets.QPushButton("Close", self._section_dlongs_window)
+            close_button.clicked.connect(self._section_dlongs_window.close)
+            button_row = QtWidgets.QHBoxLayout()
+            button_row.addStretch(1)
+            button_row.addWidget(close_button)
+            layout.addLayout(button_row)
+
+        text_edit = self._section_dlongs_window.findChild(
+            QtWidgets.QPlainTextEdit,
+            "sectionDlongsText",
+        )
+        if text_edit is not None:
+            text_edit.setPlainText(text)
+
+        self._section_dlongs_window.show()
+        self._section_dlongs_window.raise_()
+        self._section_dlongs_window.activateWindow()
 
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
