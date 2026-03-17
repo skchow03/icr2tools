@@ -2069,9 +2069,18 @@ class SGViewerController:
         selected_index = selected_indices[0] if selected_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
         self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+        self._center_viewport_on_selected_tso(selected_index)
         self._apply_trackside_drag_scope()
         if selected_indices:
             self._window.show_status_message("TSO selected: right-click and drag in the preview to move selected TSOs.")
+
+    def _center_viewport_on_selected_tso(self, selected_index: int | None) -> None:
+        if selected_index is None:
+            return
+        if selected_index < 0 or selected_index >= len(self._trackside_objects):
+            return
+        selected_object = self._trackside_objects[selected_index]
+        self._window.preview.center_view_on_point((float(selected_object.x), float(selected_object.y)))
 
     def _on_tso_visibility_row_selected(self, tso_ids: tuple[int, ...]) -> None:
         if not self._is_tso_visibility_tab_active():

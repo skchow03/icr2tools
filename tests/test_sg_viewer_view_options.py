@@ -2127,7 +2127,7 @@ def test_set_trackside_objects_tolerates_missing_selected_index_attr(qapp):
         window.close()
 
 
-def test_add_tso_mode_places_object_on_map_click(qapp):
+def test_add_tso_mode_places_object_on_map_click(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
         window.tso_add_button.setChecked(True)
@@ -2145,10 +2145,14 @@ def test_add_tso_mode_places_object_on_map_click(qapp):
         assert window.controller._trackside_objects[0].y == -456
         assert window.tso_add_button.isChecked() is False
 
+        centered_points: list[tuple[float, float]] = []
+        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+
         window.tso_table.selectRow(0)
         window.controller._on_tso_selection_changed()
 
         assert window.preview.selected_trackside_object_index == 0
+        assert centered_points == [pytest.approx((123.0, -456.0))]
     finally:
         window.close()
 
