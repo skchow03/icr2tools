@@ -2168,10 +2168,23 @@ class SGViewerController:
     def _on_tso_visibility_pill_selected(self, tso_id: int | None) -> None:
         self._window.preview.set_focused_trackside_object_index(tso_id)
 
-    def _on_tso_visibility_track_section_selected(self, section_index: int | None) -> None:
-        if section_index is None:
+    def _on_tso_visibility_track_section_selected(self, section_data: object) -> None:
+        if isinstance(section_data, int):
+            self._window.preview.selection_manager.set_selected_section(int(section_data))
             return
+        if not isinstance(section_data, dict):
+            return
+
+        section_index = section_data.get("section")
+        if not isinstance(section_index, int):
+            return
+
         self._window.preview.selection_manager.set_selected_section(int(section_index))
+        start_dlong = section_data.get("start_dlong")
+        end_dlong = section_data.get("end_dlong")
+        if isinstance(start_dlong, (int, float)):
+            end_value = float(end_dlong) if isinstance(end_dlong, (int, float)) else None
+            self._window.preview.selection_manager.set_selected_dlong_range(float(start_dlong), end_value)
 
     def _on_tso_visibility_order_changed(self, order_map: dict[int, int]) -> None:
         self._window.preview.set_trackside_order_labels(order_map)

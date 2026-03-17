@@ -61,6 +61,7 @@ class SelectionManager(QtCore.QObject):
         self._track_length: float | None = None
         self._centerline_index: CenterlineIndex | None = None
         self._sampled_dlongs: List[float] = []
+        self._sampled_centerline: list[Point] = []
         self._selected_section_index: int | None = None
         self._selected_section_points: list[Point] = []
         self._selected_curve_index: int | None = None
@@ -93,6 +94,7 @@ class SelectionManager(QtCore.QObject):
         self._track_length = self._compute_track_length(track_length, sampled_dlongs)
         self._centerline_index = centerline_index
         self._sampled_dlongs = sampled_dlongs
+        self._sampled_centerline = self._rebuild_sampled_centerline(sections, sampled_dlongs)
         self._section_ranges = self._compute_section_ranges(sections)
 
         if self._selected_section_index is not None:
@@ -112,6 +114,7 @@ class SelectionManager(QtCore.QObject):
         self._track_length = track_length
         self._centerline_index = centerline_index
         self._sampled_dlongs = sampled_dlongs
+        self._sampled_centerline = self._rebuild_sampled_centerline(sections, sampled_dlongs)
         self._section_ranges = []
         self._selected_section_index = None
         self._selected_section_points = []
@@ -183,7 +186,7 @@ class SelectionManager(QtCore.QObject):
         # NOTE: section_id is an index, not a persistent identifier.
         self._selected_curve_index = section.section_id if section.center is not None else None
         logger.debug(
-            "Selection set to index %d type=%s start_dlong=%.3f length=%.3f", 
+            "Selection set to index %d type=%s start_dlong=%.3f length=%.3f",
             index,
             section.type_name,
             float(section.start_dlong),
@@ -191,6 +194,21 @@ class SelectionManager(QtCore.QObject):
         )
         selection = self._build_section_selection(section)
         self.selectionChanged.emit(selection)
+
+    def set_selected_dlong_range(self, start_dlong: float | None, end_dlong: float | None) -> None:
+        if start_dlong is None:
+            return
+        points = self._points_for_dlong_range(float(start_dlong), end_dlong)
+        if len(points) < 2:
+            return
+        self._selected_section_points = points
+        if (
+            self._selected_section_index is not None
+            and 0 <= self._selected_section_index < len(self._sections)
+        ):
+            self.selectionChanged.emit(self._build_section_selection(self._sections[self._selected_section_index]))
+            return
+        self.selectionChanged.emit(None)
 
     def _find_section_by_dlong(self, track_point: Point, transform: Transform) -> int | None:
         if not self._sections:
@@ -253,6 +271,59 @@ class SelectionManager(QtCore.QObject):
             return None
         return mapped.section_index
 
+    def _points_for_dlong_range(self, start_dlong: float, end_dlong: float | None) -> list[Point]:
+        if len(self._sampled_dlongs) < 2:
+            return []
+
+        sampled_points = getattr(self, "_sampled_centerline", None)
+        if not isinstance(sampled_points, list) or len(sampled_points) != len(self._sampled_dlongs):
+            return []
+
+        start = max(0.0, start_dlong)
+        final_sample = float(self._sampled_dlongs[-1])
+        end = final_sample if end_dlong is None else max(start, min(float(end_dlong), final_sample))
+
+        if math.isclose(end, start, rel_tol=1e-9, abs_tol=1e-6):
+            return []
+
+        points: list[Point] = [self._point_at_dlong(start, sampled_points)]
+        for dlong, point in zip(self._sampled_dlongs, sampled_points):
+            value = float(dlong)
+            if start < value < end:
+                points.append((float(point[0]), float(point[1])))
+        points.append(self._point_at_dlong(end, sampled_points))
+
+        deduped: list[Point] = []
+        for point in points:
+            if not deduped or point != deduped[-1]:
+                deduped.append(point)
+        return deduped
+
+    def _point_at_dlong(self, dlong: float, sampled_points: list[Point]) -> Point:
+        dlongs = self._sampled_dlongs
+        if dlong <= float(dlongs[0]):
+            return (float(sampled_points[0][0]), float(sampled_points[0][1]))
+        if dlong >= float(dlongs[-1]):
+            return (float(sampled_points[-1][0]), float(sampled_points[-1][1]))
+
+        for idx in range(1, len(dlongs)):
+            current = float(dlongs[idx])
+            previous = float(dlongs[idx - 1])
+            if dlong > current:
+                continue
+            start = sampled_points[idx - 1]
+            end = sampled_points[idx]
+            denom = current - previous
+            if denom <= 0:
+                return (float(end[0]), float(end[1]))
+            pct = (dlong - previous) / denom
+            return (
+                float(start[0]) + (float(end[0]) - float(start[0])) * pct,
+                float(start[1]) + (float(end[1]) - float(start[1])) * pct,
+            )
+        return (float(sampled_points[-1][0]), float(sampled_points[-1][1]))
+
+
     @staticmethod
     def _distance_to_polyline(point: Point, polyline: list[Point]) -> float:
         best_distance_sq = float("inf")
@@ -266,6 +337,24 @@ class SelectionManager(QtCore.QObject):
         if sampled_dlongs:
             return sampled_dlongs[-1]
         return track_length
+
+    def _rebuild_sampled_centerline(
+        self,
+        sections: list[SectionPreview],
+        sampled_dlongs: list[float],
+    ) -> list[Point]:
+        points: list[Point] = []
+        for section in sections:
+            if not section.polyline:
+                continue
+            if not points:
+                points.extend((float(x), float(y)) for x, y in section.polyline)
+                continue
+            points.extend((float(x), float(y)) for x, y in section.polyline[1:])
+        if len(points) != len(sampled_dlongs):
+            return []
+        return points
+
 
     def _compute_section_ranges(self, sections: list[SectionPreview]) -> list[tuple[float, float]]:
         ranges: list[tuple[float, float]] = []
