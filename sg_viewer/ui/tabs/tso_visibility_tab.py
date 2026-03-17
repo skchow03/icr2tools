@@ -16,7 +16,9 @@ from PyQt5.QtWidgets import (
 
 from sg_viewer.io.track3d_parser import (
     Track3DObjectList,
+    Track3DSectionDlongList,
     parse_track3d,
+    parse_track3d_section_dlongs,
     save_object_lists_to_track3d,
 )
 
@@ -146,6 +148,22 @@ class TSOVisibilityTab(QWidget):
         self.object_lists = []
         self.available_tso_ids: list[int] = []
         self._tso_display_metadata: dict[int, tuple[str, str]] = {}
+        self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
+
+    def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
+        starts: list[tuple[int, int, int]] = []
+        for row in rows:
+            if not row.dlongs:
+                continue
+            starts.append((int(row.section), int(row.sub_index), int(row.dlongs[0])))
+
+        starts.sort(key=lambda item: item[2])
+        ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
+        for index, (section, sub_index, start_dlong) in enumerate(starts):
+            end_dlong = starts[index + 1][2] if index + 1 < len(starts) else None
+            ranges[(section, sub_index)] = (start_dlong, end_dlong)
+
+        self._subsection_dlong_ranges = ranges
 
     def _find_object_list_index_for_current_selection(self) -> int:
         item = self.section_list.currentItem()
@@ -233,6 +251,7 @@ class TSOVisibilityTab(QWidget):
 
     def clear_object_lists(self) -> None:
         self.object_lists = []
+        self._subsection_dlong_ranges = {}
         self.section_list.clear()
         self.tso_list.clear()
         self.tso_filter_list.clear()
@@ -256,7 +275,17 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOOrderChanged.emit({})
             return
         entry = self.object_lists[row]
-        self.selectedTrackSectionChanged.emit(int(entry.section))
+        start_dlong, end_dlong = self._subsection_dlong_ranges.get(
+            (int(entry.section), int(entry.sub_index)),
+            (None, None),
+        )
+        self.selectedTrackSectionChanged.emit(
+            {
+                "section": int(entry.section),
+                "start_dlong": start_dlong,
+                "end_dlong": end_dlong,
+            }
+        )
         order_map: dict[int, int] = {}
         for order, tso_id in enumerate(entry.tso_ids, start=1):
             if tso_id < 0:
@@ -348,6 +377,7 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists = parse_track3d(path)
+        self.set_section_dlong_rows(parse_track3d_section_dlongs(path))
         self._refresh_tso_filter_list()
         if not self.available_tso_ids:
             self.available_tso_ids = sorted(
