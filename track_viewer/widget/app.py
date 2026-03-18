@@ -335,6 +335,16 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 self.preview_api.add_type7_camera, "Add Fixed Camera"
             )
         )
+        self._sidebar.deleteLastType6Requested.connect(
+            lambda: self._handle_add_camera(
+                self.preview_api.delete_last_type6_camera, "Delete Last Pan Camera"
+            )
+        )
+        self._sidebar.deleteLastType7Requested.connect(
+            lambda: self._handle_add_camera(
+                self.preview_api.delete_last_type7_camera, "Delete Last Fixed Camera"
+            )
+        )
         self._save_cameras_button.clicked.connect(self._handle_save_cameras)
         self._save_lp_button.clicked.connect(self._handle_save_lp_line)
         self._save_all_lp_button.clicked.connect(self._handle_save_all_lp_lines)

@@ -156,6 +156,22 @@ class CameraService:
         )
         return result.success, result.message, result.selected_camera
 
+    def delete_last_type6_camera(self) -> tuple[bool, str, int | None]:
+        """Delete the last panning camera after removing any TV-mode references."""
+
+        result = self._camera_controller.delete_last_camera_of_type(
+            self._cameras, self._camera_views, 6, camera_label="pan"
+        )
+        return result.success, result.message, result.selected_camera
+
+    def delete_last_type7_camera(self) -> tuple[bool, str, int | None]:
+        """Delete the last fixed camera after removing any TV-mode references."""
+
+        result = self._camera_controller.delete_last_camera_of_type(
+            self._cameras, self._camera_views, 7, camera_label="fixed"
+        )
+        return result.success, result.message, result.selected_camera
+
     def renumber(
         self, cameras: Sequence[CameraPosition], camera_views: Sequence[CameraViewListing]
     ) -> tuple[list[CameraPosition], list[CameraViewListing]]:
