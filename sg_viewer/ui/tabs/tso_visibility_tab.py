@@ -21,6 +21,7 @@ from sg_viewer.io.track3d_parser import (
     parse_track3d_section_dlongs,
     save_object_lists_to_track3d,
 )
+from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
 
 
 class TSOVisibilityListWidget(QListWidget):
@@ -152,25 +153,9 @@ class TSOVisibilityTab(QWidget):
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
 
     def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
-        ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
-        subindex_starts: dict[int, list[tuple[int, int]]] = {}
-        for row in rows:
-            if not row.dlongs:
-                continue
-            section = int(row.section)
-            sub_index = int(row.sub_index)
-            start_dlong = int(row.dlongs[0])
-            end_dlong = int(row.dlongs[-1])
-            if end_dlong < start_dlong:
-                start_dlong, end_dlong = end_dlong, start_dlong
-            ranges[(section, sub_index)] = (start_dlong, end_dlong)
-            subindex_starts.setdefault(section, []).append((sub_index, start_dlong))
-
+        ranges, subindex_starts = build_subsection_dlong_metadata(rows)
         self._subsection_dlong_ranges = ranges
-        self._section_subindex_starts = {
-            section: tuple(start for _, start in sorted(values, key=lambda item: item[0]))
-            for section, values in subindex_starts.items()
-        }
+        self._section_subindex_starts = subindex_starts
 
     def _find_object_list_index_for_current_selection(self) -> int:
         item = self.section_list.currentItem()
