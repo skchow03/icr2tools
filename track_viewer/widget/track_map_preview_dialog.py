@@ -1,6 +1,7 @@
 """Track map preview dialog."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -43,6 +44,9 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         self._rotate_button = QtWidgets.QPushButton("Rotate Clockwise")
         self._rotate_button.clicked.connect(self._handle_rotate_clicked)
 
+        self._save_button = QtWidgets.QPushButton("Save BMP…")
+        self._save_button.clicked.connect(self._handle_save_clicked)
+
         controls_layout = QtWidgets.QHBoxLayout()
         controls_layout.addWidget(self._fit_checkbox)
         controls_layout.addSpacing(12)
@@ -51,6 +55,8 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
         controls_layout.addSpacing(12)
         controls_layout.addWidget(self._flip_button)
         controls_layout.addWidget(self._rotate_button)
+        controls_layout.addSpacing(12)
+        controls_layout.addWidget(self._save_button)
         controls_layout.addStretch()
 
         self._label = QtWidgets.QLabel()
@@ -118,6 +124,39 @@ class TrackMapPreviewDialog(QtWidgets.QDialog):
             return
         self._pixmap = self._rebuild_pixmap(self._flip_marker, self._rotation_steps)
         self._update_pixmap()
+
+    def _handle_save_clicked(self) -> None:
+        if self._pixmap.isNull():
+            QtWidgets.QMessageBox.warning(
+                self, "Save Track Map", "There is no track map image to save."
+            )
+            return
+
+        selected_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save Track Map",
+            "track_map.bmp",
+            "Bitmap Files (*.bmp)",
+        )
+        if not selected_path:
+            return
+
+        output_path = Path(selected_path)
+        if output_path.suffix.lower() != ".bmp":
+            output_path = output_path.with_suffix(".bmp")
+
+        saved = self._pixmap.toImage().save(str(output_path), "BMP")
+        if not saved:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Save Track Map",
+                f"Could not save track map to {output_path}.",
+            )
+            return
+
+        QtWidgets.QMessageBox.information(
+            self, "Save Track Map", f"Saved track map to {output_path}."
+        )
 
     def _update_pixmap(self) -> None:
         if self._pixmap.isNull():
