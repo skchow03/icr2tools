@@ -77,6 +77,8 @@ class TSOVisibilityTab(QWidget):
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
     selectedTrackSectionChanged = QtCore.pyqtSignal(object)
     selectedTSOOrderChanged = QtCore.pyqtSignal(object)
+    objectListsChanged = QtCore.pyqtSignal()
+    objectListsSaved = QtCore.pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -252,6 +254,7 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
+        self.objectListsSaved.emit()
 
     def set_object_lists(self, object_lists: list[Track3DObjectList]) -> None:
         self.object_lists = list(object_lists)
@@ -261,6 +264,7 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
+        self.objectListsSaved.emit()
 
     def _emit_track_section_and_order(self, row: int) -> None:
         if row < 0 or row >= len(self.object_lists):
@@ -386,6 +390,10 @@ class TSOVisibilityTab(QWidget):
             )
 
         self.populate_table()
+        self.objectListsSaved.emit()
+
+    def _emit_object_lists_changed(self) -> None:
+        self.objectListsChanged.emit()
 
     def populate_table(self):
         current_object_index = self._find_object_list_index_for_current_selection()
@@ -437,6 +445,7 @@ class TSOVisibilityTab(QWidget):
                 except ValueError:
                     continue
         self.object_lists[object_list_index].tso_ids = reordered_ids
+        self._emit_object_lists_changed()
         self.selectedTSOsChanged.emit(tuple(reordered_ids))
         self._emit_track_section_and_order(object_list_index)
         self.populate_table()
@@ -548,6 +557,7 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists[row].tso_ids.append(tso_id)
+        self._emit_object_lists_changed()
         self._refresh_current_tso_list()
         item = self.tso_list.item(self.tso_list.count() - 1)
         if item is not None:
@@ -570,6 +580,7 @@ class TSOVisibilityTab(QWidget):
         self.tso_list.takeItem(item_row)
         if item_row < len(self.object_lists[row].tso_ids):
             del self.object_lists[row].tso_ids[item_row]
+            self._emit_object_lists_changed()
         self.tso_list.update_item_widths()
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
@@ -628,6 +639,7 @@ class TSOVisibilityTab(QWidget):
             "Updated track.3D with current ObjectList rows.\n"
             f"Backup created at:\n{backup_path}",
         )
+        self.objectListsSaved.emit()
 
     def _on_copy_from_previous_requested(self) -> None:
         row = self._find_object_list_index_for_current_selection()
@@ -636,6 +648,7 @@ class TSOVisibilityTab(QWidget):
 
         copied_ids = list(self.object_lists[row - 1].tso_ids)
         self.object_lists[row].tso_ids = copied_ids
+        self._emit_object_lists_changed()
 
         self._refresh_current_tso_list()
 

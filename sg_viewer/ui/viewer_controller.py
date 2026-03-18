@@ -140,6 +140,7 @@ class SGViewerController:
         self._elevation_grade_is_dirty = False
         self._fsects_is_dirty = False
         self._trackside_objects_is_dirty = False
+        self._tso_visibility_is_dirty = False
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
@@ -1034,6 +1035,8 @@ class SGViewerController:
         self._window.tso_visibility_sidebar.selectedTSOPillChanged.connect(self._on_tso_visibility_pill_selected)
         self._window.tso_visibility_sidebar.selectedTrackSectionChanged.connect(self._on_tso_visibility_track_section_selected)
         self._window.tso_visibility_sidebar.selectedTSOOrderChanged.connect(self._on_tso_visibility_order_changed)
+        self._window.tso_visibility_sidebar.objectListsChanged.connect(self._on_tso_visibility_lists_changed)
+        self._window.tso_visibility_sidebar.objectListsSaved.connect(self._on_tso_visibility_lists_saved)
         self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
         self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
         self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
@@ -1207,6 +1210,10 @@ class SGViewerController:
         self._trackside_objects_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("Objects", dirty)
 
+    def _set_tso_visibility_dirty(self, dirty: bool) -> None:
+        self._tso_visibility_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("TSO Visibility", dirty)
+
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None:
         self._elevation_grade_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("Elevation/Grade", dirty)
@@ -1229,6 +1236,8 @@ class SGViewerController:
             labels.append("TSD lines")
         if self._trackside_objects_is_dirty:
             labels.append("Trackside objects")
+        if self._tso_visibility_is_dirty:
+            labels.append("TSO visibility")
         return labels
 
     def mark_fsects_dirty(self, dirty: bool) -> None:
@@ -1582,6 +1591,7 @@ class SGViewerController:
         self._window.tso_visibility_sidebar.clear_object_lists()
         self._set_tsd_dirty(False)
         self._set_trackside_objects_dirty(False)
+        self._set_tso_visibility_dirty(False)
 
     def _add_loaded_tsd_file(
         self,
@@ -2215,6 +2225,12 @@ class SGViewerController:
 
     def _on_tso_visibility_order_changed(self, order_map: dict[int, int]) -> None:
         self._window.preview.set_trackside_order_labels(order_map)
+
+    def _on_tso_visibility_lists_changed(self) -> None:
+        self._set_tso_visibility_dirty(True)
+
+    def _on_tso_visibility_lists_saved(self) -> None:
+        self._set_tso_visibility_dirty(False)
 
     def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
         if column == 5:
