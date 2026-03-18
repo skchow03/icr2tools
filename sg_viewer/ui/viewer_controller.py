@@ -1291,6 +1291,7 @@ class SGViewerController:
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
+        self._sync_tso_visibility_section_dlongs()
         if self._current_path is None:
             return
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
@@ -1331,6 +1332,32 @@ class SGViewerController:
                 self._set_active_tsd_file(target_index)
         self._set_tsd_dirty(False)
         self._set_trackside_objects_dirty(False)
+
+    def _track3d_path_for_current_project(self) -> Path | None:
+        if self._current_path is None:
+            return None
+        path = self._current_path.with_suffix(".3d")
+        if path.exists():
+            return path
+        fallback_path = self._current_path.with_suffix(".3D")
+        if fallback_path.exists():
+            return fallback_path
+        return None
+
+    def _sync_tso_visibility_section_dlongs(self) -> None:
+        track3d_path = self._track3d_path_for_current_project()
+        rows = parse_track3d_section_dlongs(track3d_path) if track3d_path is not None else []
+        self._window.tso_visibility_sidebar.set_section_dlong_rows(rows)
+
+        starts_by_section: dict[int, tuple[int, ...]] = {}
+        grouped: dict[int, list[tuple[int, int]]] = {}
+        for row in rows:
+            if not row.dlongs:
+                continue
+            grouped.setdefault(int(row.section), []).append((int(row.sub_index), int(row.dlongs[0])))
+        for section, values in grouped.items():
+            starts_by_section[section] = tuple(start for _, start in sorted(values, key=lambda item: item[0]))
+        self._window.set_section_subindex_metadata(starts_by_section)
 
     def _persist_mrk_wall_heights_for_current_track(self) -> None:
         if self._current_path is None:
