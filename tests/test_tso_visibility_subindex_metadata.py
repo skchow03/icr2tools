@@ -19,7 +19,22 @@ def test_subindex_ranges_extend_to_the_next_subindex_start():
     assert starts == {12: (1000, 1300, 1500)}
 
 
-def test_terminal_subindex_keeps_its_recorded_end_dlong():
+def test_terminal_subindex_extends_to_the_next_section_start_when_available():
+    ranges, starts = build_subsection_dlong_metadata(
+        [
+            Track3DSectionDlongList(section=8, sub_index=0, dlongs=(200, 240, 260)),
+            Track3DSectionDlongList(section=8, sub_index=1, dlongs=(300, 360, 390)),
+            Track3DSectionDlongList(section=9, sub_index=0, dlongs=(450, 500, 540)),
+        ]
+    )
+
+    assert ranges[(8, 0)] == (200, 300)
+    assert ranges[(8, 1)] == (300, 450)
+    assert ranges[(9, 0)] == (450, 540)
+    assert starts == {8: (200, 300), 9: (450,)}
+
+
+def test_terminal_subindex_keeps_its_recorded_end_dlong_without_a_following_section():
     ranges, starts = build_subsection_dlong_metadata(
         [
             Track3DSectionDlongList(section=8, sub_index=0, dlongs=(200, 240, 260)),
