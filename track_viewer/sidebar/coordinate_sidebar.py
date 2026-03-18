@@ -29,6 +29,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
     addType6Requested = QtCore.pyqtSignal()
     addType2Requested = QtCore.pyqtSignal()
     addType7Requested = QtCore.pyqtSignal()
+    deleteLastType6Requested = QtCore.pyqtSignal()
+    deleteLastType7Requested = QtCore.pyqtSignal()
 
     def __init__(self, view_model: CoordinateSidebarViewModel | None = None) -> None:
         super().__init__()
@@ -69,6 +71,8 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._tv_panel.addType6Requested.connect(self.addType6Requested)
         self._tv_panel.addType2Requested.connect(self.addType2Requested)
         self._tv_panel.addType7Requested.connect(self.addType7Requested)
+        self._tv_panel.deleteLastType6Requested.connect(self.deleteLastType6Requested)
+        self._tv_panel.deleteLastType7Requested.connect(self.deleteLastType7Requested)
         self._camera_table.positionUpdated.connect(self._handle_camera_position_updated)
         self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
         self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
