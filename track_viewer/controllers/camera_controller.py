@@ -235,6 +235,48 @@ class CameraController:
             success_message="Fixed camera added.",
         )
 
+    def delete_last_camera_of_type(
+        self,
+        cameras: List[CameraPosition],
+        camera_views: List[CameraViewListing],
+        camera_type: int,
+        *,
+        camera_label: str,
+    ) -> CameraUpdateResult:
+        """Delete the last camera of the requested type after removing its TV-mode entries."""
+        last_index = next(
+            (index for index in range(len(cameras) - 1, -1, -1) if cameras[index].camera_type == camera_type),
+            None,
+        )
+        if last_index is None:
+            return CameraUpdateResult(
+                False,
+                f"No {camera_label} cameras are available to delete.",
+                cameras,
+                camera_views,
+            )
+
+        for view in camera_views:
+            view.entries[:] = [entry for entry in view.entries if entry.camera_index != last_index]
+            for entry in view.entries:
+                if entry.camera_index is not None and entry.camera_index > last_index:
+                    entry.camera_index -= 1
+
+        cameras.pop(last_index)
+        self._renumber_camera_type_indices(cameras, camera_views)
+
+        next_selected = None
+        if cameras:
+            next_selected = min(last_index, len(cameras) - 1)
+
+        return CameraUpdateResult(
+            True,
+            f"{camera_label.capitalize()} camera deleted.",
+            cameras,
+            camera_views,
+            selected_camera=next_selected,
+        )
+
     def renumber(
         self, cameras: List[CameraPosition], camera_views: List[CameraViewListing]
     ) -> Tuple[List[CameraPosition], List[CameraViewListing]]:

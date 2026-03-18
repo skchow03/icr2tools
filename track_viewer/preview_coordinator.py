@@ -710,6 +710,28 @@ class PreviewCoordinator:
         self._handle_intent(PreviewIntent.CAMERA_CHANGED)
         return success, message
 
+    def delete_last_type6_camera(self) -> tuple[bool, str]:
+        success, message, selected = self._camera_edit_controller.delete_last_type6_camera()
+        if success:
+            self.set_selected_camera(selected)
+        self._emit_cameras_changed(
+            self._camera_service.cameras, self._camera_service.camera_views
+        )
+        self._state.status_message = message
+        self._handle_intent(PreviewIntent.CAMERA_CHANGED)
+        return success, message
+
+    def delete_last_type7_camera(self) -> tuple[bool, str]:
+        success, message, selected = self._camera_edit_controller.delete_last_type7_camera()
+        if success:
+            self.set_selected_camera(selected)
+        self._emit_cameras_changed(
+            self._camera_service.cameras, self._camera_service.camera_views
+        )
+        self._state.status_message = message
+        self._handle_intent(PreviewIntent.CAMERA_CHANGED)
+        return success, message
+
     def load_track(self, track_folder: Path) -> None:
         if not track_folder:
             self.clear()
