@@ -149,21 +149,28 @@ class TSOVisibilityTab(QWidget):
         self.available_tso_ids: list[int] = []
         self._tso_display_metadata: dict[int, tuple[str, str]] = {}
         self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
+        self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
 
     def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
-        starts: list[tuple[int, int, int]] = []
+        ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
+        subindex_starts: dict[int, list[tuple[int, int]]] = {}
         for row in rows:
             if not row.dlongs:
                 continue
-            starts.append((int(row.section), int(row.sub_index), int(row.dlongs[0])))
-
-        starts.sort(key=lambda item: item[2])
-        ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
-        for index, (section, sub_index, start_dlong) in enumerate(starts):
-            end_dlong = starts[index + 1][2] if index + 1 < len(starts) else None
+            section = int(row.section)
+            sub_index = int(row.sub_index)
+            start_dlong = int(row.dlongs[0])
+            end_dlong = int(row.dlongs[-1])
+            if end_dlong < start_dlong:
+                start_dlong, end_dlong = end_dlong, start_dlong
             ranges[(section, sub_index)] = (start_dlong, end_dlong)
+            subindex_starts.setdefault(section, []).append((sub_index, start_dlong))
 
         self._subsection_dlong_ranges = ranges
+        self._section_subindex_starts = {
+            section: tuple(start for _, start in sorted(values, key=lambda item: item[0]))
+            for section, values in subindex_starts.items()
+        }
 
     def _find_object_list_index_for_current_selection(self) -> int:
         item = self.section_list.currentItem()
@@ -252,6 +259,7 @@ class TSOVisibilityTab(QWidget):
     def clear_object_lists(self) -> None:
         self.object_lists = []
         self._subsection_dlong_ranges = {}
+        self._section_subindex_starts = {}
         self.section_list.clear()
         self.tso_list.clear()
         self.tso_filter_list.clear()
@@ -282,8 +290,11 @@ class TSOVisibilityTab(QWidget):
         self.selectedTrackSectionChanged.emit(
             {
                 "section": int(entry.section),
+                "sub_index": int(entry.sub_index),
                 "start_dlong": start_dlong,
                 "end_dlong": end_dlong,
+                "subindex_count": len(self._section_subindex_starts.get(int(entry.section), tuple())),
+                "subindex_starts": self._section_subindex_starts.get(int(entry.section), tuple()),
             }
         )
         order_map: dict[int, int] = {}

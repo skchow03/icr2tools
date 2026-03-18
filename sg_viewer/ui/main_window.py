@@ -72,6 +72,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("SG CREATE")
         self.resize(960, 720)
         self._selected_section_index: int | None = None
+        self._section_subindex_metadata: dict[int, tuple[int, ...]] = {}
         self._updating_fsect_table = False
         self._updating_xsect_table = False
         self._measurement_unit_data = "feet"
@@ -333,6 +334,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._previous_label = QtWidgets.QLabel("Previous Section: –")
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._section_length_label = QtWidgets.QLabel("Section Length: –")
+        self._section_subindex_count_label = QtWidgets.QLabel("Section SubIndexes (.3d): –")
+        self._section_subindex_starts_label = QtWidgets.QLabel("SubIndex Start DLONGs (.3d): –")
         self._previous_section_length_label = QtWidgets.QLabel(
             "Previous Section Length: –"
         )
@@ -714,6 +717,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._previous_label,
             self._next_label,
             self._section_length_label,
+            self._section_subindex_count_label,
+            self._section_subindex_starts_label,
             self._previous_section_length_label,
             self._next_section_length_label,
             self._adjusted_section_start_dlong_label,
@@ -1532,6 +1537,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._previous_label.setText("Previous Section: –")
             self._next_label.setText("Next Section: –")
             self._section_length_label.setText("Section Length: –")
+            self._update_section_subindex_labels(None)
             self._previous_section_length_label.setText("Previous Section Length: –")
             self._next_section_length_label.setText("Next Section Length: –")
             self._set_adjusted_dlong_labels(None)
@@ -1550,6 +1556,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_length_label.setText(
             f"Section Length: {self.format_length_with_secondary(selection.length)}"
         )
+        self._update_section_subindex_labels(selection.index)
         self._previous_section_length_label.setText(
             self._format_section_length("Previous", selection.previous_length)
         )
@@ -1569,6 +1576,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._profile_widget.set_selected_range(selected_range)
         self._update_fsect_table(selection.index)
 
+
+
+    def set_section_subindex_metadata(self, metadata: dict[int, tuple[int, ...]]) -> None:
+        self._section_subindex_metadata = dict(metadata)
+        if self._selected_section_index is not None:
+            self._update_section_subindex_labels(self._selected_section_index)
+
+    def _update_section_subindex_labels(self, section_index: int | None) -> None:
+        if section_index is None:
+            self._section_subindex_count_label.setText("Section SubIndexes (.3d): –")
+            self._section_subindex_starts_label.setText("SubIndex Start DLONGs (.3d): –")
+            return
+
+        starts = self._section_subindex_metadata.get(int(section_index), tuple())
+        self._section_subindex_count_label.setText(
+            f"Section SubIndexes (.3d): {len(starts)}"
+        )
+        if starts:
+            starts_text = ", ".join(self.format_length(value) for value in starts)
+        else:
+            starts_text = "–"
+        self._section_subindex_starts_label.setText(
+            f"SubIndex Start DLONGs (.3d): {starts_text}"
+        )
 
     def _format_section_length(self, prefix: str, length: float | None) -> str:
         value = "–" if length is None else self.format_length_with_secondary(length)
