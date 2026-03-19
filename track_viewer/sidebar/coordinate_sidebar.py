@@ -59,7 +59,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         )
         self._tv_panel = TvModesPanel()
         self._camera_table = CameraCoordinateTable()
-        self._add_camera_button = QtWidgets.QPushButton("Add Camera")
+        self._add_camera_button = QtWidgets.QPushButton("Add camera")
         self._camera_details = QtWidgets.QLabel("Select a camera to inspect.")
         self._camera_details.setTextFormat(QtCore.Qt.RichText)
         self._camera_details.setWordWrap(True)
@@ -86,6 +86,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         camera_title = QtWidgets.QLabel("Track cameras")
         camera_title.setStyleSheet("font-weight: bold")
         layout.addWidget(camera_title)
+        layout.addWidget(self._add_camera_button)
         layout.addWidget(self._camera_list)
         camera_filter_layout = QtWidgets.QHBoxLayout()
         camera_filter_layout.setContentsMargins(0, 0, 0, 0)
@@ -100,7 +101,6 @@ class CoordinateSidebar(QtWidgets.QFrame):
         coords_title.setStyleSheet("font-weight: bold")
         layout.addWidget(coords_title)
         layout.addWidget(self._camera_table)
-        layout.addWidget(self._add_camera_button)
 
         layout.addStretch(1)
         self.setLayout(layout)
@@ -133,6 +133,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self, cameras: list[CameraPosition], views: list[CameraViewListing]
     ) -> None:
         list_state = self._view_model.set_cameras(cameras, views)
+        self._camera_list.clearSelection()
         self._camera_table.set_camera(None, None)
         self._type6_editor.set_camera(None, None)
         self._type7_details.set_camera(None, None)
@@ -166,8 +167,11 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._type6_editor.set_camera(state.selected_index, state.type6_camera)
         self._type7_details.set_camera(state.selected_index, state.type7_camera)
         list_index = self._view_model.list_index_for_camera(index)
-        if self._camera_list.currentRow() != (list_index if list_index is not None else -1):
+        current_row = list_index if list_index is not None else -1
+        if self._camera_list.currentRow() != current_row:
             self.select_camera(index)
+        else:
+            self._tv_panel.select_camera(index)
 
     def _handle_camera_position_updated(
         self, index: int, x: Optional[int], y: Optional[int], z: Optional[int]
