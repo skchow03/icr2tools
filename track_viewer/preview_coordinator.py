@@ -688,6 +688,19 @@ class PreviewCoordinator:
         self._handle_intent(PreviewIntent.CAMERA_CHANGED)
         return success, message
 
+    def add_camera(self, camera_type: int, *, x: int = 0, y: int = 0, z: int = 0) -> tuple[bool, str]:
+        success, message, selected = self._camera_edit_controller.add_camera(
+            camera_type, x=x, y=y, z=z
+        )
+        if success and selected is not None:
+            self.set_selected_camera(selected)
+        self._emit_cameras_changed(
+            self._camera_service.cameras, self._camera_service.camera_views
+        )
+        self._state.status_message = message
+        self._handle_intent(PreviewIntent.CAMERA_CHANGED)
+        return success, message
+
     def add_type2_camera(self) -> tuple[bool, str]:
         success, message, selected = self._camera_edit_controller.add_type2_camera()
         if success and selected is not None:
