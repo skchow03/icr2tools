@@ -297,6 +297,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._sidebar.showCurrentTvOnlyChanged.connect(
             self._handle_show_current_tv_only_changed
         )
+        self._sidebar.addCameraRequested.connect(self._handle_add_camera_from_dialog)
         self._sidebar.zoomPointsToggled.connect(self._toggle_zoom_points)
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
@@ -710,6 +711,31 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
+
+    def _handle_add_camera_from_dialog(self) -> None:
+        camera_types = [
+            ("Pan", 6),
+            ("Alternate Pan", 2),
+            ("Fixed", 7),
+        ]
+        labels = [label for label, _value in camera_types]
+        selected_label, accepted = QtWidgets.QInputDialog.getItem(
+            self,
+            "Add Camera",
+            "Camera type",
+            labels,
+            0,
+            False,
+        )
+        if not accepted:
+            return
+        camera_type = next(
+            value for label, value in camera_types if label == selected_label
+        )
+        self._handle_add_camera(
+            lambda: self.preview_api.add_camera(camera_type, x=0, y=0, z=0),
+            "Add Camera",
+        )
 
     def _handle_save_cameras(self) -> None:
         success, message = self.preview_api.save_cameras()

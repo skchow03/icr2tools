@@ -128,6 +128,44 @@ class CameraController:
             selected_camera=insert_index,
         )
 
+    def add_camera(
+        self,
+        cameras: List[CameraPosition],
+        camera_type: int,
+        *,
+        x: int = 0,
+        y: int = 0,
+        z: int = 0,
+    ) -> CameraUpdateResult:
+        """Create a standalone camera with default parameters and no TV assignment."""
+        if camera_type in {2, 6}:
+            new_camera = CameraPosition(
+                camera_type=camera_type,
+                index=0,
+                x=x,
+                y=y,
+                z=z,
+                type6=Type6CameraParameters(0, 0, 0, 0, 0, 0),
+                raw_values=tuple([0] * 9),
+            )
+        elif camera_type == 7:
+            new_camera = CameraPosition(
+                camera_type=camera_type,
+                index=0,
+                x=x,
+                y=y,
+                z=z,
+                type7=Type7CameraParameters(0, 0, 0, 0, 0, 0, 0, 0),
+                raw_values=tuple([0] * 12),
+            )
+        else:
+            return CameraUpdateResult(False, "Unsupported camera type.", cameras, [])
+        cameras.append(new_camera)
+        self._renumber_camera_type_indices(cameras, [])
+        return CameraUpdateResult(
+            True, "Camera added.", cameras, [], selected_camera=len(cameras) - 1
+        )
+
     def add_type6_camera(
         self,
         cameras: List[CameraPosition],

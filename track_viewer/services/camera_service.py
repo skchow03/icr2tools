@@ -136,6 +136,16 @@ class CameraService:
         )
         return result.success, result.message, result.selected_camera
 
+    def add_camera(
+        self, camera_type: int, *, x: int = 0, y: int = 0, z: int = 0
+    ) -> tuple[bool, str, int | None]:
+        """Create a new camera that is initially unassigned to TV modes."""
+
+        result = self._camera_controller.add_camera(
+            self._cameras, camera_type, x=x, y=y, z=z
+        )
+        return result.success, result.message, result.selected_camera
+
     def add_type2_camera(
         self, selected_camera: int | None, track_length: float | None
     ) -> tuple[bool, str, int | None]:

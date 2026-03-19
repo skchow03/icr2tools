@@ -12,7 +12,6 @@ class CameraCoordinateTable(QtWidgets.QTableWidget):
     """Displays and edits a single camera's world coordinates."""
 
     positionUpdated = QtCore.pyqtSignal(int, object, object, object)
-
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(1, 3, parent)
         self._camera_index: Optional[int] = None

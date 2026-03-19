@@ -18,9 +18,7 @@ class TvModesPanel(QtWidgets.QWidget):
     cameraAssignmentChanged = QtCore.pyqtSignal()
     modeCountChanged = QtCore.pyqtSignal(int)
     viewChanged = QtCore.pyqtSignal(int)
-    addType6Requested = QtCore.pyqtSignal()
-    addType2Requested = QtCore.pyqtSignal()
-    addType7Requested = QtCore.pyqtSignal()
+    addSelectedCameraRequested = QtCore.pyqtSignal()
     deleteLastType6Requested = QtCore.pyqtSignal()
     deleteLastType7Requested = QtCore.pyqtSignal()
 
@@ -29,6 +27,7 @@ class TvModesPanel(QtWidgets.QWidget):
         self._track_length: Optional[int] = None
         self._views: List[CameraViewListing] = []
         self._cameras: List[CameraPosition] = []
+        self._selected_camera_index: Optional[int] = None
         self._mode_selector = QtWidgets.QComboBox()
         self._mode_selector.addItems(["1", "2"])
         self._mode_selector.currentIndexChanged.connect(
@@ -48,14 +47,15 @@ class TvModesPanel(QtWidgets.QWidget):
         self._delete_button = QtWidgets.QPushButton("Remove from TV mode")
         self._delete_button.setEnabled(False)
         self._delete_button.clicked.connect(self._handle_delete_camera)
-        self._add_type6_button = QtWidgets.QPushButton("Add Panning Camera")
-        self._add_type2_button = QtWidgets.QPushButton("Add Alternate Panning Camera")
-        self._add_type7_button = QtWidgets.QPushButton("Add Fixed Camera")
+        self._add_selected_camera_button = QtWidgets.QPushButton(
+            "Add Selected Camera to TV Mode"
+        )
+        self._add_selected_camera_button.setEnabled(False)
         self._delete_last_type6_button = QtWidgets.QPushButton("Delete Last Pan Camera")
         self._delete_last_type7_button = QtWidgets.QPushButton("Delete Last Fixed Camera")
-        self._add_type6_button.clicked.connect(self.addType6Requested.emit)
-        self._add_type2_button.clicked.connect(self.addType2Requested.emit)
-        self._add_type7_button.clicked.connect(self.addType7Requested.emit)
+        self._add_selected_camera_button.clicked.connect(
+            self._handle_add_selected_camera
+        )
         self._delete_last_type6_button.clicked.connect(self.deleteLastType6Requested.emit)
         self._delete_last_type7_button.clicked.connect(self.deleteLastType7Requested.emit)
 
@@ -73,11 +73,9 @@ class TvModesPanel(QtWidgets.QWidget):
         layout.addLayout(mode_layout)
         camera_action_layout = QtWidgets.QVBoxLayout()
         primary_action_layout = QtWidgets.QHBoxLayout()
-        primary_action_layout.addWidget(self._add_type6_button)
-        primary_action_layout.addWidget(self._add_type7_button)
+        primary_action_layout.addWidget(self._add_selected_camera_button)
         primary_action_layout.addStretch(1)
         secondary_action_layout = QtWidgets.QHBoxLayout()
-        secondary_action_layout.addWidget(self._add_type2_button)
         secondary_action_layout.addWidget(self._delete_button)
         secondary_action_layout.addStretch(1)
         deletion_action_layout = QtWidgets.QHBoxLayout()
@@ -119,6 +117,7 @@ class TvModesPanel(QtWidgets.QWidget):
         self._tv_trees = []
         if not views:
             self._tv_tabs.setVisible(False)
+            self._update_add_selected_button_state()
             return
         self._tv_tabs.setVisible(True)
         for view_index, view in enumerate(views):
@@ -153,10 +152,12 @@ class TvModesPanel(QtWidgets.QWidget):
             tree.itemChanged.connect(self._handle_tv_item_changed)
         self._tv_tabs.setCurrentIndex(0)
         self._update_delete_state()
+        self._update_add_selected_button_state()
 
     def _handle_view_changed(self, index: int) -> None:
         self.viewChanged.emit(index)
         self._update_delete_state()
+        self._update_add_selected_button_state()
 
     def _camera_from_index(self, camera_index: Optional[int]) -> Optional[CameraPosition]:
         if camera_index is None:
@@ -308,6 +309,8 @@ class TvModesPanel(QtWidgets.QWidget):
         self._tv_camera_items.setdefault(new_camera_index, []).append((tree, item))
 
     def select_camera(self, index: int | None) -> None:
+        self._selected_camera_index = index
+        self._update_add_selected_button_state()
         for tree in self._tv_trees:
             blocker = QtCore.QSignalBlocker(tree)
             tree.setCurrentItem(None)
@@ -396,7 +399,39 @@ class TvModesPanel(QtWidgets.QWidget):
             self._update_delete_state()
             return
         self.cameraSelected.emit(camera_index)
+        self._selected_camera_index = camera_index
         self._update_delete_state()
+        self._update_add_selected_button_state()
+
+    def _handle_add_selected_camera(self) -> None:
+        current_view_index = self._tv_tabs.currentIndex()
+        camera_index = self._selected_camera_index
+        if (
+            camera_index is None
+            or current_view_index < 0
+            or current_view_index >= len(self._views)
+        ):
+            return
+        view = self._views[current_view_index]
+        camera = self._camera_from_index(camera_index)
+        if camera is None:
+            return
+        if any(entry.camera_index == camera_index for entry in view.entries):
+            return
+        start_dlong, end_dlong = self.camera_dlongs(camera_index)
+        new_entry = CameraViewEntry(
+            camera_index=camera_index,
+            type_index=camera.index,
+            camera_type=camera.camera_type,
+            start_dlong=start_dlong or 0,
+            end_dlong=end_dlong or 0,
+            mark=camera.camera_type,
+        )
+        view.entries.append(new_entry)
+        self.set_views(self._views, self._cameras)
+        self.select_camera(camera_index)
+        self.cameraAssignmentChanged.emit()
+        self.addSelectedCameraRequested.emit()
 
     def _handle_tv_item_changed(
         self, item: QtWidgets.QTreeWidgetItem, column: int
@@ -455,6 +490,19 @@ class TvModesPanel(QtWidgets.QWidget):
             entry.end_dlong = new_value
             self.dlongsUpdated.emit(entry.camera_index, None, new_value)
             self._align_next_camera_start(tree, view_index, entry_index, new_value)
+
+    def _update_add_selected_button_state(self) -> None:
+        current_view_index = self._tv_tabs.currentIndex()
+        enabled = (
+            self._selected_camera_index is not None
+            and 0 <= current_view_index < len(self._views)
+            and self._camera_from_index(self._selected_camera_index) is not None
+            and all(
+                entry.camera_index != self._selected_camera_index
+                for entry in self._views[current_view_index].entries
+            )
+        )
+        self._add_selected_camera_button.setEnabled(enabled)
 
     def _restore_tv_value(
         self,
