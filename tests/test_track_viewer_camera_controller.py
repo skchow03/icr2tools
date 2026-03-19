@@ -98,3 +98,43 @@ def test_delete_last_fixed_camera_reports_missing_camera() -> None:
     assert result.message == "No fixed cameras are available to delete."
     assert len(cameras) == 1
     assert len(views[0].entries) == 1
+
+
+def test_delete_camera_removes_it_from_all_tv_modes_and_renumbers() -> None:
+    controller = CameraController()
+    cameras = [_type6_camera(0), _type7_camera(0), _type6_camera(1), _type7_camera(1)]
+    views = [
+        CameraViewListing(
+            view=1,
+            label="TV1",
+            entries=[
+                CameraViewEntry(camera_index=0, type_index=0, camera_type=6, start_dlong=0, end_dlong=50),
+                CameraViewEntry(camera_index=2, type_index=1, camera_type=6, start_dlong=50, end_dlong=100),
+                CameraViewEntry(camera_index=3, type_index=1, camera_type=7, start_dlong=100, end_dlong=150),
+            ],
+        ),
+        CameraViewListing(
+            view=2,
+            label="TV2",
+            entries=[
+                CameraViewEntry(camera_index=1, type_index=0, camera_type=7, start_dlong=150, end_dlong=200),
+                CameraViewEntry(camera_index=3, type_index=1, camera_type=7, start_dlong=200, end_dlong=250),
+            ],
+        ),
+    ]
+
+    result = controller.delete_camera(cameras, views, 1)
+
+    assert result.success is True
+    assert result.message == "Camera deleted."
+    assert [camera.camera_type for camera in cameras] == [6, 6, 7]
+    assert [camera.index for camera in cameras] == [0, 1, 0]
+    assert [(entry.camera_index, entry.type_index, entry.camera_type) for entry in views[0].entries] == [
+        (0, 0, 6),
+        (1, 1, 6),
+        (2, 0, 7),
+    ]
+    assert [(entry.camera_index, entry.type_index, entry.camera_type) for entry in views[1].entries] == [
+        (2, 0, 7),
+    ]
+    assert result.selected_camera == 1

@@ -45,7 +45,8 @@ def test_add_camera_button_appears_above_camera_list() -> None:
     layout = sidebar.layout()
     assert layout.itemAt(0).widget().text() == "Track cameras"
     assert layout.itemAt(1).widget().text() == "Add camera"
-    assert layout.itemAt(2).widget() is sidebar._camera_list
+    assert layout.itemAt(2).widget().text() == "Delete camera"
+    assert layout.itemAt(3).widget() is sidebar._camera_list
 
 
 

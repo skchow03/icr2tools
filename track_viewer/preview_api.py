@@ -331,6 +331,9 @@ class TrackPreviewApi:
     def delete_last_type7_camera(self) -> tuple[bool, str]:
         return self._coordinator.delete_last_type7_camera()
 
+    def delete_camera(self) -> tuple[bool, str]:
+        return self._coordinator.delete_camera()
+
     def load_track(self, track_folder: Path) -> None:
         self._coordinator.load_track(track_folder)
 
