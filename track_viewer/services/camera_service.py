@@ -182,6 +182,14 @@ class CameraService:
         )
         return result.success, result.message, result.selected_camera
 
+    def delete_camera(self, camera_index: int | None) -> tuple[bool, str, int | None]:
+        """Delete the selected camera and remove its TV-mode entries."""
+
+        result = self._camera_controller.delete_camera(
+            self._cameras, self._camera_views, camera_index
+        )
+        return result.success, result.message, result.selected_camera
+
     def renumber(
         self, cameras: Sequence[CameraPosition], camera_views: Sequence[CameraViewListing]
     ) -> tuple[list[CameraPosition], list[CameraViewListing]]:

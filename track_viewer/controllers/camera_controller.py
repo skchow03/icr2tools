@@ -315,6 +315,51 @@ class CameraController:
             selected_camera=next_selected,
         )
 
+    def delete_camera(
+        self,
+        cameras: List[CameraPosition],
+        camera_views: List[CameraViewListing],
+        camera_index: int | None,
+    ) -> CameraUpdateResult:
+        """Delete a camera and remove it from every TV mode."""
+        if camera_index is None:
+            return CameraUpdateResult(
+                False,
+                "Select a camera to delete.",
+                cameras,
+                camera_views,
+            )
+        if camera_index < 0 or camera_index >= len(cameras):
+            return CameraUpdateResult(
+                False,
+                "The selected camera is no longer available.",
+                cameras,
+                camera_views,
+            )
+
+        for view in camera_views:
+            view.entries[:] = [
+                entry for entry in view.entries if entry.camera_index != camera_index
+            ]
+            for entry in view.entries:
+                if entry.camera_index is not None and entry.camera_index > camera_index:
+                    entry.camera_index -= 1
+
+        cameras.pop(camera_index)
+        self._renumber_camera_type_indices(cameras, camera_views)
+
+        next_selected = None
+        if cameras:
+            next_selected = min(camera_index, len(cameras) - 1)
+
+        return CameraUpdateResult(
+            True,
+            "Camera deleted.",
+            cameras,
+            camera_views,
+            selected_camera=next_selected,
+        )
+
     def renumber(
         self, cameras: List[CameraPosition], camera_views: List[CameraViewListing]
     ) -> Tuple[List[CameraPosition], List[CameraViewListing]]:

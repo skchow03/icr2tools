@@ -298,6 +298,11 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             self._handle_show_current_tv_only_changed
         )
         self._sidebar.addCameraRequested.connect(self._handle_add_camera_from_dialog)
+        self._sidebar.deleteCameraRequested.connect(
+            lambda: self._handle_add_camera(
+                self.preview_api.delete_camera, "Delete Camera"
+            )
+        )
         self._sidebar.zoomPointsToggled.connect(self._toggle_zoom_points)
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
@@ -334,16 +339,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._sidebar.addType7Requested.connect(
             lambda: self._handle_add_camera(
                 self.preview_api.add_type7_camera, "Add Fixed Camera"
-            )
-        )
-        self._sidebar.deleteLastType6Requested.connect(
-            lambda: self._handle_add_camera(
-                self.preview_api.delete_last_type6_camera, "Delete Last Pan Camera"
-            )
-        )
-        self._sidebar.deleteLastType7Requested.connect(
-            lambda: self._handle_add_camera(
-                self.preview_api.delete_last_type7_camera, "Delete Last Fixed Camera"
             )
         )
         self._save_cameras_button.clicked.connect(self._handle_save_cameras)

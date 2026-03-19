@@ -19,8 +19,6 @@ class TvModesPanel(QtWidgets.QWidget):
     modeCountChanged = QtCore.pyqtSignal(int)
     viewChanged = QtCore.pyqtSignal(int)
     addSelectedCameraRequested = QtCore.pyqtSignal()
-    deleteLastType6Requested = QtCore.pyqtSignal()
-    deleteLastType7Requested = QtCore.pyqtSignal()
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -51,13 +49,9 @@ class TvModesPanel(QtWidgets.QWidget):
             "Add Selected Camera to TV Mode"
         )
         self._add_selected_camera_button.setEnabled(False)
-        self._delete_last_type6_button = QtWidgets.QPushButton("Delete Last Pan Camera")
-        self._delete_last_type7_button = QtWidgets.QPushButton("Delete Last Fixed Camera")
         self._add_selected_camera_button.clicked.connect(
             self._handle_add_selected_camera
         )
-        self._delete_last_type6_button.clicked.connect(self.deleteLastType6Requested.emit)
-        self._delete_last_type7_button.clicked.connect(self.deleteLastType7Requested.emit)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -78,13 +72,8 @@ class TvModesPanel(QtWidgets.QWidget):
         secondary_action_layout = QtWidgets.QHBoxLayout()
         secondary_action_layout.addWidget(self._delete_button)
         secondary_action_layout.addStretch(1)
-        deletion_action_layout = QtWidgets.QHBoxLayout()
-        deletion_action_layout.addWidget(self._delete_last_type6_button)
-        deletion_action_layout.addWidget(self._delete_last_type7_button)
-        deletion_action_layout.addStretch(1)
         camera_action_layout.addLayout(primary_action_layout)
         camera_action_layout.addLayout(secondary_action_layout)
-        camera_action_layout.addLayout(deletion_action_layout)
         layout.addLayout(camera_action_layout)
         layout.addWidget(self._tv_tabs)
         self.setLayout(layout)

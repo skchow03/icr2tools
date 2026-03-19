@@ -128,3 +128,6 @@ class CameraEditController:
 
     def delete_last_type7_camera(self) -> tuple[bool, str, int | None]:
         return self._camera_service.delete_last_type7_camera()
+
+    def delete_camera(self) -> tuple[bool, str, int | None]:
+        return self._camera_service.delete_camera(self._state.selected_camera)
