@@ -284,6 +284,32 @@ def test_tools_menu_can_launch_tso_generator(qapp, monkeypatch):
         window.close()
 
 
+def test_tools_menu_can_launch_tso_generator_from_frozen_build(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        popen_calls: list[list[str]] = []
+
+        class _DummyPopen:
+            def __init__(self, args):
+                popen_calls.append(args)
+
+        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+        monkeypatch.setattr("sg_viewer.ui.viewer_controller.sys", SimpleNamespace(executable="SGCreate.exe", frozen=True))
+
+        tools_menu = next(
+            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+        )
+        tso_generator_action = next(
+            action for action in tools_menu.actions() if action.text() == "Open TSO Generator"
+        )
+
+        tso_generator_action.trigger()
+
+        assert popen_calls == [["SGCreate.exe", "--launch-tso-generator"]]
+    finally:
+        window.close()
+
+
 def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
     window = SGViewerWindow()
     try:

@@ -3403,17 +3403,22 @@ class SGViewerController:
         self._background_ui_coordinator.launch_background_calibrator()
 
     def _launch_tso_generator(self) -> None:
-        script_path = Path(__file__).resolve().parents[2] / "tso_generator" / "tso_generator.py"
-        if not script_path.is_file():
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Open TSO Generator",
-                f"Could not find tso_generator.py at:\n{script_path}",
-            )
-            return
+        command: list[str]
+        if getattr(sys, "frozen", False):
+            command = [sys.executable, "--launch-tso-generator"]
+        else:
+            script_path = Path(__file__).resolve().parents[2] / "tso_generator" / "tso_generator.py"
+            if not script_path.is_file():
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Open TSO Generator",
+                    f"Could not find tso_generator.py at:\n{script_path}",
+                )
+                return
+            command = [sys.executable, str(script_path)]
 
         try:
-            subprocess.Popen([sys.executable, str(script_path)])
+            subprocess.Popen(command)
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
