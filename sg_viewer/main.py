@@ -36,6 +36,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Shortcut for --log-level DEBUG",
     )
+    parser.add_argument(
+        "--launch-tso-generator",
+        action="store_true",
+        help="Launch the bundled TSO Generator window instead of SG Create.",
+    )
     return parser.parse_args(argv)
 
 
@@ -61,6 +66,12 @@ def resource_path(relative_path: str) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.launch_tso_generator:
+        from tso_generator.tso_generator import build_window
+
+        build_window()
+        return
+
     log_level_name = "DEBUG" if args.debug else args.log_level
     configure_logging(log_level_name, args.log_file)
     logger.info("Starting SG Create (log level %s)", log_level_name.upper())
