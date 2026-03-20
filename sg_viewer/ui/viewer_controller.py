@@ -2476,6 +2476,12 @@ class SGViewerController:
             self._trackside_objects[target_row],
             self._trackside_objects[source_row],
         )
+        self._window.tso_visibility_sidebar.remap_tso_ids(
+            {
+                source_row: target_row,
+                target_row: source_row,
+            }
+        )
         self._selected_trackside_object_indices = [target_row]
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
@@ -3963,6 +3969,7 @@ class SGViewerController:
         self._update_copy_fsects_buttons()
         self._update_fsect_edit_buttons()
         sections, _ = self._window.preview.get_section_set()
+        self._window.tso_visibility_sidebar.set_current_track_section_count(len(sections))
         self._run_integrity_checks_action.setEnabled(bool(sections))
 
     def _sync_after_xsect_value_change(self) -> None:

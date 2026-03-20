@@ -5,6 +5,7 @@ from sg_viewer.io.track3d_parser import (
     parse_track3d,
     parse_track3d_section_dlongs,
     save_object_lists_to_track3d,
+    track3d_has_object_lists,
 )
 
 
@@ -41,6 +42,20 @@ def test_parse_track3d_ignores_non_tso_items(tmp_path: Path):
 
     assert len(results) == 1
     assert results[0].tso_ids == [12, 7]
+
+
+def test_track3d_has_object_lists_detects_presence(tmp_path: Path):
+    path = tmp_path / "track.3d"
+    path.write_text("ObjectList_L1_0: LIST {__TSO12};\n", encoding="utf-8")
+
+    assert track3d_has_object_lists(path) is True
+
+
+def test_track3d_has_object_lists_detects_absence(tmp_path: Path):
+    path = tmp_path / "track.3d"
+    path.write_text("sec0_l0: LIST { DATA { 0, 10, 20 } };\n", encoding="utf-8")
+
+    assert track3d_has_object_lists(path) is False
 
 
 def test_save_object_lists_to_track3d_replaces_rows_and_creates_backup(tmp_path: Path):
