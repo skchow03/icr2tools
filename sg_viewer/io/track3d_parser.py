@@ -58,6 +58,14 @@ def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
     return results
 
 
+def track3d_has_object_lists(path: str | Path) -> bool:
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            if LINE_RE.search(line):
+                return True
+    return False
+
+
 def parse_track3d_section_dlongs(path: str | Path) -> list[Track3DSectionDlongList]:
     text = Path(path).read_text(encoding="utf-8", errors="ignore")
     results: list[Track3DSectionDlongList] = []

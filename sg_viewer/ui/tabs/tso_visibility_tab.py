@@ -20,6 +20,7 @@ from sg_viewer.io.track3d_parser import (
     parse_track3d,
     parse_track3d_section_dlongs,
     save_object_lists_to_track3d,
+    track3d_has_object_lists,
 )
 from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
 
@@ -153,6 +154,13 @@ class TSOVisibilityTab(QWidget):
         self._tso_display_metadata: dict[int, tuple[str, str]] = {}
         self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
+        self._current_track_section_count: int | None = None
+
+    def set_current_track_section_count(self, count: int | None) -> None:
+        if isinstance(count, int) and count >= 0:
+            self._current_track_section_count = count
+            return
+        self._current_track_section_count = None
 
     def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
         ranges, subindex_starts = build_subsection_dlong_metadata(rows)
@@ -376,8 +384,50 @@ class TSOVisibilityTab(QWidget):
         if not path:
             return
 
+        if self.object_lists:
+            response = QMessageBox.warning(
+                self,
+                "Load track.3D",
+                "Loading track.3D will overwrite the current TSO Visibility data. Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if response != QMessageBox.Yes:
+                return
+
+        if not track3d_has_object_lists(path):
+            QMessageBox.warning(
+                self,
+                "Load track.3D",
+                "The selected track.3D file does not contain any ObjectLists.",
+            )
+            return
+
+        section_rows = parse_track3d_section_dlongs(path)
+        if not section_rows:
+            QMessageBox.warning(
+                self,
+                "Load track.3D",
+                "The selected track.3D file does not contain any section ObjectLists/DATA rows.",
+            )
+            return
+
+        loaded_section_count = len({int(row.section) for row in section_rows})
+        if (
+            self._current_track_section_count is not None
+            and loaded_section_count != self._current_track_section_count
+        ):
+            QMessageBox.warning(
+                self,
+                "Load track.3D",
+                "The selected track.3D file has a different number of sections than the current track.\n\n"
+                f"Current track sections: {self._current_track_section_count}\n"
+                f"track.3D sections: {loaded_section_count}",
+            )
+            return
+
         self.object_lists = parse_track3d(path)
-        self.set_section_dlong_rows(parse_track3d_section_dlongs(path))
+        self.set_section_dlong_rows(section_rows)
         self._refresh_tso_filter_list()
         if not self.available_tso_ids:
             self.available_tso_ids = sorted(
@@ -391,6 +441,27 @@ class TSOVisibilityTab(QWidget):
 
         self.populate_table()
         self.objectListsSaved.emit()
+
+    def remap_tso_ids(self, remap: dict[int, int]) -> None:
+        if not remap:
+            return
+        changed = False
+        for object_list in self.object_lists:
+            updated_ids: list[int] = []
+            row_changed = False
+            for tso_id in object_list.tso_ids:
+                mapped = remap.get(tso_id, tso_id)
+                updated_ids.append(mapped)
+                if mapped != tso_id:
+                    row_changed = True
+            if row_changed:
+                object_list.tso_ids = updated_ids
+                changed = True
+        if not changed:
+            return
+        self._emit_object_lists_changed()
+        self._refresh_tso_filter_list()
+        self.populate_table()
 
     def _emit_object_lists_changed(self) -> None:
         self.objectListsChanged.emit()
