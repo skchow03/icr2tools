@@ -18,6 +18,7 @@ from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.preview_defaults import create_empty_sgfile
 from sg_viewer.preview.preview_mutations import project_point_to_polyline
 from sg_viewer.preview.trk_overlay_controller import TrkOverlayController
+from sg_viewer.preview.trackside_drag import quantize_trackside_drag_delta
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
@@ -144,6 +145,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._trackside_box_select_drag_current_screen: QtCore.QPointF | None = None
         self._active_trackside_drag_index: int | None = None
         self._active_trackside_drag_origin: tuple[float, float] | None = None
+        self._active_trackside_drag_remainder: tuple[float, float] = (0.0, 0.0)
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
@@ -315,12 +317,16 @@ class PreviewRuntime(PreviewRuntimeOps):
         drag_origin = getattr(self, "_active_trackside_drag_origin", None)
         if drag_origin is None:
             return False
-        delta_x = int(round(world_pos[0] - drag_origin[0]))
-        delta_y = int(round(world_pos[1] - drag_origin[1]))
+        delta_x, delta_y, remainder = quantize_trackside_drag_delta(
+            world_pos[0] - drag_origin[0],
+            world_pos[1] - drag_origin[1],
+            getattr(self, "_active_trackside_drag_remainder", (0.0, 0.0)),
+        )
+        self._active_trackside_drag_origin = (world_pos[0], world_pos[1])
+        self._active_trackside_drag_remainder = remainder
         if delta_x == 0 and delta_y == 0:
             return False
         callback(index, delta_x, delta_y)
-        self._active_trackside_drag_origin = (world_pos[0], world_pos[1])
         return True
 
     def _trackside_box_select_screen_rect(self) -> QtCore.QRectF | None:
@@ -352,6 +358,7 @@ class PreviewRuntime(PreviewRuntimeOps):
                     if world_pos is not None:
                         self._active_trackside_drag_index = hit_index
                         self._active_trackside_drag_origin = (world_pos[0], world_pos[1])
+                        self._active_trackside_drag_remainder = (0.0, 0.0)
                         event.accept()
                         return
 
@@ -466,6 +473,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._drag_trackside_object_to(event.localPos())
             self._active_trackside_drag_index = None
             self._active_trackside_drag_origin = None
+            self._active_trackside_drag_remainder = (0.0, 0.0)
             drag_end_callback = getattr(self, "_trackside_object_drag_end_callback", None)
             if callable(drag_end_callback):
                 drag_end_callback(active_index)
