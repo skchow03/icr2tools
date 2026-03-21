@@ -404,10 +404,11 @@ class PreviewRuntime(PreviewRuntimeOps):
             return
 
         if self._active_trackside_drag_index is not None:
-            if self._drag_trackside_object_to(event.localPos()):
-                event.accept()
+            moved = self._drag_trackside_object_to(event.localPos())
+            event.accept()
+            if moved:
                 self._request_interaction_repaint()
-                return
+            return
 
         if self._handle_creation_mouse_move(event.pos()):
             event.accept()
