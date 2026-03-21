@@ -2368,8 +2368,60 @@ def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
         assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.0)) is False
         assert dragged == []
 
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.99, 0.0)) is False
+        assert dragged == []
+
         assert widget._runtime._drag_trackside_object_to(screen_point_for_world(1.0, 0.0)) is True
         assert dragged == [(0, 1, 0)]
+    finally:
+        widget.close()
+
+
+def test_preview_tso_drag_accumulates_negative_fractional_motion(qapp):
+    widget = PreviewWidgetQt()
+    try:
+        widget.resize(640, 480)
+        widget.show()
+        qapp.processEvents()
+
+        dragged = []
+        widget.set_show_trackside_objects(True)
+        widget.set_trackside_objects((
+            TracksideObject(
+                filename="cone",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+        ))
+        widget.set_trackside_move_enabled_indices((0,))
+        widget.set_trackside_object_drag_callback(lambda index, dx, dy: dragged.append((index, dx, dy)))
+
+        transform = widget.current_transform((widget.width(), widget.height()))
+        assert transform is not None
+        scale, offsets = transform
+
+        widget._runtime._active_trackside_drag_index = 0
+        widget._runtime._active_trackside_drag_origin = (0.0, 0.0)
+        widget._runtime._active_trackside_drag_remainder = (0.0, 0.0)
+
+        def screen_point_for_world(x: float, y: float) -> QtCore.QPointF:
+            return QtCore.QPointF(offsets[0] + x * scale, offsets[1] - y * scale)
+
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(-0.4, 0.0)) is False
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(-0.99, 0.0)) is False
+        assert dragged == []
+
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(-1.01, 0.0)) is True
+        assert dragged == [(0, -1, 0)]
+        assert widget._runtime._active_trackside_drag_remainder == pytest.approx((-0.01, 0.0))
     finally:
         widget.close()
 
@@ -2465,6 +2517,58 @@ def test_preview_tso_drag_does_not_rebuild_table_per_move(qapp):
         window.controller._on_preview_tso_drag_ended(0)
 
         assert refresh_calls["count"] == 1
+    finally:
+        window.close()
+
+
+def test_preview_tso_drag_release_after_only_subunit_motion_preserves_integer_storage(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        window.controller._current_path = sg_path
+
+        window.tso_add_button.setChecked(True)
+        window.controller._on_tso_add_requested()
+        window.controller._on_preview_tso_map_clicked(10, 20)
+
+        widget = window.preview
+        widget.resize(640, 480)
+        widget.show()
+        qapp.processEvents()
+
+        transform = widget.current_transform((widget.width(), widget.height()))
+        assert transform is not None
+        scale, offsets = transform
+
+        widget._runtime._active_trackside_drag_index = 0
+        widget._runtime._active_trackside_drag_origin = (0.0, 0.0)
+        widget._runtime._active_trackside_drag_remainder = (0.0, 0.0)
+
+        def screen_point_for_world(x: float, y: float) -> QtCore.QPointF:
+            return QtCore.QPointF(offsets[0] + x * scale, offsets[1] - y * scale)
+
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.4)) is False
+
+        release_pos = screen_point_for_world(0.4, 0.4)
+        release_event = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseButtonRelease,
+            release_pos,
+            release_pos,
+            release_pos,
+            QtCore.Qt.RightButton,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.NoModifier,
+        )
+        widget._runtime.on_mouse_release(release_event)
+
+        assert release_event.isAccepted() is True
+        assert window.controller._trackside_objects[0].x == 10
+        assert window.controller._trackside_objects[0].y == 20
+
+        payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
+        assert payload["trackside_objects"][0]["x"] == 10
+        assert payload["trackside_objects"][0]["y"] == 20
     finally:
         window.close()
 
