@@ -2374,6 +2374,57 @@ def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
         widget.close()
 
 
+def test_preview_tso_drag_consumes_zero_delta_mouse_move(qapp):
+    widget = PreviewWidgetQt()
+    try:
+        widget.resize(640, 480)
+        widget.show()
+        qapp.processEvents()
+
+        widget.set_show_trackside_objects(True)
+        widget.set_trackside_objects((
+            TracksideObject(
+                filename="cone",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+        ))
+        widget.set_trackside_move_enabled_indices((0,))
+
+        widget._runtime._active_trackside_drag_index = 0
+        widget._runtime._active_trackside_drag_origin = (0.0, 0.0)
+        widget._runtime._active_trackside_drag_remainder = (0.0, 0.0)
+
+        transform = widget.current_transform((widget.width(), widget.height()))
+        assert transform is not None
+        scale, offsets = transform
+        zero_delta_pos = QtCore.QPointF(offsets[0], offsets[1])
+        move_event = QtGui.QMouseEvent(
+            QtCore.QEvent.MouseMove,
+            zero_delta_pos,
+            zero_delta_pos,
+            zero_delta_pos,
+            QtCore.Qt.NoButton,
+            QtCore.Qt.RightButton,
+            QtCore.Qt.NoModifier,
+        )
+
+        widget._runtime.on_mouse_move(move_event)
+
+        assert move_event.isAccepted() is True
+        assert widget._runtime._active_trackside_drag_index == 0
+    finally:
+        widget.close()
+
+
 def test_preview_tso_drag_does_not_rebuild_table_per_move(qapp):
     window = SGViewerWindow()
     try:
