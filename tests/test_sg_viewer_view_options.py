@@ -9,6 +9,7 @@ try:
     from PyQt5 import QtCore, QtGui, QtWidgets
     from sg_viewer.ui.controllers.features.document_controller import DocumentController
     from sg_viewer.ui.app import SGViewerWindow
+    from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
@@ -2324,6 +2325,53 @@ def test_preview_tso_drag_updates_table_live_and_persists_on_drag_end(qapp, tmp_
         assert payload["trackside_objects"][0]["y"] == -456
     finally:
         window.close()
+
+
+def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
+    widget = PreviewWidgetQt()
+    try:
+        widget.resize(640, 480)
+        widget.show()
+        qapp.processEvents()
+
+        dragged = []
+        widget.set_show_trackside_objects(True)
+        widget.set_trackside_objects((
+            TracksideObject(
+                filename="cone",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+        ))
+        widget.set_trackside_move_enabled_indices((0,))
+        widget.set_trackside_object_drag_callback(lambda index, dx, dy: dragged.append((index, dx, dy)))
+
+        transform = widget.current_transform((widget.width(), widget.height()))
+        assert transform is not None
+        scale, offsets = transform
+
+        widget._runtime._active_trackside_drag_index = 0
+        widget._runtime._active_trackside_drag_origin = (0.0, 0.0)
+        widget._runtime._active_trackside_drag_remainder = (0.0, 0.0)
+
+        def screen_point_for_world(x: float, y: float) -> QtCore.QPointF:
+            return QtCore.QPointF(offsets[0] + x * scale, offsets[1] - y * scale)
+
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.0)) is False
+        assert dragged == []
+
+        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(1.0, 0.0)) is True
+        assert dragged == [(0, 1, 0)]
+    finally:
+        widget.close()
 
 
 def test_preview_tso_drag_does_not_rebuild_table_per_move(qapp):
