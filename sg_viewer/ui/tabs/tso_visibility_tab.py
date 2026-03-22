@@ -1,9 +1,11 @@
 from PyQt5 import QtCore
 from PyQt5.QtGui import QResizeEvent
 from PyQt5.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QGridLayout,
     QMessageBox,
     QHBoxLayout,
     QLabel,
@@ -73,6 +75,210 @@ class TrackSectionListWidget(QListWidget):
         self.currentRowChanged.connect(self.rowSelectionChanged.emit)
 
 
+class TSOVisibilityReconcileDialog(QDialog):
+    def __init__(
+        self,
+        current_lists: list[Track3DObjectList],
+        track3d_lists: list[Track3DObjectList],
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Reconcile track.3D ObjectLists")
+        self.resize(1100, 620)
+
+        self._current_lists = [
+            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            for entry in current_lists
+        ]
+        self._track3d_lists = [
+            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            for entry in track3d_lists
+        ]
+
+        layout = QVBoxLayout(self)
+        summary = QLabel(
+            "Compare the ObjectLists already loaded in SG Viewer against the selected track.3D file. "
+            "Use the commands below to copy matching rows or add missing rows before applying the result."
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        grid = QGridLayout()
+        layout.addLayout(grid, 1)
+
+        self.current_list_widget = QListWidget(self)
+        self.track3d_list_widget = QListWidget(self)
+        self.current_list_widget.setSelectionMode(QListWidget.SingleSelection)
+        self.track3d_list_widget.setSelectionMode(QListWidget.SingleSelection)
+
+        grid.addWidget(QLabel("Current project ObjectLists"), 0, 0)
+        grid.addWidget(QLabel("Selected track.3D ObjectLists"), 0, 2)
+        grid.addWidget(self.current_list_widget, 1, 0)
+
+        command_column = QVBoxLayout()
+        self.match_button = QPushButton("Match Same Key")
+        self.copy_to_current_button = QPushButton("Copy .3D → Current")
+        self.copy_all_matching_button = QPushButton("Copy All Matching")
+        self.add_missing_button = QPushButton("Add Missing .3D Rows")
+        self.copy_current_ids_button = QPushButton("Copy Current TSOs")
+        self.copy_track3d_ids_button = QPushButton("Copy .3D TSOs")
+        for button in (
+            self.match_button,
+            self.copy_to_current_button,
+            self.copy_all_matching_button,
+            self.add_missing_button,
+            self.copy_current_ids_button,
+            self.copy_track3d_ids_button,
+        ):
+            command_column.addWidget(button)
+        command_column.addStretch(1)
+        grid.addLayout(command_column, 1, 1)
+        grid.addWidget(self.track3d_list_widget, 1, 2)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.current_list_widget.currentRowChanged.connect(self._sync_selection_to_track3d)
+        self.track3d_list_widget.currentRowChanged.connect(self._sync_selection_to_current)
+        self.match_button.clicked.connect(self._match_same_key)
+        self.copy_to_current_button.clicked.connect(self._copy_selected_track3d_to_current)
+        self.copy_all_matching_button.clicked.connect(self._copy_all_matching_rows)
+        self.add_missing_button.clicked.connect(self._add_missing_track3d_rows)
+        self.copy_current_ids_button.clicked.connect(
+            lambda: self._copy_selected_ids(self.current_list_widget, self._current_lists)
+        )
+        self.copy_track3d_ids_button.clicked.connect(
+            lambda: self._copy_selected_ids(self.track3d_list_widget, self._track3d_lists)
+        )
+
+        self._refresh_lists()
+        if self.current_list_widget.count() > 0:
+            self.current_list_widget.setCurrentRow(0)
+        elif self.track3d_list_widget.count() > 0:
+            self.track3d_list_widget.setCurrentRow(0)
+
+    @staticmethod
+    def _entry_key(entry: Track3DObjectList) -> tuple[str, int, int]:
+        return (str(entry.side), int(entry.section), int(entry.sub_index))
+
+    @classmethod
+    def _format_entry(cls, entry: Track3DObjectList) -> str:
+        tso_text = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids) if entry.tso_ids else "(empty)"
+        return f"{entry.side} / {entry.section} / {entry.sub_index} — {tso_text}"
+
+    def _refresh_lists(self) -> None:
+        self.current_list_widget.blockSignals(True)
+        self.track3d_list_widget.blockSignals(True)
+        current_row = self.current_list_widget.currentRow()
+        track3d_row = self.track3d_list_widget.currentRow()
+        self.current_list_widget.clear()
+        self.track3d_list_widget.clear()
+        for index, entry in enumerate(self._current_lists):
+            item = QListWidgetItem(self._format_entry(entry))
+            item.setData(QtCore.Qt.UserRole, index)
+            self.current_list_widget.addItem(item)
+        current_keys = {self._entry_key(entry) for entry in self._current_lists}
+        for index, entry in enumerate(self._track3d_lists):
+            item = QListWidgetItem(self._format_entry(entry))
+            if self._entry_key(entry) not in current_keys:
+                item.setText(f"{item.text()}  [missing in project]")
+            item.setData(QtCore.Qt.UserRole, index)
+            self.track3d_list_widget.addItem(item)
+        self.current_list_widget.blockSignals(False)
+        self.track3d_list_widget.blockSignals(False)
+        if 0 <= current_row < self.current_list_widget.count():
+            self.current_list_widget.setCurrentRow(current_row)
+        if 0 <= track3d_row < self.track3d_list_widget.count():
+            self.track3d_list_widget.setCurrentRow(track3d_row)
+
+    def _find_row_by_key(
+        self,
+        entries: list[Track3DObjectList],
+        key: tuple[str, int, int],
+    ) -> int:
+        for index, entry in enumerate(entries):
+            if self._entry_key(entry) == key:
+                return index
+        return -1
+
+    def _sync_selection_to_track3d(self, row: int) -> None:
+        if row < 0 or row >= len(self._current_lists):
+            return
+        match_row = self._find_row_by_key(self._track3d_lists, self._entry_key(self._current_lists[row]))
+        if match_row >= 0:
+            self.track3d_list_widget.blockSignals(True)
+            self.track3d_list_widget.setCurrentRow(match_row)
+            self.track3d_list_widget.blockSignals(False)
+
+    def _sync_selection_to_current(self, row: int) -> None:
+        if row < 0 or row >= len(self._track3d_lists):
+            return
+        match_row = self._find_row_by_key(self._current_lists, self._entry_key(self._track3d_lists[row]))
+        if match_row >= 0:
+            self.current_list_widget.blockSignals(True)
+            self.current_list_widget.setCurrentRow(match_row)
+            self.current_list_widget.blockSignals(False)
+
+    def _match_same_key(self) -> None:
+        current_row = self.current_list_widget.currentRow()
+        if current_row >= 0:
+            self._sync_selection_to_track3d(current_row)
+            return
+        track3d_row = self.track3d_list_widget.currentRow()
+        if track3d_row >= 0:
+            self._sync_selection_to_current(track3d_row)
+
+    def _copy_selected_track3d_to_current(self) -> None:
+        current_row = self.current_list_widget.currentRow()
+        track3d_row = self.track3d_list_widget.currentRow()
+        if current_row < 0 or track3d_row < 0:
+            return
+        self._current_lists[current_row].tso_ids = list(self._track3d_lists[track3d_row].tso_ids)
+        self._refresh_lists()
+        self.current_list_widget.setCurrentRow(current_row)
+        self.track3d_list_widget.setCurrentRow(track3d_row)
+
+    def _copy_all_matching_rows(self) -> None:
+        track3d_by_key = {self._entry_key(entry): list(entry.tso_ids) for entry in self._track3d_lists}
+        changed = False
+        for entry in self._current_lists:
+            replacement = track3d_by_key.get(self._entry_key(entry))
+            if replacement is None or replacement == entry.tso_ids:
+                continue
+            entry.tso_ids = list(replacement)
+            changed = True
+        if changed:
+            self._refresh_lists()
+
+    def _add_missing_track3d_rows(self) -> None:
+        existing_keys = {self._entry_key(entry) for entry in self._current_lists}
+        additions = [
+            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            for entry in self._track3d_lists
+            if self._entry_key(entry) not in existing_keys
+        ]
+        if not additions:
+            return
+        self._current_lists.extend(additions)
+        self._current_lists.sort(key=lambda entry: (entry.section, entry.side, entry.sub_index))
+        self._refresh_lists()
+
+    def _copy_selected_ids(self, widget: QListWidget, entries: list[Track3DObjectList]) -> None:
+        row = widget.currentRow()
+        if row < 0 or row >= len(entries):
+            return
+        text = ", ".join(f"__TSO{tso_id}" for tso_id in entries[row].tso_ids)
+        QApplication.clipboard().setText(text)
+
+    def reconciled_object_lists(self) -> list[Track3DObjectList]:
+        return [
+            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            for entry in self._current_lists
+        ]
+
+
 class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
@@ -90,6 +296,7 @@ class TSOVisibilityTab(QWidget):
         self.add_tso_button = QPushButton("Add TSO")
         self.delete_tso_button = QPushButton("Delete TSO")
         self.copy_prev_button = QPushButton("Copy from Previous")
+        self.reconcile_button = QPushButton("Reconcile .3D")
         self.export_button = QPushButton("Export ObjectLists")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
 
@@ -98,6 +305,7 @@ class TSOVisibilityTab(QWidget):
         button_row.addWidget(self.add_tso_button)
         button_row.addWidget(self.delete_tso_button)
         button_row.addWidget(self.copy_prev_button)
+        button_row.addWidget(self.reconcile_button)
         button_row.addWidget(self.export_button)
         button_row.addWidget(self.save_to_track3d_button)
         layout.addLayout(button_row)
@@ -143,6 +351,7 @@ class TSOVisibilityTab(QWidget):
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
+        self.reconcile_button.clicked.connect(self._on_reconcile_requested)
         self.export_button.clicked.connect(self._on_export_requested)
         self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
         self.section_list.rowSelectionChanged.connect(self._emit_selected_tsos)
@@ -313,6 +522,15 @@ class TSOVisibilityTab(QWidget):
                 }
             )
         return payload
+
+    @staticmethod
+    def _object_list_layout_signature(
+        object_lists: list[Track3DObjectList],
+    ) -> tuple[tuple[str, int, int], ...]:
+        return tuple(
+            (str(entry.side), int(entry.section), int(entry.sub_index))
+            for entry in object_lists
+        )
 
     def load_object_lists_from_payload(self, payload: object) -> None:
         if not isinstance(payload, list):
@@ -693,6 +911,25 @@ class TSOVisibilityTab(QWidget):
         )
         if not path:
             return
+        if not track3d_has_object_lists(path):
+            QMessageBox.warning(
+                self,
+                "Save ObjectLists",
+                "The selected track.3D file does not contain any ObjectLists.",
+            )
+            return
+
+        file_object_lists = parse_track3d(path)
+        current_layout = self._object_list_layout_signature(self.object_lists)
+        file_layout = self._object_list_layout_signature(file_object_lists)
+        if current_layout != file_layout:
+            QMessageBox.warning(
+                self,
+                "Save ObjectLists",
+                "The selected track.3D file does not perfectly match the current app ObjectList layout.\n\n"
+                "Use Reconcile .3D first so every Sections / Side / SubIndex row lines up before saving.",
+            )
+            return
 
         try:
             backup_path = save_object_lists_to_track3d(path, self.object_lists)
@@ -727,3 +964,26 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOsChanged.emit(tuple(copied_ids))
         self._emit_track_section_and_order(row)
         self.populate_table()
+
+    def _on_reconcile_requested(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open track.3D to reconcile",
+            "",
+            "3D Files (*.3D *.3d);;All Files (*)",
+        )
+        if not path:
+            return
+        if not track3d_has_object_lists(path):
+            QMessageBox.warning(
+                self,
+                "Reconcile track.3D",
+                "The selected track.3D file does not contain any ObjectLists.",
+            )
+            return
+
+        dialog = TSOVisibilityReconcileDialog(self.object_lists, parse_track3d(path), self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        self.set_object_lists(dialog.reconciled_object_lists())
+        self._emit_object_lists_changed()
