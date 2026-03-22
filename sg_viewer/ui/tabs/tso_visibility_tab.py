@@ -1,5 +1,5 @@
 from PyQt5 import QtCore
-from PyQt5.QtGui import QResizeEvent
+from PyQt5.QtGui import QColor, QBrush, QResizeEvent
 from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
@@ -122,6 +122,7 @@ class TSOVisibilityReconcileDialog(QDialog):
         self.add_missing_button = QPushButton("Add Missing .3D Rows")
         self.copy_current_ids_button = QPushButton("Copy Current TSOs")
         self.copy_track3d_ids_button = QPushButton("Copy .3D TSOs")
+        self.sort_lists_button = QPushButton("Sort Both Lists")
         for button in (
             self.match_button,
             self.copy_to_current_button,
@@ -129,6 +130,7 @@ class TSOVisibilityReconcileDialog(QDialog):
             self.add_missing_button,
             self.copy_current_ids_button,
             self.copy_track3d_ids_button,
+            self.sort_lists_button,
         ):
             command_column.addWidget(button)
         command_column.addStretch(1)
@@ -152,6 +154,7 @@ class TSOVisibilityReconcileDialog(QDialog):
         self.copy_track3d_ids_button.clicked.connect(
             lambda: self._copy_selected_ids(self.track3d_list_widget, self._track3d_lists)
         )
+        self.sort_lists_button.clicked.connect(self._sort_both_lists)
 
         self._refresh_lists()
         if self.current_list_widget.count() > 0:
@@ -168,6 +171,16 @@ class TSOVisibilityReconcileDialog(QDialog):
         tso_text = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids) if entry.tso_ids else "(empty)"
         return f"{entry.side} / {entry.section} / {entry.sub_index} — {tso_text}"
 
+    @staticmethod
+    def _sort_key(entry: Track3DObjectList) -> tuple[int, int, int]:
+        side = str(entry.side).strip().upper()
+        side_order = 0 if side == "L" else 1 if side == "R" else 2
+        return (side_order, int(entry.section), int(entry.sub_index))
+
+    @staticmethod
+    def _mark_missing_item(item: QListWidgetItem) -> None:
+        item.setForeground(QBrush(QColor("red")))
+
     def _refresh_lists(self) -> None:
         self.current_list_widget.blockSignals(True)
         self.track3d_list_widget.blockSignals(True)
@@ -175,15 +188,20 @@ class TSOVisibilityReconcileDialog(QDialog):
         track3d_row = self.track3d_list_widget.currentRow()
         self.current_list_widget.clear()
         self.track3d_list_widget.clear()
+        current_keys = {self._entry_key(entry) for entry in self._current_lists}
+        track3d_keys = {self._entry_key(entry) for entry in self._track3d_lists}
         for index, entry in enumerate(self._current_lists):
             item = QListWidgetItem(self._format_entry(entry))
+            if self._entry_key(entry) not in track3d_keys:
+                item.setText(f"{item.text()}  [missing in .3D]")
+                self._mark_missing_item(item)
             item.setData(QtCore.Qt.UserRole, index)
             self.current_list_widget.addItem(item)
-        current_keys = {self._entry_key(entry) for entry in self._current_lists}
         for index, entry in enumerate(self._track3d_lists):
             item = QListWidgetItem(self._format_entry(entry))
             if self._entry_key(entry) not in current_keys:
                 item.setText(f"{item.text()}  [missing in project]")
+                self._mark_missing_item(item)
             item.setData(QtCore.Qt.UserRole, index)
             self.track3d_list_widget.addItem(item)
         self.current_list_widget.blockSignals(False)
@@ -262,7 +280,12 @@ class TSOVisibilityReconcileDialog(QDialog):
         if not additions:
             return
         self._current_lists.extend(additions)
-        self._current_lists.sort(key=lambda entry: (entry.section, entry.side, entry.sub_index))
+        self._current_lists.sort(key=self._sort_key)
+        self._refresh_lists()
+
+    def _sort_both_lists(self) -> None:
+        self._current_lists.sort(key=self._sort_key)
+        self._track3d_lists.sort(key=self._sort_key)
         self._refresh_lists()
 
     def _copy_selected_ids(self, widget: QListWidget, entries: list[Track3DObjectList]) -> None:
