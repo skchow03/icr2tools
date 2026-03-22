@@ -80,3 +80,53 @@ def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
     assert reconciled[0].tso_ids == [4, 5]
     assert any((entry.side, entry.section, entry.sub_index, entry.tso_ids) == ("R", 2, 1, [6]) for entry in reconciled)
 
+
+
+def test_reconcile_dialog_highlights_rows_missing_from_opposite_list_in_red() -> None:
+    _app()
+    dialog = TSOVisibilityReconcileDialog(
+        current_lists=[
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1]),
+            Track3DObjectList(side="R", section=3, sub_index=0, tso_ids=[2]),
+        ],
+        track3d_lists=[
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1]),
+            Track3DObjectList(side="R", section=4, sub_index=0, tso_ids=[3]),
+        ],
+    )
+
+    current_missing = dialog.current_list_widget.item(1)
+    track3d_missing = dialog.track3d_list_widget.item(1)
+
+    assert current_missing is not None
+    assert track3d_missing is not None
+    assert "[missing in .3D]" in current_missing.text()
+    assert current_missing.foreground().color().name() == "#ff0000"
+    assert "[missing in project]" in track3d_missing.text()
+    assert track3d_missing.foreground().color().name() == "#ff0000"
+
+
+def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex() -> None:
+    _app()
+    dialog = TSOVisibilityReconcileDialog(
+        current_lists=[
+            Track3DObjectList(side="R", section=2, sub_index=2, tso_ids=[8]),
+            Track3DObjectList(side="L", section=3, sub_index=1, tso_ids=[4]),
+            Track3DObjectList(side="L", section=2, sub_index=0, tso_ids=[5]),
+        ],
+        track3d_lists=[
+            Track3DObjectList(side="R", section=1, sub_index=1, tso_ids=[7]),
+            Track3DObjectList(side="L", section=5, sub_index=0, tso_ids=[6]),
+            Track3DObjectList(side="R", section=1, sub_index=0, tso_ids=[9]),
+        ],
+    )
+
+    dialog.sort_lists_button.click()
+
+    assert [
+        (entry.side, entry.section, entry.sub_index) for entry in dialog.reconciled_object_lists()
+    ] == [("L", 2, 0), ("L", 3, 1), ("R", 2, 2)]
+    assert [
+        dialog.track3d_list_widget.item(row).text().split(" — ", 1)[0]
+        for row in range(dialog.track3d_list_widget.count())
+    ] == ["L / 5 / 0", "R / 1 / 0", "R / 1 / 1"]
