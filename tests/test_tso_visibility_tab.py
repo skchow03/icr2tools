@@ -2,10 +2,10 @@ import pytest
 
 pytest.importorskip("PyQt5")
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtWidgets
 
 from sg_viewer.io.track3d_parser import Track3DObjectList
-from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
+from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityReconcileDialog, TSOVisibilityTab
 
 
 def _app() -> QtWidgets.QApplication:
@@ -15,40 +15,35 @@ def _app() -> QtWidgets.QApplication:
     return app
 
 
-def test_pills_include_filename_and_description_metadata():
+def test_pills_include_filename_and_description_metadata() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_tso_display_metadata({1: ("tree", "oak"), 2: ("house", "")})
     tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 2, 3])])
 
-    widget = tab.table.cellWidget(0, 3)
-    assert widget is not None
-
-    assert widget.item(0).text() == "__TSO1 (tree — oak)"
-    assert widget.item(1).text() == "__TSO2 (house)"
-    assert widget.item(2).text() == "__TSO3"
-    assert widget.item(0).data(QtCore.Qt.UserRole) == 1
+    assert tab.tso_list.item(0).text() == "__TSO1 (tree — oak)"
+    assert tab.tso_list.item(1).text() == "__TSO2 (house)"
+    assert tab.tso_list.item(2).text() == "__TSO3"
 
 
-def test_row_selection_emits_track_section_and_order():
+def test_row_selection_emits_track_section_and_order() -> None:
     _app()
     tab = TSOVisibilityTab()
-    tab.set_object_lists([
-        Track3DObjectList(side="L", section=4, sub_index=0, tso_ids=[7, 2, 7]),
-    ])
+    tab.set_object_lists([Track3DObjectList(side="L", section=4, sub_index=0, tso_ids=[7, 2, 7])])
 
     sections: list[object] = []
     orders: list[object] = []
     tab.selectedTrackSectionChanged.connect(sections.append)
     tab.selectedTSOOrderChanged.connect(orders.append)
 
-    tab.table.selectRow(0)
+    tab.section_list.setCurrentRow(0)
 
-    assert sections[-1] == 4
+    assert sections[-1]["section"] == 4
+    assert sections[-1]["sub_index"] == 0
     assert orders[-1] == {7: 3, 2: 2}
 
 
-def test_assigned_tso_ids_and_add_dialog_asterisk_labels():
+def test_assigned_tso_ids_and_add_dialog_asterisk_labels() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_tso_display_metadata({1: ("tree", "oak")})
@@ -61,6 +56,27 @@ def test_assigned_tso_ids_and_add_dialog_asterisk_labels():
 
     assigned = tab._assigned_tso_ids()
     assert assigned == {1, 3, 4}
-
     assert tab._build_add_tso_dialog_label(1, assigned) == "__TSO1 (tree — oak)"
     assert tab._build_add_tso_dialog_label(2, assigned) == "__TSO2 *"
+
+
+def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
+    _app()
+    dialog = TSOVisibilityReconcileDialog(
+        current_lists=[
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 2]),
+            Track3DObjectList(side="R", section=1, sub_index=0, tso_ids=[9]),
+        ],
+        track3d_lists=[
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[4, 5]),
+            Track3DObjectList(side="R", section=2, sub_index=1, tso_ids=[6]),
+        ],
+    )
+
+    dialog.copy_all_matching_button.click()
+    dialog.add_missing_button.click()
+
+    reconciled = dialog.reconciled_object_lists()
+    assert reconciled[0].tso_ids == [4, 5]
+    assert any((entry.side, entry.section, entry.sub_index, entry.tso_ids) == ("R", 2, 1, [6]) for entry in reconciled)
+

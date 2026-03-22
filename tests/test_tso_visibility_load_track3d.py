@@ -107,3 +107,36 @@ def test_load_track3d_warns_when_object_lists_are_missing(
         ("Load track.3D", "The selected track.3D file does not contain any ObjectLists."),
     ]
 
+
+def test_save_track3d_warns_when_layout_does_not_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])])
+
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "ObjectList_L0_0: LIST {__TSO0};\n"
+        "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    warnings: list[tuple[str, str]] = []
+
+    def _fake_warning(_parent, title, text, *args, **kwargs):
+        warnings.append((title, text))
+        return QtWidgets.QMessageBox.Ok
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "warning", _fake_warning)
+
+    tab._on_save_to_track3d_requested()
+
+    assert warnings == [
+        (
+            "Save ObjectLists",
+            "The selected track.3D file does not perfectly match the current app ObjectList layout.\n\n"
+            "Use Reconcile .3D first so every Sections / Side / SubIndex row lines up before saving.",
+        )
+    ]
