@@ -119,7 +119,9 @@ class TSOVisibilityReconcileDialog(QDialog):
         self.match_button = QPushButton("Match Same Key")
         self.copy_to_current_button = QPushButton("Copy .3D → Current")
         self.copy_all_matching_button = QPushButton("Copy All Matching")
+        self.add_selected_button = QPushButton("Add Selected .3D Row")
         self.add_missing_button = QPushButton("Add Missing .3D Rows")
+        self.delete_current_button = QPushButton("Delete Selected Current Row")
         self.copy_current_ids_button = QPushButton("Copy Current TSOs")
         self.copy_track3d_ids_button = QPushButton("Copy .3D TSOs")
         self.sort_lists_button = QPushButton("Sort Both Lists")
@@ -127,7 +129,9 @@ class TSOVisibilityReconcileDialog(QDialog):
             self.match_button,
             self.copy_to_current_button,
             self.copy_all_matching_button,
+            self.add_selected_button,
             self.add_missing_button,
+            self.delete_current_button,
             self.copy_current_ids_button,
             self.copy_track3d_ids_button,
             self.sort_lists_button,
@@ -147,7 +151,9 @@ class TSOVisibilityReconcileDialog(QDialog):
         self.match_button.clicked.connect(self._match_same_key)
         self.copy_to_current_button.clicked.connect(self._copy_selected_track3d_to_current)
         self.copy_all_matching_button.clicked.connect(self._copy_all_matching_rows)
+        self.add_selected_button.clicked.connect(self._add_selected_track3d_row)
         self.add_missing_button.clicked.connect(self._add_missing_track3d_rows)
+        self.delete_current_button.clicked.connect(self._delete_selected_current_row)
         self.copy_current_ids_button.clicked.connect(
             lambda: self._copy_selected_ids(self.current_list_widget, self._current_lists)
         )
@@ -270,6 +276,34 @@ class TSOVisibilityReconcileDialog(QDialog):
         if changed:
             self._refresh_lists()
 
+    def _add_selected_track3d_row(self) -> None:
+        track3d_row = self.track3d_list_widget.currentRow()
+        if track3d_row < 0 or track3d_row >= len(self._track3d_lists):
+            return
+        selected_entry = self._track3d_lists[track3d_row]
+        selected_key = self._entry_key(selected_entry)
+        if self._find_row_by_key(self._current_lists, selected_key) >= 0:
+            QMessageBox.information(
+                self,
+                "Add .3D Row",
+                "That ObjectList is already in the current project.",
+            )
+            return
+        self._current_lists.append(
+            Track3DObjectList(
+                side=selected_entry.side,
+                section=selected_entry.section,
+                sub_index=selected_entry.sub_index,
+                tso_ids=list(selected_entry.tso_ids),
+            )
+        )
+        self._current_lists.sort(key=self._sort_key)
+        self._refresh_lists()
+        added_row = self._find_row_by_key(self._current_lists, selected_key)
+        if added_row >= 0:
+            self.current_list_widget.setCurrentRow(added_row)
+        self.track3d_list_widget.setCurrentRow(track3d_row)
+
     def _add_missing_track3d_rows(self) -> None:
         existing_keys = {self._entry_key(entry) for entry in self._current_lists}
         additions = [
@@ -282,6 +316,28 @@ class TSOVisibilityReconcileDialog(QDialog):
         self._current_lists.extend(additions)
         self._current_lists.sort(key=self._sort_key)
         self._refresh_lists()
+
+    def _delete_selected_current_row(self) -> None:
+        current_row = self.current_list_widget.currentRow()
+        if current_row < 0 or current_row >= len(self._current_lists):
+            return
+        entry = self._current_lists[current_row]
+        response = QMessageBox.question(
+            self,
+            "Delete ObjectList",
+            (
+                "Delete the selected ObjectList from the current project?\n\n"
+                f"{self._format_entry(entry)}"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if response != QMessageBox.Yes:
+            return
+        del self._current_lists[current_row]
+        self._refresh_lists()
+        if self.current_list_widget.count() > 0:
+            self.current_list_widget.setCurrentRow(min(current_row, self.current_list_widget.count() - 1))
 
     def _sort_both_lists(self) -> None:
         self._current_lists.sort(key=self._sort_key)
