@@ -183,6 +183,10 @@ def test_view_options_expose_color_controls(qapp):
         assert "radii_unselected" in controls
         assert "radii_selected" in controls
         assert "xsect_dlat_line" in controls
+        assert "tso_box_default" in controls
+        assert "tso_box_selected" in controls
+        assert "tso_box_highlighted" in controls
+        assert "tso_pivot" in controls
         assert "fsect_5" in controls
 
         background_edit, _ = controls["background"]
@@ -1590,6 +1594,79 @@ def test_paint_preview_passes_selected_trackside_object_indices(monkeypatch):
         painter.end()
 
     assert captured["selected_indices"] == (0,)
+
+
+def test_paint_preview_passes_trackside_object_colors(monkeypatch):
+    from sg_viewer.services import preview_painter
+
+    captured: dict[str, object] = {}
+
+    def _fake_draw_trackside_objects(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(preview_painter, "_draw_trackside_objects", _fake_draw_trackside_objects)
+
+    image = QtGui.QImage(8, 8, QtGui.QImage.Format_ARGB32)
+    painter = QtGui.QPainter(image)
+    try:
+        preview_painter.paint_preview(
+            painter,
+            preview_painter.BasePreviewState(
+                rect=QtCore.QRect(0, 0, 8, 8),
+                background_color=QtGui.QColor("black"),
+                background_image=None,
+                background_brightness=0,
+                background_scale_500ths_per_px=None,
+                background_origin=None,
+                track_opacity=1.0,
+                sampled_centerline=[(0.0, 0.0), (1.0, 0.0)],
+                selected_section_points=(),
+                section_endpoints=(),
+                selected_section_index=None,
+                show_curve_markers=False,
+                show_axes=False,
+                show_crosshair=False,
+                sections=(),
+                selected_curve_index=None,
+                start_finish_mapping=None,
+                status_message="",
+                split_section_mode=False,
+                split_hover_point=None,
+                xsect_dlat=None,
+                show_xsect_dlat_line=False,
+                centerline_unselected_color=QtGui.QColor("white"),
+                centerline_selected_color=QtGui.QColor("white"),
+                centerline_long_curve_color=QtGui.QColor("white"),
+                radii_unselected_color=QtGui.QColor("white"),
+                radii_selected_color=QtGui.QColor("white"),
+                xsect_dlat_line_color=QtGui.QColor("white"),
+                integrity_boundary_violation_points=(),
+            ),
+            preview_painter.CreationOverlayState(),
+            node_state=None,
+            drag_heading_state=None,
+            sg_preview_state=preview_painter.SgPreviewState(
+                model=SimpleNamespace(fsects=[]),
+                transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
+                view_state=SimpleNamespace(show_surfaces=False, show_boundaries=False),
+                enabled=True,
+                trackside_objects=(SimpleNamespace(x=0, y=0, yaw=0, bbox_length=0, bbox_width=0, rotation_point="center"),),
+                selected_trackside_object_indices=(0,),
+                tso_box_default_color=QtGui.QColor("#010203"),
+                tso_box_selected_color=QtGui.QColor("#112233"),
+                tso_box_highlighted_color=QtGui.QColor("#445566"),
+                tso_pivot_color=QtGui.QColor("#778899"),
+            ),
+            transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
+            widget_height=8,
+        )
+    finally:
+        painter.end()
+
+    assert captured["default_color"].name().upper() == "#010203"
+    assert captured["selected_color"].name().upper() == "#112233"
+    assert captured["highlighted_color"].name().upper() == "#445566"
+    assert captured["pivot_color"].name().upper() == "#778899"
 
 
 def test_preview_runtime_exposes_selected_trackside_object_indices(qapp):

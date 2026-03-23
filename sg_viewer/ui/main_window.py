@@ -390,6 +390,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "radii_unselected": "Radii (Not Selected)",
             "radii_selected": "Radii (Selected)",
             "xsect_dlat_line": "X-Section DLAT Line",
+            "tso_box_default": "TSO Boxes (Default)",
+            "tso_box_selected": "TSO Boxes (Selected)",
+            "tso_box_highlighted": "TSO Boxes (TSO Visibility Highlight)",
+            "tso_pivot": "TSO Pivot Dot",
             "fsect_0": "Fsect: Grass",
             "fsect_1": "Fsect: Dry grass",
             "fsect_2": "Fsect: Dirt",
@@ -546,52 +550,145 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             diagram=self._fsect_diagram,
         )
 
+        def _build_color_control_row(
+            label: str,
+            key: str,
+            *,
+            tooltip: str | None = None,
+        ) -> tuple[str, QtWidgets.QWidget]:
+            row = QtWidgets.QWidget()
+            row_layout = QtWidgets.QHBoxLayout()
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+            hex_edit = QtWidgets.QLineEdit()
+            hex_edit.setPlaceholderText("#RRGGBB")
+            hex_edit.setClearButtonEnabled(True)
+            if tooltip:
+                hex_edit.setToolTip(tooltip)
+            color_swatch = QtWidgets.QPushButton("…")
+            color_swatch.setFixedWidth(34)
+            color_swatch.setToolTip("Pick color")
+            color_swatch.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            row_layout.addWidget(hex_edit, stretch=1)
+            row_layout.addWidget(color_swatch)
+            row.setLayout(row_layout)
+            self._preview_color_controls[key] = (hex_edit, color_swatch)
+            return label, row
+
+        def _build_color_group(
+            title: str,
+            entries: list[tuple[str, str, str | None]],
+        ) -> QtWidgets.QGroupBox:
+            group = QtWidgets.QGroupBox(title)
+            form = QtWidgets.QFormLayout()
+            form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            form.setFormAlignment(QtCore.Qt.AlignTop)
+            form.setHorizontalSpacing(12)
+            form.setVerticalSpacing(10)
+            for label, key, tooltip in entries:
+                row_label, row_widget = _build_color_control_row(
+                    label,
+                    key,
+                    tooltip=tooltip,
+                )
+                form.addRow(row_label + ":", row_widget)
+            group.setLayout(form)
+            return group
+
+        view_options_scroll = QtWidgets.QScrollArea()
+        view_options_scroll.setWidgetResizable(True)
+        view_options_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         view_options_sidebar = QtWidgets.QWidget()
         view_options_layout = QtWidgets.QVBoxLayout()
-        view_options_layout.addWidget(self._background_image_checkbox)
+        view_options_layout.setContentsMargins(12, 12, 12, 12)
+        view_options_layout.setSpacing(12)
+
+        general_group = QtWidgets.QGroupBox("General")
+        general_layout = QtWidgets.QVBoxLayout()
+        general_layout.setSpacing(10)
+        general_layout.addWidget(self._background_image_checkbox)
         background_brightness_layout = QtWidgets.QHBoxLayout()
-        background_brightness_layout.addWidget(
-            QtWidgets.QLabel("Background Brightness:")
-        )
+        background_brightness_layout.addWidget(QtWidgets.QLabel("Background Brightness"))
         background_brightness_layout.addWidget(
             self._background_brightness_slider, stretch=1
         )
         background_brightness_layout.addWidget(
             self._background_brightness_value_label
         )
-        view_options_layout.addLayout(background_brightness_layout)
-        view_options_layout.addWidget(self._radii_button)
-        view_options_layout.addWidget(self._axes_button)
-        view_options_layout.addWidget(self._crosshair_button)
-        color_group = QtWidgets.QGroupBox("Preview Colors")
-        color_form = QtWidgets.QFormLayout()
-        for key, label in self._preview_color_labels.items():
-            row = QtWidgets.QWidget()
-            row_layout = QtWidgets.QHBoxLayout()
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            hex_edit = QtWidgets.QLineEdit()
-            hex_edit.setPlaceholderText("#RRGGBB")
-            color_swatch = QtWidgets.QPushButton()
-            color_swatch.setFixedSize(16, 16)
-            color_swatch.setToolTip("Click to pick color")
-            color_swatch.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-            row_layout.addWidget(hex_edit, stretch=1)
-            row_layout.addWidget(color_swatch)
-            row.setLayout(row_layout)
-            color_form.addRow(label + ":", row)
-            self._preview_color_controls[key] = (hex_edit, color_swatch)
-        color_group.setLayout(color_form)
-        view_options_layout.addWidget(color_group)
+        general_layout.addLayout(background_brightness_layout)
+        toggles_layout = QtWidgets.QGridLayout()
+        toggles_layout.setHorizontalSpacing(12)
+        toggles_layout.setVerticalSpacing(8)
+        toggles_layout.addWidget(self._radii_button, 0, 0)
+        toggles_layout.addWidget(self._axes_button, 0, 1)
+        toggles_layout.addWidget(self._crosshair_button, 1, 0)
+        general_layout.addLayout(toggles_layout)
+        general_group.setLayout(general_layout)
+        view_options_layout.addWidget(general_group)
+
+        view_options_layout.addWidget(
+            _build_color_group(
+                "Track Preview Colors",
+                [
+                    ("Background", "background", None),
+                    ("Centerline (Not Selected)", "centerline_unselected", None),
+                    ("Centerline (Selected)", "centerline_selected", None),
+                    ("Centerline (Curve > 120° Arc)", "centerline_long_curve", None),
+                    ("Nodes (Connected)", "nodes_connected", None),
+                    ("Nodes (Disconnected)", "nodes_disconnected", None),
+                    ("Radii (Not Selected)", "radii_unselected", None),
+                    ("Radii (Selected)", "radii_selected", None),
+                    ("X-Section DLAT Line", "xsect_dlat_line", None),
+                ],
+            )
+        )
+        view_options_layout.addWidget(
+            _build_color_group(
+                "Trackside Object Colors",
+                [
+                    ("TSO Boxes (Default)", "tso_box_default", "Standard TSO bounding box color."),
+                    ("TSO Boxes (Selected)", "tso_box_selected", "Used for selected TSO bounding boxes."),
+                    (
+                        "TSO Boxes (TSO Visibility Highlight)",
+                        "tso_box_highlighted",
+                        "Used when a TSO is highlighted from the TSO Visibility tab.",
+                    ),
+                    ("TSO Pivot Dot", "tso_pivot", "Used for the pivot point marker on selected TSOs."),
+                ],
+            )
+        )
+        view_options_layout.addWidget(
+            _build_color_group(
+                "Fsect Surface Colors",
+                [
+                    ("Fsect: Grass", "fsect_0", None),
+                    ("Fsect: Dry grass", "fsect_1", None),
+                    ("Fsect: Dirt", "fsect_2", None),
+                    ("Fsect: Sand", "fsect_3", None),
+                    ("Fsect: Concrete", "fsect_4", None),
+                    ("Fsect: Asphalt", "fsect_5", None),
+                    ("Fsect: Paint", "fsect_6", None),
+                    ("Fsect: Wall", "fsect_7", None),
+                    ("Fsect: Armco", "fsect_8", None),
+                ],
+            )
+        )
         view_options_layout.addStretch()
         view_options_sidebar.setLayout(view_options_layout)
+        view_options_scroll.setWidget(view_options_sidebar)
 
         self._view_options_dialog = QtWidgets.QDialog(self)
         self._view_options_dialog.setWindowTitle("View Options")
         self._view_options_dialog.setModal(False)
         view_options_dialog_layout = QtWidgets.QVBoxLayout()
-        view_options_dialog_layout.addWidget(view_options_sidebar)
+        header = QtWidgets.QLabel(
+            "Fine-tune what the preview shows and how the track, TSOs, and surfaces are colored."
+        )
+        header.setWordWrap(True)
+        view_options_dialog_layout.addWidget(header)
+        view_options_dialog_layout.addWidget(view_options_scroll)
         self._view_options_dialog.setLayout(view_options_dialog_layout)
-        self._view_options_dialog.resize(360, 460)
+        self._view_options_dialog.resize(480, 640)
 
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()

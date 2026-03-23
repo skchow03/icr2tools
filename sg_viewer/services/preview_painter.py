@@ -47,6 +47,10 @@ class PreviewColors:
     radii_unselected: QtGui.QColor
     radii_selected: QtGui.QColor
     xsect_dlat_line: QtGui.QColor
+    tso_box_default: QtGui.QColor
+    tso_box_selected: QtGui.QColor
+    tso_box_highlighted: QtGui.QColor
+    tso_pivot: QtGui.QColor
 
 
 def default_preview_colors() -> PreviewColors:
@@ -60,6 +64,10 @@ def default_preview_colors() -> PreviewColors:
         radii_unselected=QtGui.QColor(140, 140, 140),
         radii_selected=QtGui.QColor("magenta"),
         xsect_dlat_line=QtGui.QColor("limegreen"),
+        tso_box_default=QtGui.QColor("#44CCFF"),
+        tso_box_selected=QtGui.QColor("#FF2A2A"),
+        tso_box_highlighted=QtGui.QColor("#FFD54A"),
+        tso_pivot=QtGui.QColor("#FF2A2A"),
     )
 
 
@@ -149,6 +157,18 @@ class SgPreviewState:
     trackside_order_labels: tuple[tuple[int, int], ...] = ()
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
+    tso_box_default_color: QtGui.QColor = field(
+        default_factory=lambda: QtGui.QColor("#44CCFF")
+    )
+    tso_box_selected_color: QtGui.QColor = field(
+        default_factory=lambda: QtGui.QColor("#FF2A2A")
+    )
+    tso_box_highlighted_color: QtGui.QColor = field(
+        default_factory=lambda: QtGui.QColor("#FFD54A")
+    )
+    tso_pivot_color: QtGui.QColor = field(
+        default_factory=lambda: QtGui.QColor("#FF2A2A")
+    )
 
 
 @dataclass
@@ -244,6 +264,10 @@ def paint_preview(
                 focused_index=sg_preview_state.focused_trackside_object_index,
                 move_enabled_indices=sg_preview_state.trackside_move_enabled_indices,
                 order_labels=sg_preview_state.trackside_order_labels,
+                default_color=sg_preview_state.tso_box_default_color,
+                selected_color=sg_preview_state.tso_box_selected_color,
+                highlighted_color=sg_preview_state.tso_box_highlighted_color,
+                pivot_color=sg_preview_state.tso_pivot_color,
             )
         _draw_centerlines(
             painter,
@@ -833,19 +857,38 @@ def _draw_trackside_objects(
     focused_index: int | None,
     move_enabled_indices: tuple[int, ...],
     order_labels: tuple[tuple[int, int], ...],
+    default_color: QtGui.QColor,
+    selected_color: QtGui.QColor,
+    highlighted_color: QtGui.QColor,
+    pivot_color: QtGui.QColor,
 ) -> None:
     highlighted_indices = set(int(i) for i in move_enabled_indices)
-    highlighted_indices.update(int(i) for i in selected_indices)
+    selected_index_set = set(int(i) for i in selected_indices)
+    if selected_index is not None:
+        selected_index_set.add(int(selected_index))
     order_by_index = {int(index): int(order) for index, order in order_labels}
     for index, obj in enumerate(trackside_objects):
         yaw_radians = math.radians(float(getattr(obj, "yaw", 0.0)) / 10.0)
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
         half_width = max(0.0, float(getattr(obj, "bbox_width", 0.0)) * 0.5)
         is_highlighted = index in highlighted_indices
+        is_selected = index in selected_index_set
         is_focused = focused_index is not None and index == int(focused_index)
-        color = QtGui.QColor("#FF7A1A") if is_focused else (QtGui.QColor("#FFD54A") if is_highlighted else QtGui.QColor("#44CCFF"))
+        color = (
+            QtGui.QColor("#FF7A1A")
+            if is_focused
+            else (
+                QtGui.QColor(selected_color)
+                if is_selected
+                else (
+                    QtGui.QColor(highlighted_color)
+                    if is_highlighted
+                    else QtGui.QColor(default_color)
+                )
+            )
+        )
         painter.save()
-        painter.setPen(QtGui.QPen(color, 2.0 if is_highlighted else 1.25))
+        painter.setPen(QtGui.QPen(color, 2.0 if (is_highlighted or is_selected) else 1.25))
         painter.setBrush(QtCore.Qt.NoBrush)
 
         if half_length <= 0.0 or half_width <= 0.0:
@@ -854,9 +897,9 @@ def _draw_trackside_objects(
             sy = float(point.y())
             marker_size = 4.0
             painter.drawRect(QtCore.QRectF(sx - marker_size, sy - marker_size, marker_size * 2.0, marker_size * 2.0))
-            if selected_index is not None and index == int(selected_index):
+            if is_selected:
                 painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
-                painter.setBrush(QtGui.QBrush(QtGui.QColor("#FF2A2A")))
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(pivot_color)))
                 painter.drawEllipse(point, 4.0, 4.0)
             order = order_by_index.get(index)
             if order is not None and is_highlighted:
@@ -887,10 +930,10 @@ def _draw_trackside_objects(
             polygon.append(sg_rendering.map_point(wx, wy, transform, widget_height))
         painter.drawPolygon(polygon)
 
-        if selected_index is not None and index == int(selected_index):
+        if is_selected:
             anchor = sg_rendering.map_point(float(obj.x), float(obj.y), transform, widget_height)
             painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
-            painter.setBrush(QtGui.QBrush(QtGui.QColor("#FF2A2A")))
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(pivot_color)))
             painter.drawEllipse(anchor, 4.0, 4.0)
 
         order = order_by_index.get(index)
