@@ -16,12 +16,21 @@ Supported roof types
 from __future__ import annotations
 
 import configparser
+import json
 import math
 import sys
 from pathlib import Path
 
 
-INI_PATH = Path(__file__).with_suffix(".ini")
+def _runtime_base_path() -> Path:
+    """Return the writable folder for bundled and source runs."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+INI_PATH = _runtime_base_path() / "tso_generator.ini"
+TEMPLATE_JSON_PATH = _runtime_base_path() / "tso_generator_templates.json"
 TEMPLATE_SECTION_PREFIX = "template:"
 
 TEMPLATE_FIELDS = (
@@ -794,15 +803,63 @@ def write_3d(path, verts, faces, parameters):
 # UI helpers
 # ------------------------------------------------------------
 
+def _load_templates_from_json(config: configparser.ConfigParser) -> None:
+    if not TEMPLATE_JSON_PATH.exists():
+        return
+    try:
+        payload = json.loads(TEMPLATE_JSON_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+
+    templates = payload.get("templates", {})
+    if not isinstance(templates, dict):
+        return
+
+    for name, values in templates.items():
+        if not isinstance(name, str) or not isinstance(values, dict):
+            continue
+        save_template(config, name, values)
+
+
+def _save_templates_to_json(config: configparser.ConfigParser) -> None:
+    payload = {
+        "templates": {
+            name: get_template_values(config, name) or {}
+            for name in list_template_names(config)
+        }
+    }
+    TEMPLATE_JSON_PATH.write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def load_settings():
     config = configparser.ConfigParser()
     config.read(INI_PATH)
+    _load_templates_from_json(config)
     return config
 
 
 def save_settings(config: configparser.ConfigParser):
-    with open(INI_PATH, "w", encoding="utf-8") as ini_file:
-        config.write(ini_file)
+    template_sections = [
+        section for section in config.sections() if section.startswith(TEMPLATE_SECTION_PREFIX)
+    ]
+    template_backup = {section: dict(config[section]) for section in template_sections}
+
+    try:
+        for section in template_sections:
+            config.remove_section(section)
+        with open(INI_PATH, "w", encoding="utf-8") as ini_file:
+            config.write(ini_file)
+    finally:
+        for section, values in template_backup.items():
+            if not config.has_section(section):
+                config.add_section(section)
+            config[section].clear()
+            config[section].update(values)
+
+    _save_templates_to_json(config)
 
 
 def set_sunny_path(config: configparser.ConfigParser, sunny_pcx_path: str):

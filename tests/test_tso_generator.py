@@ -170,6 +170,61 @@ def test_template_roundtrip_and_listing_order():
     assert values["depth"] == ""
 
 
+
+
+def test_load_settings_prefers_runtime_folder_and_reads_templates_json(tmp_path, monkeypatch):
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir()
+    monkeypatch.setattr("tso_generator.tso_generator.INI_PATH", runtime_dir / "tso_generator.ini")
+    monkeypatch.setattr(
+        "tso_generator.tso_generator.TEMPLATE_JSON_PATH",
+        runtime_dir / "tso_generator_templates.json",
+    )
+
+    (runtime_dir / "tso_generator.ini").write_text("""[paths]
+sunny_pcx=test.pcx
+""", encoding="utf-8")
+    (runtime_dir / "tso_generator_templates.json").write_text(
+        '{"templates": {"Tower": {"width": 321, "roof_type": "gable"}}}',
+        encoding="utf-8",
+    )
+
+    from tso_generator.tso_generator import load_settings, get_template_values
+
+    cfg = load_settings()
+
+    assert cfg.get("paths", "sunny_pcx") == "test.pcx"
+    values = get_template_values(cfg, "Tower")
+    assert values is not None
+    assert values["width"] == "321"
+    assert values["roof_type"] == "gable"
+
+
+def test_save_settings_writes_templates_to_json_not_ini(tmp_path, monkeypatch):
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir()
+    ini_path = runtime_dir / "tso_generator.ini"
+    json_path = runtime_dir / "tso_generator_templates.json"
+    monkeypatch.setattr("tso_generator.tso_generator.INI_PATH", ini_path)
+    monkeypatch.setattr("tso_generator.tso_generator.TEMPLATE_JSON_PATH", json_path)
+
+    cfg = configparser.ConfigParser()
+    cfg["paths"] = {"sunny_pcx": "test.pcx"}
+    save_template(cfg, "Tower", {"width": 321, "roof_type": "gable"})
+
+    from tso_generator.tso_generator import save_settings
+
+    save_settings(cfg)
+
+    ini_text = ini_path.read_text(encoding="utf-8")
+    assert "[paths]" in ini_text
+    assert TEMPLATE_SECTION_PREFIX not in ini_text
+
+    payload = json_path.read_text(encoding="utf-8")
+    assert '"Tower"' in payload
+    assert '"width": "321"' in payload
+    assert '"roof_type": "gable"' in payload
+
 def test_none_roof_omits_roof_faces():
     _verts, faces = generate_building(320, 1042, 100, "none", 30, 15, 50, 50)
     names = {name for name, _ in faces}
