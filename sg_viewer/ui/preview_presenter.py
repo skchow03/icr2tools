@@ -86,6 +86,10 @@ class PreviewPresenter:
             trackside_order_labels=self._runtime.trackside_order_labels,
             section_geometry_version=self._runtime.section_geometry_version,
             tsd_lines_version=self._runtime.tsd_lines_version,
+            tso_box_default_color=self._colors.tso_box_default,
+            tso_box_selected_color=self._colors.tso_box_selected,
+            tso_box_highlighted_color=self._colors.tso_box_highlighted,
+            tso_pivot_color=self._colors.tso_pivot,
         )
 
         preview_painter.paint_preview(
