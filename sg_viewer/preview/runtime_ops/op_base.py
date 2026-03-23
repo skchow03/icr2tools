@@ -198,6 +198,9 @@ class _RuntimeCoreBaseMixin:
     def set_section_drag_enabled(self, enabled: bool) -> None:
         self._interaction.set_section_drag_enabled(enabled)
 
+    def set_node_interaction_mode(self, mode: str) -> None:
+        self._interaction.set_node_interaction_mode(mode)
+
     def _widget_size(self) -> tuple[int, int]:
         return self._context.widget_size()
 

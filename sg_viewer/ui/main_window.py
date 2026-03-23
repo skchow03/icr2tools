@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.model.sg_document import SGDocument
@@ -58,6 +59,12 @@ from sg_viewer.ui.presentation.window_panels import (
     create_toolbar_navigation_panel,
 )
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
+
+
+@dataclass(frozen=True)
+class InteractionModeTool:
+    mode: str
+    button: QtWidgets.QToolButton
 
 
 class SGViewerWindow(QtWidgets.QMainWindow):
@@ -261,6 +268,52 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Set Start/Finish",
             shortcut_labels["set_start_finish"],
         )
+
+        self._interaction_mode_toolbar = QtWidgets.QToolBar("Interaction Mode", self)
+        self._interaction_mode_toolbar.setObjectName("interactionModeToolbar")
+        self._interaction_mode_toolbar.setMovable(False)
+        self._interaction_mode_toolbar.setFloatable(False)
+        self._interaction_mode_toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
+        self._interaction_mode_toolbar.setIconSize(QtCore.QSize(16, 16))
+        self._interaction_mode_toolbar.setContentsMargins(0, 0, 0, 0)
+        self._interaction_mode_toolbar.layout().setContentsMargins(4, 2, 4, 2)
+        self._interaction_mode_toolbar.setStyleSheet(
+            "QToolBar { spacing: 4px; }"
+            "QToolButton { padding: 4px 10px; }"
+        )
+        self._interaction_mode_action_group = QtWidgets.QActionGroup(self)
+        self._interaction_mode_action_group.setExclusive(True)
+        self._interaction_mode_tools: dict[str, InteractionModeTool] = {}
+        self._interaction_mode_tooltips = {
+            "select": "Inspect and select sections without starting an edit operation.",
+            "move_point": "Drag a section endpoint to reposition it without snapping to another node.",
+            "move_section": "Drag the currently selected section chain as a whole.",
+            "create_straight": "Create a new straight section from an available node or empty track.",
+            "create_curve": "Create a new curved section from an unconnected node.",
+            "connect": "Drag an endpoint onto another endpoint to connect or disconnect sections.",
+            "delete": "Click a section to delete it.",
+        }
+        for mode, label in (
+            ("select", "Select"),
+            ("move_point", "Move Point"),
+            ("move_section", "Move Section"),
+            ("create_straight", "Create Straight"),
+            ("create_curve", "Create Curve"),
+            ("connect", "Connect"),
+            ("delete", "Delete"),
+        ):
+            action = QtWidgets.QAction(label, self)
+            action.setCheckable(True)
+            action.setData(mode)
+            action.setToolTip(self._interaction_mode_tooltips[mode])
+            self._interaction_mode_action_group.addAction(action)
+            button = QtWidgets.QToolButton()
+            button.setDefaultAction(action)
+            button.setAutoRaise(False)
+            self._interaction_mode_toolbar.addWidget(button)
+            self._interaction_mode_tools[mode] = InteractionModeTool(mode=mode, button=button)
+        self._interaction_mode_tools["select"].button.setChecked(True)
+        self.addToolBar(QtCore.Qt.TopToolBarArea, self._interaction_mode_toolbar)
         self._radii_button = QtWidgets.QCheckBox("Show Radii")
         self._radii_button.setChecked(True)
         self._axes_button = QtWidgets.QCheckBox("Show Axes")
@@ -890,6 +943,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def set_start_finish_button(self) -> QtWidgets.QPushButton:
         return self._set_start_finish_button
+
+
+    @property
+    def interaction_mode_toolbar(self) -> QtWidgets.QToolBar:
+        return self._interaction_mode_toolbar
+
+    @property
+    def interaction_mode_action_group(self) -> QtWidgets.QActionGroup:
+        return self._interaction_mode_action_group
+
+    def interaction_mode_button(self, mode: str) -> QtWidgets.QToolButton:
+        return self._interaction_mode_tools[mode].button
 
     @property
     def radii_button(self) -> QtWidgets.QCheckBox:

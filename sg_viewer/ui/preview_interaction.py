@@ -74,6 +74,7 @@ class PreviewInteraction:
         self._drag_state_active = False
         self._last_dragged_indices: list[int] | None = None
         self._section_drag_enabled = True
+        self._node_interaction_mode = "select"
 
     # ------------------------------------------------------------------
     # State helpers
@@ -139,6 +140,13 @@ class PreviewInteraction:
         if not enabled and self._is_dragging_section:
             self._end_section_drag()
 
+    def set_node_interaction_mode(self, mode: str) -> None:
+        if mode not in {"select", "move_point", "connect"}:
+            raise ValueError(f"Unsupported node interaction mode: {mode}")
+        self._node_interaction_mode = mode
+        if mode == "select" and self._is_dragging_node:
+            self._end_node_drag()
+
     # ------------------------------------------------------------------
     # Mouse interaction entry points
     # ------------------------------------------------------------------
@@ -162,10 +170,16 @@ class PreviewInteraction:
 
         hit = self._hit_test_node(event.pos(), selected_section)
         if hit is not None:
+            if self._node_interaction_mode == "select":
+                return False
             if selected_section is None or selected_section != hit[0]:
                 return False
 
-            if self._start_node_interaction(hit, event.pos(), allow_disconnect=False):
+            if self._start_node_interaction(
+                hit,
+                event.pos(),
+                allow_disconnect=self._node_interaction_mode == "connect",
+            ):
                 event.accept()
                 return True
             return False
@@ -193,7 +207,10 @@ class PreviewInteraction:
                 event.accept()
                 return True
 
-            self._update_connection_target(track_point, transform)
+            if self._node_interaction_mode == "connect":
+                self._update_connection_target(track_point, transform)
+            else:
+                self._connection_target = None
             self._update_dragged_section(track_point)
             event.accept()
             return True

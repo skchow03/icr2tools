@@ -9,6 +9,7 @@ from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
 from dataclasses import dataclass
+from enum import Enum
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -92,6 +93,16 @@ class LoadedTsdFile:
     source_path: Path | None = None
 
 
+class InteractionMode(str, Enum):
+    SELECT = "select"
+    MOVE_POINT = "move_point"
+    MOVE_SECTION = "move_section"
+    CREATE_STRAIGHT = "create_straight"
+    CREATE_CURVE = "create_curve"
+    CONNECT = "connect"
+    DELETE = "delete"
+
+
 class SGViewerController:
     _TSD_SHOW_ALL_LABEL = "Show all TSDs"
     _ELEVATION_TAB_BASE_LABEL = "Elevation/Grade"
@@ -117,6 +128,8 @@ class SGViewerController:
         self._move_section_default_style = window.move_section_button.styleSheet()
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
+        self._current_interaction_mode = InteractionMode.SELECT
+        self._synchronizing_interaction_mode = False
         self._elevation_controller = ElevationController()
         self._calibrator_window: Calibrator | None = None
         self._delete_shortcut = QtWidgets.QShortcut(
@@ -188,12 +201,7 @@ class SGViewerController:
         self._window.preview.document.elevations_bulk_changed.connect(
             lambda: self._mark_elevation_grade_dirty(True)
         )
-        self._window.preview.set_section_drag_enabled(
-            self._window.move_section_button.isChecked()
-        )
-        self._on_move_section_mode_changed(
-            self._window.move_section_button.isChecked()
-        )
+        self.set_interaction_mode(InteractionMode.SELECT)
         self._file_menu_coordinator.refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.show_status_message(
@@ -895,6 +903,9 @@ class SGViewerController:
         )
         self._set_start_finish_action.triggered.connect(
             self._window.preview.activate_set_start_finish_mode
+        )
+        self._window.interaction_mode_action_group.triggered.connect(
+            self._on_interaction_mode_action_triggered
         )
         self._window.preview.newStraightModeChanged.connect(
             self._on_new_straight_mode_changed
@@ -3355,25 +3366,37 @@ class SGViewerController:
         button = self._window.new_straight_button
         button.setChecked(active)
         if active:
+            self._current_interaction_mode = InteractionMode.CREATE_STRAIGHT
             button.setStyleSheet("background-color: #3f51b5; color: white;")
         else:
             button.setStyleSheet(self._new_straight_default_style)
+            if self._current_interaction_mode == InteractionMode.CREATE_STRAIGHT:
+                self._current_interaction_mode = InteractionMode.SELECT
+        self._sync_interaction_mode_ui()
 
     def _on_new_curve_mode_changed(self, active: bool) -> None:
         button = self._window.new_curve_button
         button.setChecked(active)
         if active:
+            self._current_interaction_mode = InteractionMode.CREATE_CURVE
             button.setStyleSheet("background-color: #3f51b5; color: white;")
         else:
             button.setStyleSheet(self._new_curve_default_style)
+            if self._current_interaction_mode == InteractionMode.CREATE_CURVE:
+                self._current_interaction_mode = InteractionMode.SELECT
+        self._sync_interaction_mode_ui()
 
     def _on_delete_mode_changed(self, active: bool) -> None:
         button = self._window.delete_section_button
         button.setChecked(active)
         if active:
+            self._current_interaction_mode = InteractionMode.DELETE
             button.setStyleSheet("background-color: #b53f3f; color: white;")
         else:
             button.setStyleSheet(self._delete_default_style)
+            if self._current_interaction_mode == InteractionMode.DELETE:
+                self._current_interaction_mode = InteractionMode.SELECT
+        self._sync_interaction_mode_ui()
 
     def _on_split_mode_changed(self, active: bool) -> None:
         button = self._window.split_section_button
@@ -3382,14 +3405,19 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3fb5b5; color: white;")
         else:
             button.setStyleSheet(self._split_default_style)
+        self._sync_interaction_mode_ui()
 
     def _on_move_section_mode_changed(self, active: bool) -> None:
         button = self._window.move_section_button
         button.setChecked(active)
         if active:
+            self._current_interaction_mode = InteractionMode.MOVE_SECTION
             button.setStyleSheet("background-color: #4caf50; color: white;")
         else:
             button.setStyleSheet(self._move_section_default_style)
+            if self._current_interaction_mode == InteractionMode.MOVE_SECTION:
+                self._current_interaction_mode = InteractionMode.SELECT
+        self._sync_interaction_mode_ui()
 
     def _on_scale_changed(self, scale: float) -> None:
         _ = scale
@@ -3579,6 +3607,88 @@ class SGViewerController:
 
     def _toggle_move_section_mode(self, checked: bool) -> None:
         self._sections_controller.toggle_move_section_mode(checked)
+
+    def _on_interaction_mode_action_triggered(
+        self, action: QtWidgets.QAction
+    ) -> None:
+        mode = action.data()
+        if not isinstance(mode, str):
+            return
+        self.set_interaction_mode(mode)
+
+    def set_interaction_mode(self, mode: InteractionMode | str) -> None:
+        resolved_mode = InteractionMode(mode)
+        if self._current_interaction_mode == resolved_mode and not self._synchronizing_interaction_mode:
+            self._sync_interaction_mode_ui()
+            return
+
+        self._synchronizing_interaction_mode = True
+        try:
+            previous_mode = self._current_interaction_mode
+            self._current_interaction_mode = resolved_mode
+
+            preview = self._window.preview
+            preview.cancel_creation()
+            preview.cancel_delete_section()
+            preview.cancel_split_section()
+            preview.set_section_drag_enabled(False)
+            preview.set_node_interaction_mode("select")
+
+            self._window.new_straight_button.setChecked(False)
+            self._window.new_curve_button.setChecked(False)
+            self._window.split_section_button.setChecked(False)
+            self._window.move_section_button.setChecked(False)
+            self._window.delete_section_button.setChecked(False)
+            self._on_new_straight_mode_changed(False)
+            self._on_new_curve_mode_changed(False)
+            self._on_split_mode_changed(False)
+            self._on_move_section_mode_changed(False)
+            self._on_delete_mode_changed(False)
+
+            if resolved_mode == InteractionMode.MOVE_POINT:
+                preview.set_node_interaction_mode("move_point")
+            elif resolved_mode == InteractionMode.CONNECT:
+                preview.set_node_interaction_mode("connect")
+            elif resolved_mode == InteractionMode.MOVE_SECTION:
+                self._window.move_section_button.setChecked(True)
+                self._toggle_move_section_mode(True)
+            elif resolved_mode == InteractionMode.CREATE_STRAIGHT:
+                self._window.new_straight_button.setChecked(True)
+                self._toggle_new_straight_mode(True)
+            elif resolved_mode == InteractionMode.CREATE_CURVE:
+                self._window.new_curve_button.setChecked(True)
+                self._toggle_new_curve_mode(True)
+            elif resolved_mode == InteractionMode.DELETE:
+                self._window.delete_section_button.setChecked(True)
+                self._toggle_delete_section_mode(True)
+
+            if self._current_interaction_mode != resolved_mode:
+                self._current_interaction_mode = resolved_mode
+
+            self._sync_interaction_mode_ui()
+            if previous_mode != self._current_interaction_mode:
+                self._window.show_status_message(
+                    f"Interaction mode: {self._interaction_mode_label(self._current_interaction_mode)}."
+                )
+        finally:
+            self._synchronizing_interaction_mode = False
+
+    def _sync_interaction_mode_ui(self) -> None:
+        for action in self._window.interaction_mode_action_group.actions():
+            mode = action.data()
+            if isinstance(mode, str):
+                action.setChecked(mode == self._current_interaction_mode.value)
+
+    def _interaction_mode_label(self, mode: InteractionMode) -> str:
+        return {
+            InteractionMode.SELECT: "Select",
+            InteractionMode.MOVE_POINT: "Move Point",
+            InteractionMode.MOVE_SECTION: "Move Section",
+            InteractionMode.CREATE_STRAIGHT: "Create Straight",
+            InteractionMode.CREATE_CURVE: "Create Curve",
+            InteractionMode.CONNECT: "Connect",
+            InteractionMode.DELETE: "Delete",
+        }[mode]
 
     def _refresh_recent_menu(self) -> None:
         self._file_menu_coordinator.refresh_recent_menu()
