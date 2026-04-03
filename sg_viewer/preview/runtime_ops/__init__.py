@@ -9,10 +9,10 @@ from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.geometry import (
     CURVE_SOLVE_TOLERANCE as CURVE_SOLVE_TOLERANCE_DEFAULT,
 )
-from sg_viewer.preview.runtime_ops_core import _RuntimeCoreMixin
-from sg_viewer.preview.runtime_ops_editing import _RuntimeEditingMixin
+from sg_viewer.preview.runtime_ops.op_preview import _RuntimeCoreMixin
 from sg_viewer.preview.runtime_ops_loading import _RuntimeLoadingMixin
 from sg_viewer.preview.runtime_ops_persistence import _RuntimePersistenceMixin
+from sg_viewer.preview.runtime_ops_editing.edit_preview_ops import _RuntimeEditingMixin
 
 
 class PreviewRuntimeOps(

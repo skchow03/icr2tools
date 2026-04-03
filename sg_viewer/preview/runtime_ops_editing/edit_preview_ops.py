@@ -14,11 +14,20 @@ from sg_viewer.geometry.sg_geometry import rebuild_centerline_from_sections, sca
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.preview.preview_mutations import project_point_to_polyline
-from sg_viewer.preview.runtime_ops_core import Point
+from sg_viewer.preview.runtime_ops.base_context import Point
+from sg_viewer.preview.runtime_ops_editing.edit_commit_adapter import (
+    _RuntimeEditCommitAdapterMixin,
+)
+from sg_viewer.preview.runtime_ops_editing.edit_constraints import (
+    _RuntimeEditConstraintsMixin,
+)
 from sg_viewer.preview.runtime_ops_editing.edit_context import capture_edit_context
 
 
-class _RuntimeEditPreviewOpsMixin:
+class _RuntimeEditingMixin(
+    _RuntimeEditConstraintsMixin,
+    _RuntimeEditCommitAdapterMixin,
+):
     # ------------------------------------------------------------------
     # Delete section
     # ------------------------------------------------------------------
@@ -522,3 +531,7 @@ class _RuntimeEditPreviewOpsMixin:
 
         self.rebuild_after_start_finish(new_sections)
         self._show_status("Start/finish set to selected section (now section 0)")
+
+
+# Backward-compat alias for tests/internal imports.
+_RuntimeEditPreviewOpsMixin = _RuntimeEditingMixin

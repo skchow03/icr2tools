@@ -17,9 +17,24 @@ from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.preview.runtime_ops.base_context import Point, logger
+from sg_viewer.preview.runtime_ops.op_base import _RuntimeCoreBaseMixin
+from sg_viewer.preview.runtime_ops.op_commit import _RuntimeCoreCommitMixin
+from sg_viewer.preview.runtime_ops.op_validation import _RuntimeCoreValidationMixin
+from sg_viewer.preview.runtime_ops.commit_ops import _RuntimeCoreCommitOpsMixin
+from sg_viewer.preview.runtime_ops.connect_ops import _RuntimeCoreConnectOpsMixin
+from sg_viewer.preview.runtime_ops.drag_node import _RuntimeCoreDragNodeMixin
+from sg_viewer.preview.runtime_ops.drag_polyline import _RuntimeCoreDragPolylineMixin
 
 
-class _RuntimeCorePreviewMixin:
+class _RuntimeCoreMixin(
+    _RuntimeCoreBaseMixin,
+    _RuntimeCoreValidationMixin,
+    _RuntimeCoreCommitMixin,
+    _RuntimeCoreCommitOpsMixin,
+    _RuntimeCoreConnectOpsMixin,
+    _RuntimeCoreDragNodeMixin,
+    _RuntimeCoreDragPolylineMixin,
+):
     def _should_throttle_interaction_repaint(self) -> bool:
         """Throttle only during expensive TSD/TRK overlay interaction redraws."""
         return bool(
@@ -705,3 +720,7 @@ class _RuntimeCorePreviewMixin:
         for idx in range(num_xsects):
             grades.append(section.grade[idx] if idx < len(section.grade) else None)
         return grades
+
+
+# Backward-compat alias for internal imports.
+_RuntimeCorePreviewMixin = _RuntimeCoreMixin
