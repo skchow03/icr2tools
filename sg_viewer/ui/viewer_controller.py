@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
 from sg_viewer.model.history import FileHistory
 from sg_viewer.services.sg_settings_store import SGSettingsStore
 from sg_viewer.model.preview_fsection import PreviewFSection
@@ -371,6 +372,9 @@ class SGViewerController:
         self._show_section_dlongs_action = QtWidgets.QAction("Track Section DLONGs…", self._window)
         self._show_section_dlongs_action.triggered.connect(self._show_track_section_dlongs_dialog)
 
+        self._three_d_tools_action = QtWidgets.QAction("Run 3D Tools…", self._window)
+        self._three_d_tools_action.triggered.connect(self._open_three_d_tools_dialog)
+
         self._section_table_action = QtWidgets.QAction("Section Table", self._window)
         self._section_table_action.setEnabled(False)
         self._section_table_action.triggered.connect(self._section_editing_coordinator.show_section_table)
@@ -577,6 +581,7 @@ class SGViewerController:
         tools_menu.addSeparator()
         tools_menu.addAction(self._show_palette_colors_action)
         tools_menu.addAction(self._show_unique_tso_filenames_action)
+        tools_menu.addAction(self._three_d_tools_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._run_integrity_checks_action)
         tools_menu.addSeparator()
@@ -787,6 +792,89 @@ class SGViewerController:
         self._section_dlongs_window.show()
         self._section_dlongs_window.raise_()
         self._section_dlongs_window.activateWindow()
+
+    def _open_three_d_tools_dialog(self) -> None:
+        selected_track3d = self._track3d_path_for_current_project()
+        default_path = str(selected_track3d) if selected_track3d is not None else ""
+        file_path, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Select 3D file",
+            default_path,
+            "Track 3D Files (*.3d *.3D);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        input_path = Path(file_path)
+        if not input_path.exists():
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "3D Tools",
+                f"The selected file does not exist:\n{input_path}",
+            )
+            return
+
+        operation, accepted = QtWidgets.QInputDialog.getItem(
+            self._window,
+            "3D Tools",
+            "Choose operation:",
+            (
+                "Inspect see-through candidates",
+                "Fix see-through elevation (save as copy)",
+                "Fix see-through elevation (in place)",
+            ),
+            current=0,
+            editable=False,
+        )
+        if not accepted:
+            return
+
+        try:
+            if operation == "Inspect see-through candidates":
+                report = inspect_file(input_path)
+                QtWidgets.QMessageBox.information(
+                    self._window,
+                    "3D Tools - Inspect Report",
+                    "\n".join(report.summary_lines()),
+                )
+                self._window.show_status_message(f"3D tools inspection complete: {input_path.name}")
+                return
+
+            output_path: Path | None = None
+            if operation == "Fix see-through elevation (save as copy)":
+                output_text, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+                    self._window,
+                    "Save fixed 3D file",
+                    str(input_path.with_name(f"{input_path.stem}_fixed{input_path.suffix}")),
+                    "Track 3D Files (*.3d *.3D);;All Files (*)",
+                )
+                if not output_text:
+                    return
+                output_path = Path(output_text)
+
+            report = process_file(
+                input_path=input_path,
+                output_path=input_path if operation == "Fix see-through elevation (in place)" else output_path,
+                fix_elevation=True,
+            )
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "3D Tools - Fix Report",
+                "\n".join(report.summary_lines()),
+            )
+            self._window.show_status_message(f"3D tools fix complete: {input_path.name}")
+        except ToolError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "3D Tools",
+                f"3D tools failed:\n{exc}",
+            )
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "3D Tools",
+                f"Could not read or write 3D file:\n{exc}",
+            )
 
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
