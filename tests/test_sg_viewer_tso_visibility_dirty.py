@@ -65,3 +65,21 @@ def test_tso_visibility_sidebar_marks_tab_dirty_and_save_clears_it(qapp) -> None
         assert window.right_sidebar_tabs.tabText(4) == "TSO Visibility"
     finally:
         window.close()
+
+
+def test_save_project_clears_tso_visibility_dirty_flag(qapp, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    _ = qapp
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        controller._set_tso_visibility_dirty(True)
+        assert window.right_sidebar_tabs.tabText(5) == "TSO Visibility*"
+
+        monkeypatch.setattr(window.preview, "save_sg", lambda _path: None)
+
+        controller._document_controller.save_to_path(tmp_path / "saved.sg")
+
+        assert controller._tso_visibility_is_dirty is False
+        assert window.right_sidebar_tabs.tabText(5) == "TSO Visibility"
+    finally:
+        window.close()
