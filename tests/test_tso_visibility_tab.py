@@ -60,6 +60,22 @@ def test_assigned_tso_ids_and_add_dialog_asterisk_labels() -> None:
     assert tab._build_add_tso_dialog_label(2, assigned) == "__TSO2 *"
 
 
+def test_add_selected_tso_uses_tso_filter_list_selection() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_tso_display_metadata({1: ("tree", "oak"), 2: ("house", "")})
+    tab.set_available_tso_ids([1, 2, 3])
+    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])])
+    tab.section_list.setCurrentRow(0)
+    tab.tso_filter_list.setCurrentRow(1)
+
+    tab.add_tso_button.click()
+
+    assert tab.object_lists[0].tso_ids == [1, 2]
+    assert tab.tso_list.count() == 2
+    assert tab.tso_list.item(1).text() == "__TSO2 (house)"
+
+
 def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
     _app()
     dialog = TSOVisibilityReconcileDialog(
