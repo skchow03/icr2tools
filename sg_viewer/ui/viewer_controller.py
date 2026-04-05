@@ -1113,6 +1113,9 @@ class SGViewerController:
         self._window.xsect_elevation_widget.xsectClicked.connect(
             self._on_xsect_node_clicked
         )
+        self._window.xsect_elevation_table.itemSelectionChanged.connect(
+            self._on_xsect_table_selection_changed
+        )
         self._window.xsect_elevation_table.cellChanged.connect(
             self._on_xsect_table_cell_changed
         )
@@ -4015,3 +4018,11 @@ class SGViewerController:
 
     def _on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
         self._elevation_panel_controller.on_xsect_table_cell_changed(row_index, column_index)
+
+    def _on_xsect_table_selection_changed(self) -> None:
+        if self._window.is_updating_xsect_table:
+            return
+        row_index = self._window.xsect_elevation_table.currentRow()
+        if row_index < 0:
+            return
+        self._on_xsect_node_clicked(row_index)

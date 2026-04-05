@@ -163,3 +163,49 @@ def test_xsect_table_grade_edit_is_ignored_when_elevation_tab_not_active(qapp, m
         assert refreshed["count"] == 1
     finally:
         window.close()
+
+
+def test_xsect_table_selection_updates_active_xsect(qapp):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        assert controller is not None
+        assert window.xsect_combo.currentData() == 0
+
+        window.xsect_elevation_table.setRowCount(2)
+        window.xsect_elevation_table.setItem(0, 0, QtWidgets.QTableWidgetItem("0"))
+        window.xsect_elevation_table.setItem(1, 0, QtWidgets.QTableWidgetItem("1"))
+        window.xsect_elevation_table.setCurrentCell(1, 0)
+
+        controller._on_xsect_table_selection_changed()
+
+        assert window.xsect_combo.currentData() == 1
+    finally:
+        window.close()
+
+
+def test_xsect_table_selection_ignores_programmatic_table_refresh(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        assert controller is not None
+        window.xsect_combo.setCurrentIndex(0)
+
+        called = {"value": False}
+
+        def _on_xsect_node_clicked(_xsect_index: int) -> None:
+            called["value"] = True
+
+        monkeypatch.setattr(controller, "_on_xsect_node_clicked", _on_xsect_node_clicked)
+        window._updating_xsect_table = True
+        window.xsect_elevation_table.setRowCount(2)
+        window.xsect_elevation_table.setItem(0, 0, QtWidgets.QTableWidgetItem("0"))
+        window.xsect_elevation_table.setItem(1, 0, QtWidgets.QTableWidgetItem("1"))
+        window.xsect_elevation_table.setCurrentCell(1, 0)
+
+        controller._on_xsect_table_selection_changed()
+
+        assert called["value"] is False
+    finally:
+        window._updating_xsect_table = False
+        window.close()
