@@ -372,7 +372,7 @@ class TSOVisibilityTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.load_button = QPushButton("Load track.3D")
-        self.add_tso_button = QPushButton("Add TSO")
+        self.add_tso_button = QPushButton("Add Selected TSO")
         self.delete_tso_button = QPushButton("Delete TSO")
         self.copy_prev_button = QPushButton("Copy from Previous")
         self.reconcile_button = QPushButton("Reconcile .3D")
@@ -401,9 +401,9 @@ class TSOVisibilityTab(QWidget):
         self.section_list = TrackSectionListWidget()
         left_panel.addWidget(self.section_list)
 
-        left_panel.addWidget(QLabel("Filter by TSO"))
+        left_panel.addWidget(QLabel("TSO list (check to filter sections, select one for Add Selected TSO)"))
         self.tso_filter_list = QListWidget()
-        self.tso_filter_list.setSelectionMode(QListWidget.NoSelection)
+        self.tso_filter_list.setSelectionMode(QListWidget.SingleSelection)
         self.tso_filter_list.itemChanged.connect(self._on_tso_filter_changed)
         left_panel.addWidget(self.tso_filter_list)
 
@@ -493,9 +493,12 @@ class TSOVisibilityTab(QWidget):
 
     def _refresh_tso_filter_list(self) -> None:
         selected_before = self._selected_filter_tso_ids()
+        selected_item = self.tso_filter_list.currentItem()
+        selected_tso_id_for_add = selected_item.data(QtCore.Qt.UserRole) if selected_item is not None else None
         all_ids = self._collect_all_tso_ids()
         self.tso_filter_list.blockSignals(True)
         self.tso_filter_list.clear()
+        selected_row_for_add = -1
         for tso_id in all_ids:
             item = QListWidgetItem(self._build_tso_filter_label(tso_id))
             item.setData(QtCore.Qt.UserRole, tso_id)
@@ -503,6 +506,12 @@ class TSOVisibilityTab(QWidget):
             check_state = QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked
             item.setCheckState(check_state)
             self.tso_filter_list.addItem(item)
+            if selected_tso_id_for_add == tso_id:
+                selected_row_for_add = self.tso_filter_list.count() - 1
+        if selected_row_for_add >= 0:
+            self.tso_filter_list.setCurrentRow(selected_row_for_add)
+        elif self.tso_filter_list.count() > 0:
+            self.tso_filter_list.setCurrentRow(0)
         self.tso_filter_list.blockSignals(False)
 
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
@@ -877,50 +886,10 @@ class TSOVisibilityTab(QWidget):
         row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             return
-        available_ids = self.available_tso_ids or sorted(
-            {
-                tso_id
-                for object_list in self.object_lists
-                for tso_id in object_list.tso_ids
-                if tso_id >= 0
-            }
-        )
-        if not available_ids:
+        selected_filter_item = self.tso_filter_list.currentItem()
+        if selected_filter_item is None:
             return
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Add TSO")
-        dialog.resize(500, 420)
-        dialog_layout = QVBoxLayout(dialog)
-        dialog_layout.addWidget(QLabel("Choose a TSO to add:"))
-        dialog_layout.addWidget(
-            QLabel("* indicates this TSO is not assigned to any visibility row yet.")
-        )
-
-        list_widget = QListWidget(dialog)
-        list_widget.setSelectionMode(QListWidget.SingleSelection)
-        list_widget.setVerticalScrollMode(QListWidget.ScrollPerPixel)
-        assigned_ids = self._assigned_tso_ids()
-        for tso_id in available_ids:
-            item = QListWidgetItem(self._build_add_tso_dialog_label(tso_id, assigned_ids))
-            item.setData(QtCore.Qt.UserRole, tso_id)
-            list_widget.addItem(item)
-        if list_widget.count() > 0:
-            list_widget.setCurrentRow(0)
-        list_widget.itemDoubleClicked.connect(lambda _item: dialog.accept())
-        dialog_layout.addWidget(list_widget)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        dialog_layout.addWidget(buttons)
-
-        if dialog.exec_() != QDialog.Accepted:
-            return
-        selected_items = list_widget.selectedItems()
-        if not selected_items:
-            return
-        tso_id = selected_items[0].data(QtCore.Qt.UserRole)
+        tso_id = selected_filter_item.data(QtCore.Qt.UserRole)
         if not isinstance(tso_id, int):
             return
 
