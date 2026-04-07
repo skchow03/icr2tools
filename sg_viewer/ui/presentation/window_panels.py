@@ -74,6 +74,7 @@ def create_elevation_panel(
     *,
     elevation_layout: QtWidgets.QFormLayout,
     xsect_table: QtWidgets.QTableWidget,
+    edit_xsect_list_button: QtWidgets.QPushButton,
     xsect_combo: QtWidgets.QComboBox,
     copy_xsect_button: QtWidgets.QPushButton,
     profile_widget: QtWidgets.QWidget,
@@ -84,6 +85,7 @@ def create_elevation_panel(
     layout.addLayout(elevation_layout)
     layout.addWidget(QtWidgets.QLabel("X-Section Elevations"))
     layout.addWidget(xsect_table)
+    layout.addWidget(edit_xsect_list_button)
     controls = QtWidgets.QHBoxLayout()
     controls.addWidget(QtWidgets.QLabel("Elevation X-Section:"))
     controls.addWidget(xsect_combo)
