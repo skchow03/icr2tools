@@ -36,6 +36,10 @@ class XsectTableWindow(QtWidgets.QDialog):
         self._is_updating = False
         self._pending_edit = False
         self._next_new_key = -1
+        self._unit_label = "500ths"
+        self._decimals = 0
+        self._to_display_units: Callable[[float], float] = lambda value: float(value)
+        self._from_display_units: Callable[[float], float] = lambda value: float(value)
 
         self._apply_timer = QtCore.QTimer(self)
         self._apply_timer.setInterval(250)
@@ -46,7 +50,7 @@ class XsectTableWindow(QtWidgets.QDialog):
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(2)
         self._table.setRowCount(10)
-        self._table.setHorizontalHeaderLabels(["Xsect", "DLAT"])
+        self._table.setHorizontalHeaderLabels(["Xsect", "DLAT (500ths)"])
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setAlternatingRowColors(True)
@@ -58,6 +62,20 @@ class XsectTableWindow(QtWidgets.QDialog):
 
         layout.addWidget(self._table)
         self.setLayout(layout)
+
+    def set_display_unit(
+        self,
+        *,
+        unit_label: str,
+        decimals: int,
+        to_display_units: Callable[[float], float],
+        from_display_units: Callable[[float], float],
+    ) -> None:
+        self._unit_label = unit_label
+        self._decimals = max(0, int(decimals))
+        self._to_display_units = to_display_units
+        self._from_display_units = from_display_units
+        self._table.setHorizontalHeaderLabels(["Xsect", f"DLAT ({self._unit_label})"])
 
     def set_xsects(self, metadata: list[tuple[int, float]]) -> None:
         self._entries = [
@@ -127,6 +145,7 @@ class XsectTableWindow(QtWidgets.QDialog):
             dlat = _parse_float(item.text())
             if dlat is None:
                 continue
+            dlat = self._from_display_units(dlat)
             key = item.data(QtCore.Qt.UserRole)
             if key is None:
                 key = self._next_new_key
@@ -160,8 +179,8 @@ class XsectTableWindow(QtWidgets.QDialog):
             self._table.setItem(row, 1, dlat_item)
         self._table.blockSignals(False)
 
-    @staticmethod
-    def _format_dlat(value: float) -> str:
-        if float(value).is_integer():
-            return f"{int(value)}"
-        return f"{value:.1f}"
+    def _format_dlat(self, value: float) -> str:
+        display_value = self._to_display_units(value)
+        if self._decimals == 0:
+            return f"{int(round(display_value))}"
+        return f"{display_value:.{self._decimals}f}".rstrip("0").rstrip(".")
