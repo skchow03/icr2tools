@@ -4099,6 +4099,7 @@ class SGViewerController:
         self._refresh_elevation_inputs()
         self._window.update_xsect_table_headers()
         self._refresh_xsect_elevation_table()
+        self._section_editing_coordinator.update_xsect_table()
         self._refresh_xsect_elevation_panel()
         self._update_track_length_display()
         self._window.update_selection_sidebar(self._active_selection)

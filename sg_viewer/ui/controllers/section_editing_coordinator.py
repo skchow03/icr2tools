@@ -124,6 +124,12 @@ class SectionEditingCoordinator:
             self._host._xsect_table_window = XsectTableWindow(self._host._window)
             self._host._xsect_table_window.on_xsects_edited(self.apply_xsect_table_edits)
 
+        self._host._xsect_table_window.set_display_unit(
+            unit_label=self._host._window.fsect_display_unit_label(),
+            decimals=self._host._window.fsect_display_decimals(),
+            to_display_units=self._host._window.fsect_dlat_to_display_units,
+            from_display_units=self._host._window.fsect_dlat_from_display_units,
+        )
         self._host._xsect_table_window.set_xsects(metadata)
         self._host._xsect_table_window.show()
         self._host._xsect_table_window.raise_()
@@ -133,6 +139,12 @@ class SectionEditingCoordinator:
         if self._host._xsect_table_window is None:
             return
         metadata = self._host._window.preview.get_xsect_metadata()
+        self._host._xsect_table_window.set_display_unit(
+            unit_label=self._host._window.fsect_display_unit_label(),
+            decimals=self._host._window.fsect_display_decimals(),
+            to_display_units=self._host._window.fsect_dlat_to_display_units,
+            from_display_units=self._host._window.fsect_dlat_from_display_units,
+        )
         self._host._xsect_table_window.set_xsects(metadata)
 
     def apply_xsect_table_edits(self, entries: list[XsectEntry]) -> None:
