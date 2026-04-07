@@ -1165,7 +1165,12 @@ class SGViewerController:
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
-        self._window.copy_xsect_button.clicked.connect(self._elevation_ui_coordinator.copy_xsect_to_all)
+        self._window.edit_xsect_list_button.clicked.connect(
+            self._section_editing_coordinator.show_xsect_table
+        )
+        self._window.copy_xsect_button.clicked.connect(
+            self._elevation_ui_coordinator.copy_xsect_data_to_targets
+        )
         self._window.altitude_slider.valueChanged.connect(
             self._on_altitude_slider_changed
         )

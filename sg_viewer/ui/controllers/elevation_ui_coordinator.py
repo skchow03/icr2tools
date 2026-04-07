@@ -52,8 +52,8 @@ class ElevationUiCoordinator:
     def on_altitude_range_changed(self, changed: str | None = None) -> None:
         self._elevation_panel_controller.on_altitude_range_changed(changed)
 
-    def copy_xsect_to_all(self) -> bool:
-        if self._elevation_panel_controller.copy_xsect_to_all():
+    def copy_xsect_data_to_targets(self) -> bool:
+        if self._elevation_panel_controller.copy_xsect_data_to_targets():
             self._host._sync_after_xsect_value_change()
             return True
         return False

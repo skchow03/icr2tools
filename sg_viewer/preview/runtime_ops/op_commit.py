@@ -260,6 +260,16 @@ class _RuntimeCoreCommitMixin:
         self._bump_sg_version()
         return True
 
+    def copy_xsect_data_to_targets(
+        self, xsect_index: int, target_indices: list[int]
+    ) -> bool:
+        try:
+            self._document.copy_xsect_data_to_targets(xsect_index, target_indices)
+        except (ValueError, IndexError):
+            return False
+        self._bump_sg_version()
+        return True
+
     def offset_all_elevations(self, delta: float, *, validate: bool = True) -> bool:
         try:
             self._document.offset_all_elevations(delta, validate=validate)

@@ -325,7 +325,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_elevation_widget = XsectElevationWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
-        self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section to All")
+        self._edit_xsect_list_button = QtWidgets.QPushButton("Edit X-Section List...")
+        self._edit_xsect_list_button.setEnabled(False)
+        self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section data to...")
         self._copy_xsect_button.setEnabled(False)
         self._track_stats_label = QtWidgets.QLabel("Track Length: –")
         self._section_index_label = QtWidgets.QLabel("Current Section: –")
@@ -532,6 +534,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         elevation_panel = create_elevation_panel(
             elevation_layout=elevation_layout,
             xsect_table=self._xsect_elevation_table,
+            edit_xsect_list_button=self._edit_xsect_list_button,
             xsect_combo=self._xsect_combo,
             copy_xsect_button=self._copy_xsect_button,
             profile_widget=self._profile_widget,
@@ -1145,6 +1148,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._heading_table_action.setEnabled(enabled)
         if self._xsect_table_action is not None:
             self._xsect_table_action.setEnabled(enabled)
+        self._edit_xsect_list_button.setEnabled(enabled)
 
     @property
     def preview_color_controls(
@@ -1182,6 +1186,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def xsect_combo(self) -> QtWidgets.QComboBox:
         return self._xsect_combo
+
+    @property
+    def edit_xsect_list_button(self) -> QtWidgets.QPushButton:
+        return self._edit_xsect_list_button
 
     @property
     def copy_xsect_button(self) -> QtWidgets.QPushButton:
@@ -1422,6 +1430,60 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_slider.setValue(
             min(max(self._grade_slider.value(), minimum), maximum)
         )
+
+    def show_copy_xsect_targets_dialog(
+        self,
+        *,
+        source_xsect_index: int,
+        metadata: list[tuple[int, float]],
+    ) -> list[int] | None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Copy X-Section data to...")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(
+            QtWidgets.QLabel(
+                f"Copy data from X-section {source_xsect_index} to selected X-sections:"
+            )
+        )
+
+        list_widget = QtWidgets.QListWidget(dialog)
+        unit = self._current_measurement_unit()
+        unit_label = self._measurement_unit_label(unit)
+        decimals = self._measurement_unit_decimals(unit)
+        for idx, dlat in metadata:
+            display_dlat = self._fsect_dlat_to_display_units(float(dlat))
+            dlat_text = (
+                f"{int(round(display_dlat))}"
+                if decimals == 0
+                else f"{display_dlat:.{decimals}f}".rstrip("0").rstrip(".")
+            )
+            item = QtWidgets.QListWidgetItem(f"X-section {idx} (DLAT {dlat_text} {unit_label})")
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            if idx == source_xsect_index:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
+                item.setForeground(QtGui.QBrush(QtCore.Qt.gray))
+            list_widget.addItem(item)
+        layout.addWidget(list_widget)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal,
+            dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return None
+
+        targets: list[int] = []
+        for row in range(list_widget.count()):
+            item = list_widget.item(row)
+            if item.checkState() == QtCore.Qt.Checked:
+                targets.append(metadata[row][0])
+        return targets
 
     def show_raise_lower_elevations_dialog(self) -> None:
         delta, ok = QtWidgets.QInputDialog.getDouble(

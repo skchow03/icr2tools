@@ -236,20 +236,43 @@ class ElevationPanelController:
     def open_flatten_all_elevations_and_grade_dialog(self) -> bool:
         return self._host._window.show_flatten_all_elevations_and_grade_dialog()
 
-    def copy_xsect_to_all(self) -> bool:
+    def copy_xsect_data_to_targets(self) -> bool:
         xsect_index = self._host._current_xsect_index()
         if xsect_index is None:
             return False
-        response = QtWidgets.QMessageBox.question(
-            self._host._window, "Copy X-Section", f"Copy X-section {xsect_index} altitude and grade data to all x-sections?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No,
+        metadata = self._host._window.preview.get_xsect_metadata()
+        if len(metadata) < 2:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Copy X-Section",
+                "At least two X-sections are required to copy data.",
+            )
+            return False
+        selected_targets = self._host._window.show_copy_xsect_targets_dialog(
+            source_xsect_index=xsect_index,
+            metadata=metadata,
         )
-        if response != QtWidgets.QMessageBox.Yes:
+        if selected_targets is None:
             return False
-        if not self._host._window.preview.copy_xsect_data_to_all(xsect_index):
-            QtWidgets.QMessageBox.warning(self._host._window, "Copy Failed", "Unable to copy x-section data. Ensure all sections have elevation data.")
+        if not selected_targets:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Copy X-Section",
+                "No target X-sections selected.",
+            )
             return False
-        self._host._window.show_status_message(f"Copied x-section {xsect_index} data to all x-sections.")
+        if not self._host._window.preview.copy_xsect_data_to_targets(
+            xsect_index, selected_targets
+        ):
+            QtWidgets.QMessageBox.warning(
+                self._host._window,
+                "Copy Failed",
+                "Unable to copy x-section data. Ensure all sections have elevation data.",
+            )
+            return False
+        self._host._window.show_status_message(
+            f"Copied x-section {xsect_index} data to {len(selected_targets)} x-section(s)."
+        )
         return True
 
     def refresh_xsect_elevation_panel(self, *, refresh_table: bool = True) -> None:

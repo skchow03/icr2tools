@@ -183,6 +183,54 @@ class SGDocument(QtCore.QObject):
 
         self._emit_bulk_elevation_changed()
 
+    def copy_xsect_data_to_targets(
+        self, xsect_index: int, target_indices: list[int]
+    ) -> None:
+        if self._sg_data is None:
+            raise ValueError("No SG data loaded.")
+
+        if xsect_index < 0 or xsect_index >= self._sg_data.num_xsects:
+            raise IndexError("X-section index out of range.")
+
+        if not self._sg_data.sects:
+            raise ValueError("No sections available to update.")
+
+        cleaned_targets = sorted(
+            {
+                int(index)
+                for index in target_indices
+                if int(index) != xsect_index
+            }
+        )
+        if not cleaned_targets:
+            return
+        for target in cleaned_targets:
+            if target < 0 or target >= self._sg_data.num_xsects:
+                raise IndexError("Target X-section index out of range.")
+
+        for idx, section in enumerate(self._sg_data.sects):
+            if not section.alt or xsect_index >= len(section.alt):
+                raise ValueError(f"Section {idx} has no elevation data.")
+            if not section.grade or xsect_index >= len(section.grade):
+                raise ValueError(f"Section {idx} has no grade data.")
+            for target in cleaned_targets:
+                if target >= len(section.alt) or target >= len(section.grade):
+                    raise ValueError(
+                        f"Section {idx} does not have x-section {target} data."
+                    )
+
+        for section in self._sg_data.sects:
+            source_altitude = int(section.alt[xsect_index])
+            source_grade = int(section.grade[xsect_index])
+            for target in cleaned_targets:
+                section.alt[target] = source_altitude
+                section.grade[target] = source_grade
+
+        if __debug__:
+            self.validate()
+
+        self._emit_bulk_elevation_changed()
+
     def offset_all_elevations(self, delta: float, *, validate: bool = True) -> None:
         if self._sg_data is None:
             raise ValueError("No SG data loaded.")
