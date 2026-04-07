@@ -122,9 +122,9 @@ def test_xsect_table_altitude_edit_is_ignored_when_elevation_tab_not_active(qapp
 
         controller._active_selection = type("Selection", (), {"index": 0})()
         window.xsect_elevation_table.setRowCount(1)
-        window.xsect_elevation_table.setItem(0, 1, QtWidgets.QTableWidgetItem("123"))
+        window.xsect_elevation_table.setItem(0, 2, QtWidgets.QTableWidgetItem("123"))
 
-        controller._elevation_panel_controller.on_xsect_table_cell_changed(0, 1)
+        controller._elevation_panel_controller.on_xsect_table_cell_changed(0, 2)
 
         assert called["value"] is False
         assert refreshed["count"] == 1
@@ -155,12 +155,47 @@ def test_xsect_table_grade_edit_is_ignored_when_elevation_tab_not_active(qapp, m
 
         controller._active_selection = type("Selection", (), {"index": 0})()
         window.xsect_elevation_table.setRowCount(1)
-        window.xsect_elevation_table.setItem(0, 2, QtWidgets.QTableWidgetItem("4"))
+        window.xsect_elevation_table.setItem(0, 3, QtWidgets.QTableWidgetItem("4"))
 
-        controller._elevation_panel_controller.on_xsect_table_cell_changed(0, 2)
+        controller._elevation_panel_controller.on_xsect_table_cell_changed(0, 3)
 
         assert called["value"] is False
         assert refreshed["count"] == 1
+    finally:
+        window.close()
+
+
+def test_xsect_table_dlat_edit_updates_xsect_definitions(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        assert controller is not None
+
+        called_payload: list[list[tuple[int, float]]] = []
+        synced = {"count": 0}
+
+        monkeypatch.setattr(controller, "_is_elevation_tab_active", lambda: True)
+        monkeypatch.setattr(window.preview, "get_xsect_metadata", lambda: [(0, -100.0), (1, 100.0)])
+
+        def _set_xsect_definitions(payload):
+            called_payload.append(payload)
+            return True
+
+        monkeypatch.setattr(window.preview, "set_xsect_definitions", _set_xsect_definitions)
+        monkeypatch.setattr(
+            controller,
+            "_sync_after_xsect_value_change",
+            lambda: synced.__setitem__("count", synced["count"] + 1),
+        )
+
+        controller._active_selection = type("Selection", (), {"index": 0})()
+        window.xsect_elevation_table.setRowCount(2)
+        window.xsect_elevation_table.setItem(1, 1, QtWidgets.QTableWidgetItem("3.0"))
+
+        controller._elevation_panel_controller.on_xsect_table_cell_changed(1, 1)
+
+        assert called_payload == [[(0, -100.0), (1, 1500.0)]]
+        assert synced["count"] == 1
     finally:
         window.close()
 
