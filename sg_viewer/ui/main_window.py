@@ -429,7 +429,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             on_drag_started=self._on_fsect_diagram_drag_started,
             on_drag_ended=self._on_fsect_diagram_drag_ended,
         )
-        self._xsect_elevation_table = QtWidgets.QTableWidget(0, 3)
+        self._xsect_elevation_table = QtWidgets.QTableWidget(0, 4)
         self.update_xsect_table_headers()
         self._xsect_elevation_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
@@ -1220,6 +1220,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def update_xsect_elevation_table(
         self,
+        xsect_dlats: list[float | int | None],
         altitudes: list[int | None],
         grades: list[int | None],
         selected_index: int | None,
@@ -1229,12 +1230,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._updating_xsect_table = True
         self._xsect_elevation_table.blockSignals(True)
         try:
-            row_count = min(len(altitudes), len(grades))
+            row_count = min(len(xsect_dlats), len(altitudes), len(grades))
             self._xsect_elevation_table.setRowCount(row_count)
             for row in range(row_count):
                 xsect_item = QtWidgets.QTableWidgetItem(str(row))
                 xsect_item.setFlags(
                     QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                )
+                dlat_value = xsect_dlats[row]
+                dlat_text = (
+                    format_fsect_dlat(dlat_value, unit=self._current_measurement_unit())
+                    if dlat_value is not None
+                    else ""
+                )
+                dlat_item = QtWidgets.QTableWidgetItem(dlat_text)
+                dlat_item.setTextAlignment(
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
                 )
                 altitude_value = altitudes[row]
                 altitude_text = (
@@ -1253,8 +1264,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
                 )
                 self._xsect_elevation_table.setItem(row, 0, xsect_item)
-                self._xsect_elevation_table.setItem(row, 1, altitude_item)
-                self._xsect_elevation_table.setItem(row, 2, grade_item)
+                self._xsect_elevation_table.setItem(row, 1, dlat_item)
+                self._xsect_elevation_table.setItem(row, 2, altitude_item)
+                self._xsect_elevation_table.setItem(row, 3, grade_item)
             if (
                 selected_index is not None
                 and 0 <= selected_index < self._xsect_elevation_table.rowCount()
@@ -1592,7 +1604,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def update_xsect_table_headers(self) -> None:
         unit_label = self._xsect_altitude_units_label()
         self._xsect_elevation_table.setHorizontalHeaderLabels(
-            ["Xsect", f"Elevation ({unit_label})", "Grade"]
+            ["Xsect", f"DLAT ({unit_label})", f"Elevation ({unit_label})", "Grade"]
         )
 
     def _xsect_altitude_units_label(self) -> str:

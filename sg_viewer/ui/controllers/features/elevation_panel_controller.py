@@ -270,14 +270,22 @@ class ElevationPanelController:
     def refresh_xsect_elevation_table(self) -> None:
         selection = self._host._active_selection
         if selection is None:
-            self._host._window.update_xsect_elevation_table([], [], None, enabled=False)
+            self._host._window.update_xsect_elevation_table([], [], [], None, enabled=False)
             return
+        metadata = self._host._window.preview.get_xsect_metadata()
+        xsect_dlats = [dlat for _, dlat in metadata]
         altitudes = self._host._window.preview.get_section_xsect_altitudes(selection.index)
         grades = self._host._window.preview.get_section_xsect_grades(selection.index)
-        self._host._window.update_xsect_elevation_table(altitudes, grades, self._host._current_xsect_index(), enabled=bool(altitudes) and bool(grades))
+        self._host._window.update_xsect_elevation_table(
+            xsect_dlats,
+            altitudes,
+            grades,
+            self._host._current_xsect_index(),
+            enabled=bool(xsect_dlats) and bool(altitudes) and bool(grades),
+        )
 
     def on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
-        if self._host._window.is_updating_xsect_table or column_index not in (1, 2):
+        if self._host._window.is_updating_xsect_table or column_index not in (1, 2, 3):
             return
         if not self._host._is_elevation_tab_active():
             self.refresh_xsect_elevation_table()
@@ -292,6 +300,25 @@ class ElevationPanelController:
         if not text:
             self.refresh_xsect_elevation_table(); return
         if column_index == 1:
+            metadata = self._host._window.preview.get_xsect_metadata()
+            if row_index < 0 or row_index >= len(metadata):
+                self.refresh_xsect_elevation_table()
+                return
+            try:
+                dlat_display_value = float(text)
+            except ValueError:
+                self.refresh_xsect_elevation_table()
+                return
+            dlat = self._host._window.fsect_dlat_from_display_units(dlat_display_value)
+            updated_entries = [
+                (index, dlat if index == row_index else current_dlat)
+                for index, current_dlat in metadata
+            ]
+            if self._host._window.preview.set_xsect_definitions(updated_entries):
+                self._host._sync_after_xsect_value_change()
+            else:
+                self.refresh_xsect_elevation_table()
+        elif column_index == 2:
             try: display_value = float(text)
             except ValueError: self.refresh_xsect_elevation_table(); return
             altitude = self._host._window.xsect_altitude_from_display_units(display_value)
