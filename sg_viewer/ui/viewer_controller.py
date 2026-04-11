@@ -9,6 +9,7 @@ from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -93,6 +94,55 @@ class LoadedTsdFile:
     source_path: Path | None = None
 
 
+class _MrkTexturePatternDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget,
+        color_lookup_provider: Callable[[], dict[str, QtGui.QColor]],
+    ) -> None:
+        super().__init__(parent)
+        self._color_lookup_provider = color_lookup_provider
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        pattern_text = str(index.data(QtCore.Qt.DisplayRole) or "").strip()
+        texture_names = [token.strip() for token in pattern_text.split(",") if token.strip()]
+        color_lookup = self._color_lookup_provider()
+        colors = [color_lookup.get(name) for name in texture_names]
+        colors = [color for color in colors if color is not None and color.isValid()]
+        if not colors:
+            super().paint(painter, option, index)
+            return
+
+        painter.save()
+        style = option.widget.style() if option.widget is not None else QtWidgets.QApplication.style()
+        style.drawPrimitive(QtWidgets.QStyle.PE_PanelItemViewItem, option, painter, option.widget)
+
+        rect = option.rect.adjusted(4, 4, -4, -4)
+        if rect.width() > 0 and rect.height() > 0:
+            segment_width = rect.width() / float(len(colors))
+            for segment_index, color in enumerate(colors):
+                left = rect.left() + int(round(segment_index * segment_width))
+                right = rect.left() + int(round((segment_index + 1) * segment_width))
+                segment_rect = QtCore.QRect(left, rect.top(), max(1, right - left), rect.height())
+                painter.fillRect(segment_rect, color)
+            painter.setPen(QtGui.QPen(option.palette.mid().color()))
+            painter.drawRect(rect)
+        painter.restore()
+
+    def sizeHint(
+        self,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> QtCore.QSize:
+        base_size = super().sizeHint(option, index)
+        return QtCore.QSize(base_size.width(), max(base_size.height(), 22))
+
+
 class SGViewerController:
     _TSD_SHOW_ALL_LABEL = "Show all TSDs"
     _ELEVATION_TAB_BASE_LABEL = "Elevation/Grade"
@@ -136,6 +186,11 @@ class SGViewerController:
         self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
         self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
+        self._mrk_texture_pattern_delegate = _MrkTexturePatternDelegate(
+            self._window.mrk_entries_table,
+            self._mrk_texture_color_lookup,
+        )
+        self._window.mrk_entries_table.setItemDelegateForColumn(5, self._mrk_texture_pattern_delegate)
         self._mrk_is_dirty = False
         self._tsd_is_dirty = False
         self._elevation_grade_is_dirty = False
@@ -2707,7 +2762,17 @@ class SGViewerController:
             QtWidgets.QMessageBox.warning(self._window, "Invalid MRK Texture", str(exc))
             return
         self._set_mrk_dirty(True)
+        self._window.mrk_entries_table.viewport().update()
         self._update_mrk_highlights_from_table()
+
+    def _mrk_texture_color_lookup(self) -> dict[str, QtGui.QColor]:
+        color_lookup: dict[str, QtGui.QColor] = {}
+        for definition in self._mrk_texture_definitions:
+            color = parse_hex_color(definition.highlight_color)
+            if color is None:
+                continue
+            color_lookup[definition.texture_name] = color
+        return color_lookup
 
     def _default_texture_pattern_for_wall_count(self, wall_count: int) -> str:
         if not self._mrk_texture_definitions:
@@ -2974,6 +3039,7 @@ class SGViewerController:
         table.blockSignals(False)
 
         self._mrk_texture_definitions = tuple(texture_definitions)
+        self._window.mrk_entries_table.viewport().update()
         self._set_mrk_dirty(mark_dirty)
         self._update_mrk_highlights_from_table()
 
