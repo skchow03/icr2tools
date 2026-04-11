@@ -102,7 +102,34 @@ def create_elevation_panel(
 def create_stats_sidebar_panel(*labels: QtWidgets.QLabel) -> StatsSidebarPanel:
     widget = QtWidgets.QGroupBox("Track / Section")
     layout = QtWidgets.QVBoxLayout()
-    for label in labels:
-        layout.addWidget(label)
+    layout.setContentsMargins(8, 10, 8, 8)
+    layout.setSpacing(8)
+
+    sections_layout = QtWidgets.QGridLayout()
+    sections_layout.setContentsMargins(0, 0, 0, 0)
+    sections_layout.setHorizontalSpacing(10)
+    sections_layout.setVerticalSpacing(8)
+
+    grouped_indices: list[tuple[str, tuple[int, ...]]] = [
+        ("Track", (0,)),
+        ("Current Section", (1, 2, 3, 6, 14)),
+        ("Connections", (4, 5, 9, 10)),
+        ("Section Metadata", (7, 8, 11, 12, 13)),
+    ]
+
+    for panel_index, (title, indices) in enumerate(grouped_indices):
+        group_box = QtWidgets.QGroupBox(title)
+        group_layout = QtWidgets.QVBoxLayout()
+        group_layout.setContentsMargins(8, 8, 8, 8)
+        group_layout.setSpacing(4)
+        for index in indices:
+            if index < len(labels):
+                label = labels[index]
+                label.setWordWrap(True)
+                group_layout.addWidget(label)
+        group_box.setLayout(group_layout)
+        sections_layout.addWidget(group_box, panel_index // 2, panel_index % 2)
+
+    layout.addLayout(sections_layout)
     widget.setLayout(layout)
     return StatsSidebarPanel(widget=widget, layout=layout)
