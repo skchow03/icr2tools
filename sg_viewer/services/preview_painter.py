@@ -902,7 +902,7 @@ def _draw_trackside_objects(
                 painter.setBrush(QtGui.QBrush(QtGui.QColor(pivot_color)))
                 painter.drawEllipse(point, 4.0, 4.0)
             order = order_by_index.get(index)
-            if order is not None and is_highlighted:
+            if order is not None:
                 painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
                 painter.drawText(QtCore.QPointF(sx - 3.0, sy + marker_size + 14.0), str(order))
             painter.restore()
@@ -937,7 +937,7 @@ def _draw_trackside_objects(
             painter.drawEllipse(anchor, 4.0, 4.0)
 
         order = order_by_index.get(index)
-        if order is not None and is_highlighted:
+        if order is not None:
             bounds = polygon.boundingRect()
             label_point = QtCore.QPointF(bounds.center().x(), bounds.bottom() + 12.0)
             painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
