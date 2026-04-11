@@ -992,10 +992,17 @@ class TSOVisibilityTab(QWidget):
         if not isinstance(tso_id, int):
             return
 
-        self.object_lists[row].tso_ids.append(tso_id)
+        selected_pill = self.tso_list.currentItem()
+        insert_index = len(self.object_lists[row].tso_ids)
+        if selected_pill is not None:
+            selected_row = self.tso_list.row(selected_pill)
+            if selected_row >= 0:
+                insert_index = min(selected_row + 1, len(self.object_lists[row].tso_ids))
+
+        self.object_lists[row].tso_ids.insert(insert_index, tso_id)
         self._emit_object_lists_changed()
         self._refresh_current_tso_list()
-        item = self.tso_list.item(self.tso_list.count() - 1)
+        item = self.tso_list.item(insert_index)
         if item is not None:
             self.tso_list.setCurrentItem(item)
         self.selectedTSOPillChanged.emit(tso_id)
