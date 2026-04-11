@@ -1,5 +1,5 @@
 from PyQt5 import QtCore
-from PyQt5.QtGui import QColor, QBrush, QResizeEvent
+from PyQt5.QtGui import QColor, QBrush, QPainter, QPen, QResizeEvent
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -42,6 +42,8 @@ class TSOVisibilityListWidget(QListWidget):
         self.setSpacing(4)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setDropIndicatorShown(False)
+        self._drop_indicator_y: int | None = None
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -64,8 +66,59 @@ class TSOVisibilityListWidget(QListWidget):
         spacing_total = self.spacing() * max(self.count() - 1, 0)
         return (item_height * self.count()) + spacing_total + (self.frameWidth() * 2) + 4
 
+    def _update_drop_indicator_position(self, event_pos: QtCore.QPoint) -> None:
+        position = self.dropIndicatorPosition()
+        indicator_y: int | None = None
+        if position == QAbstractItemView.OnViewport:
+            indicator_y = self.viewport().height() - 1
+        else:
+            target_index = self.indexAt(event_pos)
+            if target_index.isValid():
+                rect = self.visualRect(target_index)
+                if position == QAbstractItemView.BelowItem:
+                    indicator_y = rect.bottom() + 1
+                else:
+                    indicator_y = rect.top()
+            elif self.count() > 0:
+                last_item = self.item(self.count() - 1)
+                if last_item is not None:
+                    last_rect = self.visualItemRect(last_item)
+                    indicator_y = last_rect.bottom() + 1
+        self._drop_indicator_y = indicator_y
+        self.viewport().update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self._drop_indicator_y is None:
+            return
+        painter = QPainter(self.viewport())
+        pen = QPen(QColor("#0078d4"))
+        pen.setWidth(4)
+        painter.setPen(pen)
+        left = 1
+        right = max(self.viewport().width() - 2, left)
+        y = self._drop_indicator_y
+        painter.drawLine(left, y, right, y)
+
+        cap_height = 8
+        cap_top = y - cap_height // 2
+        cap_bottom = y + cap_height // 2
+        painter.drawLine(left, cap_top, left, cap_bottom)
+        painter.drawLine(right, cap_top, right, cap_bottom)
+
+    def dragMoveEvent(self, event) -> None:
+        super().dragMoveEvent(event)
+        self._update_drop_indicator_position(event.pos())
+
+    def dragLeaveEvent(self, event) -> None:
+        super().dragLeaveEvent(event)
+        self._drop_indicator_y = None
+        self.viewport().update()
+
     def dropEvent(self, event):
         super().dropEvent(event)
+        self._drop_indicator_y = None
+        self.viewport().update()
         self.orderChanged.emit()
         self.contentHeightChanged.emit()
 
