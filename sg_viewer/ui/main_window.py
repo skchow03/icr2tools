@@ -129,6 +129,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_move_up_button = QtWidgets.QPushButton("Move Up")
         self._mrk_move_down_button = QtWidgets.QPushButton("Move Down")
         self._mrk_textures_button = QtWidgets.QPushButton("Manage textures...")
+        self._mrk_texture_pattern_show_colors_checkbox = QtWidgets.QCheckBox(
+            "Show texture color boxes"
+        )
+        self._mrk_texture_pattern_show_colors_checkbox.setChecked(True)
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
         self._mrk_save_button = QtWidgets.QPushButton("Export MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Import MRK entries")
@@ -202,6 +206,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Texture Pattern",
             "Description",
         ])
+        self._mrk_entries_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents
+        )
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
         self._mrk_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._mrk_entries_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -725,6 +732,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.addWidget(self._mrk_save_button, 1, 2)
         mrk_buttons.addWidget(self._mrk_load_button, 1, 3)
         mrk_layout.addLayout(mrk_buttons)
+        mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
         mrk_layout.addWidget(self._mrk_entries_table)
         mrk_layout.addStretch()
         self._mrk_sidebar.setLayout(mrk_layout)
@@ -1006,6 +1014,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_generate_file_button(self) -> QtWidgets.QPushButton:
         return self._mrk_generate_file_button
+
+    @property
+    def mrk_texture_pattern_show_colors_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._mrk_texture_pattern_show_colors_checkbox
 
     @property
     def mrk_entries_table(self) -> QtWidgets.QTableWidget:

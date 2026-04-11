@@ -914,6 +914,36 @@ def test_mrk_table_selection_updates_selected_wall_preview(qapp):
         window.close()
 
 
+def test_mrk_texture_pattern_defaults_to_color_boxes(qapp):
+    window = SGViewerWindow()
+    try:
+        assert window.mrk_texture_pattern_show_colors_checkbox.isChecked() is True
+        assert window.controller._mrk_texture_pattern_delegate._show_color_boxes is True
+    finally:
+        window.close()
+
+
+def test_mrk_texture_pattern_checkbox_switches_delegate_to_text_mode(qapp):
+    window = SGViewerWindow()
+    try:
+        window.mrk_texture_pattern_show_colors_checkbox.setChecked(False)
+        assert window.controller._mrk_texture_pattern_delegate._show_color_boxes is False
+
+        window.mrk_texture_pattern_show_colors_checkbox.setChecked(True)
+        assert window.controller._mrk_texture_pattern_delegate._show_color_boxes is True
+    finally:
+        window.close()
+
+
+def test_mrk_table_columns_default_to_resize_to_contents(qapp):
+    window = SGViewerWindow()
+    try:
+        header = window.mrk_entries_table.horizontalHeader()
+        assert header.sectionResizeMode(0) == QtWidgets.QHeaderView.ResizeToContents
+    finally:
+        window.close()
+
+
 def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
     window = SGViewerWindow()
     try:

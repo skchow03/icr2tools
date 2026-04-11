@@ -102,6 +102,10 @@ class _MrkTexturePatternDelegate(QtWidgets.QStyledItemDelegate):
     ) -> None:
         super().__init__(parent)
         self._color_lookup_provider = color_lookup_provider
+        self._show_color_boxes = True
+
+    def set_show_color_boxes(self, show_color_boxes: bool) -> None:
+        self._show_color_boxes = bool(show_color_boxes)
 
     def paint(
         self,
@@ -110,6 +114,9 @@ class _MrkTexturePatternDelegate(QtWidgets.QStyledItemDelegate):
         index: QtCore.QModelIndex,
     ) -> None:
         pattern_text = str(index.data(QtCore.Qt.DisplayRole) or "").strip()
+        if not self._show_color_boxes:
+            super().paint(painter, option, index)
+            return
         texture_names = [token.strip() for token in pattern_text.split(",") if token.strip()]
         color_lookup = self._color_lookup_provider()
         colors = [color_lookup.get(name) for name in texture_names]
@@ -191,6 +198,9 @@ class SGViewerController:
             self._mrk_texture_color_lookup,
         )
         self._window.mrk_entries_table.setItemDelegateForColumn(5, self._mrk_texture_pattern_delegate)
+        self._mrk_texture_pattern_delegate.set_show_color_boxes(
+            self._window.mrk_texture_pattern_show_colors_checkbox.isChecked()
+        )
         self._mrk_is_dirty = False
         self._tsd_is_dirty = False
         self._elevation_grade_is_dirty = False
@@ -234,6 +244,7 @@ class SGViewerController:
         )
         self._on_mrk_wall_height_changed(self._window.pitwall_wall_height_spin.value())
         self._on_mrk_armco_height_changed(self._window.pitwall_armco_height_spin.value())
+        self._autosize_mrk_table_columns()
         self._load_measurement_unit_from_history()
         self._load_preview_colors_from_history()
         self._initialize_preview_color_controls()
@@ -1135,6 +1146,9 @@ class SGViewerController:
         self._window.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
+        self._window.mrk_texture_pattern_show_colors_checkbox.toggled.connect(
+            self._on_mrk_texture_pattern_display_mode_changed
+        )
         self._window.generate_pitwall_button.clicked.connect(self._generate_pitwall_txt)
         self._window.pitwall_wall_height_spin.valueChanged.connect(self._on_mrk_wall_height_changed)
         self._window.pitwall_armco_height_spin.valueChanged.connect(self._on_mrk_armco_height_changed)
@@ -1574,6 +1588,7 @@ class SGViewerController:
         table.selectRow(row)
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
 
     def _on_mrk_delete_entry_requested(self) -> None:
         table = self._window.mrk_entries_table
@@ -1583,6 +1598,7 @@ class SGViewerController:
         table.removeRow(selected_rows[0].row())
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
 
     def _move_mrk_entry(self, *, direction: int) -> None:
         table = self._window.mrk_entries_table
@@ -1622,6 +1638,7 @@ class SGViewerController:
         table.selectRow(target_row)
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
 
     def _on_mrk_move_up_requested(self) -> None:
         self._move_mrk_entry(direction=-1)
@@ -2764,6 +2781,7 @@ class SGViewerController:
         self._set_mrk_dirty(True)
         self._window.mrk_entries_table.viewport().update()
         self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
 
     def _mrk_texture_color_lookup(self) -> dict[str, QtGui.QColor]:
         color_lookup: dict[str, QtGui.QColor] = {}
@@ -2864,6 +2882,7 @@ class SGViewerController:
         table.blockSignals(False)
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
 
     def _on_mrk_entry_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         row = item.row()
@@ -2902,6 +2921,7 @@ class SGViewerController:
                 table.blockSignals(False)
         self._set_mrk_dirty(True)
         self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
 
     def _update_mrk_highlights_from_table(self) -> None:
         table = self._window.mrk_entries_table
@@ -3310,6 +3330,7 @@ class SGViewerController:
                 str(exc),
             )
             return
+        self._autosize_mrk_table_columns()
         self._window.show_status_message(f"Imported MRK data from {path.name}")
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
@@ -3373,6 +3394,14 @@ class SGViewerController:
         )
         self._persist_mrk_wall_heights_for_current_track()
         self._update_mrk_highlights_from_table()
+
+    def _on_mrk_texture_pattern_display_mode_changed(self, checked: bool) -> None:
+        self._mrk_texture_pattern_delegate.set_show_color_boxes(checked)
+        self._window.mrk_entries_table.viewport().update()
+        self._autosize_mrk_table_columns()
+
+    def _autosize_mrk_table_columns(self) -> None:
+        self._window.mrk_entries_table.resizeColumnsToContents()
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
