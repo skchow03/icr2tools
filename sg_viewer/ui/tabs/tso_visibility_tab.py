@@ -67,25 +67,33 @@ class TSOVisibilityListWidget(QListWidget):
         return (item_height * self.count()) + spacing_total + (self.frameWidth() * 2) + 4
 
     def _update_drop_indicator_position(self, event_pos: QtCore.QPoint) -> None:
-        position = self.dropIndicatorPosition()
-        indicator_y: int | None = None
-        if position == QAbstractItemView.OnViewport:
-            indicator_y = self.viewport().height() - 1
-        else:
-            target_index = self.indexAt(event_pos)
-            if target_index.isValid():
-                rect = self.visualRect(target_index)
-                if position == QAbstractItemView.BelowItem:
-                    indicator_y = rect.bottom() + 1
-                else:
-                    indicator_y = rect.top()
-            elif self.count() > 0:
-                last_item = self.item(self.count() - 1)
-                if last_item is not None:
-                    last_rect = self.visualItemRect(last_item)
-                    indicator_y = last_rect.bottom() + 1
+        indicator_y = self._calculate_drop_indicator_y(event_pos)
         self._drop_indicator_y = indicator_y
         self.viewport().update()
+
+    def _calculate_drop_indicator_y(self, event_pos: QtCore.QPoint) -> int | None:
+        if self.count() == 0:
+            return self.viewport().height() - 1
+
+        first_item = self.item(0)
+        last_item = self.item(self.count() - 1)
+        if first_item is None or last_item is None:
+            return None
+
+        first_rect = self.visualItemRect(first_item)
+        if event_pos.y() <= first_rect.center().y():
+            return first_rect.top()
+
+        for row in range(1, self.count()):
+            item = self.item(row)
+            if item is None:
+                continue
+            rect = self.visualItemRect(item)
+            if event_pos.y() <= rect.center().y():
+                return rect.top()
+
+        last_rect = self.visualItemRect(last_item)
+        return last_rect.bottom() + 1
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
