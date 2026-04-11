@@ -796,11 +796,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         self._right_sidebar_tabs.addTab(self._tso_sidebar, "Objects")
         self._right_sidebar_tabs.addTab(self._tso_visibility_sidebar, "TSO Visibility")
-        # Avoid locking the splitter to the tabs' initial size hint (which can become
-        # very wide due to table content) so users can shrink the right sidebar.
-        self._right_sidebar_tabs.setMinimumWidth(260)
+        # Keep the right sidebar width fixed so window resizing only grows/shrinks
+        # the track-diagram side of the window.
+        sidebar_width = max(320, self._right_sidebar_tabs.sizeHint().width())
+        self._right_sidebar_tabs.setFixedWidth(sidebar_width)
         self._right_sidebar_tabs.setSizePolicy(
-            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Fixed,
             QtWidgets.QSizePolicy.Expanding,
         )
 
@@ -834,6 +835,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         splitter.addWidget(preview_column)
         splitter.addWidget(self._right_sidebar_tabs)
         splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
         splitter.setCollapsible(1, False)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(splitter)
