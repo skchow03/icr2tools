@@ -470,7 +470,7 @@ class TSOVisibilityTab(QWidget):
 
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
         self.section_list = TrackSectionListWidget()
-        layout.addWidget(self.section_list, 1)
+        layout.addWidget(self.section_list, 0)
 
         lists_row = QHBoxLayout()
         layout.addLayout(lists_row)
@@ -530,6 +530,7 @@ class TSOVisibilityTab(QWidget):
         self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
         self._current_track_section_count: int | None = None
+        QtCore.QTimer.singleShot(0, self._resize_section_list)
 
     def set_current_track_section_count(self, count: int | None) -> None:
         if isinstance(count, int) and count >= 0:
@@ -965,8 +966,13 @@ class TSOVisibilityTab(QWidget):
                 return
         self.selectedTSOPillChanged.emit(tso_id)
 
+    def _resize_section_list(self) -> None:
+        target_height = max(140, int(self.height() * 0.25))
+        self.section_list.setFixedHeight(target_height)
+
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
+        self._resize_section_list()
         self.tso_list.update_item_widths()
 
     def _refresh_visible_tso_column(self) -> None:
