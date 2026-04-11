@@ -76,6 +76,23 @@ def test_add_selected_tso_uses_tso_filter_list_selection() -> None:
     assert tab.tso_list.item(1).text() == "__TSO2 (house)"
 
 
+
+
+def test_add_selected_tso_inserts_after_selected_visible_tso() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1, 2, 3, 4])
+    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 3, 4])])
+    tab.section_list.setCurrentRow(0)
+    tab.tso_list.setCurrentRow(0)
+    tab.tso_filter_list.setCurrentRow(1)
+
+    tab.add_tso_button.click()
+
+    assert tab.object_lists[0].tso_ids == [1, 2, 3, 4]
+    assert tab.tso_list.currentRow() == 1
+    assert tab.tso_list.item(1).text() == "__TSO2"
+
 def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
     _app()
     dialog = TSOVisibilityReconcileDialog(
