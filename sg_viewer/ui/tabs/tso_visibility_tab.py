@@ -507,8 +507,8 @@ class TSOVisibilityTab(QWidget):
             "  color: palette(text);"
             "}"
             "QListWidget::item:selected {"
-            "  background: palette(light);"
-            "  color: palette(text);"
+            "  background: #0078d4;"
+            "  color: #ffffff;"
             "}"
         )
         right_panel.addWidget(self.tso_list)
@@ -921,13 +921,18 @@ class TSOVisibilityTab(QWidget):
         self._emit_track_section_and_order(object_list_index)
         self.populate_table()
 
-    def _refresh_current_tso_list(self) -> None:
+    def _refresh_current_tso_list(self, selected_tso_id: int | None = None) -> None:
         row = self._find_object_list_index_for_current_selection()
         self.tso_list.clear()
         if row < 0 or row >= len(self.object_lists):
             return
+        selected_row = -1
         for tso_id in self.object_lists[row].tso_ids:
             self.tso_list.addItem(self._make_tso_list_item(tso_id))
+            if selected_tso_id is not None and selected_row < 0 and tso_id == selected_tso_id:
+                selected_row = self.tso_list.count() - 1
+        if selected_row >= 0:
+            self.tso_list.setCurrentRow(selected_row)
         self.tso_list.update_item_widths()
 
     def _emit_selected_tsos(self) -> None:
@@ -939,9 +944,18 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOOrderChanged.emit({})
             return
         self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
-        self.selectedTSOPillChanged.emit(None)
+        selected_item = self.tso_list.currentItem()
+        selected_tso_id = (
+            selected_item.data(QtCore.Qt.UserRole)
+            if selected_item is not None and isinstance(selected_item.data(QtCore.Qt.UserRole), int)
+            else None
+        )
+        if selected_tso_id is None:
+            self.selectedTSOPillChanged.emit(None)
+        else:
+            self.selectedTSOPillChanged.emit(selected_tso_id)
         self._emit_track_section_and_order(row)
-        self._refresh_current_tso_list()
+        self._refresh_current_tso_list(selected_tso_id)
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
         row = self._find_object_list_index_for_current_selection()

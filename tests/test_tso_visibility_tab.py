@@ -74,6 +74,7 @@ def test_add_selected_tso_uses_tso_filter_list_selection() -> None:
     assert tab.object_lists[0].tso_ids == [1, 2]
     assert tab.tso_list.count() == 2
     assert tab.tso_list.item(1).text() == "__TSO2 (house)"
+    assert tab.tso_list.currentRow() == 1
 
 
 
