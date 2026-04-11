@@ -159,6 +159,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             return
         start = math.ceil(min_alt / step) * step
         end = max_alt + step * 0.5
+        decimals = max(self._data.decimals, 0)
         painter.save()
         painter.setClipRect(rect)
         grid_pen = QtGui.QPen(QtGui.QColor("#2f2f2f"))
@@ -170,6 +171,17 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             if rect.top() <= y <= rect.bottom():
                 painter.drawLine(rect.left(), int(round(y)), rect.right(), int(round(y)))
             value += step
+        painter.restore()
+        painter.save()
+        painter.setPen(QtGui.QPen(QtGui.QColor("#888")))
+        for value in self._axis_values(min_alt, max_alt, step):
+            y = self._map_y(value, rect, min_alt, max_alt)
+            if not (rect.top() <= y <= rect.bottom()):
+                continue
+            display_value = units_from_500ths(value, self._data.unit)
+            label = self._format_axis_value(display_value, decimals)
+            text_rect = QtCore.QRect(rect.left() - 44, int(round(y)) - 8, 40, 16)
+            painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter, label)
         painter.restore()
 
     def _draw_section_highlight(
@@ -415,6 +427,23 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         raw_step_display = span_display / 6.0
         snapped_step_display = self._nice_step(raw_step_display)
         return float(max(units_to_500ths(snapped_step_display, self._data.unit), 1))
+
+    @staticmethod
+    def _axis_values(min_value: float, max_value: float, step: float) -> list[float]:
+        start = math.ceil(min_value / step) * step
+        values: list[float] = []
+        value = start
+        end = max_value + step * 0.5
+        while value <= end:
+            values.append(value)
+            value += step
+        return values
+
+    @staticmethod
+    def _format_axis_value(value: float, decimals: int) -> str:
+        if decimals <= 0:
+            return f"{int(round(value))}"
+        return f"{value:.{decimals}f}"
 
     @staticmethod
     def _nice_step(value: float) -> float:
