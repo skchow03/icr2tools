@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon
 # ensure repo root on path for local runs
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -11,6 +12,24 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from sg_viewer.ui.app_bootstrap import SGViewerApp, bootstrap_window  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+def _centered_top_left(
+    available: QtCore.QRect,
+    window_size: QtCore.QSize,
+) -> tuple[int, int]:
+    x = available.x() + max(0, (available.width() - window_size.width()) // 2)
+    y = available.y() + max(0, (available.height() - window_size.height()) // 2)
+    return x, y
+
+
+def center_window_on_screen(window, app: SGViewerApp) -> None:
+    screen = window.screen() or app.primaryScreen()
+    if screen is None:
+        return
+    available = screen.availableGeometry()
+    x, y = _centered_top_left(available, window.size())
+    window.move(x, y)
+
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -84,6 +103,7 @@ def main() -> None:
 
     window = bootstrap_window()
     app.window = window
+    center_window_on_screen(window, app)
     window.show()
 
     sys.exit(app.exec_())
