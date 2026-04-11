@@ -359,6 +359,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Adjusted Section Length: –"
         )
         self._radius_label = QtWidgets.QLabel("Radius: –")
+        self._section_boundary_dlats_label = QtWidgets.QLabel("Boundary DLATs: –")
+        self._section_boundary_dlats_label.setWordWrap(True)
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
         self._measurement_units_combo.addItem("Meter", "meter")
@@ -834,6 +836,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._adjusted_section_end_dlong_label,
             self._adjusted_section_length_label,
             self._radius_label,
+            self._section_boundary_dlats_label,
         )
         preview_column_layout.addWidget(stats_panel.widget)
         preview_column.setLayout(preview_column_layout)
@@ -1728,6 +1731,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._set_adjusted_dlong_labels(None)
             self._profile_widget.set_selected_range(None)
             self._update_fsect_table(None)
+            self._update_boundary_dlat_labels(None)
             return
 
         self._selected_section_index = selection.index
@@ -1760,6 +1764,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         selected_range = self._preview.get_section_range(selection.index)
         self._profile_widget.set_selected_range(selected_range)
         self._update_fsect_table(selection.index)
+        self._update_boundary_dlat_labels(selection.index)
 
 
 
@@ -2034,6 +2039,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             prev_fsects=prev_fsects,
             next_fsects=next_fsects,
         )
+        self._update_boundary_dlat_labels(section_index)
+
+    def _update_boundary_dlat_labels(self, section_index: int | None) -> None:
+        if section_index is None:
+            self._section_boundary_dlats_label.setText("Boundary DLATs: –")
+            return
+
+        fsects = self._preview.get_section_fsects(section_index)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+        if not boundary_number_by_row:
+            self._section_boundary_dlats_label.setText("Boundary DLATs: none")
+            return
+
+        unit_label = self._fsect_dlat_units_label()
+        lines: list[str] = [f"Boundary DLATs ({unit_label}):"]
+        for row_index, boundary_number in sorted(
+            boundary_number_by_row.items(), key=lambda item: int(item[1])
+        ):
+            fsect = fsects[row_index]
+            lines.append(
+                f"B{boundary_number}: Start {self._format_fsect_dlat(fsect.start_dlat)}, End {self._format_fsect_dlat(fsect.end_dlat)}"
+            )
+        self._section_boundary_dlats_label.setText("\n".join(lines))
 
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._updating_fsect_table:
@@ -2158,6 +2186,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def update_selected_section_fsect_table(self) -> None:
         self._update_fsect_table(self._selected_section_index)
+        self._update_boundary_dlat_labels(self._selected_section_index)
 
     def _on_measurement_units_changed(self) -> None:
         previous_unit = self._measurement_unit_data
@@ -2167,6 +2196,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.update_xsect_table_headers()
         self._update_fsect_table_headers()
         self._update_fsect_table(self._selected_section_index)
+        self._update_boundary_dlat_labels(self._selected_section_index)
 
     def _sync_pitwall_height_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()
