@@ -1,17 +1,21 @@
 from PyQt5 import QtCore
 from PyQt5.QtGui import QColor, QBrush, QResizeEvent
 from PyQt5.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QGridLayout,
+    QHeaderView,
     QMessageBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -66,13 +70,66 @@ class TSOVisibilityListWidget(QListWidget):
         self.contentHeightChanged.emit()
 
 
-class TrackSectionListWidget(QListWidget):
+class TrackSectionListWidget(QTableWidget):
     rowSelectionChanged = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
-        self.setSelectionMode(QListWidget.SingleSelection)
-        self.currentRowChanged.connect(self.rowSelectionChanged.emit)
+        self.setColumnCount(2)
+        self.setHorizontalHeaderLabels(["L sections", "R sections"])
+        self.verticalHeader().setVisible(False)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._flat_items: list[QTableWidgetItem] = []
+        self.itemSelectionChanged.connect(self._emit_row_selection_changed)
+
+    def _emit_row_selection_changed(self) -> None:
+        item = self.currentItem()
+        if item is None:
+            self.rowSelectionChanged.emit(-1)
+            return
+        object_index = item.data(QtCore.Qt.UserRole)
+        if isinstance(object_index, int):
+            self.rowSelectionChanged.emit(object_index)
+            return
+        self.rowSelectionChanged.emit(-1)
+
+    def clear(self) -> None:
+        self.clearContents()
+        self.setRowCount(0)
+        self._flat_items = []
+
+    def count(self) -> int:
+        return len(self._flat_items)
+
+    def item(self, row: int) -> QTableWidgetItem | None:
+        if 0 <= row < len(self._flat_items):
+            return self._flat_items[row]
+        return None
+
+    def setCurrentRow(self, row: int) -> None:
+        item = self.item(row)
+        if item is None:
+            self.clearSelection()
+            return
+        self.setCurrentItem(item)
+
+    def set_entries(self, left_entries: list[QTableWidgetItem], right_entries: list[QTableWidgetItem]) -> None:
+        row_count = max(len(left_entries), len(right_entries))
+        self.clear()
+        self.setRowCount(row_count)
+        self._flat_items = []
+        for row in range(row_count):
+            if row < len(left_entries):
+                item = left_entries[row]
+                self.setItem(row, 0, item)
+                self._flat_items.append(item)
+            if row < len(right_entries):
+                item = right_entries[row]
+                self.setItem(row, 1, item)
+                self._flat_items.append(item)
 
 
 class TSOVisibilityReconcileDialog(QDialog):
@@ -375,9 +432,9 @@ class TSOVisibilityTab(QWidget):
         self.reconcile_button = QPushButton("Reconcile Project vs track.3D")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
         self.export_button = QPushButton("Export ObjectLists to File")
-        self.add_tso_button = QPushButton("Add Selected TSO to Section")
-        self.delete_tso_button = QPushButton("Remove Selected TSO from Section")
-        self.copy_prev_button = QPushButton("Copy TSOs from Previous Section")
+        self.add_tso_button = QPushButton("Add selected TSO to section")
+        self.delete_tso_button = QPushButton("Remove selected TSO from section")
+        self.copy_prev_button = QPushButton("Copy TSOs from previous section")
 
         self.load_button.setToolTip(
             "Load ObjectLists from a track.3D file. This replaces the current TSO visibility data."
@@ -401,7 +458,6 @@ class TSOVisibilityTab(QWidget):
 
         button_rows = QVBoxLayout()
         top_button_row = QHBoxLayout()
-        bottom_button_row = QHBoxLayout()
         for button in (
             self.load_button,
             self.reconcile_button,
@@ -409,33 +465,34 @@ class TSOVisibilityTab(QWidget):
             self.export_button,
         ):
             top_button_row.addWidget(button)
-        for button in (
-            self.add_tso_button,
-            self.delete_tso_button,
-            self.copy_prev_button,
-        ):
-            bottom_button_row.addWidget(button)
         button_rows.addLayout(top_button_row)
-        button_rows.addLayout(bottom_button_row)
         layout.addLayout(button_rows)
+
+        layout.addWidget(QLabel("Sections / Side / SubIndex"))
+        self.section_list = TrackSectionListWidget()
+        layout.addWidget(self.section_list, 1)
 
         lists_row = QHBoxLayout()
         layout.addLayout(lists_row)
 
         left_panel = QVBoxLayout()
+        center_panel = QVBoxLayout()
         right_panel = QVBoxLayout()
         lists_row.addLayout(left_panel, 1)
+        lists_row.addLayout(center_panel, 0)
         lists_row.addLayout(right_panel, 1)
-
-        left_panel.addWidget(QLabel("Sections / Side / SubIndex"))
-        self.section_list = TrackSectionListWidget()
-        left_panel.addWidget(self.section_list)
 
         left_panel.addWidget(QLabel("TSO list (check to filter sections, select one for Add Selected TSO)"))
         self.tso_filter_list = QListWidget()
         self.tso_filter_list.setSelectionMode(QListWidget.SingleSelection)
         self.tso_filter_list.itemChanged.connect(self._on_tso_filter_changed)
         left_panel.addWidget(self.tso_filter_list)
+
+        center_panel.addStretch(1)
+        center_panel.addWidget(self.add_tso_button)
+        center_panel.addWidget(self.delete_tso_button)
+        center_panel.addWidget(self.copy_prev_button)
+        center_panel.addStretch(1)
 
         right_panel.addWidget(QLabel("Visible TSOs (drag to reorder)"))
         self.tso_list = TSOVisibilityListWidget()
@@ -805,14 +862,20 @@ class TSOVisibilityTab(QWidget):
     def populate_table(self):
         current_object_index = self._find_object_list_index_for_current_selection()
         selected_tso_ids = self._selected_filter_tso_ids()
-        self.section_list.clear()
+        left_section_items: list[QTableWidgetItem] = []
+        right_section_items: list[QTableWidgetItem] = []
         for object_list_index, entry in enumerate(self.object_lists):
             if selected_tso_ids and not any(tso_id in selected_tso_ids for tso_id in entry.tso_ids):
                 continue
-            label = f"{entry.side} / {entry.section} / {entry.sub_index}"
-            item = QListWidgetItem(label)
+            label = f"{entry.section} / {entry.sub_index}"
+            item = QTableWidgetItem(label)
             item.setData(QtCore.Qt.UserRole, object_list_index)
-            self.section_list.addItem(item)
+            if str(entry.side).strip().upper() == "R":
+                right_section_items.append(item)
+            else:
+                left_section_items.append(item)
+
+        self.section_list.set_entries(left_section_items, right_section_items)
 
         if self.section_list.count() == 0:
             self.tso_list.clear()
