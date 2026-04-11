@@ -9,6 +9,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.ui.altitude_units import (
     MIN_ELEVATION_Y_RANGE_UNITS,
     units_from_500ths,
+    units_to_500ths,
 )
 
 
@@ -141,6 +142,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         painter.setPen(QtGui.QPen(QtGui.QColor("#bbb")))
         painter.drawRect(plot_rect)
 
+        self._draw_y_gridlines(painter, plot_rect, min_alt, max_alt)
         self._draw_section_highlight(painter, plot_rect, x_start, x_end)
         self._draw_series(painter, plot_rect, x_start, x_end, min_alt, max_alt)
         self._draw_section_markers(painter, plot_rect, x_start, x_end, min_alt, max_alt)
@@ -148,6 +150,27 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._draw_legend(painter, plot_rect)
         painter.restore()
         painter.end()
+
+    def _draw_y_gridlines(
+        self, painter: QtGui.QPainter, rect: QtCore.QRect, min_alt: float, max_alt: float
+    ) -> None:
+        step = self._grid_step_500ths(min_alt, max_alt)
+        if step <= 0:
+            return
+        start = math.ceil(min_alt / step) * step
+        end = max_alt + step * 0.5
+        painter.save()
+        painter.setClipRect(rect)
+        grid_pen = QtGui.QPen(QtGui.QColor("#2f2f2f"))
+        grid_pen.setStyle(QtCore.Qt.DotLine)
+        painter.setPen(grid_pen)
+        value = start
+        while value <= end:
+            y = self._map_y(value, rect, min_alt, max_alt)
+            if rect.top() <= y <= rect.bottom():
+                painter.drawLine(rect.left(), int(round(y)), rect.right(), int(round(y)))
+            value += step
+        painter.restore()
 
     def _draw_section_highlight(
         self, painter: QtGui.QPainter, rect: QtCore.QRect, x_start: float, x_end: float
@@ -384,6 +407,30 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         if end <= start:
             return 0.0, max_dlong
         return start, end
+
+    def _grid_step_500ths(self, min_alt: float, max_alt: float) -> float:
+        span_display = units_from_500ths(max_alt - min_alt, self._data.unit)
+        if span_display <= 0:
+            return float(MIN_ELEVATION_Y_RANGE_UNITS)
+        raw_step_display = span_display / 6.0
+        snapped_step_display = self._nice_step(raw_step_display)
+        return float(max(units_to_500ths(snapped_step_display, self._data.unit), 1))
+
+    @staticmethod
+    def _nice_step(value: float) -> float:
+        if value <= 0:
+            return 1.0
+        magnitude = 10 ** math.floor(math.log10(value))
+        normalized = value / magnitude
+        if normalized <= 1:
+            nice = 1
+        elif normalized <= 2:
+            nice = 2
+        elif normalized <= 5:
+            nice = 5
+        else:
+            nice = 10
+        return nice * magnitude
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         if self._data is None or not self._data.dlongs:
