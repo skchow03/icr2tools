@@ -482,9 +482,18 @@ class TSOVisibilityTab(QWidget):
         lists_row.addLayout(center_panel, 0)
         lists_row.addLayout(right_panel, 1)
 
-        left_panel.addWidget(QLabel("TSO list (check to filter sections, select one for Add Selected TSO)"))
-        self.tso_filter_list = QListWidget()
-        self.tso_filter_list.setSelectionMode(QListWidget.SingleSelection)
+        tso_filter_label = QLabel("TSO list")
+        tso_filter_label.setToolTip("Check Filter to narrow sections. Select a TSO row for Add selected TSO to section.")
+        left_panel.addWidget(tso_filter_label)
+        self.tso_filter_list = QTableWidget()
+        self.tso_filter_list.setColumnCount(2)
+        self.tso_filter_list.setHorizontalHeaderLabels(["Filter", "TSO"])
+        self.tso_filter_list.verticalHeader().setVisible(False)
+        self.tso_filter_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.tso_filter_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tso_filter_list.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tso_filter_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tso_filter_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tso_filter_list.itemChanged.connect(self._on_tso_filter_changed)
         left_panel.addWidget(self.tso_filter_list)
 
@@ -570,8 +579,8 @@ class TSOVisibilityTab(QWidget):
 
     def _selected_filter_tso_ids(self) -> set[int]:
         selected: set[int] = set()
-        for index in range(self.tso_filter_list.count()):
-            item = self.tso_filter_list.item(index)
+        for index in range(self.tso_filter_list.rowCount()):
+            item = self.tso_filter_list.item(index, 0)
             if item is None or item.checkState() != QtCore.Qt.Checked:
                 continue
             tso_id = item.data(QtCore.Qt.UserRole)
@@ -585,21 +594,29 @@ class TSOVisibilityTab(QWidget):
         selected_tso_id_for_add = selected_item.data(QtCore.Qt.UserRole) if selected_item is not None else None
         all_ids = self._collect_all_tso_ids()
         self.tso_filter_list.blockSignals(True)
-        self.tso_filter_list.clear()
+        self.tso_filter_list.clearContents()
+        self.tso_filter_list.setRowCount(0)
         selected_row_for_add = -1
-        for tso_id in all_ids:
-            item = QListWidgetItem(self._build_tso_filter_label(tso_id))
-            item.setData(QtCore.Qt.UserRole, tso_id)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            check_state = QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked
-            item.setCheckState(check_state)
-            self.tso_filter_list.addItem(item)
+        self.tso_filter_list.setRowCount(len(all_ids))
+        for row, tso_id in enumerate(all_ids):
+            filter_item = QTableWidgetItem("")
+            filter_item.setData(QtCore.Qt.UserRole, tso_id)
+            filter_item.setFlags(
+                QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsUserCheckable
+            )
+            filter_item.setCheckState(QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked)
+            self.tso_filter_list.setItem(row, 0, filter_item)
+
+            tso_item = QTableWidgetItem(self._build_tso_filter_label(tso_id))
+            tso_item.setData(QtCore.Qt.UserRole, tso_id)
+            tso_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+            self.tso_filter_list.setItem(row, 1, tso_item)
             if selected_tso_id_for_add == tso_id:
-                selected_row_for_add = self.tso_filter_list.count() - 1
+                selected_row_for_add = row
         if selected_row_for_add >= 0:
-            self.tso_filter_list.setCurrentRow(selected_row_for_add)
-        elif self.tso_filter_list.count() > 0:
-            self.tso_filter_list.setCurrentRow(0)
+            self.tso_filter_list.setCurrentCell(selected_row_for_add, 1)
+        elif self.tso_filter_list.rowCount() > 0:
+            self.tso_filter_list.setCurrentCell(0, 1)
         self.tso_filter_list.blockSignals(False)
 
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
@@ -642,7 +659,8 @@ class TSOVisibilityTab(QWidget):
         self._section_subindex_starts = {}
         self.section_list.clear()
         self.tso_list.clear()
-        self.tso_filter_list.clear()
+        self.tso_filter_list.clearContents()
+        self.tso_filter_list.setRowCount(0)
         self.selectedTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
@@ -999,7 +1017,10 @@ class TSOVisibilityTab(QWidget):
         row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             return
-        selected_filter_item = self.tso_filter_list.currentItem()
+        current_row = self.tso_filter_list.currentRow()
+        if current_row < 0:
+            return
+        selected_filter_item = self.tso_filter_list.item(current_row, 1)
         if selected_filter_item is None:
             return
         tso_id = selected_filter_item.data(QtCore.Qt.UserRole)
