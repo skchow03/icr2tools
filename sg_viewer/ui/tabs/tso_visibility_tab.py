@@ -371,23 +371,53 @@ class TSOVisibilityTab(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self.load_button = QPushButton("Load track.3D")
-        self.add_tso_button = QPushButton("Add Selected TSO")
-        self.delete_tso_button = QPushButton("Delete TSO")
-        self.copy_prev_button = QPushButton("Copy from Previous")
-        self.reconcile_button = QPushButton("Reconcile .3D")
-        self.export_button = QPushButton("Export ObjectLists")
+        self.load_button = QPushButton("Load ObjectLists from track.3D")
+        self.reconcile_button = QPushButton("Reconcile Project vs track.3D")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
+        self.export_button = QPushButton("Export ObjectLists to File")
+        self.add_tso_button = QPushButton("Add Selected TSO to Section")
+        self.delete_tso_button = QPushButton("Remove Selected TSO from Section")
+        self.copy_prev_button = QPushButton("Copy TSOs from Previous Section")
 
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.load_button)
-        button_row.addWidget(self.add_tso_button)
-        button_row.addWidget(self.delete_tso_button)
-        button_row.addWidget(self.copy_prev_button)
-        button_row.addWidget(self.reconcile_button)
-        button_row.addWidget(self.export_button)
-        button_row.addWidget(self.save_to_track3d_button)
-        layout.addLayout(button_row)
+        self.load_button.setToolTip(
+            "Load ObjectLists from a track.3D file. This replaces the current TSO visibility data."
+        )
+        self.reconcile_button.setToolTip(
+            "Compare current ObjectLists with another track.3D file and copy/add matching rows."
+        )
+        self.save_to_track3d_button.setToolTip(
+            "Write the current ObjectLists back into a selected track.3D file."
+        )
+        self.export_button.setToolTip("Export the current ObjectLists to a standalone text file.")
+        self.add_tso_button.setToolTip(
+            "Add the selected TSO from the filter list to the currently selected section/sub-index."
+        )
+        self.delete_tso_button.setToolTip(
+            "Remove the selected TSO pill from the currently selected section/sub-index."
+        )
+        self.copy_prev_button.setToolTip(
+            "Copy the previous section's visible TSO list into the currently selected section/sub-index."
+        )
+
+        button_rows = QVBoxLayout()
+        top_button_row = QHBoxLayout()
+        bottom_button_row = QHBoxLayout()
+        for button in (
+            self.load_button,
+            self.reconcile_button,
+            self.save_to_track3d_button,
+            self.export_button,
+        ):
+            top_button_row.addWidget(button)
+        for button in (
+            self.add_tso_button,
+            self.delete_tso_button,
+            self.copy_prev_button,
+        ):
+            bottom_button_row.addWidget(button)
+        button_rows.addLayout(top_button_row)
+        button_rows.addLayout(bottom_button_row)
+        layout.addLayout(button_rows)
 
         lists_row = QHBoxLayout()
         layout.addLayout(lists_row)
