@@ -5,7 +5,11 @@ import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.ui.altitude_units import MIN_ELEVATION_Y_RANGE_UNITS, units_from_500ths
+from sg_viewer.ui.altitude_units import (
+    MIN_ELEVATION_Y_RANGE_UNITS,
+    units_from_500ths,
+    units_to_500ths,
+)
 
 @dataclass
 class XsectElevationData:
@@ -134,10 +138,50 @@ class XsectElevationWidget(QtWidgets.QWidget):
         painter.setPen(QtGui.QPen(QtGui.QColor("#bbb")))
         painter.drawRect(plot_rect)
 
+        self._draw_gridlines(painter, plot_rect, min_alt, max_alt)
         self._draw_profile(painter, plot_rect, altitudes, min_alt, max_alt)
         self._draw_axes_labels(painter, plot_rect, min_alt, max_alt)
         painter.restore()
         painter.end()
+
+    def _draw_gridlines(
+        self,
+        painter: QtGui.QPainter,
+        rect: QtCore.QRect,
+        min_alt: float,
+        max_alt: float,
+    ) -> None:
+        painter.save()
+        painter.setClipRect(rect)
+        grid_pen = QtGui.QPen(QtGui.QColor("#2f2f2f"))
+        grid_pen.setStyle(QtCore.Qt.DotLine)
+        painter.setPen(grid_pen)
+
+        y_step = self._grid_step_500ths(min_alt, max_alt)
+        y_start = math.ceil(min_alt / y_step) * y_step
+        y_end = max_alt + y_step * 0.5
+        y_value = y_start
+        while y_value <= y_end:
+            y = self._map_y(y_value, rect, min_alt, max_alt)
+            if rect.top() <= y <= rect.bottom():
+                painter.drawLine(rect.left(), int(round(y)), rect.right(), int(round(y)))
+            y_value += y_step
+
+        dlats = self._data.xsect_dlats if self._data else None
+        if dlats and len(dlats) >= 2:
+            min_dlat = min(dlats)
+            max_dlat = max(dlats)
+            x_step = self._grid_step_for_dlat(min_dlat, max_dlat)
+            if x_step > 0:
+                x_start = math.ceil(min_dlat / x_step) * x_step
+                x_end = max_dlat + x_step * 0.5
+                x_value = x_start
+                while x_value <= x_end:
+                    x = self._map_x_dlat(x_value, rect, min_dlat, max_dlat)
+                    if rect.left() <= x <= rect.right():
+                        painter.drawLine(int(round(x)), rect.top(), int(round(x)), rect.bottom())
+                    x_value += x_step
+        painter.restore()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if event.button() != QtCore.Qt.LeftButton or self._data is None:
@@ -404,7 +448,50 @@ class XsectElevationWidget(QtWidgets.QWidget):
         return rect.right() - ratio * rect.width()
 
     @staticmethod
+    def _map_x_dlat(
+        dlat_value: float,
+        rect: QtCore.QRect,
+        min_dlat: float,
+        max_dlat: float,
+    ) -> float:
+        span = max(max_dlat - min_dlat, 1e-6)
+        ratio = (dlat_value - min_dlat) / span
+        return rect.right() - ratio * rect.width()
+
+    @staticmethod
     def _map_y(altitude: float, rect: QtCore.QRect, min_alt: float, max_alt: float) -> float:
         span = max(max_alt - min_alt, 1e-6)
         relative = (altitude - min_alt) / span
         return rect.bottom() - relative * rect.height()
+
+    def _grid_step_500ths(self, min_alt: float, max_alt: float) -> float:
+        span_display = units_from_500ths(max_alt - min_alt, self._data.unit)
+        if span_display <= 0:
+            return float(MIN_ELEVATION_Y_RANGE_UNITS)
+        raw_step_display = span_display / 6.0
+        snapped_step_display = self._nice_step(raw_step_display)
+        return float(max(units_to_500ths(snapped_step_display, self._data.unit), 1))
+
+    def _grid_step_for_dlat(self, min_dlat: float, max_dlat: float) -> float:
+        span_display = units_from_500ths(max_dlat - min_dlat, self._data.unit)
+        if span_display <= 0:
+            return 0.0
+        raw_step_display = span_display / 8.0
+        snapped_step_display = self._nice_step(raw_step_display)
+        return float(max(units_to_500ths(snapped_step_display, self._data.unit), 1))
+
+    @staticmethod
+    def _nice_step(value: float) -> float:
+        if value <= 0:
+            return 1.0
+        magnitude = 10 ** math.floor(math.log10(value))
+        normalized = value / magnitude
+        if normalized <= 1:
+            nice = 1
+        elif normalized <= 2:
+            nice = 2
+        elif normalized <= 5:
+            nice = 5
+        else:
+            nice = 10
+        return nice * magnitude
