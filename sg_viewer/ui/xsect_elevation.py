@@ -151,36 +151,51 @@ class XsectElevationWidget(QtWidgets.QWidget):
         min_alt: float,
         max_alt: float,
     ) -> None:
+        y_step = self._grid_step_500ths(min_alt, max_alt)
+        y_values = self._axis_values(min_alt, max_alt, y_step)
+        decimals = max(self._data.decimals, 0) if self._data is not None else 0
         painter.save()
         painter.setClipRect(rect)
         grid_pen = QtGui.QPen(QtGui.QColor("#2f2f2f"))
         grid_pen.setStyle(QtCore.Qt.DotLine)
         painter.setPen(grid_pen)
 
-        y_step = self._grid_step_500ths(min_alt, max_alt)
-        y_start = math.ceil(min_alt / y_step) * y_step
-        y_end = max_alt + y_step * 0.5
-        y_value = y_start
-        while y_value <= y_end:
+        for y_value in y_values:
             y = self._map_y(y_value, rect, min_alt, max_alt)
             if rect.top() <= y <= rect.bottom():
                 painter.drawLine(rect.left(), int(round(y)), rect.right(), int(round(y)))
-            y_value += y_step
 
         dlats = self._data.xsect_dlats if self._data else None
+        x_values: list[float] = []
+        min_dlat = 0.0
+        max_dlat = 0.0
         if dlats and len(dlats) >= 2:
-            min_dlat = min(dlats)
-            max_dlat = max(dlats)
+            min_dlat = float(min(dlats))
+            max_dlat = float(max(dlats))
             x_step = self._grid_step_for_dlat(min_dlat, max_dlat)
             if x_step > 0:
-                x_start = math.ceil(min_dlat / x_step) * x_step
-                x_end = max_dlat + x_step * 0.5
-                x_value = x_start
-                while x_value <= x_end:
+                x_values = self._axis_values(min_dlat, max_dlat, x_step)
+                for x_value in x_values:
                     x = self._map_x_dlat(x_value, rect, min_dlat, max_dlat)
                     if rect.left() <= x <= rect.right():
                         painter.drawLine(int(round(x)), rect.top(), int(round(x)), rect.bottom())
-                    x_value += x_step
+        painter.restore()
+        painter.save()
+        painter.setPen(QtGui.QPen(QtGui.QColor("#888")))
+        for y_value in y_values:
+            y = self._map_y(y_value, rect, min_alt, max_alt)
+            if not (rect.top() <= y <= rect.bottom()):
+                continue
+            label = self._format_axis_value(units_from_500ths(y_value, self._data.unit), decimals)
+            text_rect = QtCore.QRect(rect.left() - 44, int(round(y)) - 8, 40, 16)
+            painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter, label)
+        for x_value in x_values:
+            x = self._map_x_dlat(x_value, rect, min_dlat, max_dlat)
+            if not (rect.left() <= x <= rect.right()):
+                continue
+            label = self._format_axis_value(units_from_500ths(x_value, self._data.unit), decimals)
+            text_rect = QtCore.QRect(int(round(x)) - 24, rect.bottom() + 4, 48, 16)
+            painter.drawText(text_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, label)
         painter.restore()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
@@ -495,3 +510,22 @@ class XsectElevationWidget(QtWidgets.QWidget):
         else:
             nice = 10
         return nice * magnitude
+
+    @staticmethod
+    def _axis_values(min_value: float, max_value: float, step: float) -> list[float]:
+        if step <= 0:
+            return []
+        start = math.ceil(min_value / step) * step
+        values: list[float] = []
+        value = start
+        end = max_value + step * 0.5
+        while value <= end:
+            values.append(value)
+            value += step
+        return values
+
+    @staticmethod
+    def _format_axis_value(value: float, decimals: int) -> str:
+        if decimals <= 0:
+            return f"{int(round(value))}"
+        return f"{value:.{decimals}f}"
