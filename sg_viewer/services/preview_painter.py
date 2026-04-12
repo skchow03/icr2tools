@@ -1628,7 +1628,7 @@ def _draw_query_track_node(
     transform: Transform,
     widget_height: int,
 ) -> None:
-    mapped_point = sg_rendering.map_point(world_point, transform, widget_height)
+    mapped_point = _map_point(world_point, transform, widget_height)
     if mapped_point is None:
         return
     painter.save()
