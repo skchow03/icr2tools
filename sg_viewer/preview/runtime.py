@@ -164,6 +164,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._split_hover_point: Point | None = None
         self._split_hover_section_index: int | None = None
         self._query_track_hover_point: Point | None = None
+        self._query_track_overlay_message: str = ""
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -588,6 +589,17 @@ class PreviewRuntime(PreviewRuntimeOps):
         if point == self._query_track_hover_point:
             return
         self._query_track_hover_point = point
+        self._context.request_repaint()
+
+    @property
+    def query_track_overlay_message(self) -> str:
+        return self._query_track_overlay_message
+
+    def set_query_track_overlay_message(self, message: str) -> None:
+        normalized = str(message)
+        if normalized == self._query_track_overlay_message:
+            return
+        self._query_track_overlay_message = normalized
         self._context.request_repaint()
 
 

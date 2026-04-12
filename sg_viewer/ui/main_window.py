@@ -2196,11 +2196,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _refresh_query_track_info_label(self) -> None:
         if not self._query_track_mode_active:
             self._query_track_info_label.setText("Query Track: off")
+            self._preview.set_query_track_overlay_message("")
             return
         if self._query_track_result is None:
             self._query_track_info_label.setText("Query Track: hover over centerline")
+            self._preview.set_query_track_overlay_message("Query Track:\nHover over centerline")
             return
         result = self._query_track_result
+        query_text = self._format_query_track_text(result)
+        self._query_track_info_label.setText(query_text)
+        self._preview.set_query_track_overlay_message(query_text)
+
+    def _format_query_track_text(self, result: dict[str, object]) -> str:
         adjusted_dlong = result.get("adjusted_dlong")
         adjusted_text = (
             "–"
@@ -2218,7 +2225,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             f"{name}: {self._format_fsect_dlat(value)}"
             for name, value in boundary_values
         ) or "none"
-        self._query_track_info_label.setText(
+        return (
             "Query Track:\n"
             f"Section #: {result.get('section_index', '–')}\n"
             f"Adjusted DLONG: {adjusted_text}\n"

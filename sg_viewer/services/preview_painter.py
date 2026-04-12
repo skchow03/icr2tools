@@ -94,6 +94,7 @@ class BasePreviewState:
     split_section_mode: bool
     split_hover_point: Point | None
     query_track_hover_point: Point | None
+    query_track_overlay_message: str
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
     centerline_unselected_color: QtGui.QColor
@@ -344,6 +345,11 @@ def paint_preview(
     )
     _draw_nodes(painter, node_state, transform, widget_height)
     _draw_center_crosshair(painter, base_state.rect, base_state.show_crosshair)
+    _draw_query_track_overlay(
+        painter,
+        base_state.rect,
+        base_state.query_track_overlay_message,
+    )
     _draw_status_overlay(painter, base_state.rect, base_state.status_message)
 
 
@@ -1817,6 +1823,58 @@ def _draw_status_overlay(
         return
 
     sg_rendering.draw_status_message(painter, rect, message)
+
+
+def _draw_query_track_overlay(
+    painter: QtGui.QPainter,
+    rect: QtCore.QRect,
+    message: str,
+) -> None:
+    if not message:
+        return
+
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+    padding = QtCore.QMargins(10, 8, 10, 8)
+    metrics = painter.fontMetrics()
+    offset = QtCore.QPoint(12, 12)
+    available_width = max(
+        0,
+        rect.width() - offset.x() * 2 - padding.left() - padding.right(),
+    )
+    text_rect = metrics.boundingRect(
+        0,
+        0,
+        available_width,
+        0,
+        QtCore.Qt.TextWordWrap,
+        message,
+    )
+    box = QtCore.QRect(
+        rect.right() - offset.x() - text_rect.width() - padding.left() - padding.right(),
+        rect.top() + offset.y(),
+        text_rect.width() + padding.left() + padding.right(),
+        text_rect.height() + padding.top() + padding.bottom(),
+    )
+
+    painter.setBrush(QtGui.QColor(0, 0, 0, 170))
+    painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180)))
+    painter.drawRoundedRect(box, 6, 6)
+
+    painter.setPen(QtGui.QPen(QtGui.QColor("white")))
+    painter.drawText(
+        box.adjusted(
+            padding.left(),
+            padding.top(),
+            -padding.right(),
+            -padding.bottom(),
+        ),
+        QtCore.Qt.TextWordWrap,
+        message,
+    )
+
+    painter.restore()
 
 
 def _draw_curve_heading_line(
