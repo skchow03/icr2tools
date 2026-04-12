@@ -2197,7 +2197,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _refresh_query_track_info_label(self) -> None:
         if not self._query_track_mode_active:
-            self._query_track_info_label.setText("Query Track: off")
+            self._query_track_info_label.setText("")
             self._preview.set_query_track_overlay_message("")
             return
         if self._query_track_result is None:
