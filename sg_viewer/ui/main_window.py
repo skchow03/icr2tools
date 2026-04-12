@@ -2085,7 +2085,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_query_track_toggled(self, checked: bool) -> None:
         self._query_track_mode_active = bool(checked)
-        self._stats_sidebar_panel.setVisible(not self._query_track_mode_active)
+        self._query_track_info_label.setVisible(not self._query_track_mode_active)
         if not self._query_track_mode_active:
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
@@ -2201,12 +2201,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._preview.set_query_track_overlay_message("")
             return
         if self._query_track_result is None:
-            self._query_track_info_label.setText("Query Track: hover over centerline")
             self._preview.set_query_track_overlay_message("Query Track:\nHover over centerline")
             return
         result = self._query_track_result
         query_text = self._format_query_track_text(result)
-        self._query_track_info_label.setText(query_text)
         self._preview.set_query_track_overlay_message(query_text)
 
     def _format_query_track_text(self, result: dict[str, object]) -> str:
