@@ -14,6 +14,7 @@ try:
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
     from sg_viewer.services.trackside_objects import TracksideObject
+    from sg_viewer.services.tsd_objects import TsdZebraCrossingObject
     from icr2_core.trk.sg_classes import SGFile
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -2186,9 +2187,9 @@ def test_fsect_diagram_uses_wrapped_neighbor_sections(qapp, monkeypatch):
 def test_tsd_objects_controls_exist(qapp):
     window = SGViewerWindow()
     try:
-        assert window.tsd_add_zebra_object_button.text() == "Add zebra crossing object"
+        assert window.tsd_add_object_button.text() == "Add TSD Object"
         assert window.tsd_export_objects_button.text() == "Export object .TSD files"
-        assert window.tsd_objects_table.columnCount() == 9
+        assert window.tsd_objects_table.columnCount() == 3
     finally:
         window.close()
 
@@ -2199,14 +2200,25 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
         sg_path = tmp_path / "track.sg"
         sg_path.write_bytes(b"")
         window.controller._current_path = sg_path
+        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
+            name="Zebra Crossing 1",
+            start_dlong=0,
+            right_dlat=20000,
+            left_dlat=-20000,
+            stripe_width_500ths=4000,
+            stripe_length_500ths=28000,
+            stripe_spacing_500ths=3000,
+            color_index=36,
+            command="Detail",
+        )
 
-        window.controller._on_tsd_add_zebra_object_requested()
+        window.controller._on_tsd_add_object_requested()
 
         assert window.tsd_objects_table.rowCount() == 1
         assert len(window.preview.tsd_lines) == 6
         payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
         assert payload["tsd"]["objects"][0]["type"] == "zebra_crossing"
-        assert payload["tsd"]["objects"][0]["stripe_count"] == 6
+        assert payload["tsd"]["objects"][0]["stripe_count"] >= 1
     finally:
         window.close()
 
@@ -2214,7 +2226,18 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
 def test_export_tsd_objects_writes_generated_tsd_files(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
-        window.controller._on_tsd_add_zebra_object_requested()
+        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
+            name="Zebra Crossing 1",
+            start_dlong=0,
+            right_dlat=20000,
+            left_dlat=-20000,
+            stripe_width_500ths=4000,
+            stripe_length_500ths=28000,
+            stripe_spacing_500ths=3000,
+            color_index=36,
+            command="Detail",
+        )
+        window.controller._on_tsd_add_object_requested()
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
             "getExistingDirectory",

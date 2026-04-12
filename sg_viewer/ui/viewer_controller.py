@@ -1174,9 +1174,9 @@ class SGViewerController:
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
-        self._window.tsd_add_zebra_object_button.clicked.connect(self._on_tsd_add_zebra_object_requested)
+        self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
-        self._window.tsd_objects_table.itemChanged.connect(self._on_tsd_object_item_changed)
+        self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
         self._window.tso_stamp_button.clicked.connect(self._on_tso_stamp_requested)
         self._window.tso_box_select_button.clicked.connect(self._on_tso_box_select_requested)
@@ -2190,18 +2190,7 @@ class SGViewerController:
         try:
             table.setRowCount(len(self._tsd_objects))
             for row, obj in enumerate(self._tsd_objects):
-                values = [
-                    obj.name,
-                    str(obj.start_dlong),
-                    str(obj.right_dlat),
-                    str(obj.left_dlat),
-                    str(obj.stripe_count),
-                    str(obj.stripe_width_500ths),
-                    str(obj.stripe_length_500ths),
-                    str(obj.stripe_spacing_500ths),
-                    str(obj.color_index),
-                    obj.command,
-                ]
+                values = [obj.name, "Zebra crossing"]
                 for column, value in enumerate(values):
                     item = table.item(row, column)
                     if item is None:
@@ -2210,58 +2199,105 @@ class SGViewerController:
                     else:
                         item.setText(value)
                     item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                button = QtWidgets.QPushButton("Edit…")
+                button.clicked.connect(
+                    lambda _checked=False, row_index=row: self._open_tsd_object_attributes_dialog(row_index)
+                )
+                table.setCellWidget(row, 2, button)
         finally:
             table.blockSignals(previous_state)
 
-    def _on_tsd_add_zebra_object_requested(self) -> None:
-        index = len(self._tsd_objects) + 1
-        self._tsd_objects.append(
-            TsdZebraCrossingObject(
-                name=f"Zebra Crossing {index}",
-                start_dlong=0,
-                right_dlat=20000,
-                left_dlat=-20000,
-                stripe_count=6,
-                stripe_width_500ths=4000,
-                stripe_length_500ths=28000,
-                stripe_spacing_500ths=3000,
-                color_index=36,
-                command="Detail",
-            )
-        )
+    def _on_tsd_add_object_requested(self) -> None:
+        new_object = self._open_tsd_object_dialog()
+        if new_object is None:
+            return
+        self._tsd_objects.append(new_object)
         self._refresh_tsd_objects_table()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
 
-    def _on_tsd_object_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
-        row = item.row()
+    def _on_tsd_objects_table_cell_clicked(self, row: int, column: int) -> None:
+        if column == 2:
+            self._open_tsd_object_attributes_dialog(row)
+
+    def _open_tsd_object_attributes_dialog(self, row: int) -> None:
         if row < 0 or row >= len(self._tsd_objects):
             return
-        table = self._window.tsd_objects_table
-        try:
-            command_text = (table.item(row, 9).text() if table.item(row, 9) else "Detail").strip() or "Detail"
-            if command_text not in ("Detail", "Detail_Dash"):
-                command_text = "Detail"
-            obj = TsdZebraCrossingObject(
-                name=(table.item(row, 0).text() if table.item(row, 0) else "Zebra Crossing").strip() or "Zebra Crossing",
-                start_dlong=int((table.item(row, 1).text() if table.item(row, 1) else "0").strip()),
-                right_dlat=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
-                left_dlat=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
-                stripe_count=max(1, int((table.item(row, 4).text() if table.item(row, 4) else "1").strip())),
-                stripe_width_500ths=max(1, int((table.item(row, 5).text() if table.item(row, 5) else "1").strip())),
-                stripe_length_500ths=max(1, int((table.item(row, 6).text() if table.item(row, 6) else "1").strip())),
-                stripe_spacing_500ths=max(0, int((table.item(row, 7).text() if table.item(row, 7) else "0").strip())),
-                color_index=int((table.item(row, 8).text() if table.item(row, 8) else "36").strip()),
-                command=command_text,
-            )
-        except ValueError:
-            self._refresh_tsd_objects_table()
+        updated = self._open_tsd_object_dialog(existing=self._tsd_objects[row])
+        if updated is None:
             return
-        self._tsd_objects[row] = obj
+        self._tsd_objects[row] = updated
         self._refresh_tsd_preview_lines()
+        self._refresh_tsd_objects_table()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _open_tsd_object_dialog(
+        self,
+        *,
+        existing: TsdZebraCrossingObject | None = None,
+    ) -> TsdZebraCrossingObject | None:
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("TSD Object Attributes")
+        layout = QtWidgets.QFormLayout(dialog)
+        type_combo = QtWidgets.QComboBox(dialog)
+        type_combo.addItem("Zebra crossing", userData="zebra_crossing")
+        type_combo.setEnabled(False)
+        default_index = len(self._tsd_objects) + 1
+        name_edit = QtWidgets.QLineEdit(existing.name if existing else f"Zebra Crossing {default_index}", dialog)
+        start_dlong_spin = QtWidgets.QSpinBox(dialog)
+        start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        start_dlong_spin.setValue(existing.start_dlong if existing else 0)
+        right_dlat_spin = QtWidgets.QSpinBox(dialog)
+        right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        right_dlat_spin.setValue(existing.right_dlat if existing else 20000)
+        left_dlat_spin = QtWidgets.QSpinBox(dialog)
+        left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        left_dlat_spin.setValue(existing.left_dlat if existing else -20000)
+        stripe_width_spin = QtWidgets.QSpinBox(dialog)
+        stripe_width_spin.setRange(1, 2_000_000_000)
+        stripe_width_spin.setValue(existing.stripe_width_500ths if existing else 4000)
+        stripe_length_spin = QtWidgets.QSpinBox(dialog)
+        stripe_length_spin.setRange(1, 2_000_000_000)
+        stripe_length_spin.setValue(existing.stripe_length_500ths if existing else 28000)
+        stripe_spacing_spin = QtWidgets.QSpinBox(dialog)
+        stripe_spacing_spin.setRange(0, 2_000_000_000)
+        stripe_spacing_spin.setValue(existing.stripe_spacing_500ths if existing else 3000)
+        color_spin = QtWidgets.QSpinBox(dialog)
+        color_spin.setRange(-2_000_000_000, 2_000_000_000)
+        color_spin.setValue(existing.color_index if existing else 36)
+        layout.addRow("Type", type_combo)
+        layout.addRow("Name", name_edit)
+        layout.addRow("Start DLONG", start_dlong_spin)
+        layout.addRow("Right DLAT", right_dlat_spin)
+        layout.addRow("Left DLAT", left_dlat_spin)
+        layout.addRow("Stripe Width", stripe_width_spin)
+        layout.addRow("Stripe Length", stripe_length_spin)
+        layout.addRow("Stripe Spacing", stripe_spacing_spin)
+        layout.addRow("Color", color_spin)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        name = name_edit.text().strip() or f"Zebra Crossing {default_index}"
+        return TsdZebraCrossingObject(
+            name=name,
+            start_dlong=start_dlong_spin.value(),
+            right_dlat=right_dlat_spin.value(),
+            left_dlat=left_dlat_spin.value(),
+            stripe_width_500ths=stripe_width_spin.value(),
+            stripe_length_500ths=stripe_length_spin.value(),
+            stripe_spacing_500ths=stripe_spacing_spin.value(),
+            color_index=color_spin.value(),
+            command="Detail",
+        )
 
     def _on_tsd_export_objects_requested(self) -> None:
         if not self._tsd_objects:

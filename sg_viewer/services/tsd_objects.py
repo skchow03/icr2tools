@@ -11,16 +11,24 @@ class TsdZebraCrossingObject:
     start_dlong: int
     right_dlat: int
     left_dlat: int
-    stripe_count: int
     stripe_width_500ths: int
     stripe_length_500ths: int
     stripe_spacing_500ths: int
     color_index: int = 36
     command: str = "Detail"
 
+    @property
+    def stripe_count(self) -> int:
+        width = max(1, int(self.stripe_width_500ths))
+        spacing = max(0, int(self.stripe_spacing_500ths))
+        stride = width + spacing
+        if stride <= 0:
+            return 1
+        span = abs(int(self.left_dlat) - int(self.right_dlat))
+        return max(1, (span // stride) + 1)
+
     def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         command = normalize_tsd_command(self.command)
-        count = max(1, int(self.stripe_count))
         width = max(1, int(self.stripe_width_500ths))
         length = max(1, int(self.stripe_length_500ths))
         spacing = max(0, int(self.stripe_spacing_500ths))
@@ -34,7 +42,7 @@ class TsdZebraCrossingObject:
 
         lines: list[TrackSurfaceDetailLine] = []
         current_dlat = right_dlat
-        for _ in range(count):
+        for _ in range(self.stripe_count):
             if direction > 0 and current_dlat > left_dlat:
                 break
             if direction < 0 and current_dlat < left_dlat:
@@ -87,7 +95,6 @@ def tsd_object_from_payload(payload: dict[str, object]) -> TsdZebraCrossingObjec
         start_dlong=int(payload["start_dlong"]),
         right_dlat=int(right_dlat),
         left_dlat=int(left_dlat),
-        stripe_count=max(1, int(payload["stripe_count"])),
         stripe_width_500ths=max(1, int(payload["stripe_width_500ths"])),
         stripe_length_500ths=max(1, int(payload["stripe_length_500ths"])),
         stripe_spacing_500ths=max(0, int(payload["stripe_spacing_500ths"])),
