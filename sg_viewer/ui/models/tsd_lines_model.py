@@ -191,6 +191,22 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
         self.endRemoveRows()
         return True
 
+    def move_row(self, *, source_row: int, target_row: int) -> bool:
+        if not (0 <= source_row < len(self._rows)):
+            return False
+        if not (0 <= target_row < len(self._rows)):
+            return False
+        if source_row == target_row:
+            return False
+        self._rows[source_row], self._rows[target_row] = (
+            self._rows[target_row],
+            self._rows[source_row],
+        )
+        top_left = self.index(min(source_row, target_row), 0)
+        bottom_right = self.index(max(source_row, target_row), self.columnCount() - 1)
+        self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        return True
+
     def replace_lines(self, lines: tuple[TrackSurfaceDetailLine, ...]) -> None:
         self.beginResetModel()
         self._rows = [

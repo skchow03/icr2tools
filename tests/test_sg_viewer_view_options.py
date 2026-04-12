@@ -2189,8 +2189,12 @@ def test_tsd_objects_controls_exist(qapp):
     try:
         assert window.tsd_add_object_button.text() == "Add TSD Object"
         assert window.tsd_remove_selected_object_button.text() == "Remove Selected TSD Object"
+        assert window.tsd_move_object_up_button.text() == "Move Up"
+        assert window.tsd_move_object_down_button.text() == "Move Down"
         assert window.tsd_export_objects_button.text() == "Export object .TSD files"
         assert window.tsd_objects_table.columnCount() == 5
+        assert window.tsd_move_line_up_button.text() == "Move Up"
+        assert window.tsd_move_line_down_button.text() == "Move Down"
     finally:
         window.close()
 
@@ -2334,6 +2338,119 @@ def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(qapp, m
         window.tsd_objects_table.selectRow(0)
 
         assert centered_points == [pytest.approx((120.0, 0.0))]
+    finally:
+        window.close()
+
+
+def test_tsd_objects_table_selection_on_nonzero_column_centers_view(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
+            name="Crossing",
+            start_dlong=50,
+            right_dlat=0,
+            left_dlat=0,
+            stripe_width_500ths=1000,
+            stripe_length_500ths=40,
+            stripe_spacing_500ths=1000,
+            color_index=36,
+            command="Detail",
+        )
+        window.controller._on_tsd_add_object_requested()
+        section = SimpleNamespace(
+            start=(0.0, 0.0),
+            end=(300.0, 0.0),
+            center=None,
+            length=300.0,
+            start_dlong=0.0,
+            start_heading=(1.0, 0.0),
+        )
+        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+
+        centered_points: list[tuple[float, float]] = []
+        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+
+        window.tsd_objects_table.setCurrentCell(0, 1)
+
+        assert centered_points == [pytest.approx((70.0, 0.0))]
+    finally:
+        window.close()
+
+
+def test_move_selected_tsd_object_up_and_down(qapp):
+    window = SGViewerWindow()
+    try:
+        objects = iter(
+            [
+                TsdZebraCrossingObject(
+                    name="A",
+                    start_dlong=0,
+                    right_dlat=10000,
+                    left_dlat=-10000,
+                    stripe_width_500ths=4000,
+                    stripe_length_500ths=10000,
+                    stripe_spacing_500ths=1000,
+                    color_index=36,
+                    command="Detail",
+                ),
+                TsdZebraCrossingObject(
+                    name="B",
+                    start_dlong=1000,
+                    right_dlat=10000,
+                    left_dlat=-10000,
+                    stripe_width_500ths=4000,
+                    stripe_length_500ths=10000,
+                    stripe_spacing_500ths=1000,
+                    color_index=36,
+                    command="Detail",
+                ),
+            ]
+        )
+        window.controller._open_tsd_object_dialog = lambda existing=None: next(objects)
+        window.controller._on_tsd_add_object_requested()
+        window.controller._on_tsd_add_object_requested()
+
+        window.tsd_objects_table.selectRow(1)
+        window.controller._on_tsd_move_object_up_requested()
+        assert [obj.name for obj in window.controller._tsd_objects] == ["B", "A"]
+
+        window.tsd_objects_table.selectRow(0)
+        window.controller._on_tsd_move_object_down_requested()
+        assert [obj.name for obj in window.controller._tsd_objects] == ["A", "B"]
+    finally:
+        window.close()
+
+
+def test_move_selected_tsd_line_up_and_down(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._on_tsd_add_line_requested()
+        window.controller._on_tsd_add_line_requested()
+        window.controller._tsd_lines_model.setData(
+            window.controller._tsd_lines_model.index(0, 3),
+            "10",
+        )
+        window.controller._tsd_lines_model.setData(
+            window.controller._tsd_lines_model.index(1, 3),
+            "20",
+        )
+
+        window.tsd_lines_table.selectRow(1)
+        window.controller._on_tsd_move_line_up_requested()
+        assert window.controller._tsd_lines_model.line_at(0).start_dlong == 20
+
+        window.tsd_lines_table.selectRow(0)
+        window.controller._on_tsd_move_line_down_requested()
+        assert window.controller._tsd_lines_model.line_at(1).start_dlong == 20
+    finally:
+        window.close()
+
+
+def test_tsd_lines_table_header_uses_resize_to_contents(qapp):
+    window = SGViewerWindow()
+    try:
+        header = window.tsd_lines_table.horizontalHeader()
+        assert header.sectionResizeMode(0) == QtWidgets.QHeaderView.ResizeToContents
     finally:
         window.close()
 

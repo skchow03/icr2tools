@@ -148,9 +148,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._pitwall_length_multiplier_spin = QtWidgets.QDoubleSpinBox()
         self._tsd_add_line_button = QtWidgets.QPushButton("Add TSD line")
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
+        self._tsd_move_line_up_button = QtWidgets.QPushButton("Move Up")
+        self._tsd_move_line_down_button = QtWidgets.QPushButton("Move Down")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
+        self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
+        self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
         self._tsd_remove_selected_object_button = QtWidgets.QPushButton("Remove Selected TSD Object")
         self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
         self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
@@ -162,6 +166,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Attributes",
         ])
         self._tsd_objects_table.horizontalHeader().setStretchLastSection(True)
+        self._tsd_objects_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._tsd_objects_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._tso_add_button = QtWidgets.QPushButton("Add TSO")
         self._tso_add_button.setCheckable(True)
         self._tso_stamp_button = QtWidgets.QPushButton("Stamp")
@@ -190,7 +196,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_files_combo.setEnabled(False)
         self._tsd_files_combo.setToolTip("Select a loaded TSD file to edit.")
         self._tsd_lines_table = QtWidgets.QTableView()
-        self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
+        self._tsd_lines_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents
+        )
+        self._tsd_lines_table.horizontalHeader().setStretchLastSection(False)
         self._tsd_lines_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._tsd_lines_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._tsd_lines_table.setEditTriggers(
@@ -765,6 +774,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_buttons = QtWidgets.QHBoxLayout()
         tsd_buttons.addWidget(self._tsd_add_line_button)
         tsd_buttons.addWidget(self._tsd_delete_line_button)
+        tsd_buttons.addWidget(self._tsd_move_line_up_button)
+        tsd_buttons.addWidget(self._tsd_move_line_down_button)
         tsd_buttons.addWidget(self._tsd_generate_file_button)
         tsd_buttons.addWidget(self._tsd_load_file_button)
         tsd_layout.addLayout(tsd_buttons)
@@ -779,6 +790,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_object_buttons = QtWidgets.QHBoxLayout()
         tsd_object_buttons.addWidget(self._tsd_add_object_button)
         tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button)
+        tsd_object_buttons.addWidget(self._tsd_move_object_up_button)
+        tsd_object_buttons.addWidget(self._tsd_move_object_down_button)
         tsd_object_buttons.addWidget(self._tsd_export_objects_button)
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
@@ -1107,6 +1120,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._tsd_load_file_button
 
     @property
+    def tsd_move_line_up_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_move_line_up_button
+
+    @property
+    def tsd_move_line_down_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_move_line_down_button
+
+    @property
     def tsd_lines_table(self) -> QtWidgets.QTableView:
         return self._tsd_lines_table
 
@@ -1121,6 +1142,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_remove_selected_object_button(self) -> QtWidgets.QPushButton:
         return self._tsd_remove_selected_object_button
+
+    @property
+    def tsd_move_object_up_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_move_object_up_button
+
+    @property
+    def tsd_move_object_down_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_move_object_down_button
 
     @property
     def tsd_export_objects_button(self) -> QtWidgets.QPushButton:

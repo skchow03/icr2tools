@@ -1172,11 +1172,15 @@ class SGViewerController:
         self._window.mrk_entries_table.cellDoubleClicked.connect(self._on_mrk_entry_cell_double_clicked)
         self._window.tsd_add_line_button.clicked.connect(self._on_tsd_add_line_requested)
         self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
+        self._window.tsd_move_line_up_button.clicked.connect(self._on_tsd_move_line_up_requested)
+        self._window.tsd_move_line_down_button.clicked.connect(self._on_tsd_move_line_down_requested)
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
         self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
         self._window.tsd_remove_selected_object_button.clicked.connect(self._on_tsd_remove_selected_object_requested)
+        self._window.tsd_move_object_up_button.clicked.connect(self._on_tsd_move_object_up_requested)
+        self._window.tsd_move_object_down_button.clicked.connect(self._on_tsd_move_object_down_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
         self._window.tsd_objects_table.itemSelectionChanged.connect(self._on_tsd_object_selection_changed)
         self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
@@ -1653,6 +1657,7 @@ class SGViewerController:
     def _on_tsd_add_line_requested(self) -> None:
         row = self._tsd_lines_model.add_default_row()
         self._window.tsd_lines_table.selectRow(row)
+        self._autosize_tsd_lines_table_columns()
         self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
@@ -1666,10 +1671,35 @@ class SGViewerController:
         if not selected_rows:
             return
         self._tsd_lines_model.remove_row(selected_rows[0].row())
+        self._autosize_tsd_lines_table_columns()
         self._sync_active_tsd_file_from_model()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _move_tsd_line(self, *, direction: int) -> None:
+        selection_model = self._window.tsd_lines_table.selectionModel()
+        if selection_model is None:
+            return
+        selected_rows = selection_model.selectedRows()
+        if not selected_rows:
+            return
+        source_row = selected_rows[0].row()
+        target_row = source_row + direction
+        if not self._tsd_lines_model.move_row(source_row=source_row, target_row=target_row):
+            return
+        self._window.tsd_lines_table.selectRow(target_row)
+        self._autosize_tsd_lines_table_columns()
+        self._sync_active_tsd_file_from_model()
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tsd_move_line_up_requested(self) -> None:
+        self._move_tsd_line(direction=-1)
+
+    def _on_tsd_move_line_down_requested(self) -> None:
+        self._move_tsd_line(direction=1)
 
     def _on_tsd_generate_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
@@ -1846,6 +1876,7 @@ class SGViewerController:
             table.blockSignals(previous_block_state)
             self._suspend_tsd_preview_refresh = False
 
+        self._autosize_tsd_lines_table_columns()
         self._refresh_tsd_preview_lines()
         self._log_tsd_perf("TSD table populate duration", started)
 
@@ -2059,6 +2090,7 @@ class SGViewerController:
             adjusted_to_sg_ranges,
         )
         self._window.preview.set_tsd_lines(tuple(self._last_tsd_preview_lines))
+        self._autosize_tsd_lines_table_columns()
         self._sync_active_tsd_file_from_model()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -2213,6 +2245,13 @@ class SGViewerController:
         finally:
             table.blockSignals(previous_state)
 
+    @staticmethod
+    def _selected_row_indices(selection_model: QtCore.QItemSelectionModel | None) -> list[int]:
+        if selection_model is None:
+            return []
+        row_indices = {index.row() for index in selection_model.selectedIndexes() if index.row() >= 0}
+        return sorted(row_indices)
+
     def _on_tsd_add_object_requested(self) -> None:
         new_object = self._open_tsd_object_dialog()
         if new_object is None:
@@ -2228,13 +2267,10 @@ class SGViewerController:
             self._open_tsd_object_attributes_dialog(row)
 
     def _on_tsd_object_selection_changed(self) -> None:
-        selection_model = self._window.tsd_objects_table.selectionModel()
-        if selection_model is None:
-            return
-        selected_rows = selection_model.selectedRows()
+        selected_rows = self._selected_row_indices(self._window.tsd_objects_table.selectionModel())
         if not selected_rows:
             return
-        self._center_viewport_on_tsd_object(selected_rows[0].row())
+        self._center_viewport_on_tsd_object(selected_rows[0])
 
     def _center_viewport_on_tsd_object(self, row: int) -> None:
         if row < 0 or row >= len(self._tsd_objects):
@@ -2285,8 +2321,8 @@ class SGViewerController:
     def _on_tsd_remove_selected_object_requested(self) -> None:
         selected_rows = sorted(
             {
-                index.row()
-                for index in self._window.tsd_objects_table.selectionModel().selectedRows()
+                row
+                for row in self._selected_row_indices(self._window.tsd_objects_table.selectionModel())
             },
             reverse=True,
         )
@@ -2304,6 +2340,31 @@ class SGViewerController:
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _move_tsd_object(self, *, direction: int) -> None:
+        selected_rows = self._selected_row_indices(self._window.tsd_objects_table.selectionModel())
+        if not selected_rows:
+            return
+        source_row = selected_rows[0]
+        target_row = source_row + direction
+        if target_row < 0 or target_row >= len(self._tsd_objects):
+            return
+        self._tsd_objects[source_row], self._tsd_objects[target_row] = (
+            self._tsd_objects[target_row],
+            self._tsd_objects[source_row],
+        )
+        self._refresh_tsd_objects_table()
+        self._window.tsd_objects_table.selectRow(target_row)
+        self._center_viewport_on_tsd_object(target_row)
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tsd_move_object_up_requested(self) -> None:
+        self._move_tsd_object(direction=-1)
+
+    def _on_tsd_move_object_down_requested(self) -> None:
+        self._move_tsd_object(direction=1)
 
     def _open_tsd_object_attributes_dialog(self, row: int) -> None:
         if row < 0 or row >= len(self._tsd_objects):
@@ -3601,6 +3662,9 @@ class SGViewerController:
 
     def _autosize_mrk_table_columns(self) -> None:
         self._window.mrk_entries_table.resizeColumnsToContents()
+
+    def _autosize_tsd_lines_table_columns(self) -> None:
+        self._window.tsd_lines_table.resizeColumnsToContents()
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
