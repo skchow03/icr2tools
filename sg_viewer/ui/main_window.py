@@ -151,6 +151,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
+        self._tsd_remove_selected_object_button = QtWidgets.QPushButton("Remove Selected TSD Object")
         self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
         self._tsd_objects_table = QtWidgets.QTableWidget(0, 3)
         self._tsd_objects_table.setHorizontalHeaderLabels([
@@ -775,6 +776,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_objects_layout.addWidget(QtWidgets.QLabel("Create higher-level patterns that generate multiple TSD lines."))
         tsd_object_buttons = QtWidgets.QHBoxLayout()
         tsd_object_buttons.addWidget(self._tsd_add_object_button)
+        tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button)
         tsd_object_buttons.addWidget(self._tsd_export_objects_button)
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
@@ -1113,6 +1115,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_add_object_button(self) -> QtWidgets.QPushButton:
         return self._tsd_add_object_button
+
+    @property
+    def tsd_remove_selected_object_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_remove_selected_object_button
 
     @property
     def tsd_export_objects_button(self) -> QtWidgets.QPushButton:

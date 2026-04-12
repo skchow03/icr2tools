@@ -68,8 +68,8 @@ def test_transverse_line_generates_single_line() -> None:
         section_index=4,
         adjusted_dlong=12000,
         line_width_500ths=1500,
-        center_dlat=2500,
-        tsd_width_500ths=42000,
+        right_dlat_bound=-18500,
+        left_dlat_bound=23500,
         color_index=11,
     )
 
@@ -91,8 +91,8 @@ def test_transverse_line_payload_round_trip() -> None:
         "section_index": 3,
         "adjusted_dlong": 2222,
         "line_width_500ths": 3000,
-        "center_dlat": -1000,
-        "tsd_width_500ths": 18000,
+        "right_dlat_bound": -10000,
+        "left_dlat_bound": 8000,
         "color_index": 9,
         "command": "Detail",
     }
@@ -104,3 +104,25 @@ def test_transverse_line_payload_round_trip() -> None:
     assert serialized["type"] == "transverse_line"
     assert serialized["section_index"] == 3
     assert serialized["adjusted_dlong"] == 2222
+    assert serialized["right_dlat_bound"] == -10000
+    assert serialized["left_dlat_bound"] == 8000
+
+
+def test_transverse_line_payload_back_compat_center_and_width() -> None:
+    payload = {
+        "type": "transverse_line",
+        "name": "Legacy Transverse",
+        "section_index": 1,
+        "adjusted_dlong": 5000,
+        "line_width_500ths": 2500,
+        "center_dlat": -1000,
+        "tsd_width_500ths": 18000,
+        "color_index": 9,
+        "command": "Detail",
+    }
+
+    obj = tsd_object_from_payload(payload)
+
+    assert isinstance(obj, TsdTransverseLineObject)
+    assert obj.right_dlat_bound == -10000
+    assert obj.left_dlat_bound == 8000

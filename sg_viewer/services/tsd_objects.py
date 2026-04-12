@@ -11,10 +11,18 @@ class TsdTransverseLineObject:
     section_index: int
     adjusted_dlong: int
     line_width_500ths: int
-    center_dlat: int
-    tsd_width_500ths: int
+    right_dlat_bound: int
+    left_dlat_bound: int
     color_index: int = 36
     command: str = "Detail"
+
+    @property
+    def center_dlat(self) -> int:
+        return int(round((int(self.left_dlat_bound) + int(self.right_dlat_bound)) * 0.5))
+
+    @property
+    def tsd_width_500ths(self) -> int:
+        return max(1, int(round(abs(int(self.left_dlat_bound) - int(self.right_dlat_bound)))))
 
     def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         command = normalize_tsd_command(self.command)
@@ -99,6 +107,8 @@ def tsd_object_to_payload(obj: TsdZebraCrossingObject | TsdTransverseLineObject)
             "section_index": int(obj.section_index),
             "adjusted_dlong": int(obj.adjusted_dlong),
             "line_width_500ths": int(obj.line_width_500ths),
+            "right_dlat_bound": int(obj.right_dlat_bound),
+            "left_dlat_bound": int(obj.left_dlat_bound),
             "center_dlat": int(obj.center_dlat),
             "tsd_width_500ths": int(obj.tsd_width_500ths),
             "color_index": int(obj.color_index),
@@ -122,13 +132,21 @@ def tsd_object_to_payload(obj: TsdZebraCrossingObject | TsdTransverseLineObject)
 def tsd_object_from_payload(payload: dict[str, object]) -> TsdZebraCrossingObject | TsdTransverseLineObject:
     payload_type = payload.get("type")
     if payload_type == "transverse_line":
+        right_bound = payload.get("right_dlat_bound")
+        left_bound = payload.get("left_dlat_bound")
+        if right_bound is None or left_bound is None:
+            center = int(payload.get("center_dlat", 0))
+            width = max(1, int(payload.get("tsd_width_500ths", 1)))
+            half_width = int(round(width / 2.0))
+            right_bound = center - half_width
+            left_bound = center + half_width
         return TsdTransverseLineObject(
             name=str(payload.get("name") or "Transverse Line"),
             section_index=max(0, int(payload.get("section_index", 0))),
             adjusted_dlong=int(payload["adjusted_dlong"]),
             line_width_500ths=max(1, int(payload["line_width_500ths"])),
-            center_dlat=int(payload["center_dlat"]),
-            tsd_width_500ths=max(1, int(payload["tsd_width_500ths"])),
+            right_dlat_bound=int(right_bound),
+            left_dlat_bound=int(left_bound),
             color_index=int(payload.get("color_index", 36)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
         )

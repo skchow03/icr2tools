@@ -2188,6 +2188,7 @@ def test_tsd_objects_controls_exist(qapp):
     window = SGViewerWindow()
     try:
         assert window.tsd_add_object_button.text() == "Add TSD Object"
+        assert window.tsd_remove_selected_object_button.text() == "Remove Selected TSD Object"
         assert window.tsd_export_objects_button.text() == "Export object .TSD files"
         assert window.tsd_objects_table.columnCount() == 3
     finally:
@@ -2223,7 +2224,55 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
         window.close()
 
 
-def test_export_tsd_objects_writes_generated_tsd_files(qapp, tmp_path, monkeypatch):
+def test_export_tsd_objects_writes_single_combined_file(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        objects = iter(
+            [
+                TsdZebraCrossingObject(
+                    name="Zebra Crossing 1",
+                    start_dlong=0,
+                    right_dlat=20000,
+                    left_dlat=-20000,
+                    stripe_width_500ths=4000,
+                    stripe_length_500ths=28000,
+                    stripe_spacing_500ths=3000,
+                    color_index=36,
+                    command="Detail",
+                ),
+                TsdZebraCrossingObject(
+                    name="Zebra Crossing 2",
+                    start_dlong=1000,
+                    right_dlat=10000,
+                    left_dlat=-10000,
+                    stripe_width_500ths=5000,
+                    stripe_length_500ths=20000,
+                    stripe_spacing_500ths=2000,
+                    color_index=36,
+                    command="Detail",
+                ),
+            ]
+        )
+        window.controller._open_tsd_object_dialog = lambda existing=None: next(objects)
+        window.controller._on_tsd_add_object_requested()
+        window.controller._on_tsd_add_object_requested()
+        export_path = tmp_path / "all_objects_export.tsd"
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getSaveFileName",
+            lambda *args, **kwargs: (str(export_path), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_export_objects_requested()
+
+        assert export_path.exists()
+        content = export_path.read_text(encoding="utf-8")
+        assert content.count("Detail:") == 10
+    finally:
+        window.close()
+
+
+def test_remove_selected_tsd_object_removes_selected_rows(qapp):
     window = SGViewerWindow()
     try:
         window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
@@ -2238,18 +2287,14 @@ def test_export_tsd_objects_writes_generated_tsd_files(qapp, tmp_path, monkeypat
             command="Detail",
         )
         window.controller._on_tsd_add_object_requested()
-        monkeypatch.setattr(
-            QtWidgets.QFileDialog,
-            "getExistingDirectory",
-            lambda *args, **kwargs: str(tmp_path),
-        )
+        window.controller._on_tsd_add_object_requested()
+        assert window.tsd_objects_table.rowCount() == 2
 
-        window.controller._on_tsd_export_objects_requested()
+        window.tsd_objects_table.selectRow(1)
+        window.controller._on_tsd_remove_selected_object_requested()
 
-        exported = tmp_path / "Zebra_Crossing_1.tsd"
-        assert exported.exists()
-        content = exported.read_text(encoding="utf-8")
-        assert content.count("Detail:") == 6
+        assert window.tsd_objects_table.rowCount() == 1
+        assert len(window.controller._tsd_objects) == 1
     finally:
         window.close()
 
