@@ -153,10 +153,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
         self._tsd_remove_selected_object_button = QtWidgets.QPushButton("Remove Selected TSD Object")
         self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
-        self._tsd_objects_table = QtWidgets.QTableWidget(0, 3)
+        self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
         self._tsd_objects_table.setHorizontalHeaderLabels([
             "Name",
             "Type",
+            "Starting DLONG",
+            "Ending DLONG",
             "Attributes",
         ])
         self._tsd_objects_table.horizontalHeader().setStretchLastSection(True)
