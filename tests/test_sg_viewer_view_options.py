@@ -2190,7 +2190,7 @@ def test_tsd_objects_controls_exist(qapp):
         assert window.tsd_add_object_button.text() == "Add TSD Object"
         assert window.tsd_remove_selected_object_button.text() == "Remove Selected TSD Object"
         assert window.tsd_export_objects_button.text() == "Export object .TSD files"
-        assert window.tsd_objects_table.columnCount() == 3
+        assert window.tsd_objects_table.columnCount() == 5
     finally:
         window.close()
 
@@ -2295,6 +2295,45 @@ def test_remove_selected_tsd_object_removes_selected_rows(qapp):
 
         assert window.tsd_objects_table.rowCount() == 1
         assert len(window.controller._tsd_objects) == 1
+    finally:
+        window.close()
+
+
+def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
+            name="Crossing",
+            start_dlong=100,
+            right_dlat=0,
+            left_dlat=0,
+            stripe_width_500ths=1000,
+            stripe_length_500ths=40,
+            stripe_spacing_500ths=1000,
+            color_index=36,
+            command="Detail",
+        )
+        window.controller._on_tsd_add_object_requested()
+
+        assert window.tsd_objects_table.item(0, 2).text() == "100"
+        assert window.tsd_objects_table.item(0, 3).text() == "140"
+
+        section = SimpleNamespace(
+            start=(0.0, 0.0),
+            end=(300.0, 0.0),
+            center=None,
+            length=300.0,
+            start_dlong=0.0,
+            start_heading=(1.0, 0.0),
+        )
+        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+
+        centered_points: list[tuple[float, float]] = []
+        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+
+        window.tsd_objects_table.selectRow(0)
+
+        assert centered_points == [pytest.approx((120.0, 0.0))]
     finally:
         window.close()
 

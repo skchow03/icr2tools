@@ -1178,6 +1178,7 @@ class SGViewerController:
         self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
         self._window.tsd_remove_selected_object_button.clicked.connect(self._on_tsd_remove_selected_object_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
+        self._window.tsd_objects_table.itemSelectionChanged.connect(self._on_tsd_object_selection_changed)
         self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
         self._window.tso_stamp_button.clicked.connect(self._on_tso_stamp_requested)
@@ -2193,7 +2194,8 @@ class SGViewerController:
             table.setRowCount(len(self._tsd_objects))
             for row, obj in enumerate(self._tsd_objects):
                 object_type_label = "Transverse Line" if isinstance(obj, TsdTransverseLineObject) else "Zebra crossing"
-                values = [obj.name, object_type_label]
+                start_dlong, end_dlong = self._tsd_object_dlong_range(obj)
+                values = [obj.name, object_type_label, str(start_dlong), str(end_dlong)]
                 for column, value in enumerate(values):
                     item = table.item(row, column)
                     if item is None:
@@ -2207,7 +2209,7 @@ class SGViewerController:
                 button.clicked.connect(
                     lambda _checked=False, row_index=row: self._open_tsd_object_attributes_dialog(row_index)
                 )
-                table.setCellWidget(row, 2, button)
+                table.setCellWidget(row, 4, button)
         finally:
             table.blockSignals(previous_state)
 
@@ -2222,8 +2224,63 @@ class SGViewerController:
         self._persist_tsd_state_for_current_track()
 
     def _on_tsd_objects_table_cell_clicked(self, row: int, column: int) -> None:
-        if column == 2:
+        if column == 4:
             self._open_tsd_object_attributes_dialog(row)
+
+    def _on_tsd_object_selection_changed(self) -> None:
+        selection_model = self._window.tsd_objects_table.selectionModel()
+        if selection_model is None:
+            return
+        selected_rows = selection_model.selectedRows()
+        if not selected_rows:
+            return
+        self._center_viewport_on_tsd_object(selected_rows[0].row())
+
+    def _center_viewport_on_tsd_object(self, row: int) -> None:
+        if row < 0 or row >= len(self._tsd_objects):
+            return
+        center_point = self._tsd_object_center_point(self._tsd_objects[row])
+        if center_point is None:
+            return
+        self._window.preview.center_view_on_point(center_point)
+
+    @staticmethod
+    def _tsd_object_dlong_range(
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject,
+    ) -> tuple[int, int]:
+        lines = obj.generated_lines()
+        if not lines:
+            return 0, 0
+        start_dlong = min(int(line.start_dlong) for line in lines)
+        end_dlong = max(int(line.end_dlong) for line in lines)
+        return start_dlong, end_dlong
+
+    def _tsd_object_center_point(
+        self,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject,
+    ) -> Point | None:
+        lines = obj.generated_lines()
+        if not lines:
+            return None
+        start_dlong, end_dlong = self._tsd_object_dlong_range(obj)
+        center_dlong = start_dlong + (end_dlong - start_dlong) * 0.5
+        reference_line = lines[0]
+        center_dlat = float(reference_line.start_dlat) + (
+            float(reference_line.end_dlat) - float(reference_line.start_dlat)
+        ) * 0.5
+        sections, _ = self._window.preview.get_section_set()
+        track_length = max(
+            (float(section.start_dlong) + float(section.length) for section in sections),
+            default=0.0,
+        )
+        if track_length <= 0.0:
+            return None
+        return self._point_on_track_at_dlong(
+            sections,
+            center_dlong % track_length,
+            center_dlat,
+            track_length,
+        )
 
     def _on_tsd_remove_selected_object_requested(self) -> None:
         selected_rows = sorted(
