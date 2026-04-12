@@ -747,7 +747,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
         mrk_layout.addWidget(self._mrk_entries_table)
-        mrk_layout.addStretch()
+        mrk_layout.setStretchFactor(self._mrk_entries_table, 1)
         self._mrk_sidebar.setLayout(mrk_layout)
 
         self._sync_pitwall_height_spin_units(previous_unit="500ths")
