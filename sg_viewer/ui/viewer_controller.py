@@ -2334,6 +2334,34 @@ class SGViewerController:
         layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
         layout.addRow("Line Width", line_width_spin)
         layout.addRow("Color", color_spin)
+        zebra_only_fields = (
+            start_dlong_spin,
+            right_dlat_spin,
+            left_dlat_spin,
+            stripe_width_spin,
+            stripe_length_spin,
+            stripe_spacing_spin,
+        )
+        transverse_only_fields = (
+            adjusted_dlong_spin,
+            line_width_spin,
+        )
+
+        def _set_row_visible(field: QtWidgets.QWidget, visible: bool) -> None:
+            label = layout.labelForField(field)
+            if label is not None:
+                label.setVisible(visible)
+            field.setVisible(visible)
+
+        def _sync_tsd_object_field_visibility() -> None:
+            is_transverse = str(type_combo.currentData()) == "transverse_line"
+            for field in zebra_only_fields:
+                _set_row_visible(field, not is_transverse)
+            for field in transverse_only_fields:
+                _set_row_visible(field, is_transverse)
+
+        type_combo.currentIndexChanged.connect(_sync_tsd_object_field_visibility)
+        _sync_tsd_object_field_visibility()
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
             parent=dialog,
@@ -2348,7 +2376,7 @@ class SGViewerController:
             section_index = (
                 existing.section_index
                 if isinstance(existing, TsdTransverseLineObject)
-                else self._selected_section_index
+                else self._window.preview.selection_manager.selected_section_index
             )
             if section_index is None:
                 QtWidgets.QMessageBox.warning(
