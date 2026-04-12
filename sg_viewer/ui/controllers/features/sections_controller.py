@@ -122,6 +122,7 @@ class SectionsController:
             self._host._window.delete_section_button.setStyleSheet(self._host._delete_default_style)
             self._host._window.split_section_button.setChecked(False)
         self._host._window.set_start_finish_button.setEnabled(has_sections)
+        self._host._window.query_track_button.setEnabled(has_sections)
         self._host._section_table_action.setEnabled(has_sections)
         self._host._heading_table_action.setEnabled(has_sections)
         self._host._scale_track_action.setEnabled(has_sections and is_closed_loop(sections))

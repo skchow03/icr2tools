@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets
+from icr2_core.sg_elevation import sg_xsect_altitude_grade_at
+from track_viewer.geometry import project_point_to_centerline
 
 from sg_viewer.model.sg_document import SGDocument
+from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.color_utils import parse_hex_color
@@ -92,6 +95,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         # Cache of adjusted section ranges indexed by section. Rebuilt when SG geometry or
         # elevation/grade data changes, because those values feed intent-length conversion.
         self._adjusted_section_ranges_cache: tuple[tuple[int, int, int], ...] | None = None
+        self._query_track_mode_active = False
+        self._query_track_result: dict[str, object] | None = None
 
         shortcut_labels = {
             "previous_section": "Ctrl+PgUp",
@@ -110,7 +115,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             button.setText(label)
             button.setToolTip(f"{label} ({shortcut})")
 
-        self._preview: PreviewContext = PreviewWidgetQt(
+        self._preview: PreviewWidgetQt = PreviewWidgetQt(
             show_status=self.show_status_message
         )
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
@@ -268,6 +273,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Set Start/Finish",
             shortcut_labels["set_start_finish"],
         )
+        self._query_track_button = QtWidgets.QPushButton("Query track")
+        self._query_track_button.setCheckable(True)
+        self._query_track_button.setEnabled(False)
         self._radii_button = QtWidgets.QCheckBox("Show Radii")
         self._radii_button.setChecked(True)
         self._axes_button = QtWidgets.QCheckBox("Show Axes")
@@ -361,6 +369,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radius_label = QtWidgets.QLabel("Radius: –")
         self._section_boundary_dlats_label = QtWidgets.QLabel("Boundary DLATs: –")
         self._section_boundary_dlats_label.setWordWrap(True)
+        self._query_track_info_label = QtWidgets.QLabel("Query Track: –")
+        self._query_track_info_label.setWordWrap(True)
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
         self._measurement_units_combo.addItem("Meter", "meter")
@@ -522,6 +532,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._move_section_button,
             self._delete_section_button,
             self._set_start_finish_button,
+            self._query_track_button,
         )
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
@@ -837,6 +848,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._adjusted_section_length_label,
             self._radius_label,
             self._section_boundary_dlats_label,
+            self._query_track_info_label,
         )
         preview_column_layout.addWidget(stats_panel.widget)
         preview_column.setLayout(preview_column_layout)
@@ -858,6 +870,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             from sg_viewer.ui.app_bootstrap import wire_window_features
 
             wire_window_features(self)
+        self._preview.pointerMoved.connect(self._on_preview_pointer_moved)
+        self._preview.pointerLeft.connect(self._on_preview_pointer_left)
+        self._query_track_button.toggled.connect(self._on_query_track_toggled)
 
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
@@ -906,6 +921,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def set_start_finish_button(self) -> QtWidgets.QPushButton:
         return self._set_start_finish_button
+
+    @property
+    def query_track_button(self) -> QtWidgets.QPushButton:
+        return self._query_track_button
 
     @property
     def radii_button(self) -> QtWidgets.QCheckBox:
@@ -2063,6 +2082,152 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
         self._section_boundary_dlats_label.setText("\n".join(lines))
 
+    def _on_query_track_toggled(self, checked: bool) -> None:
+        self._query_track_mode_active = bool(checked)
+        if not self._query_track_mode_active:
+            self._query_track_result = None
+            self._preview.set_query_track_hover_point(None)
+        self._refresh_query_track_info_label()
+
+    def _on_preview_pointer_left(self) -> None:
+        if not self._query_track_mode_active:
+            return
+        self._query_track_result = None
+        self._preview.set_query_track_hover_point(None)
+        self._refresh_query_track_info_label()
+
+    def _on_preview_pointer_moved(self, point: QtCore.QPointF) -> None:
+        if not self._query_track_mode_active:
+            return
+
+        widget_size = self._preview.widget_size()
+        transform = self._preview.current_transform(widget_size)
+        if transform is None:
+            return
+        track_point = self._preview.map_to_track(
+            (float(point.x()), float(point.y())),
+            widget_size,
+            self._preview.widget_height(),
+            transform,
+        )
+        if track_point is None:
+            return
+
+        centerline_index = self._preview.section_manager.centerline_index
+        sampled_dlongs = self._preview.section_manager.sampled_dlongs
+        sections = self._preview.section_manager.sections
+        track_length = float(sum(max(0.0, float(section.length)) for section in sections))
+        if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
+            self._query_track_result = None
+            self._preview.set_query_track_hover_point(None)
+            self._refresh_query_track_info_label()
+            return
+
+        projected_point, projected_dlong, distance_sq = project_point_to_centerline(
+            track_point, centerline_index, sampled_dlongs, track_length
+        )
+        if projected_point is None or projected_dlong is None:
+            self._query_track_result = None
+            self._preview.set_query_track_hover_point(None)
+            self._refresh_query_track_info_label()
+            return
+
+        zoom_scale = max(float(transform[0]), 0.0)
+        pixel_distance = (distance_sq ** 0.5) * zoom_scale
+        if pixel_distance > 16.0:
+            self._query_track_result = None
+            self._preview.set_query_track_hover_point(None)
+            self._refresh_query_track_info_label()
+            return
+
+        mapped = dlong_to_section_position(sections, projected_dlong, track_length)
+        if mapped is None:
+            self._query_track_result = None
+            self._preview.set_query_track_hover_point(None)
+            self._refresh_query_track_info_label()
+            return
+
+        section_index = int(mapped.section_index)
+        within_section_dlong = float(mapped.within_section_dlong)
+        section_length = float(mapped.section_length)
+        progress = 0.0 if section_length <= 0.0 else max(0.0, min(1.0, within_section_dlong / section_length))
+
+        boundary_dlats: list[tuple[str, float]] = []
+        fsects = self._preview.get_section_fsects(section_index)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+        for row_index, boundary_number in sorted(
+            boundary_number_by_row.items(), key=lambda item: int(item[1])
+        ):
+            fsect = fsects[row_index]
+            dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            boundary_dlats.append((f"B{boundary_number}", dlat))
+
+        adjusted_range = self._adjusted_section_dlongs(section_index)
+        adjusted_dlong = None
+        if adjusted_range is not None:
+            adjusted_start, _adjusted_end, adjusted_length = adjusted_range
+            adjusted_dlong = float(adjusted_start) + float(adjusted_length) * progress
+
+        centerline_elevation = self._sample_centerline_elevation(section_index, progress)
+
+        self._query_track_result = {
+            "section_index": section_index,
+            "adjusted_dlong": adjusted_dlong,
+            "boundary_dlats": tuple(boundary_dlats),
+            "centerline_elevation": centerline_elevation,
+        }
+        self._preview.set_query_track_hover_point(projected_point)
+        self._refresh_query_track_info_label()
+
+    def _sample_centerline_elevation(self, section_index: int, progress: float) -> float | None:
+        sgfile = self._preview.sgfile
+        if sgfile is None or sgfile.num_xsects <= 0:
+            return None
+        xsect_pair = self._centerline_xsect_pair(list(sgfile.xsect_dlats))
+        if xsect_pair is None:
+            return None
+        right_idx, left_idx, centerline_pct = xsect_pair
+        subsect = max(0.0, min(1.0, progress))
+        try:
+            right_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, right_idx)
+            left_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, left_idx)
+        except Exception:
+            return None
+        return float(right_altitude) + (float(left_altitude) - float(right_altitude)) * float(centerline_pct)
+
+    def _refresh_query_track_info_label(self) -> None:
+        if not self._query_track_mode_active:
+            self._query_track_info_label.setText("Query Track: off")
+            return
+        if self._query_track_result is None:
+            self._query_track_info_label.setText("Query Track: hover over centerline")
+            return
+        result = self._query_track_result
+        adjusted_dlong = result.get("adjusted_dlong")
+        adjusted_text = (
+            "–"
+            if adjusted_dlong is None
+            else self.format_length(float(adjusted_dlong))
+        )
+        elevation = result.get("centerline_elevation")
+        elevation_text = (
+            "–"
+            if elevation is None
+            else self._format_xsect_altitude(int(round(float(elevation))))
+        )
+        boundary_values = result.get("boundary_dlats", ())
+        boundaries_text = ", ".join(
+            f"{name}: {self._format_fsect_dlat(value)}"
+            for name, value in boundary_values
+        ) or "none"
+        self._query_track_info_label.setText(
+            "Query Track:\n"
+            f"Section #: {result.get('section_index', '–')}\n"
+            f"Adjusted DLONG: {adjusted_text}\n"
+            f"Elevation at DLAT=0: {elevation_text}\n"
+            f"Boundary DLATs: {boundaries_text}"
+        )
+
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
         if self._updating_fsect_table:
             return
@@ -2197,6 +2362,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_fsect_table_headers()
         self._update_fsect_table(self._selected_section_index)
         self._update_boundary_dlat_labels(self._selected_section_index)
+        self._refresh_query_track_info_label()
 
     def _sync_pitwall_height_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()

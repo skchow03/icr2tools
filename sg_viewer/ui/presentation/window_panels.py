@@ -115,7 +115,7 @@ def create_stats_sidebar_panel(*labels: QtWidgets.QLabel) -> StatsSidebarPanel:
         ("Current Section", (1, 2, 3, 6, 14)),
         ("Connections", (4, 5, 9, 10)),
         ("Section Metadata", (7, 8, 11, 12, 13)),
-        ("Boundaries (Walls)", (15,)),
+        ("Boundaries (Walls)", (15, 16)),
     ]
 
     for panel_index, (title, indices) in enumerate(grouped_indices):
