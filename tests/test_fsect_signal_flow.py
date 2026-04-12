@@ -47,3 +47,19 @@ def test_query_track_refresh_updates_overlay_message() -> None:
     assert "Query Track:" in overlay
     assert "Section #: 3" in overlay
     assert "Boundary DLATs: B1:" in overlay
+
+
+def test_query_track_overlay_includes_boundary_elevations() -> None:
+    _app()
+    window = SGViewerWindow(wire_features=False)
+
+    text = window._format_query_track_text(
+        {
+            "section_index": 0,
+            "adjusted_dlong": 1000.0,
+            "centerline_elevation": 3000.0,
+            "boundary_dlats": (("B0", -500.0, 2800.0), ("B1", 500.0, None)),
+        }
+    )
+
+    assert "Boundary DLATs: B0: -500.0 @ 2800.0, B1: 500.0" in text

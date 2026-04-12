@@ -2152,7 +2152,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         section_index = int(mapped.section_index)
         progress = max(0.0, min(1.0, float(mapped.fraction)))
 
-        boundary_dlats: list[tuple[str, float]] = []
+        boundary_dlats: list[tuple[str, float, float | None]] = []
         fsects = self._preview.get_section_fsects(section_index)
         boundary_number_by_row = boundary_numbers_for_fsects(fsects)
         for row_index, boundary_number in sorted(
@@ -2160,7 +2160,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         ):
             fsect = fsects[row_index]
             dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
-            boundary_dlats.append((f"B{boundary_number}", dlat))
+            elevation = self._sample_elevation_at_dlat(section_index, progress, dlat)
+            boundary_dlats.append((f"B{boundary_number}", dlat, elevation))
 
         adjusted_range = self._adjusted_section_dlongs(section_index)
         adjusted_dlong = None
@@ -2180,20 +2181,51 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._refresh_query_track_info_label()
 
     def _sample_centerline_elevation(self, section_index: int, progress: float) -> float | None:
+        return self._sample_elevation_at_dlat(section_index, progress, 0.0)
+
+    def _sample_elevation_at_dlat(
+        self,
+        section_index: int,
+        progress: float,
+        dlat: float,
+    ) -> float | None:
         sgfile = self._preview.sgfile
         if sgfile is None or sgfile.num_xsects <= 0:
             return None
-        xsect_pair = self._centerline_xsect_pair(list(sgfile.xsect_dlats))
-        if xsect_pair is None:
+        xsect_entries: list[tuple[float, int]] = []
+        for xsect_index, raw_dlat in enumerate(list(sgfile.xsect_dlats)):
+            try:
+                xsect_entries.append((float(raw_dlat), xsect_index))
+            except (TypeError, ValueError):
+                continue
+        if not xsect_entries:
             return None
-        right_idx, left_idx, centerline_pct = xsect_pair
-        subsect = max(0.0, min(1.0, progress))
+        xsect_entries.sort(key=lambda entry: entry[0])
+        dlat_value = float(dlat)
+        lower_dlat, lower_idx = xsect_entries[0]
+        upper_dlat, upper_idx = xsect_entries[-1]
+        if dlat_value <= lower_dlat:
+            upper_dlat, upper_idx = lower_dlat, lower_idx
+        elif dlat_value >= upper_dlat:
+            lower_dlat, lower_idx = upper_dlat, upper_idx
+        else:
+            for entry_index in range(1, len(xsect_entries)):
+                candidate_dlat, candidate_idx = xsect_entries[entry_index]
+                if candidate_dlat >= dlat_value:
+                    lower_dlat, lower_idx = xsect_entries[entry_index - 1]
+                    upper_dlat, upper_idx = candidate_dlat, candidate_idx
+                    break
+
+        subsect = max(0.0, min(1.0, float(progress)))
         try:
-            right_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, right_idx)
-            left_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, left_idx)
+            lower_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, lower_idx)
+            upper_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, upper_idx)
         except Exception:
             return None
-        return float(right_altitude) + (float(left_altitude) - float(right_altitude)) * float(centerline_pct)
+        if lower_idx == upper_idx or upper_dlat == lower_dlat:
+            return float(lower_altitude)
+        dlat_ratio = (dlat_value - lower_dlat) / (upper_dlat - lower_dlat)
+        return float(lower_altitude) + (float(upper_altitude) - float(lower_altitude)) * float(dlat_ratio)
 
     def _refresh_query_track_info_label(self) -> None:
         if not self._query_track_mode_active:
@@ -2221,10 +2253,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             else self._format_xsect_altitude(int(round(float(elevation))))
         )
         boundary_values = result.get("boundary_dlats", ())
-        boundaries_text = ", ".join(
-            f"{name}: {self._format_fsect_dlat(value)}"
-            for name, value in boundary_values
-        ) or "none"
+        formatted_boundaries: list[str] = []
+        for boundary in boundary_values:
+            if not isinstance(boundary, tuple) or len(boundary) < 2:
+                continue
+            name = boundary[0]
+            dlat_value = boundary[1]
+            if len(boundary) >= 3:
+                boundary_elevation = boundary[2]
+            else:
+                boundary_elevation = None
+            elevation_suffix = (
+                ""
+                if boundary_elevation is None
+                else f" @ {self._format_xsect_altitude(int(round(float(boundary_elevation))))}"
+            )
+            formatted_boundaries.append(
+                f"{name}: {self._format_fsect_dlat(float(dlat_value))}{elevation_suffix}"
+            )
+        boundaries_text = ", ".join(formatted_boundaries) or "none"
         return (
             "Query Track:\n"
             f"Section #: {result.get('section_index', '–')}\n"
