@@ -118,6 +118,7 @@ class PreviewPresenter:
                 split_section_mode=self._runtime.split_section_mode,
                 split_hover_point=self._runtime.split_hover_point,
                 query_track_hover_point=self._runtime.query_track_hover_point,
+                query_track_overlay_message=self._runtime.query_track_overlay_message,
                 xsect_dlat=self._runtime.selected_xsect_dlat
                 if self._runtime.show_sg_fsects
                 else None,
