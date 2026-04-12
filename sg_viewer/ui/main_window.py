@@ -2148,9 +2148,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
 
         section_index = int(mapped.section_index)
-        within_section_dlong = float(mapped.within_section_dlong)
-        section_length = float(mapped.section_length)
-        progress = 0.0 if section_length <= 0.0 else max(0.0, min(1.0, within_section_dlong / section_length))
+        progress = max(0.0, min(1.0, float(mapped.fraction)))
 
         boundary_dlats: list[tuple[str, float]] = []
         fsects = self._preview.get_section_fsects(section_index)
