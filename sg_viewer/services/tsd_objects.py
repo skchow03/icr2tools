@@ -6,6 +6,35 @@ from sg_viewer.services.tsd_io import TrackSurfaceDetailLine, normalize_tsd_comm
 
 
 @dataclass(frozen=True)
+class TsdTransverseLineObject:
+    name: str
+    section_index: int
+    adjusted_dlong: int
+    line_width_500ths: int
+    center_dlat: int
+    tsd_width_500ths: int
+    color_index: int = 36
+    command: str = "Detail"
+
+    def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
+        command = normalize_tsd_command(self.command)
+        start_dlong = int(self.adjusted_dlong)
+        line_width = max(1, int(self.line_width_500ths))
+        end_dlong = start_dlong + line_width
+        return (
+            TrackSurfaceDetailLine(
+                color_index=int(self.color_index),
+                width_500ths=max(1, int(self.tsd_width_500ths)),
+                start_dlong=start_dlong,
+                start_dlat=int(self.center_dlat),
+                end_dlong=end_dlong,
+                end_dlat=int(self.center_dlat),
+                command=command,
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class TsdZebraCrossingObject:
     name: str
     start_dlong: int
@@ -62,7 +91,19 @@ class TsdZebraCrossingObject:
         return tuple(lines)
 
 
-def tsd_object_to_payload(obj: TsdZebraCrossingObject) -> dict[str, object]:
+def tsd_object_to_payload(obj: TsdZebraCrossingObject | TsdTransverseLineObject) -> dict[str, object]:
+    if isinstance(obj, TsdTransverseLineObject):
+        return {
+            "type": "transverse_line",
+            "name": obj.name,
+            "section_index": int(obj.section_index),
+            "adjusted_dlong": int(obj.adjusted_dlong),
+            "line_width_500ths": int(obj.line_width_500ths),
+            "center_dlat": int(obj.center_dlat),
+            "tsd_width_500ths": int(obj.tsd_width_500ths),
+            "color_index": int(obj.color_index),
+            "command": normalize_tsd_command(obj.command),
+        }
     return {
         "type": "zebra_crossing",
         "name": obj.name,
@@ -78,8 +119,20 @@ def tsd_object_to_payload(obj: TsdZebraCrossingObject) -> dict[str, object]:
     }
 
 
-def tsd_object_from_payload(payload: dict[str, object]) -> TsdZebraCrossingObject:
-    if payload.get("type") != "zebra_crossing":
+def tsd_object_from_payload(payload: dict[str, object]) -> TsdZebraCrossingObject | TsdTransverseLineObject:
+    payload_type = payload.get("type")
+    if payload_type == "transverse_line":
+        return TsdTransverseLineObject(
+            name=str(payload.get("name") or "Transverse Line"),
+            section_index=max(0, int(payload.get("section_index", 0))),
+            adjusted_dlong=int(payload["adjusted_dlong"]),
+            line_width_500ths=max(1, int(payload["line_width_500ths"])),
+            center_dlat=int(payload["center_dlat"]),
+            tsd_width_500ths=max(1, int(payload["tsd_width_500ths"])),
+            color_index=int(payload.get("color_index", 36)),
+            command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+        )
+    if payload_type != "zebra_crossing":
         raise ValueError("Unsupported TSD object type.")
     right_dlat = payload.get("right_dlat")
     left_dlat = payload.get("left_dlat")
