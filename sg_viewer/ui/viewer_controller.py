@@ -33,6 +33,7 @@ from sg_viewer.services.tsd_io import (
     serialize_tsd,
 )
 from sg_viewer.services.tsd_objects import (
+    TsdTransverseLineObject,
     TsdZebraCrossingObject,
     tsd_object_from_payload,
     tsd_object_to_payload,
@@ -211,7 +212,7 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
-        self._tsd_objects: list[TsdZebraCrossingObject] = []
+        self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject] = []
         self._trackside_objects: list[TracksideObject] = []
         self._selected_trackside_object_indices: list[int] = []
         self._objects_tab_selected_trackside_object_indices: list[int] = []
@@ -2184,13 +2185,52 @@ class SGViewerController:
             lines.extend(obj.generated_lines())
         return tuple(lines)
 
+    def _compute_transverse_line_geometry(
+        self,
+        *,
+        section_index: int,
+        adjusted_dlong: int,
+    ) -> tuple[int, int] | None:
+        model = self._window.preview.sg_preview_model
+        if model is None or section_index < 0 or section_index >= len(model.fsects):
+            return None
+        boundaries = model.fsects[section_index].boundaries
+        if len(boundaries) < 2:
+            return None
+        adjusted_range = self._window.adjusted_section_range_500ths(section_index)
+        if adjusted_range is None:
+            return None
+        adjusted_start, adjusted_end = adjusted_range
+        adjusted_length = float(adjusted_end) - float(adjusted_start)
+        if math.isclose(adjusted_length, 0.0):
+            progress = 0.0
+        else:
+            progress = (float(adjusted_dlong) - float(adjusted_start)) / adjusted_length
+        progress = max(0.0, min(1.0, progress))
+        first_dlat = self._boundary_dlat_at_progress(boundaries[0], progress)
+        last_dlat = self._boundary_dlat_at_progress(boundaries[-1], progress)
+        if first_dlat is None or last_dlat is None:
+            return None
+        center_dlat = int(round((first_dlat + last_dlat) * 0.5))
+        tsd_width_500ths = max(1, int(round(abs(last_dlat - first_dlat))))
+        return center_dlat, tsd_width_500ths
+
+    def _boundary_dlat_at_progress(self, boundary, progress: float) -> float | None:
+        attrs = getattr(boundary, "attrs", {}) or {}
+        start = attrs.get("dlat_start")
+        end = attrs.get("dlat_end")
+        if start is None or end is None:
+            return None
+        return float(start) + (float(end) - float(start)) * float(progress)
+
     def _refresh_tsd_objects_table(self) -> None:
         table = self._window.tsd_objects_table
         previous_state = table.blockSignals(True)
         try:
             table.setRowCount(len(self._tsd_objects))
             for row, obj in enumerate(self._tsd_objects):
-                values = [obj.name, "Zebra crossing"]
+                object_type_label = "Transverse Line" if isinstance(obj, TsdTransverseLineObject) else "Zebra crossing"
+                values = [obj.name, object_type_label]
                 for column, value in enumerate(values):
                     item = table.item(row, column)
                     if item is None:
@@ -2237,34 +2277,49 @@ class SGViewerController:
     def _open_tsd_object_dialog(
         self,
         *,
-        existing: TsdZebraCrossingObject | None = None,
-    ) -> TsdZebraCrossingObject | None:
+        existing: TsdZebraCrossingObject | TsdTransverseLineObject | None = None,
+    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | None:
         dialog = QtWidgets.QDialog(self._window)
         dialog.setWindowTitle("TSD Object Attributes")
         layout = QtWidgets.QFormLayout(dialog)
         type_combo = QtWidgets.QComboBox(dialog)
         type_combo.addItem("Zebra crossing", userData="zebra_crossing")
-        type_combo.setEnabled(False)
+        type_combo.addItem("Transverse Line", userData="transverse_line")
         default_index = len(self._tsd_objects) + 1
-        name_edit = QtWidgets.QLineEdit(existing.name if existing else f"Zebra Crossing {default_index}", dialog)
+        default_name = "TSD Object"
+        if isinstance(existing, TsdZebraCrossingObject):
+            default_name = f"Zebra Crossing {default_index}"
+            type_combo.setCurrentIndex(0)
+            type_combo.setEnabled(False)
+        elif isinstance(existing, TsdTransverseLineObject):
+            default_name = f"Transverse Line {default_index}"
+            type_combo.setCurrentIndex(1)
+            type_combo.setEnabled(False)
+        name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
         start_dlong_spin = QtWidgets.QSpinBox(dialog)
         start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
-        start_dlong_spin.setValue(existing.start_dlong if existing else 0)
+        start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdZebraCrossingObject) else 0)
         right_dlat_spin = QtWidgets.QSpinBox(dialog)
         right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
-        right_dlat_spin.setValue(existing.right_dlat if existing else 20000)
+        right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdZebraCrossingObject) else 20000)
         left_dlat_spin = QtWidgets.QSpinBox(dialog)
         left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
-        left_dlat_spin.setValue(existing.left_dlat if existing else -20000)
+        left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdZebraCrossingObject) else -20000)
         stripe_width_spin = QtWidgets.QSpinBox(dialog)
         stripe_width_spin.setRange(1, 2_000_000_000)
-        stripe_width_spin.setValue(existing.stripe_width_500ths if existing else 4000)
+        stripe_width_spin.setValue(existing.stripe_width_500ths if isinstance(existing, TsdZebraCrossingObject) else 4000)
         stripe_length_spin = QtWidgets.QSpinBox(dialog)
         stripe_length_spin.setRange(1, 2_000_000_000)
-        stripe_length_spin.setValue(existing.stripe_length_500ths if existing else 28000)
+        stripe_length_spin.setValue(existing.stripe_length_500ths if isinstance(existing, TsdZebraCrossingObject) else 28000)
         stripe_spacing_spin = QtWidgets.QSpinBox(dialog)
         stripe_spacing_spin.setRange(0, 2_000_000_000)
-        stripe_spacing_spin.setValue(existing.stripe_spacing_500ths if existing else 3000)
+        stripe_spacing_spin.setValue(existing.stripe_spacing_500ths if isinstance(existing, TsdZebraCrossingObject) else 3000)
+        adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
+        adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        adjusted_dlong_spin.setValue(existing.adjusted_dlong if isinstance(existing, TsdTransverseLineObject) else 0)
+        line_width_spin = QtWidgets.QSpinBox(dialog)
+        line_width_spin.setRange(1, 2_000_000_000)
+        line_width_spin.setValue(existing.line_width_500ths if isinstance(existing, TsdTransverseLineObject) else 5000)
         color_spin = QtWidgets.QSpinBox(dialog)
         color_spin.setRange(-2_000_000_000, 2_000_000_000)
         color_spin.setValue(existing.color_index if existing else 36)
@@ -2276,6 +2331,8 @@ class SGViewerController:
         layout.addRow("Stripe Width", stripe_width_spin)
         layout.addRow("Stripe Length", stripe_length_spin)
         layout.addRow("Stripe Spacing", stripe_spacing_spin)
+        layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
+        layout.addRow("Line Width", line_width_spin)
         layout.addRow("Color", color_spin)
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
@@ -2286,6 +2343,43 @@ class SGViewerController:
         layout.addRow(buttons)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return None
+        object_type = str(type_combo.currentData())
+        if object_type == "transverse_line":
+            section_index = (
+                existing.section_index
+                if isinstance(existing, TsdTransverseLineObject)
+                else self._selected_section_index
+            )
+            if section_index is None:
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Transverse Line",
+                    "Select a section before creating a Transverse Line object.",
+                )
+                return None
+            line_geometry = self._compute_transverse_line_geometry(
+                section_index=section_index,
+                adjusted_dlong=adjusted_dlong_spin.value(),
+            )
+            if line_geometry is None:
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Transverse Line",
+                    "Could not compute first/last boundary DLAT values for this section at the given Adjusted DLONG.",
+                )
+                return None
+            center_dlat, tsd_width_500ths = line_geometry
+            name = name_edit.text().strip() or f"Transverse Line {default_index}"
+            return TsdTransverseLineObject(
+                name=name,
+                section_index=section_index,
+                adjusted_dlong=adjusted_dlong_spin.value(),
+                line_width_500ths=line_width_spin.value(),
+                center_dlat=center_dlat,
+                tsd_width_500ths=tsd_width_500ths,
+                color_index=color_spin.value(),
+                command="Detail",
+            )
         name = name_edit.text().strip() or f"Zebra Crossing {default_index}"
         return TsdZebraCrossingObject(
             name=name,
