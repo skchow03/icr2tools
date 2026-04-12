@@ -93,6 +93,7 @@ class BasePreviewState:
     status_message: str
     split_section_mode: bool
     split_hover_point: Point | None
+    query_track_hover_point: Point | None
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
     centerline_unselected_color: QtGui.QColor
@@ -322,6 +323,13 @@ def paint_preview(
             _draw_split_hover_node(
                 painter,
                 base_state.split_hover_point,
+                transform,
+                widget_height,
+            )
+        if base_state.query_track_hover_point is not None:
+            _draw_query_track_node(
+                painter,
+                base_state.query_track_hover_point,
                 transform,
                 widget_height,
             )
@@ -1611,6 +1619,25 @@ def _draw_split_hover_node(
     painter.setPen(QtGui.QPen(QtCore.Qt.yellow, 1))
     painter.setBrush(QtGui.QBrush(QtCore.Qt.yellow))
     painter.drawEllipse(mapped_point, radius, radius)
+    painter.restore()
+
+
+def _draw_query_track_node(
+    painter: QtGui.QPainter,
+    world_point: Point,
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    mapped_point = sg_rendering.map_point(world_point, transform, widget_height)
+    if mapped_point is None:
+        return
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor("#00E5FF"))
+    pen.setWidth(2)
+    painter.setPen(pen)
+    painter.setBrush(QtCore.Qt.NoBrush)
+    painter.drawEllipse(mapped_point, 7.0, 7.0)
     painter.restore()
 
 

@@ -19,6 +19,8 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     splitSectionModeChanged = QtCore.pyqtSignal(bool)
     scaleChanged = QtCore.pyqtSignal(float)
     interactionDragChanged = QtCore.pyqtSignal(bool)
+    pointerMoved = QtCore.pyqtSignal(object)
+    pointerLeft = QtCore.pyqtSignal()
 
     def __init__(
         self,
@@ -113,6 +115,7 @@ class PreviewWidgetQt(QtWidgets.QWidget):
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         self._runtime.on_mouse_move(event)
+        self.pointerMoved.emit(QtCore.QPointF(event.localPos()))
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         self._runtime.on_mouse_release(event)
@@ -122,6 +125,7 @@ class PreviewWidgetQt(QtWidgets.QWidget):
 
     def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: D401
         self._runtime.on_leave(event)
+        self.pointerLeft.emit()
         super().leaveEvent(event)
 
     def set_preview_color(self, key: str, color: QtGui.QColor) -> None:

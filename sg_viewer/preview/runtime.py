@@ -163,6 +163,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._split_previous_status_message: str | None = None
         self._split_hover_point: Point | None = None
         self._split_hover_section_index: int | None = None
+        self._query_track_hover_point: Point | None = None
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -578,6 +579,16 @@ class PreviewRuntime(PreviewRuntimeOps):
             return
         if intent.kind == "consume":
             event.accept()
+
+    @property
+    def query_track_hover_point(self) -> Point | None:
+        return self._query_track_hover_point
+
+    def set_query_track_hover_point(self, point: Point | None) -> None:
+        if point == self._query_track_hover_point:
+            return
+        self._query_track_hover_point = point
+        self._context.request_repaint()
 
 
 def _rotation_pivot_local_offsets(rotation_point: str, half_length: float, half_width: float) -> tuple[float, float]:
