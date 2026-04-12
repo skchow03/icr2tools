@@ -369,7 +369,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._radius_label = QtWidgets.QLabel("Radius: –")
         self._section_boundary_dlats_label = QtWidgets.QLabel("Boundary DLATs: –")
         self._section_boundary_dlats_label.setWordWrap(True)
-        self._query_track_info_label = QtWidgets.QLabel("Query Track: –")
+        self._query_track_info_label = QtWidgets.QLabel("")
         self._query_track_info_label.setWordWrap(True)
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
@@ -848,7 +848,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._adjusted_section_length_label,
             self._radius_label,
             self._section_boundary_dlats_label,
-            self._query_track_info_label,
+            #self._query_track_info_label,
         )
         self._stats_sidebar_panel = stats_panel.widget
         preview_column_layout.addWidget(stats_panel.widget)
