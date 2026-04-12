@@ -1176,6 +1176,7 @@ class SGViewerController:
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
         self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
+        self._window.tsd_remove_selected_object_button.clicked.connect(self._on_tsd_remove_selected_object_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
         self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
@@ -2185,44 +2186,6 @@ class SGViewerController:
             lines.extend(obj.generated_lines())
         return tuple(lines)
 
-    def _compute_transverse_line_geometry(
-        self,
-        *,
-        section_index: int,
-        adjusted_dlong: int,
-    ) -> tuple[int, int] | None:
-        model = self._window.preview.sg_preview_model
-        if model is None or section_index < 0 or section_index >= len(model.fsects):
-            return None
-        boundaries = model.fsects[section_index].boundaries
-        if len(boundaries) < 2:
-            return None
-        adjusted_range = self._window.adjusted_section_range_500ths(section_index)
-        if adjusted_range is None:
-            return None
-        adjusted_start, adjusted_end = adjusted_range
-        adjusted_length = float(adjusted_end) - float(adjusted_start)
-        if math.isclose(adjusted_length, 0.0):
-            progress = 0.0
-        else:
-            progress = (float(adjusted_dlong) - float(adjusted_start)) / adjusted_length
-        progress = max(0.0, min(1.0, progress))
-        first_dlat = self._boundary_dlat_at_progress(boundaries[0], progress)
-        last_dlat = self._boundary_dlat_at_progress(boundaries[-1], progress)
-        if first_dlat is None or last_dlat is None:
-            return None
-        center_dlat = int(round((first_dlat + last_dlat) * 0.5))
-        tsd_width_500ths = max(1, int(round(abs(last_dlat - first_dlat))))
-        return center_dlat, tsd_width_500ths
-
-    def _boundary_dlat_at_progress(self, boundary, progress: float) -> float | None:
-        attrs = getattr(boundary, "attrs", {}) or {}
-        start = attrs.get("dlat_start")
-        end = attrs.get("dlat_end")
-        if start is None or end is None:
-            return None
-        return float(start) + (float(end) - float(start)) * float(progress)
-
     def _refresh_tsd_objects_table(self) -> None:
         table = self._window.tsd_objects_table
         previous_state = table.blockSignals(True)
@@ -2261,6 +2224,29 @@ class SGViewerController:
     def _on_tsd_objects_table_cell_clicked(self, row: int, column: int) -> None:
         if column == 2:
             self._open_tsd_object_attributes_dialog(row)
+
+    def _on_tsd_remove_selected_object_requested(self) -> None:
+        selected_rows = sorted(
+            {
+                index.row()
+                for index in self._window.tsd_objects_table.selectionModel().selectedRows()
+            },
+            reverse=True,
+        )
+        if not selected_rows:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Remove TSD Object",
+                "Select one or more TSD objects to remove.",
+            )
+            return
+        for row in selected_rows:
+            if 0 <= row < len(self._tsd_objects):
+                del self._tsd_objects[row]
+        self._refresh_tsd_objects_table()
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _open_tsd_object_attributes_dialog(self, row: int) -> None:
         if row < 0 or row >= len(self._tsd_objects):
@@ -2317,6 +2303,16 @@ class SGViewerController:
         adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
         adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         adjusted_dlong_spin.setValue(existing.adjusted_dlong if isinstance(existing, TsdTransverseLineObject) else 0)
+        right_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
+        right_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
+        right_dlat_bound_spin.setValue(
+            existing.right_dlat_bound if isinstance(existing, TsdTransverseLineObject) else 20000
+        )
+        left_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
+        left_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
+        left_dlat_bound_spin.setValue(
+            existing.left_dlat_bound if isinstance(existing, TsdTransverseLineObject) else -20000
+        )
         line_width_spin = QtWidgets.QSpinBox(dialog)
         line_width_spin.setRange(1, 2_000_000_000)
         line_width_spin.setValue(existing.line_width_500ths if isinstance(existing, TsdTransverseLineObject) else 5000)
@@ -2332,6 +2328,8 @@ class SGViewerController:
         layout.addRow("Stripe Length", stripe_length_spin)
         layout.addRow("Stripe Spacing", stripe_spacing_spin)
         layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
+        layout.addRow("Right DLAT Bound", right_dlat_bound_spin)
+        layout.addRow("Left DLAT Bound", left_dlat_bound_spin)
         layout.addRow("Line Width", line_width_spin)
         layout.addRow("Color", color_spin)
         zebra_only_fields = (
@@ -2344,6 +2342,8 @@ class SGViewerController:
         )
         transverse_only_fields = (
             adjusted_dlong_spin,
+            right_dlat_bound_spin,
+            left_dlat_bound_spin,
             line_width_spin,
         )
 
@@ -2373,38 +2373,19 @@ class SGViewerController:
             return None
         object_type = str(type_combo.currentData())
         if object_type == "transverse_line":
+            name = name_edit.text().strip() or f"Transverse Line {default_index}"
             section_index = (
                 existing.section_index
                 if isinstance(existing, TsdTransverseLineObject)
                 else self._window.preview.selection_manager.selected_section_index
-            )
-            if section_index is None:
-                QtWidgets.QMessageBox.warning(
-                    self._window,
-                    "Transverse Line",
-                    "Select a section before creating a Transverse Line object.",
-                )
-                return None
-            line_geometry = self._compute_transverse_line_geometry(
-                section_index=section_index,
-                adjusted_dlong=adjusted_dlong_spin.value(),
-            )
-            if line_geometry is None:
-                QtWidgets.QMessageBox.warning(
-                    self._window,
-                    "Transverse Line",
-                    "Could not compute first/last boundary DLAT values for this section at the given Adjusted DLONG.",
-                )
-                return None
-            center_dlat, tsd_width_500ths = line_geometry
-            name = name_edit.text().strip() or f"Transverse Line {default_index}"
+            ) or 0
             return TsdTransverseLineObject(
                 name=name,
                 section_index=section_index,
                 adjusted_dlong=adjusted_dlong_spin.value(),
                 line_width_500ths=line_width_spin.value(),
-                center_dlat=center_dlat,
-                tsd_width_500ths=tsd_width_500ths,
+                right_dlat_bound=right_dlat_bound_spin.value(),
+                left_dlat_bound=left_dlat_bound_spin.value(),
                 color_index=color_spin.value(),
                 command="Detail",
             )
@@ -2425,24 +2406,27 @@ class SGViewerController:
         if not self._tsd_objects:
             QtWidgets.QMessageBox.information(self._window, "Export TSD Objects", "No TSD objects to export.")
             return
-        output_dir = QtWidgets.QFileDialog.getExistingDirectory(
+        output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
-            "Export TSD Object Files",
+            "Export TSD Objects",
             "",
+            "TSD Files (*.tsd)",
         )
-        if not output_dir:
+        if not output_path:
             return
-        out_path = Path(output_dir)
-        exported = 0
+        tsd_path = Path(output_path)
+        if tsd_path.suffix.lower() != ".tsd":
+            tsd_path = tsd_path.with_suffix(".tsd")
+        combined_lines: list[TrackSurfaceDetailLine] = []
         for obj in self._tsd_objects:
-            safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in obj.name).strip("_") or "tsd_object"
-            tsd_path = out_path / f"{safe_name}.tsd"
-            tsd_path.write_text(
-                serialize_tsd(TrackSurfaceDetailFile(lines=obj.generated_lines())),
-                encoding="utf-8",
-            )
-            exported += 1
-        self._window.show_status_message(f"Exported {exported} TSD object files to {out_path}")
+            combined_lines.extend(obj.generated_lines())
+        tsd_path.write_text(
+            serialize_tsd(TrackSurfaceDetailFile(lines=tuple(combined_lines))),
+            encoding="utf-8",
+        )
+        self._window.show_status_message(
+            f"Exported {len(self._tsd_objects)} TSD objects into {tsd_path.name}"
+        )
 
 
     def _refresh_tso_table(self) -> None:
