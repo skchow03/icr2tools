@@ -850,6 +850,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._section_boundary_dlats_label,
             self._query_track_info_label,
         )
+        self._stats_sidebar_panel = stats_panel.widget
         preview_column_layout.addWidget(stats_panel.widget)
         preview_column.setLayout(preview_column_layout)
 
@@ -2084,6 +2085,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_query_track_toggled(self, checked: bool) -> None:
         self._query_track_mode_active = bool(checked)
+        self._stats_sidebar_panel.setVisible(not self._query_track_mode_active)
         if not self._query_track_mode_active:
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
