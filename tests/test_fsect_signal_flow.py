@@ -62,4 +62,5 @@ def test_query_track_overlay_includes_boundary_elevations() -> None:
         }
     )
 
-    assert "Boundary DLATs: B0: -500.0 @ 2800.0, B1: 500.0" in text
+    assert "Boundary DLATs: B0: -500.0, B1: 500.0" in text
+    assert "Boundary Elevations: B0: 2800.0, B1: –" in text

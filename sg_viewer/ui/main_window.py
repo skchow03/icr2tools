@@ -2253,7 +2253,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             else self._format_xsect_altitude(int(round(float(elevation))))
         )
         boundary_values = result.get("boundary_dlats", ())
-        formatted_boundaries: list[str] = []
+        formatted_boundary_dlats: list[str] = []
+        formatted_boundary_elevations: list[str] = []
         for boundary in boundary_values:
             if not isinstance(boundary, tuple) or len(boundary) < 2:
                 continue
@@ -2263,21 +2264,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 boundary_elevation = boundary[2]
             else:
                 boundary_elevation = None
-            elevation_suffix = (
-                ""
+            formatted_boundary_dlats.append(
+                f"{name}: {self._format_fsect_dlat(float(dlat_value))}"
+            )
+            boundary_elevation_text = (
+                "–"
                 if boundary_elevation is None
-                else f" @ {self._format_xsect_altitude(int(round(float(boundary_elevation))))}"
+                else self._format_xsect_altitude(int(round(float(boundary_elevation))))
             )
-            formatted_boundaries.append(
-                f"{name}: {self._format_fsect_dlat(float(dlat_value))}{elevation_suffix}"
-            )
-        boundaries_text = ", ".join(formatted_boundaries) or "none"
+            formatted_boundary_elevations.append(f"{name}: {boundary_elevation_text}")
+        boundaries_dlat_text = ", ".join(formatted_boundary_dlats) or "none"
+        boundaries_elevation_text = ", ".join(formatted_boundary_elevations) or "none"
         return (
             "Query Track:\n"
             f"Section #: {result.get('section_index', '–')}\n"
             f"Adjusted DLONG: {adjusted_text}\n"
             f"Elevation at DLAT=0: {elevation_text}\n"
-            f"Boundary DLATs: {boundaries_text}"
+            f"Boundary DLATs: {boundaries_dlat_text}\n"
+            f"Boundary Elevations: {boundaries_elevation_text}"
         )
 
     def _on_fsect_cell_changed(self, row_index: int, column_index: int) -> None:
