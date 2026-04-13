@@ -535,7 +535,7 @@ class SGViewerController:
             self._window.copy_fsects_next_button.isEnabled()
         )
 
-        self._add_fsect_action = QtWidgets.QAction("Add Fsect", self._window)
+        self._add_fsect_action = QtWidgets.QAction("Insert Fsect", self._window)
         self._add_fsect_action.setEnabled(self._window.add_fsect_button.isEnabled())
 
         self._delete_fsect_action = QtWidgets.QAction("Delete Fsect", self._window)

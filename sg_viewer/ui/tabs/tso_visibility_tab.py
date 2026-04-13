@@ -522,11 +522,17 @@ class TSOVisibilityTab(QWidget):
         for button in (
             self.load_button,
             self.reconcile_button,
-            self.save_to_track3d_button,
-            self.export_button,
         ):
             top_button_row.addWidget(button)
         button_rows.addLayout(top_button_row)
+
+        bottom_button_row = QHBoxLayout()
+        for button in (
+            self.save_to_track3d_button,
+            self.export_button,
+        ):
+            bottom_button_row.addWidget(button)
+        button_rows.addLayout(bottom_button_row)
         layout.addLayout(button_rows)
 
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
