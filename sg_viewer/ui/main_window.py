@@ -153,6 +153,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_save_file_button = QtWidgets.QPushButton("Save .TSD")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Save As .TSD")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
+        self._tsd_remove_file_button = QtWidgets.QPushButton("Remove .TSD file from project")
+        self._tsd_remove_file_button.setEnabled(False)
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
         self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
@@ -780,6 +782,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_file_row = QtWidgets.QHBoxLayout()
         tsd_file_row.addWidget(QtWidgets.QLabel("Loaded TSD file:"))
         tsd_file_row.addWidget(self._tsd_files_combo)
+        tsd_file_row.addWidget(self._tsd_remove_file_button)
         tsd_lines_layout.addLayout(tsd_file_row)
         tsd_lines_layout.addWidget(self._tsd_lines_table)
         tsd_lines_group.setLayout(tsd_lines_layout)
@@ -805,6 +808,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_save_file_button.setToolTip("Save current TSD lines to the selected loaded .TSD file.")
         self._tsd_generate_file_button.setToolTip("Choose a file path and save current TSD lines as a .TSD file.")
         self._tsd_load_file_button.setToolTip("Load a .TSD file and add it to the loaded list.")
+        self._tsd_remove_file_button.setToolTip(
+            "Remove selected .TSD file(s) from this project without deleting files from disk."
+        )
         self._tsd_add_object_button.setToolTip("Create a new TSD object pattern.")
         self._tsd_remove_selected_object_button.setToolTip("Remove the selected TSD object.")
         self._tsd_move_object_up_button.setToolTip("Move the selected TSD object up one row.")
@@ -1135,6 +1141,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_load_file_button(self) -> QtWidgets.QPushButton:
         return self._tsd_load_file_button
+
+    @property
+    def tsd_remove_file_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_remove_file_button
 
     @property
     def tsd_move_line_up_button(self) -> QtWidgets.QPushButton:
