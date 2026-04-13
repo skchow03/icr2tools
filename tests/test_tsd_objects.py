@@ -1,4 +1,5 @@
 from sg_viewer.services.tsd_objects import (
+    TsdDoubleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
     tsd_object_from_payload,
@@ -126,3 +127,46 @@ def test_transverse_line_payload_back_compat_center_and_width() -> None:
     assert isinstance(obj, TsdTransverseLineObject)
     assert obj.right_dlat_bound == -10000
     assert obj.left_dlat_bound == 8000
+
+
+def test_double_solid_line_generates_two_lines_with_line_width_gap() -> None:
+    obj = TsdDoubleSolidLineObject(
+        name="Double Yellow",
+        start_adjusted_dlong=1000,
+        end_adjusted_dlong=9000,
+        dlat=500,
+        line_width_500ths=2000,
+        color_index=14,
+    )
+
+    lines = obj.generated_lines()
+
+    assert len(lines) == 2
+    assert [line.start_dlat for line in lines] == [2500, -1500]
+    assert [line.end_dlat for line in lines] == [2500, -1500]
+    assert all(line.start_dlong == 1000 for line in lines)
+    assert all(line.end_dlong == 9000 for line in lines)
+    assert all(line.width_500ths == 2000 for line in lines)
+    assert all(line.color_index == 14 for line in lines)
+
+
+def test_double_solid_line_payload_round_trip() -> None:
+    payload = {
+        "type": "double_solid_line",
+        "name": "DSL",
+        "start_adjusted_dlong": 100,
+        "end_adjusted_dlong": 9900,
+        "dlat": -250,
+        "line_width_500ths": 1500,
+        "color_index": 4,
+        "command": "Detail",
+    }
+
+    obj = tsd_object_from_payload(payload)
+    serialized = tsd_object_to_payload(obj)
+
+    assert isinstance(obj, TsdDoubleSolidLineObject)
+    assert serialized["type"] == "double_solid_line"
+    assert serialized["start_adjusted_dlong"] == 100
+    assert serialized["end_adjusted_dlong"] == 9900
+    assert serialized["dlat"] == -250
