@@ -1178,6 +1178,7 @@ class SGViewerController:
         self._window.tsd_save_file_button.clicked.connect(self._on_tsd_save_file_requested)
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
+        self._window.tsd_remove_file_button.clicked.connect(self._on_tsd_remove_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
         self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
         self._window.tsd_remove_selected_object_button.clicked.connect(self._on_tsd_remove_selected_object_requested)
@@ -1791,6 +1792,70 @@ class SGViewerController:
             f"Loaded TSD file {path.name} ({len(self._loaded_tsd_files)} total)"
         )
 
+    def _on_tsd_remove_file_requested(self) -> None:
+        if not self._loaded_tsd_files:
+            return
+
+        selected_combo_index = self._window.tsd_files_combo.currentIndex()
+        if selected_combo_index <= 0:
+            if not self._confirm_tsd_file_removal(remove_all=True):
+                return
+            removed_count = len(self._loaded_tsd_files)
+            self._loaded_tsd_files = []
+            self._active_tsd_file_index = None
+            self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
+            self._refresh_tsd_file_combo()
+            self._refresh_tsd_preview_lines()
+            self._persist_tsd_state_for_current_track()
+            self._set_tsd_dirty(True)
+            self._window.show_status_message(
+                f"Removed {removed_count} .TSD file(s) from the project."
+            )
+            return
+
+        remove_index = selected_combo_index - 1
+        if remove_index < 0 or remove_index >= len(self._loaded_tsd_files):
+            return
+        removed_file = self._loaded_tsd_files[remove_index]
+        if not self._confirm_tsd_file_removal(remove_all=False, file_name=removed_file.name):
+            return
+
+        self._loaded_tsd_files.pop(remove_index)
+        if not self._loaded_tsd_files:
+            self._active_tsd_file_index = None
+            self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
+            self._refresh_tsd_file_combo()
+            self._refresh_tsd_preview_lines()
+        else:
+            replacement_index = min(remove_index, len(self._loaded_tsd_files) - 1)
+            self._set_active_tsd_file(replacement_index)
+            self._refresh_tsd_file_combo(selected_index=replacement_index + 1)
+            self._refresh_tsd_preview_lines()
+        self._persist_tsd_state_for_current_track()
+        self._set_tsd_dirty(True)
+        self._window.show_status_message(f"Removed {removed_file.name} from the project.")
+
+    def _confirm_tsd_file_removal(self, *, remove_all: bool, file_name: str | None = None) -> bool:
+        if remove_all:
+            message = (
+                "This will remove all loaded .TSD files and all TSD lines from this project.\n"
+                "The .TSD files on disk will not be deleted.\n\nContinue?"
+            )
+        else:
+            display_name = file_name or "the selected .TSD file"
+            message = (
+                f"This will remove {display_name} and its TSD lines from this project.\n"
+                "The .TSD file on disk will not be deleted.\n\nContinue?"
+            )
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            "Remove .TSD File from Project?",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
     def _sync_active_tsd_file_from_model(self) -> None:
         if self._active_tsd_file_index is None:
             return
@@ -1808,15 +1873,7 @@ class SGViewerController:
         self._active_tsd_file_index = None
         self._tsd_objects = []
         self._trackside_objects = []
-        combo = self._window.tsd_files_combo
-        previous_block_state = combo.blockSignals(True)
-        try:
-            combo.clear()
-            combo.addItem(self._TSD_SHOW_ALL_LABEL)
-            combo.setCurrentIndex(0)
-            combo.setEnabled(False)
-        finally:
-            combo.blockSignals(previous_block_state)
+        self._refresh_tsd_file_combo()
         self._populate_tsd_table(TrackSurfaceDetailFile(lines=()))
         self._refresh_tsd_objects_table()
         self._refresh_tso_table()
@@ -1847,6 +1904,7 @@ class SGViewerController:
             combo.blockSignals(previous_block_state)
         if select:
             self._set_active_tsd_file(len(self._loaded_tsd_files) - 1)
+        self._update_tsd_remove_file_button_enabled()
 
     def _upsert_loaded_tsd_file(
         self,
@@ -1886,9 +1944,29 @@ class SGViewerController:
             self._active_tsd_file_index = None
             self._populate_tsd_table(TrackSurfaceDetailFile(lines=self._all_loaded_tsd_lines()))
             self._persist_tsd_state_for_current_track()
+            self._update_tsd_remove_file_button_enabled()
             return
         self._set_active_tsd_file(index - 1)
         self._persist_tsd_state_for_current_track()
+        self._update_tsd_remove_file_button_enabled()
+
+    def _refresh_tsd_file_combo(self, *, selected_index: int = 0) -> None:
+        combo = self._window.tsd_files_combo
+        previous_block_state = combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem(self._TSD_SHOW_ALL_LABEL)
+            for loaded_file in self._loaded_tsd_files:
+                combo.addItem(loaded_file.name)
+            combo.setEnabled(bool(self._loaded_tsd_files))
+            if combo.count() > 0:
+                combo.setCurrentIndex(max(0, min(selected_index, combo.count() - 1)))
+        finally:
+            combo.blockSignals(previous_block_state)
+        self._update_tsd_remove_file_button_enabled()
+
+    def _update_tsd_remove_file_button_enabled(self) -> None:
+        self._window.tsd_remove_file_button.setEnabled(bool(self._loaded_tsd_files))
 
     def _all_loaded_tsd_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         lines: list[TrackSurfaceDetailLine] = []
