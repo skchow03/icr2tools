@@ -1174,6 +1174,7 @@ class SGViewerController:
         self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
         self._window.tsd_move_line_up_button.clicked.connect(self._on_tsd_move_line_up_requested)
         self._window.tsd_move_line_down_button.clicked.connect(self._on_tsd_move_line_down_requested)
+        self._window.tsd_save_file_button.clicked.connect(self._on_tsd_save_file_requested)
         self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
         self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
@@ -1701,10 +1702,46 @@ class SGViewerController:
     def _on_tsd_move_line_down_requested(self) -> None:
         self._move_tsd_line(direction=1)
 
+    def _save_tsd_to_path(self, path: Path, *, fail_title: str) -> TrackSurfaceDetailFile | None:
+        try:
+            detail_file = self._build_tsd_file_from_model()
+            path.write_text(serialize_tsd(detail_file), encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                fail_title,
+                str(exc),
+            )
+            return None
+        return detail_file
+
+    def _on_tsd_save_file_requested(self) -> None:
+        if self._active_tsd_file_index is None:
+            self._on_tsd_generate_file_requested()
+            return
+        if self._active_tsd_file_index < 0 or self._active_tsd_file_index >= len(self._loaded_tsd_files):
+            return
+        active_file = self._loaded_tsd_files[self._active_tsd_file_index]
+        if active_file.source_path is None:
+            self._on_tsd_generate_file_requested()
+            return
+        detail_file = self._save_tsd_to_path(active_file.source_path, fail_title="Save TSD Failed")
+        if detail_file is None:
+            return
+        self._upsert_loaded_tsd_file(
+            active_file.source_path.name,
+            tuple(detail_file.lines),
+            source_path=active_file.source_path.resolve(),
+        )
+        self._refresh_tsd_preview_lines()
+        self._persist_tsd_state_for_current_track()
+        self._set_tsd_dirty(False)
+        self._window.show_status_message(f"Saved TSD file {active_file.source_path.name}")
+
     def _on_tsd_generate_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
-            "Generate TSD File",
+            "Save As TSD File",
             "",
             "TSD Files (*.tsd)",
         )
@@ -1714,21 +1751,14 @@ class SGViewerController:
         if path.suffix.lower() != ".tsd":
             path = path.with_suffix(".tsd")
 
-        try:
-            detail_file = self._build_tsd_file_from_model()
-            path.write_text(serialize_tsd(detail_file), encoding="utf-8")
-        except (OSError, ValueError) as exc:
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Generate TSD Failed",
-                str(exc),
-            )
+        detail_file = self._save_tsd_to_path(path, fail_title="Save As TSD Failed")
+        if detail_file is None:
             return
         self._upsert_loaded_tsd_file(path.name, tuple(detail_file.lines), source_path=path.resolve())
         self._refresh_tsd_preview_lines()
         self._persist_tsd_state_for_current_track()
         self._set_tsd_dirty(False)
-        self._window.show_status_message(f"Generated TSD file {path.name}")
+        self._window.show_status_message(f"Saved TSD file {path.name}")
 
     def _on_tsd_load_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(

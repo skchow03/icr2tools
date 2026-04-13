@@ -408,7 +408,8 @@ def test_tsd_tab_exists(qapp):
             if window.right_sidebar_tabs.tabText(index) == "TSD"
         )
         assert tsd_index >= 0
-        assert window.tsd_generate_file_button.text() == "Generate .TSD file"
+        assert window.tsd_save_file_button.text() == "Save .TSD"
+        assert window.tsd_generate_file_button.text() == "Save As .TSD"
         assert window.tsd_load_file_button.text() == "Load .TSD file"
     finally:
         window.close()
@@ -437,6 +438,33 @@ def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
         assert output_path.read_text(encoding="utf-8") == (
             "Detail: 36 4000 0 -126000 919091 -126000\n"
             "Detail_Dash: 36 4000 919091 -126000 2015740 -126000\n"
+        )
+    finally:
+        window.close()
+
+
+def test_save_tsd_file_writes_to_selected_loaded_path(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        input_path = tmp_path / "detail.tsd"
+        input_path.write_text(
+            "Detail: 36 4000 0 -126000 919091 -126000\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(input_path), "TSD Files (*.tsd)"),
+        )
+
+        window.controller._on_tsd_load_file_requested()
+        line_type_index = window.controller._tsd_lines_model.index(0, 0)
+        window.controller._tsd_lines_model.setData(line_type_index, "Detail_Dash")
+
+        window.controller._on_tsd_save_file_requested()
+
+        assert input_path.read_text(encoding="utf-8") == (
+            "Detail_Dash: 36 4000 0 -126000 919091 -126000\n"
         )
     finally:
         window.close()
