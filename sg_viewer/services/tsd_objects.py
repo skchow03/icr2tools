@@ -43,6 +43,51 @@ class TsdTransverseLineObject:
 
 
 @dataclass(frozen=True)
+class TsdDoubleSolidLineObject:
+    name: str
+    start_adjusted_dlong: int
+    end_adjusted_dlong: int
+    dlat: int
+    line_width_500ths: int
+    color_index: int = 36
+    command: str = "Detail"
+
+    @property
+    def lateral_offset_500ths(self) -> int:
+        return max(1, int(self.line_width_500ths))
+
+    def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
+        command = normalize_tsd_command(self.command)
+        line_width = max(1, int(self.line_width_500ths))
+        center_dlat = int(self.dlat)
+        offset = int(self.lateral_offset_500ths)
+        left_dlat = center_dlat + offset
+        right_dlat = center_dlat - offset
+        start_dlong = int(self.start_adjusted_dlong)
+        end_dlong = int(self.end_adjusted_dlong)
+        return (
+            TrackSurfaceDetailLine(
+                color_index=int(self.color_index),
+                width_500ths=line_width,
+                start_dlong=start_dlong,
+                start_dlat=left_dlat,
+                end_dlong=end_dlong,
+                end_dlat=left_dlat,
+                command=command,
+            ),
+            TrackSurfaceDetailLine(
+                color_index=int(self.color_index),
+                width_500ths=line_width,
+                start_dlong=start_dlong,
+                start_dlat=right_dlat,
+                end_dlong=end_dlong,
+                end_dlat=right_dlat,
+                command=command,
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class TsdZebraCrossingObject:
     name: str
     start_dlong: int
@@ -99,7 +144,20 @@ class TsdZebraCrossingObject:
         return tuple(lines)
 
 
-def tsd_object_to_payload(obj: TsdZebraCrossingObject | TsdTransverseLineObject) -> dict[str, object]:
+def tsd_object_to_payload(
+    obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+) -> dict[str, object]:
+    if isinstance(obj, TsdDoubleSolidLineObject):
+        return {
+            "type": "double_solid_line",
+            "name": obj.name,
+            "start_adjusted_dlong": int(obj.start_adjusted_dlong),
+            "end_adjusted_dlong": int(obj.end_adjusted_dlong),
+            "dlat": int(obj.dlat),
+            "line_width_500ths": int(obj.line_width_500ths),
+            "color_index": int(obj.color_index),
+            "command": normalize_tsd_command(obj.command),
+        }
     if isinstance(obj, TsdTransverseLineObject):
         return {
             "type": "transverse_line",
@@ -129,8 +187,20 @@ def tsd_object_to_payload(obj: TsdZebraCrossingObject | TsdTransverseLineObject)
     }
 
 
-def tsd_object_from_payload(payload: dict[str, object]) -> TsdZebraCrossingObject | TsdTransverseLineObject:
+def tsd_object_from_payload(
+    payload: dict[str, object],
+) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject:
     payload_type = payload.get("type")
+    if payload_type == "double_solid_line":
+        return TsdDoubleSolidLineObject(
+            name=str(payload.get("name") or "Double Solid Line"),
+            start_adjusted_dlong=int(payload["start_adjusted_dlong"]),
+            end_adjusted_dlong=int(payload["end_adjusted_dlong"]),
+            dlat=int(payload["dlat"]),
+            line_width_500ths=max(1, int(payload["line_width_500ths"])),
+            color_index=int(payload.get("color_index", 36)),
+            command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+        )
     if payload_type == "transverse_line":
         right_bound = payload.get("right_dlat_bound")
         left_bound = payload.get("left_dlat_bound")

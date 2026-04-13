@@ -33,6 +33,7 @@ from sg_viewer.services.tsd_io import (
     serialize_tsd,
 )
 from sg_viewer.services.tsd_objects import (
+    TsdDoubleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
     tsd_object_from_payload,
@@ -212,7 +213,7 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
-        self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject] = []
+        self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject] = []
         self._trackside_objects: list[TracksideObject] = []
         self._selected_trackside_object_indices: list[int] = []
         self._objects_tab_selected_trackside_object_indices: list[int] = []
@@ -2255,7 +2256,12 @@ class SGViewerController:
         try:
             table.setRowCount(len(self._tsd_objects))
             for row, obj in enumerate(self._tsd_objects):
-                object_type_label = "Transverse Line" if isinstance(obj, TsdTransverseLineObject) else "Zebra crossing"
+                if isinstance(obj, TsdTransverseLineObject):
+                    object_type_label = "Transverse Line"
+                elif isinstance(obj, TsdDoubleSolidLineObject):
+                    object_type_label = "Double Solid Line"
+                else:
+                    object_type_label = "Zebra crossing"
                 start_dlong, end_dlong = self._tsd_object_dlong_range(obj)
                 values = [obj.name, object_type_label, str(start_dlong), str(end_dlong)]
                 for column, value in enumerate(values):
@@ -2312,7 +2318,7 @@ class SGViewerController:
 
     @staticmethod
     def _tsd_object_dlong_range(
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
     ) -> tuple[int, int]:
         lines = obj.generated_lines()
         if not lines:
@@ -2323,7 +2329,7 @@ class SGViewerController:
 
     def _tsd_object_center_point(
         self,
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
     ) -> Point | None:
         lines = obj.generated_lines()
         if not lines:
@@ -2411,14 +2417,15 @@ class SGViewerController:
     def _open_tsd_object_dialog(
         self,
         *,
-        existing: TsdZebraCrossingObject | TsdTransverseLineObject | None = None,
-    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | None:
+        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None = None,
+    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None:
         dialog = QtWidgets.QDialog(self._window)
         dialog.setWindowTitle("TSD Object Attributes")
         layout = QtWidgets.QFormLayout(dialog)
         type_combo = QtWidgets.QComboBox(dialog)
         type_combo.addItem("Zebra crossing", userData="zebra_crossing")
         type_combo.addItem("Transverse Line", userData="transverse_line")
+        type_combo.addItem("Double Solid Line", userData="double_solid_line")
         default_index = len(self._tsd_objects) + 1
         default_name = "TSD Object"
         if isinstance(existing, TsdZebraCrossingObject):
@@ -2428,6 +2435,10 @@ class SGViewerController:
         elif isinstance(existing, TsdTransverseLineObject):
             default_name = f"Transverse Line {default_index}"
             type_combo.setCurrentIndex(1)
+            type_combo.setEnabled(False)
+        elif isinstance(existing, TsdDoubleSolidLineObject):
+            default_name = f"Double Solid Line {default_index}"
+            type_combo.setCurrentIndex(2)
             type_combo.setEnabled(False)
         name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
         start_dlong_spin = QtWidgets.QSpinBox(dialog)
@@ -2451,6 +2462,19 @@ class SGViewerController:
         adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
         adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         adjusted_dlong_spin.setValue(existing.adjusted_dlong if isinstance(existing, TsdTransverseLineObject) else 0)
+        start_adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
+        start_adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        start_adjusted_dlong_spin.setValue(
+            existing.start_adjusted_dlong if isinstance(existing, TsdDoubleSolidLineObject) else 0
+        )
+        end_adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
+        end_adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        end_adjusted_dlong_spin.setValue(
+            existing.end_adjusted_dlong if isinstance(existing, TsdDoubleSolidLineObject) else 20000
+        )
+        dlat_spin = QtWidgets.QSpinBox(dialog)
+        dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        dlat_spin.setValue(existing.dlat if isinstance(existing, TsdDoubleSolidLineObject) else 0)
         right_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
         right_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
         right_dlat_bound_spin.setValue(
@@ -2476,6 +2500,9 @@ class SGViewerController:
         layout.addRow("Stripe Length", stripe_length_spin)
         layout.addRow("Stripe Spacing", stripe_spacing_spin)
         layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
+        layout.addRow("Start Adjusted DLONG", start_adjusted_dlong_spin)
+        layout.addRow("End Adjusted DLONG", end_adjusted_dlong_spin)
+        layout.addRow("DLAT", dlat_spin)
         layout.addRow("Right DLAT Bound", right_dlat_bound_spin)
         layout.addRow("Left DLAT Bound", left_dlat_bound_spin)
         layout.addRow("Line Width", line_width_spin)
@@ -2494,6 +2521,12 @@ class SGViewerController:
             left_dlat_bound_spin,
             line_width_spin,
         )
+        double_solid_only_fields = (
+            start_adjusted_dlong_spin,
+            end_adjusted_dlong_spin,
+            dlat_spin,
+            line_width_spin,
+        )
 
         def _set_row_visible(field: QtWidgets.QWidget, visible: bool) -> None:
             label = layout.labelForField(field)
@@ -2502,11 +2535,15 @@ class SGViewerController:
             field.setVisible(visible)
 
         def _sync_tsd_object_field_visibility() -> None:
-            is_transverse = str(type_combo.currentData()) == "transverse_line"
+            object_type = str(type_combo.currentData())
+            is_transverse = object_type == "transverse_line"
+            is_double_solid = object_type == "double_solid_line"
             for field in zebra_only_fields:
-                _set_row_visible(field, not is_transverse)
+                _set_row_visible(field, object_type == "zebra_crossing")
             for field in transverse_only_fields:
                 _set_row_visible(field, is_transverse)
+            for field in double_solid_only_fields:
+                _set_row_visible(field, is_double_solid)
 
         type_combo.currentIndexChanged.connect(_sync_tsd_object_field_visibility)
         _sync_tsd_object_field_visibility()
@@ -2520,6 +2557,17 @@ class SGViewerController:
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return None
         object_type = str(type_combo.currentData())
+        if object_type == "double_solid_line":
+            name = name_edit.text().strip() or f"Double Solid Line {default_index}"
+            return TsdDoubleSolidLineObject(
+                name=name,
+                start_adjusted_dlong=start_adjusted_dlong_spin.value(),
+                end_adjusted_dlong=end_adjusted_dlong_spin.value(),
+                dlat=dlat_spin.value(),
+                line_width_500ths=line_width_spin.value(),
+                color_index=color_spin.value(),
+                command="Detail",
+            )
         if object_type == "transverse_line":
             name = name_edit.text().strip() or f"Transverse Line {default_index}"
             section_index = (
