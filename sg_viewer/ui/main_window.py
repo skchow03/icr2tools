@@ -150,7 +150,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_move_line_up_button = QtWidgets.QPushButton("Move Up")
         self._tsd_move_line_down_button = QtWidgets.QPushButton("Move Down")
-        self._tsd_generate_file_button = QtWidgets.QPushButton("Generate .TSD file")
+        self._tsd_save_file_button = QtWidgets.QPushButton("Save .TSD")
+        self._tsd_generate_file_button = QtWidgets.QPushButton("Save As .TSD")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
@@ -772,6 +773,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_buttons.addWidget(self._tsd_delete_line_button)
         tsd_buttons.addWidget(self._tsd_move_line_up_button)
         tsd_buttons.addWidget(self._tsd_move_line_down_button)
+        tsd_buttons.addWidget(self._tsd_save_file_button)
         tsd_buttons.addWidget(self._tsd_generate_file_button)
         tsd_buttons.addWidget(self._tsd_load_file_button)
         tsd_lines_layout.addLayout(tsd_buttons)
@@ -800,7 +802,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_delete_line_button.setToolTip("Delete the selected TSD line row.")
         self._tsd_move_line_up_button.setToolTip("Move the selected TSD line up one row.")
         self._tsd_move_line_down_button.setToolTip("Move the selected TSD line down one row.")
-        self._tsd_generate_file_button.setToolTip("Export current TSD lines to a .TSD file.")
+        self._tsd_save_file_button.setToolTip("Save current TSD lines to the selected loaded .TSD file.")
+        self._tsd_generate_file_button.setToolTip("Choose a file path and save current TSD lines as a .TSD file.")
         self._tsd_load_file_button.setToolTip("Load a .TSD file and add it to the loaded list.")
         self._tsd_add_object_button.setToolTip("Create a new TSD object pattern.")
         self._tsd_remove_selected_object_button.setToolTip("Remove the selected TSD object.")
@@ -1124,6 +1127,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_generate_file_button(self) -> QtWidgets.QPushButton:
         return self._tsd_generate_file_button
+
+    @property
+    def tsd_save_file_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_save_file_button
 
     @property
     def tsd_load_file_button(self) -> QtWidgets.QPushButton:
