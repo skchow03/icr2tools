@@ -333,7 +333,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._copy_fsects_prev_button.setEnabled(False)
         self._copy_fsects_next_button = QtWidgets.QPushButton("Copy Fsects to Next")
         self._copy_fsects_next_button.setEnabled(False)
-        self._add_fsect_button = QtWidgets.QPushButton("Add Fsect Below")
+        self._add_fsect_button = QtWidgets.QPushButton("Insert Fsect Below")
         self._add_fsect_button.setEnabled(False)
         self._delete_fsect_button = QtWidgets.QPushButton("Delete Fsect")
         self._delete_fsect_button.setEnabled(False)
