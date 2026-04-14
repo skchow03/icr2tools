@@ -188,9 +188,97 @@ class TsdZebraCrossingObject:
         return tuple(lines)
 
 
+@dataclass(frozen=True)
+class TsdPitStallsObject:
+    name: str
+    start_dlong: int
+    left_dlat: int
+    right_dlat: int
+    line_thickness_500ths: int
+    dlong_spacing_500ths: int
+    color_index: int = 36
+    line_count: int = 1
+    draw_left_border: bool = False
+    draw_right_border: bool = False
+    border_color_index: int = 36
+    border_line_thickness_500ths: int = 1
+    command: str = "Detail"
+
+    def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
+        command = normalize_tsd_command(self.command)
+        count = max(1, int(self.line_count))
+        spacing = max(0, int(self.dlong_spacing_500ths))
+        line_thickness = max(1, int(self.line_thickness_500ths))
+        start_dlong = int(self.start_dlong)
+        left_dlat = int(self.left_dlat)
+        right_dlat = int(self.right_dlat)
+        center_dlat = int(round((left_dlat + right_dlat) * 0.5))
+        transverse_width = max(1, abs(left_dlat - right_dlat))
+        border_width = max(1, int(self.border_line_thickness_500ths))
+
+        lines: list[TrackSurfaceDetailLine] = []
+        for line_index in range(count):
+            line_start_dlong = start_dlong + (line_index * spacing)
+            lines.append(
+                TrackSurfaceDetailLine(
+                    color_index=int(self.color_index),
+                    width_500ths=transverse_width,
+                    start_dlong=line_start_dlong,
+                    start_dlat=center_dlat,
+                    end_dlong=line_start_dlong + line_thickness,
+                    end_dlat=center_dlat,
+                    command=command,
+                )
+            )
+        border_start_dlong = start_dlong
+        border_end_dlong = start_dlong + ((count - 1) * spacing) + line_thickness
+        if self.draw_left_border:
+            lines.append(
+                TrackSurfaceDetailLine(
+                    color_index=int(self.border_color_index),
+                    width_500ths=border_width,
+                    start_dlong=border_start_dlong,
+                    start_dlat=left_dlat,
+                    end_dlong=border_end_dlong,
+                    end_dlat=left_dlat,
+                    command=command,
+                )
+            )
+        if self.draw_right_border:
+            lines.append(
+                TrackSurfaceDetailLine(
+                    color_index=int(self.border_color_index),
+                    width_500ths=border_width,
+                    start_dlong=border_start_dlong,
+                    start_dlat=right_dlat,
+                    end_dlong=border_end_dlong,
+                    end_dlat=right_dlat,
+                    command=command,
+                )
+            )
+        return tuple(lines)
+
+
 def tsd_object_to_payload(
-    obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+    obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
 ) -> dict[str, object]:
+    if isinstance(obj, TsdPitStallsObject):
+        return {
+            "type": "pit_stalls",
+            "name": obj.name,
+            "start_dlong": int(obj.start_dlong),
+            "left_dlat": int(obj.left_dlat),
+            "right_dlat": int(obj.right_dlat),
+            "line_thickness_500ths": int(obj.line_thickness_500ths),
+            "dlong_spacing_500ths": int(obj.dlong_spacing_500ths),
+            "color_index": int(obj.color_index),
+            "line_count": int(obj.line_count),
+            "draw_left_border": bool(obj.draw_left_border),
+            "draw_right_border": bool(obj.draw_right_border),
+            "border_color_index": int(obj.border_color_index),
+            "border_line_thickness_500ths": int(obj.border_line_thickness_500ths),
+            "command": normalize_tsd_command(obj.command),
+        }
     if isinstance(obj, TsdDoubleSolidLineObject):
         return {
             "type": "double_solid_line",
@@ -237,8 +325,24 @@ def tsd_object_to_payload(
 
 def tsd_object_from_payload(
     payload: dict[str, object],
-) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject:
+) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject:
     payload_type = payload.get("type")
+    if payload_type == "pit_stalls":
+        return TsdPitStallsObject(
+            name=str(payload.get("name") or "Pit Stalls"),
+            start_dlong=int(payload.get("start_dlong", 0)),
+            left_dlat=int(payload.get("left_dlat", -20000)),
+            right_dlat=int(payload.get("right_dlat", 20000)),
+            line_thickness_500ths=max(1, int(payload.get("line_thickness_500ths", 2000))),
+            dlong_spacing_500ths=max(0, int(payload.get("dlong_spacing_500ths", 4000))),
+            color_index=int(payload.get("color_index", 36)),
+            line_count=max(1, int(payload.get("line_count", 12))),
+            draw_left_border=bool(payload.get("draw_left_border", False)),
+            draw_right_border=bool(payload.get("draw_right_border", False)),
+            border_color_index=int(payload.get("border_color_index", payload.get("color_index", 36))),
+            border_line_thickness_500ths=max(1, int(payload.get("border_line_thickness_500ths", 500))),
+            command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+        )
     if payload_type == "double_solid_line":
         return TsdDoubleSolidLineObject(
             name=str(payload.get("name") or "Double Solid Line"),
