@@ -2363,26 +2363,86 @@ class SGViewerController:
         return tuple(lines)
 
     def _on_tsd_skid_marks_requested(self) -> None:
+        section_columns: tuple[tuple[str, str], ...] = (
+            ("name", "Section label used only for readability in this table."),
+            ("start_dlong", "Section start position along track in dlong units."),
+            ("apex_dlong", "Apex position in dlong units where lateral range transitions."),
+            ("end_dlong", "Section end position along track in dlong units."),
+            ("min_len", "Minimum skid length to generate in dlong units."),
+            ("max_len", "Maximum skid length to generate in dlong units."),
+            ("width", "Skid mark width (dlat span) in 1/10000 track units."),
+            ("num_skids", "How many randomized skid marks to generate for this section."),
+            ("start_dlat_a", "Inside/lower dlat boundary at section start."),
+            ("start_dlat_b", "Outside/upper dlat boundary at section start."),
+            ("apex_dlat_a", "Inside/lower dlat boundary at apex."),
+            ("apex_dlat_b", "Outside/upper dlat boundary at apex."),
+            ("end_dlat_a", "Inside/lower dlat boundary at section end."),
+            ("end_dlat_b", "Outside/upper dlat boundary at section end."),
+        )
+
+        def _rows_csv_to_table(table: QtWidgets.QTableWidget, rows_csv: str) -> None:
+            lines = [line.strip() for line in rows_csv.splitlines() if line.strip()]
+            table.setRowCount(max(1, len(lines)))
+            for row_index, line in enumerate(lines):
+                values = [value.strip() for value in line.split(",")]
+                for column_index in range(len(section_columns)):
+                    value = values[column_index] if column_index < len(values) else ""
+                    table.setItem(row_index, column_index, QtWidgets.QTableWidgetItem(value))
+
+        def _table_to_rows_csv(table: QtWidgets.QTableWidget) -> str:
+            rows: list[str] = []
+            for row_index in range(table.rowCount()):
+                values: list[str] = []
+                has_value = False
+                for column_index in range(table.columnCount()):
+                    item = table.item(row_index, column_index)
+                    value = item.text().strip() if item is not None else ""
+                    values.append(value)
+                    if value:
+                        has_value = True
+                if has_value:
+                    rows.append(",".join(values))
+            return "\n".join(rows)
+
         dialog = QtWidgets.QDialog(self._window)
         dialog.setWindowTitle("Generate Skid Marks")
+        dialog.resize(1180, 520)
         layout = QtWidgets.QVBoxLayout(dialog)
         info_label = QtWidgets.QLabel(
-            "Enter one CSV row per section:\n"
-            "name,start_dlong,apex_dlong,end_dlong,min_len,max_len,width,num_skids,"
-            "start_dlat_a,start_dlat_b,apex_dlat_a,apex_dlat_b,end_dlat_a,end_dlat_b"
+            "Enter one row per section in the table. Hover each column header for parameter help."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
         colors_edit = QtWidgets.QLineEdit(",".join(str(value) for value in self._skid_marks_colors), dialog)
-        rows_edit = QtWidgets.QPlainTextEdit(dialog)
-        rows_edit.setPlaceholderText(
-            "Example:\nTurn1,100000,120000,150000,3500,9000,2200,14,22000,16000,13000,7000,14000,5000"
-        )
-        rows_edit.setPlainText(self._skid_marks_rows_text)
+        colors_edit.setToolTip("Comma-separated palette indices used when assigning skid mark colors.")
+        sections_table = QtWidgets.QTableWidget(dialog)
+        sections_table.setColumnCount(len(section_columns))
+        sections_table.setHorizontalHeaderLabels([name for name, _tooltip in section_columns])
+        sections_table.verticalHeader().setVisible(True)
+        sections_table.setAlternatingRowColors(True)
+        sections_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        sections_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        sections_table.horizontalHeader().setStretchLastSection(True)
+        for column_index, (_name, tooltip) in enumerate(section_columns):
+            item = sections_table.horizontalHeaderItem(column_index)
+            if item is not None:
+                item.setToolTip(tooltip)
+        _rows_csv_to_table(sections_table, self._skid_marks_rows_text)
+
+        sections_buttons = QtWidgets.QHBoxLayout()
+        add_row_button = QtWidgets.QPushButton("Add section row", dialog)
+        add_row_button.setToolTip("Append a blank row for another skid-generation section.")
+        remove_row_button = QtWidgets.QPushButton("Remove selected rows", dialog)
+        remove_row_button.setToolTip("Delete selected section rows from the table.")
+        sections_buttons.addWidget(add_row_button)
+        sections_buttons.addWidget(remove_row_button)
+        sections_buttons.addStretch(1)
+
         layout.addWidget(QtWidgets.QLabel("Colors (comma-separated palette indices):"))
         layout.addWidget(colors_edit)
         layout.addWidget(QtWidgets.QLabel("Section rows:"))
-        layout.addWidget(rows_edit)
+        layout.addLayout(sections_buttons)
+        layout.addWidget(sections_table)
         buttons = QtWidgets.QDialogButtonBox(parent=dialog)
         randomize_button = buttons.addButton("Randomize skid marks", QtWidgets.QDialogButtonBox.ActionRole)
         save_button = buttons.addButton("Save generated .TSD…", QtWidgets.QDialogButtonBox.ActionRole)
@@ -2390,15 +2450,28 @@ class SGViewerController:
         close_button.clicked.connect(dialog.reject)
         layout.addWidget(buttons)
 
+        def _add_row() -> None:
+            sections_table.insertRow(sections_table.rowCount())
+
+        def _remove_selected_rows() -> None:
+            selected_rows = sorted({index.row() for index in sections_table.selectedIndexes()}, reverse=True)
+            for row_index in selected_rows:
+                sections_table.removeRow(row_index)
+            if sections_table.rowCount() == 0:
+                sections_table.setRowCount(1)
+
+        add_row_button.clicked.connect(_add_row)
+        remove_row_button.clicked.connect(_remove_selected_rows)
+
         def _parse_parameters_from_dialog() -> SkidMarkGenerationParameters:
             colors = parse_colors_csv(colors_edit.text())
-            sections = parse_skid_sections_csv(rows_edit.toPlainText())
+            sections = parse_skid_sections_csv(_table_to_rows_csv(sections_table))
             if not sections:
                 raise ValueError("Add at least one section row before generating skid marks.")
             return SkidMarkGenerationParameters(colors=colors, sections=sections)
 
         def _persist_dialog_values() -> None:
-            self._skid_marks_rows_text = rows_edit.toPlainText().strip()
+            self._skid_marks_rows_text = _table_to_rows_csv(sections_table)
             self._skid_marks_colors = parse_colors_csv(colors_edit.text())
             self._set_tsd_dirty(True)
             self._persist_tsd_state_for_current_track()
