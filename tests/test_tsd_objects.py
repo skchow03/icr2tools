@@ -63,6 +63,56 @@ def test_zebra_crossing_payload_back_compat_center_dlat() -> None:
     assert obj.left_dlat == 4000
 
 
+def test_zebra_crossing_optional_end_transverse_lines() -> None:
+    obj = TsdZebraCrossingObject(
+        name="With End Caps",
+        start_dlong=1000,
+        right_dlat=-6000,
+        left_dlat=6000,
+        stripe_width_500ths=2000,
+        stripe_length_500ths=10000,
+        stripe_spacing_500ths=1000,
+        transverse_line_thickness_500ths=1500,
+    )
+
+    lines = obj.generated_lines()
+
+    assert len(lines) == obj.stripe_count + 2
+    assert lines[-2].start_dlong == 1000
+    assert lines[-2].end_dlong == 1000
+    assert lines[-2].start_dlat == -6000
+    assert lines[-2].end_dlat == 6000
+    assert lines[-2].width_500ths == 1500
+    assert lines[-1].start_dlong == 11000
+    assert lines[-1].end_dlong == 11000
+    assert lines[-1].start_dlat == -6000
+    assert lines[-1].end_dlat == 6000
+    assert lines[-1].width_500ths == 1500
+
+
+def test_zebra_crossing_payload_round_trip_transverse_line_thickness() -> None:
+    payload = {
+        "type": "zebra_crossing",
+        "name": "Crossing",
+        "start_dlong": 1200,
+        "right_dlat": -9000,
+        "left_dlat": 9000,
+        "stripe_width_500ths": 3000,
+        "stripe_length_500ths": 7000,
+        "stripe_spacing_500ths": 800,
+        "transverse_line_thickness_500ths": 2200,
+        "color_index": 36,
+        "command": "Detail",
+    }
+
+    obj = tsd_object_from_payload(payload)
+    serialized = tsd_object_to_payload(obj)
+
+    assert isinstance(obj, TsdZebraCrossingObject)
+    assert obj.transverse_line_thickness_500ths == 2200
+    assert serialized["transverse_line_thickness_500ths"] == 2200
+
+
 def test_transverse_line_generates_single_line() -> None:
     obj = TsdTransverseLineObject(
         name="Lane Marker",
