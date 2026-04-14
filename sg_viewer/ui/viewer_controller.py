@@ -220,6 +220,7 @@ class SGViewerController:
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
+        self._skid_marks_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject] = []
         self._generated_skid_mark_lines: tuple[TrackSurfaceDetailLine, ...] = ()
@@ -2364,20 +2365,20 @@ class SGViewerController:
 
     def _on_tsd_skid_marks_requested(self) -> None:
         section_columns: tuple[tuple[str, str], ...] = (
-            ("name", "Section label used only for readability in this table."),
-            ("start_dlong", "Section start position along track in dlong units."),
-            ("apex_dlong", "Apex position in dlong units where lateral range transitions."),
-            ("end_dlong", "Section end position along track in dlong units."),
-            ("min_len", "Minimum skid length to generate in dlong units."),
-            ("max_len", "Maximum skid length to generate in dlong units."),
-            ("width", "Skid mark width (dlat span) in 1/10000 track units."),
-            ("num_skids", "How many randomized skid marks to generate for this section."),
-            ("start_dlat_a", "Inside/lower dlat boundary at section start."),
-            ("start_dlat_b", "Outside/upper dlat boundary at section start."),
-            ("apex_dlat_a", "Inside/lower dlat boundary at apex."),
-            ("apex_dlat_b", "Outside/upper dlat boundary at apex."),
-            ("end_dlat_a", "Inside/lower dlat boundary at section end."),
-            ("end_dlat_b", "Outside/upper dlat boundary at section end."),
+            ("Section", "Section label used only for readability in this table."),
+            ("Start dLong", "Section start position along track in dlong units."),
+            ("Apex dLong", "Apex position in dlong units where lateral range transitions."),
+            ("End dLong", "Section end position along track in dlong units."),
+            ("Min Length", "Minimum skid length to generate in dlong units."),
+            ("Max Length", "Maximum skid length to generate in dlong units."),
+            ("Width (dLat)", "Skid mark width (dlat span) in 1/10000 track units."),
+            ("Count", "How many randomized skid marks to generate for this section."),
+            ("Start dLat In", "Inside/lower dlat boundary at section start."),
+            ("Start dLat Out", "Outside/upper dlat boundary at section start."),
+            ("Apex dLat In", "Inside/lower dlat boundary at apex."),
+            ("Apex dLat Out", "Outside/upper dlat boundary at apex."),
+            ("End dLat In", "Inside/lower dlat boundary at section end."),
+            ("End dLat Out", "Outside/upper dlat boundary at section end."),
         )
 
         def _rows_csv_to_table(table: QtWidgets.QTableWidget, rows_csv: str) -> None:
@@ -2406,10 +2407,14 @@ class SGViewerController:
 
         dialog = QtWidgets.QDialog(self._window)
         dialog.setWindowTitle("Generate Skid Marks")
+        dialog.setWindowModality(QtCore.Qt.NonModal)
         dialog.resize(1180, 520)
         layout = QtWidgets.QVBoxLayout(dialog)
         info_label = QtWidgets.QLabel(
-            "Enter one row per section in the table. Hover each column header for parameter help."
+            "This tool generates randomized skid-mark line details that follow the dLong/dLat ranges you define below. "
+            "Each row describes one track section, and the generator picks random start points, lengths, and colors "
+            "inside those limits. Start with one section, generate a few times, then tune boundaries and count to "
+            "shape how dense and wide the marks appear. Hover each column header for details."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -2523,7 +2528,10 @@ class SGViewerController:
 
         randomize_button.clicked.connect(_generate)
         save_button.clicked.connect(_save_generated)
-        dialog.exec()
+        self._skid_marks_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _refresh_tsd_objects_table(self) -> None:
         table = self._window.tsd_objects_table
