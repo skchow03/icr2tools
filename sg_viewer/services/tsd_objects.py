@@ -100,6 +100,7 @@ class TsdZebraCrossingObject:
     left_margin_500ths: int = 0
     transverse_line_thickness_500ths: int = 0
     color_index: int = 36
+    transverse_line_color_index: int = 36
     command: str = "Detail"
 
     @property
@@ -164,7 +165,7 @@ class TsdZebraCrossingObject:
             transverse_width = max(1, abs(left_dlat - right_dlat))
             lines.append(
                 TrackSurfaceDetailLine(
-                    color_index=int(self.color_index),
+                    color_index=int(self.transverse_line_color_index),
                     width_500ths=transverse_width,
                     start_dlong=start_dlong,
                     start_dlat=transverse_center_dlat,
@@ -175,7 +176,7 @@ class TsdZebraCrossingObject:
             )
             lines.append(
                 TrackSurfaceDetailLine(
-                    color_index=int(self.color_index),
+                    color_index=int(self.transverse_line_color_index),
                     width_500ths=transverse_width,
                     start_dlong=end_dlong,
                     start_dlat=transverse_center_dlat,
@@ -229,6 +230,7 @@ def tsd_object_to_payload(
         "left_margin_500ths": int(obj.left_margin_500ths),
         "transverse_line_thickness_500ths": int(obj.transverse_line_thickness_500ths),
         "color_index": int(obj.color_index),
+        "transverse_line_color_index": int(obj.transverse_line_color_index),
         "command": normalize_tsd_command(obj.command),
     }
 
@@ -289,5 +291,6 @@ def tsd_object_from_payload(
         left_margin_500ths=max(0, int(payload.get("left_margin_500ths", 0))),
         transverse_line_thickness_500ths=max(0, int(payload.get("transverse_line_thickness_500ths", 0))),
         color_index=int(payload.get("color_index", 36)),
+        transverse_line_color_index=int(payload.get("transverse_line_color_index", payload.get("color_index", 36))),
         command=normalize_tsd_command(str(payload.get("command", "Detail"))),
     )
