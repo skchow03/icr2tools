@@ -2963,14 +2963,135 @@ class SGViewerController:
                 command="Detail",
             )
 
-        def _live_preview_tsd_object() -> None:
+        def _set_tsd_object_form_values(
+            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+        ) -> None:
+            with QtCore.QSignalBlocker(type_combo):
+                type_value = (
+                    "double_solid_line"
+                    if isinstance(obj, TsdDoubleSolidLineObject)
+                    else "transverse_line"
+                    if isinstance(obj, TsdTransverseLineObject)
+                    else "zebra_crossing"
+                )
+                type_index = type_combo.findData(type_value)
+                if type_index >= 0:
+                    type_combo.setCurrentIndex(type_index)
+            with QtCore.QSignalBlocker(name_edit):
+                name_edit.setText(obj.name)
+            with QtCore.QSignalBlocker(start_dlong_spin):
+                start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdZebraCrossingObject) else 0)
+            with QtCore.QSignalBlocker(right_dlat_spin):
+                right_dlat_spin.setValue(obj.right_dlat if isinstance(obj, TsdZebraCrossingObject) else 20000)
+            with QtCore.QSignalBlocker(left_dlat_spin):
+                left_dlat_spin.setValue(obj.left_dlat if isinstance(obj, TsdZebraCrossingObject) else -20000)
+            with QtCore.QSignalBlocker(stripe_width_spin):
+                stripe_width_spin.setValue(
+                    obj.stripe_width_500ths if isinstance(obj, TsdZebraCrossingObject) else 4000
+                )
+            with QtCore.QSignalBlocker(stripe_length_spin):
+                stripe_length_spin.setValue(
+                    obj.stripe_length_500ths if isinstance(obj, TsdZebraCrossingObject) else 28000
+                )
+            with QtCore.QSignalBlocker(stripe_spacing_spin):
+                stripe_spacing_spin.setValue(
+                    obj.stripe_spacing_500ths if isinstance(obj, TsdZebraCrossingObject) else 3000
+                )
+            with QtCore.QSignalBlocker(right_margin_spin):
+                right_margin_spin.setValue(obj.right_margin_500ths if isinstance(obj, TsdZebraCrossingObject) else 0)
+            with QtCore.QSignalBlocker(left_margin_spin):
+                left_margin_spin.setValue(obj.left_margin_500ths if isinstance(obj, TsdZebraCrossingObject) else 0)
+            with QtCore.QSignalBlocker(transverse_line_enabled):
+                transverse_line_enabled.setChecked(
+                    isinstance(obj, TsdZebraCrossingObject) and int(obj.transverse_line_thickness_500ths) > 0
+                )
+            with QtCore.QSignalBlocker(transverse_line_thickness_spin):
+                transverse_line_thickness_spin.setValue(
+                    obj.transverse_line_thickness_500ths if isinstance(obj, TsdZebraCrossingObject) else 2500
+                )
+            with QtCore.QSignalBlocker(transverse_line_color_spin):
+                transverse_line_color_spin.setValue(
+                    obj.transverse_line_color_index if isinstance(obj, TsdZebraCrossingObject) else 36
+                )
+            with QtCore.QSignalBlocker(adjusted_dlong_spin):
+                adjusted_dlong_spin.setValue(obj.adjusted_dlong if isinstance(obj, TsdTransverseLineObject) else 0)
+            with QtCore.QSignalBlocker(start_adjusted_dlong_spin):
+                start_adjusted_dlong_spin.setValue(
+                    obj.start_adjusted_dlong if isinstance(obj, TsdDoubleSolidLineObject) else 0
+                )
+            with QtCore.QSignalBlocker(end_adjusted_dlong_spin):
+                end_adjusted_dlong_spin.setValue(
+                    obj.end_adjusted_dlong if isinstance(obj, TsdDoubleSolidLineObject) else 20000
+                )
+            with QtCore.QSignalBlocker(dlat_spin):
+                dlat_spin.setValue(obj.dlat if isinstance(obj, TsdDoubleSolidLineObject) else 0)
+            with QtCore.QSignalBlocker(right_dlat_bound_spin):
+                right_dlat_bound_spin.setValue(
+                    obj.right_dlat_bound if isinstance(obj, TsdTransverseLineObject) else 20000
+                )
+            with QtCore.QSignalBlocker(left_dlat_bound_spin):
+                left_dlat_bound_spin.setValue(
+                    obj.left_dlat_bound if isinstance(obj, TsdTransverseLineObject) else -20000
+                )
+            with QtCore.QSignalBlocker(line_width_spin):
+                line_width_spin.setValue(
+                    obj.line_width_500ths
+                    if isinstance(obj, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
+                    else 5000
+                )
+            with QtCore.QSignalBlocker(color_spin):
+                color_spin.setValue(obj.color_index)
+            _sync_tsd_object_field_visibility()
+
+        def _candidate_tsd_objects(
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject]:
+            edit_row = self._editing_tsd_object_index
+            if edit_row is not None and 0 <= edit_row < len(self._tsd_objects):
+                objects = list(self._tsd_objects)
+                objects[edit_row] = preview_object
+                return objects
+            return [*self._tsd_objects, preview_object]
+
+        def _warn_if_excessive_tsd_lines(
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+        ) -> bool:
+            line_count = sum(len(obj.generated_lines()) for obj in _candidate_tsd_objects(preview_object))
+            if line_count <= 1000:
+                return True
+            answer = QtWidgets.QMessageBox.warning(
+                dialog,
+                "Large TSD line count",
+                (
+                    f"Committing this change would produce {line_count} TSD lines.\n\n"
+                    "This can slow the editor. Commit this value anyway?"
+                ),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            return answer == QtWidgets.QMessageBox.Yes
+
+        def _live_preview_tsd_object(*, require_confirmation: bool = False) -> bool:
             preview_object = _build_tsd_object_from_form()
+            if require_confirmation and not _warn_if_excessive_tsd_lines(preview_object):
+                return False
             edit_row = self._editing_tsd_object_index
             if edit_row is not None and 0 <= edit_row < len(self._tsd_objects):
                 self._tsd_objects[edit_row] = preview_object
             else:
                 self._tsd_object_dialog_preview_object = preview_object
             self._refresh_tsd_preview_lines()
+            return True
+
+        committed_preview_object = _build_tsd_object_from_form()
+
+        def _commit_tsd_object_preview_change() -> None:
+            nonlocal committed_preview_object
+            if _live_preview_tsd_object(require_confirmation=True):
+                committed_preview_object = _build_tsd_object_from_form()
+                return
+            _set_tsd_object_form_values(committed_preview_object)
+            _live_preview_tsd_object(require_confirmation=False)
 
         preview_controls: tuple[QtWidgets.QWidget, ...] = (
             type_combo,
@@ -2997,13 +3118,13 @@ class SGViewerController:
         )
         for control in preview_controls:
             if isinstance(control, QtWidgets.QLineEdit):
-                control.textChanged.connect(lambda *_args: _live_preview_tsd_object())
+                control.editingFinished.connect(_commit_tsd_object_preview_change)
             elif isinstance(control, QtWidgets.QCheckBox):
-                control.toggled.connect(lambda *_args: _live_preview_tsd_object())
+                control.toggled.connect(lambda *_args: _commit_tsd_object_preview_change())
             elif isinstance(control, QtWidgets.QComboBox):
-                control.currentIndexChanged.connect(lambda *_args: _live_preview_tsd_object())
+                control.currentIndexChanged.connect(lambda *_args: _commit_tsd_object_preview_change())
             elif isinstance(control, QtWidgets.QSpinBox):
-                control.valueChanged.connect(lambda *_args: _live_preview_tsd_object())
+                control.editingFinished.connect(_commit_tsd_object_preview_change)
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
@@ -3012,7 +3133,7 @@ class SGViewerController:
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addRow(buttons)
-        _live_preview_tsd_object()
+        _live_preview_tsd_object(require_confirmation=False)
         wait_loop = QtCore.QEventLoop(dialog)
         dialog.finished.connect(wait_loop.quit)
         dialog.show()
