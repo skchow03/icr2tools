@@ -23,8 +23,8 @@ def test_zebra_crossing_generates_stripes_with_consistent_dlong_span() -> None:
     assert len(lines) == obj.stripe_count
     assert all(line.start_dlong == 1000 for line in lines)
     assert all(line.end_dlong == 21000 for line in lines)
-    assert [line.start_dlat for line in lines] == [12000, 7000, 2000, -3000, -8000]
-    assert [line.end_dlat for line in lines] == [12000, 7000, 2000, -3000, -8000]
+    assert [line.start_dlat for line in lines] == [10000, 5000, 0, -5000, -10000]
+    assert [line.end_dlat for line in lines] == [10000, 5000, 0, -5000, -10000]
 
 
 def test_zebra_crossing_stops_at_left_bound() -> None:
@@ -40,8 +40,26 @@ def test_zebra_crossing_stops_at_left_bound() -> None:
 
     lines = obj.generated_lines()
 
-    assert len(lines) == 3
-    assert [line.start_dlat for line in lines] == [10000, 6000, 2000]
+    assert len(lines) == 2
+    assert [line.start_dlat for line in lines] == [8500, 4500]
+
+
+def test_zebra_crossing_allows_explicit_bound_margins() -> None:
+    obj = TsdZebraCrossingObject(
+        name="Margins",
+        start_dlong=0,
+        right_dlat=-10000,
+        left_dlat=12000,
+        stripe_width_500ths=2000,
+        stripe_length_500ths=5000,
+        stripe_spacing_500ths=2000,
+        right_margin_500ths=1500,
+        left_margin_500ths=2500,
+    )
+
+    lines = obj.generated_lines()
+
+    assert [line.start_dlat for line in lines] == [-7500, -3500, 500, 4500, 8500]
 
 
 def test_zebra_crossing_payload_back_compat_center_dlat() -> None:
@@ -110,7 +128,11 @@ def test_zebra_crossing_payload_round_trip_transverse_line_thickness() -> None:
 
     assert isinstance(obj, TsdZebraCrossingObject)
     assert obj.transverse_line_thickness_500ths == 2200
+    assert obj.right_margin_500ths == 0
+    assert obj.left_margin_500ths == 0
     assert serialized["transverse_line_thickness_500ths"] == 2200
+    assert serialized["right_margin_500ths"] == 0
+    assert serialized["left_margin_500ths"] == 0
 
 
 def test_transverse_line_generates_single_line() -> None:
