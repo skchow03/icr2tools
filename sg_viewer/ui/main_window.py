@@ -156,6 +156,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_remove_file_button = QtWidgets.QPushButton("Remove .TSD file from project")
         self._tsd_remove_file_button.setEnabled(False)
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
+        self._tsd_duplicate_object_button = QtWidgets.QPushButton("Duplicate TSD Object")
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
         self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
         self._tsd_remove_selected_object_button = QtWidgets.QPushButton("Remove Selected TSD Object")
@@ -791,13 +792,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
         tsd_objects_layout = QtWidgets.QVBoxLayout()
         tsd_objects_layout.addWidget(QtWidgets.QLabel("Create higher-level patterns that generate multiple TSD lines."))
-        tsd_object_buttons = QtWidgets.QHBoxLayout()
-        tsd_object_buttons.addWidget(self._tsd_add_object_button)
-        tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button)
-        tsd_object_buttons.addWidget(self._tsd_move_object_up_button)
-        tsd_object_buttons.addWidget(self._tsd_move_object_down_button)
-        tsd_object_buttons.addWidget(self._tsd_export_objects_button)
-        tsd_object_buttons.addWidget(self._tsd_skid_marks_button)
+        tsd_object_buttons = QtWidgets.QGridLayout()
+        tsd_object_buttons.addWidget(self._tsd_add_object_button, 0, 0)
+        tsd_object_buttons.addWidget(self._tsd_duplicate_object_button, 0, 1)
+        tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button, 0, 2)
+        tsd_object_buttons.addWidget(self._tsd_move_object_up_button, 1, 0)
+        tsd_object_buttons.addWidget(self._tsd_move_object_down_button, 1, 1)
+        tsd_object_buttons.addWidget(self._tsd_export_objects_button, 1, 2)
+        tsd_object_buttons.addWidget(self._tsd_skid_marks_button, 1, 3)
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
         tsd_objects_group.setLayout(tsd_objects_layout)
@@ -814,6 +816,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Remove selected .TSD file(s) from this project without deleting files from disk."
         )
         self._tsd_add_object_button.setToolTip("Create a new TSD object pattern.")
+        self._tsd_duplicate_object_button.setToolTip("Duplicate the selected TSD object below it.")
         self._tsd_remove_selected_object_button.setToolTip("Remove the selected TSD object.")
         self._tsd_move_object_up_button.setToolTip("Move the selected TSD object up one row.")
         self._tsd_move_object_down_button.setToolTip("Move the selected TSD object down one row.")
@@ -1172,6 +1175,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_remove_selected_object_button(self) -> QtWidgets.QPushButton:
         return self._tsd_remove_selected_object_button
+
+    @property
+    def tsd_duplicate_object_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_duplicate_object_button
 
     @property
     def tsd_move_object_up_button(self) -> QtWidgets.QPushButton:

@@ -2216,6 +2216,7 @@ def test_tsd_objects_controls_exist(qapp):
     window = SGViewerWindow()
     try:
         assert window.tsd_add_object_button.text() == "Add TSD Object"
+        assert window.tsd_duplicate_object_button.text() == "Duplicate TSD Object"
         assert window.tsd_remove_selected_object_button.text() == "Remove Selected TSD Object"
         assert window.tsd_move_object_up_button.text() == "Move Up"
         assert window.tsd_move_object_down_button.text() == "Move Down"
@@ -2445,6 +2446,48 @@ def test_move_selected_tsd_object_up_and_down(qapp):
         window.tsd_objects_table.selectRow(0)
         window.controller._on_tsd_move_object_down_requested()
         assert [obj.name for obj in window.controller._tsd_objects] == ["A", "B"]
+    finally:
+        window.close()
+
+
+def test_duplicate_selected_tsd_object_inserts_duplicate_below_selection(qapp):
+    window = SGViewerWindow()
+    try:
+        objects = iter(
+            [
+                TsdZebraCrossingObject(
+                    name="A",
+                    start_dlong=0,
+                    right_dlat=10000,
+                    left_dlat=-10000,
+                    stripe_width_500ths=4000,
+                    stripe_length_500ths=10000,
+                    stripe_spacing_500ths=1000,
+                    color_index=36,
+                    command="Detail",
+                ),
+                TsdZebraCrossingObject(
+                    name="B",
+                    start_dlong=1000,
+                    right_dlat=10000,
+                    left_dlat=-10000,
+                    stripe_width_500ths=4000,
+                    stripe_length_500ths=10000,
+                    stripe_spacing_500ths=1000,
+                    color_index=36,
+                    command="Detail",
+                ),
+            ]
+        )
+        window.controller._open_tsd_object_dialog = lambda existing=None: next(objects)
+        window.controller._on_tsd_add_object_requested()
+        window.controller._on_tsd_add_object_requested()
+
+        window.tsd_objects_table.selectRow(0)
+        window.controller._on_tsd_duplicate_object_requested()
+
+        assert [obj.name for obj in window.controller._tsd_objects] == ["A", "A", "B"]
+        assert window.tsd_objects_table.currentRow() == 1
     finally:
         window.close()
 
