@@ -223,6 +223,10 @@ class SGViewerController:
         self._skid_marks_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject] = []
+        self._tsd_object_dialog_preview_object: (
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None
+        ) = None
+        self._editing_tsd_object_index: int | None = None
         self._generated_skid_mark_lines: tuple[TrackSurfaceDetailLine, ...] = ()
         self._skid_marks_rows_text = ""
         self._skid_marks_colors = DEFAULT_SKID_COLORS
@@ -2360,6 +2364,8 @@ class SGViewerController:
         lines = list(self._tsd_lines_model.all_lines())
         for obj in self._tsd_objects:
             lines.extend(obj.generated_lines())
+        if self._tsd_object_dialog_preview_object is not None:
+            lines.extend(self._tsd_object_dialog_preview_object.generated_lines())
         lines.extend(self._generated_skid_mark_lines)
         return tuple(lines)
 
@@ -2572,8 +2578,11 @@ class SGViewerController:
         return sorted(row_indices)
 
     def _on_tsd_add_object_requested(self) -> None:
+        self._editing_tsd_object_index = None
         new_object = self._open_tsd_object_dialog()
+        self._tsd_object_dialog_preview_object = None
         if new_object is None:
+            self._refresh_tsd_preview_lines()
             return
         self._tsd_objects.append(new_object)
         self._refresh_tsd_objects_table()
@@ -2688,8 +2697,14 @@ class SGViewerController:
     def _open_tsd_object_attributes_dialog(self, row: int) -> None:
         if row < 0 or row >= len(self._tsd_objects):
             return
+        original_object = self._tsd_objects[row]
+        self._editing_tsd_object_index = row
         updated = self._open_tsd_object_dialog(existing=self._tsd_objects[row])
+        self._editing_tsd_object_index = None
+        self._tsd_object_dialog_preview_object = None
         if updated is None:
+            self._tsd_objects[row] = original_object
+            self._refresh_tsd_preview_lines()
             return
         self._tsd_objects[row] = updated
         self._refresh_tsd_preview_lines()
@@ -2703,6 +2718,8 @@ class SGViewerController:
         existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None = None,
     ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None:
         dialog = QtWidgets.QDialog(self._window)
+        dialog.setModal(False)
+        dialog.setWindowModality(QtCore.Qt.NonModal)
         dialog.setWindowTitle("TSD Object Attributes")
         layout = QtWidgets.QFormLayout(dialog)
         type_combo = QtWidgets.QComboBox(dialog)
@@ -2742,6 +2759,12 @@ class SGViewerController:
         stripe_spacing_spin = QtWidgets.QSpinBox(dialog)
         stripe_spacing_spin.setRange(0, 2_000_000_000)
         stripe_spacing_spin.setValue(existing.stripe_spacing_500ths if isinstance(existing, TsdZebraCrossingObject) else 3000)
+        right_margin_spin = QtWidgets.QSpinBox(dialog)
+        right_margin_spin.setRange(0, 2_000_000_000)
+        right_margin_spin.setValue(existing.right_margin_500ths if isinstance(existing, TsdZebraCrossingObject) else 0)
+        left_margin_spin = QtWidgets.QSpinBox(dialog)
+        left_margin_spin.setRange(0, 2_000_000_000)
+        left_margin_spin.setValue(existing.left_margin_500ths if isinstance(existing, TsdZebraCrossingObject) else 0)
         transverse_line_enabled = QtWidgets.QCheckBox("Draw at crosswalk ends", dialog)
         transverse_line_enabled.setChecked(
             isinstance(existing, TsdZebraCrossingObject)
@@ -2794,6 +2817,8 @@ class SGViewerController:
         layout.addRow("Stripe Width", stripe_width_spin)
         layout.addRow("Stripe Length", stripe_length_spin)
         layout.addRow("Stripe Spacing", stripe_spacing_spin)
+        layout.addRow("Right Margin from Bound", right_margin_spin)
+        layout.addRow("Left Margin from Bound", left_margin_spin)
         layout.addRow("End Transverse Lines", transverse_line_enabled)
         layout.addRow("End Line Thickness", transverse_line_thickness_spin)
         layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
@@ -2811,6 +2836,8 @@ class SGViewerController:
             stripe_width_spin,
             stripe_length_spin,
             stripe_spacing_spin,
+            right_margin_spin,
+            left_margin_spin,
             transverse_line_enabled,
             transverse_line_thickness_spin,
         )
@@ -2850,6 +2877,98 @@ class SGViewerController:
         type_combo.currentIndexChanged.connect(_sync_tsd_object_field_visibility)
         transverse_line_enabled.toggled.connect(_sync_tsd_object_field_visibility)
         _sync_tsd_object_field_visibility()
+
+        def _build_tsd_object_from_form() -> (
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject
+        ):
+            object_type = str(type_combo.currentData())
+            if object_type == "double_solid_line":
+                name = name_edit.text().strip() or f"Double Solid Line {default_index}"
+                return TsdDoubleSolidLineObject(
+                    name=name,
+                    start_adjusted_dlong=start_adjusted_dlong_spin.value(),
+                    end_adjusted_dlong=end_adjusted_dlong_spin.value(),
+                    dlat=dlat_spin.value(),
+                    line_width_500ths=line_width_spin.value(),
+                    color_index=color_spin.value(),
+                    command="Detail",
+                )
+            if object_type == "transverse_line":
+                name = name_edit.text().strip() or f"Transverse Line {default_index}"
+                section_index = (
+                    existing.section_index
+                    if isinstance(existing, TsdTransverseLineObject)
+                    else self._window.preview.selection_manager.selected_section_index
+                ) or 0
+                return TsdTransverseLineObject(
+                    name=name,
+                    section_index=section_index,
+                    adjusted_dlong=adjusted_dlong_spin.value(),
+                    line_width_500ths=line_width_spin.value(),
+                    right_dlat_bound=right_dlat_bound_spin.value(),
+                    left_dlat_bound=left_dlat_bound_spin.value(),
+                    color_index=color_spin.value(),
+                    command="Detail",
+                )
+            name = name_edit.text().strip() or f"Zebra Crossing {default_index}"
+            return TsdZebraCrossingObject(
+                name=name,
+                start_dlong=start_dlong_spin.value(),
+                right_dlat=right_dlat_spin.value(),
+                left_dlat=left_dlat_spin.value(),
+                stripe_width_500ths=stripe_width_spin.value(),
+                stripe_length_500ths=stripe_length_spin.value(),
+                stripe_spacing_500ths=stripe_spacing_spin.value(),
+                right_margin_500ths=right_margin_spin.value(),
+                left_margin_500ths=left_margin_spin.value(),
+                transverse_line_thickness_500ths=(
+                    transverse_line_thickness_spin.value() if transverse_line_enabled.isChecked() else 0
+                ),
+                color_index=color_spin.value(),
+                command="Detail",
+            )
+
+        def _live_preview_tsd_object() -> None:
+            preview_object = _build_tsd_object_from_form()
+            edit_row = self._editing_tsd_object_index
+            if edit_row is not None and 0 <= edit_row < len(self._tsd_objects):
+                self._tsd_objects[edit_row] = preview_object
+            else:
+                self._tsd_object_dialog_preview_object = preview_object
+            self._refresh_tsd_preview_lines()
+
+        preview_controls: tuple[QtWidgets.QWidget, ...] = (
+            type_combo,
+            name_edit,
+            start_dlong_spin,
+            right_dlat_spin,
+            left_dlat_spin,
+            stripe_width_spin,
+            stripe_length_spin,
+            stripe_spacing_spin,
+            right_margin_spin,
+            left_margin_spin,
+            transverse_line_enabled,
+            transverse_line_thickness_spin,
+            adjusted_dlong_spin,
+            start_adjusted_dlong_spin,
+            end_adjusted_dlong_spin,
+            dlat_spin,
+            right_dlat_bound_spin,
+            left_dlat_bound_spin,
+            line_width_spin,
+            color_spin,
+        )
+        for control in preview_controls:
+            if isinstance(control, QtWidgets.QLineEdit):
+                control.textChanged.connect(lambda *_args: _live_preview_tsd_object())
+            elif isinstance(control, QtWidgets.QCheckBox):
+                control.toggled.connect(lambda *_args: _live_preview_tsd_object())
+            elif isinstance(control, QtWidgets.QComboBox):
+                control.currentIndexChanged.connect(lambda *_args: _live_preview_tsd_object())
+            elif isinstance(control, QtWidgets.QSpinBox):
+                control.valueChanged.connect(lambda *_args: _live_preview_tsd_object())
+
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
             parent=dialog,
@@ -2857,52 +2976,14 @@ class SGViewerController:
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addRow(buttons)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
+        _live_preview_tsd_object()
+        wait_loop = QtCore.QEventLoop(dialog)
+        dialog.finished.connect(wait_loop.quit)
+        dialog.show()
+        wait_loop.exec()
+        if dialog.result() != QtWidgets.QDialog.Accepted:
             return None
-        object_type = str(type_combo.currentData())
-        if object_type == "double_solid_line":
-            name = name_edit.text().strip() or f"Double Solid Line {default_index}"
-            return TsdDoubleSolidLineObject(
-                name=name,
-                start_adjusted_dlong=start_adjusted_dlong_spin.value(),
-                end_adjusted_dlong=end_adjusted_dlong_spin.value(),
-                dlat=dlat_spin.value(),
-                line_width_500ths=line_width_spin.value(),
-                color_index=color_spin.value(),
-                command="Detail",
-            )
-        if object_type == "transverse_line":
-            name = name_edit.text().strip() or f"Transverse Line {default_index}"
-            section_index = (
-                existing.section_index
-                if isinstance(existing, TsdTransverseLineObject)
-                else self._window.preview.selection_manager.selected_section_index
-            ) or 0
-            return TsdTransverseLineObject(
-                name=name,
-                section_index=section_index,
-                adjusted_dlong=adjusted_dlong_spin.value(),
-                line_width_500ths=line_width_spin.value(),
-                right_dlat_bound=right_dlat_bound_spin.value(),
-                left_dlat_bound=left_dlat_bound_spin.value(),
-                color_index=color_spin.value(),
-                command="Detail",
-            )
-        name = name_edit.text().strip() or f"Zebra Crossing {default_index}"
-        return TsdZebraCrossingObject(
-            name=name,
-            start_dlong=start_dlong_spin.value(),
-            right_dlat=right_dlat_spin.value(),
-            left_dlat=left_dlat_spin.value(),
-            stripe_width_500ths=stripe_width_spin.value(),
-            stripe_length_500ths=stripe_length_spin.value(),
-            stripe_spacing_500ths=stripe_spacing_spin.value(),
-            transverse_line_thickness_500ths=(
-                transverse_line_thickness_spin.value() if transverse_line_enabled.isChecked() else 0
-            ),
-            color_index=color_spin.value(),
-            command="Detail",
-        )
+        return _build_tsd_object_from_form()
 
     def _on_tsd_export_objects_requested(self) -> None:
         if not self._tsd_objects:

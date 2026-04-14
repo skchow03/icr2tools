@@ -96,6 +96,8 @@ class TsdZebraCrossingObject:
     stripe_width_500ths: int
     stripe_length_500ths: int
     stripe_spacing_500ths: int
+    right_margin_500ths: int = 0
+    left_margin_500ths: int = 0
     transverse_line_thickness_500ths: int = 0
     color_index: int = 36
     command: str = "Detail"
@@ -107,7 +109,18 @@ class TsdZebraCrossingObject:
         stride = width + spacing
         if stride <= 0:
             return 1
-        span = abs(int(self.left_dlat) - int(self.right_dlat))
+        right_dlat = int(self.right_dlat)
+        left_dlat = int(self.left_dlat)
+        direction = 1 if left_dlat >= right_dlat else -1
+        inward_offset = (width / 2.0) + max(0, int(self.right_margin_500ths))
+        inward_opposite = (width / 2.0) + max(0, int(self.left_margin_500ths))
+        first_center = right_dlat + int(round(direction * inward_offset))
+        last_center = left_dlat - int(round(direction * inward_opposite))
+        if direction > 0 and first_center > last_center:
+            return 0
+        if direction < 0 and first_center < last_center:
+            return 0
+        span = abs(last_center - first_center)
         return max(1, (span // stride) + 1)
 
     def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
@@ -125,11 +138,14 @@ class TsdZebraCrossingObject:
         direction = 1 if left_dlat >= right_dlat else -1
 
         lines: list[TrackSurfaceDetailLine] = []
-        current_dlat = right_dlat
+        right_margin = max(0, int(self.right_margin_500ths))
+        left_margin = max(0, int(self.left_margin_500ths))
+        current_dlat = right_dlat + int(round(direction * ((width / 2.0) + right_margin)))
+        max_dlat = left_dlat - int(round(direction * ((width / 2.0) + left_margin)))
         for _ in range(self.stripe_count):
-            if direction > 0 and current_dlat > left_dlat:
+            if direction > 0 and current_dlat > max_dlat:
                 break
-            if direction < 0 and current_dlat < left_dlat:
+            if direction < 0 and current_dlat < max_dlat:
                 break
             lines.append(
                 TrackSurfaceDetailLine(
@@ -209,6 +225,8 @@ def tsd_object_to_payload(
         "stripe_width_500ths": int(obj.stripe_width_500ths),
         "stripe_length_500ths": int(obj.stripe_length_500ths),
         "stripe_spacing_500ths": int(obj.stripe_spacing_500ths),
+        "right_margin_500ths": int(obj.right_margin_500ths),
+        "left_margin_500ths": int(obj.left_margin_500ths),
         "transverse_line_thickness_500ths": int(obj.transverse_line_thickness_500ths),
         "color_index": int(obj.color_index),
         "command": normalize_tsd_command(obj.command),
@@ -267,6 +285,8 @@ def tsd_object_from_payload(
         stripe_width_500ths=max(1, int(payload["stripe_width_500ths"])),
         stripe_length_500ths=max(1, int(payload["stripe_length_500ths"])),
         stripe_spacing_500ths=max(0, int(payload["stripe_spacing_500ths"])),
+        right_margin_500ths=max(0, int(payload.get("right_margin_500ths", 0))),
+        left_margin_500ths=max(0, int(payload.get("left_margin_500ths", 0))),
         transverse_line_thickness_500ths=max(0, int(payload.get("transverse_line_thickness_500ths", 0))),
         color_index=int(payload.get("color_index", 36)),
         command=normalize_tsd_command(str(payload.get("command", "Detail"))),
