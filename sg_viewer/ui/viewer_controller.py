@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import random
 import subprocess
 import sys
 from time import perf_counter
@@ -38,6 +39,13 @@ from sg_viewer.services.tsd_objects import (
     TsdZebraCrossingObject,
     tsd_object_from_payload,
     tsd_object_to_payload,
+)
+from sg_viewer.services.skid_marks import (
+    DEFAULT_SKID_COLORS,
+    SkidMarkGenerationParameters,
+    generate_skid_mark_lines,
+    parse_colors_csv,
+    parse_skid_sections_csv,
 )
 from sg_viewer.services.trackside_objects import (
     TracksideObject,
@@ -214,6 +222,9 @@ class SGViewerController:
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject] = []
+        self._generated_skid_mark_lines: tuple[TrackSurfaceDetailLine, ...] = ()
+        self._skid_marks_rows_text = ""
+        self._skid_marks_colors = DEFAULT_SKID_COLORS
         self._trackside_objects: list[TracksideObject] = []
         self._selected_trackside_object_indices: list[int] = []
         self._objects_tab_selected_trackside_object_indices: list[int] = []
@@ -1185,6 +1196,7 @@ class SGViewerController:
         self._window.tsd_move_object_up_button.clicked.connect(self._on_tsd_move_object_up_requested)
         self._window.tsd_move_object_down_button.clicked.connect(self._on_tsd_move_object_down_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
+        self._window.tsd_skid_marks_button.clicked.connect(self._on_tsd_skid_marks_requested)
         self._window.tsd_objects_table.itemSelectionChanged.connect(self._on_tsd_object_selection_changed)
         self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
@@ -1464,6 +1476,13 @@ class SGViewerController:
             self._current_path,
             [tsd_object_to_payload(obj) for obj in self._tsd_objects],
         )
+        self._sg_settings_store.set_tsd_skid_marks_state(
+            self._current_path,
+            {
+                "rows_csv": self._skid_marks_rows_text,
+                "colors_csv": ",".join(str(value) for value in self._skid_marks_colors),
+            },
+        )
         self._sg_settings_store.set_trackside_objects(
             self._current_path,
             [trackside_object_to_payload(obj) for obj in self._trackside_objects],
@@ -1476,6 +1495,9 @@ class SGViewerController:
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
         self._sync_tso_visibility_section_dlongs()
+        self._generated_skid_mark_lines = ()
+        self._skid_marks_rows_text = ""
+        self._skid_marks_colors = DEFAULT_SKID_COLORS
         if self._current_path is None:
             return
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
@@ -1486,6 +1508,17 @@ class SGViewerController:
                 self._tsd_objects.append(tsd_object_from_payload(raw_object))
             except (ValueError, TypeError, KeyError):
                 logger.warning("Unable to restore TSD object %s", raw_object, exc_info=True)
+        skid_state = self._sg_settings_store.get_tsd_skid_marks_state(self._current_path)
+        if isinstance(skid_state, dict):
+            raw_rows = skid_state.get("rows_csv")
+            raw_colors = skid_state.get("colors_csv")
+            if isinstance(raw_rows, str):
+                self._skid_marks_rows_text = raw_rows
+            if isinstance(raw_colors, str):
+                try:
+                    self._skid_marks_colors = parse_colors_csv(raw_colors)
+                except ValueError:
+                    self._skid_marks_colors = DEFAULT_SKID_COLORS
         self._refresh_tsd_objects_table()
         self._trackside_objects = []
         for raw_object in self._sg_settings_store.get_trackside_objects(self._current_path):
@@ -2326,7 +2359,98 @@ class SGViewerController:
         lines = list(self._tsd_lines_model.all_lines())
         for obj in self._tsd_objects:
             lines.extend(obj.generated_lines())
+        lines.extend(self._generated_skid_mark_lines)
         return tuple(lines)
+
+    def _on_tsd_skid_marks_requested(self) -> None:
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Generate Skid Marks")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        info_label = QtWidgets.QLabel(
+            "Enter one CSV row per section:\n"
+            "name,start_dlong,apex_dlong,end_dlong,min_len,max_len,width,num_skids,"
+            "start_dlat_a,start_dlat_b,apex_dlat_a,apex_dlat_b,end_dlat_a,end_dlat_b"
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        colors_edit = QtWidgets.QLineEdit(",".join(str(value) for value in self._skid_marks_colors), dialog)
+        rows_edit = QtWidgets.QPlainTextEdit(dialog)
+        rows_edit.setPlaceholderText(
+            "Example:\nTurn1,100000,120000,150000,3500,9000,2200,14,22000,16000,13000,7000,14000,5000"
+        )
+        rows_edit.setPlainText(self._skid_marks_rows_text)
+        layout.addWidget(QtWidgets.QLabel("Colors (comma-separated palette indices):"))
+        layout.addWidget(colors_edit)
+        layout.addWidget(QtWidgets.QLabel("Section rows:"))
+        layout.addWidget(rows_edit)
+        buttons = QtWidgets.QDialogButtonBox(parent=dialog)
+        randomize_button = buttons.addButton("Randomize skid marks", QtWidgets.QDialogButtonBox.ActionRole)
+        save_button = buttons.addButton("Save generated .TSD…", QtWidgets.QDialogButtonBox.ActionRole)
+        close_button = buttons.addButton(QtWidgets.QDialogButtonBox.Close)
+        close_button.clicked.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        def _parse_parameters_from_dialog() -> SkidMarkGenerationParameters:
+            colors = parse_colors_csv(colors_edit.text())
+            sections = parse_skid_sections_csv(rows_edit.toPlainText())
+            if not sections:
+                raise ValueError("Add at least one section row before generating skid marks.")
+            return SkidMarkGenerationParameters(colors=colors, sections=sections)
+
+        def _persist_dialog_values() -> None:
+            self._skid_marks_rows_text = rows_edit.toPlainText().strip()
+            self._skid_marks_colors = parse_colors_csv(colors_edit.text())
+            self._set_tsd_dirty(True)
+            self._persist_tsd_state_for_current_track()
+
+        def _generate() -> None:
+            try:
+                parameters = _parse_parameters_from_dialog()
+            except ValueError as exc:
+                QtWidgets.QMessageBox.warning(dialog, "Skid Marks", str(exc))
+                return
+            self._generated_skid_mark_lines = generate_skid_mark_lines(
+                parameters,
+                rng=random.Random(),
+            )
+            _persist_dialog_values()
+            self._refresh_tsd_preview_lines()
+            self._window.show_status_message(
+                f"Generated {len(self._generated_skid_mark_lines)} randomized skid mark lines."
+            )
+
+        def _save_generated() -> None:
+            if not self._generated_skid_mark_lines:
+                QtWidgets.QMessageBox.information(
+                    dialog,
+                    "Save Generated Skid Marks",
+                    "Generate skid marks first.",
+                )
+                return
+            output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+                self._window,
+                "Save Generated Skid Marks",
+                "skid_marks.tsd",
+                "TSD Files (*.tsd)",
+            )
+            if not output_path:
+                return
+            path = Path(output_path)
+            if path.suffix.lower() != ".tsd":
+                path = path.with_suffix(".tsd")
+            try:
+                path.write_text(
+                    serialize_tsd(TrackSurfaceDetailFile(lines=self._generated_skid_mark_lines)),
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                QtWidgets.QMessageBox.critical(dialog, "Save Generated Skid Marks", str(exc))
+                return
+            self._window.show_status_message(f"Saved generated skid marks to {path.name}.")
+
+        randomize_button.clicked.connect(_generate)
+        save_button.clicked.connect(_save_generated)
+        dialog.exec()
 
     def _refresh_tsd_objects_table(self) -> None:
         table = self._window.tsd_objects_table

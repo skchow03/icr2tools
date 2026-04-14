@@ -177,6 +177,21 @@ class SGSettingsStore:
         tsd_state["objects"] = objects
         self.update(sg_path, tsd=tsd_state)
 
+    def get_tsd_skid_marks_state(self, sg_path: Path) -> dict[str, object] | None:
+        payload = self.load(sg_path)
+        raw = payload.get("tsd")
+        if not isinstance(raw, dict):
+            return None
+        skid_marks = raw.get("skid_marks")
+        return skid_marks if isinstance(skid_marks, dict) else None
+
+    def set_tsd_skid_marks_state(self, sg_path: Path, state: dict[str, object]) -> None:
+        payload = self.load(sg_path)
+        raw_tsd = payload.get("tsd")
+        tsd_state = dict(raw_tsd) if isinstance(raw_tsd, dict) else {}
+        tsd_state["skid_marks"] = state
+        self.update(sg_path, tsd=tsd_state)
+
     def get_trackside_objects(self, sg_path: Path) -> list[dict[str, object]]:
         payload = self.load(sg_path)
         raw = payload.get("trackside_objects")
