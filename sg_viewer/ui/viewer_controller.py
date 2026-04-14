@@ -9,7 +9,7 @@ import sys
 from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -1197,6 +1197,7 @@ class SGViewerController:
         self._window.tsd_remove_file_button.clicked.connect(self._on_tsd_remove_file_requested)
         self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
         self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
+        self._window.tsd_duplicate_object_button.clicked.connect(self._on_tsd_duplicate_object_requested)
         self._window.tsd_remove_selected_object_button.clicked.connect(self._on_tsd_remove_selected_object_requested)
         self._window.tsd_move_object_up_button.clicked.connect(self._on_tsd_move_object_up_requested)
         self._window.tsd_move_object_down_button.clicked.connect(self._on_tsd_move_object_down_requested)
@@ -2665,6 +2666,27 @@ class SGViewerController:
             if 0 <= row < len(self._tsd_objects):
                 del self._tsd_objects[row]
         self._refresh_tsd_objects_table()
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
+    def _on_tsd_duplicate_object_requested(self) -> None:
+        selected_rows = self._selected_row_indices(self._window.tsd_objects_table.selectionModel())
+        if not selected_rows:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Duplicate TSD Object",
+                "Select a TSD object to duplicate.",
+            )
+            return
+        source_row = selected_rows[0]
+        if source_row < 0 or source_row >= len(self._tsd_objects):
+            return
+        duplicated_object = replace(self._tsd_objects[source_row])
+        self._tsd_objects.insert(source_row + 1, duplicated_object)
+        self._refresh_tsd_objects_table()
+        self._window.tsd_objects_table.selectRow(source_row + 1)
+        self._center_viewport_on_tsd_object(source_row + 1)
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
