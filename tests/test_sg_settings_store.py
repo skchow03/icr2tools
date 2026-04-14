@@ -70,3 +70,25 @@ def test_tsd_objects_round_trip_without_overwriting_files(tmp_path):
     assert len(files) == 1
     assert files[0].name == "base.tsd"
     assert objects[0]["name"] == "Crossing A"
+
+
+def test_tsd_skid_marks_state_round_trip(tmp_path):
+    sg_path = tmp_path / "tracks" / "test.sg"
+    sg_path.parent.mkdir(parents=True, exist_ok=True)
+    sg_path.write_bytes(b"")
+
+    store = SGSettingsStore()
+    store.set_tsd_skid_marks_state(
+        sg_path,
+        {
+            "rows_csv": "Turn1,100,120,140,10,20,1000,3,20,10,12,8,11,7",
+            "colors_csv": "45,28",
+        },
+    )
+
+    payload = store.get_tsd_skid_marks_state(sg_path)
+
+    assert payload == {
+        "rows_csv": "Turn1,100,120,140,10,20,1000,3,20,10,12,8,11,7",
+        "colors_csv": "45,28",
+    }

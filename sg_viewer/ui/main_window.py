@@ -160,6 +160,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
         self._tsd_remove_selected_object_button = QtWidgets.QPushButton("Remove Selected TSD Object")
         self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
+        self._tsd_skid_marks_button = QtWidgets.QPushButton("Skid Marks...")
         self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
         self._tsd_objects_table.setHorizontalHeaderLabels([
             "Name",
@@ -796,6 +797,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_object_buttons.addWidget(self._tsd_move_object_up_button)
         tsd_object_buttons.addWidget(self._tsd_move_object_down_button)
         tsd_object_buttons.addWidget(self._tsd_export_objects_button)
+        tsd_object_buttons.addWidget(self._tsd_skid_marks_button)
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
         tsd_objects_group.setLayout(tsd_objects_layout)
@@ -816,6 +818,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_move_object_up_button.setToolTip("Move the selected TSD object up one row.")
         self._tsd_move_object_down_button.setToolTip("Move the selected TSD object down one row.")
         self._tsd_export_objects_button.setToolTip("Export all TSD objects as .TSD files.")
+        self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
         self._tsd_sidebar.setLayout(tsd_layout)
 
         self._tso_sidebar = QtWidgets.QWidget()
@@ -1185,6 +1188,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_objects_table(self) -> QtWidgets.QTableWidget:
         return self._tsd_objects_table
+
+    @property
+    def tsd_skid_marks_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_skid_marks_button
 
     @property
     def tso_add_button(self) -> QtWidgets.QPushButton:
