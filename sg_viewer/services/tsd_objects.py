@@ -96,6 +96,7 @@ class TsdZebraCrossingObject:
     stripe_width_500ths: int
     stripe_length_500ths: int
     stripe_spacing_500ths: int
+    transverse_line_thickness_500ths: int = 0
     color_index: int = 36
     command: str = "Detail"
 
@@ -114,6 +115,7 @@ class TsdZebraCrossingObject:
         width = max(1, int(self.stripe_width_500ths))
         length = max(1, int(self.stripe_length_500ths))
         spacing = max(0, int(self.stripe_spacing_500ths))
+        transverse_line_thickness = max(0, int(self.transverse_line_thickness_500ths))
         start_dlong = int(self.start_dlong)
         end_dlong = start_dlong + length
 
@@ -141,6 +143,29 @@ class TsdZebraCrossingObject:
                 )
             )
             current_dlat += direction * stride
+        if transverse_line_thickness > 0:
+            lines.append(
+                TrackSurfaceDetailLine(
+                    color_index=int(self.color_index),
+                    width_500ths=transverse_line_thickness,
+                    start_dlong=start_dlong,
+                    start_dlat=right_dlat,
+                    end_dlong=start_dlong,
+                    end_dlat=left_dlat,
+                    command=command,
+                )
+            )
+            lines.append(
+                TrackSurfaceDetailLine(
+                    color_index=int(self.color_index),
+                    width_500ths=transverse_line_thickness,
+                    start_dlong=end_dlong,
+                    start_dlat=right_dlat,
+                    end_dlong=end_dlong,
+                    end_dlat=left_dlat,
+                    command=command,
+                )
+            )
         return tuple(lines)
 
 
@@ -182,6 +207,7 @@ def tsd_object_to_payload(
         "stripe_width_500ths": int(obj.stripe_width_500ths),
         "stripe_length_500ths": int(obj.stripe_length_500ths),
         "stripe_spacing_500ths": int(obj.stripe_spacing_500ths),
+        "transverse_line_thickness_500ths": int(obj.transverse_line_thickness_500ths),
         "color_index": int(obj.color_index),
         "command": normalize_tsd_command(obj.command),
     }
@@ -239,6 +265,7 @@ def tsd_object_from_payload(
         stripe_width_500ths=max(1, int(payload["stripe_width_500ths"])),
         stripe_length_500ths=max(1, int(payload["stripe_length_500ths"])),
         stripe_spacing_500ths=max(0, int(payload["stripe_spacing_500ths"])),
+        transverse_line_thickness_500ths=max(0, int(payload.get("transverse_line_thickness_500ths", 0))),
         color_index=int(payload.get("color_index", 36)),
         command=normalize_tsd_command(str(payload.get("command", "Detail"))),
     )

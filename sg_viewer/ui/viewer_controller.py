@@ -2742,6 +2742,18 @@ class SGViewerController:
         stripe_spacing_spin = QtWidgets.QSpinBox(dialog)
         stripe_spacing_spin.setRange(0, 2_000_000_000)
         stripe_spacing_spin.setValue(existing.stripe_spacing_500ths if isinstance(existing, TsdZebraCrossingObject) else 3000)
+        transverse_line_enabled = QtWidgets.QCheckBox("Draw at crosswalk ends", dialog)
+        transverse_line_enabled.setChecked(
+            isinstance(existing, TsdZebraCrossingObject)
+            and int(existing.transverse_line_thickness_500ths) > 0
+        )
+        transverse_line_thickness_spin = QtWidgets.QSpinBox(dialog)
+        transverse_line_thickness_spin.setRange(1, 2_000_000_000)
+        transverse_line_thickness_spin.setValue(
+            existing.transverse_line_thickness_500ths
+            if isinstance(existing, TsdZebraCrossingObject) and int(existing.transverse_line_thickness_500ths) > 0
+            else 4000
+        )
         adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
         adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         adjusted_dlong_spin.setValue(existing.adjusted_dlong if isinstance(existing, TsdTransverseLineObject) else 0)
@@ -2782,6 +2794,8 @@ class SGViewerController:
         layout.addRow("Stripe Width", stripe_width_spin)
         layout.addRow("Stripe Length", stripe_length_spin)
         layout.addRow("Stripe Spacing", stripe_spacing_spin)
+        layout.addRow("End Transverse Lines", transverse_line_enabled)
+        layout.addRow("End Line Thickness", transverse_line_thickness_spin)
         layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
         layout.addRow("Start Adjusted DLONG", start_adjusted_dlong_spin)
         layout.addRow("End Adjusted DLONG", end_adjusted_dlong_spin)
@@ -2797,6 +2811,8 @@ class SGViewerController:
             stripe_width_spin,
             stripe_length_spin,
             stripe_spacing_spin,
+            transverse_line_enabled,
+            transverse_line_thickness_spin,
         )
         transverse_only_fields = (
             adjusted_dlong_spin,
@@ -2827,8 +2843,12 @@ class SGViewerController:
                 _set_row_visible(field, is_transverse)
             for field in double_solid_only_fields:
                 _set_row_visible(field, is_double_solid)
+            transverse_line_thickness_spin.setEnabled(
+                object_type == "zebra_crossing" and transverse_line_enabled.isChecked()
+            )
 
         type_combo.currentIndexChanged.connect(_sync_tsd_object_field_visibility)
+        transverse_line_enabled.toggled.connect(_sync_tsd_object_field_visibility)
         _sync_tsd_object_field_visibility()
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
@@ -2877,6 +2897,9 @@ class SGViewerController:
             stripe_width_500ths=stripe_width_spin.value(),
             stripe_length_500ths=stripe_length_spin.value(),
             stripe_spacing_500ths=stripe_spacing_spin.value(),
+            transverse_line_thickness_500ths=(
+                transverse_line_thickness_spin.value() if transverse_line_enabled.isChecked() else 0
+            ),
             color_index=color_spin.value(),
             command="Detail",
         )
