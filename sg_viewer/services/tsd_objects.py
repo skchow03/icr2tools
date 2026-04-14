@@ -144,25 +144,27 @@ class TsdZebraCrossingObject:
             )
             current_dlat += direction * stride
         if transverse_line_thickness > 0:
+            transverse_center_dlat = int(round((left_dlat + right_dlat) * 0.5))
+            transverse_width = max(1, abs(left_dlat - right_dlat))
             lines.append(
                 TrackSurfaceDetailLine(
                     color_index=int(self.color_index),
-                    width_500ths=transverse_line_thickness,
+                    width_500ths=transverse_width,
                     start_dlong=start_dlong,
-                    start_dlat=right_dlat,
-                    end_dlong=start_dlong,
-                    end_dlat=left_dlat,
+                    start_dlat=transverse_center_dlat,
+                    end_dlong=start_dlong + transverse_line_thickness,
+                    end_dlat=transverse_center_dlat,
                     command=command,
                 )
             )
             lines.append(
                 TrackSurfaceDetailLine(
                     color_index=int(self.color_index),
-                    width_500ths=transverse_line_thickness,
+                    width_500ths=transverse_width,
                     start_dlong=end_dlong,
-                    start_dlat=right_dlat,
-                    end_dlong=end_dlong,
-                    end_dlat=left_dlat,
+                    start_dlat=transverse_center_dlat,
+                    end_dlong=end_dlong + transverse_line_thickness,
+                    end_dlat=transverse_center_dlat,
                     command=command,
                 )
             )

@@ -79,15 +79,15 @@ def test_zebra_crossing_optional_end_transverse_lines() -> None:
 
     assert len(lines) == obj.stripe_count + 2
     assert lines[-2].start_dlong == 1000
-    assert lines[-2].end_dlong == 1000
-    assert lines[-2].start_dlat == -6000
-    assert lines[-2].end_dlat == 6000
-    assert lines[-2].width_500ths == 1500
+    assert lines[-2].end_dlong == 2500
+    assert lines[-2].start_dlat == 0
+    assert lines[-2].end_dlat == 0
+    assert lines[-2].width_500ths == 12000
     assert lines[-1].start_dlong == 11000
-    assert lines[-1].end_dlong == 11000
-    assert lines[-1].start_dlat == -6000
-    assert lines[-1].end_dlat == 6000
-    assert lines[-1].width_500ths == 1500
+    assert lines[-1].end_dlong == 12500
+    assert lines[-1].start_dlat == 0
+    assert lines[-1].end_dlat == 0
+    assert lines[-1].width_500ths == 12000
 
 
 def test_zebra_crossing_payload_round_trip_transverse_line_thickness() -> None:
