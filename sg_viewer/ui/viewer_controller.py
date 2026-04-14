@@ -2831,6 +2831,11 @@ class SGViewerController:
         color_spin = QtWidgets.QSpinBox(dialog)
         color_spin.setRange(-2_000_000_000, 2_000_000_000)
         color_spin.setValue(existing.color_index if existing else 36)
+        transverse_line_color_spin = QtWidgets.QSpinBox(dialog)
+        transverse_line_color_spin.setRange(-2_000_000_000, 2_000_000_000)
+        transverse_line_color_spin.setValue(
+            existing.transverse_line_color_index if isinstance(existing, TsdZebraCrossingObject) else 36
+        )
         layout.addRow("Type", type_combo)
         layout.addRow("Name", name_edit)
         layout.addRow("Start DLONG", start_dlong_spin)
@@ -2850,7 +2855,8 @@ class SGViewerController:
         layout.addRow("Right DLAT Bound", right_dlat_bound_spin)
         layout.addRow("Left DLAT Bound", left_dlat_bound_spin)
         layout.addRow("Line Width", line_width_spin)
-        layout.addRow("Color", color_spin)
+        layout.addRow("Stripe Color", color_spin)
+        layout.addRow("End Line Color", transverse_line_color_spin)
         zebra_only_fields = (
             start_dlong_spin,
             right_dlat_spin,
@@ -2862,6 +2868,7 @@ class SGViewerController:
             left_margin_spin,
             transverse_line_enabled,
             transverse_line_thickness_spin,
+            transverse_line_color_spin,
         )
         transverse_only_fields = (
             adjusted_dlong_spin,
@@ -2893,6 +2900,9 @@ class SGViewerController:
             for field in double_solid_only_fields:
                 _set_row_visible(field, is_double_solid)
             transverse_line_thickness_spin.setEnabled(
+                object_type == "zebra_crossing" and transverse_line_enabled.isChecked()
+            )
+            transverse_line_color_spin.setEnabled(
                 object_type == "zebra_crossing" and transverse_line_enabled.isChecked()
             )
 
@@ -2947,6 +2957,9 @@ class SGViewerController:
                     transverse_line_thickness_spin.value() if transverse_line_enabled.isChecked() else 0
                 ),
                 color_index=color_spin.value(),
+                transverse_line_color_index=(
+                    transverse_line_color_spin.value() if transverse_line_enabled.isChecked() else color_spin.value()
+                ),
                 command="Detail",
             )
 
@@ -2972,6 +2985,7 @@ class SGViewerController:
             left_margin_spin,
             transverse_line_enabled,
             transverse_line_thickness_spin,
+            transverse_line_color_spin,
             adjusted_dlong_spin,
             start_adjusted_dlong_spin,
             end_adjusted_dlong_spin,
