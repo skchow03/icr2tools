@@ -35,6 +35,7 @@ from sg_viewer.services.tsd_io import (
 )
 from sg_viewer.services.tsd_objects import (
     TsdDoubleSolidLineObject,
+    TsdPitStallsObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
     tsd_object_from_payload,
@@ -222,9 +223,11 @@ class SGViewerController:
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._skid_marks_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
-        self._tsd_objects: list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject] = []
+        self._tsd_objects: list[
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject
+        ] = []
         self._tsd_object_dialog_preview_object: (
-            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject | None
         ) = None
         self._editing_tsd_object_index: int | None = None
         self._generated_skid_mark_lines: tuple[TrackSurfaceDetailLine, ...] = ()
@@ -2550,6 +2553,8 @@ class SGViewerController:
                     object_type_label = "Transverse Line"
                 elif isinstance(obj, TsdDoubleSolidLineObject):
                     object_type_label = "Double Solid Line"
+                elif isinstance(obj, TsdPitStallsObject):
+                    object_type_label = "Pit Stalls"
                 else:
                     object_type_label = "Zebra crossing"
                 start_dlong, end_dlong = self._tsd_object_dlong_range(obj)
@@ -2611,7 +2616,7 @@ class SGViewerController:
 
     @staticmethod
     def _tsd_object_dlong_range(
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
     ) -> tuple[int, int]:
         lines = obj.generated_lines()
         if not lines:
@@ -2622,7 +2627,7 @@ class SGViewerController:
 
     def _tsd_object_center_point(
         self,
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
     ) -> Point | None:
         lines = obj.generated_lines()
         if not lines:
@@ -2737,8 +2742,8 @@ class SGViewerController:
     def _open_tsd_object_dialog(
         self,
         *,
-        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None = None,
-    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | None:
+        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject | None = None,
+    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject | None:
         dialog = QtWidgets.QDialog(self._window)
         dialog.setModal(False)
         dialog.setWindowModality(QtCore.Qt.NonModal)
@@ -2748,6 +2753,7 @@ class SGViewerController:
         type_combo.addItem("Zebra crossing", userData="zebra_crossing")
         type_combo.addItem("Transverse Line", userData="transverse_line")
         type_combo.addItem("Double Solid Line", userData="double_solid_line")
+        type_combo.addItem("Pit Stalls", userData="pit_stalls")
         default_index = len(self._tsd_objects) + 1
         default_name = "TSD Object"
         if isinstance(existing, TsdZebraCrossingObject):
@@ -2761,6 +2767,10 @@ class SGViewerController:
         elif isinstance(existing, TsdDoubleSolidLineObject):
             default_name = f"Double Solid Line {default_index}"
             type_combo.setCurrentIndex(2)
+            type_combo.setEnabled(False)
+        elif isinstance(existing, TsdPitStallsObject):
+            default_name = f"Pit Stalls {default_index}"
+            type_combo.setCurrentIndex(3)
             type_combo.setEnabled(False)
         name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
         start_dlong_spin = QtWidgets.QSpinBox(dialog)
@@ -2828,6 +2838,44 @@ class SGViewerController:
         line_width_spin = QtWidgets.QSpinBox(dialog)
         line_width_spin.setRange(1, 2_000_000_000)
         line_width_spin.setValue(existing.line_width_500ths if isinstance(existing, TsdTransverseLineObject) else 5000)
+        pit_stalls_start_dlong_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        pit_stalls_start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdPitStallsObject) else 0)
+        pit_stalls_left_dlat_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        pit_stalls_left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdPitStallsObject) else -20000)
+        pit_stalls_right_dlat_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        pit_stalls_right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdPitStallsObject) else 20000)
+        pit_stalls_line_thickness_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_line_thickness_spin.setRange(1, 2_000_000_000)
+        pit_stalls_line_thickness_spin.setValue(
+            existing.line_thickness_500ths if isinstance(existing, TsdPitStallsObject) else 2000
+        )
+        pit_stalls_spacing_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_spacing_spin.setRange(0, 2_000_000_000)
+        pit_stalls_spacing_spin.setValue(existing.dlong_spacing_500ths if isinstance(existing, TsdPitStallsObject) else 4000)
+        pit_stalls_line_count_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_line_count_spin.setRange(1, 2_000_000_000)
+        pit_stalls_line_count_spin.setValue(existing.line_count if isinstance(existing, TsdPitStallsObject) else 12)
+        pit_stalls_left_border_checkbox = QtWidgets.QCheckBox("Draw left longitudinal border", dialog)
+        pit_stalls_left_border_checkbox.setChecked(
+            isinstance(existing, TsdPitStallsObject) and bool(existing.draw_left_border)
+        )
+        pit_stalls_right_border_checkbox = QtWidgets.QCheckBox("Draw right longitudinal border", dialog)
+        pit_stalls_right_border_checkbox.setChecked(
+            isinstance(existing, TsdPitStallsObject) and bool(existing.draw_right_border)
+        )
+        pit_stalls_border_color_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_border_color_spin.setRange(-2_000_000_000, 2_000_000_000)
+        pit_stalls_border_color_spin.setValue(
+            existing.border_color_index if isinstance(existing, TsdPitStallsObject) else 36
+        )
+        pit_stalls_border_thickness_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_border_thickness_spin.setRange(1, 2_000_000_000)
+        pit_stalls_border_thickness_spin.setValue(
+            existing.border_line_thickness_500ths if isinstance(existing, TsdPitStallsObject) else 500
+        )
         color_spin = QtWidgets.QSpinBox(dialog)
         color_spin.setRange(-2_000_000_000, 2_000_000_000)
         color_spin.setValue(existing.color_index if existing else 36)
@@ -2855,6 +2903,16 @@ class SGViewerController:
         layout.addRow("Right DLAT Bound", right_dlat_bound_spin)
         layout.addRow("Left DLAT Bound", left_dlat_bound_spin)
         layout.addRow("Line Width", line_width_spin)
+        layout.addRow("Pit Start DLONG", pit_stalls_start_dlong_spin)
+        layout.addRow("Pit Left DLAT", pit_stalls_left_dlat_spin)
+        layout.addRow("Pit Right DLAT", pit_stalls_right_dlat_spin)
+        layout.addRow("Pit Line Thickness", pit_stalls_line_thickness_spin)
+        layout.addRow("Pit Line DLONG Spacing", pit_stalls_spacing_spin)
+        layout.addRow("Pit Number of Lines", pit_stalls_line_count_spin)
+        layout.addRow("Pit Left Border", pit_stalls_left_border_checkbox)
+        layout.addRow("Pit Right Border", pit_stalls_right_border_checkbox)
+        layout.addRow("Pit Border Color", pit_stalls_border_color_spin)
+        layout.addRow("Pit Border Thickness", pit_stalls_border_thickness_spin)
         layout.addRow("Stripe Color", color_spin)
         layout.addRow("End Line Color", transverse_line_color_spin)
         zebra_only_fields = (
@@ -2882,6 +2940,18 @@ class SGViewerController:
             dlat_spin,
             line_width_spin,
         )
+        pit_stalls_only_fields = (
+            pit_stalls_start_dlong_spin,
+            pit_stalls_left_dlat_spin,
+            pit_stalls_right_dlat_spin,
+            pit_stalls_line_thickness_spin,
+            pit_stalls_spacing_spin,
+            pit_stalls_line_count_spin,
+            pit_stalls_left_border_checkbox,
+            pit_stalls_right_border_checkbox,
+            pit_stalls_border_color_spin,
+            pit_stalls_border_thickness_spin,
+        )
 
         def _set_row_visible(field: QtWidgets.QWidget, visible: bool) -> None:
             label = layout.labelForField(field)
@@ -2893,12 +2963,15 @@ class SGViewerController:
             object_type = str(type_combo.currentData())
             is_transverse = object_type == "transverse_line"
             is_double_solid = object_type == "double_solid_line"
+            is_pit_stalls = object_type == "pit_stalls"
             for field in zebra_only_fields:
                 _set_row_visible(field, object_type == "zebra_crossing")
             for field in transverse_only_fields:
                 _set_row_visible(field, is_transverse)
             for field in double_solid_only_fields:
                 _set_row_visible(field, is_double_solid)
+            for field in pit_stalls_only_fields:
+                _set_row_visible(field, is_pit_stalls)
             transverse_line_thickness_spin.setEnabled(
                 object_type == "zebra_crossing" and transverse_line_enabled.isChecked()
             )
@@ -2911,9 +2984,26 @@ class SGViewerController:
         _sync_tsd_object_field_visibility()
 
         def _build_tsd_object_from_form() -> (
-            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject
         ):
             object_type = str(type_combo.currentData())
+            if object_type == "pit_stalls":
+                name = name_edit.text().strip() or f"Pit Stalls {default_index}"
+                return TsdPitStallsObject(
+                    name=name,
+                    start_dlong=pit_stalls_start_dlong_spin.value(),
+                    left_dlat=pit_stalls_left_dlat_spin.value(),
+                    right_dlat=pit_stalls_right_dlat_spin.value(),
+                    line_thickness_500ths=pit_stalls_line_thickness_spin.value(),
+                    dlong_spacing_500ths=pit_stalls_spacing_spin.value(),
+                    color_index=color_spin.value(),
+                    line_count=pit_stalls_line_count_spin.value(),
+                    draw_left_border=pit_stalls_left_border_checkbox.isChecked(),
+                    draw_right_border=pit_stalls_right_border_checkbox.isChecked(),
+                    border_color_index=pit_stalls_border_color_spin.value(),
+                    border_line_thickness_500ths=pit_stalls_border_thickness_spin.value(),
+                    command="Detail",
+                )
             if object_type == "double_solid_line":
                 name = name_edit.text().strip() or f"Double Solid Line {default_index}"
                 return TsdDoubleSolidLineObject(
@@ -2964,10 +3054,13 @@ class SGViewerController:
             )
 
         def _set_tsd_object_form_values(
-            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
         ) -> None:
             with QtCore.QSignalBlocker(type_combo):
                 type_value = (
+                    "pit_stalls"
+                    if isinstance(obj, TsdPitStallsObject)
+                    else
                     "double_solid_line"
                     if isinstance(obj, TsdDoubleSolidLineObject)
                     else "transverse_line"
@@ -3039,13 +3132,45 @@ class SGViewerController:
                     if isinstance(obj, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
                     else 5000
                 )
+            with QtCore.QSignalBlocker(pit_stalls_start_dlong_spin):
+                pit_stalls_start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdPitStallsObject) else 0)
+            with QtCore.QSignalBlocker(pit_stalls_left_dlat_spin):
+                pit_stalls_left_dlat_spin.setValue(obj.left_dlat if isinstance(obj, TsdPitStallsObject) else -20000)
+            with QtCore.QSignalBlocker(pit_stalls_right_dlat_spin):
+                pit_stalls_right_dlat_spin.setValue(obj.right_dlat if isinstance(obj, TsdPitStallsObject) else 20000)
+            with QtCore.QSignalBlocker(pit_stalls_line_thickness_spin):
+                pit_stalls_line_thickness_spin.setValue(
+                    obj.line_thickness_500ths if isinstance(obj, TsdPitStallsObject) else 2000
+                )
+            with QtCore.QSignalBlocker(pit_stalls_spacing_spin):
+                pit_stalls_spacing_spin.setValue(
+                    obj.dlong_spacing_500ths if isinstance(obj, TsdPitStallsObject) else 4000
+                )
+            with QtCore.QSignalBlocker(pit_stalls_line_count_spin):
+                pit_stalls_line_count_spin.setValue(obj.line_count if isinstance(obj, TsdPitStallsObject) else 12)
+            with QtCore.QSignalBlocker(pit_stalls_left_border_checkbox):
+                pit_stalls_left_border_checkbox.setChecked(
+                    bool(obj.draw_left_border) if isinstance(obj, TsdPitStallsObject) else False
+                )
+            with QtCore.QSignalBlocker(pit_stalls_right_border_checkbox):
+                pit_stalls_right_border_checkbox.setChecked(
+                    bool(obj.draw_right_border) if isinstance(obj, TsdPitStallsObject) else False
+                )
+            with QtCore.QSignalBlocker(pit_stalls_border_color_spin):
+                pit_stalls_border_color_spin.setValue(
+                    obj.border_color_index if isinstance(obj, TsdPitStallsObject) else 36
+                )
+            with QtCore.QSignalBlocker(pit_stalls_border_thickness_spin):
+                pit_stalls_border_thickness_spin.setValue(
+                    obj.border_line_thickness_500ths if isinstance(obj, TsdPitStallsObject) else 500
+                )
             with QtCore.QSignalBlocker(color_spin):
                 color_spin.setValue(obj.color_index)
             _sync_tsd_object_field_visibility()
 
         def _candidate_tsd_objects(
-            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
-        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject]:
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
+        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject]:
             edit_row = self._editing_tsd_object_index
             if edit_row is not None and 0 <= edit_row < len(self._tsd_objects):
                 objects = list(self._tsd_objects)
@@ -3054,7 +3179,7 @@ class SGViewerController:
             return [*self._tsd_objects, preview_object]
 
         def _warn_if_excessive_tsd_lines(
-            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject,
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
         ) -> bool:
             line_count = sum(len(obj.generated_lines()) for obj in _candidate_tsd_objects(preview_object))
             if line_count <= 1000:
@@ -3114,6 +3239,16 @@ class SGViewerController:
             right_dlat_bound_spin,
             left_dlat_bound_spin,
             line_width_spin,
+            pit_stalls_start_dlong_spin,
+            pit_stalls_left_dlat_spin,
+            pit_stalls_right_dlat_spin,
+            pit_stalls_line_thickness_spin,
+            pit_stalls_spacing_spin,
+            pit_stalls_line_count_spin,
+            pit_stalls_left_border_checkbox,
+            pit_stalls_right_border_checkbox,
+            pit_stalls_border_color_spin,
+            pit_stalls_border_thickness_spin,
             color_spin,
         )
         for control in preview_controls:
