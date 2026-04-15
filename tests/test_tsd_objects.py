@@ -250,6 +250,8 @@ def test_dashed_lines_generates_multiple_segments_from_ratio() -> None:
         name="Dashed",
         start_adjusted_dlong=1000,
         end_adjusted_dlong=12000,
+        start_dlat=0,
+        end_dlat=0,
         line_thickness_500ths=600,
         line_length_500ths=2000,
         gap_to_line_ratio=0.5,
@@ -272,6 +274,8 @@ def test_dashed_lines_payload_round_trip() -> None:
         "name": "Dashed",
         "start_adjusted_dlong": 123,
         "end_adjusted_dlong": 4567,
+        "start_dlat": -250,
+        "end_dlat": 1250,
         "line_thickness_500ths": 890,
         "line_length_500ths": 1200,
         "gap_to_line_ratio": 1.25,
@@ -286,9 +290,22 @@ def test_dashed_lines_payload_round_trip() -> None:
     assert serialized["type"] == "dashed_lines"
     assert serialized["start_adjusted_dlong"] == 123
     assert serialized["end_adjusted_dlong"] == 4567
+    assert serialized["start_dlat"] == -250
+    assert serialized["end_dlat"] == 1250
     assert serialized["line_thickness_500ths"] == 890
     assert serialized["line_length_500ths"] == 1200
     assert serialized["gap_to_line_ratio"] == 1.25
+
+
+def test_dashed_lines_payload_defaults_match_editor_defaults() -> None:
+    obj = tsd_object_from_payload({"type": "dashed_lines", "name": "Dashed"})
+
+    assert isinstance(obj, TsdDashedLinesObject)
+    assert obj.start_dlat == 0
+    assert obj.end_dlat == 0
+    assert obj.line_thickness_500ths == 3000
+    assert obj.line_length_500ths == 60000
+    assert obj.gap_to_line_ratio == 3.0
 
 
 def test_pit_stalls_payload_defaults_preserve_right_negative_left_positive() -> None:

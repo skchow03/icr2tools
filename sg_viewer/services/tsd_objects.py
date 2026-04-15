@@ -92,6 +92,8 @@ class TsdDashedLinesObject:
     name: str
     start_adjusted_dlong: int
     end_adjusted_dlong: int
+    start_dlat: int
+    end_dlat: int
     line_thickness_500ths: int
     line_length_500ths: int
     gap_to_line_ratio: float
@@ -104,6 +106,9 @@ class TsdDashedLinesObject:
         end_dlong = int(self.end_adjusted_dlong)
         if end_dlong <= start_dlong:
             return ()
+        start_dlat = int(self.start_dlat)
+        end_dlat = int(self.end_dlat)
+        dlong_span = end_dlong - start_dlong
         line_thickness = max(1, int(self.line_thickness_500ths))
         line_length = max(1, int(self.line_length_500ths))
         ratio = max(0.0, float(self.gap_to_line_ratio))
@@ -117,14 +122,18 @@ class TsdDashedLinesObject:
         while cursor < end_dlong:
             dash_end_dlong = min(cursor + line_length, end_dlong)
             if dash_end_dlong > cursor:
+                start_ratio = (cursor - start_dlong) / dlong_span
+                end_ratio = (dash_end_dlong - start_dlong) / dlong_span
+                dash_start_dlat = int(round(start_dlat + ((end_dlat - start_dlat) * start_ratio)))
+                dash_end_dlat = int(round(start_dlat + ((end_dlat - start_dlat) * end_ratio)))
                 lines.append(
                     TrackSurfaceDetailLine(
                         color_index=int(self.color_index),
                         width_500ths=line_thickness,
                         start_dlong=cursor,
-                        start_dlat=0,
+                        start_dlat=dash_start_dlat,
                         end_dlong=dash_end_dlong,
-                        end_dlat=0,
+                        end_dlat=dash_end_dlat,
                         command=command,
                     )
                 )
@@ -347,6 +356,8 @@ def tsd_object_to_payload(
             "name": obj.name,
             "start_adjusted_dlong": int(obj.start_adjusted_dlong),
             "end_adjusted_dlong": int(obj.end_adjusted_dlong),
+            "start_dlat": int(obj.start_dlat),
+            "end_dlat": int(obj.end_dlat),
             "line_thickness_500ths": int(obj.line_thickness_500ths),
             "line_length_500ths": int(obj.line_length_500ths),
             "gap_to_line_ratio": float(obj.gap_to_line_ratio),
@@ -421,9 +432,11 @@ def tsd_object_from_payload(
             name=str(payload.get("name") or "Dashed Lines"),
             start_adjusted_dlong=int(payload.get("start_adjusted_dlong", 0)),
             end_adjusted_dlong=int(payload.get("end_adjusted_dlong", 20000)),
-            line_thickness_500ths=max(1, int(payload.get("line_thickness_500ths", 500))),
-            line_length_500ths=max(1, int(payload.get("line_length_500ths", 4000))),
-            gap_to_line_ratio=max(0.0, float(payload.get("gap_to_line_ratio", 1.0))),
+            start_dlat=int(payload.get("start_dlat", 0)),
+            end_dlat=int(payload.get("end_dlat", 0)),
+            line_thickness_500ths=max(1, int(payload.get("line_thickness_500ths", 3000))),
+            line_length_500ths=max(1, int(payload.get("line_length_500ths", 60000))),
+            gap_to_line_ratio=max(0.0, float(payload.get("gap_to_line_ratio", 3.0))),
             color_index=int(payload.get("color_index", 36)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
         )

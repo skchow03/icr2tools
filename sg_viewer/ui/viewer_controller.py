@@ -2858,7 +2858,7 @@ class SGViewerController:
         dashed_line_thickness_spin = QtWidgets.QSpinBox(dialog)
         dashed_line_thickness_spin.setRange(1, 2_000_000_000)
         dashed_line_thickness_spin.setValue(
-            existing.line_thickness_500ths if isinstance(existing, TsdDashedLinesObject) else 500
+            existing.line_thickness_500ths if isinstance(existing, TsdDashedLinesObject) else 3000
         )
         dashed_start_dlong_spin = QtWidgets.QSpinBox(dialog)
         dashed_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
@@ -2870,17 +2870,27 @@ class SGViewerController:
         dashed_end_dlong_spin.setValue(
             existing.end_adjusted_dlong if isinstance(existing, TsdDashedLinesObject) else 20000
         )
+        dashed_start_dlat_spin = QtWidgets.QSpinBox(dialog)
+        dashed_start_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        dashed_start_dlat_spin.setValue(
+            existing.start_dlat if isinstance(existing, TsdDashedLinesObject) else 0
+        )
+        dashed_end_dlat_spin = QtWidgets.QSpinBox(dialog)
+        dashed_end_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        dashed_end_dlat_spin.setValue(
+            existing.end_dlat if isinstance(existing, TsdDashedLinesObject) else 0
+        )
         dashed_line_length_spin = QtWidgets.QSpinBox(dialog)
         dashed_line_length_spin.setRange(1, 2_000_000_000)
         dashed_line_length_spin.setValue(
-            existing.line_length_500ths if isinstance(existing, TsdDashedLinesObject) else 4000
+            existing.line_length_500ths if isinstance(existing, TsdDashedLinesObject) else 60000
         )
         dashed_gap_ratio_spin = QtWidgets.QDoubleSpinBox(dialog)
         dashed_gap_ratio_spin.setRange(0.0, 1_000_000.0)
         dashed_gap_ratio_spin.setDecimals(3)
         dashed_gap_ratio_spin.setSingleStep(0.1)
         dashed_gap_ratio_spin.setValue(
-            existing.gap_to_line_ratio if isinstance(existing, TsdDashedLinesObject) else 1.0
+            existing.gap_to_line_ratio if isinstance(existing, TsdDashedLinesObject) else 3.0
         )
         pit_stalls_start_dlong_spin = QtWidgets.QSpinBox(dialog)
         pit_stalls_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
@@ -2950,6 +2960,8 @@ class SGViewerController:
         layout.addRow("Dashed Line Thickness", dashed_line_thickness_spin)
         layout.addRow("Dashed Start DLONG", dashed_start_dlong_spin)
         layout.addRow("Dashed End DLONG", dashed_end_dlong_spin)
+        layout.addRow("Dashed Start DLAT", dashed_start_dlat_spin)
+        layout.addRow("Dashed End DLAT", dashed_end_dlat_spin)
         layout.addRow("Dashed Line Length", dashed_line_length_spin)
         layout.addRow("Gap-to-Line Ratio", dashed_gap_ratio_spin)
         layout.addRow("Pit Start DLONG", pit_stalls_start_dlong_spin)
@@ -2993,6 +3005,8 @@ class SGViewerController:
             dashed_line_thickness_spin,
             dashed_start_dlong_spin,
             dashed_end_dlong_spin,
+            dashed_start_dlat_spin,
+            dashed_end_dlat_spin,
             dashed_line_length_spin,
             dashed_gap_ratio_spin,
         )
@@ -3080,6 +3094,8 @@ class SGViewerController:
                     name=name,
                     start_adjusted_dlong=dashed_start_dlong_spin.value(),
                     end_adjusted_dlong=dashed_end_dlong_spin.value(),
+                    start_dlat=dashed_start_dlat_spin.value(),
+                    end_dlat=dashed_end_dlat_spin.value(),
                     line_thickness_500ths=dashed_line_thickness_spin.value(),
                     line_length_500ths=dashed_line_length_spin.value(),
                     gap_to_line_ratio=dashed_gap_ratio_spin.value(),
@@ -3207,7 +3223,7 @@ class SGViewerController:
                 )
             with QtCore.QSignalBlocker(dashed_line_thickness_spin):
                 dashed_line_thickness_spin.setValue(
-                    obj.line_thickness_500ths if isinstance(obj, TsdDashedLinesObject) else 500
+                    obj.line_thickness_500ths if isinstance(obj, TsdDashedLinesObject) else 3000
                 )
             with QtCore.QSignalBlocker(dashed_start_dlong_spin):
                 dashed_start_dlong_spin.setValue(
@@ -3217,13 +3233,21 @@ class SGViewerController:
                 dashed_end_dlong_spin.setValue(
                     obj.end_adjusted_dlong if isinstance(obj, TsdDashedLinesObject) else 20000
                 )
+            with QtCore.QSignalBlocker(dashed_start_dlat_spin):
+                dashed_start_dlat_spin.setValue(
+                    obj.start_dlat if isinstance(obj, TsdDashedLinesObject) else 0
+                )
+            with QtCore.QSignalBlocker(dashed_end_dlat_spin):
+                dashed_end_dlat_spin.setValue(
+                    obj.end_dlat if isinstance(obj, TsdDashedLinesObject) else 0
+                )
             with QtCore.QSignalBlocker(dashed_line_length_spin):
                 dashed_line_length_spin.setValue(
-                    obj.line_length_500ths if isinstance(obj, TsdDashedLinesObject) else 4000
+                    obj.line_length_500ths if isinstance(obj, TsdDashedLinesObject) else 60000
                 )
             with QtCore.QSignalBlocker(dashed_gap_ratio_spin):
                 dashed_gap_ratio_spin.setValue(
-                    obj.gap_to_line_ratio if isinstance(obj, TsdDashedLinesObject) else 1.0
+                    obj.gap_to_line_ratio if isinstance(obj, TsdDashedLinesObject) else 3.0
                 )
             with QtCore.QSignalBlocker(pit_stalls_start_dlong_spin):
                 pit_stalls_start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdPitStallsObject) else 0)
@@ -3335,6 +3359,8 @@ class SGViewerController:
             dashed_line_thickness_spin,
             dashed_start_dlong_spin,
             dashed_end_dlong_spin,
+            dashed_start_dlat_spin,
+            dashed_end_dlat_spin,
             dashed_line_length_spin,
             dashed_gap_ratio_spin,
             pit_stalls_start_dlong_spin,
