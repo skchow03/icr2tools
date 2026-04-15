@@ -573,6 +573,13 @@ class SGViewerController:
         self._move_fsect_up_action.setEnabled(self._window.move_fsect_up_button.isEnabled())
         self._move_fsect_down_action = QtWidgets.QAction("Move Fsect Down", self._window)
         self._move_fsect_down_action.setEnabled(self._window.move_fsect_down_button.isEnabled())
+        self._swap_fsect_types_action = QtWidgets.QAction(
+            "Swap Fsect Type Across All Sections…",
+            self._window,
+        )
+        self._swap_fsect_types_action.setEnabled(
+            self._window.swap_fsect_types_button.isEnabled()
+        )
 
         self._run_integrity_checks_action = QtWidgets.QAction("Run SG Integrity Checks", self._window)
         self._run_integrity_checks_action.setEnabled(False)
@@ -663,6 +670,8 @@ class SGViewerController:
         fsects_menu.addAction(self._delete_fsect_action)
         fsects_menu.addAction(self._move_fsect_up_action)
         fsects_menu.addAction(self._move_fsect_down_action)
+        fsects_menu.addSeparator()
+        fsects_menu.addAction(self._swap_fsect_types_action)
 
         mrk_menu = tools_menu.addMenu("MRK")
         mrk_menu.addAction(self._mrk_add_entry_action)
@@ -1272,6 +1281,12 @@ class SGViewerController:
         self._move_fsect_up_action.triggered.connect(self._move_selected_fsect_up)
         self._window.move_fsect_down_button.clicked.connect(self._move_selected_fsect_down)
         self._move_fsect_down_action.triggered.connect(self._move_selected_fsect_down)
+        self._window.swap_fsect_types_button.clicked.connect(
+            self._section_editing_coordinator.swap_fsect_type_across_sections
+        )
+        self._swap_fsect_types_action.triggered.connect(
+            self._section_editing_coordinator.swap_fsect_type_across_sections
+        )
         self._window.xsect_combo.currentIndexChanged.connect(
             self._refresh_elevation_profile
         )
@@ -5065,9 +5080,13 @@ class SGViewerController:
             self._delete_fsect_action.setEnabled(False)
             self._move_fsect_up_action.setEnabled(False)
             self._move_fsect_down_action.setEnabled(False)
+            self._window.swap_fsect_types_button.setEnabled(False)
+            self._swap_fsect_types_action.setEnabled(False)
             return
         self._window.add_fsect_button.setEnabled(True)
         self._add_fsect_action.setEnabled(True)
+        self._window.swap_fsect_types_button.setEnabled(True)
+        self._swap_fsect_types_action.setEnabled(True)
         fsects = self._window.preview.get_section_fsects(selection.index)
         row_index = self._window.fsect_table.currentRow()
         delete_enabled = bool(fsects)

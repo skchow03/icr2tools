@@ -13,8 +13,10 @@ from sg_viewer.sg_document_fsects import GROUND_TYPES
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.ui.generate_fsects_dialog import GenerateFsectsDialog
+from sg_viewer.ui.fsection_type_utils import fsect_matches_option
 from sg_viewer.ui.rotate_track_dialog import RotateTrackDialog
 from sg_viewer.ui.scale_track_dialog import ScaleTrackDialog
+from sg_viewer.ui.swap_fsect_types_dialog import SwapFsectTypesDialog
 
 
 class SectionsControllerHost(Protocol):
@@ -405,6 +407,79 @@ class SectionsController:
         self._host._mark_fsects_dirty(True)
         self._host._window.preview.selection_manager.set_selected_section(target_index)
         self._host._window.show_status_message(f"Copied fsects from section {selection.index} to {direction} section {target_index}.")
+
+    def swap_fsect_type_across_sections(self) -> None:
+        sections, _ = self._host._window.preview.get_section_set()
+        if not sections:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Swap Fsect Type",
+                "There are no track sections available to update.",
+            )
+            return
+
+        dialog = SwapFsectTypesDialog(self._host._window)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        source_surface_type, source_type2 = dialog.source_type()
+        target_surface_type, target_type2 = dialog.target_type()
+        if (
+            source_surface_type == target_surface_type
+            and source_type2 == target_type2
+        ):
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Swap Fsect Type",
+                "Source and destination types are the same.",
+            )
+            return
+
+        updated_fsects_by_section: list[list[PreviewFSection]] = []
+        replacement_count = 0
+        for section_index in range(len(sections)):
+            section_fsects = self._host._window.preview.get_section_fsects(section_index)
+            updated_section_fsects: list[PreviewFSection] = []
+            for fsect in section_fsects:
+                if fsect_matches_option(
+                    surface_type=int(fsect.surface_type),
+                    type2=int(fsect.type2),
+                    option_surface_type=source_surface_type,
+                    option_type2=source_type2,
+                ):
+                    replacement_count += 1
+                    updated_section_fsects.append(
+                        PreviewFSection(
+                            start_dlat=float(fsect.start_dlat),
+                            end_dlat=float(fsect.end_dlat),
+                            surface_type=target_surface_type,
+                            type2=target_type2,
+                        )
+                    )
+                else:
+                    updated_section_fsects.append(fsect)
+            updated_fsects_by_section.append(updated_section_fsects)
+
+        if replacement_count == 0:
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Swap Fsect Type",
+                "No matching Fsects were found to swap.",
+            )
+            return
+
+        if not self._host._window.preview.replace_all_fsects(updated_fsects_by_section):
+            QtWidgets.QMessageBox.warning(
+                self._host._window,
+                "Swap Fsect Type Failed",
+                "Unable to apply fsect type swap to the current track.",
+            )
+            return
+
+        self._host._mark_fsects_dirty(True)
+        self._host._window.show_status_message(
+            f"Swapped {replacement_count} Fsect instance(s) across all sections."
+        )
 
     def add_fsect_below_selected(self) -> None:
         selection = self._host._active_selection
