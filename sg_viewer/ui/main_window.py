@@ -69,6 +69,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     fsectDiagramDlatChangeRequested = QtCore.pyqtSignal(int, int, str, float, bool, bool)
     fsectDiagramDragRefreshRequested = QtCore.pyqtSignal()
     fsectDiagramDragCommitRequested = QtCore.pyqtSignal(int, int, str, float)
+    generateElevationChangeApplied = QtCore.pyqtSignal()
 
     def __init__(self, *, wire_features: bool = True) -> None:
         super().__init__()
@@ -355,6 +356,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._edit_xsect_list_button.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section data to...")
         self._copy_xsect_button.setEnabled(False)
+        self._generate_elevation_change_button = QtWidgets.QPushButton("Generate elevation change...")
+        self._generate_elevation_change_button.setEnabled(False)
+        self._generate_elevation_change_dialog: QtWidgets.QDialog | None = None
         self._track_stats_label = QtWidgets.QLabel("Track Length: –")
         self._section_index_label = QtWidgets.QLabel("Current Section: –")
         self._section_start_dlong_label = QtWidgets.QLabel("Starting DLONG: –")
@@ -568,6 +572,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             edit_xsect_list_button=self._edit_xsect_list_button,
             xsect_combo=self._xsect_combo,
             copy_xsect_button=self._copy_xsect_button,
+            generate_elevation_change_button=self._generate_elevation_change_button,
             profile_widget=self._profile_widget,
             xsect_elevation_widget=self._xsect_elevation_widget,
         )
@@ -1313,6 +1318,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._copy_xsect_button
 
     @property
+    def generate_elevation_change_button(self) -> QtWidgets.QPushButton:
+        return self._generate_elevation_change_button
+
+    @property
     def altitude_slider(self) -> QtWidgets.QSlider:
         return self._altitude_slider
 
@@ -1629,7 +1638,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
 
 
-    def show_generate_elevation_change_dialog(self, *, xsect_index: int) -> bool:
+    def show_generate_elevation_change_dialog(self, *, xsect_index: int) -> None:
         sections, _ = self._preview.get_section_set()
         if not sections:
             QtWidgets.QMessageBox.information(
@@ -1637,10 +1646,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Generate elevation change",
                 "There are no track sections available.",
             )
-            return False
+            return
+
+        if self._generate_elevation_change_dialog is not None:
+            self._generate_elevation_change_dialog.raise_()
+            self._generate_elevation_change_dialog.activateWindow()
+            return
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Generate elevation change")
+        dialog.setModal(False)
+        dialog.setWindowModality(QtCore.Qt.NonModal)
         layout = QtWidgets.QFormLayout(dialog)
 
         section_max = len(sections) - 1
@@ -1686,48 +1702,53 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.Horizontal,
             dialog,
         )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
+        buttons.rejected.connect(dialog.close)
         layout.addRow(buttons)
+        def _apply_elevation_change() -> None:
+            start_section = start_section_spin.value()
+            end_section = end_section_spin.value()
+            if end_section <= start_section:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Generate elevation change",
+                    "Ending section must be greater than starting section.",
+                )
+                return
 
-        if dialog.exec_() != QtWidgets.QDialog.Accepted:
-            return False
+            start_elevation = units_to_500ths(start_elevation_spin.value(), unit)
+            end_elevation = units_to_500ths(end_elevation_spin.value(), unit)
+            curve_type = str(curve_combo.currentData())
 
-        start_section = start_section_spin.value()
-        end_section = end_section_spin.value()
-        if end_section <= start_section:
+            if self._preview.generate_elevation_change(
+                start_section_id=start_section,
+                end_section_id=end_section,
+                xsect_index=xsect_index,
+                start_elevation=start_elevation,
+                end_elevation=end_elevation,
+                curve_type=curve_type,
+                validate=False,
+            ):
+                self._preview.validate_document()
+                self.show_status_message(
+                    f"Generated {curve_combo.currentText().lower()} elevation change on x-section {xsect_index}."
+                )
+                self.generateElevationChangeApplied.emit()
+                dialog.close()
+                return
+
             QtWidgets.QMessageBox.warning(
                 self,
                 "Generate elevation change",
-                "Ending section must be greater than starting section.",
+                "Unable to generate elevation change for the selected range.",
             )
-            return False
 
-        start_elevation = units_to_500ths(start_elevation_spin.value(), unit)
-        end_elevation = units_to_500ths(end_elevation_spin.value(), unit)
-        curve_type = str(curve_combo.currentData())
+        def _clear_dialog_ref() -> None:
+            self._generate_elevation_change_dialog = None
 
-        if self._preview.generate_elevation_change(
-            start_section_id=start_section,
-            end_section_id=end_section,
-            xsect_index=xsect_index,
-            start_elevation=start_elevation,
-            end_elevation=end_elevation,
-            curve_type=curve_type,
-            validate=False,
-        ):
-            self._preview.validate_document()
-            self.show_status_message(
-                f"Generated {curve_combo.currentText().lower()} elevation change on x-section {xsect_index}."
-            )
-            return True
-
-        QtWidgets.QMessageBox.warning(
-            self,
-            "Generate elevation change",
-            "Unable to generate elevation change for the selected range.",
-        )
-        return False
+        buttons.accepted.connect(_apply_elevation_change)
+        dialog.finished.connect(_clear_dialog_ref)
+        self._generate_elevation_change_dialog = dialog
+        dialog.show()
 
     def show_flatten_all_elevations_and_grade_dialog(self) -> bool:
         elevation, ok = QtWidgets.QInputDialog.getDouble(

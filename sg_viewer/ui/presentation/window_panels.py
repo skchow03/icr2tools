@@ -86,6 +86,7 @@ def create_elevation_panel(
     edit_xsect_list_button: QtWidgets.QPushButton,
     xsect_combo: QtWidgets.QComboBox,
     copy_xsect_button: QtWidgets.QPushButton,
+    generate_elevation_change_button: QtWidgets.QPushButton,
     profile_widget: QtWidgets.QWidget,
     xsect_elevation_widget: QtWidgets.QWidget,
 ) -> ElevationPanel:
@@ -99,6 +100,7 @@ def create_elevation_panel(
     controls.addWidget(QtWidgets.QLabel("Track Elevation Profile:"))
     controls.addWidget(xsect_combo)
     controls.addWidget(copy_xsect_button)
+    controls.addWidget(generate_elevation_change_button)
     layout.addLayout(controls)
     layout.addWidget(profile_widget, stretch=2)
     layout.addWidget(QtWidgets.QLabel("Lateral Section Elevation Profile"))

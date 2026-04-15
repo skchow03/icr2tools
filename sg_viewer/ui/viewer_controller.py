@@ -1281,6 +1281,12 @@ class SGViewerController:
         self._window.copy_xsect_button.clicked.connect(
             self._elevation_ui_coordinator.copy_xsect_data_to_targets
         )
+        self._window.generate_elevation_change_button.clicked.connect(
+            self._open_generate_elevation_change_dialog
+        )
+        self._window.generateElevationChangeApplied.connect(
+            self._on_generate_elevation_change_applied
+        )
         self._window.altitude_slider.valueChanged.connect(
             self._on_altitude_slider_changed
         )
@@ -5026,7 +5032,10 @@ class SGViewerController:
     def _update_copy_xsect_button(self) -> None:
         combo_enabled = self._window.xsect_combo.isEnabled()
         sections, _ = self._window.preview.get_section_set()
-        self._window.copy_xsect_button.setEnabled(combo_enabled and bool(sections))
+        can_generate = combo_enabled and bool(sections)
+        self._window.copy_xsect_button.setEnabled(can_generate)
+        self._window.generate_elevation_change_button.setEnabled(can_generate)
+        self._generate_elevation_change_action.setEnabled(can_generate)
 
     def _update_copy_fsects_buttons(self) -> None:
         selection = self._active_selection
@@ -5117,11 +5126,13 @@ class SGViewerController:
                 "Select an x-section before generating an elevation change.",
             )
             return
-        if self._window.show_generate_elevation_change_dialog(xsect_index=xsect_index):
-            self._reset_altitude_range_for_track()
-            self._refresh_elevation_profile()
-            self._refresh_xsect_elevation_panel()
-            self._refresh_xsect_elevation_table()
+        self._window.show_generate_elevation_change_dialog(xsect_index=xsect_index)
+
+    def _on_generate_elevation_change_applied(self) -> None:
+        self._reset_altitude_range_for_track()
+        self._refresh_elevation_profile()
+        self._refresh_xsect_elevation_panel()
+        self._refresh_xsect_elevation_table()
 
     def _apply_altitude_edit(self, live: bool = False, slider_value: int | None = None) -> None:
         if not self._is_elevation_tab_active():
