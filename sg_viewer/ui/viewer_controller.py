@@ -2778,10 +2778,10 @@ class SGViewerController:
         start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdZebraCrossingObject) else 0)
         right_dlat_spin = QtWidgets.QSpinBox(dialog)
         right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
-        right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdZebraCrossingObject) else 20000)
+        right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdZebraCrossingObject) else -20000)
         left_dlat_spin = QtWidgets.QSpinBox(dialog)
         left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
-        left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdZebraCrossingObject) else -20000)
+        left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdZebraCrossingObject) else 20000)
         stripe_width_spin = QtWidgets.QSpinBox(dialog)
         stripe_width_spin.setRange(1, 2_000_000_000)
         stripe_width_spin.setValue(existing.stripe_width_500ths if isinstance(existing, TsdZebraCrossingObject) else 4000)
@@ -2828,12 +2828,12 @@ class SGViewerController:
         right_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
         right_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
         right_dlat_bound_spin.setValue(
-            existing.right_dlat_bound if isinstance(existing, TsdTransverseLineObject) else 20000
+            existing.right_dlat_bound if isinstance(existing, TsdTransverseLineObject) else -20000
         )
         left_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
         left_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
         left_dlat_bound_spin.setValue(
-            existing.left_dlat_bound if isinstance(existing, TsdTransverseLineObject) else -20000
+            existing.left_dlat_bound if isinstance(existing, TsdTransverseLineObject) else 20000
         )
         line_width_spin = QtWidgets.QSpinBox(dialog)
         line_width_spin.setRange(1, 2_000_000_000)
@@ -2843,10 +2843,10 @@ class SGViewerController:
         pit_stalls_start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdPitStallsObject) else 0)
         pit_stalls_left_dlat_spin = QtWidgets.QSpinBox(dialog)
         pit_stalls_left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
-        pit_stalls_left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdPitStallsObject) else -20000)
+        pit_stalls_left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdPitStallsObject) else 20000)
         pit_stalls_right_dlat_spin = QtWidgets.QSpinBox(dialog)
         pit_stalls_right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
-        pit_stalls_right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdPitStallsObject) else 20000)
+        pit_stalls_right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdPitStallsObject) else -20000)
         pit_stalls_line_thickness_spin = QtWidgets.QSpinBox(dialog)
         pit_stalls_line_thickness_spin.setRange(1, 2_000_000_000)
         pit_stalls_line_thickness_spin.setValue(
@@ -3075,9 +3075,9 @@ class SGViewerController:
             with QtCore.QSignalBlocker(start_dlong_spin):
                 start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdZebraCrossingObject) else 0)
             with QtCore.QSignalBlocker(right_dlat_spin):
-                right_dlat_spin.setValue(obj.right_dlat if isinstance(obj, TsdZebraCrossingObject) else 20000)
+                right_dlat_spin.setValue(obj.right_dlat if isinstance(obj, TsdZebraCrossingObject) else -20000)
             with QtCore.QSignalBlocker(left_dlat_spin):
-                left_dlat_spin.setValue(obj.left_dlat if isinstance(obj, TsdZebraCrossingObject) else -20000)
+                left_dlat_spin.setValue(obj.left_dlat if isinstance(obj, TsdZebraCrossingObject) else 20000)
             with QtCore.QSignalBlocker(stripe_width_spin):
                 stripe_width_spin.setValue(
                     obj.stripe_width_500ths if isinstance(obj, TsdZebraCrossingObject) else 4000
@@ -3120,11 +3120,11 @@ class SGViewerController:
                 dlat_spin.setValue(obj.dlat if isinstance(obj, TsdDoubleSolidLineObject) else 0)
             with QtCore.QSignalBlocker(right_dlat_bound_spin):
                 right_dlat_bound_spin.setValue(
-                    obj.right_dlat_bound if isinstance(obj, TsdTransverseLineObject) else 20000
+                    obj.right_dlat_bound if isinstance(obj, TsdTransverseLineObject) else -20000
                 )
             with QtCore.QSignalBlocker(left_dlat_bound_spin):
                 left_dlat_bound_spin.setValue(
-                    obj.left_dlat_bound if isinstance(obj, TsdTransverseLineObject) else -20000
+                    obj.left_dlat_bound if isinstance(obj, TsdTransverseLineObject) else 20000
                 )
             with QtCore.QSignalBlocker(line_width_spin):
                 line_width_spin.setValue(
@@ -3135,9 +3135,9 @@ class SGViewerController:
             with QtCore.QSignalBlocker(pit_stalls_start_dlong_spin):
                 pit_stalls_start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdPitStallsObject) else 0)
             with QtCore.QSignalBlocker(pit_stalls_left_dlat_spin):
-                pit_stalls_left_dlat_spin.setValue(obj.left_dlat if isinstance(obj, TsdPitStallsObject) else -20000)
+                pit_stalls_left_dlat_spin.setValue(obj.left_dlat if isinstance(obj, TsdPitStallsObject) else 20000)
             with QtCore.QSignalBlocker(pit_stalls_right_dlat_spin):
-                pit_stalls_right_dlat_spin.setValue(obj.right_dlat if isinstance(obj, TsdPitStallsObject) else 20000)
+                pit_stalls_right_dlat_spin.setValue(obj.right_dlat if isinstance(obj, TsdPitStallsObject) else -20000)
             with QtCore.QSignalBlocker(pit_stalls_line_thickness_spin):
                 pit_stalls_line_thickness_spin.setValue(
                     obj.line_thickness_500ths if isinstance(obj, TsdPitStallsObject) else 2000
