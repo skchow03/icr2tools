@@ -88,6 +88,51 @@ class TsdDoubleSolidLineObject:
 
 
 @dataclass(frozen=True)
+class TsdDashedLinesObject:
+    name: str
+    start_adjusted_dlong: int
+    end_adjusted_dlong: int
+    line_thickness_500ths: int
+    line_length_500ths: int
+    gap_to_line_ratio: float
+    color_index: int = 36
+    command: str = "Detail"
+
+    def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
+        command = normalize_tsd_command(self.command)
+        start_dlong = int(self.start_adjusted_dlong)
+        end_dlong = int(self.end_adjusted_dlong)
+        if end_dlong <= start_dlong:
+            return ()
+        line_thickness = max(1, int(self.line_thickness_500ths))
+        line_length = max(1, int(self.line_length_500ths))
+        ratio = max(0.0, float(self.gap_to_line_ratio))
+        gap_length = max(0, int(round(line_length * ratio)))
+        stride = line_length + gap_length
+        if stride <= 0:
+            stride = line_length
+
+        lines: list[TrackSurfaceDetailLine] = []
+        cursor = start_dlong
+        while cursor < end_dlong:
+            dash_end_dlong = min(cursor + line_length, end_dlong)
+            if dash_end_dlong > cursor:
+                lines.append(
+                    TrackSurfaceDetailLine(
+                        color_index=int(self.color_index),
+                        width_500ths=line_thickness,
+                        start_dlong=cursor,
+                        start_dlat=0,
+                        end_dlong=dash_end_dlong,
+                        end_dlat=0,
+                        command=command,
+                    )
+                )
+            cursor += stride
+        return tuple(lines)
+
+
+@dataclass(frozen=True)
 class TsdZebraCrossingObject:
     name: str
     start_dlong: int
@@ -260,7 +305,13 @@ class TsdPitStallsObject:
 
 
 def tsd_object_to_payload(
-    obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
+    obj: (
+        TsdZebraCrossingObject
+        | TsdTransverseLineObject
+        | TsdDoubleSolidLineObject
+        | TsdDashedLinesObject
+        | TsdPitStallsObject
+    ),
 ) -> dict[str, object]:
     if isinstance(obj, TsdPitStallsObject):
         return {
@@ -287,6 +338,18 @@ def tsd_object_to_payload(
             "end_adjusted_dlong": int(obj.end_adjusted_dlong),
             "dlat": int(obj.dlat),
             "line_width_500ths": int(obj.line_width_500ths),
+            "color_index": int(obj.color_index),
+            "command": normalize_tsd_command(obj.command),
+        }
+    if isinstance(obj, TsdDashedLinesObject):
+        return {
+            "type": "dashed_lines",
+            "name": obj.name,
+            "start_adjusted_dlong": int(obj.start_adjusted_dlong),
+            "end_adjusted_dlong": int(obj.end_adjusted_dlong),
+            "line_thickness_500ths": int(obj.line_thickness_500ths),
+            "line_length_500ths": int(obj.line_length_500ths),
+            "gap_to_line_ratio": float(obj.gap_to_line_ratio),
             "color_index": int(obj.color_index),
             "command": normalize_tsd_command(obj.command),
         }
@@ -325,7 +388,7 @@ def tsd_object_to_payload(
 
 def tsd_object_from_payload(
     payload: dict[str, object],
-) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject:
+) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject:
     payload_type = payload.get("type")
     if payload_type == "pit_stalls":
         return TsdPitStallsObject(
@@ -350,6 +413,17 @@ def tsd_object_from_payload(
             end_adjusted_dlong=int(payload["end_adjusted_dlong"]),
             dlat=int(payload["dlat"]),
             line_width_500ths=max(1, int(payload["line_width_500ths"])),
+            color_index=int(payload.get("color_index", 36)),
+            command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+        )
+    if payload_type == "dashed_lines":
+        return TsdDashedLinesObject(
+            name=str(payload.get("name") or "Dashed Lines"),
+            start_adjusted_dlong=int(payload.get("start_adjusted_dlong", 0)),
+            end_adjusted_dlong=int(payload.get("end_adjusted_dlong", 20000)),
+            line_thickness_500ths=max(1, int(payload.get("line_thickness_500ths", 500))),
+            line_length_500ths=max(1, int(payload.get("line_length_500ths", 4000))),
+            gap_to_line_ratio=max(0.0, float(payload.get("gap_to_line_ratio", 1.0))),
             color_index=int(payload.get("color_index", 36)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
         )
