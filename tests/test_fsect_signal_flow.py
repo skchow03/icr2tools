@@ -47,6 +47,7 @@ def test_query_track_refresh_updates_overlay_message() -> None:
     assert "Query Track:" in overlay
     assert "Section #: 3" in overlay
     assert "Boundary DLATs: B1:" in overlay
+    assert "[Space: Freeze]" in overlay
 
 
 def test_query_track_overlay_includes_boundary_elevations() -> None:
@@ -64,3 +65,33 @@ def test_query_track_overlay_includes_boundary_elevations() -> None:
 
     assert "Boundary DLATs: B0: -500.0, B1: 500.0" in text
     assert "Boundary Elevations: B0: 2800.0, B1: –" in text
+
+
+def test_query_track_spacebar_toggles_frozen_mode() -> None:
+    _app()
+    window = SGViewerWindow(wire_features=False)
+    window._query_track_mode_active = True
+
+    window._toggle_query_track_info_freeze()
+    assert window._query_track_info_frozen is True
+
+    window._toggle_query_track_info_freeze()
+    assert window._query_track_info_frozen is False
+
+
+def test_query_track_overlay_shows_unfreeze_hint_when_frozen() -> None:
+    _app()
+    window = SGViewerWindow(wire_features=False)
+    window._query_track_mode_active = True
+    window._query_track_info_frozen = True
+    window._query_track_result = {
+        "section_index": 1,
+        "adjusted_dlong": None,
+        "centerline_elevation": None,
+        "boundary_dlats": (),
+    }
+
+    window._refresh_query_track_info_label()
+
+    overlay = window._preview.query_track_overlay_message
+    assert "[Space: Unfreeze]" in overlay
