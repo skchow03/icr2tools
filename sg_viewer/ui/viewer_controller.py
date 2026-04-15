@@ -34,6 +34,7 @@ from sg_viewer.services.tsd_io import (
     serialize_tsd,
 )
 from sg_viewer.services.tsd_objects import (
+    TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
     TsdPitStallsObject,
     TsdTransverseLineObject,
@@ -224,10 +225,19 @@ class SGViewerController:
         self._skid_marks_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._tsd_objects: list[
-            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject
+            TsdZebraCrossingObject
+            | TsdTransverseLineObject
+            | TsdDoubleSolidLineObject
+            | TsdDashedLinesObject
+            | TsdPitStallsObject
         ] = []
         self._tsd_object_dialog_preview_object: (
-            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject | None
+            TsdZebraCrossingObject
+            | TsdTransverseLineObject
+            | TsdDoubleSolidLineObject
+            | TsdDashedLinesObject
+            | TsdPitStallsObject
+            | None
         ) = None
         self._editing_tsd_object_index: int | None = None
         self._generated_skid_mark_lines: tuple[TrackSurfaceDetailLine, ...] = ()
@@ -2553,6 +2563,8 @@ class SGViewerController:
                     object_type_label = "Transverse Line"
                 elif isinstance(obj, TsdDoubleSolidLineObject):
                     object_type_label = "Double Solid Line"
+                elif isinstance(obj, TsdDashedLinesObject):
+                    object_type_label = "Dashed Lines"
                 elif isinstance(obj, TsdPitStallsObject):
                     object_type_label = "Pit Stalls"
                 else:
@@ -2616,7 +2628,7 @@ class SGViewerController:
 
     @staticmethod
     def _tsd_object_dlong_range(
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
     ) -> tuple[int, int]:
         lines = obj.generated_lines()
         if not lines:
@@ -2627,7 +2639,7 @@ class SGViewerController:
 
     def _tsd_object_center_point(
         self,
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
     ) -> Point | None:
         lines = obj.generated_lines()
         if not lines:
@@ -2742,8 +2754,8 @@ class SGViewerController:
     def _open_tsd_object_dialog(
         self,
         *,
-        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject | None = None,
-    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject | None:
+        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject | None = None,
+    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject | None:
         dialog = QtWidgets.QDialog(self._window)
         dialog.setModal(False)
         dialog.setWindowModality(QtCore.Qt.NonModal)
@@ -2753,6 +2765,7 @@ class SGViewerController:
         type_combo.addItem("Zebra crossing", userData="zebra_crossing")
         type_combo.addItem("Transverse Line", userData="transverse_line")
         type_combo.addItem("Double Solid Line", userData="double_solid_line")
+        type_combo.addItem("Dashed Lines", userData="dashed_lines")
         type_combo.addItem("Pit Stalls", userData="pit_stalls")
         default_index = len(self._tsd_objects) + 1
         default_name = "TSD Object"
@@ -2768,9 +2781,13 @@ class SGViewerController:
             default_name = f"Double Solid Line {default_index}"
             type_combo.setCurrentIndex(2)
             type_combo.setEnabled(False)
+        elif isinstance(existing, TsdDashedLinesObject):
+            default_name = f"Dashed Lines {default_index}"
+            type_combo.setCurrentIndex(3)
+            type_combo.setEnabled(False)
         elif isinstance(existing, TsdPitStallsObject):
             default_name = f"Pit Stalls {default_index}"
-            type_combo.setCurrentIndex(3)
+            type_combo.setCurrentIndex(4)
             type_combo.setEnabled(False)
         name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
         start_dlong_spin = QtWidgets.QSpinBox(dialog)
@@ -2838,6 +2855,33 @@ class SGViewerController:
         line_width_spin = QtWidgets.QSpinBox(dialog)
         line_width_spin.setRange(1, 2_000_000_000)
         line_width_spin.setValue(existing.line_width_500ths if isinstance(existing, TsdTransverseLineObject) else 5000)
+        dashed_line_thickness_spin = QtWidgets.QSpinBox(dialog)
+        dashed_line_thickness_spin.setRange(1, 2_000_000_000)
+        dashed_line_thickness_spin.setValue(
+            existing.line_thickness_500ths if isinstance(existing, TsdDashedLinesObject) else 500
+        )
+        dashed_start_dlong_spin = QtWidgets.QSpinBox(dialog)
+        dashed_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        dashed_start_dlong_spin.setValue(
+            existing.start_adjusted_dlong if isinstance(existing, TsdDashedLinesObject) else 0
+        )
+        dashed_end_dlong_spin = QtWidgets.QSpinBox(dialog)
+        dashed_end_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        dashed_end_dlong_spin.setValue(
+            existing.end_adjusted_dlong if isinstance(existing, TsdDashedLinesObject) else 20000
+        )
+        dashed_line_length_spin = QtWidgets.QSpinBox(dialog)
+        dashed_line_length_spin.setRange(1, 2_000_000_000)
+        dashed_line_length_spin.setValue(
+            existing.line_length_500ths if isinstance(existing, TsdDashedLinesObject) else 4000
+        )
+        dashed_gap_ratio_spin = QtWidgets.QDoubleSpinBox(dialog)
+        dashed_gap_ratio_spin.setRange(0.0, 1_000_000.0)
+        dashed_gap_ratio_spin.setDecimals(3)
+        dashed_gap_ratio_spin.setSingleStep(0.1)
+        dashed_gap_ratio_spin.setValue(
+            existing.gap_to_line_ratio if isinstance(existing, TsdDashedLinesObject) else 1.0
+        )
         pit_stalls_start_dlong_spin = QtWidgets.QSpinBox(dialog)
         pit_stalls_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         pit_stalls_start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdPitStallsObject) else 0)
@@ -2903,6 +2947,11 @@ class SGViewerController:
         layout.addRow("Right DLAT Bound", right_dlat_bound_spin)
         layout.addRow("Left DLAT Bound", left_dlat_bound_spin)
         layout.addRow("Line Width", line_width_spin)
+        layout.addRow("Dashed Line Thickness", dashed_line_thickness_spin)
+        layout.addRow("Dashed Start DLONG", dashed_start_dlong_spin)
+        layout.addRow("Dashed End DLONG", dashed_end_dlong_spin)
+        layout.addRow("Dashed Line Length", dashed_line_length_spin)
+        layout.addRow("Gap-to-Line Ratio", dashed_gap_ratio_spin)
         layout.addRow("Pit Start DLONG", pit_stalls_start_dlong_spin)
         layout.addRow("Pit Left DLAT", pit_stalls_left_dlat_spin)
         layout.addRow("Pit Right DLAT", pit_stalls_right_dlat_spin)
@@ -2940,6 +2989,13 @@ class SGViewerController:
             dlat_spin,
             line_width_spin,
         )
+        dashed_lines_only_fields = (
+            dashed_line_thickness_spin,
+            dashed_start_dlong_spin,
+            dashed_end_dlong_spin,
+            dashed_line_length_spin,
+            dashed_gap_ratio_spin,
+        )
         pit_stalls_only_fields = (
             pit_stalls_start_dlong_spin,
             pit_stalls_left_dlat_spin,
@@ -2963,6 +3019,7 @@ class SGViewerController:
             object_type = str(type_combo.currentData())
             is_transverse = object_type == "transverse_line"
             is_double_solid = object_type == "double_solid_line"
+            is_dashed_lines = object_type == "dashed_lines"
             is_pit_stalls = object_type == "pit_stalls"
             for field in zebra_only_fields:
                 _set_row_visible(field, object_type == "zebra_crossing")
@@ -2970,6 +3027,8 @@ class SGViewerController:
                 _set_row_visible(field, is_transverse)
             for field in double_solid_only_fields:
                 _set_row_visible(field, is_double_solid)
+            for field in dashed_lines_only_fields:
+                _set_row_visible(field, is_dashed_lines)
             for field in pit_stalls_only_fields:
                 _set_row_visible(field, is_pit_stalls)
             transverse_line_thickness_spin.setEnabled(
@@ -2984,7 +3043,7 @@ class SGViewerController:
         _sync_tsd_object_field_visibility()
 
         def _build_tsd_object_from_form() -> (
-            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject
         ):
             object_type = str(type_combo.currentData())
             if object_type == "pit_stalls":
@@ -3012,6 +3071,18 @@ class SGViewerController:
                     end_adjusted_dlong=end_adjusted_dlong_spin.value(),
                     dlat=dlat_spin.value(),
                     line_width_500ths=line_width_spin.value(),
+                    color_index=color_spin.value(),
+                    command="Detail",
+                )
+            if object_type == "dashed_lines":
+                name = name_edit.text().strip() or f"Dashed Lines {default_index}"
+                return TsdDashedLinesObject(
+                    name=name,
+                    start_adjusted_dlong=dashed_start_dlong_spin.value(),
+                    end_adjusted_dlong=dashed_end_dlong_spin.value(),
+                    line_thickness_500ths=dashed_line_thickness_spin.value(),
+                    line_length_500ths=dashed_line_length_spin.value(),
+                    gap_to_line_ratio=dashed_gap_ratio_spin.value(),
                     color_index=color_spin.value(),
                     command="Detail",
                 )
@@ -3054,7 +3125,7 @@ class SGViewerController:
             )
 
         def _set_tsd_object_form_values(
-            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
+            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
         ) -> None:
             with QtCore.QSignalBlocker(type_combo):
                 type_value = (
@@ -3063,6 +3134,8 @@ class SGViewerController:
                     else
                     "double_solid_line"
                     if isinstance(obj, TsdDoubleSolidLineObject)
+                    else "dashed_lines"
+                    if isinstance(obj, TsdDashedLinesObject)
                     else "transverse_line"
                     if isinstance(obj, TsdTransverseLineObject)
                     else "zebra_crossing"
@@ -3132,6 +3205,26 @@ class SGViewerController:
                     if isinstance(obj, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
                     else 5000
                 )
+            with QtCore.QSignalBlocker(dashed_line_thickness_spin):
+                dashed_line_thickness_spin.setValue(
+                    obj.line_thickness_500ths if isinstance(obj, TsdDashedLinesObject) else 500
+                )
+            with QtCore.QSignalBlocker(dashed_start_dlong_spin):
+                dashed_start_dlong_spin.setValue(
+                    obj.start_adjusted_dlong if isinstance(obj, TsdDashedLinesObject) else 0
+                )
+            with QtCore.QSignalBlocker(dashed_end_dlong_spin):
+                dashed_end_dlong_spin.setValue(
+                    obj.end_adjusted_dlong if isinstance(obj, TsdDashedLinesObject) else 20000
+                )
+            with QtCore.QSignalBlocker(dashed_line_length_spin):
+                dashed_line_length_spin.setValue(
+                    obj.line_length_500ths if isinstance(obj, TsdDashedLinesObject) else 4000
+                )
+            with QtCore.QSignalBlocker(dashed_gap_ratio_spin):
+                dashed_gap_ratio_spin.setValue(
+                    obj.gap_to_line_ratio if isinstance(obj, TsdDashedLinesObject) else 1.0
+                )
             with QtCore.QSignalBlocker(pit_stalls_start_dlong_spin):
                 pit_stalls_start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdPitStallsObject) else 0)
             with QtCore.QSignalBlocker(pit_stalls_left_dlat_spin):
@@ -3169,8 +3262,8 @@ class SGViewerController:
             _sync_tsd_object_field_visibility()
 
         def _candidate_tsd_objects(
-            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
-        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject]:
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
+        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject]:
             edit_row = self._editing_tsd_object_index
             if edit_row is not None and 0 <= edit_row < len(self._tsd_objects):
                 objects = list(self._tsd_objects)
@@ -3179,7 +3272,7 @@ class SGViewerController:
             return [*self._tsd_objects, preview_object]
 
         def _warn_if_excessive_tsd_lines(
-            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdPitStallsObject,
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
         ) -> bool:
             line_count = sum(len(obj.generated_lines()) for obj in _candidate_tsd_objects(preview_object))
             if line_count <= 1000:
@@ -3239,6 +3332,11 @@ class SGViewerController:
             right_dlat_bound_spin,
             left_dlat_bound_spin,
             line_width_spin,
+            dashed_line_thickness_spin,
+            dashed_start_dlong_spin,
+            dashed_end_dlong_spin,
+            dashed_line_length_spin,
+            dashed_gap_ratio_spin,
             pit_stalls_start_dlong_spin,
             pit_stalls_left_dlat_spin,
             pit_stalls_right_dlat_spin,
@@ -3258,6 +3356,8 @@ class SGViewerController:
                 control.toggled.connect(lambda *_args: _commit_tsd_object_preview_change())
             elif isinstance(control, QtWidgets.QComboBox):
                 control.currentIndexChanged.connect(lambda *_args: _commit_tsd_object_preview_change())
+            elif isinstance(control, QtWidgets.QDoubleSpinBox):
+                control.editingFinished.connect(_commit_tsd_object_preview_change)
             elif isinstance(control, QtWidgets.QSpinBox):
                 control.editingFinished.connect(_commit_tsd_object_preview_change)
 

@@ -1,4 +1,5 @@
 from sg_viewer.services.tsd_objects import (
+    TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
@@ -242,6 +243,52 @@ def test_double_solid_line_payload_round_trip() -> None:
     assert serialized["start_adjusted_dlong"] == 100
     assert serialized["end_adjusted_dlong"] == 9900
     assert serialized["dlat"] == -250
+
+
+def test_dashed_lines_generates_multiple_segments_from_ratio() -> None:
+    obj = TsdDashedLinesObject(
+        name="Dashed",
+        start_adjusted_dlong=1000,
+        end_adjusted_dlong=12000,
+        line_thickness_500ths=600,
+        line_length_500ths=2000,
+        gap_to_line_ratio=0.5,
+        color_index=8,
+    )
+
+    lines = obj.generated_lines()
+
+    assert [line.start_dlong for line in lines] == [1000, 4000, 7000, 10000]
+    assert [line.end_dlong for line in lines] == [3000, 6000, 9000, 12000]
+    assert all(line.width_500ths == 600 for line in lines)
+    assert all(line.start_dlat == 0 for line in lines)
+    assert all(line.end_dlat == 0 for line in lines)
+    assert all(line.color_index == 8 for line in lines)
+
+
+def test_dashed_lines_payload_round_trip() -> None:
+    payload = {
+        "type": "dashed_lines",
+        "name": "Dashed",
+        "start_adjusted_dlong": 123,
+        "end_adjusted_dlong": 4567,
+        "line_thickness_500ths": 890,
+        "line_length_500ths": 1200,
+        "gap_to_line_ratio": 1.25,
+        "color_index": 7,
+        "command": "Detail",
+    }
+
+    obj = tsd_object_from_payload(payload)
+    serialized = tsd_object_to_payload(obj)
+
+    assert isinstance(obj, TsdDashedLinesObject)
+    assert serialized["type"] == "dashed_lines"
+    assert serialized["start_adjusted_dlong"] == 123
+    assert serialized["end_adjusted_dlong"] == 4567
+    assert serialized["line_thickness_500ths"] == 890
+    assert serialized["line_length_500ths"] == 1200
+    assert serialized["gap_to_line_ratio"] == 1.25
 
 
 def test_pit_stalls_payload_defaults_preserve_right_negative_left_positive() -> None:
