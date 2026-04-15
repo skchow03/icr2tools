@@ -96,6 +96,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         # elevation/grade data changes, because those values feed intent-length conversion.
         self._adjusted_section_ranges_cache: tuple[tuple[int, int, int], ...] | None = None
         self._query_track_mode_active = False
+        self._query_track_info_frozen = False
         self._query_track_result: dict[str, object] | None = None
 
         shortcut_labels = {
@@ -909,6 +910,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.pointerMoved.connect(self._on_preview_pointer_moved)
         self._preview.pointerLeft.connect(self._on_preview_pointer_left)
         self._query_track_button.toggled.connect(self._on_query_track_toggled)
+        self._query_track_freeze_shortcut = QtWidgets.QShortcut(
+            QtGui.QKeySequence(QtCore.Qt.Key_Space),
+            self,
+        )
+        self._query_track_freeze_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self._query_track_freeze_shortcut.activated.connect(
+            self._toggle_query_track_info_freeze
+        )
 
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
@@ -2156,21 +2165,34 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_query_track_toggled(self, checked: bool) -> None:
         self._query_track_mode_active = bool(checked)
+        self._query_track_info_frozen = False
         self._query_track_info_label.setVisible(not self._query_track_mode_active)
         if not self._query_track_mode_active:
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
+        else:
+            self.show_status_message("Query Track active. Press Space to freeze/unfreeze overlay details.")
+        self._refresh_query_track_info_label()
+
+    def _toggle_query_track_info_freeze(self) -> None:
+        if not self._query_track_mode_active:
+            return
+        self._query_track_info_frozen = not self._query_track_info_frozen
+        if self._query_track_info_frozen:
+            self.show_status_message("Query Track overlay frozen. Press Space again to resume live updates.")
+        else:
+            self.show_status_message("Query Track overlay live updates resumed.")
         self._refresh_query_track_info_label()
 
     def _on_preview_pointer_left(self) -> None:
-        if not self._query_track_mode_active:
+        if not self._query_track_mode_active or self._query_track_info_frozen:
             return
         self._query_track_result = None
         self._preview.set_query_track_hover_point(None)
         self._refresh_query_track_info_label()
 
     def _on_preview_pointer_moved(self, point: QtCore.QPointF) -> None:
-        if not self._query_track_mode_active:
+        if not self._query_track_mode_active or self._query_track_info_frozen:
             return
 
         widget_size = self._preview.widget_size()
@@ -2303,12 +2325,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._query_track_info_label.setText("")
             self._preview.set_query_track_overlay_message("")
             return
+        if self._query_track_info_frozen:
+            freeze_suffix = "\n[Space: Unfreeze]"
+        else:
+            freeze_suffix = "\n[Space: Freeze]"
         if self._query_track_result is None:
-            self._preview.set_query_track_overlay_message("Query Track:\nHover over centerline")
+            self._preview.set_query_track_overlay_message(
+                "Query Track:\nHover over centerline" + freeze_suffix
+            )
             return
         result = self._query_track_result
         query_text = self._format_query_track_text(result)
-        self._preview.set_query_track_overlay_message(query_text)
+        self._preview.set_query_track_overlay_message(query_text + freeze_suffix)
 
     def _format_query_track_text(self, result: dict[str, object]) -> str:
         adjusted_dlong = result.get("adjusted_dlong")
