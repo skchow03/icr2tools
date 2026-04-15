@@ -47,6 +47,7 @@ def create_fsect_panel(
     delete_button: QtWidgets.QPushButton,
     move_up_button: QtWidgets.QPushButton,
     move_down_button: QtWidgets.QPushButton,
+    swap_types_button: QtWidgets.QPushButton,
     table: QtWidgets.QTableWidget,
     diagram: QtWidgets.QWidget,
 ) -> FsectPanel:
@@ -70,6 +71,7 @@ def create_fsect_panel(
     move_row.addWidget(move_up_button)
     move_row.addWidget(move_down_button)
     layout.addLayout(move_row)
+    layout.addWidget(swap_types_button)
     layout.addWidget(QtWidgets.QLabel("Fsects"))
     layout.addWidget(table)
     layout.addWidget(QtWidgets.QLabel("Fsect Diagram"))

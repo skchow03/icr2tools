@@ -184,3 +184,6 @@ class SectionEditingCoordinator:
 
     def copy_fsects_to_neighbor(self, *, direction: str) -> None:
         self._sections_controller.copy_fsects_to_neighbor(direction=direction)
+
+    def swap_fsect_type_across_sections(self) -> None:
+        self._sections_controller.swap_fsect_type_across_sections()

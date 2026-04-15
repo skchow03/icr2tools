@@ -345,6 +345,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._move_fsect_up_button.setEnabled(False)
         self._move_fsect_down_button = QtWidgets.QPushButton("Move Fsect Down")
         self._move_fsect_down_button.setEnabled(False)
+        self._swap_fsect_types_button = QtWidgets.QPushButton("Swap Type Across All Sections…")
+        self._swap_fsect_types_button.setEnabled(False)
         self._section_table_action: QtWidgets.QAction | None = None
         self._heading_table_action: QtWidgets.QAction | None = None
         self._xsect_table_action: QtWidgets.QAction | None = None
@@ -585,6 +587,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             delete_button=self._delete_fsect_button,
             move_up_button=self._move_fsect_up_button,
             move_down_button=self._move_fsect_down_button,
+            swap_types_button=self._swap_fsect_types_button,
             table=self._fsect_table,
             diagram=self._fsect_diagram,
         )
@@ -1043,6 +1046,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def move_fsect_down_button(self) -> QtWidgets.QPushButton:
         return self._move_fsect_down_button
+
+    @property
+    def swap_fsect_types_button(self) -> QtWidgets.QPushButton:
+        return self._swap_fsect_types_button
 
     @property
     def fsect_table(self) -> QtWidgets.QTableWidget:

@@ -104,6 +104,10 @@ class _FakeWindow:
 class _Host:
     def __init__(self, preview: _FakePreview) -> None:
         self._window = _FakeWindow(preview)
+        self.fsects_dirty = False
+
+    def _mark_fsects_dirty(self, dirty: bool) -> None:
+        self.fsects_dirty = dirty
 
 
 def test_reverse_track_reverses_sections_fsects_and_orientation() -> None:
@@ -228,3 +232,54 @@ def test_reverse_track_recomputes_ground_fsects_from_new_right_side() -> None:
         PreviewFSection(start_dlat=0.0, end_dlat=2.0, surface_type=1, type2=0),
         PreviewFSection(start_dlat=8.0, end_dlat=10.0, surface_type=0, type2=0),
     ]
+
+
+def test_swap_fsect_type_across_sections_replaces_matching_types(monkeypatch) -> None:
+    sections = [
+        _section(0, 0, 1, (0.0, 0.0), (100.0, 0.0)),
+        _section(1, 0, 1, (100.0, 0.0), (200.0, 0.0)),
+    ]
+    fsects = [
+        [
+            PreviewFSection(start_dlat=-3.0, end_dlat=-3.0, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=4.0, end_dlat=4.0, surface_type=5, type2=0),
+        ],
+        [
+            PreviewFSection(start_dlat=-2.0, end_dlat=-2.0, surface_type=7, type2=0),
+            PreviewFSection(start_dlat=6.0, end_dlat=6.0, surface_type=4, type2=0),
+        ],
+    ]
+    preview = _FakePreview(sections, fsects)
+    host = _Host(preview)
+    controller = SectionsController(host)
+
+    class _AcceptedDialog:
+        def __init__(self, _parent):
+            pass
+
+        def exec_(self):
+            return 1
+
+        def source_type(self):
+            return (7, 0)
+
+        def target_type(self):
+            return (7, 1)
+
+    monkeypatch.setattr(
+        "sg_viewer.ui.controllers.features.sections_controller.SwapFsectTypesDialog",
+        _AcceptedDialog,
+    )
+
+    controller.swap_fsect_type_across_sections()
+
+    assert preview.received_fsects is not None
+    swapped = preview.received_fsects
+    assert swapped[0][0].surface_type == 7
+    assert swapped[0][0].type2 == 1
+    assert swapped[1][0].surface_type == 7
+    assert swapped[1][0].type2 == 1
+    assert swapped[0][1] == fsects[0][1]
+    assert swapped[1][1] == fsects[1][1]
+    assert host.fsects_dirty is True
+    assert host._window.status == "Swapped 2 Fsect instance(s) across all sections."
