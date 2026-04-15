@@ -242,3 +242,15 @@ def test_double_solid_line_payload_round_trip() -> None:
     assert serialized["start_adjusted_dlong"] == 100
     assert serialized["end_adjusted_dlong"] == 9900
     assert serialized["dlat"] == -250
+
+
+def test_pit_stalls_payload_defaults_preserve_right_negative_left_positive() -> None:
+    payload = {
+        "type": "pit_stalls",
+        "name": "Pit",
+    }
+
+    obj = tsd_object_from_payload(payload)
+
+    assert obj.right_dlat == -20000
+    assert obj.left_dlat == 20000

@@ -331,8 +331,8 @@ def tsd_object_from_payload(
         return TsdPitStallsObject(
             name=str(payload.get("name") or "Pit Stalls"),
             start_dlong=int(payload.get("start_dlong", 0)),
-            left_dlat=int(payload.get("left_dlat", -20000)),
-            right_dlat=int(payload.get("right_dlat", 20000)),
+            left_dlat=int(payload.get("left_dlat", 20000)),
+            right_dlat=int(payload.get("right_dlat", -20000)),
             line_thickness_500ths=max(1, int(payload.get("line_thickness_500ths", 2000))),
             dlong_spacing_500ths=max(0, int(payload.get("dlong_spacing_500ths", 4000))),
             color_index=int(payload.get("color_index", 36)),
