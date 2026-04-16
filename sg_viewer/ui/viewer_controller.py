@@ -1658,7 +1658,11 @@ class SGViewerController:
 
     def _on_mrk_add_entry_requested(self) -> None:
         table = self._window.mrk_entries_table
-        row = table.rowCount()
+        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        if table.rowCount() == 0 or not selected_rows:
+            row = 0
+        else:
+            row = selected_rows[0].row() + 1
         table.insertRow(row)
         values = [0, 0, 0, 1]
         for column, value in enumerate(values):
