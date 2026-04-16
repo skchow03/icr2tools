@@ -1666,7 +1666,7 @@ class SGViewerController:
             item.setTextAlignment(int(QtCore.Qt.AlignCenter))
             table.setItem(row, column, item)
         self._set_mrk_side_cell(row, self._auto_detect_mrk_side(0, 0))
-        table.setItem(row, 5, QtWidgets.QTableWidgetItem(self._default_texture_pattern_for_wall_count(1)))
+        table.setItem(row, 5, QtWidgets.QTableWidgetItem(""))
         table.setItem(row, 6, QtWidgets.QTableWidgetItem(""))
         table.selectRow(row)
         self._set_mrk_dirty(True)
