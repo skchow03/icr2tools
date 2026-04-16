@@ -33,12 +33,18 @@ class MrkTexturesDialog(QtWidgets.QDialog):
 
         add_button = QtWidgets.QPushButton("Add")
         remove_button = QtWidgets.QPushButton("Remove")
+        move_up_button = QtWidgets.QPushButton("Move Up")
+        move_down_button = QtWidgets.QPushButton("Move Down")
         add_button.clicked.connect(self._add_empty_row)
         remove_button.clicked.connect(self._remove_selected_row)
+        move_up_button.clicked.connect(self._move_selected_row_up)
+        move_down_button.clicked.connect(self._move_selected_row_down)
 
         button_row = QtWidgets.QHBoxLayout()
         button_row.addWidget(add_button)
         button_row.addWidget(remove_button)
+        button_row.addWidget(move_up_button)
+        button_row.addWidget(move_down_button)
         button_row.addStretch()
 
         buttons = QtWidgets.QDialogButtonBox(
@@ -136,6 +142,33 @@ class MrkTexturesDialog(QtWidgets.QDialog):
             return
         self._table.removeRow(selected_rows[0].row())
 
+    def _move_selected_row(self, *, direction: int) -> None:
+        selected_rows = self._table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        source_row = selected_rows[0].row()
+        target_row = source_row + direction
+        if target_row < 0 or target_row >= self._table.rowCount():
+            return
+        source_values = [self._item_text(source_row, column) for column in range(7)]
+        target_values = [self._item_text(target_row, column) for column in range(7)]
+        for column in range(7):
+            source_item = self._table.item(source_row, column)
+            target_item = self._table.item(target_row, column)
+            if source_item is None or target_item is None:
+                continue
+            source_item.setText(target_values[column])
+            target_item.setText(source_values[column])
+        self._set_color_cell(source_row, target_values[6] or "#FFFF00")
+        self._set_color_cell(target_row, source_values[6] or "#FFFF00")
+        self._table.selectRow(target_row)
+
+    def _move_selected_row_up(self) -> None:
+        self._move_selected_row(direction=-1)
+
+    def _move_selected_row_down(self) -> None:
+        self._move_selected_row(direction=1)
+
     def _set_color_cell(self, row: int, color_value: str) -> None:
         color = QtGui.QColor(color_value)
         if not color.isValid():
@@ -174,21 +207,29 @@ class MrkTexturePatternDialog(QtWidgets.QDialog):
         add_button = QtWidgets.QPushButton("Add")
         remove_button = QtWidgets.QPushButton("Remove Selected")
         remove_all_button = QtWidgets.QPushButton("Remove all")
+        move_up_button = QtWidgets.QPushButton("Move Up")
+        move_down_button = QtWidgets.QPushButton("Move Down")
         add_button.clicked.connect(self._add_selected)
         remove_button.clicked.connect(self._remove_selected)
         remove_all_button.clicked.connect(self._remove_all)
+        move_up_button.clicked.connect(self._move_selected_up)
+        move_down_button.clicked.connect(self._move_selected_down)
 
         self._list = QtWidgets.QListWidget()
         self._list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         for mip in pattern:
             if mip in self._available:
                 self._list.addItem(mip)
+        self._awaiting_first_selection = self._list.count() == 0
 
         row = QtWidgets.QHBoxLayout()
         row.addWidget(self._combo)
         row.addWidget(add_button)
         row.addWidget(remove_button)
         row.addWidget(remove_all_button)
+        row.addWidget(move_up_button)
+        row.addWidget(move_down_button)
+        self._combo.activated.connect(self._on_combo_activated)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -221,6 +262,33 @@ class MrkTexturePatternDialog(QtWidgets.QDialog):
         if row < 0:
             return
         self._list.takeItem(row)
+        if self._list.count() == 0:
+            self._awaiting_first_selection = True
 
     def _remove_all(self) -> None:
         self._list.clear()
+        self._awaiting_first_selection = True
+
+    def _move_selected(self, *, direction: int) -> None:
+        source_row = self._list.currentRow()
+        if source_row < 0:
+            return
+        target_row = source_row + direction
+        if target_row < 0 or target_row >= self._list.count():
+            return
+        item = self._list.takeItem(source_row)
+        self._list.insertItem(target_row, item)
+        self._list.setCurrentRow(target_row)
+
+    def _move_selected_up(self) -> None:
+        self._move_selected(direction=-1)
+
+    def _move_selected_down(self) -> None:
+        self._move_selected(direction=1)
+
+    def _on_combo_activated(self) -> None:
+        if not self._awaiting_first_selection or self._combo.count() == 0:
+            return
+        self._list.addItem(self._combo.currentText())
+        self._list.setCurrentRow(self._list.count() - 1)
+        self._awaiting_first_selection = False

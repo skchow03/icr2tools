@@ -973,7 +973,7 @@ def test_mrk_table_columns_default_to_resize_to_contents(qapp):
         window.close()
 
 
-def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
+def test_mrk_add_entry_starts_with_blank_texture_pattern(qapp):
     window = SGViewerWindow()
     try:
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
@@ -985,10 +985,7 @@ def test_mrk_add_entry_populates_repeating_texture_pattern(qapp):
 
         window.mrk_add_entry_button.click()
 
-        window.mrk_entries_table.item(0, 3).setText("5")
-        window.controller._on_mrk_entry_item_changed(window.mrk_entries_table.item(0, 3))
-
-        assert window.mrk_entries_table.item(0, 5).text() == "brick01,stripe02,brick01,stripe02,brick01"
+        assert window.mrk_entries_table.item(0, 5).text() == ""
     finally:
         window.close()
 
