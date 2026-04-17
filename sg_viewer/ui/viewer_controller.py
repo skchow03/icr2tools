@@ -178,6 +178,7 @@ class SGViewerController:
         self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
         self._section_dlongs_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
+        self._project_working_directory: Path | None = None
         self._history = FileHistory()
         self._sg_settings_store = SGSettingsStore()
         self._new_straight_default_style = window.new_straight_button.styleSheet()
@@ -466,6 +467,12 @@ class SGViewerController:
         self._view_options_action = QtWidgets.QAction("View Options…", self._window)
         self._view_options_action.triggered.connect(self._window.show_view_options_dialog)
 
+        self._set_project_working_folder_action = QtWidgets.QAction("Set Project Working Folder…", self._window)
+        self._set_project_working_folder_action.triggered.connect(self._choose_project_working_folder)
+        self._clear_project_working_folder_action = QtWidgets.QAction("Clear Project Working Folder", self._window)
+        self._clear_project_working_folder_action.triggered.connect(self._clear_project_working_folder)
+        self._clear_project_working_folder_action.setEnabled(False)
+
         self._show_section_dlongs_action = QtWidgets.QAction("Track Section DLONGs…", self._window)
         self._show_section_dlongs_action.triggered.connect(self._show_track_section_dlongs_dialog)
 
@@ -627,8 +634,11 @@ class SGViewerController:
         view_menu.addAction(self._open_background_action)
         view_menu.addAction(self._background_settings_action)
         view_menu.addAction(self._view_options_action)
-        view_menu.addAction(self._show_section_dlongs_action)
         view_menu.addSeparator()
+        view_menu.addAction(self._set_project_working_folder_action)
+        view_menu.addAction(self._clear_project_working_folder_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self._show_section_dlongs_action)
         view_menu.addAction(self._show_radii_action)
         view_menu.addAction(self._show_axes_action)
         view_menu.addAction(self._show_crosshair_action)
@@ -712,6 +722,49 @@ class SGViewerController:
     def _settings_path_for(self, sg_path: Path) -> Path:
         return self._sg_settings_store._settings_path(sg_path)
 
+    def _dialog_default_directory(self) -> str:
+        if self._project_working_directory is not None:
+            return str(self._project_working_directory)
+        if self._current_path is not None:
+            return str(self._current_path.parent)
+        return ""
+
+    def _dialog_default_file_path(self, filename: str) -> str:
+        default_directory = self._dialog_default_directory()
+        if not default_directory:
+            return filename
+        return str(Path(default_directory) / filename)
+
+    def _set_project_working_directory(self, directory: Path | None, *, persist: bool = True) -> None:
+        if directory is None:
+            self._project_working_directory = None
+            self._clear_project_working_folder_action.setEnabled(False)
+            if persist and self._current_path is not None:
+                self._document_controller.persist_project_metadata()
+            return
+
+        resolved = directory.resolve()
+        self._project_working_directory = resolved
+        self._clear_project_working_folder_action.setEnabled(True)
+        if persist and self._current_path is not None:
+            self._document_controller.persist_project_metadata()
+
+    def _choose_project_working_folder(self) -> None:
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            self._window,
+            "Select Project Working Folder",
+            self._dialog_default_directory(),
+        )
+        if not selected:
+            return
+        selected_path = Path(selected).resolve()
+        self._set_project_working_directory(selected_path, persist=True)
+        self._window.show_status_message(f"Project working folder set to {selected_path}")
+
+    def _clear_project_working_folder(self) -> None:
+        self._set_project_working_directory(None, persist=True)
+        self._window.show_status_message("Project working folder cleared.")
+
     @staticmethod
     def _read_pcx_256_palette(path: Path) -> list[tuple[int, int, int]]:
         data = path.read_bytes()
@@ -728,13 +781,10 @@ class SGViewerController:
         return [QtGui.QColor(red, green, blue) for red, green, blue in colors]
 
     def _load_sunny_palette_dialog(self) -> None:
-        default_directory = ""
-        if self._current_path is not None:
-            default_directory = str(self._current_path.parent)
         path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._window,
             "Load SUNNY.PCX Palette",
-            default_directory,
+            self._dialog_default_directory(),
             "PCX files (*.pcx *.PCX);;All files (*)",
         )
         if not path_str:
@@ -1027,7 +1077,7 @@ class SGViewerController:
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
             "Save pitwall.txt",
-            "pitwall.txt",
+            self._dialog_default_file_path("pitwall.txt"),
             "Text Files (*.txt);;All Files (*)",
         )
         if not output_path:
@@ -1850,7 +1900,7 @@ class SGViewerController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
             "Save As TSD File",
-            "",
+            self._dialog_default_directory(),
             "TSD Files (*.tsd)",
         )
         if not path_str:
@@ -1872,7 +1922,7 @@ class SGViewerController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
             self._window,
             "Load TSD File",
-            "",
+            self._dialog_default_directory(),
             "TSD Files (*.tsd *.TSD);;All files (*)",
         )
         if not path_str:
@@ -2582,7 +2632,7 @@ class SGViewerController:
             output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
                 self._window,
                 "Save Generated Skid Marks",
-                "skid_marks.tsd",
+                self._dialog_default_file_path("skid_marks.tsd"),
                 "TSD Files (*.tsd)",
             )
             if not output_path:
@@ -3464,7 +3514,7 @@ class SGViewerController:
         output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
             "Export TSD Objects",
-            "",
+            self._dialog_default_directory(),
             "TSD Files (*.tsd)",
         )
         if not output_path:
@@ -3949,7 +3999,7 @@ class SGViewerController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
             "Save objects.txt",
-            "objects.txt",
+            self._dialog_default_file_path("objects.txt"),
             "Text Files (*.txt);;All files (*)",
         )
         if not path_str:
@@ -4280,7 +4330,7 @@ class SGViewerController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
             "Export MRK Entries and Textures",
-            "",
+            self._dialog_default_directory(),
             "JSON Files (*.json)",
         )
         if not path_str:
@@ -4296,7 +4346,7 @@ class SGViewerController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
             "Generate MRK File",
-            "",
+            self._dialog_default_directory(),
             "MRK Files (*.mrk)",
         )
         if not path_str:
@@ -4509,7 +4559,7 @@ class SGViewerController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
             self._window,
             "Import MRK Entries and Textures",
-            "",
+            self._dialog_default_directory(),
             "JSON Files (*.json)",
         )
         if not path_str:

@@ -29,6 +29,7 @@ class DocumentControllerHost(Protocol):
     _generate_elevation_change_action: QtWidgets.QAction
     _delete_default_style: str
     _history: object
+    _project_working_directory: Path | None
 
     def _clear_background_state(self) -> None: ...
     def _apply_saved_background(self, sg_path: Path | None = None) -> None: ...
@@ -55,6 +56,9 @@ class DocumentControllerHost(Protocol):
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None: ...
     def _mark_fsects_dirty(self, dirty: bool) -> None: ...
     def _settings_path_for(self, sg_path: Path) -> Path: ...
+    def _set_project_working_directory(self, directory: Path | None, *, persist: bool = True) -> None: ...
+    def _dialog_default_directory(self) -> str: ...
+    def _dialog_default_file_path(self, filename: str) -> str: ...
 
 
 class DocumentController:
@@ -108,10 +112,16 @@ class DocumentController:
             self._host._current_path = path
             self._host._is_untitled = False
             self._host._history.record_open(path)
+            loaded_working_directory = self._load_project_working_directory(path)
+            self._host._set_project_working_directory(
+                loaded_working_directory if loaded_working_directory is not None else path.parent,
+                persist=False,
+            )
         else:
             self._host._window.show_status_message(f"Imported {path} into project")
             self._host._current_path = None
             self._host._is_untitled = True
+            self._host._set_project_working_directory(None, persist=False)
         self._host._elevation_controller.reset()
 
         self._host._window.update_window_title(
@@ -155,7 +165,7 @@ class DocumentController:
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
             "Import TRK file",
-            "",
+            self._host._dialog_default_directory(),
             "TRK files (*.trk *.TRK);;All files (*)",
             options=options,
         )
@@ -215,7 +225,7 @@ class DocumentController:
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
             "Import TRK from DAT file",
-            "",
+            self._host._dialog_default_directory(),
             "DAT files (*.dat *.DAT);;All files (*)",
             options=options,
         )
@@ -268,7 +278,7 @@ class DocumentController:
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
             "Import SG file",
-            "",
+            self._host._dialog_default_directory(),
             "SG files (*.sg *.SG);;All files (*)",
             options=options,
         )
@@ -280,7 +290,7 @@ class DocumentController:
         project_path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
             self._host._window,
             "Open Project file",
-            "",
+            self._host._dialog_default_directory(),
             "SG Project files (*.sgc *.SGC);;All files (*)",
             options=options,
         )
@@ -308,6 +318,7 @@ class DocumentController:
 
             if not sg_path.exists():
                 raise ValueError(f"Referenced SG file does not exist: {sg_path}")
+            project_working_directory = self._decode_project_working_directory(project_path, payload)
 
             embedded_sg = payload.get("sg_data")
             if raw_sg_file is None:
@@ -319,6 +330,7 @@ class DocumentController:
             QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
             self._logger.exception("Failed to open project file")
             return
+        self._host._set_project_working_directory(project_working_directory, persist=False)
         self.load_sg(sg_path)
 
     def save_project_file_dialog(self) -> None:
@@ -328,6 +340,8 @@ class DocumentController:
         default_path = ""
         if self._host._current_path is not None:
             default_path = str(self._host._settings_path_for(self._host._current_path))
+        elif self._host._project_working_directory is not None:
+            default_path = str(self._host._project_working_directory / "project.sgc")
         options = QtWidgets.QFileDialog.Options()
         project_path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._host._window,
@@ -361,6 +375,7 @@ class DocumentController:
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
         self._host._current_path = None
+        self._host._set_project_working_directory(None, persist=False)
         self._host._window.preview.start_new_track()
         self._host._active_selection = None
         self._host._window.update_selection_sidebar(None)
@@ -403,6 +418,8 @@ class DocumentController:
             QtWidgets.QMessageBox.information(self._host._window, "No SG Loaded", "Load an SG file before saving.")
             return
         default_path = str(self._host._current_path) if self._host._current_path else ""
+        if not default_path and self._host._project_working_directory is not None:
+            default_path = str(self._host._project_working_directory / "track.sg")
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._host._window, "Export to SG file", default_path, "SG files (*.sg *.SG);;All files (*)", options=options
@@ -428,6 +445,8 @@ class DocumentController:
             self._logger.exception("Failed to save SG file")
             return
         self._host._current_path = path
+        if self._host._project_working_directory is None:
+            self._host._set_project_working_directory(path.parent, persist=False)
         self._host._window.show_status_message(f"Saved {path} and project {self._host._settings_path_for(path)}")
         self._host._history.record_save(path)
         self._host._refresh_recent_menu()
@@ -464,6 +483,11 @@ class DocumentController:
         self._host._window.show_status_message(f"Loaded project {project_path}")
         self._host._current_path = sg_path
         self._host._is_untitled = False
+        project_working_directory = self._decode_project_working_directory(project_path, self._load_project_payload(project_path))
+        self._host._set_project_working_directory(
+            project_working_directory if project_working_directory is not None else sg_path.parent,
+            persist=False,
+        )
         self._host._history.record_open(project_path)
         self._host._elevation_controller.reset()
 
@@ -512,8 +536,54 @@ class DocumentController:
                 payload = loaded_payload
 
         payload["sg_file"] = sg_path.name
+        encoded_working_directory = self._encode_project_working_directory(settings_path, self._host._project_working_directory)
+        if encoded_working_directory is None:
+            payload.pop("working_directory", None)
+        else:
+            payload["working_directory"] = encoded_working_directory
         payload.pop("sg_data", None)
         settings_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def persist_project_metadata(self) -> None:
+        if self._host._current_path is None:
+            return
+        self._persist_project_sg_reference(self._host._current_path)
+
+    @staticmethod
+    def _load_project_payload(project_path: Path) -> dict[str, object]:
+        try:
+            payload = json.loads(project_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _load_project_working_directory(self, sg_path: Path) -> Path | None:
+        settings_path = self._host._settings_path_for(sg_path)
+        payload = self._load_project_payload(settings_path)
+        return self._decode_project_working_directory(settings_path, payload)
+
+    @staticmethod
+    def _decode_project_working_directory(project_path: Path, payload: dict[str, object]) -> Path | None:
+        raw_working_directory = payload.get("working_directory")
+        if not isinstance(raw_working_directory, str) or not raw_working_directory.strip():
+            return None
+        directory = Path(raw_working_directory)
+        if not directory.is_absolute():
+            directory = (project_path.parent / directory).resolve()
+        else:
+            directory = directory.resolve()
+        if not directory.is_dir():
+            return None
+        return directory
+
+    @staticmethod
+    def _encode_project_working_directory(project_path: Path, working_directory: Path | None) -> str | None:
+        if working_directory is None:
+            return None
+        try:
+            return str(working_directory.resolve().relative_to(project_path.parent.resolve()))
+        except ValueError:
+            return str(working_directory.resolve())
 
     def _serialize_sg_data_payload(self, sgfile: SGFile) -> dict[str, object]:
         sections: list[dict[str, object]] = []
@@ -672,7 +742,11 @@ class DocumentController:
         default_output = sg_path.with_suffix('.trk')
         options = QtWidgets.QFileDialog.Options()
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self._host._window, "Save TRK As", str(default_output), "TRK files (*.trk *.TRK);;All files (*)", options=options
+            self._host._window,
+            "Save TRK As",
+            self._host._dialog_default_file_path(default_output.name),
+            "TRK files (*.trk *.TRK);;All files (*)",
+            options=options,
         )
         if not output_path:
             return
