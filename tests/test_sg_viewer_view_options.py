@@ -3019,6 +3019,8 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
         input_path.write_text("3D VERSION 3.0;\n", encoding="utf-8")
 
         events: list[str] = []
+        progress_values: list[int] = []
+        progress_messages: list[str] = []
 
         class _FakeProgressDialog:
             def __init__(self, *_args, **_kwargs) -> None:
@@ -3043,7 +3045,10 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
                 pass
 
             def setValue(self, _value: int) -> None:
-                pass
+                progress_values.append(_value)
+
+            def setLabelText(self, value: str) -> None:
+                progress_messages.append(value)
 
             def show(self) -> None:
                 events.append("shown")
@@ -3057,6 +3062,10 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
 
         def _fake_process_file(*args, **kwargs):
             assert events == ["created", "shown"]
+            progress_callback = kwargs.get("on_progress")
+            assert progress_callback is not None
+            progress_callback(1, 4, "Fixing section 1/4")
+            progress_callback(4, 4, "See-through elevation fix complete.")
             return _FakeReport()
 
         monkeypatch.setattr(
@@ -3077,5 +3086,7 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
         window.controller._open_three_d_tools_dialog()
 
         assert events == ["created", "shown", "events", "closed"]
+        assert progress_values == [0, 25, 100]
+        assert progress_messages == ["Fixing section 1/4", "See-through elevation fix complete."]
     finally:
         window.close()

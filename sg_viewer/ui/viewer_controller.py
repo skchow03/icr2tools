@@ -962,7 +962,7 @@ class SGViewerController:
                 "Fixing see-through elevations…",
                 "",
                 0,
-                0,
+                100,
                 self._window,
             )
             progress_dialog.setWindowTitle("3D Tools")
@@ -976,10 +976,18 @@ class SGViewerController:
             QtWidgets.QApplication.processEvents()
 
             try:
+                def _on_progress(current: int, total: int, message: str) -> None:
+                    safe_total = max(total, 1)
+                    value = int((current / safe_total) * 100)
+                    progress_dialog.setLabelText(message)
+                    progress_dialog.setValue(max(0, min(100, value)))
+                    QtWidgets.QApplication.processEvents()
+
                 report = process_file(
                     input_path=input_path,
                     output_path=input_path if operation == "Fix see-through elevation (in place)" else output_path,
                     fix_elevation=True,
+                    on_progress=_on_progress,
                 )
             finally:
                 progress_dialog.close()
