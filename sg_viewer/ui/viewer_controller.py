@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import random
+import re
 import subprocess
 import sys
 from time import perf_counter
@@ -97,6 +98,14 @@ from sg_viewer.model.track_model import TrackModel
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 
 logger = logging.getLogger(__name__)
+
+_TSO_DYNAMIC_LINE_PATTERN = re.compile(
+    r'^\s*__TSO\d+:\s*DYNAMIC\s+'
+    r'(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*'
+    r'(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*'
+    r'-?\d+\s*,\s*EXTERN\s*"([^"]+)"\s*;\s*$',
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -1312,6 +1321,10 @@ class SGViewerController:
         self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
         self._window.tso_move_up_button.clicked.connect(self._on_tso_move_up_requested)
         self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
+        self._window.tso_import_from_3d_button.clicked.connect(
+            self._on_tso_import_from_3d_requested
+        )
+        self._window.tso_delete_all_button.clicked.connect(self._on_tso_delete_all_requested)
         self._window.tso_modify_elevations_button.clicked.connect(self._on_tso_modify_elevations_requested)
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
@@ -3907,6 +3920,105 @@ class SGViewerController:
 
     def _on_tso_move_down_requested(self) -> None:
         self._move_tso(direction=1)
+
+    def _parse_trackside_objects_from_3d_text(self, text: str) -> list[TracksideObject]:
+        parsed_objects: list[TracksideObject] = []
+        for raw_line in text.splitlines():
+            match = _TSO_DYNAMIC_LINE_PATTERN.match(raw_line)
+            if match is None:
+                continue
+            filename = normalize_trackside_filename(match.group(7))
+            if not filename:
+                continue
+            parsed_objects.append(
+                TracksideObject(
+                    filename=filename,
+                    x=int(match.group(1)),
+                    y=int(match.group(2)),
+                    z=int(match.group(3)),
+                    yaw=int(match.group(4)),
+                    pitch=int(match.group(5)),
+                    tilt=int(match.group(6)),
+                )
+            )
+        return parsed_objects
+
+    def _on_tso_import_from_3d_requested(self) -> None:
+        proceed = QtWidgets.QMessageBox.warning(
+            self._window,
+            "Import TSOs from .3D",
+            (
+                "This will clear and replace the current TSO list with TSOs parsed from "
+                "the selected .3D file. Continue?"
+            ),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if proceed != QtWidgets.QMessageBox.Yes:
+            return
+
+        default_path = ""
+        selected_track3d = self._track3d_path_for_current_project()
+        if selected_track3d is not None:
+            default_path = str(selected_track3d)
+
+        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Open track .3D file",
+            default_path,
+            "Track 3D Files (*.3d *.3D);;All Files (*)",
+        )
+        if not path_str:
+            return
+
+        path = Path(path_str)
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Import TSOs from .3D",
+                f"Could not read file:\n{exc}",
+            )
+            return
+
+        parsed_objects = self._parse_trackside_objects_from_3d_text(text)
+        if not parsed_objects:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Import TSOs from .3D",
+                "No matching __TSO DYNAMIC lines were found in that .3D file.",
+            )
+            return
+
+        self._trackside_objects = parsed_objects
+        self._selected_trackside_object_indices = []
+        self._objects_tab_selected_trackside_object_indices = []
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+        self._window.show_status_message(f"Imported {len(parsed_objects)} TSO(s) from {path.name}.")
+
+    def _on_tso_delete_all_requested(self) -> None:
+        if not self._trackside_objects:
+            self._window.show_status_message("No TSOs to delete.")
+            return
+        proceed = QtWidgets.QMessageBox.warning(
+            self._window,
+            "Delete all TSOs",
+            "This will permanently remove all TSOs from the current project. Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if proceed != QtWidgets.QMessageBox.Yes:
+            return
+        self._trackside_objects = []
+        self._selected_trackside_object_indices = []
+        self._objects_tab_selected_trackside_object_indices = []
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
+        self._window.show_status_message("Deleted all TSOs from the project.")
 
     def _on_tso_modify_elevations_requested(self) -> None:
         table = self._window.tso_table

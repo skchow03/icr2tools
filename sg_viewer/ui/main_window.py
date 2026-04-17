@@ -184,6 +184,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_delete_button = QtWidgets.QPushButton("Delete TSO")
         self._tso_move_up_button = QtWidgets.QPushButton("Move Up")
         self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
+        self._tso_import_from_3d_button = QtWidgets.QPushButton("Import TSOs from .3D file")
+        self._tso_delete_all_button = QtWidgets.QPushButton("Delete All TSOs")
         self._tso_modify_elevations_button = QtWidgets.QPushButton("Modify elevations...")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
         self._tso_table = QtWidgets.QTableWidget(0, 6)
@@ -848,11 +850,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_buttons.addWidget(self._tso_delete_button)
         tso_buttons.addWidget(self._tso_move_up_button)
         tso_buttons.addWidget(self._tso_move_down_button)
+        tso_buttons.addWidget(self._tso_import_from_3d_button)
+        tso_buttons.addWidget(self._tso_delete_all_button)
         tso_buttons.addWidget(self._tso_modify_elevations_button)
         tso_layout.addLayout(tso_buttons)
         tso_layout.addWidget(self._tso_generate_file_button)
         tso_layout.addWidget(self._tso_table)
         self._tso_sidebar.setLayout(tso_layout)
+        self._tso_import_from_3d_button.setToolTip(
+            "Import TSOs from an existing .3D file and replace all current TSOs."
+        )
+        self._tso_delete_all_button.setToolTip("Delete every TSO from the current project.")
         self._tso_visibility_sidebar = TSOVisibilityTab()
 
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
@@ -1252,6 +1260,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_modify_elevations_button(self) -> QtWidgets.QPushButton:
         return self._tso_modify_elevations_button
+
+    @property
+    def tso_import_from_3d_button(self) -> QtWidgets.QPushButton:
+        return self._tso_import_from_3d_button
+
+    @property
+    def tso_delete_all_button(self) -> QtWidgets.QPushButton:
+        return self._tso_delete_all_button
 
     @property
     def tso_table(self) -> QtWidgets.QTableWidget:
