@@ -2639,6 +2639,82 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         window.close()
 
 
+def test_tso_attributes_apply_bbox_rotation_to_matching_filename_only(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="cone",
+                x=10,
+                y=20,
+                z=1,
+                yaw=2,
+                pitch=3,
+                tilt=4,
+                description="a",
+                bbox_length=100,
+                bbox_width=200,
+                rotation_point="center",
+            ),
+            TracksideObject(
+                filename="cone.3do",
+                x=30,
+                y=40,
+                z=5,
+                yaw=6,
+                pitch=7,
+                tilt=8,
+                description="b",
+                bbox_length=300,
+                bbox_width=400,
+                rotation_point="top_left",
+            ),
+            TracksideObject(
+                filename="barrel",
+                x=50,
+                y=60,
+                z=9,
+                yaw=10,
+                pitch=11,
+                tilt=12,
+                description="c",
+                bbox_length=500,
+                bbox_width=600,
+                rotation_point="bottom_left",
+            ),
+        ]
+        window.controller._refresh_tso_table()
+        window.controller._trackside_objects_is_dirty = False
+
+        apply_from_dialog = TracksideObject(
+            filename="cone",
+            x=0,
+            y=0,
+            z=0,
+            yaw=0,
+            pitch=0,
+            tilt=0,
+            description="",
+            bbox_length=777,
+            bbox_width=888,
+            rotation_point="bottom_right",
+        )
+        window.controller._on_tso_attributes_apply_bbox_rotation_to_matching_filename(0, apply_from_dialog)
+
+        assert window.controller._trackside_objects[0].bbox_length == 777
+        assert window.controller._trackside_objects[0].bbox_width == 888
+        assert window.controller._trackside_objects[0].rotation_point == "bottom_right"
+        assert window.controller._trackside_objects[1].bbox_length == 777
+        assert window.controller._trackside_objects[1].bbox_width == 888
+        assert window.controller._trackside_objects[1].rotation_point == "bottom_right"
+        assert window.controller._trackside_objects[2].bbox_length == 500
+        assert window.controller._trackside_objects[2].bbox_width == 600
+        assert window.controller._trackside_objects[2].rotation_point == "bottom_left"
+        assert window.controller._trackside_objects_is_dirty is True
+    finally:
+        window.close()
+
+
 def test_modify_tso_elevations_raise_lower_uses_current_units(qapp):
     window = SGViewerWindow()
     try:

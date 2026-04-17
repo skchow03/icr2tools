@@ -22,6 +22,7 @@ from sg_viewer.ui.presentation.units_presenter import (
 
 class TracksideObjectAttributesDialog(QtWidgets.QDialog):
     objectUpdated = QtCore.pyqtSignal(int, object)
+    matchingFilenameBBoxRotationApplyRequested = QtCore.pyqtSignal(int, object)
     objectPreviewUpdated = QtCore.pyqtSignal(int, object)
     previewEnded = QtCore.pyqtSignal()
 
@@ -98,8 +99,10 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
 
         buttons = QtWidgets.QDialogButtonBox()
         apply_button = buttons.addButton("Apply", QtWidgets.QDialogButtonBox.ApplyRole)
+        apply_matching_button = buttons.addButton("Apply BBox/Pivot to matches", QtWidgets.QDialogButtonBox.ActionRole)
         close_button = buttons.addButton(QtWidgets.QDialogButtonBox.Close)
         apply_button.clicked.connect(self._apply_changes)
+        apply_matching_button.clicked.connect(self._apply_bbox_rotation_to_matching_filename)
         close_button.clicked.connect(self.close)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -143,36 +146,42 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self.setWindowTitle(f"TSO Attributes — __TSO{row_index}")
 
     def _apply_changes(self) -> None:
-        if self._row_index is None:
+        obj = self._build_object_from_form()
+        if obj is None or self._row_index is None:
             return
-        filename = normalize_trackside_filename(self._filename_edit.text())
-        if not filename:
-            QtWidgets.QMessageBox.warning(self, "TSO Attributes", "Filename is required.")
-            return
-        obj = TracksideObject(
-            filename=filename,
-            x=int(self._x_spin.value()),
-            y=int(self._y_spin.value()),
-            z=int(self._z_spin.value()),
-            yaw=int(self._yaw_spin.value()),
-            pitch=int(self._pitch_spin.value()),
-            tilt=int(self._tilt_spin.value()),
-            description=self._description_edit.text().strip(),
-            bbox_length=max(0, units_to_500ths(float(self._bbox_length_spin.value()), self._measurement_unit)),
-            bbox_width=max(0, units_to_500ths(float(self._bbox_width_spin.value()), self._measurement_unit)),
-            rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
-        )
         self._applying_changes = True
         self.objectUpdated.emit(int(self._row_index), obj)
         self._applying_changes = False
 
-    def _emit_preview_update(self) -> None:
-        if self._row_index is None:
+    def _apply_bbox_rotation_to_matching_filename(self) -> None:
+        obj = self._build_object_from_form()
+        if obj is None or self._row_index is None:
             return
+        confirmation = QtWidgets.QMessageBox.question(
+            self,
+            "Apply BBox/Pivot to Matches",
+            (
+                "This will copy BBox Length, BBox Width, and Rotation point "
+                f'to every TSO with filename "{obj.filename}". Continue?'
+            ),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirmation != QtWidgets.QMessageBox.Yes:
+            return
+        self._applying_changes = True
+        self.matchingFilenameBBoxRotationApplyRequested.emit(int(self._row_index), obj)
+        self._applying_changes = False
+
+    def _build_object_from_form(self, *, warn_on_missing_filename: bool = True) -> TracksideObject | None:
+        if self._row_index is None:
+            return None
         filename = normalize_trackside_filename(self._filename_edit.text())
         if not filename:
-            return
-        obj = TracksideObject(
+            if warn_on_missing_filename:
+                QtWidgets.QMessageBox.warning(self, "TSO Attributes", "Filename is required.")
+            return None
+        return TracksideObject(
             filename=filename,
             x=int(self._x_spin.value()),
             y=int(self._y_spin.value()),
@@ -185,6 +194,11 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             bbox_width=max(0, units_to_500ths(float(self._bbox_width_spin.value()), self._measurement_unit)),
             rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
         )
+
+    def _emit_preview_update(self) -> None:
+        obj = self._build_object_from_form(warn_on_missing_filename=False)
+        if obj is None or self._row_index is None:
+            return
         self.objectPreviewUpdated.emit(int(self._row_index), obj)
 
     def closeEvent(self, event: QtCore.QEvent) -> None:
