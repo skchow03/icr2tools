@@ -58,13 +58,21 @@ from sg_viewer.services.trackside_objects import (
     trackside_object_to_payload,
 )
 from sg_viewer.model.sg_model import Point, SectionPreview
+from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.model.selection import SectionSelection
+from track_viewer.geometry import project_point_to_centerline
 from sg_viewer.ui.altitude_units import (
     feet_from_500ths,
     feet_from_slider_units,
     feet_to_500ths,
     units_to_500ths,
     units_from_500ths,
+)
+from sg_viewer.ui.presentation.fsect_table_presenter import boundary_numbers_for_fsects
+from sg_viewer.ui.presentation.units_presenter import (
+    measurement_unit_decimals,
+    measurement_unit_label,
+    measurement_unit_step,
 )
 from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
@@ -4021,57 +4029,227 @@ class SGViewerController:
         self._window.show_status_message("Deleted all TSOs from the project.")
 
     def _on_tso_modify_elevations_requested(self) -> None:
-        table = self._window.tso_table
-        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
-        rows = sorted({model_index.row() for model_index in selected_rows if model_index.row() >= 0})
-        if not rows:
+        if not self._trackside_objects:
             QtWidgets.QMessageBox.information(
                 self._window,
                 "Modify elevations",
-                "Select one or more TSOs in the table first.",
+                "There are no TSOs to update.",
             )
             return
 
-        current_z = self._trackside_objects[rows[0]].z if 0 <= rows[0] < len(self._trackside_objects) else 0
-        z_value, ok = QtWidgets.QInputDialog.getInt(
-            self._window,
-            "Modify elevations",
-            "New Z position (500ths):",
-            value=current_z,
-            min=-2147483648,
-            max=2147483647,
+        unit = self._window.current_measurement_unit()
+        unit_label = measurement_unit_label(unit)
+        decimals = measurement_unit_decimals(unit)
+        step = measurement_unit_step(unit)
+
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Modify elevations")
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        options_group = QtWidgets.QGroupBox("Apply to all TSOs")
+        options_layout = QtWidgets.QVBoxLayout(options_group)
+        raise_lower_radio = QtWidgets.QRadioButton("Raise/lower all TSO elevations by:")
+        raise_lower_radio.setChecked(True)
+        set_absolute_radio = QtWidgets.QRadioButton("Set all TSO elevations to:")
+        set_boundary_radio = QtWidgets.QRadioButton(
+            "Set each TSO elevation to the closest track boundary elevation"
         )
-        if not ok:
+        options_layout.addWidget(raise_lower_radio)
+        options_layout.addWidget(set_absolute_radio)
+        options_layout.addWidget(set_boundary_radio)
+        layout.addWidget(options_group)
+
+        value_spin = QtWidgets.QDoubleSpinBox(dialog)
+        value_spin.setRange(-1_000_000.0, 1_000_000.0)
+        value_spin.setDecimals(decimals)
+        value_spin.setSingleStep(step)
+        value_spin.setValue(0.0)
+        value_spin.setSuffix(f" {unit_label}")
+        value_label = QtWidgets.QLabel(f"Amount ({unit_label}):", dialog)
+        value_row = QtWidgets.QHBoxLayout()
+        value_row.addWidget(value_label)
+        value_row.addWidget(value_spin)
+        layout.addLayout(value_row)
+
+        def _sync_value_input() -> None:
+            if raise_lower_radio.isChecked():
+                value_label.setText(f"Amount ({unit_label}):")
+                value_spin.setEnabled(True)
+            elif set_absolute_radio.isChecked():
+                value_label.setText(f"Elevation ({unit_label}):")
+                value_spin.setEnabled(True)
+            else:
+                value_spin.setEnabled(False)
+
+        raise_lower_radio.toggled.connect(_sync_value_input)
+        set_absolute_radio.toggled.connect(_sync_value_input)
+        set_boundary_radio.toggled.connect(_sync_value_input)
+        _sync_value_input()
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
 
         changed = False
-        for row in rows:
-            if 0 <= row < len(self._trackside_objects):
-                obj = self._trackside_objects[row]
-                if obj.z == z_value:
+        skipped_boundary_matches = 0
+        delta_500ths = units_to_500ths(value_spin.value(), unit)
+        absolute_500ths = units_to_500ths(value_spin.value(), unit)
+        for index, obj in enumerate(self._trackside_objects):
+            if raise_lower_radio.isChecked():
+                z_value = int(obj.z + delta_500ths)
+            elif set_absolute_radio.isChecked():
+                z_value = int(absolute_500ths)
+            else:
+                boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
+                if boundary_elevation is None:
+                    skipped_boundary_matches += 1
                     continue
-                self._trackside_objects[row] = TracksideObject(
-                    filename=obj.filename,
-                    x=obj.x,
-                    y=obj.y,
-                    z=z_value,
-                    yaw=obj.yaw,
-                    pitch=obj.pitch,
-                    tilt=obj.tilt,
-                    description=obj.description,
-                    bbox_length=obj.bbox_length,
-                    bbox_width=obj.bbox_width,
-                    rotation_point=obj.rotation_point,
-                )
-                changed = True
+                z_value = int(boundary_elevation)
+            if obj.z == z_value:
+                continue
+            self._trackside_objects[index] = TracksideObject(
+                filename=obj.filename,
+                x=obj.x,
+                y=obj.y,
+                z=z_value,
+                yaw=obj.yaw,
+                pitch=obj.pitch,
+                tilt=obj.tilt,
+                description=obj.description,
+                bbox_length=obj.bbox_length,
+                bbox_width=obj.bbox_width,
+                rotation_point=obj.rotation_point,
+            )
+            changed = True
 
         if not changed:
+            if set_boundary_radio.isChecked() and skipped_boundary_matches > 0:
+                QtWidgets.QMessageBox.information(
+                    self._window,
+                    "Modify elevations",
+                    "Could not determine boundary elevations for any TSOs.",
+                )
             return
 
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
-        self._window.show_status_message(f"Updated Z position for {len(rows)} selected TSO(s).")
+        if raise_lower_radio.isChecked():
+            self._window.show_status_message(
+                f"Adjusted all TSO elevations by {value_spin.value():g} {unit_label}."
+            )
+            return
+        if set_absolute_radio.isChecked():
+            self._window.show_status_message(
+                f"Set all TSO elevations to {value_spin.value():g} {unit_label}."
+            )
+            return
+        if skipped_boundary_matches > 0:
+            self._window.show_status_message(
+                f"Set boundary-matched elevations for TSOs ({skipped_boundary_matches} skipped)."
+            )
+            return
+        self._window.show_status_message("Set all TSO elevations to the nearest boundary elevation.")
+
+    @staticmethod
+    def _point_on_section(section: SectionPreview, fraction: float, dlat: float) -> Point:
+        sx, sy = section.start
+        ex, ey = section.end
+        center = section.center
+        if center is None:
+            dx = ex - sx
+            dy = ey - sy
+            cx = sx + dx * fraction
+            cy = sy + dy * fraction
+            length = math.hypot(dx, dy)
+            if length <= 0:
+                return (cx, cy)
+            nx = -dy / length
+            ny = dx / length
+            return (cx + nx * dlat, cy + ny * dlat)
+
+        center_x, center_y = center
+        start_vec = (sx - center_x, sy - center_y)
+        end_vec = (ex - center_x, ey - center_y)
+        base_radius = math.hypot(start_vec[0], start_vec[1])
+        if base_radius <= 0:
+            return (sx, sy)
+        start_angle = math.atan2(start_vec[1], start_vec[0])
+        end_angle = math.atan2(end_vec[1], end_vec[0])
+        heading = section.start_heading
+        if heading is not None:
+            cross = start_vec[0] * heading[1] - start_vec[1] * heading[0]
+            ccw = cross > 0
+        else:
+            cross_vectors = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0]
+            ccw = cross_vectors > 0
+        if ccw:
+            angle_delta = end_angle - start_angle
+            if angle_delta < 0:
+                angle_delta += math.tau
+        else:
+            angle_delta = end_angle - start_angle
+            if angle_delta > 0:
+                angle_delta -= math.tau
+        angle = start_angle + angle_delta * fraction
+        sign = -1.0 if ccw else 1.0
+        radius = max(0.0, base_radius + sign * dlat)
+        return (
+            center_x + math.cos(angle) * radius,
+            center_y + math.sin(angle) * radius,
+        )
+
+    def _closest_boundary_elevation_for_tso(self, obj: TracksideObject) -> int | None:
+        section_manager = self._window.preview.section_manager
+        centerline_index = section_manager.centerline_index
+        sampled_dlongs = section_manager.sampled_dlongs
+        sections = section_manager.sections
+        track_length = float(sum(max(0.0, float(section.length)) for section in sections))
+        if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
+            return None
+        projected_point, projected_dlong, _distance_sq = project_point_to_centerline(
+            (float(obj.x), float(obj.y)),
+            centerline_index,
+            sampled_dlongs,
+            track_length,
+        )
+        if projected_point is None or projected_dlong is None:
+            return None
+        mapped = dlong_to_section_position(sections, projected_dlong, track_length)
+        if mapped is None:
+            return None
+        section_index = int(mapped.section_index)
+        if section_index < 0 or section_index >= len(sections):
+            return None
+        progress = max(0.0, min(1.0, float(mapped.fraction)))
+        section = sections[section_index]
+        fsects = self._window.preview.get_section_fsects(section_index)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+        if not boundary_number_by_row:
+            return None
+        best_distance_sq: float | None = None
+        best_elevation: int | None = None
+        for row_index in boundary_number_by_row:
+            if row_index < 0 or row_index >= len(fsects):
+                continue
+            fsect = fsects[row_index]
+            dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            boundary_point = self._point_on_section(section, progress, dlat)
+            distance_sq = (boundary_point[0] - float(obj.x)) ** 2 + (boundary_point[1] - float(obj.y)) ** 2
+            elevation = self._window._sample_elevation_at_dlat(section_index, progress, dlat)
+            if elevation is None:
+                continue
+            if best_distance_sq is None or distance_sq < best_distance_sq:
+                best_distance_sq = distance_sq
+                best_elevation = int(round(elevation))
+        return best_elevation
 
     def _on_tso_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         row = item.row()

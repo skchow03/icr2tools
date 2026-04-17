@@ -17,6 +17,7 @@ try:
     from sg_viewer.services.trackside_objects import TracksideObject
     from sg_viewer.services.tsd_objects import TsdZebraCrossingObject
     from icr2_core.trk.sg_classes import SGFile
+    from sg_viewer.ui.altitude_units import units_to_500ths
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
@@ -2635,6 +2636,102 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         assert window.controller._on_preview_tso_map_clicked(90, 100) is False
         assert len(window.controller._trackside_objects) == 2
     finally:
+        window.close()
+
+
+def test_modify_tso_elevations_raise_lower_uses_current_units(qapp, monkeypatch):
+    window = SGViewerWindow()
+    original_exec = QtWidgets.QDialog.exec_
+    try:
+        window.measurement_units_combo.setCurrentIndex(1)  # meter
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="cone",
+                x=10,
+                y=20,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            )
+        ]
+        window.controller._refresh_tso_table()
+
+        def _fake_exec(dialog):
+            spin = dialog.findChild(QtWidgets.QDoubleSpinBox)
+            assert spin is not None
+            spin.setValue(1.0)
+            return QtWidgets.QDialog.Accepted
+
+        monkeypatch.setattr(QtWidgets.QDialog, "exec_", _fake_exec)
+
+        window.controller._on_tso_modify_elevations_requested()
+
+        assert window.controller._trackside_objects[0].z == units_to_500ths(1.0, "meter")
+    finally:
+        monkeypatch.setattr(QtWidgets.QDialog, "exec_", original_exec)
+        window.close()
+
+
+def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
+    window = SGViewerWindow()
+    original_exec = QtWidgets.QDialog.exec_
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="one",
+                x=10,
+                y=20,
+                z=5,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+            TracksideObject(
+                filename="two",
+                x=30,
+                y=40,
+                z=9,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+        ]
+        window.controller._refresh_tso_table()
+
+        def _fake_exec(dialog):
+            radios = dialog.findChildren(QtWidgets.QRadioButton)
+            for radio in radios:
+                if "closest track boundary elevation" in radio.text():
+                    radio.setChecked(True)
+                    break
+            return QtWidgets.QDialog.Accepted
+
+        monkeypatch.setattr(QtWidgets.QDialog, "exec_", _fake_exec)
+        monkeypatch.setattr(
+            window.controller,
+            "_closest_boundary_elevation_for_tso",
+            lambda obj: 123 if obj.filename == "one" else None,
+        )
+
+        window.controller._on_tso_modify_elevations_requested()
+
+        assert window.controller._trackside_objects[0].z == 123
+        assert window.controller._trackside_objects[1].z == 9
+    finally:
+        monkeypatch.setattr(QtWidgets.QDialog, "exec_", original_exec)
         window.close()
 
 
