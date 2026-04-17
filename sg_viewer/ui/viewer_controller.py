@@ -241,6 +241,7 @@ class SGViewerController:
         self._sunny_palette_path: Path | None = None
         self._palette_colors_dialog: PaletteColorDialog | None = None
         self._skid_marks_dialog: QtWidgets.QDialog | None = None
+        self._tso_modify_elevations_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._tsd_objects: list[
             TsdZebraCrossingObject
@@ -4037,20 +4038,37 @@ class SGViewerController:
             )
             return
 
+        if self._tso_modify_elevations_dialog is not None and self._tso_modify_elevations_dialog.isVisible():
+            self._tso_modify_elevations_dialog.raise_()
+            self._tso_modify_elevations_dialog.activateWindow()
+            return
+
         unit = self._window.current_measurement_unit()
         unit_label = measurement_unit_label(unit)
         decimals = measurement_unit_decimals(unit)
         step = measurement_unit_step(unit)
 
         dialog = QtWidgets.QDialog(self._window)
+        self._tso_modify_elevations_dialog = dialog
         dialog.setWindowTitle("Modify elevations")
+        dialog.setWindowModality(QtCore.Qt.NonModal)
+        dialog.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
         layout = QtWidgets.QVBoxLayout(dialog)
 
-        options_group = QtWidgets.QGroupBox("Apply to all TSOs")
+        scope_group = QtWidgets.QGroupBox("Target TSOs")
+        scope_layout = QtWidgets.QVBoxLayout(scope_group)
+        apply_all_radio = QtWidgets.QRadioButton("Apply to all TSOs")
+        apply_all_radio.setChecked(True)
+        apply_selected_radio = QtWidgets.QRadioButton("Apply to selected TSOs")
+        scope_layout.addWidget(apply_all_radio)
+        scope_layout.addWidget(apply_selected_radio)
+        layout.addWidget(scope_group)
+
+        options_group = QtWidgets.QGroupBox("Elevation change")
         options_layout = QtWidgets.QVBoxLayout(options_group)
-        raise_lower_radio = QtWidgets.QRadioButton("Raise/lower all TSO elevations by:")
+        raise_lower_radio = QtWidgets.QRadioButton("Raise/lower elevations by:")
         raise_lower_radio.setChecked(True)
-        set_absolute_radio = QtWidgets.QRadioButton("Set all TSO elevations to:")
+        set_absolute_radio = QtWidgets.QRadioButton("Set elevations to:")
         set_boundary_radio = QtWidgets.QRadioButton(
             "Set each TSO elevation to the closest track boundary elevation"
         )
@@ -4087,76 +4105,104 @@ class SGViewerController:
         _sync_value_input()
 
         buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtWidgets.QDialogButtonBox.Apply | QtWidgets.QDialogButtonBox.Close,
             parent=dialog,
         )
-        buttons.accepted.connect(dialog.accept)
+        apply_button = buttons.button(QtWidgets.QDialogButtonBox.Apply)
+        if apply_button is not None:
+            apply_button.setDefault(True)
+            apply_button.setAutoDefault(True)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+        dialog.finished.connect(self._on_tso_modify_elevations_dialog_closed)
 
-        if dialog.exec_() != QtWidgets.QDialog.Accepted:
-            return
-
-        changed = False
-        skipped_boundary_matches = 0
-        delta_500ths = units_to_500ths(value_spin.value(), unit)
-        absolute_500ths = units_to_500ths(value_spin.value(), unit)
-        for index, obj in enumerate(self._trackside_objects):
-            if raise_lower_radio.isChecked():
-                z_value = int(obj.z + delta_500ths)
-            elif set_absolute_radio.isChecked():
-                z_value = int(absolute_500ths)
+        def _apply_changes() -> None:
+            if apply_selected_radio.isChecked():
+                target_indices = sorted(set(self._selected_trackside_object_indices))
+                if not target_indices:
+                    QtWidgets.QMessageBox.information(
+                        dialog,
+                        "Modify elevations",
+                        "No TSOs are selected. Select one or more TSOs, or choose Apply to all TSOs.",
+                    )
+                    return
             else:
-                boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
-                if boundary_elevation is None:
-                    skipped_boundary_matches += 1
+                target_indices = list(range(len(self._trackside_objects)))
+
+            changed = False
+            skipped_boundary_matches = 0
+            delta_500ths = units_to_500ths(value_spin.value(), unit)
+            absolute_500ths = units_to_500ths(value_spin.value(), unit)
+            for index in target_indices:
+                obj = self._trackside_objects[index]
+                if raise_lower_radio.isChecked():
+                    z_value = int(obj.z + delta_500ths)
+                elif set_absolute_radio.isChecked():
+                    z_value = int(absolute_500ths)
+                else:
+                    boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
+                    if boundary_elevation is None:
+                        skipped_boundary_matches += 1
+                        continue
+                    z_value = int(boundary_elevation)
+                if obj.z == z_value:
                     continue
-                z_value = int(boundary_elevation)
-            if obj.z == z_value:
-                continue
-            self._trackside_objects[index] = TracksideObject(
-                filename=obj.filename,
-                x=obj.x,
-                y=obj.y,
-                z=z_value,
-                yaw=obj.yaw,
-                pitch=obj.pitch,
-                tilt=obj.tilt,
-                description=obj.description,
-                bbox_length=obj.bbox_length,
-                bbox_width=obj.bbox_width,
-                rotation_point=obj.rotation_point,
-            )
-            changed = True
-
-        if not changed:
-            if set_boundary_radio.isChecked() and skipped_boundary_matches > 0:
-                QtWidgets.QMessageBox.information(
-                    self._window,
-                    "Modify elevations",
-                    "Could not determine boundary elevations for any TSOs.",
+                self._trackside_objects[index] = TracksideObject(
+                    filename=obj.filename,
+                    x=obj.x,
+                    y=obj.y,
+                    z=z_value,
+                    yaw=obj.yaw,
+                    pitch=obj.pitch,
+                    tilt=obj.tilt,
+                    description=obj.description,
+                    bbox_length=obj.bbox_length,
+                    bbox_width=obj.bbox_width,
+                    rotation_point=obj.rotation_point,
                 )
-            return
+                changed = True
 
-        self._refresh_tso_table()
-        self._set_trackside_objects_dirty(True)
-        self._persist_tsd_state_for_current_track()
-        if raise_lower_radio.isChecked():
+            if not changed:
+                if set_boundary_radio.isChecked() and skipped_boundary_matches > 0:
+                    QtWidgets.QMessageBox.information(
+                        dialog,
+                        "Modify elevations",
+                        "Could not determine boundary elevations for any targeted TSOs.",
+                    )
+                return
+
+            self._refresh_tso_table()
+            self._set_trackside_objects_dirty(True)
+            self._persist_tsd_state_for_current_track()
+            target_label = "selected TSOs" if apply_selected_radio.isChecked() else "all TSOs"
+            if raise_lower_radio.isChecked():
+                self._window.show_status_message(
+                    f"Adjusted {target_label} elevations by {value_spin.value():g} {unit_label}."
+                )
+                return
+            if set_absolute_radio.isChecked():
+                self._window.show_status_message(
+                    f"Set {target_label} elevations to {value_spin.value():g} {unit_label}."
+                )
+                return
+            if skipped_boundary_matches > 0:
+                self._window.show_status_message(
+                    f"Set boundary-matched elevations for {target_label} ({skipped_boundary_matches} skipped)."
+                )
+                return
             self._window.show_status_message(
-                f"Adjusted all TSO elevations by {value_spin.value():g} {unit_label}."
+                f"Set {target_label} elevations to the nearest boundary elevation."
             )
-            return
-        if set_absolute_radio.isChecked():
-            self._window.show_status_message(
-                f"Set all TSO elevations to {value_spin.value():g} {unit_label}."
-            )
-            return
-        if skipped_boundary_matches > 0:
-            self._window.show_status_message(
-                f"Set boundary-matched elevations for TSOs ({skipped_boundary_matches} skipped)."
-            )
-            return
-        self._window.show_status_message("Set all TSO elevations to the nearest boundary elevation.")
+
+        buttons.clicked.connect(
+            lambda button: _apply_changes()
+            if buttons.standardButton(button) == QtWidgets.QDialogButtonBox.Apply
+            else None
+        )
+        dialog.show()
+
+    def _on_tso_modify_elevations_dialog_closed(self) -> None:
+        self._tso_modify_elevations_dialog = None
 
     @staticmethod
     def _point_on_section(section: SectionPreview, fraction: float, dlat: float) -> Point:
