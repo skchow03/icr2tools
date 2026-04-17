@@ -958,11 +958,32 @@ class SGViewerController:
                     return
                 output_path = Path(output_text)
 
-            report = process_file(
-                input_path=input_path,
-                output_path=input_path if operation == "Fix see-through elevation (in place)" else output_path,
-                fix_elevation=True,
+            progress_dialog = QtWidgets.QProgressDialog(
+                "Fixing see-through elevations…",
+                "",
+                0,
+                0,
+                self._window,
             )
+            progress_dialog.setWindowTitle("3D Tools")
+            progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+            progress_dialog.setCancelButton(None)
+            progress_dialog.setMinimumDuration(0)
+            progress_dialog.setAutoClose(False)
+            progress_dialog.setAutoReset(False)
+            progress_dialog.setValue(0)
+            progress_dialog.show()
+            QtWidgets.QApplication.processEvents()
+
+            try:
+                report = process_file(
+                    input_path=input_path,
+                    output_path=input_path if operation == "Fix see-through elevation (in place)" else output_path,
+                    fix_elevation=True,
+                )
+            finally:
+                progress_dialog.close()
+
             QtWidgets.QMessageBox.information(
                 self._window,
                 "3D Tools - Fix Report",

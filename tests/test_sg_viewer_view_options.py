@@ -7,6 +7,7 @@ from sg_viewer.services.mrk_io import parse_mrk_text
 
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
+    import sg_viewer.ui.viewer_controller as viewer_controller_module
     from sg_viewer.ui.controllers.features.document_controller import DocumentController
     from sg_viewer.ui.app import SGViewerWindow
     from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
@@ -3007,5 +3008,74 @@ def test_view_menu_track_section_dlongs_dialog_shows_parsed_rows(qapp, tmp_path,
             "sec0_l0: 0, 10, 20, 30\n"
             "sec2_l1: 100, 200, 300, 400"
         )
+    finally:
+        window.close()
+
+
+def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        input_path = tmp_path / "track.3D"
+        input_path.write_text("3D VERSION 3.0;\n", encoding="utf-8")
+
+        events: list[str] = []
+
+        class _FakeProgressDialog:
+            def __init__(self, *_args, **_kwargs) -> None:
+                events.append("created")
+
+            def setWindowTitle(self, _value: str) -> None:
+                pass
+
+            def setWindowModality(self, _value) -> None:
+                pass
+
+            def setCancelButton(self, _value) -> None:
+                pass
+
+            def setMinimumDuration(self, _value: int) -> None:
+                pass
+
+            def setAutoClose(self, _value: bool) -> None:
+                pass
+
+            def setAutoReset(self, _value: bool) -> None:
+                pass
+
+            def setValue(self, _value: int) -> None:
+                pass
+
+            def show(self) -> None:
+                events.append("shown")
+
+            def close(self) -> None:
+                events.append("closed")
+
+        class _FakeReport:
+            def summary_lines(self) -> list[str]:
+                return ["fixed"]
+
+        def _fake_process_file(*args, **kwargs):
+            assert events == ["created", "shown"]
+            return _FakeReport()
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *args, **kwargs: (str(input_path), "Track 3D Files (*.3d *.3D)"),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog,
+            "getItem",
+            lambda *args, **kwargs: ("Fix see-through elevation (in place)", True),
+        )
+        monkeypatch.setattr(QtWidgets, "QProgressDialog", _FakeProgressDialog)
+        monkeypatch.setattr(QtWidgets.QApplication, "processEvents", lambda: events.append("events"))
+        monkeypatch.setattr(viewer_controller_module, "process_file", _fake_process_file)
+        monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args, **kwargs: None)
+
+        window.controller._open_three_d_tools_dialog()
+
+        assert events == ["created", "shown", "events", "closed"]
     finally:
         window.close()
