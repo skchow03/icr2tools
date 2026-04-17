@@ -3679,6 +3679,9 @@ class SGViewerController:
         if self._tso_attributes_dialog is None:
             self._tso_attributes_dialog = TracksideObjectAttributesDialog(self._window)
             self._tso_attributes_dialog.objectUpdated.connect(self._on_tso_attributes_updated)
+            self._tso_attributes_dialog.matchingFilenameBBoxRotationApplyRequested.connect(
+                self._on_tso_attributes_apply_bbox_rotation_to_matching_filename
+            )
             self._tso_attributes_dialog.objectPreviewUpdated.connect(self._on_tso_attributes_preview_updated)
             self._tso_attributes_dialog.previewEnded.connect(self._on_tso_attributes_preview_ended)
         self._tso_attributes_dialog.set_measurement_unit(self._window.current_measurement_unit())
@@ -3709,6 +3712,42 @@ class SGViewerController:
 
     def _on_tso_attributes_preview_ended(self) -> None:
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+
+    def _on_tso_attributes_apply_bbox_rotation_to_matching_filename(self, row: int, obj: object) -> None:
+        if not isinstance(obj, TracksideObject):
+            return
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+
+        target_filename = normalize_trackside_filename(obj.filename)
+        if not target_filename:
+            return
+
+        updated_any = False
+        for index, existing in enumerate(self._trackside_objects):
+            if normalize_trackside_filename(existing.filename) != target_filename:
+                continue
+            self._trackside_objects[index] = TracksideObject(
+                filename=existing.filename,
+                x=existing.x,
+                y=existing.y,
+                z=existing.z,
+                yaw=existing.yaw,
+                pitch=existing.pitch,
+                tilt=existing.tilt,
+                description=existing.description,
+                bbox_length=obj.bbox_length,
+                bbox_width=obj.bbox_width,
+                rotation_point=obj.rotation_point,
+            )
+            updated_any = True
+
+        if not updated_any:
+            return
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        self._refresh_tso_table()
+        self._set_trackside_objects_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _on_preview_tso_dragged(self, anchor_index: int, delta_x: int, delta_y: int) -> None:
         move_indices = sorted(
