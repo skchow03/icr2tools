@@ -2639,9 +2639,8 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         window.close()
 
 
-def test_modify_tso_elevations_raise_lower_uses_current_units(qapp, monkeypatch):
+def test_modify_tso_elevations_raise_lower_uses_current_units(qapp):
     window = SGViewerWindow()
-    original_exec = QtWidgets.QDialog.exec_
     try:
         window.measurement_units_combo.setCurrentIndex(1)  # meter
         window.controller._trackside_objects = [
@@ -2661,25 +2660,25 @@ def test_modify_tso_elevations_raise_lower_uses_current_units(qapp, monkeypatch)
         ]
         window.controller._refresh_tso_table()
 
-        def _fake_exec(dialog):
-            spin = dialog.findChild(QtWidgets.QDoubleSpinBox)
-            assert spin is not None
-            spin.setValue(1.0)
-            return QtWidgets.QDialog.Accepted
-
-        monkeypatch.setattr(QtWidgets.QDialog, "exec_", _fake_exec)
-
         window.controller._on_tso_modify_elevations_requested()
+        dialog = window.controller._tso_modify_elevations_dialog
+        assert dialog is not None
+        spin = dialog.findChild(QtWidgets.QDoubleSpinBox)
+        assert spin is not None
+        spin.setValue(1.0)
+        buttons = dialog.findChild(QtWidgets.QDialogButtonBox)
+        assert buttons is not None
+        apply_button = buttons.button(QtWidgets.QDialogButtonBox.Apply)
+        assert apply_button is not None
+        apply_button.click()
 
         assert window.controller._trackside_objects[0].z == units_to_500ths(1.0, "meter")
     finally:
-        monkeypatch.setattr(QtWidgets.QDialog, "exec_", original_exec)
         window.close()
 
 
 def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
     window = SGViewerWindow()
-    original_exec = QtWidgets.QDialog.exec_
     try:
         window.controller._trackside_objects = [
             TracksideObject(
@@ -2711,15 +2710,6 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         ]
         window.controller._refresh_tso_table()
 
-        def _fake_exec(dialog):
-            radios = dialog.findChildren(QtWidgets.QRadioButton)
-            for radio in radios:
-                if "closest track boundary elevation" in radio.text():
-                    radio.setChecked(True)
-                    break
-            return QtWidgets.QDialog.Accepted
-
-        monkeypatch.setattr(QtWidgets.QDialog, "exec_", _fake_exec)
         monkeypatch.setattr(
             window.controller,
             "_closest_boundary_elevation_for_tso",
@@ -2727,11 +2717,85 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         )
 
         window.controller._on_tso_modify_elevations_requested()
+        dialog = window.controller._tso_modify_elevations_dialog
+        assert dialog is not None
+        radios = dialog.findChildren(QtWidgets.QRadioButton)
+        for radio in radios:
+            if "closest track boundary elevation" in radio.text():
+                radio.setChecked(True)
+                break
+        buttons = dialog.findChild(QtWidgets.QDialogButtonBox)
+        assert buttons is not None
+        apply_button = buttons.button(QtWidgets.QDialogButtonBox.Apply)
+        assert apply_button is not None
+        apply_button.click()
 
         assert window.controller._trackside_objects[0].z == 123
         assert window.controller._trackside_objects[1].z == 9
     finally:
-        monkeypatch.setattr(QtWidgets.QDialog, "exec_", original_exec)
+        window.close()
+
+
+def test_modify_tso_elevations_can_target_selected_tsos_only(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="one",
+                x=10,
+                y=20,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+            TracksideObject(
+                filename="two",
+                x=30,
+                y=40,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            ),
+        ]
+        window.controller._refresh_tso_table()
+        window.controller._selected_trackside_object_indices = [1]
+
+        window.controller._on_tso_modify_elevations_requested()
+        dialog = window.controller._tso_modify_elevations_dialog
+        assert dialog is not None
+        assert dialog.windowModality() == QtCore.Qt.NonModal
+        assert dialog.windowFlags() & QtCore.Qt.WindowStaysOnTopHint
+
+        radios = dialog.findChildren(QtWidgets.QRadioButton)
+        for radio in radios:
+            if radio.text() == "Apply to selected TSOs":
+                radio.setChecked(True)
+                break
+
+        spin = dialog.findChild(QtWidgets.QDoubleSpinBox)
+        assert spin is not None
+        spin.setValue(2.0)
+        buttons = dialog.findChild(QtWidgets.QDialogButtonBox)
+        assert buttons is not None
+        apply_button = buttons.button(QtWidgets.QDialogButtonBox.Apply)
+        assert apply_button is not None
+        apply_button.click()
+
+        assert window.controller._trackside_objects[0].z == 0
+        assert window.controller._trackside_objects[1].z == units_to_500ths(
+            2.0, window.current_measurement_unit()
+        )
+    finally:
         window.close()
 
 
