@@ -6,7 +6,7 @@ import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 SECTION_START_MARKER = "Outputing section from dlong"
 SECTION_END_MARKER = ";"
@@ -15,6 +15,9 @@ VERTEX_RE = re.compile(r"\[<\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*")
 
 class ToolError(Exception):
     """Raised when the .3D file structure is not what the tool expects."""
+
+
+ProgressCallback = Callable[[int, int, str], None]
 
 
 @dataclass
@@ -302,6 +305,7 @@ def inspect_see_through_candidates(data: Sequence[str]) -> InspectionReport:
 
 def fix_see_through_elevation(
     data: Sequence[str],
+    on_progress: ProgressCallback | None = None,
 ) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     out = list(data)
     simple_fixed: list[str] = []
@@ -309,12 +313,18 @@ def fix_see_through_elevation(
     skipped_simple: list[str] = []
     skipped_multi: list[str] = []
 
+    total_sections = len(catalog_sections(out))
+    if on_progress is not None:
+        on_progress(0, total_sections, "Preparing see-through elevation fix…")
+
     index = 0
     while True:
         sections = catalog_sections(out)
         if index >= len(sections):
             break
         section = sections[index]
+        if on_progress is not None:
+            on_progress(index, total_sections, f"Fixing section {index + 1}/{total_sections}: {section.name}")
         start_row, end_row = section.start_row, section.end_row
 
         surface_row = find_row(out, start_row, "% Output road surface", end_row)
@@ -355,6 +365,8 @@ def fix_see_through_elevation(
                 simple_fixed.append(section.name)
         index += 1
 
+    if on_progress is not None:
+        on_progress(total_sections, total_sections, "See-through elevation fix complete.")
     return out, simple_fixed, multi_fixed, skipped_simple, skipped_multi
 
 
@@ -370,6 +382,7 @@ def process_file(
     relabel_tsos: bool = False,
     sections_filter: str = "HI",
     dry_run: bool = False,
+    on_progress: ProgressCallback | None = None,
 ) -> ChangeReport:
     data = read_text_lines(input_path)
     report = ChangeReport(
@@ -386,7 +399,10 @@ def process_file(
         report.missing_fences.extend(missing)
 
     if fix_elevation:
-        data, simple_fixed, multi_fixed, skipped_simple, skipped_multi = fix_see_through_elevation(data)
+        data, simple_fixed, multi_fixed, skipped_simple, skipped_multi = fix_see_through_elevation(
+            data,
+            on_progress=on_progress,
+        )
         report.simple_sections_fixed.extend(simple_fixed)
         report.multi_boundary_sections_fixed.extend(multi_fixed)
         report.skipped_already_fixed_simple.extend(skipped_simple)
