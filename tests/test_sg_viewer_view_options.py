@@ -2931,6 +2931,32 @@ def test_tso_box_select_selects_rows_and_preview_selection(qapp):
         selected_rows = window.tso_table.selectionModel().selectedRows()
         assert sorted(index.row() for index in selected_rows) == [0, 1]
         assert window.preview.selected_trackside_object_index == 0
+        assert window.controller._tso_box_select_mode_active is False
+        assert window.preview._trackside_box_select_enabled is False
+        assert window.tso_box_select_button.isChecked() is False
+    finally:
+        window.close()
+
+
+def test_tso_box_select_deactivates_when_leaving_objects_tab(qapp):
+    window = SGViewerWindow()
+    try:
+        objects_tab_index = window.right_sidebar_tabs.indexOf(window._tso_sidebar)
+        walls_tab_index = window.right_sidebar_tabs.indexOf(window._mrk_sidebar)
+        assert objects_tab_index >= 0
+        assert walls_tab_index >= 0
+
+        window.right_sidebar_tabs.setCurrentIndex(objects_tab_index)
+        window.tso_box_select_button.setChecked(True)
+        window.controller._on_tso_box_select_requested()
+        assert window.controller._tso_box_select_mode_active is True
+        assert window.preview._trackside_box_select_enabled is True
+
+        window.right_sidebar_tabs.setCurrentIndex(walls_tab_index)
+
+        assert window.controller._tso_box_select_mode_active is False
+        assert window.preview._trackside_box_select_enabled is False
+        assert window.tso_box_select_button.isChecked() is False
     finally:
         window.close()
 
