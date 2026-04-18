@@ -2639,6 +2639,48 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         window.close()
 
 
+def test_add_tso_uses_closest_boundary_elevation_for_new_object(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(
+            window.controller,
+            "_closest_boundary_elevation_for_tso",
+            lambda obj: 321,
+        )
+        window.tso_add_button.setChecked(True)
+        window.controller._on_tso_add_requested()
+
+        assert window.controller._on_preview_tso_map_clicked(12, 34) is True
+        assert window.controller._trackside_objects[0].z == 321
+    finally:
+        window.close()
+
+
+def test_tso_stamp_uses_closest_boundary_elevation_for_each_new_object(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog,
+            "getText",
+            lambda *args, **kwargs: ("cone.3do", True),
+        )
+        elevation_by_xy = {(50, 60): 100, (70, 80): 200}
+        monkeypatch.setattr(
+            window.controller,
+            "_closest_boundary_elevation_for_tso",
+            lambda obj: elevation_by_xy[(obj.x, obj.y)],
+        )
+
+        window.controller._on_tso_stamp_requested()
+        assert window.controller._on_preview_tso_map_clicked(50, 60) is True
+        assert window.controller._on_preview_tso_map_clicked(70, 80) is True
+
+        assert window.controller._trackside_objects[0].z == 100
+        assert window.controller._trackside_objects[1].z == 200
+    finally:
+        window.close()
+
+
 def test_tso_attributes_apply_bbox_rotation_to_matching_filename_only(qapp):
     window = SGViewerWindow()
     try:

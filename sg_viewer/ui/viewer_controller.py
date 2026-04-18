@@ -3812,11 +3812,25 @@ class SGViewerController:
         default_filename = filename or "object"
         if filename is None and self._trackside_objects:
             default_filename = normalize_trackside_filename(self._trackside_objects[-1].filename) or "object"
-        return TracksideObject(
+        candidate = TracksideObject(
             filename=default_filename,
             x=x,
             y=y,
             z=0,
+            yaw=0,
+            pitch=0,
+            tilt=0,
+            description="",
+            bbox_length=0,
+            bbox_width=0,
+            rotation_point="center",
+        )
+        boundary_elevation = self._closest_boundary_elevation_for_tso(candidate)
+        return TracksideObject(
+            filename=default_filename,
+            x=x,
+            y=y,
+            z=int(boundary_elevation) if boundary_elevation is not None else 0,
             yaw=0,
             pitch=0,
             tilt=0,
