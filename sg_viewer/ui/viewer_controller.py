@@ -3920,6 +3920,8 @@ class SGViewerController:
         ]
         self._selected_trackside_object_indices = selected_indices
         self._refresh_tso_table()
+        if self._tso_box_select_mode_active:
+            self._set_tso_box_select_mode_active(False)
         self._window.show_status_message(f"Selected {len(selected_indices)} TSO(s) with box selection.")
 
 
@@ -4965,6 +4967,8 @@ class SGViewerController:
         is_tsd_tab = tab_name == "TSD"
         is_objects_tab = tab_name == "Objects"
         is_tso_visibility_tab = tab_name == "TSO Visibility"
+        if self._tso_box_select_mode_active and not is_objects_tab:
+            self._set_tso_box_select_mode_active(False)
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab or is_tso_visibility_tab)
         self._window.preview.set_show_trackside_objects(is_objects_tab or is_tso_visibility_tab)
