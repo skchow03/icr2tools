@@ -92,3 +92,31 @@ def test_tsd_skid_marks_state_round_trip(tmp_path):
         "rows_csv": "Turn1,100,120,140,10,20,1000,3,20,10,12,8,11,7",
         "colors_csv": "45,28",
     }
+
+
+def test_track3d_file_round_trip_with_relative_path(tmp_path):
+    sg_path = tmp_path / "tracks" / "test.sg"
+    sg_path.parent.mkdir(parents=True, exist_ok=True)
+    sg_path.write_bytes(b"")
+    track3d_path = sg_path.parent / "track.3d"
+    track3d_path.write_text("", encoding="utf-8")
+
+    store = SGSettingsStore()
+    store.set_track3d_file(sg_path, track3d_path)
+
+    payload = json.loads(sg_path.with_suffix(".sgc").read_text(encoding="utf-8"))
+    assert payload["track3d_file"] == "track.3d"
+    assert store.get_track3d_file(sg_path) == track3d_path.resolve()
+
+
+def test_track3d_file_can_be_cleared(tmp_path):
+    sg_path = tmp_path / "tracks" / "test.sg"
+    sg_path.parent.mkdir(parents=True, exist_ok=True)
+    sg_path.write_bytes(b"")
+
+    store = SGSettingsStore()
+    store.set_track3d_file(sg_path, tmp_path / "tracks" / "track.3d")
+    store.set_track3d_file(sg_path, None)
+
+    payload = json.loads(sg_path.with_suffix(".sgc").read_text(encoding="utf-8"))
+    assert "track3d_file" not in payload

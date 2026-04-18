@@ -1,48 +1,62 @@
-import re
+from __future__ import annotations
 
-def read_color_definitions(colors_file):
-    """Reads the color definitions from the colors.txt file"""
-    colors = {}
-    with open(colors_file, 'r') as file:
-        for line in file:
-            # Extract color definitions in the format: __ColorName__: [<0, 0, 0>, c= <value>];
-            match = re.match(r'(__\w+__):\s*(\[<.*>\]);', line)
-            if match:
-                color_name, color_value = match.groups()
-                colors[color_name] = color_value
+import argparse
+import re
+from collections.abc import Mapping
+from pathlib import Path
+
+_COLOR_DEFINITION_PATTERN = re.compile(r"^\s*(__\w+__):\s*(\[[^\]]+\])\s*;\s*$")
+
+
+def read_color_definitions(colors_file: str | Path) -> dict[str, str]:
+    """Return color definitions keyed by color symbol name."""
+    path = Path(colors_file)
+    colors: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        match = _COLOR_DEFINITION_PATTERN.match(raw_line)
+        if match:
+            color_name, color_value = match.groups()
+            colors[color_name] = color_value
     return colors
 
-def replace_color_definitions(track_file, colors):
-    """Replaces the color definitions in the track.3d file with the new ones from colors"""
-    with open(track_file, 'r') as file:
-        content = file.readlines()
-    
-    # Iterate over the content and replace matching color definitions
-    updated_content = []
-    for line in content:
-        # Check if the line defines a color and extract the name
-        match = re.match(r'(__\w+__):\s*(\[<.*>\]);', line)
+
+def replace_color_definitions(track_file: str | Path, colors: Mapping[str, str]) -> int:
+    """Replace matching color lines in ``track_file`` and return replacement count."""
+    path = Path(track_file)
+    updated_content: list[str] = []
+    replacements = 0
+
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True):
+        match = _COLOR_DEFINITION_PATTERN.match(line.rstrip("\r\n"))
         if match:
             color_name = match.group(1)
-            # Replace the line if the color name is in the provided colors dictionary
-            if color_name in colors:
-                line = f'{color_name}: {colors[color_name]};\n'
+            updated_value = colors.get(color_name)
+            if updated_value is not None:
+                line = f"{color_name}: {updated_value};\n"
+                replacements += 1
         updated_content.append(line)
-    
-    # Write the updated content back to the track.3d file
-    with open(track_file, 'w') as file:
-        file.writelines(updated_content)
 
-def main():
-    track_file = 'nash.3d'
-    colors_file = 'colors.txt'
-    
-    # Read the new color definitions from the colors file
+    path.write_text("".join(updated_content), encoding="utf-8")
+    return replacements
+
+
+def replace_colors_from_file(track_file: str | Path, colors_file: str | Path) -> int:
+    """Load color definitions from ``colors_file`` and apply them to ``track_file``."""
     colors = read_color_definitions(colors_file)
-    
-    # Replace the color definitions in the arling.3d file
-    replace_color_definitions(track_file, colors)
-    print("Color definitions have been replaced and saved in {}".format(track_file))
+    return replace_color_definitions(track_file, colors)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Replace __Color__ definitions in a .3D file using values from a colors file."
+    )
+    parser.add_argument("track_file", help="Path to the source track .3D file to update.")
+    parser.add_argument("colors_file", help="Path to the file containing replacement color definitions.")
+    args = parser.parse_args()
+
+    replacements = replace_colors_from_file(args.track_file, args.colors_file)
+    print(f"Updated {replacements} color definition(s) in {args.track_file}.")
+
 
 if __name__ == "__main__":
     main()

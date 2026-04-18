@@ -188,6 +188,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_delete_all_button = QtWidgets.QPushButton("Delete All TSOs")
         self._tso_modify_elevations_button = QtWidgets.QPushButton("Modify elevations...")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
+        self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
+        self._three_d_file_selected_path_label.setWordWrap(True)
+        self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
+        self._three_d_file_inspect_button = QtWidgets.QPushButton("Inspect see-through candidates")
+        self._three_d_file_fix_copy_button = QtWidgets.QPushButton("Fix see-through (save as copy)")
+        self._three_d_file_fix_in_place_button = QtWidgets.QPushButton("Fix see-through (in place)")
+        self._three_d_file_colors_path_label = QtWidgets.QLabel("Colors file: none")
+        self._three_d_file_colors_path_label.setWordWrap(True)
+        self._three_d_file_select_colors_button = QtWidgets.QPushButton("Select colors file...")
+        self._three_d_file_apply_colors_button = QtWidgets.QPushButton("Apply color replacements")
         self._tso_table = QtWidgets.QTableWidget(0, 6)
         self._tso_table.setHorizontalHeaderLabels([
             "Name",
@@ -862,6 +872,52 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tso_delete_all_button.setToolTip("Delete every TSO from the current project.")
         self._tso_visibility_sidebar = TSOVisibilityTab()
+        self._three_d_file_sidebar = QtWidgets.QWidget()
+        three_d_layout = QtWidgets.QVBoxLayout()
+        three_d_intro = QtWidgets.QLabel(
+            "Use this tab to choose the project .3D file, then run tools that inspect/fix "
+            "see-through elevations and replace color definitions.\n"
+            "The selected paths are saved with the project."
+        )
+        three_d_intro.setWordWrap(True)
+        three_d_layout.addWidget(three_d_intro)
+
+        track_group = QtWidgets.QGroupBox("1) Track .3D file")
+        track_group_layout = QtWidgets.QVBoxLayout()
+        track_group_layout.addWidget(self._three_d_file_selected_path_label)
+        track_group_layout.addWidget(self._three_d_file_select_button)
+        track_group.setLayout(track_group_layout)
+        three_d_layout.addWidget(track_group)
+
+        elevation_group = QtWidgets.QGroupBox("2) Fix see-through elevations")
+        elevation_group_layout = QtWidgets.QVBoxLayout()
+        elevation_note = QtWidgets.QLabel(
+            "Inspect first to preview candidates. Then apply fix either to a new copy or directly in place."
+        )
+        elevation_note.setWordWrap(True)
+        elevation_group_layout.addWidget(elevation_note)
+        elevation_buttons = QtWidgets.QGridLayout()
+        elevation_buttons.addWidget(self._three_d_file_inspect_button, 0, 0)
+        elevation_buttons.addWidget(self._three_d_file_fix_copy_button, 0, 1)
+        elevation_buttons.addWidget(self._three_d_file_fix_in_place_button, 1, 0, 1, 2)
+        elevation_group_layout.addLayout(elevation_buttons)
+        elevation_group.setLayout(elevation_group_layout)
+        three_d_layout.addWidget(elevation_group)
+
+        colors_group = QtWidgets.QGroupBox("3) Fix colors")
+        colors_group_layout = QtWidgets.QVBoxLayout()
+        colors_note = QtWidgets.QLabel(
+            "Choose a colors definition file (e.g., colors.txt) then apply replacements to the selected .3D file."
+        )
+        colors_note.setWordWrap(True)
+        colors_group_layout.addWidget(colors_note)
+        colors_group_layout.addWidget(self._three_d_file_colors_path_label)
+        colors_group_layout.addWidget(self._three_d_file_select_colors_button)
+        colors_group_layout.addWidget(self._three_d_file_apply_colors_button)
+        colors_group.setLayout(colors_group_layout)
+        three_d_layout.addWidget(colors_group)
+        three_d_layout.addStretch(1)
+        self._three_d_file_sidebar.setLayout(three_d_layout)
 
         self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
         self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
@@ -869,6 +925,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         self._right_sidebar_tabs.addTab(self._tso_sidebar, "Objects")
         self._right_sidebar_tabs.addTab(self._tso_visibility_sidebar, "TSO Visibility")
+        self._right_sidebar_tabs.addTab(self._three_d_file_sidebar, ".3D file")
         # Keep the right sidebar width fixed so window resizing only grows/shrinks
         # the track-diagram side of the window.
         sidebar_width = max(320, self._right_sidebar_tabs.sizeHint().width())
@@ -1276,6 +1333,36 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_visibility_sidebar(self) -> TSOVisibilityTab:
         return self._tso_visibility_sidebar
+
+    @property
+    def three_d_file_select_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_select_button
+
+    @property
+    def three_d_file_inspect_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_inspect_button
+
+    @property
+    def three_d_file_fix_copy_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_fix_copy_button
+
+    @property
+    def three_d_file_fix_in_place_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_fix_in_place_button
+
+    @property
+    def three_d_file_select_colors_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_select_colors_button
+
+    @property
+    def three_d_file_apply_colors_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_apply_colors_button
+
+    def set_selected_track3d_path_text(self, text: str) -> None:
+        self._three_d_file_selected_path_label.setText(f"Selected .3D file: {text}")
+
+    def set_selected_colors_path_text(self, text: str) -> None:
+        self._three_d_file_colors_path_label.setText(f"Colors file: {text}")
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action
