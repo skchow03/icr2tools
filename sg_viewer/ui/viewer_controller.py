@@ -16,6 +16,7 @@ from typing import Callable
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
+from sg_viewer.replacecolors import replace_colors_from_file
 from sg_viewer.model.history import FileHistory
 from sg_viewer.services.sg_settings_store import SGSettingsStore
 from sg_viewer.model.preview_fsection import PreviewFSection
@@ -243,6 +244,8 @@ class SGViewerController:
         self._skid_marks_dialog: QtWidgets.QDialog | None = None
         self._tso_modify_elevations_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
+        self._selected_track3d_path: Path | None = None
+        self._selected_track3d_colors_path: Path | None = None
         self._tsd_objects: list[
             TsdZebraCrossingObject
             | TsdTransverseLineObject
@@ -968,26 +971,9 @@ class SGViewerController:
         self._section_dlongs_window.activateWindow()
 
     def _open_three_d_tools_dialog(self) -> None:
-        selected_track3d = self._track3d_path_for_current_project()
-        default_path = str(selected_track3d) if selected_track3d is not None else ""
-        file_path, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
-            self._window,
-            "Select 3D file",
-            default_path,
-            "Track 3D Files (*.3d *.3D);;All Files (*)",
-        )
-        if not file_path:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
             return
-
-        input_path = Path(file_path)
-        if not input_path.exists():
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "3D Tools",
-                f"The selected file does not exist:\n{input_path}",
-            )
-            return
-
         operation, accepted = QtWidgets.QInputDialog.getItem(
             self._window,
             "3D Tools",
@@ -1005,67 +991,13 @@ class SGViewerController:
 
         try:
             if operation == "Inspect see-through candidates":
-                report = inspect_file(input_path)
-                QtWidgets.QMessageBox.information(
-                    self._window,
-                    "3D Tools - Inspect Report",
-                    "\n".join(report.summary_lines()),
-                )
-                self._window.show_status_message(f"3D tools inspection complete: {input_path.name}")
+                self._run_three_d_inspect(input_path)
                 return
 
-            output_path: Path | None = None
             if operation == "Fix see-through elevation (save as copy)":
-                output_text, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
-                    self._window,
-                    "Save fixed 3D file",
-                    str(input_path.with_name(f"{input_path.stem}_fixed{input_path.suffix}")),
-                    "Track 3D Files (*.3d *.3D);;All Files (*)",
-                )
-                if not output_text:
-                    return
-                output_path = Path(output_text)
-
-            progress_dialog = QtWidgets.QProgressDialog(
-                "Fixing see-through elevations…",
-                "",
-                0,
-                100,
-                self._window,
-            )
-            progress_dialog.setWindowTitle("3D Tools")
-            progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
-            progress_dialog.setCancelButton(None)
-            progress_dialog.setMinimumDuration(0)
-            progress_dialog.setAutoClose(False)
-            progress_dialog.setAutoReset(False)
-            progress_dialog.setValue(0)
-            progress_dialog.show()
-            QtWidgets.QApplication.processEvents()
-
-            try:
-                def _on_progress(current: int, total: int, message: str) -> None:
-                    safe_total = max(total, 1)
-                    value = int((current / safe_total) * 100)
-                    progress_dialog.setLabelText(message)
-                    progress_dialog.setValue(max(0, min(100, value)))
-                    QtWidgets.QApplication.processEvents()
-
-                report = process_file(
-                    input_path=input_path,
-                    output_path=input_path if operation == "Fix see-through elevation (in place)" else output_path,
-                    fix_elevation=True,
-                    on_progress=_on_progress,
-                )
-            finally:
-                progress_dialog.close()
-
-            QtWidgets.QMessageBox.information(
-                self._window,
-                "3D Tools - Fix Report",
-                "\n".join(report.summary_lines()),
-            )
-            self._window.show_status_message(f"3D tools fix complete: {input_path.name}")
+                self._run_three_d_fix(input_path, in_place=False)
+                return
+            self._run_three_d_fix(input_path, in_place=True)
         except ToolError as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -1078,6 +1010,69 @@ class SGViewerController:
                 "3D Tools",
                 f"Could not read or write 3D file:\n{exc}",
             )
+
+    def _run_three_d_inspect(self, input_path: Path) -> None:
+        report = inspect_file(input_path)
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "3D Tools - Inspect Report",
+            "\n".join(report.summary_lines()),
+        )
+        self._window.show_status_message(f"3D tools inspection complete: {input_path.name}")
+
+    def _run_three_d_fix(self, input_path: Path, *, in_place: bool) -> None:
+        output_path: Path | None = None
+        if not in_place:
+            output_text, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+                self._window,
+                "Save fixed 3D file",
+                str(input_path.with_name(f"{input_path.stem}_fixed{input_path.suffix}")),
+                "Track 3D Files (*.3d *.3D);;All Files (*)",
+            )
+            if not output_text:
+                return
+            output_path = Path(output_text)
+
+        progress_dialog = QtWidgets.QProgressDialog(
+            "Fixing see-through elevations…",
+            "",
+            0,
+            100,
+            self._window,
+        )
+        progress_dialog.setWindowTitle("3D Tools")
+        progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+        progress_dialog.setCancelButton(None)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setAutoClose(False)
+        progress_dialog.setAutoReset(False)
+        progress_dialog.setValue(0)
+        progress_dialog.show()
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            def _on_progress(current: int, total: int, message: str) -> None:
+                safe_total = max(total, 1)
+                value = int((current / safe_total) * 100)
+                progress_dialog.setLabelText(message)
+                progress_dialog.setValue(max(0, min(100, value)))
+                QtWidgets.QApplication.processEvents()
+
+            report = process_file(
+                input_path=input_path,
+                output_path=input_path if in_place else output_path,
+                fix_elevation=True,
+                on_progress=_on_progress,
+            )
+        finally:
+            progress_dialog.close()
+
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "3D Tools - Fix Report",
+            "\n".join(report.summary_lines()),
+        )
+        self._window.show_status_message(f"3D tools fix complete: {input_path.name}")
 
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
@@ -1336,6 +1331,16 @@ class SGViewerController:
         self._window.tso_delete_all_button.clicked.connect(self._on_tso_delete_all_requested)
         self._window.tso_modify_elevations_button.clicked.connect(self._on_tso_modify_elevations_requested)
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
+        self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
+        self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
+        self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
+        self._window.three_d_file_fix_in_place_button.clicked.connect(self._on_three_d_fix_in_place_requested)
+        self._window.three_d_file_select_colors_button.clicked.connect(
+            self._on_select_track3d_colors_file_requested
+        )
+        self._window.three_d_file_apply_colors_button.clicked.connect(
+            self._on_three_d_apply_color_replacements_requested
+        )
         self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
         self._window.tso_table.itemSelectionChanged.connect(self._on_tso_selection_changed)
         self._window.tso_table.cellClicked.connect(self._on_tso_table_cell_clicked)
@@ -1635,12 +1640,23 @@ class SGViewerController:
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
-        self._sync_tso_visibility_section_dlongs()
         self._generated_skid_mark_lines = ()
         self._skid_marks_rows_text = ""
         self._skid_marks_colors = DEFAULT_SKID_COLORS
+        self._selected_track3d_path = None
+        self._selected_track3d_colors_path = None
+        self._window.set_selected_track3d_path_text("none")
+        self._window.set_selected_colors_path_text("none")
+        self._sync_tso_visibility_section_dlongs()
         if self._current_path is None:
             return
+        persisted_track3d_path = self._sg_settings_store.get_track3d_file(self._current_path)
+        if persisted_track3d_path is not None:
+            self._set_selected_track3d_path(persisted_track3d_path, persist=False)
+        else:
+            auto_track3d_path = self._track3d_path_for_current_project()
+            if auto_track3d_path is not None:
+                self._set_selected_track3d_path(auto_track3d_path, persist=False)
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
         self._tsd_objects = []
         self._trackside_objects = []
@@ -1692,6 +1708,8 @@ class SGViewerController:
         self._set_trackside_objects_dirty(False)
 
     def _track3d_path_for_current_project(self) -> Path | None:
+        if self._selected_track3d_path is not None and self._selected_track3d_path.exists():
+            return self._selected_track3d_path
         if self._current_path is None:
             return None
         path = self._current_path.with_suffix(".3d")
@@ -1701,6 +1719,132 @@ class SGViewerController:
         if fallback_path.exists():
             return fallback_path
         return None
+
+    def _set_selected_track3d_path(self, path: Path | None, *, persist: bool) -> None:
+        resolved = path.resolve() if path is not None else None
+        self._selected_track3d_path = resolved
+        self._window.set_selected_track3d_path_text(str(resolved) if resolved is not None else "none")
+        if persist and self._current_path is not None:
+            self._sg_settings_store.set_track3d_file(self._current_path, resolved)
+        self._sync_tso_visibility_section_dlongs()
+
+    def _ensure_selected_track3d_file(self) -> Path | None:
+        candidate = self._track3d_path_for_current_project()
+        if candidate is not None and candidate.exists():
+            if self._selected_track3d_path != candidate.resolve():
+                self._set_selected_track3d_path(candidate, persist=False)
+            return candidate
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "3D Tools",
+            "Select a track .3D file first.",
+        )
+        return None
+
+    def _on_select_track3d_file_requested(self) -> None:
+        default_path = ""
+        selected_track3d = self._track3d_path_for_current_project()
+        if selected_track3d is not None:
+            default_path = str(selected_track3d)
+        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Select track .3D file",
+            default_path,
+            "Track 3D Files (*.3d *.3D);;All Files (*)",
+        )
+        if not path_str:
+            return
+        selected_path = Path(path_str)
+        if not selected_path.exists():
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"File not found:\n{selected_path}")
+            return
+        self._set_selected_track3d_path(selected_path, persist=True)
+        self._window.show_status_message(f"Selected .3D file: {selected_path.name}")
+
+    def _on_select_track3d_colors_file_requested(self) -> None:
+        default_path = str(self._selected_track3d_colors_path) if self._selected_track3d_colors_path is not None else ""
+        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Select colors definition file",
+            default_path,
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not path_str:
+            return
+        selected_path = Path(path_str)
+        if not selected_path.exists():
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"File not found:\n{selected_path}")
+            return
+        self._selected_track3d_colors_path = selected_path.resolve()
+        self._window.set_selected_colors_path_text(str(self._selected_track3d_colors_path))
+        self._window.show_status_message(f"Selected colors file: {selected_path.name}")
+
+    def _on_three_d_inspect_requested(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+        try:
+            self._run_three_d_inspect(input_path)
+        except ToolError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"3D tools failed:\n{exc}")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not read 3D file:\n{exc}")
+
+    def _on_three_d_fix_copy_requested(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+        try:
+            self._run_three_d_fix(input_path, in_place=False)
+        except ToolError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"3D tools failed:\n{exc}")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}")
+
+    def _on_three_d_fix_in_place_requested(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+        proceed = QtWidgets.QMessageBox.warning(
+            self._window,
+            "3D Tools",
+            "This will edit the selected .3D file in place. Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if proceed != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            self._run_three_d_fix(input_path, in_place=True)
+        except ToolError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"3D tools failed:\n{exc}")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}")
+
+    def _on_three_d_apply_color_replacements_requested(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+        if self._selected_track3d_colors_path is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "3D Tools",
+                "Select a colors definition file first.",
+            )
+            return
+        try:
+            replacement_count = replace_colors_from_file(input_path, self._selected_track3d_colors_path)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not update colors:\n{exc}")
+            return
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "3D Tools - Color Fix",
+            f"Updated {replacement_count} color definition(s) in:\n{input_path}",
+        )
+        self._window.show_status_message(
+            f"3D tools color fix complete: {input_path.name} ({replacement_count} updated)"
+        )
 
     def _sync_tso_visibility_section_dlongs(self) -> None:
         track3d_path = self._track3d_path_for_current_project()

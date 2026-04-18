@@ -202,6 +202,30 @@ class SGSettingsStore:
     def set_trackside_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
         self.update(sg_path, trackside_objects=objects)
 
+    def get_track3d_file(self, sg_path: Path) -> Path | None:
+        payload = self.load(sg_path)
+        value = payload.get("track3d_file")
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value)
+        if not path.is_absolute():
+            path = (sg_path.parent / path).resolve()
+        return path
+
+    def set_track3d_file(self, sg_path: Path, track3d_path: Path | None) -> None:
+        if track3d_path is None:
+            payload = self.load(sg_path)
+            payload.pop("track3d_file", None)
+            self.save(sg_path, payload)
+            return
+        stored_path = track3d_path
+        if track3d_path.is_absolute():
+            try:
+                stored_path = track3d_path.resolve().relative_to(sg_path.parent.resolve())
+            except ValueError:
+                stored_path = track3d_path.resolve()
+        self.update(sg_path, track3d_file=str(stored_path))
+
 
     def get_tso_visibility_object_lists(self, sg_path: Path) -> list[dict[str, object]]:
         payload = self.load(sg_path)
