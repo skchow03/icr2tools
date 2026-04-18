@@ -226,6 +226,28 @@ class SGSettingsStore:
                 stored_path = track3d_path.resolve()
         self.update(sg_path, track3d_file=str(stored_path))
 
+    def get_track3d_colors(self, sg_path: Path) -> dict[str, int] | None:
+        payload = self.load(sg_path)
+        raw = payload.get("track3d_colors")
+        if not isinstance(raw, dict):
+            return None
+        resolved: dict[str, int] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                return None
+            if not isinstance(value, int):
+                return None
+            if value < 0 or value > 255:
+                return None
+            resolved[key] = value
+        return resolved
+
+    def set_track3d_colors(self, sg_path: Path, colors: dict[str, int]) -> None:
+        serialized: dict[str, int] = {}
+        for key, value in colors.items():
+            serialized[str(key)] = max(0, min(255, int(value)))
+        self.update(sg_path, track3d_colors=serialized)
+
 
     def get_tso_visibility_object_lists(self, sg_path: Path) -> list[dict[str, object]]:
         payload = self.load(sg_path)

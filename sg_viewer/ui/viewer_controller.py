@@ -16,7 +16,7 @@ from typing import Callable
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
-from sg_viewer.replacecolors import replace_colors_from_file
+from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS, replace_color_section_from_indices
 from sg_viewer.model.history import FileHistory
 from sg_viewer.services.sg_settings_store import SGSettingsStore
 from sg_viewer.model.preview_fsection import PreviewFSection
@@ -84,6 +84,7 @@ from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
+from sg_viewer.ui.track3d_colors_dialog import Track3DColorDefinitionsDialog
 from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
@@ -245,7 +246,7 @@ class SGViewerController:
         self._tso_modify_elevations_dialog: QtWidgets.QDialog | None = None
         self._loaded_tsd_files: list[LoadedTsdFile] = []
         self._selected_track3d_path: Path | None = None
-        self._selected_track3d_colors_path: Path | None = None
+        self._track3d_colors: dict[str, int] = dict(DEFAULT_TRACK3D_COLORS)
         self._tsd_objects: list[
             TsdZebraCrossingObject
             | TsdTransverseLineObject
@@ -1336,7 +1337,7 @@ class SGViewerController:
         self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
         self._window.three_d_file_fix_in_place_button.clicked.connect(self._on_three_d_fix_in_place_requested)
         self._window.three_d_file_select_colors_button.clicked.connect(
-            self._on_select_track3d_colors_file_requested
+            self._on_edit_track3d_colors_requested
         )
         self._window.three_d_file_apply_colors_button.clicked.connect(
             self._on_three_d_apply_color_replacements_requested
@@ -1644,12 +1645,20 @@ class SGViewerController:
         self._skid_marks_rows_text = ""
         self._skid_marks_colors = DEFAULT_SKID_COLORS
         self._selected_track3d_path = None
-        self._selected_track3d_colors_path = None
+        self._track3d_colors = dict(DEFAULT_TRACK3D_COLORS)
         self._window.set_selected_track3d_path_text("none")
-        self._window.set_selected_colors_path_text("none")
+        self._window.set_selected_colors_path_text("defaults")
         self._sync_tso_visibility_section_dlongs()
         if self._current_path is None:
             return
+        persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(self._current_path)
+        if isinstance(persisted_track3d_colors, dict):
+            merged_colors = dict(DEFAULT_TRACK3D_COLORS)
+            for name, value in persisted_track3d_colors.items():
+                if name in merged_colors:
+                    merged_colors[name] = int(value)
+            self._track3d_colors = merged_colors
+            self._window.set_selected_colors_path_text("custom")
         persisted_track3d_path = self._sg_settings_store.get_track3d_file(self._current_path)
         if persisted_track3d_path is not None:
             self._set_selected_track3d_path(persisted_track3d_path, persist=False)
@@ -1761,23 +1770,19 @@ class SGViewerController:
         self._set_selected_track3d_path(selected_path, persist=True)
         self._window.show_status_message(f"Selected .3D file: {selected_path.name}")
 
-    def _on_select_track3d_colors_file_requested(self) -> None:
-        default_path = str(self._selected_track3d_colors_path) if self._selected_track3d_colors_path is not None else ""
-        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
-            self._window,
-            "Select colors definition file",
-            default_path,
-            "Text Files (*.txt);;All Files (*)",
+    def _on_edit_track3d_colors_requested(self) -> None:
+        dialog = Track3DColorDefinitionsDialog(
+            colors=self._track3d_colors,
+            palette=self._sunny_palette,
+            parent=self._window,
         )
-        if not path_str:
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
-        selected_path = Path(path_str)
-        if not selected_path.exists():
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"File not found:\n{selected_path}")
-            return
-        self._selected_track3d_colors_path = selected_path.resolve()
-        self._window.set_selected_colors_path_text(str(self._selected_track3d_colors_path))
-        self._window.show_status_message(f"Selected colors file: {selected_path.name}")
+        self._track3d_colors = dialog.selected_colors()
+        self._window.set_selected_colors_path_text("custom")
+        if self._current_path is not None:
+            self._sg_settings_store.set_track3d_colors(self._current_path, self._track3d_colors)
+        self._window.show_status_message("Updated 3D polygon color mappings.")
 
     def _on_three_d_inspect_requested(self) -> None:
         input_path = self._ensure_selected_track3d_file()
@@ -1825,15 +1830,8 @@ class SGViewerController:
         input_path = self._ensure_selected_track3d_file()
         if input_path is None:
             return
-        if self._selected_track3d_colors_path is None:
-            QtWidgets.QMessageBox.information(
-                self._window,
-                "3D Tools",
-                "Select a colors definition file first.",
-            )
-            return
         try:
-            replacement_count = replace_colors_from_file(input_path, self._selected_track3d_colors_path)
+            replacement_count = replace_color_section_from_indices(input_path, self._track3d_colors)
         except OSError as exc:
             QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not update colors:\n{exc}")
             return
