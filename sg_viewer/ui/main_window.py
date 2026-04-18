@@ -194,9 +194,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_inspect_button = QtWidgets.QPushButton("Inspect see-through candidates")
         self._three_d_file_fix_copy_button = QtWidgets.QPushButton("Fix see-through (save as copy)")
         self._three_d_file_fix_in_place_button = QtWidgets.QPushButton("Fix see-through (in place)")
-        self._three_d_file_colors_path_label = QtWidgets.QLabel("Colors file: none")
+        self._three_d_file_colors_path_label = QtWidgets.QLabel("Color mappings: defaults")
         self._three_d_file_colors_path_label.setWordWrap(True)
-        self._three_d_file_select_colors_button = QtWidgets.QPushButton("Select colors file...")
+        self._three_d_file_select_colors_button = QtWidgets.QPushButton("Edit color mappings...")
         self._three_d_file_apply_colors_button = QtWidgets.QPushButton("Apply color replacements")
         self._tso_table = QtWidgets.QTableWidget(0, 6)
         self._tso_table.setHorizontalHeaderLabels([
@@ -907,7 +907,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         colors_group = QtWidgets.QGroupBox("3) Fix colors")
         colors_group_layout = QtWidgets.QVBoxLayout()
         colors_note = QtWidgets.QLabel(
-            "Choose a colors definition file (e.g., colors.txt) then apply replacements to the selected .3D file."
+            "Edit the default polygon color mappings (name + SUNNY.PCX index + swatch), "
+            "store them with the project, then apply to the selected .3D file."
         )
         colors_note.setWordWrap(True)
         colors_group_layout.addWidget(colors_note)
@@ -1362,7 +1363,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_selected_path_label.setText(f"Selected .3D file: {text}")
 
     def set_selected_colors_path_text(self, text: str) -> None:
-        self._three_d_file_colors_path_label.setText(f"Colors file: {text}")
+        self._three_d_file_colors_path_label.setText(f"Color mappings: {text}")
 
     def set_section_table_action(self, action: QtWidgets.QAction) -> None:
         self._section_table_action = action
