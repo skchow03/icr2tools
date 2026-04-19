@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS
+from sg_viewer.ui.palette_dialog import PaletteColorDialog
+
+
+class ClickableSwatchLabel(QtWidgets.QLabel):
+    clicked = QtCore.pyqtSignal()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802 (Qt override)
+        if event.button() == QtCore.Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
@@ -22,7 +32,7 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
 
         self._palette = list(palette) if palette is not None else []
         self._spin_boxes: dict[str, QtWidgets.QSpinBox] = {}
-        self._swatches: dict[str, QtWidgets.QLabel] = {}
+        self._swatches: dict[str, ClickableSwatchLabel] = {}
 
         layout = QtWidgets.QVBoxLayout(self)
         description = QtWidgets.QLabel(
@@ -52,11 +62,13 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
             table.setCellWidget(row, 1, spin)
             self._spin_boxes[name] = spin
 
-            swatch = QtWidgets.QLabel(table)
+            swatch = ClickableSwatchLabel(table)
             swatch.setFixedSize(52, 20)
             swatch.setFrameShape(QtWidgets.QFrame.Box)
             swatch.setFrameShadow(QtWidgets.QFrame.Plain)
-            swatch.setToolTip("Palette swatch for selected index")
+            swatch.setToolTip("Palette swatch for selected index (click to choose from palette)")
+            swatch.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            swatch.clicked.connect(lambda key=name: self._select_index_from_palette(key))
             table.setCellWidget(row, 2, swatch)
             self._swatches[name] = swatch
 
@@ -104,3 +116,22 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
             return
         swatch.setStyleSheet("background-color: #8a8a8a; border: 1px solid #555;")
         swatch.setToolTip(f"Index {index}: palette unavailable")
+
+    def _select_index_from_palette(self, name: str) -> None:
+        if not self._palette:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Palette unavailable",
+                "Load SUNNY.PCX first to choose from all 256 palette colors.",
+            )
+            return
+        current_index = int(self._spin_boxes[name].value())
+        dialog = PaletteColorDialog(
+            self._palette,
+            self,
+            selection_mode=True,
+            initial_index=current_index,
+        )
+        if dialog.exec_() != QtWidgets.QDialog.Accepted or dialog.selected_index is None:
+            return
+        self._spin_boxes[name].setValue(int(dialog.selected_index))
