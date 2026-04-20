@@ -303,6 +303,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 self.preview_api.delete_camera, "Delete Camera"
             )
         )
+        self._sidebar.generateElevationRequested.connect(
+            self._handle_generate_camera_elevation
+        )
         self._sidebar.zoomPointsToggled.connect(self._toggle_zoom_points)
         self._sidebar.set_cameras([], [])
         self._sidebar.update_selected_camera_details(None, None)
@@ -738,6 +741,26 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         if success:
             QtWidgets.QMessageBox.information(self, title, message)
             self._set_camera_dirty(False)
+        else:
+            QtWidgets.QMessageBox.warning(self, title, message)
+
+    def _handle_generate_camera_elevation(self) -> None:
+        height, accepted = QtWidgets.QInputDialog.getInt(
+            self,
+            "Generate Elevation",
+            "Height off ground",
+            0,
+            -500000,
+            500000,
+            1,
+        )
+        if not accepted:
+            return
+        success, message = self.preview_api.generate_selected_camera_elevation(height)
+        title = "Generate Elevation"
+        if success:
+            self._mark_camera_dirty()
+            QtWidgets.QMessageBox.information(self, title, message)
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 

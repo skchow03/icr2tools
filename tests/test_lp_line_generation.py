@@ -61,3 +61,24 @@ def test_generate_lp_line_boundary_index_validates_section_bounds(monkeypatch) -
 
     assert success is False
     assert "Boundary 2 is unavailable in section 0" in message
+
+
+def test_closest_boundary_elevation_at_returns_nearest_boundary_height(
+    monkeypatch,
+) -> None:
+    model = _build_model()
+
+    def _fake_getxyz(_trk, dlong, dlat, _cline):
+        return (float(dlong), float(dlat), float(dlong + (dlat * 10.0)))
+
+    monkeypatch.setattr("track_viewer.model.track_preview_model.getxyz", _fake_getxyz)
+
+    elevation = model.closest_boundary_elevation_at(0.0, 9.0)
+
+    assert elevation == 90
+
+
+def test_closest_boundary_elevation_at_returns_none_without_track() -> None:
+    model = TrackPreviewModel()
+
+    assert model.closest_boundary_elevation_at(0.0, 0.0) is None

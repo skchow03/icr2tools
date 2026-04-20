@@ -31,6 +31,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
     addType7Requested = QtCore.pyqtSignal()
     addCameraRequested = QtCore.pyqtSignal()
     deleteCameraRequested = QtCore.pyqtSignal()
+    generateElevationRequested = QtCore.pyqtSignal()
 
     def __init__(self, view_model: CoordinateSidebarViewModel | None = None) -> None:
         super().__init__()
@@ -77,6 +78,9 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._delete_camera_button = QtWidgets.QPushButton("Delete camera")
         self._delete_camera_button.setEnabled(False)
         self._delete_camera_button.clicked.connect(self.deleteCameraRequested)
+        self._generate_elevation_button = QtWidgets.QPushButton("Generate Elevation")
+        self._generate_elevation_button.setEnabled(False)
+        self._generate_elevation_button.clicked.connect(self.generateElevationRequested)
         self._type6_editor.set_tv_dlongs_provider(self._tv_panel.camera_dlongs)
         self._type6_editor.parametersChanged.connect(self._handle_type6_parameters_changed)
 
@@ -88,6 +92,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         layout.addWidget(camera_title)
         layout.addWidget(self._add_camera_button)
         layout.addWidget(self._delete_camera_button)
+        layout.addWidget(self._generate_elevation_button)
         layout.addWidget(self._camera_list)
         camera_filter_layout = QtWidgets.QHBoxLayout()
         camera_filter_layout.setContentsMargins(0, 0, 0, 0)
@@ -147,6 +152,7 @@ class CoordinateSidebar(QtWidgets.QFrame):
         self._camera_list.setCurrentRow(list_index if list_index is not None else -1)
         self._camera_list.blockSignals(False)
         self._delete_camera_button.setEnabled(index is not None)
+        self._generate_elevation_button.setEnabled(index is not None)
         self._tv_panel.select_camera(index)
         if index is None:
             self._camera_table.setCurrentCell(-1, -1)
@@ -190,9 +196,11 @@ class CoordinateSidebar(QtWidgets.QFrame):
         resolved = self._view_model.resolve_camera_selection(index)
         if resolved is None:
             self._delete_camera_button.setEnabled(False)
+            self._generate_elevation_button.setEnabled(False)
             self.cameraSelectionChanged.emit(None)
             return
         self._delete_camera_button.setEnabled(True)
+        self._generate_elevation_button.setEnabled(True)
         self.cameraSelectionChanged.emit(resolved)
 
     def _handle_tv_mode_view_changed(self, index: int) -> None:

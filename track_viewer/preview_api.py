@@ -322,6 +322,11 @@ class TrackPreviewApi:
     ) -> None:
         self._coordinator.update_camera_position(camera_index, x, y, z)
 
+    def generate_selected_camera_elevation(
+        self, height_off_ground: int
+    ) -> tuple[bool, str]:
+        return self._coordinator.generate_selected_camera_elevation(height_off_ground)
+
     def set_selected_camera(self, index: int | None) -> None:
         self._coordinator.set_selected_camera(index)
 

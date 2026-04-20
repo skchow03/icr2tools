@@ -267,6 +267,42 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line with {record_count} records."
 
+    def closest_boundary_elevation_at(self, x: float, y: float) -> int | None:
+        """Return the nearest boundary elevation to a world-space XY coordinate."""
+        if self.trk is None or not self.centerline:
+            return None
+
+        best_distance_sq: float | None = None
+        best_z: float | None = None
+        track_length = float(getattr(self.trk, "trklength", 0) or 0.0)
+
+        for section_index, section in enumerate(getattr(self.trk, "sects", [])):
+            section_length = float(getattr(section, "length", 0.0) or 0.0)
+            if section_length <= 0:
+                continue
+            section_start = float(getattr(section, "start_dlong", 0.0) or 0.0)
+            sample_count = max(2, min(33, int(math.ceil(section_length / 2000.0)) + 1))
+
+            for sample_index in range(sample_count):
+                ratio = sample_index / (sample_count - 1)
+                dlong = section_start + section_length * ratio
+                if track_length > 0:
+                    dlong %= track_length
+                for boundary_index in range(int(getattr(section, "num_bounds", 0) or 0)):
+                    try:
+                        dlat = getbounddlat(self.trk, section_index, ratio, boundary_index)
+                        bx, by, bz = getxyz(self.trk, dlong, dlat, self.centerline)
+                    except Exception:
+                        continue
+                    distance_sq = (float(bx) - float(x)) ** 2 + (float(by) - float(y)) ** 2
+                    if best_distance_sq is None or distance_sq < best_distance_sq:
+                        best_distance_sq = distance_sq
+                        best_z = float(bz)
+
+        if best_z is None:
+            return None
+        return int(round(best_z))
+
     def _create_lp_records_from_replay(
         self,
         rpy: Rpy,

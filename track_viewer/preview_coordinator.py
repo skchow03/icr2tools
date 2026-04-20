@@ -684,6 +684,27 @@ class PreviewCoordinator:
             self._selection_controller.emit_selected_camera()
         self._handle_intent(PreviewIntent.CAMERA_CHANGED)
 
+    def generate_selected_camera_elevation(
+        self, height_off_ground: int
+    ) -> tuple[bool, str]:
+        selected = self._state.selected_camera
+        if selected is None:
+            return False, "Select a camera before generating elevation."
+        if selected < 0 or selected >= len(self._camera_service.cameras):
+            return False, "The selected camera is no longer available."
+        camera = self._camera_service.cameras[selected]
+        boundary_elevation = self._model.closest_boundary_elevation_at(camera.x, camera.y)
+        if boundary_elevation is None:
+            return False, "Could not determine the nearest track boundary elevation."
+        camera.z = int(boundary_elevation + int(height_off_ground))
+        self._selection_controller.emit_selected_camera()
+        self._handle_intent(PreviewIntent.CAMERA_CHANGED)
+        return (
+            True,
+            "Generated elevation from nearest track boundary "
+            f"({boundary_elevation}) with offset {height_off_ground}.",
+        )
+
     def set_selected_camera(self, index: int | None) -> None:
         self._selection_controller.set_selected_camera(index)
 
