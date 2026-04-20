@@ -325,9 +325,21 @@ class LPEditingSession:
         return False, message, set()
 
     def generate_lp_line(
-        self, lp_name: str, speed_mph: float, dlat: float
+        self,
+        lp_name: str,
+        speed_mph: float,
+        dlat: float,
+        *,
+        boundary_index: int | None = None,
+        wall_margin: float = 0.0,
     ) -> tuple[bool, str, set[LPChange]]:
-        success, message = self._model.generate_lp_line(lp_name, speed_mph, dlat)
+        success, message = self._model.generate_lp_line(
+            lp_name,
+            speed_mph,
+            dlat,
+            boundary_index=boundary_index,
+            wall_margin=wall_margin,
+        )
         if success:
             return True, message, {LPChange.DATA}
         return False, message, set()

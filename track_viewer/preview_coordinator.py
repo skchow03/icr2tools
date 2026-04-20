@@ -338,10 +338,20 @@ class PreviewCoordinator:
         return success, message
 
     def generate_lp_line(
-        self, lp_name: str, speed_mph: float, dlat: float
+        self,
+        lp_name: str,
+        speed_mph: float,
+        dlat: float,
+        *,
+        boundary_index: int | None = None,
+        wall_margin: float = 0.0,
     ) -> tuple[bool, str]:
         success, message, changes = self._lp_session.generate_lp_line(
-            lp_name, speed_mph, dlat
+            lp_name,
+            speed_mph,
+            dlat,
+            boundary_index=boundary_index,
+            wall_margin=wall_margin,
         )
         self._apply_lp_changes(changes)
         return success, message

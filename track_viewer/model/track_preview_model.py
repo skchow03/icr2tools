@@ -18,7 +18,7 @@ from icr2_core.lp.lpcalc import get_fake_radius1, get_fake_radius2, get_fake_rad
 from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
-from icr2_core.trk.trk_utils import getxyz
+from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -203,9 +203,15 @@ class TrackPreviewModel(QtCore.QObject):
         return True
 
     def generate_lp_line(
-        self, lp_name: str, speed_mph: float, dlat: float
+        self,
+        lp_name: str,
+        speed_mph: float,
+        dlat: float,
+        *,
+        boundary_index: int | None = None,
+        wall_margin: float = 0.0,
     ) -> tuple[bool, str]:
-        """Generate a new LP line at the specified DLAT and speed."""
+        """Generate a new LP line at a fixed DLAT or offset from a boundary."""
         if self.trk is None or not self.centerline or self.track_length is None:
             return False, "No track loaded to generate LP data."
         if not lp_name or lp_name == "center-line":
@@ -215,13 +221,30 @@ class TrackPreviewModel(QtCore.QObject):
         track_length = float(self.track_length)
         if track_length <= 0:
             return False, "Track length is not available."
+        if boundary_index is not None and boundary_index < 0:
+            return False, "Boundary index must be zero or greater."
         record_count = max(2, math.ceil(track_length / LP_RESOLUTION) + 1)
         speed_raw = int(round(speed_mph * 5280 / 9))
         records: list[LpPoint] = []
         for index in range(record_count):
             dlong = track_length if index == record_count - 1 else index * LP_RESOLUTION
+            current_dlat = float(dlat)
+            if boundary_index is not None:
+                try:
+                    sect_id, subsect = dlong2sect(self.trk, float(dlong))
+                except Exception as exc:
+                    return False, f"Failed to locate section for DLONG {dlong:.0f}: {exc}"
+                section = self.trk.sects[sect_id]
+                if boundary_index >= section.num_bounds:
+                    return (
+                        False,
+                        f"Boundary {boundary_index} is unavailable in section {sect_id} "
+                        f"(has {section.num_bounds} boundaries).",
+                    )
+                wall_dlat = getbounddlat(self.trk, sect_id, subsect, boundary_index)
+                current_dlat = wall_dlat + float(wall_margin)
             try:
-                x, y, _ = getxyz(self.trk, float(dlong), float(dlat), self.centerline)
+                x, y, _ = getxyz(self.trk, float(dlong), current_dlat, self.centerline)
             except Exception as exc:
                 return False, f"Failed to build LP record at DLONG {dlong:.0f}: {exc}"
             records.append(
@@ -229,7 +252,7 @@ class TrackPreviewModel(QtCore.QObject):
                     x=x,
                     y=y,
                     dlong=float(dlong),
-                    dlat=float(dlat),
+                    dlat=current_dlat,
                     speed_raw=speed_raw,
                     speed_mph=float(speed_mph),
                     lateral_speed=0.0,
