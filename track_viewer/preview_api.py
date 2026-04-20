@@ -175,9 +175,21 @@ class TrackPreviewApi:
         return self._coordinator.import_active_lp_csv(csv_path)
 
     def generate_lp_line(
-        self, lp_name: str, speed_mph: float, dlat: float
+        self,
+        lp_name: str,
+        speed_mph: float,
+        dlat: float,
+        *,
+        boundary_index: int | None = None,
+        wall_margin: float = 0.0,
     ) -> tuple[bool, str]:
-        return self._coordinator.generate_lp_line(lp_name, speed_mph, dlat)
+        return self._coordinator.generate_lp_line(
+            lp_name,
+            speed_mph,
+            dlat,
+            boundary_index=boundary_index,
+            wall_margin=wall_margin,
+        )
 
     def generate_lp_line_from_replay(
         self,

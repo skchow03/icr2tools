@@ -2575,8 +2575,33 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         dlat_input.setRange(-2_147_483_647, 2_147_483_647)
         dlat_input.setSingleStep(500)
         dlat_input.setValue(default_dlat)
+        fixed_dlat_radio = QtWidgets.QRadioButton("Use fixed DLAT")
+        fixed_dlat_radio.setChecked(True)
+        boundary_dlat_radio = QtWidgets.QRadioButton("Match boundary DLAT + margin")
+        boundary_input = QtWidgets.QSpinBox(dialog)
+        boundary_input.setRange(0, 100)
+        boundary_input.setValue(0)
+        boundary_input.setToolTip("Boundary index counted right to left (0 is rightmost).")
+        wall_margin_input = QtWidgets.QSpinBox(dialog)
+        wall_margin_input.setRange(-2_147_483_647, 2_147_483_647)
+        wall_margin_input.setSingleStep(500)
+        wall_margin_input.setValue(0)
+        wall_margin_input.setSuffix(" DLAT")
+
+        def _sync_generation_mode_inputs() -> None:
+            use_boundary = boundary_dlat_radio.isChecked()
+            dlat_input.setEnabled(not use_boundary)
+            boundary_input.setEnabled(use_boundary)
+            wall_margin_input.setEnabled(use_boundary)
+
+        fixed_dlat_radio.toggled.connect(_sync_generation_mode_inputs)
+        boundary_dlat_radio.toggled.connect(_sync_generation_mode_inputs)
+        _sync_generation_mode_inputs()
         form_layout.addRow("Speed", speed_input)
-        form_layout.addRow("DLAT", dlat_input)
+        form_layout.addRow(fixed_dlat_radio, dlat_input)
+        form_layout.addRow(boundary_dlat_radio, QtWidgets.QLabel(""))
+        form_layout.addRow("Boundary (R→L)", boundary_input)
+        form_layout.addRow("Wall margin", wall_margin_input)
         button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
@@ -2588,8 +2613,18 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         dialog.setLayout(layout)
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
+        boundary_index: int | None = None
+        wall_margin = 0.0
+        dlat_value = float(dlat_input.value())
+        if boundary_dlat_radio.isChecked():
+            boundary_index = boundary_input.value()
+            wall_margin = float(wall_margin_input.value())
         success, message = self.preview_api.generate_lp_line(
-            lp_name, speed_input.value(), dlat_input.value()
+            lp_name,
+            speed_input.value(),
+            dlat_value,
+            boundary_index=boundary_index,
+            wall_margin=wall_margin,
         )
         title = "Generate LP Line"
         if success:
