@@ -45,6 +45,12 @@ class TvModesPanel(QtWidgets.QWidget):
         self._delete_button = QtWidgets.QPushButton("Remove from TV mode")
         self._delete_button.setEnabled(False)
         self._delete_button.clicked.connect(self._handle_delete_camera)
+        self._move_up_button = QtWidgets.QPushButton("Move Up")
+        self._move_up_button.setEnabled(False)
+        self._move_up_button.clicked.connect(self._handle_move_up)
+        self._move_down_button = QtWidgets.QPushButton("Move Down")
+        self._move_down_button.setEnabled(False)
+        self._move_down_button.clicked.connect(self._handle_move_down)
         self._add_selected_camera_button = QtWidgets.QPushButton(
             "Add Selected Camera to TV Mode"
         )
@@ -71,6 +77,8 @@ class TvModesPanel(QtWidgets.QWidget):
         primary_action_layout.addStretch(1)
         secondary_action_layout = QtWidgets.QHBoxLayout()
         secondary_action_layout.addWidget(self._delete_button)
+        secondary_action_layout.addWidget(self._move_up_button)
+        secondary_action_layout.addWidget(self._move_down_button)
         secondary_action_layout.addStretch(1)
         camera_action_layout.addLayout(primary_action_layout)
         camera_action_layout.addLayout(secondary_action_layout)
@@ -146,6 +154,7 @@ class TvModesPanel(QtWidgets.QWidget):
     def _handle_view_changed(self, index: int) -> None:
         self.viewChanged.emit(index)
         self._update_delete_state()
+        self._update_reorder_state()
         self._update_add_selected_button_state()
 
     def _camera_from_index(self, camera_index: Optional[int]) -> Optional[CameraPosition]:
@@ -375,21 +384,25 @@ class TvModesPanel(QtWidgets.QWidget):
         if current is None:
             self.cameraSelected.emit(None)
             self._update_delete_state()
+            self._update_reorder_state()
             return
         data = current.data(0, QtCore.Qt.UserRole)
         if data is None:
             self.cameraSelected.emit(None)
             self._update_delete_state()
+            self._update_reorder_state()
             return
         try:
             camera_index = int(data)
         except (TypeError, ValueError):
             self.cameraSelected.emit(None)
             self._update_delete_state()
+            self._update_reorder_state()
             return
         self.cameraSelected.emit(camera_index)
         self._selected_camera_index = camera_index
         self._update_delete_state()
+        self._update_reorder_state()
         self._update_add_selected_button_state()
 
     def _handle_add_selected_camera(self) -> None:
@@ -595,6 +608,7 @@ class TvModesPanel(QtWidgets.QWidget):
                 with QtCore.QSignalBlocker(tree):
                     tree.setCurrentItem(items[next_index])
         self._update_delete_state()
+        self._update_reorder_state()
         self.cameraAssignmentChanged.emit()
 
     def _current_tree(self) -> Optional[QtWidgets.QTreeWidget]:
@@ -655,6 +669,85 @@ class TvModesPanel(QtWidgets.QWidget):
             self._delete_button.setEnabled(False)
             return
         self._delete_button.setEnabled(tree.currentItem() is not None)
+
+    def _update_reorder_state(self) -> None:
+        tree = self._current_tree()
+        if tree is None:
+            self._move_up_button.setEnabled(False)
+            self._move_down_button.setEnabled(False)
+            return
+        item = tree.currentItem()
+        if item is None:
+            self._move_up_button.setEnabled(False)
+            self._move_down_button.setEnabled(False)
+            return
+        view_index = self._tv_tree_views.get(tree)
+        entry_index_data = item.data(0, QtCore.Qt.UserRole + 2)
+        if (
+            view_index is None
+            or view_index < 0
+            or view_index >= len(self._views)
+            or entry_index_data is None
+        ):
+            self._move_up_button.setEnabled(False)
+            self._move_down_button.setEnabled(False)
+            return
+        try:
+            entry_index = int(entry_index_data)
+        except (TypeError, ValueError):
+            self._move_up_button.setEnabled(False)
+            self._move_down_button.setEnabled(False)
+            return
+        entry_count = len(self._views[view_index].entries)
+        self._move_up_button.setEnabled(entry_count > 1 and entry_index > 0)
+        self._move_down_button.setEnabled(
+            entry_count > 1 and entry_index < (entry_count - 1)
+        )
+
+    def _handle_move_up(self) -> None:
+        self._move_selected_entry(-1)
+
+    def _handle_move_down(self) -> None:
+        self._move_selected_entry(1)
+
+    def _move_selected_entry(self, direction: int) -> None:
+        tree = self._current_tree()
+        if tree is None:
+            return
+        item = tree.currentItem()
+        if item is None:
+            return
+        view_index = self._tv_tree_views.get(tree)
+        if view_index is None or view_index < 0 or view_index >= len(self._views):
+            return
+        entry_index_data = item.data(0, QtCore.Qt.UserRole + 2)
+        if entry_index_data is None:
+            return
+        try:
+            entry_index = int(entry_index_data)
+        except (TypeError, ValueError):
+            return
+        target_index = entry_index + direction
+        view = self._views[view_index]
+        if (
+            target_index < 0
+            or target_index >= len(view.entries)
+            or entry_index < 0
+            or entry_index >= len(view.entries)
+        ):
+            return
+        view.entries[entry_index], view.entries[target_index] = (
+            view.entries[target_index],
+            view.entries[entry_index],
+        )
+        self._refresh_tv_tree(view_index)
+        items = self._tv_tree_items.get(tree, [])
+        if 0 <= target_index < len(items):
+            with QtCore.QSignalBlocker(tree):
+                tree.setCurrentItem(items[target_index])
+        self._update_delete_state()
+        self._update_reorder_state()
+        self.cameraAssignmentChanged.emit()
 
     def _show_dlong_bounds_error(self) -> None:
         if self._track_length is None:
