@@ -15,10 +15,12 @@ class PaletteColorDialog(QtWidgets.QDialog):
         initial_index: int | None = None,
     ) -> None:
         super().__init__(parent)
+        self._palette = list(palette[:256])
         self.setWindowTitle("SUNNY.PCX Palette")
         self.setModal(selection_mode)
         self.resize(560, 640)
         self._buttons: list[QtWidgets.QPushButton] = []
+        self._selected_button: QtWidgets.QPushButton | None = None
         self.selected_index: int | None = None
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -39,17 +41,11 @@ class PaletteColorDialog(QtWidgets.QDialog):
         grid_layout.setSpacing(2)
         grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        for index, color in enumerate(palette[:256]):
+        for index, color in enumerate(self._palette):
             button = QtWidgets.QPushButton()
             button.setFixedSize(30, 30)
             button.setFocusPolicy(QtCore.Qt.NoFocus)
-            button.setStyleSheet(
-                "background-color: rgb(%d, %d, %d); border: 1px solid #222;" % (
-                    color.red(),
-                    color.green(),
-                    color.blue(),
-                )
-            )
+            self._set_button_style(button, color)
             button.setToolTip(
                 f"Index {index}: rgb({color.red()}, {color.green()}, {color.blue()})"
             )
@@ -76,13 +72,29 @@ class PaletteColorDialog(QtWidgets.QDialog):
             close_button.clicked.connect(self.close)
             layout.addWidget(close_button, alignment=QtCore.Qt.AlignRight)
 
-        if initial_index is not None and 0 <= initial_index < len(palette):
-            self._on_color_selected(initial_index, palette[initial_index])
+        if initial_index is not None and 0 <= initial_index < len(self._palette):
+            self._on_color_selected(initial_index, self._palette[initial_index])
 
     def _on_color_selected(self, index: int, color: QtGui.QColor) -> None:
+        if self._selected_button is not None and self.selected_index is not None:
+            self._set_button_style(self._selected_button, self._palette[self.selected_index])
+
+        selected_button = self._buttons[index]
+        self._set_button_style(selected_button, color, selected=True)
+        self._selected_button = selected_button
         self.selected_index = int(index)
         self._selected_label.setText(
             f"Selected index: {index}   rgb({color.red()}, {color.green()}, {color.blue()})"
         )
         if hasattr(self, "_ok_button"):
             self._ok_button.setEnabled(True)
+
+    @staticmethod
+    def _set_button_style(
+        button: QtWidgets.QPushButton, color: QtGui.QColor, *, selected: bool = False
+    ) -> None:
+        border = "2px solid white" if selected else "1px solid #222"
+        button.setStyleSheet(
+            "background-color: rgb(%d, %d, %d); border: %s;"
+            % (color.red(), color.green(), color.blue(), border)
+        )
