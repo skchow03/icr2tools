@@ -194,6 +194,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._has_unsaved_changes = False
         self._show_status = show_status or self.set_status_text
         self._sg_version = 0
+        self._track_interaction_enabled = True
         self._last_load_warnings: list[str] = []
         self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
         self._elevation_xsect_bounds_cache: dict[
