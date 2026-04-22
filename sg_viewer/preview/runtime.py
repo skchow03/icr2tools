@@ -388,7 +388,8 @@ class PreviewRuntime(PreviewRuntimeOps):
 
         inputs = self._interaction_inputs()
         if (
-            not inputs.delete_section_active
+            self._track_interaction_enabled
+            and not inputs.delete_section_active
             and not inputs.creation_active
             and not inputs.split_section_mode
             and self._interaction.handle_mouse_press(event)
@@ -433,7 +434,7 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._apply_mouse_intent(intent, event)
             return
 
-        if self._interaction.handle_mouse_move(event):
+        if self._track_interaction_enabled and self._interaction.handle_mouse_move(event):
             self._request_interaction_repaint()
             return
 
@@ -509,7 +510,7 @@ class PreviewRuntime(PreviewRuntimeOps):
 
         was_dragging_node = self._interaction.is_dragging_node
         dragged_indices = self._interaction.last_dragged_indices
-        if self._interaction.handle_mouse_release(event):
+        if self._track_interaction_enabled and self._interaction.handle_mouse_release(event):
             if was_dragging_node:
                 affected_indices = (
                     list(dragged_indices) if dragged_indices is not None else None

@@ -157,6 +157,7 @@ class _RuntimeCoreBaseMixin:
         self._has_unsaved_changes = False
         self._show_status = show_status or self.set_status_text
         self._sg_version = 0
+        self._track_interaction_enabled = True
         self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
         self._elevation_xsect_bounds_cache: dict[
             tuple[int, int], dict[int, tuple[float, float] | None]
@@ -197,6 +198,14 @@ class _RuntimeCoreBaseMixin:
 
     def set_section_drag_enabled(self, enabled: bool) -> None:
         self._interaction.set_section_drag_enabled(enabled)
+
+    def set_track_interaction_enabled(self, enabled: bool) -> None:
+        normalized = bool(enabled)
+        if normalized == self._track_interaction_enabled:
+            return
+        self._track_interaction_enabled = normalized
+        if not normalized:
+            self._interaction.reset()
 
     def _widget_size(self) -> tuple[int, int]:
         return self._context.widget_size()

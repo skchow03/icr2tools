@@ -2449,6 +2449,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_ruler_overlay(self._ruler_start_point, track_point)
         self._ruler_mode_active = False
         self._ruler_frozen = True
+        self._preview.set_track_interaction_enabled(True)
         self._update_ruler_button_state()
         self.show_status_message("Ruler frozen. Click Clear Ruler to remove it.")
 
@@ -2461,12 +2462,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._ruler_mode_active = False
             self._ruler_start_point = None
             self._ruler_end_point = None
+            self._preview.set_track_interaction_enabled(True)
             self._preview.set_ruler_overlay(None, None, "")
             self.show_status_message("Ruler mode cancelled.")
         else:
             self._ruler_mode_active = True
             self._ruler_start_point = None
             self._ruler_end_point = None
+            self._preview.set_track_interaction_enabled(False)
             self.show_status_message("Ruler mode active. Click to set start point.")
         self._update_ruler_button_state()
 
@@ -2487,6 +2490,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._ruler_start_point = None
         self._ruler_end_point = None
         self._ruler_frozen = False
+        self._preview.set_track_interaction_enabled(True)
         self._preview.set_ruler_overlay(None, None, "")
         self._update_ruler_button_state()
 
