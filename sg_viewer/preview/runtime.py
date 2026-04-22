@@ -165,6 +165,9 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._split_hover_section_index: int | None = None
         self._query_track_hover_point: Point | None = None
         self._query_track_overlay_message: str = ""
+        self._ruler_start_point: Point | None = None
+        self._ruler_end_point: Point | None = None
+        self._ruler_label: str = ""
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -600,6 +603,36 @@ class PreviewRuntime(PreviewRuntimeOps):
         if normalized == self._query_track_overlay_message:
             return
         self._query_track_overlay_message = normalized
+        self._context.request_repaint()
+
+    @property
+    def ruler_start_point(self) -> Point | None:
+        return self._ruler_start_point
+
+    @property
+    def ruler_end_point(self) -> Point | None:
+        return self._ruler_end_point
+
+    @property
+    def ruler_label(self) -> str:
+        return self._ruler_label
+
+    def set_ruler_overlay(
+        self,
+        start_point: Point | None,
+        end_point: Point | None,
+        label: str,
+    ) -> None:
+        normalized_label = str(label)
+        if (
+            start_point == self._ruler_start_point
+            and end_point == self._ruler_end_point
+            and normalized_label == self._ruler_label
+        ):
+            return
+        self._ruler_start_point = start_point
+        self._ruler_end_point = end_point
+        self._ruler_label = normalized_label
         self._context.request_repaint()
 
 

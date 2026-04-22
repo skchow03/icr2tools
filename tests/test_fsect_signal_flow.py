@@ -95,3 +95,34 @@ def test_query_track_overlay_shows_unfreeze_hint_when_frozen() -> None:
 
     overlay = window._preview.query_track_overlay_message
     assert "[Space: Unfreeze]" in overlay
+
+
+def test_ruler_button_transitions_to_clear_when_ruler_is_frozen() -> None:
+    _app()
+    window = SGViewerWindow(wire_features=False)
+    start = (0.0, 0.0)
+    end = (3000.0, 4000.0)
+
+    window._update_ruler_overlay(start, end)
+    window._ruler_frozen = True
+    window._update_ruler_button_state()
+
+    assert window.ruler_button.text() == "Clear Ruler"
+    assert window._preview.ruler_start_point == start
+    assert window._preview.ruler_end_point == end
+    assert window._preview.ruler_label == "8.3 ft"
+
+
+def test_clear_ruler_button_resets_overlay_and_button_text() -> None:
+    _app()
+    window = SGViewerWindow(wire_features=False)
+    window._update_ruler_overlay((0.0, 0.0), (1.0, 1.0))
+    window._ruler_frozen = True
+    window._update_ruler_button_state()
+
+    window._on_ruler_button_clicked()
+
+    assert window.ruler_button.text() == "Ruler"
+    assert window._preview.ruler_start_point is None
+    assert window._preview.ruler_end_point is None
+    assert window._preview.ruler_label == ""
