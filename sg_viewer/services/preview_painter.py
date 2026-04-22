@@ -95,6 +95,9 @@ class BasePreviewState:
     split_hover_point: Point | None
     query_track_hover_point: Point | None
     query_track_overlay_message: str
+    ruler_start_point: Point | None
+    ruler_end_point: Point | None
+    ruler_label: str
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
     centerline_unselected_color: QtGui.QColor
@@ -334,6 +337,18 @@ def paint_preview(
                 transform,
                 widget_height,
             )
+        if (
+            base_state.ruler_start_point is not None
+            and base_state.ruler_end_point is not None
+        ):
+            _draw_ruler_overlay(
+                painter,
+                base_state.ruler_start_point,
+                base_state.ruler_end_point,
+                base_state.ruler_label,
+                transform,
+                widget_height,
+            )
 
     _draw_creation_overlays(painter, base_state.rect, creation_state, transform, widget_height)
     _draw_drag_heading_guide(
@@ -378,6 +393,38 @@ def _draw_center_crosshair(
         center.x(),
         center.y() + crosshair_half_size_px,
     )
+    painter.restore()
+
+
+def _draw_ruler_overlay(
+    painter: QtGui.QPainter,
+    start_point: Point,
+    end_point: Point,
+    label: str,
+    transform: ViewTransform,
+    widget_height: int,
+) -> None:
+    start_screen = transform.track_to_screen(start_point)
+    end_screen = transform.track_to_screen(end_point)
+    start_x, start_y = _to_screen_coords(start_screen, widget_height)
+    end_x, end_y = _to_screen_coords(end_screen, widget_height)
+    painter.save()
+    painter.setRenderHint(type(painter).Antialiasing, True)
+    painter.setPen(QtGui.QPen(QtGui.QColor(100, 220, 255, 220), 2.0))
+    painter.drawLine(
+        QtCore.QPointF(start_x, start_y),
+        QtCore.QPointF(end_x, end_y),
+    )
+    painter.setBrush(QtGui.QColor(100, 220, 255, 180))
+    painter.drawEllipse(QtCore.QPointF(start_x, start_y), 4.0, 4.0)
+    painter.drawEllipse(QtCore.QPointF(end_x, end_y), 4.0, 4.0)
+    if label.strip():
+        mid_x = (start_x + end_x) * 0.5
+        mid_y = (start_y + end_y) * 0.5
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 255), 1.0))
+        text_rect = QtCore.QRectF(mid_x + 8.0, mid_y - 20.0, 160.0, 20.0)
+        painter.fillRect(text_rect.adjusted(-4.0, -2.0, 4.0, 2.0), QtGui.QColor(0, 0, 0, 170))
+        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, label)
     painter.restore()
 
 

@@ -99,6 +99,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._query_track_mode_active = False
         self._query_track_info_frozen = False
         self._query_track_result: dict[str, object] | None = None
+        self._ruler_mode_active = False
+        self._ruler_start_point: tuple[float, float] | None = None
+        self._ruler_end_point: tuple[float, float] | None = None
+        self._ruler_frozen = False
 
         shortcut_labels = {
             "previous_section": "Ctrl+PgUp",
@@ -300,6 +304,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._query_track_button = QtWidgets.QPushButton("Query track")
         self._query_track_button.setCheckable(True)
         self._query_track_button.setEnabled(False)
+        self._ruler_button = QtWidgets.QPushButton("Ruler")
+        self._ruler_button.setEnabled(False)
         self._radii_button = QtWidgets.QCheckBox("Show Radii")
         self._radii_button.setChecked(True)
         self._axes_button = QtWidgets.QCheckBox("Show Axes")
@@ -562,6 +568,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._delete_section_button,
             self._set_start_finish_button,
             self._query_track_button,
+            self._ruler_button,
         )
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
@@ -983,7 +990,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             wire_window_features(self)
         self._preview.pointerMoved.connect(self._on_preview_pointer_moved)
         self._preview.pointerLeft.connect(self._on_preview_pointer_left)
+        self._preview.pointerClicked.connect(self._on_preview_pointer_clicked)
         self._query_track_button.toggled.connect(self._on_query_track_toggled)
+        self._ruler_button.clicked.connect(self._on_ruler_button_clicked)
         self._query_track_freeze_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence(QtCore.Qt.Key_Space),
             self,
@@ -1044,6 +1053,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def query_track_button(self) -> QtWidgets.QPushButton:
         return self._query_track_button
+
+    @property
+    def ruler_button(self) -> QtWidgets.QPushButton:
+        return self._ruler_button
 
     @property
     def radii_button(self) -> QtWidgets.QCheckBox:
@@ -2318,25 +2331,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_preview_pointer_left(self) -> None:
         if not self._query_track_mode_active or self._query_track_info_frozen:
-            return
-        self._query_track_result = None
-        self._preview.set_query_track_hover_point(None)
-        self._refresh_query_track_info_label()
+            pass
+        else:
+            self._query_track_result = None
+            self._preview.set_query_track_hover_point(None)
+            self._refresh_query_track_info_label()
+        if self._ruler_mode_active and self._ruler_start_point is not None and not self._ruler_frozen:
+            self._update_ruler_overlay(self._ruler_start_point, self._ruler_start_point)
 
     def _on_preview_pointer_moved(self, point: QtCore.QPointF) -> None:
+        if self._ruler_mode_active and self._ruler_start_point is not None and not self._ruler_frozen:
+            track_point = self._track_point_from_preview_position(point)
+            if track_point is not None:
+                self._update_ruler_overlay(self._ruler_start_point, track_point)
         if not self._query_track_mode_active or self._query_track_info_frozen:
             return
 
-        widget_size = self._preview.widget_size()
-        transform = self._preview.current_transform(widget_size)
-        if transform is None:
-            return
-        track_point = self._preview.map_to_track(
-            (float(point.x()), float(point.y())),
-            widget_size,
-            self._preview.widget_height(),
-            transform,
-        )
+        track_point = self._track_point_from_preview_position(point)
         if track_point is None:
             return
 
@@ -2359,6 +2370,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._refresh_query_track_info_label()
             return
 
+        widget_size = self._preview.widget_size()
+        transform = self._preview.current_transform(widget_size)
+        if transform is None:
+            return
         zoom_scale = max(float(transform[0]), 0.0)
         pixel_distance = (distance_sq ** 0.5) * zoom_scale
         if pixel_distance > 16.0:
@@ -2404,6 +2419,82 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         }
         self._preview.set_query_track_hover_point(projected_point)
         self._refresh_query_track_info_label()
+
+    def _track_point_from_preview_position(
+        self,
+        point: QtCore.QPointF,
+    ) -> tuple[float, float] | None:
+        widget_size = self._preview.widget_size()
+        transform = self._preview.current_transform(widget_size)
+        if transform is None:
+            return None
+        return self._preview.map_to_track(
+            (float(point.x()), float(point.y())),
+            widget_size,
+            self._preview.widget_height(),
+            transform,
+        )
+
+    def _on_preview_pointer_clicked(self, point: QtCore.QPointF) -> None:
+        if not self._ruler_mode_active or self._ruler_frozen:
+            return
+        track_point = self._track_point_from_preview_position(point)
+        if track_point is None:
+            return
+        if self._ruler_start_point is None:
+            self._ruler_start_point = track_point
+            self._update_ruler_overlay(track_point, track_point)
+            self.show_status_message("Ruler start point set. Move mouse and click again to finish.")
+            return
+        self._update_ruler_overlay(self._ruler_start_point, track_point)
+        self._ruler_mode_active = False
+        self._ruler_frozen = True
+        self._update_ruler_button_state()
+        self.show_status_message("Ruler frozen. Click Clear Ruler to remove it.")
+
+    def _on_ruler_button_clicked(self) -> None:
+        if self._ruler_frozen:
+            self._clear_ruler()
+            self.show_status_message("Ruler cleared.")
+            return
+        if self._ruler_mode_active:
+            self._ruler_mode_active = False
+            self._ruler_start_point = None
+            self._ruler_end_point = None
+            self._preview.set_ruler_overlay(None, None, "")
+            self.show_status_message("Ruler mode cancelled.")
+        else:
+            self._ruler_mode_active = True
+            self._ruler_start_point = None
+            self._ruler_end_point = None
+            self.show_status_message("Ruler mode active. Click to set start point.")
+        self._update_ruler_button_state()
+
+    def _update_ruler_overlay(
+        self,
+        start_point: tuple[float, float],
+        end_point: tuple[float, float],
+    ) -> None:
+        self._ruler_start_point = start_point
+        self._ruler_end_point = end_point
+        dx = float(end_point[0]) - float(start_point[0])
+        dy = float(end_point[1]) - float(start_point[1])
+        length = (dx * dx + dy * dy) ** 0.5
+        self._preview.set_ruler_overlay(start_point, end_point, self.format_length(length))
+
+    def _clear_ruler(self) -> None:
+        self._ruler_mode_active = False
+        self._ruler_start_point = None
+        self._ruler_end_point = None
+        self._ruler_frozen = False
+        self._preview.set_ruler_overlay(None, None, "")
+        self._update_ruler_button_state()
+
+    def _update_ruler_button_state(self) -> None:
+        if self._ruler_frozen:
+            self._ruler_button.setText("Clear Ruler")
+            return
+        self._ruler_button.setText("Ruler")
 
     def _sample_centerline_elevation(self, section_index: int, progress: float) -> float | None:
         return self._sample_elevation_at_dlat(section_index, progress, 0.0)

@@ -119,6 +119,9 @@ class PreviewPresenter:
                 split_hover_point=self._runtime.split_hover_point,
                 query_track_hover_point=self._runtime.query_track_hover_point,
                 query_track_overlay_message=self._runtime.query_track_overlay_message,
+                ruler_start_point=self._runtime.ruler_start_point,
+                ruler_end_point=self._runtime.ruler_end_point,
+                ruler_label=self._runtime.ruler_label,
                 xsect_dlat=self._runtime.selected_xsect_dlat
                 if self._runtime.show_sg_fsects
                 else None,
