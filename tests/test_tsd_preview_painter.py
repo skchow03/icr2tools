@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import pytest
 
 from sg_viewer.services.preview_painter import (
+    _draw_ruler_overlay,
     _point_on_section,
     _sample_tsd_detail_line,
     _tsd_width_to_pixels,
@@ -199,3 +200,20 @@ def test_tsd_segment_bbox_culling_still_skips_sampling(monkeypatch, qapp) -> Non
 
     assert estimate_calls == 1
     assert sample_calls == 0
+
+
+def test_draw_ruler_overlay_uses_tuple_transform(qapp) -> None:
+    from PyQt5 import QtGui
+
+    image = QtGui.QImage(120, 120, QtGui.QImage.Format_ARGB32)
+    image.fill(0)
+    painter = QtGui.QPainter(image)
+    _draw_ruler_overlay(
+        painter,
+        (10.0, 10.0),
+        (20.0, 20.0),
+        "14.1 ft",
+        (2.0, (5.0, 5.0)),
+        widget_height=120,
+    )
+    painter.end()

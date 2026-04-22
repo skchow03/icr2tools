@@ -401,13 +401,15 @@ def _draw_ruler_overlay(
     start_point: Point,
     end_point: Point,
     label: str,
-    transform: ViewTransform,
+    transform: Transform,
     widget_height: int,
 ) -> None:
-    start_screen = transform.track_to_screen(start_point)
-    end_screen = transform.track_to_screen(end_point)
-    start_x, start_y = _to_screen_coords(start_screen, widget_height)
-    end_x, end_y = _to_screen_coords(end_screen, widget_height)
+    start_pos = _map_point(start_point, transform, widget_height)
+    end_pos = _map_point(end_point, transform, widget_height)
+    start_x = start_pos.x()
+    start_y = start_pos.y()
+    end_x = end_pos.x()
+    end_y = end_pos.y()
     painter.save()
     painter.setRenderHint(type(painter).Antialiasing, True)
     painter.setPen(QtGui.QPen(QtGui.QColor(100, 220, 255, 220), 2.0))
