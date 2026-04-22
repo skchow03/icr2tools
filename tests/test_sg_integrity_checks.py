@@ -157,9 +157,29 @@ def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
         [[wide_left_boundary], []],
     )
 
+    assert "Boundary points within 100 ft of a different centerline: 1" in report.text
     assert "Boundary points closer to a different centerline: 1" in report.text
     assert "section 0 left boundary" in report.text
-    assert len(report.boundary_ownership_violation_points) == 1
+    assert len(report.boundary_ownership_violation_points) >= 1
+
+
+def test_integrity_report_flags_boundary_within_100ft_of_other_centerline() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(100.0), 0.0))
+    section_b = _section(section_id=1, start=(0.0, _ft_to_world(90.0)), end=(_ft_to_world(100.0), _ft_to_world(90.0)))
+    left_boundary = PreviewFSection(
+        start_dlat=_ft_to_world(20.0),
+        end_dlat=_ft_to_world(20.0),
+        surface_type=0,
+        type2=0,
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b],
+        [[left_boundary], []],
+    )
+
+    assert "Boundary points within 100 ft of a different centerline: 1" in report.text
+    assert "Boundary points closer to a different centerline: none" in report.text
 
 
 def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> None:
@@ -189,6 +209,7 @@ def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> Non
         [[wide_left_boundary], []],
     ).text
 
+    assert "Boundary points within 100 ft of a different centerline: 1" not in report
     assert "Boundary points closer to a different centerline: 1" not in report
 
 

@@ -23,6 +23,7 @@ FT_TO_WORLD = 6000.0
 MIN_RADIUS_FT = 50.0
 MAX_ARC_DEGREES = 120.0
 MIN_CENTERLINE_SEPARATION_FT = 80.0
+MIN_BOUNDARY_CENTERLINE_CLEARANCE_FT = 100.0
 PERP_SAMPLE_STEP_FT = 10.0
 UNIT_LABELS = {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}
 UNIT_DECIMALS = {"feet": 2, "meter": 3, "inch": 1, "500ths": 0}
@@ -471,8 +472,10 @@ def _boundary_centerline_ownership_report_numpy(
 ) -> tuple[list[str], list[Point]]:
     lines: list[str] = []
     findings: list[str] = []
+    proximity_findings: list[str] = []
     violation_points: list[Point] = []
     prepared_polyline_cache = _build_prepared_polyline_cache(sections)
+    min_boundary_clearance_world = _ft_to_world(MIN_BOUNDARY_CENTERLINE_CLEARANCE_FT)
 
     for section_index, section in enumerate(sections):
         progress.step(
@@ -511,6 +514,8 @@ def _boundary_centerline_ownership_report_numpy(
         )
         left_points = sample_points + normals * left_dlat[:, None]
         right_points = sample_points + normals * right_dlat[:, None]
+        section_proximity_flagged = False
+        section_ownership_flagged = False
 
         for side, points in (("left", left_points), ("right", right_points)):
             side_points = points[valid]
@@ -521,7 +526,6 @@ def _boundary_centerline_ownership_report_numpy(
                 side_points,
                 own_prepared_polyline,
             )
-            unresolved = np.ones(side_points.shape[0], dtype=bool)
             rival_indices = np.full(side_points.shape[0], -1, dtype=int)
             rival_distances = np.full(side_points.shape[0], math.inf, dtype=float)
 
@@ -530,48 +534,78 @@ def _boundary_centerline_ownership_report_numpy(
                     continue
                 if _is_adjacent_section(section_index, rival_index, sections):
                     continue
-                if not np.any(unresolved):
-                    break
 
                 rival_prepared_polyline = prepared_polyline_cache.get(rival_index)
                 if rival_prepared_polyline is None:
                     continue
 
-                unresolved_indices = np.flatnonzero(unresolved)
                 rival_distances_candidate = _points_to_polyline_distance_numpy(
-                    side_points[unresolved_indices],
+                    side_points,
                     rival_prepared_polyline,
                 )
-                can_flip = rival_distances_candidate + 1e-6 < own_distances[unresolved_indices]
-                if not np.any(can_flip):
+                closer_mask = rival_distances_candidate + 1e-6 < rival_distances
+                if not np.any(closer_mask):
                     continue
+                rival_distances[closer_mask] = rival_distances_candidate[closer_mask]
+                rival_indices[closer_mask] = rival_index
 
-                flipped_indices = unresolved_indices[can_flip]
-                rival_indices[flipped_indices] = rival_index
-                rival_distances[flipped_indices] = rival_distances_candidate[can_flip]
-                unresolved[flipped_indices] = False
-
-            flipped = np.flatnonzero(rival_indices >= 0)
-            if flipped.size == 0:
-                continue
-
-            first = int(flipped[0])
-            boundary_point = side_points[first]
-            findings.append(
-                (
-                    f"  - section {section_index} {side} boundary near "
-                    f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
-                    f"at DLONG {_format_world_distance(section.start_dlong + along[first], measurement_unit)} "
-                    f"is closer to section {int(rival_indices[first])} centerline "
-                    f"({_format_world_distance(rival_distances[first], measurement_unit)}) than its own "
-                    f"({_format_world_distance(own_distances[first], measurement_unit)})"
+            if not section_proximity_flagged:
+                close_hits = np.flatnonzero(
+                    (rival_indices >= 0) & (rival_distances < min_boundary_clearance_world)
                 )
-            )
-            violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
-            break
+                if close_hits.size > 0:
+                    first_close = int(close_hits[0])
+                    boundary_point = side_points[first_close]
+                    proximity_findings.append(
+                        (
+                            f"  - section {section_index} {side} boundary near "
+                            f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
+                            f"at DLONG {_format_world_distance(section.start_dlong + along[first_close], measurement_unit)} "
+                            f"is within {_format_world_distance(min_boundary_clearance_world, measurement_unit)} of section "
+                            f"{int(rival_indices[first_close])} centerline "
+                            f"({_format_world_distance(rival_distances[first_close], measurement_unit)})"
+                        )
+                    )
+                    violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+                    section_proximity_flagged = True
 
-        if findings and findings[-1].startswith(f"  - section {section_index} "):
-            continue
+            if not section_ownership_flagged:
+                flipped = np.flatnonzero((rival_indices >= 0) & (rival_distances + 1e-6 < own_distances))
+                if flipped.size > 0:
+                    first = int(flipped[0])
+                    boundary_point = side_points[first]
+                    findings.append(
+                        (
+                            f"  - section {section_index} {side} boundary near "
+                            f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
+                            f"at DLONG {_format_world_distance(section.start_dlong + along[first], measurement_unit)} "
+                            f"is closer to section {int(rival_indices[first])} centerline "
+                            f"({_format_world_distance(rival_distances[first], measurement_unit)}) than its own "
+                            f"({_format_world_distance(own_distances[first], measurement_unit)})"
+                        )
+                    )
+                    violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+                    section_ownership_flagged = True
+
+            if section_proximity_flagged and section_ownership_flagged:
+                break
+
+    if proximity_findings:
+        lines.append(
+            (
+                "Boundary points within "
+                f"{_format_world_distance(min_boundary_clearance_world, measurement_unit)} of a different centerline: "
+                f"{len(proximity_findings)}"
+            )
+        )
+        lines.extend(proximity_findings)
+    else:
+        lines.append(
+            (
+                "Boundary points within "
+                f"{_format_world_distance(min_boundary_clearance_world, measurement_unit)} of a different centerline: none"
+            )
+        )
 
     if findings:
         lines.append(
@@ -593,8 +627,10 @@ def _boundary_centerline_ownership_report_fallback(
 ) -> tuple[list[str], list[Point]]:
     lines: list[str] = []
     findings: list[str] = []
+    proximity_findings: list[str] = []
     violation_points: list[Point] = []
     spatial_index = _build_section_segment_spatial_index(sections, sample_step_world)
+    min_boundary_clearance_world = _ft_to_world(MIN_BOUNDARY_CENTERLINE_CLEARANCE_FT)
 
     for section_index, section in enumerate(sections):
         progress.step(
@@ -605,6 +641,8 @@ def _boundary_centerline_ownership_report_fallback(
             continue
 
         section_fsects = _safe_get_fsects(fsects_by_section, section_index)
+        section_proximity_flagged = False
+        section_ownership_flagged = False
         for sample_point, tangent, along_distance, total_distance in samples:
             normal = _left_normal(tangent)
             if normal is None:
@@ -631,24 +669,57 @@ def _boundary_centerline_ownership_report_fallback(
                     continue
                 if _is_adjacent_section(section_index, rival_index, sections):
                     continue
-                if rival_dist + 1e-6 >= own_dist:
-                    continue
 
-                findings.append(
-                    (
-                        f"  - section {section_index} {side} boundary near "
-                        f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
-                        f"at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
-                        f"is closer to section {rival_index} centerline "
-                        f"({_format_world_distance(rival_dist, measurement_unit)}) than its own "
-                        f"({_format_world_distance(own_dist, measurement_unit)})"
+                if not section_proximity_flagged and rival_dist < min_boundary_clearance_world:
+                    proximity_findings.append(
+                        (
+                            f"  - section {section_index} {side} boundary near "
+                            f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
+                            f"at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
+                            f"is within {_format_world_distance(min_boundary_clearance_world, measurement_unit)} of section "
+                            f"{rival_index} centerline "
+                            f"({_format_world_distance(rival_dist, measurement_unit)})"
+                        )
                     )
-                )
-                violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+                    violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+                    section_proximity_flagged = True
+
+                if not section_ownership_flagged and rival_dist + 1e-6 < own_dist:
+                    findings.append(
+                        (
+                            f"  - section {section_index} {side} boundary near "
+                            f"({_format_world_distance(boundary_point[0], measurement_unit)}, {_format_world_distance(boundary_point[1], measurement_unit)}) "
+                            f"at DLONG {_format_world_distance(section.start_dlong + along_distance, measurement_unit)} "
+                            f"is closer to section {rival_index} centerline "
+                            f"({_format_world_distance(rival_dist, measurement_unit)}) than its own "
+                            f"({_format_world_distance(own_dist, measurement_unit)})"
+                        )
+                    )
+                    violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+                    section_ownership_flagged = True
+
+                if section_proximity_flagged and section_ownership_flagged:
+                    break
+
+            if section_proximity_flagged and section_ownership_flagged:
                 break
 
-            if findings and findings[-1].startswith(f"  - section {section_index} "):
-                break
+    if proximity_findings:
+        lines.append(
+            (
+                "Boundary points within "
+                f"{_format_world_distance(min_boundary_clearance_world, measurement_unit)} of a different centerline: "
+                f"{len(proximity_findings)}"
+            )
+        )
+        lines.extend(proximity_findings)
+    else:
+        lines.append(
+            (
+                "Boundary points within "
+                f"{_format_world_distance(min_boundary_clearance_world, measurement_unit)} of a different centerline: none"
+            )
+        )
 
     if findings:
         lines.append(
