@@ -281,6 +281,23 @@ class _RuntimeCoreDragNodeMixin:
     # ------------------------------------------------------------------
 
     def _handle_click(self, pos: QtCore.QPoint) -> None:
+        callback = getattr(self, "_trackside_map_click_callback", None)
+        if callable(callback):
+            widget_size = self._widget_size()
+            transform = self.current_transform(widget_size)
+            if transform is not None:
+                world_pos = self.map_to_track(
+                    (float(pos.x()), float(pos.y())),
+                    widget_size,
+                    self._widget_height(),
+                    transform,
+                )
+                if world_pos is not None and bool(
+                    callback(int(round(world_pos[0])), int(round(world_pos[1])))
+                ):
+                    self._request_interaction_repaint()
+                    return
+
         if self._delete_section_active and self._handle_delete_click(pos):
             return
 

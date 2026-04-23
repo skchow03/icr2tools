@@ -4082,11 +4082,14 @@ class SGViewerController:
         return True
 
     def _find_trackside_object_at_point(self, x: float, y: float) -> int | None:
+        transform = self._window.preview.current_transform(self._window.preview.widget_size())
+        scale = float(transform[0]) if transform is not None else 1.0
+        apparent_half_extent = 4.0 / max(scale, 1e-9)
         for index in range(len(self._trackside_objects) - 1, -1, -1):
             obj = self._trackside_objects[index]
             yaw_radians = math.radians(float(obj.yaw) / 10.0)
-            half_length = max(1.0, float(obj.bbox_length) * 0.5)
-            half_width = max(1.0, float(obj.bbox_width) * 0.5)
+            half_length = max(apparent_half_extent, float(obj.bbox_length) * 0.5)
+            half_width = max(apparent_half_extent, float(obj.bbox_width) * 0.5)
             pivot_local_x, pivot_local_y = self._rotation_pivot_local_offsets(
                 normalize_rotation_point(str(getattr(obj, "rotation_point", "center"))),
                 half_length,

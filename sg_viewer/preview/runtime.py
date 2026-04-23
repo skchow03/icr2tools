@@ -368,22 +368,6 @@ class PreviewRuntime(PreviewRuntimeOps):
                         event.accept()
                         return
 
-        if event.button() == QtCore.Qt.LeftButton:
-            callback = getattr(self, "_trackside_map_click_callback", None)
-            if callable(callback):
-                transform = self.current_transform(self._widget_size())
-                if transform is not None:
-                    world_pos = self.map_to_track(
-                        (float(event.localPos().x()), float(event.localPos().y())),
-                        self._widget_size(),
-                        self._widget_height(),
-                        transform,
-                    )
-                    if world_pos is not None and bool(callback(int(round(world_pos[0])), int(round(world_pos[1])))):
-                        event.accept()
-                        self._request_interaction_repaint()
-                        return
-
         if self._handle_creation_mouse_press(event):
             return
 
