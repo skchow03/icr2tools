@@ -10,10 +10,10 @@ _COLOR_DEFINITION_PATTERN = re.compile(r"^\s*(__\w+__):\s*(\[[^\]]+\])\s*;\s*$")
 
 DEFAULT_TRACK3D_COLORS: "OrderedDict[str, int]" = OrderedDict(
     [
-        ("__Asphalt1__", 239),
-        ("__Asphalt2__", 238),
-        ("__Asphalt3__", 237),
-        ("__Asphalt4__", 236),
+        ("__Asphalt1__", 41),
+        ("__Asphalt2__", 40),
+        ("__Asphalt3__", 41),
+        ("__Asphalt4__", 40),
         ("__Concrete1__", 39),
         ("__Concrete2__", 38),
         ("__Concrete3__", 37),
