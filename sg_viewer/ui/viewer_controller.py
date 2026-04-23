@@ -1147,18 +1147,7 @@ class SGViewerController:
             )
             return
 
-        opened = QtGui.QDesktopServices.openUrl(
-            QtCore.QUrl.fromLocalFile(str(path.resolve()))
-        )
-        if not opened:
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Generate pitwall.txt",
-                f"Saved file, but could not open it automatically:\n{path}",
-            )
-            return
-
-        self._window.show_status_message(f"Generated and opened {path.name}.")
+        self._window.show_status_message(f"Generated {path.name} successfully.")
 
     def _connect_signals(self) -> None:
         self._window.preview.selectedSectionChanged.connect(
