@@ -2639,6 +2639,51 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         window.close()
 
 
+def test_objects_tab_map_click_selects_tso_inside_bbox(qapp):
+    window = SGViewerWindow()
+    try:
+        objects_tab_index = window.right_sidebar_tabs.indexOf(window.tso_sidebar)
+        window.right_sidebar_tabs.setCurrentIndex(objects_tab_index)
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="cone",
+                x=100,
+                y=200,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=40,
+                bbox_width=20,
+                rotation_point="center",
+            ),
+        ]
+        window.controller._refresh_tso_table()
+
+        consumed = window.controller._on_preview_tso_map_clicked(110, 205)
+
+        assert consumed is True
+        assert window.controller._selected_trackside_object_indices == [0]
+        assert window.preview.selected_trackside_object_indices == (0,)
+    finally:
+        window.close()
+
+
+def test_objects_tab_map_click_consumes_without_tso_hit(qapp):
+    window = SGViewerWindow()
+    try:
+        objects_tab_index = window.right_sidebar_tabs.indexOf(window.tso_sidebar)
+        window.right_sidebar_tabs.setCurrentIndex(objects_tab_index)
+
+        consumed = window.controller._on_preview_tso_map_clicked(-9999, -9999)
+
+        assert consumed is True
+        assert window.controller._selected_trackside_object_indices == []
+    finally:
+        window.close()
+
+
 def test_add_tso_uses_closest_boundary_elevation_for_new_object(qapp, monkeypatch):
     window = SGViewerWindow()
     try:

@@ -54,6 +54,7 @@ from sg_viewer.services.skid_marks import (
 from sg_viewer.services.trackside_objects import (
     TracksideObject,
     normalize_trackside_filename,
+    normalize_rotation_point,
     serialize_objects_txt,
     trackside_object_from_payload,
     trackside_object_to_payload,
@@ -4057,7 +4058,19 @@ class SGViewerController:
 
     def _on_preview_tso_map_clicked(self, x: int, y: int) -> bool:
         if not self._tso_add_mode_active and not self._tso_stamp_mode_active:
-            return False
+            if not self._is_objects_tab_active():
+                return False
+            hit_index = self._find_trackside_object_at_point(float(x), float(y))
+            selected_indices = [hit_index] if hit_index is not None else []
+            self._objects_tab_selected_trackside_object_indices = list(selected_indices)
+            self._selected_trackside_object_indices = list(selected_indices)
+            self._refresh_tso_table()
+            self._apply_trackside_drag_scope()
+            if hit_index is not None:
+                self._window.show_status_message(
+                    "TSO selected: right-click and drag in the preview to move selected TSOs."
+                )
+            return True
         filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
         self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
         self._selected_trackside_object_indices = [len(self._trackside_objects) - 1]
@@ -4067,6 +4080,52 @@ class SGViewerController:
         if self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
         return True
+
+    def _find_trackside_object_at_point(self, x: float, y: float) -> int | None:
+        for index in range(len(self._trackside_objects) - 1, -1, -1):
+            obj = self._trackside_objects[index]
+            yaw_radians = math.radians(float(obj.yaw) / 10.0)
+            half_length = max(1.0, float(obj.bbox_length) * 0.5)
+            half_width = max(1.0, float(obj.bbox_width) * 0.5)
+            pivot_local_x, pivot_local_y = self._rotation_pivot_local_offsets(
+                normalize_rotation_point(str(getattr(obj, "rotation_point", "center"))),
+                half_length,
+                half_width,
+            )
+            center_x = float(obj.x) - (
+                pivot_local_x * math.cos(yaw_radians) - pivot_local_y * math.sin(yaw_radians)
+            )
+            center_y = float(obj.y) - (
+                pivot_local_x * math.sin(yaw_radians) + pivot_local_y * math.cos(yaw_radians)
+            )
+            dx = float(x) - center_x
+            dy = float(y) - center_y
+            cos_yaw = math.cos(-yaw_radians)
+            sin_yaw = math.sin(-yaw_radians)
+            local_x = dx * cos_yaw - dy * sin_yaw
+            local_y = dx * sin_yaw + dy * cos_yaw
+            if abs(local_x) <= half_length and abs(local_y) <= half_width:
+                return index
+        return None
+
+    @staticmethod
+    def _rotation_pivot_local_offsets(
+        rotation_point: str,
+        half_length: float,
+        half_width: float,
+    ) -> tuple[float, float]:
+        mapping = {
+            "center": (0.0, 0.0),
+            "top_left": (-half_length, half_width),
+            "top_center": (0.0, half_width),
+            "top_right": (half_length, half_width),
+            "center_left": (-half_length, 0.0),
+            "center_right": (half_length, 0.0),
+            "bottom_left": (-half_length, -half_width),
+            "bottom_center": (0.0, -half_width),
+            "bottom_right": (half_length, -half_width),
+        }
+        return mapping.get(rotation_point, (0.0, 0.0))
 
     def _on_preview_tso_box_selected(self, min_x: int, min_y: int, max_x: int, max_y: int) -> None:
         selected_indices = [
