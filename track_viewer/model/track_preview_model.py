@@ -212,13 +212,16 @@ class TrackPreviewModel(QtCore.QObject):
         wall_margin: float = 0.0,
     ) -> tuple[bool, str]:
         """Generate a new LP line at a fixed DLAT or offset from a boundary."""
-        if self.trk is None or not self.centerline or self.track_length is None:
+        if self.trk is None or not self.centerline:
             return False, "No track loaded to generate LP data."
         if not lp_name or lp_name == "center-line":
             return False, "Select a valid LP line to replace."
         if lp_name not in self.available_lp_files:
             return False, f"{lp_name} is not available for editing."
-        track_length = float(self.track_length)
+        current_track_length = float(getattr(self.trk, "trklength", 0) or 0)
+        if current_track_length > 0:
+            self.track_length = current_track_length
+        track_length = float(self.track_length or 0)
         if track_length <= 0:
             return False, "Track length is not available."
         if boundary_index is not None and boundary_index < 0:
@@ -260,6 +263,7 @@ class TrackPreviewModel(QtCore.QObject):
             )
         if self._ai_lines is None:
             self._ai_lines = {}
+        self._ai_lines.pop(lp_name, None)
         self._ai_lines[lp_name] = records
         self._manual_lp_overrides.add(lp_name)
         self._pending_ai_line_loads.discard(lp_name)

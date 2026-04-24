@@ -6,6 +6,7 @@ from track_viewer.model.track_preview_model import TrackPreviewModel
 def _build_model() -> TrackPreviewModel:
     model = TrackPreviewModel()
     model.trk = SimpleNamespace(
+        trklength=12000.0,
         num_sects=1,
         sects=[
             SimpleNamespace(
@@ -61,6 +62,28 @@ def test_generate_lp_line_boundary_index_validates_section_bounds(monkeypatch) -
 
     assert success is False
     assert "Boundary 2 is unavailable in section 0" in message
+
+
+def test_generate_lp_line_replaces_existing_records_using_current_track_length(
+    monkeypatch,
+) -> None:
+    model = _build_model()
+    monkeypatch.setattr(
+        "track_viewer.model.track_preview_model.getxyz",
+        lambda _trk, dlong, dlat, _cline: (float(dlong), float(dlat), 0.0),
+    )
+
+    model._ai_lines = {
+        "RACE": [SimpleNamespace(dlong=0.0), SimpleNamespace(dlong=12000.0)]
+    }
+    model.track_length = 12000.0
+    model.trk.trklength = 18000.0
+
+    success, _ = model.generate_lp_line("RACE", 100.0, 0.0)
+
+    assert success is True
+    records = model.ai_line_records("RACE")
+    assert [record.dlong for record in records] == [0.0, 6000.0, 12000.0, 18000.0]
 
 
 def test_closest_boundary_elevation_at_returns_nearest_boundary_height(
