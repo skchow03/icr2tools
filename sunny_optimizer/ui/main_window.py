@@ -141,7 +141,7 @@ class ClickablePaletteLabel(QtWidgets.QLabel):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SUNNY Palette Optimizer Prototype")
+        self.setWindowTitle("Texture Tools - Sunny Optimizer")
         self.resize(1400, 800)
 
         self.preview_max_dim = 512
