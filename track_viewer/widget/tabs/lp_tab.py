@@ -15,9 +15,9 @@ class LpTabBuilder:
 
     def build(self) -> QtWidgets.QWidget:
         window = self._window
-        window._lp_list = QtWidgets.QTableWidget(0, 4)
+        window._lp_list = QtWidgets.QTableWidget(0, 5)
         window._lp_list.setHorizontalHeaderLabels(
-            ["LP name", "Edit", "Visible", "Unsaved changes"]
+            ["LP name", "Records", "Edit", "Visible", "Unsaved changes"]
         )
         window._lp_list.setSelectionMode(
             QtWidgets.QAbstractItemView.NoSelection
@@ -40,6 +40,9 @@ class LpTabBuilder:
         header.setSectionResizeMode(
             3, QtWidgets.QHeaderView.ResizeToContents
         )
+        header.setSectionResizeMode(
+            4, QtWidgets.QHeaderView.ResizeToContents
+        )
         window._lp_button_group = QtWidgets.QButtonGroup(window)
         window._lp_button_group.setExclusive(True)
         window._lp_button_group.buttonClicked.connect(
@@ -48,6 +51,7 @@ class LpTabBuilder:
         window._lp_checkboxes = {}
         window._lp_name_cells = {}
         window._lp_name_labels = {}
+        window._lp_record_count_labels = {}
         window._lp_dirty_labels = {}
         window._lp_records_label = QtWidgets.QLabel("LP records")
         window._lp_records_label.setStyleSheet("font-weight: bold")
