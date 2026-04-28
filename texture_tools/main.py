@@ -165,6 +165,8 @@ class PmpConversionWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         self.input_edit = self._make_browse_row(layout, "Input image (.png):", self._browse_input)
         self.output_edit = self._make_browse_row(layout, "Output file (.pmp):", self._browse_output)
+        self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit.setText("SUNNY.PCX")
 
         settings_row = QtWidgets.QHBoxLayout()
         settings_row.addWidget(QtWidgets.QLabel("Header bytes 002-003 (hex):"))
@@ -205,6 +207,11 @@ class PmpConversionWidget(QtWidgets.QWidget):
         if path:
             self.output_edit.setText(path)
 
+    def _browse_palette(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select palette file", "", "PCX (*.pcx *.PCX);;All files (*.*)")
+        if path:
+            self.palette_edit.setText(path)
+
     def _convert(self) -> None:
         try:
             raw = self.size_field.text().strip()
@@ -213,7 +220,14 @@ class PmpConversionWidget(QtWidgets.QWidget):
             size_field = int(raw, 16)
             if not 0 <= size_field <= 0xFFFF:
                 raise ValueError("Header size field must be in range 0000..FFFF")
-            out = png_to_pmp(self.input_edit.text().strip(), self.output_edit.text().strip(), size_field=size_field)
+            palette_raw = self.palette_edit.text().strip()
+            palette_path = palette_raw if palette_raw else None
+            out = png_to_pmp(
+                self.input_edit.text().strip(),
+                self.output_edit.text().strip(),
+                size_field=size_field,
+                palette_path=palette_path,
+            )
             self.status_label.setText(f"Created PMP: {out}")
         except Exception as exc:  # pragma: no cover
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))

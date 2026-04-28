@@ -23,7 +23,7 @@ def test_png_to_pmp_writes_expected_header_and_runs(tmp_path: Path) -> None:
     dst = tmp_path / "sprite.pmp"
     image.save(src)
 
-    png_to_pmp(src, dst, size_field=0x1234)
+    png_to_pmp(src, dst, size_field=0x1234, palette_path=None)
 
     data = dst.read_bytes()
     assert data[:2] == bytes((2, 4))
@@ -57,11 +57,59 @@ def test_png_to_pmp_writes_expected_header_and_runs(tmp_path: Path) -> None:
 
 def test_png_to_pmp_rejects_large_images(tmp_path: Path) -> None:
     src = tmp_path / "too_wide.png"
-    Image.new("P", (256, 1)).save(src)
+    Image.new("P", (257, 1)).save(src)
 
     try:
-        png_to_pmp(src, tmp_path / "out.pmp", size_field=0)
+        png_to_pmp(src, tmp_path / "out.pmp", size_field=0, palette_path=None)
     except ValueError as exc:
-        assert "255x255" in str(exc)
+        assert "256x256" in str(exc)
     else:
         raise AssertionError("expected ValueError for oversized image")
+
+
+def test_png_to_pmp_supports_256x256(tmp_path: Path) -> None:
+    src = tmp_path / "max_size.png"
+    dst = tmp_path / "max_size.pmp"
+    Image.new("RGBA", (256, 256), color=(255, 0, 0, 255)).save(src)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=None)
+
+    data = dst.read_bytes()
+    assert data[0] == 0
+    assert data[1] == 0
+
+
+def test_png_to_pmp_skips_fully_transparent_pixels(tmp_path: Path) -> None:
+    src = tmp_path / "alpha.png"
+    dst = tmp_path / "alpha.pmp"
+    image = Image.new("RGBA", (4, 1), color=(255, 0, 0, 255))
+    pixels = image.load()
+    pixels[1, 0] = (0, 255, 0, 0)
+    image.save(src)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=None)
+
+    runs = dst.read_bytes()[12:]
+    assert len(runs) == 8
+    assert runs[0:3] == bytes((0, 0, 0))
+    assert runs[4:7] == bytes((0, 2, 3))
+
+
+def test_png_to_pmp_uses_given_palette(tmp_path: Path) -> None:
+    src = tmp_path / "source.png"
+    dst = tmp_path / "paletted.pmp"
+    palette_path = tmp_path / "SUNNY.PCX"
+
+    source = Image.new("RGBA", (1, 1), color=(255, 0, 0, 255))
+    source.save(src)
+
+    palette = Image.new("P", (1, 1))
+    pal = [0] * (256 * 3)
+    pal[3:6] = [255, 0, 0]
+    palette.putpalette(pal)
+    palette.save(palette_path)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=palette_path)
+
+    runs = dst.read_bytes()[12:]
+    assert runs == bytes((0, 0, 0, 1))
