@@ -177,6 +177,13 @@ class PmpConversionWidget(QtWidgets.QWidget):
         settings_row.addStretch(1)
         layout.addLayout(settings_row)
 
+        note = QtWidgets.QLabel(
+            "Note: this converter writes bytes 000-001 from image height/width "
+            "and bytes 004-007 as encoded run-data length."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
         convert_btn = QtWidgets.QPushButton("Convert PNG → PMP")
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel("Ready")

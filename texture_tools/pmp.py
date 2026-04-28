@@ -56,8 +56,18 @@ def png_to_pmp(
 ) -> Path:
     """Convert an input PNG image to a PMP sprite file.
 
-    The PMP format uses 8-bit indexed colors and stores image rows as runs of
-    contiguous pixels of the same palette index.
+    Header layout emitted by this converter:
+      - byte 0: sprite height (0-255)
+      - byte 1: sprite width (0-255)
+      - bytes 2-3: caller-provided metadata field (little-endian)
+      - bytes 4-7: run data byte length (little-endian)
+      - bytes 8-11: opaque 4-byte field (defaults to ``1E 00 00 00``)
+
+    Run payload layout emitted by this converter:
+      - 4 bytes per run: ``(y, x_start, x_end, palette_index)``
+
+    The PMP format here uses 8-bit indexed colors and stores image rows as
+    runs of contiguous pixels of the same palette index.
     """
     src = Path(input_path)
     dst = Path(output_path)
