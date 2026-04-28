@@ -84,11 +84,11 @@ def parse_pmp(path: str):
     if len(data) < 12:
         raise ValueError("File is too small to be a valid PMP.")
 
-    width = data[0]
-    height = data[1]
+    bbox_width = data[0]
+    bbox_height = data[1]
 
-    unknown_2 = data[2]
-    unknown_3 = data[3]
+    bbox_right_offset = data[2]
+    bbox_bottom_offset = data[3]
 
     declared_run_data_size = int.from_bytes(data[4:8], "little")
     unknown_8_to_11 = data[8:12]
@@ -125,10 +125,10 @@ def parse_pmp(path: str):
         max_x = max(max_x, x_end_exclusive)
 
     metadata = {
-        "width": width,
-        "height": height,
-        "unknown_2": unknown_2,
-        "unknown_3": unknown_3,
+        "bbox_width": bbox_width,
+        "bbox_height": bbox_height,
+        "bbox_right_offset": bbox_right_offset,
+        "bbox_bottom_offset": bbox_bottom_offset,
         "declared_run_data_size": declared_run_data_size,
         "actual_run_data_size": len(run_data),
         "unknown_8_to_11_hex": unknown_8_to_11.hex(" "),
@@ -151,9 +151,7 @@ def convert_pmp_to_png(
     metadata, runs = parse_pmp(pmp_path)
 
     # NOTE:
-    # For now, always render PMP sprites onto a fixed 256x256 canvas.
-    # The meaning of the width/height bytes in the PMP header is still
-    # unclear, so we intentionally ignore them during conversion.
+    # PMP run coordinates are stored in a 256x256 atlas space.
     width = 256
     height = 256
 
@@ -194,7 +192,7 @@ def convert_pmp_to_png(
     print(f"Input:   {pmp_path}")
     print(f"Output:  {png_path}")
     print(f"Palette: {palette_path}")
-    print("Canvas:  256x256 (PMP header width/height currently ignored)")
+    print("Canvas:  256x256")
     print()
     print("PMP metadata:")
     for key, value in metadata.items():
