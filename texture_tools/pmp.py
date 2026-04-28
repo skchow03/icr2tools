@@ -8,7 +8,7 @@ from PIL import Image
 DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
 
 
-def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None) -> bytes:
+def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None, *, alpha_transparent_threshold: int = 0) -> bytes:
     width, height = indexed.size
     color_pixels = indexed.load()
     alpha_pixels = alpha.load() if alpha is not None else None
@@ -17,7 +17,7 @@ def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None) -> byte
     for y in range(height):
         x = 0
         while x < width:
-            if alpha_pixels is not None and int(alpha_pixels[x, y]) == 0:
+            if alpha_pixels is not None and int(alpha_pixels[x, y]) <= alpha_transparent_threshold:
                 x += 1
                 continue
 
@@ -25,7 +25,7 @@ def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None) -> byte
             start = x
             x += 1
             while x < width:
-                if alpha_pixels is not None and int(alpha_pixels[x, y]) == 0:
+                if alpha_pixels is not None and int(alpha_pixels[x, y]) <= alpha_transparent_threshold:
                     break
                 if int(color_pixels[x, y]) != color:
                     break
@@ -53,6 +53,7 @@ def png_to_pmp(
     size_field: int,
     palette_path: str | Path | None = "SUNNY.PCX",
     unknown_field: bytes = DEFAULT_UNKNOWN_FIELD,
+    alpha_transparent_threshold: int = 0,
 ) -> Path:
     """Convert an input PNG image to a PMP sprite file.
 
@@ -89,8 +90,12 @@ def png_to_pmp(
         if len(unknown_field) != 4:
             raise ValueError("unknown_field must be exactly 4 bytes")
 
-        encoded_runs = _encode_runs(indexed, alpha)
-        bbox = alpha.getbbox()
+        if not 0 <= int(alpha_transparent_threshold) <= 255:
+            raise ValueError("alpha_transparent_threshold must be in range 0..255")
+
+        alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= int(alpha_transparent_threshold) else 255)
+        encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=int(alpha_transparent_threshold))
+        bbox = alpha_thresholded.getbbox()
 
     if bbox is None:
         bbox_width = 0
