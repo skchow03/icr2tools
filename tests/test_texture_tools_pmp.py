@@ -113,6 +113,34 @@ def test_png_to_pmp_writes_signed_bbox_origin_when_size_field_is_zero(tmp_path: 
     assert data[3] == 236  # int8(-20): bbox top edge is y=20
 
 
+def test_png_to_pmp_alpha_threshold_drops_mostly_transparent_pixels(tmp_path: Path) -> None:
+    src = tmp_path / "threshold.png"
+    dst = tmp_path / "threshold.pmp"
+    image = Image.new("RGBA", (3, 1), color=(255, 0, 0, 255))
+    pixels = image.load()
+    pixels[1, 0] = (0, 255, 0, 51)  # 80% transparent
+    image.save(src)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=None, alpha_transparent_threshold=51)
+
+    runs = dst.read_bytes()[12:]
+    assert len(runs) == 8
+    assert runs[0:3] == bytes((0, 0, 1))
+    assert runs[4:7] == bytes((0, 2, 3))
+
+
+def test_png_to_pmp_rejects_invalid_alpha_threshold(tmp_path: Path) -> None:
+    src = tmp_path / "source.png"
+    Image.new("RGBA", (1, 1), color=(255, 0, 0, 255)).save(src)
+
+    try:
+        png_to_pmp(src, tmp_path / "out.pmp", size_field=0, palette_path=None, alpha_transparent_threshold=300)
+    except ValueError as exc:
+        assert "0..255" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for invalid alpha threshold")
+
+
 def test_png_to_pmp_uses_given_palette(tmp_path: Path) -> None:
     src = tmp_path / "source.png"
     dst = tmp_path / "paletted.pmp"

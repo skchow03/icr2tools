@@ -175,6 +175,13 @@ class PmpConversionWidget(QtWidgets.QWidget):
         self.size_field.setMaxLength(4)
         self.size_field.setFixedWidth(100)
         settings_row.addWidget(self.size_field)
+        settings_row.addSpacing(16)
+        settings_row.addWidget(QtWidgets.QLabel("Treat alpha ≤ as transparent:"))
+        self.alpha_threshold_spin = QtWidgets.QSpinBox()
+        self.alpha_threshold_spin.setRange(0, 255)
+        self.alpha_threshold_spin.setValue(51)
+        self.alpha_threshold_spin.setToolTip("51 means pixels that are at least 80% transparent are dropped.")
+        settings_row.addWidget(self.alpha_threshold_spin)
         settings_row.addStretch(1)
         layout.addLayout(settings_row)
 
@@ -236,6 +243,7 @@ class PmpConversionWidget(QtWidgets.QWidget):
                 self.output_edit.text().strip(),
                 size_field=size_field,
                 palette_path=palette_path,
+                alpha_transparent_threshold=self.alpha_threshold_spin.value(),
             )
             self.status_label.setText(f"Created PMP: {out}")
         except Exception as exc:  # pragma: no cover
