@@ -150,11 +150,12 @@ def convert_pmp_to_png(
     palette = load_palette(palette_path)
     metadata, runs = parse_pmp(pmp_path)
 
-    width = metadata["width"]
-    height = metadata["height"]
-
-    if width == 0 or height == 0:
-        raise ValueError(f"Invalid PMP dimensions: {width}x{height}")
+    # NOTE:
+    # For now, always render PMP sprites onto a fixed 256x256 canvas.
+    # The meaning of the width/height bytes in the PMP header is still
+    # unclear, so we intentionally ignore them during conversion.
+    width = 256
+    height = 256
 
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     pixels = img.load()
@@ -193,6 +194,7 @@ def convert_pmp_to_png(
     print(f"Input:   {pmp_path}")
     print(f"Output:  {png_path}")
     print(f"Palette: {palette_path}")
+    print("Canvas:  256x256 (PMP header width/height currently ignored)")
     print()
     print("PMP metadata:")
     for key, value in metadata.items():
