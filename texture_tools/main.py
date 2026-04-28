@@ -3,6 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Ensure repo root is on sys.path when running this file directly
+if __package__ is None or __package__ == "":
+    sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from PIL import Image
 
 try:
@@ -11,8 +15,8 @@ except ImportError:  # pragma: no cover
     from PySide6 import QtCore, QtWidgets  # type: ignore
 
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
-from sunny_optimizer.chop_horizon import chop_horizon
-from sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
+from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
+from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
 
 class MipConversionWidget(QtWidgets.QWidget):
