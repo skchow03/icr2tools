@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover
 
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
 from texture_tools.pmp import png_to_pmp
+from texture_tools.pmp_to_png import convert_pmp_to_png
 from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
 from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
@@ -240,6 +241,69 @@ class PmpConversionWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
 
 
+class PmpToPngWidget(QtWidgets.QWidget):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QtWidgets.QVBoxLayout(self)
+        self.input_edit = self._make_browse_row(layout, "Input file (.pmp):", self._browse_input)
+        self.output_edit = self._make_browse_row(layout, "Output image (.png):", self._browse_output)
+        self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit.setText("SUNNY.PCX")
+
+        self.crop_checkbox = QtWidgets.QCheckBox("Crop transparent border")
+        layout.addWidget(self.crop_checkbox)
+
+        convert_btn = QtWidgets.QPushButton("Convert PMP → PNG")
+        convert_btn.clicked.connect(self._convert)
+        self.status_label = QtWidgets.QLabel("Ready")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(convert_btn)
+        layout.addWidget(self.status_label)
+
+    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel(label))
+        edit = QtWidgets.QLineEdit()
+        browse = QtWidgets.QPushButton("Browse…")
+        browse.clicked.connect(callback)
+        row.addWidget(edit, 1)
+        row.addWidget(browse)
+        parent.addLayout(row)
+        return edit
+
+    def _browse_input(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select PMP input", "", "PMP (*.pmp);;All files (*.*)")
+        if path:
+            self.input_edit.setText(path)
+            if not self.output_edit.text().strip():
+                self.output_edit.setText(str(Path(path).with_suffix(".png")))
+
+    def _browse_output(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select PNG output", "", "PNG (*.png);;All files (*.*)")
+        if path:
+            self.output_edit.setText(path)
+
+    def _browse_palette(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select palette file", "", "PCX (*.pcx *.PCX);;All files (*.*)")
+        if path:
+            self.palette_edit.setText(path)
+
+    def _convert(self) -> None:
+        try:
+            convert_pmp_to_png(
+                self.input_edit.text().strip(),
+                self.output_edit.text().strip(),
+                self.palette_edit.text().strip(),
+                crop=self.crop_checkbox.isChecked(),
+            )
+            self.status_label.setText(f"Created PNG: {self.output_edit.text().strip()}")
+        except Exception as exc:  # pragma: no cover
+            QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
+
+
 class TextureToolsWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -250,7 +314,8 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._build_sunny_tab(), "Palette Optimizer")
         tabs.addTab(ChopHorizonWidget(), "Chop Horizon")
         tabs.addTab(MipConversionWidget(), "MIP Conversion")
-        tabs.addTab(PmpConversionWidget(), "PMP Conversion")
+        tabs.addTab(PmpConversionWidget(), "PNG → PMP")
+        tabs.addTab(PmpToPngWidget(), "PMP → PNG")
         self.setCentralWidget(tabs)
 
         self._sunny_windows: list[SunnyOptimizerWindow] = []
