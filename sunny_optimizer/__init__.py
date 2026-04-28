@@ -1,4 +1,1 @@
-from .model import SunnyPaletteOptimizer
-from .quantizer import Quantizer
-
-__all__ = ["SunnyPaletteOptimizer", "Quantizer"]
+from texture_tools.sunny_optimizer import *  # noqa: F401,F403
