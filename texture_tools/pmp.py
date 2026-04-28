@@ -57,9 +57,10 @@ def png_to_pmp(
     """Convert an input PNG image to a PMP sprite file.
 
     Header layout emitted by this converter:
-      - byte 0: sprite height (0-255)
-      - byte 1: sprite width (0-255)
-      - bytes 2-3: caller-provided metadata field (little-endian)
+      - byte 0: sprite bounding-box width (0-255)
+      - byte 1: sprite bounding-box height (0-255)
+      - byte 2: pixels from right edge of 256x256 canvas to bbox right edge
+      - byte 3: pixels from bottom edge of 256x256 canvas to bbox bottom edge
       - bytes 4-7: run data byte length (little-endian)
       - bytes 8-11: opaque 4-byte field (defaults to ``1E 00 00 00``)
 
@@ -68,6 +69,10 @@ def png_to_pmp(
 
     The PMP format here uses 8-bit indexed colors and stores image rows as
     runs of contiguous pixels of the same palette index.
+
+    For backward compatibility, ``size_field`` can still be provided. When it
+    is non-zero, bytes 2-3 are written directly from ``size_field`` as
+    little-endian metadata instead of auto-computing bbox offsets.
     """
     src = Path(input_path)
     dst = Path(output_path)
@@ -85,10 +90,26 @@ def png_to_pmp(
             raise ValueError("unknown_field must be exactly 4 bytes")
 
         encoded_runs = _encode_runs(indexed, alpha)
+        bbox = alpha.getbbox()
+
+    if bbox is None:
+        bbox_width = 0
+        bbox_height = 0
+        bbox_right_offset = 0
+        bbox_bottom_offset = 0
+    else:
+        left, top, right_exclusive, bottom_exclusive = bbox
+        bbox_width = right_exclusive - left
+        bbox_height = bottom_exclusive - top
+        bbox_right_offset = 255 - (right_exclusive - 1)
+        bbox_bottom_offset = 255 - (bottom_exclusive - 1)
 
     header = bytearray()
-    header.extend((height % 256, width % 256))
-    header.extend(int(size_field).to_bytes(2, "little", signed=False))
+    header.extend((bbox_width % 256, bbox_height % 256))
+    if int(size_field):
+        header.extend(int(size_field).to_bytes(2, "little", signed=False))
+    else:
+        header.extend((bbox_right_offset % 256, bbox_bottom_offset % 256))
     header.extend(len(encoded_runs).to_bytes(4, "little", signed=False))
     header.extend(unknown_field)
 

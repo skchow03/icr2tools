@@ -26,7 +26,7 @@ def test_png_to_pmp_writes_expected_header_and_runs(tmp_path: Path) -> None:
     png_to_pmp(src, dst, size_field=0x1234, palette_path=None)
 
     data = dst.read_bytes()
-    assert data[:2] == bytes((2, 4))
+    assert data[:2] == bytes((4, 2))
     assert data[2:4] == bytes((0x34, 0x12))
     assert int.from_bytes(data[4:8], "little") == len(data) - 12
     assert data[8:12] == bytes((0x1E, 0x00, 0x00, 0x00))
@@ -93,6 +93,24 @@ def test_png_to_pmp_skips_fully_transparent_pixels(tmp_path: Path) -> None:
     assert len(runs) == 8
     assert runs[0:3] == bytes((0, 0, 0))
     assert runs[4:7] == bytes((0, 2, 3))
+
+
+def test_png_to_pmp_writes_bbox_offsets_when_size_field_is_zero(tmp_path: Path) -> None:
+    src = tmp_path / "offsets.png"
+    dst = tmp_path / "offsets.pmp"
+    image = Image.new("RGBA", (256, 256), color=(0, 0, 0, 0))
+    pixels = image.load()
+    pixels[10, 20] = (255, 0, 0, 255)
+    pixels[12, 21] = (255, 0, 0, 255)
+    image.save(src)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=None)
+
+    data = dst.read_bytes()
+    assert data[0] == 3  # bbox width
+    assert data[1] == 2  # bbox height
+    assert data[2] == 243  # 255 - rightmost_x (12)
+    assert data[3] == 234  # 255 - bottommost_y (21)
 
 
 def test_png_to_pmp_uses_given_palette(tmp_path: Path) -> None:

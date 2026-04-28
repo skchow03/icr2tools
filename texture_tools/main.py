@@ -170,7 +170,7 @@ class PmpConversionWidget(QtWidgets.QWidget):
         self.palette_edit.setText("SUNNY.PCX")
 
         settings_row = QtWidgets.QHBoxLayout()
-        settings_row.addWidget(QtWidgets.QLabel("Header bytes 002-003 (hex):"))
+        settings_row.addWidget(QtWidgets.QLabel("Header bytes 002-003 override (hex):"))
         self.size_field = QtWidgets.QLineEdit("0000")
         self.size_field.setMaxLength(4)
         self.size_field.setFixedWidth(100)
@@ -179,8 +179,9 @@ class PmpConversionWidget(QtWidgets.QWidget):
         layout.addLayout(settings_row)
 
         note = QtWidgets.QLabel(
-            "Note: this converter writes bytes 000-001 from image height/width "
-            "and bytes 004-007 as encoded run-data length."
+            "Note: bytes 000-001 are bbox width/height. By default bytes 002-003 "
+            "are computed as right/bottom offsets on a 256x256 canvas; non-zero "
+            "override value writes raw bytes 002-003."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
