@@ -95,7 +95,7 @@ def test_png_to_pmp_skips_fully_transparent_pixels(tmp_path: Path) -> None:
     assert runs[4:7] == bytes((0, 2, 4))
 
 
-def test_png_to_pmp_writes_bbox_offsets_when_size_field_is_zero(tmp_path: Path) -> None:
+def test_png_to_pmp_writes_signed_bbox_origin_when_size_field_is_zero(tmp_path: Path) -> None:
     src = tmp_path / "offsets.png"
     dst = tmp_path / "offsets.pmp"
     image = Image.new("RGBA", (256, 256), color=(0, 0, 0, 0))
@@ -109,8 +109,8 @@ def test_png_to_pmp_writes_bbox_offsets_when_size_field_is_zero(tmp_path: Path) 
     data = dst.read_bytes()
     assert data[0] == 3  # bbox width
     assert data[1] == 2  # bbox height
-    assert data[2] == 243  # 255 - rightmost_x (12)
-    assert data[3] == 234  # 255 - bottommost_y (21)
+    assert data[2] == 246  # int8(-10): bbox left edge is x=10
+    assert data[3] == 236  # int8(-20): bbox top edge is y=20
 
 
 def test_png_to_pmp_uses_given_palette(tmp_path: Path) -> None:

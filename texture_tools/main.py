@@ -180,7 +180,7 @@ class PmpConversionWidget(QtWidgets.QWidget):
 
         note = QtWidgets.QLabel(
             "Note: bytes 000-001 are bbox width/height. By default bytes 002-003 "
-            "are computed as right/bottom offsets on a 256x256 canvas; non-zero "
+            "store signed Int8 values for -left/-top bbox origin offsets; non-zero "
             "override value writes raw bytes 002-003."
         )
         note.setWordWrap(True)
