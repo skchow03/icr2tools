@@ -30,8 +30,8 @@ def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None) -> byte
                 if int(color_pixels[x, y]) != color:
                     break
                 x += 1
-            end = x - 1
-            data.extend((y, start, end, color))
+            end_exclusive = x
+            data.extend((y, start, end_exclusive, color))
     return bytes(data)
 
 
@@ -65,7 +65,7 @@ def png_to_pmp(
       - bytes 8-11: opaque 4-byte field (defaults to ``1E 00 00 00``)
 
     Run payload layout emitted by this converter:
-      - 4 bytes per run: ``(y, x_start, x_end, palette_index)``
+      - 4 bytes per run: ``(y, x_start, x_end_exclusive, palette_index)``
 
     The PMP format here uses 8-bit indexed colors and stores image rows as
     runs of contiguous pixels of the same palette index.

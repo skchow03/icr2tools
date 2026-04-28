@@ -37,19 +37,19 @@ def test_png_to_pmp_writes_expected_header_and_runs(tmp_path: Path) -> None:
         (
             0,
             0,
-            1,
-            1,
-            0,
-            2,
-            3,
             2,
             1,
             0,
+            2,
+            4,
+            2,
+            1,
             0,
+            1,
             3,
             1,
             1,
-            3,
+            4,
             4,
         )
     )
@@ -91,8 +91,8 @@ def test_png_to_pmp_skips_fully_transparent_pixels(tmp_path: Path) -> None:
 
     runs = dst.read_bytes()[12:]
     assert len(runs) == 8
-    assert runs[0:3] == bytes((0, 0, 0))
-    assert runs[4:7] == bytes((0, 2, 3))
+    assert runs[0:3] == bytes((0, 0, 1))
+    assert runs[4:7] == bytes((0, 2, 4))
 
 
 def test_png_to_pmp_writes_bbox_offsets_when_size_field_is_zero(tmp_path: Path) -> None:
@@ -130,4 +130,4 @@ def test_png_to_pmp_uses_given_palette(tmp_path: Path) -> None:
     png_to_pmp(src, dst, size_field=0, palette_path=palette_path)
 
     runs = dst.read_bytes()[12:]
-    assert runs == bytes((0, 0, 0, 1))
+    assert runs == bytes((0, 0, 1, 1))
