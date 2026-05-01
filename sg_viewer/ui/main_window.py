@@ -406,6 +406,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_boundary_dlats_label.setWordWrap(True)
         self._query_track_info_label = QtWidgets.QLabel("")
         self._query_track_info_label.setWordWrap(True)
+        self._zoom_factor_label = QtWidgets.QLabel("Zoom Factor: –")
+        self._zoom_factor_label.setWordWrap(True)
         self._measurement_units_combo = QtWidgets.QComboBox()
         self._measurement_units_combo.addItem("Feet", "feet")
         self._measurement_units_combo.addItem("Meter", "meter")
@@ -965,7 +967,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._adjusted_section_length_label,
             self._radius_label,
             self._section_boundary_dlats_label,
-            #self._query_track_info_label,
+            self._zoom_factor_label,
         )
         self._stats_sidebar_panel = stats_panel.widget
         preview_column_layout.addWidget(stats_panel.widget)
@@ -2311,7 +2313,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_query_track_toggled(self, checked: bool) -> None:
         self._query_track_mode_active = bool(checked)
         self._query_track_info_frozen = False
-        self._query_track_info_label.setVisible(not self._query_track_mode_active)
         if not self._query_track_mode_active:
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
@@ -2548,6 +2549,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return float(lower_altitude) + (float(upper_altitude) - float(lower_altitude)) * float(dlat_ratio)
 
     def _refresh_query_track_info_label(self) -> None:
+        self._zoom_factor_label.setText(self._format_query_track_zoom_text())
         if not self._query_track_mode_active:
             self._query_track_info_label.setText("")
             self._preview.set_query_track_overlay_message("")
@@ -2601,29 +2603,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             formatted_boundary_elevations.append(f"{name}: {boundary_elevation_text}")
         boundaries_dlat_text = ", ".join(formatted_boundary_dlats) or "none"
         boundaries_elevation_text = ", ".join(formatted_boundary_elevations) or "none"
-        zoom_text = self._format_query_track_zoom_text()
         return (
             "Query Track:\n"
             f"Section #: {result.get('section_index', '–')}\n"
             f"Adjusted DLONG: {adjusted_text}\n"
             f"Elevation at DLAT=0: {elevation_text}\n"
             f"Boundary DLATs: {boundaries_dlat_text}\n"
-            f"Boundary Elevations: {boundaries_elevation_text}\n"
-            f"{zoom_text}"
+            f"Boundary Elevations: {boundaries_elevation_text}"
         )
 
     def _format_query_track_zoom_text(self) -> str:
         widget_size = self._preview.widget_size()
         transform = self._preview.current_transform(widget_size)
         if transform is None:
-            return "Zoom: –"
+            return "Zoom Factor: –"
         pixels_per_500ths = max(float(transform[0]), 0.0)
         if pixels_per_500ths <= 0.0:
-            return "Zoom: –"
+            return "Zoom Factor: –"
         units_per_pixel = units_from_500ths(1.0 / pixels_per_500ths, self._current_measurement_unit())
         unit_label = self._measurement_unit_label(self._current_measurement_unit())
         return (
-            f"Zoom: 1 px = {units_per_pixel:.4f} {unit_label} "
+            f"Zoom Factor: 1 px = {units_per_pixel:.4f} {unit_label} "
             f"({pixels_per_500ths:.4f} px/500ths)"
         )
 
