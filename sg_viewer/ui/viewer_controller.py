@@ -5210,9 +5210,13 @@ class SGViewerController:
 
     def _apply_trackside_drag_scope(self) -> None:
         if self._is_objects_tab_active():
-            self._window.preview.set_trackside_move_enabled_indices(
-                tuple(self._objects_tab_selected_trackside_object_indices)
-            )
+            selected_indices = tuple(self._objects_tab_selected_trackside_object_indices)
+            if selected_indices:
+                self._window.preview.set_trackside_move_enabled_indices(selected_indices)
+            else:
+                self._window.preview.set_trackside_move_enabled_indices(
+                    tuple(range(len(self._trackside_objects)))
+                )
             return
         self._window.preview.set_trackside_move_enabled_indices(())
 
