@@ -5429,6 +5429,7 @@ class SGViewerController:
 
     def _on_scale_changed(self, scale: float) -> None:
         _ = scale
+        self._window._refresh_query_track_info_label()
 
     def _on_preview_drag_state_changed(self, dragging: bool) -> None:
         if not dragging:
