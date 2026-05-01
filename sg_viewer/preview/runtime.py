@@ -290,8 +290,9 @@ class PreviewRuntime(PreviewRuntimeOps):
             )
             center_x = float(obj.x) - (pivot_local_x * math.cos(yaw_radians) - pivot_local_y * math.sin(yaw_radians))
             center_y = float(obj.y) - (pivot_local_x * math.sin(yaw_radians) + pivot_local_y * math.cos(yaw_radians))
+            widget_height = self._widget_height()
             sx = offsets[0] + center_x * scale
-            sy = offsets[1] - center_y * scale
+            sy = widget_height - (offsets[1] + center_y * scale)
             dx = float(screen_pos.x()) - sx
             dy = float(screen_pos.y()) - sy
             cos_yaw = math.cos(-yaw_radians)

@@ -3077,6 +3077,55 @@ def test_preview_tso_drag_updates_table_live_and_persists_on_drag_end(qapp, tmp_
         window.close()
 
 
+
+
+def test_preview_tso_drag_hit_test_uses_widget_height_for_y_transform(qapp):
+    widget = PreviewWidgetQt()
+    try:
+        widget.resize(640, 480)
+        widget.show()
+        qapp.processEvents()
+
+        widget.set_show_trackside_objects(True)
+        widget.set_trackside_objects((
+            TracksideObject(
+                filename="cone",
+                x=100,
+                y=200,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=200,
+                bbox_width=200,
+                rotation_point="center",
+            ),
+        ))
+        widget.set_trackside_move_enabled_indices((0,))
+        widget.set_selected_trackside_object_indices((0,))
+
+        widget_height = widget.height()
+
+        def screen_point_for_world(scale: float, offsets: tuple[float, float], x: float, y: float) -> QtCore.QPointF:
+            return QtCore.QPointF(
+                offsets[0] + x * scale,
+                widget_height - (offsets[1] + y * scale),
+            )
+
+        original_current_transform = widget._runtime.current_transform
+        try:
+            for scale in (0.5, 4.0):
+                offsets = (320.0, 240.0)
+                widget._runtime.current_transform = lambda _size, s=scale, o=offsets: (s, o)
+                hit = widget._runtime._trackside_drag_hit_test(
+                    screen_point_for_world(scale, offsets, 100.0, 200.0)
+                )
+                assert hit == 0
+        finally:
+            widget._runtime.current_transform = original_current_transform
+    finally:
+        widget.close()
 def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
     widget = PreviewWidgetQt()
     try:
