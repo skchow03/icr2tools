@@ -3440,3 +3440,34 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
         assert progress_messages == ["Fixing section 1/4", "See-through elevation fix complete."]
     finally:
         window.close()
+
+def test_preview_tso_hit_test_uses_pixel_scaled_bounds_at_high_zoom(qapp):
+    widget = PreviewWidgetQt()
+    try:
+        widget.resize(640, 480)
+        widget.show()
+        qapp.processEvents()
+
+        widget.set_show_trackside_objects(True)
+        widget.set_trackside_objects((
+            TracksideObject(
+                filename="cone",
+                x=500,
+                y=250,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=40,
+                bbox_width=20,
+                rotation_point="center",
+            ),
+        ))
+        widget.set_trackside_move_enabled_indices((0,))
+
+        widget._runtime.current_transform = lambda _size: (2.0, (0.0, 0.0))
+        hit = widget._runtime._trackside_drag_hit_test(QtCore.QPointF(1000.0, -500.0))
+        assert hit == 0
+    finally:
+        widget.close()
