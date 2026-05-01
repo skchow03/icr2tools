@@ -3728,6 +3728,15 @@ class SGViewerController:
                         row_index,
                         QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
                     )
+            if self._selected_trackside_object_indices:
+                first_selected_index = self._selected_trackside_object_indices[0]
+                if 0 <= first_selected_index < table.rowCount():
+                    selected_item = table.item(first_selected_index, 0)
+                    if selected_item is not None:
+                        table.scrollToItem(
+                            selected_item,
+                            QtWidgets.QAbstractItemView.PositionAtCenter,
+                        )
         self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
         selected_index = self._selected_trackside_object_indices[0] if self._selected_trackside_object_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
