@@ -281,12 +281,12 @@ class PreviewRuntime(PreviewRuntimeOps):
         for selected in candidate_indices:
             obj = self._trackside_objects[selected]
             yaw_radians = math.radians(float(obj.yaw) / 10.0)
-            half_length = max(4.0 / max(scale, 1e-9), float(obj.bbox_length) * 0.5)
-            half_width = max(4.0 / max(scale, 1e-9), float(obj.bbox_width) * 0.5)
+            half_length_world = max(4.0 / max(scale, 1e-9), float(obj.bbox_length) * 0.5)
+            half_width_world = max(4.0 / max(scale, 1e-9), float(obj.bbox_width) * 0.5)
             pivot_local_x, pivot_local_y = _rotation_pivot_local_offsets(
                 normalize_rotation_point(str(getattr(obj, "rotation_point", "center"))),
-                half_length,
-                half_width,
+                half_length_world,
+                half_width_world,
             )
             center_x = float(obj.x) - (pivot_local_x * math.cos(yaw_radians) - pivot_local_y * math.sin(yaw_radians))
             center_y = float(obj.y) - (pivot_local_x * math.sin(yaw_radians) + pivot_local_y * math.cos(yaw_radians))
@@ -298,9 +298,11 @@ class PreviewRuntime(PreviewRuntimeOps):
             sin_yaw = math.sin(-yaw_radians)
             local_x = dx * cos_yaw - dy * sin_yaw
             local_y = dx * sin_yaw + dy * cos_yaw
-            near_length = half_length + (hit_tolerance / max(scale, 1e-9))
-            near_width = half_width + (hit_tolerance / max(scale, 1e-9))
-            if abs(local_x) <= near_length and abs(local_y) <= near_width:
+            half_length_px = half_length_world * scale
+            half_width_px = half_width_world * scale
+            near_length_px = half_length_px + hit_tolerance
+            near_width_px = half_width_px + hit_tolerance
+            if abs(local_x) <= near_length_px and abs(local_y) <= near_width_px:
                 return selected
         return None
 
