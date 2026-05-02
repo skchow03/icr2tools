@@ -202,13 +202,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_colors_path_label.setWordWrap(True)
         self._three_d_file_select_colors_button = QtWidgets.QPushButton("Edit color mappings...")
         self._three_d_file_apply_colors_button = QtWidgets.QPushButton("Apply color replacements")
-        self._tso_table = QtWidgets.QTableWidget(0, 6)
+        self._tso_table = QtWidgets.QTableWidget(0, 7)
         self._tso_table.setHorizontalHeaderLabels([
             "Name",
             "Filename",
             "X (500ths)",
             "Y (500ths)",
             "Z (500ths)",
+            "Z rel. boundary (500ths)",
             "Attributes",
         ])
         self._tso_table.horizontalHeader().setStretchLastSection(True)

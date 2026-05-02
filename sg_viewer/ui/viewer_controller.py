@@ -3701,6 +3701,11 @@ class SGViewerController:
                     str(obj.x),
                     str(obj.y),
                     str(obj.z),
+                    (
+                        str(relative_z)
+                        if (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
+                        else ""
+                    ),
                 ]
                 for column, value in enumerate(values):
                     item = table.item(row, column)
@@ -3715,7 +3720,7 @@ class SGViewerController:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
                 button = QtWidgets.QPushButton("Edit…")
                 button.clicked.connect(lambda _checked=False, row_index=row: self._open_tso_attributes_dialog(row_index))
-                table.setCellWidget(row, 5, button)
+                table.setCellWidget(row, 6, button)
         finally:
             table.blockSignals(previous_state)
         selection_model = table.selectionModel()
@@ -3949,6 +3954,10 @@ class SGViewerController:
                     z_item = table.item(index, 4)
                     if z_item is not None:
                         z_item.setText(str(obj.z))
+                relative_z_item = table.item(index, 5)
+                if relative_z_item is not None:
+                    relative_z = self._tso_relative_boundary_elevation(obj)
+                    relative_z_item.setText(str(relative_z) if relative_z is not None else "")
         finally:
             table.blockSignals(previous_state)
 
@@ -4557,6 +4566,12 @@ class SGViewerController:
                 best_elevation = int(round(elevation))
         return best_elevation
 
+    def _tso_relative_boundary_elevation(self, obj: TracksideObject) -> int | None:
+        boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
+        if boundary_elevation is None:
+            return None
+        return int(obj.z) - int(boundary_elevation)
+
     def _on_tso_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         row = item.row()
         if row < 0 or row >= len(self._trackside_objects):
@@ -4580,6 +4595,12 @@ class SGViewerController:
                 bbox_width=max(0, int(existing.bbox_width)),
                 rotation_point=existing.rotation_point,
             )
+            if item.column() == 5:
+                relative_z = int((table.item(row, 5).text() if table.item(row, 5) else "0").strip())
+                boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
+                if boundary_elevation is None:
+                    raise ValueError
+                obj = replace(obj, z=int(boundary_elevation) + relative_z)
         except ValueError:
             self._refresh_tso_table()
             return
