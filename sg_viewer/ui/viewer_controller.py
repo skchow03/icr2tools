@@ -3690,6 +3690,7 @@ class SGViewerController:
 
     def _refresh_tso_table(self) -> None:
         table = self._window.tso_table
+        self._update_tso_table_headers()
         previous_state = table.blockSignals(True)
         try:
             table.setRowCount(len(self._trackside_objects))
@@ -3698,11 +3699,11 @@ class SGViewerController:
                 values = [
                     f"__TSO{row}",
                     normalize_trackside_filename(obj.filename),
-                    str(obj.x),
-                    str(obj.y),
-                    str(obj.z),
+                    self._format_tso_distance_for_display(int(obj.x)),
+                    self._format_tso_distance_for_display(int(obj.y)),
+                    self._format_tso_distance_for_display(int(obj.z)),
                     (
-                        str(relative_z)
+                        self._format_tso_distance_for_display(relative_z)
                         if (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
                         else ""
                     ),
@@ -3946,20 +3947,45 @@ class SGViewerController:
                 obj = self._trackside_objects[index]
                 x_item = table.item(index, 2)
                 if x_item is not None:
-                    x_item.setText(str(obj.x))
+                    x_item.setText(self._format_tso_distance_for_display(int(obj.x)))
                 y_item = table.item(index, 3)
                 if y_item is not None:
-                    y_item.setText(str(obj.y))
+                    y_item.setText(self._format_tso_distance_for_display(int(obj.y)))
                 if include_z:
                     z_item = table.item(index, 4)
                     if z_item is not None:
-                        z_item.setText(str(obj.z))
+                        z_item.setText(self._format_tso_distance_for_display(int(obj.z)))
                 relative_z_item = table.item(index, 5)
                 if relative_z_item is not None:
                     relative_z = self._tso_relative_boundary_elevation(obj)
-                    relative_z_item.setText(str(relative_z) if relative_z is not None else "")
+                    relative_z_item.setText(
+                        self._format_tso_distance_for_display(relative_z) if relative_z is not None else ""
+                    )
         finally:
             table.blockSignals(previous_state)
+
+    def _update_tso_table_headers(self) -> None:
+        unit_label = measurement_unit_label(self._window.current_measurement_unit())
+        self._window.tso_table.setHorizontalHeaderLabels(
+            [
+                "Name",
+                "Filename",
+                f"X ({unit_label})",
+                f"Y ({unit_label})",
+                f"Z ({unit_label})",
+                f"Z rel. boundary ({unit_label})",
+                "Attributes",
+            ]
+        )
+
+    def _format_tso_distance_for_display(self, value_500ths: int) -> str:
+        unit = self._window.current_measurement_unit()
+        decimals = measurement_unit_decimals(unit)
+        return f"{units_from_500ths(value_500ths, unit):.{decimals}f}"
+
+    def _parse_tso_distance_from_display(self, text: str) -> int:
+        unit = self._window.current_measurement_unit()
+        return int(units_to_500ths(float(text.strip()), unit))
 
     def _build_default_tso(self, *, x: int, y: int, filename: str | None = None) -> TracksideObject:
         default_filename = filename or "object"
@@ -4584,9 +4610,9 @@ class SGViewerController:
             existing = self._trackside_objects[row]
             obj = TracksideObject(
                 filename=filename,
-                x=int((table.item(row, 2).text() if table.item(row, 2) else "0").strip()),
-                y=int((table.item(row, 3).text() if table.item(row, 3) else "0").strip()),
-                z=int((table.item(row, 4).text() if table.item(row, 4) else "0").strip()),
+                x=self._parse_tso_distance_from_display(table.item(row, 2).text() if table.item(row, 2) else "0"),
+                y=self._parse_tso_distance_from_display(table.item(row, 3).text() if table.item(row, 3) else "0"),
+                z=self._parse_tso_distance_from_display(table.item(row, 4).text() if table.item(row, 4) else "0"),
                 yaw=existing.yaw,
                 pitch=existing.pitch,
                 tilt=existing.tilt,
@@ -4596,7 +4622,7 @@ class SGViewerController:
                 rotation_point=existing.rotation_point,
             )
             if item.column() == 5:
-                relative_z = int((table.item(row, 5).text() if table.item(row, 5) else "0").strip())
+                relative_z = self._parse_tso_distance_from_display(table.item(row, 5).text() if table.item(row, 5) else "0")
                 boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
                 if boundary_elevation is None:
                     raise ValueError
@@ -6076,6 +6102,7 @@ class SGViewerController:
         self._section_editing_coordinator.update_xsect_table()
         self._refresh_xsect_elevation_panel()
         self._update_track_length_display()
+        self._refresh_tso_table()
         self._window.update_selection_sidebar(self._active_selection)
         if self._tso_attributes_dialog is not None:
             self._tso_attributes_dialog.set_measurement_unit(self._window.current_measurement_unit())
