@@ -3320,6 +3320,38 @@ def test_preview_tso_drag_does_not_rebuild_table_per_move(qapp):
         window.close()
 
 
+def test_tso_z_rel_boundary_cell_click_does_not_open_attributes_dialog(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="one",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            )
+        ]
+        window.controller._refresh_tso_table()
+
+        called_rows: list[int] = []
+        window.controller._open_tso_attributes_dialog = lambda row: called_rows.append(row)
+
+        window.controller._on_tso_table_cell_clicked(0, 5)
+        assert called_rows == []
+
+        window.controller._on_tso_table_cell_clicked(0, 6)
+        assert called_rows == [0]
+    finally:
+        window.close()
+
+
 def test_preview_tso_drag_release_after_only_subunit_motion_preserves_integer_storage(qapp, tmp_path):
     window = SGViewerWindow()
     try:

@@ -3817,7 +3817,7 @@ class SGViewerController:
         self._set_tso_visibility_dirty(False)
 
     def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
-        if column == 5:
+        if column == 6:
             self._open_tso_attributes_dialog(row)
 
     def _open_tso_attributes_dialog(self, row: int) -> None:
