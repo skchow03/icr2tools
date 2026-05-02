@@ -3115,7 +3115,11 @@ class SGViewerController:
         )
         line_width_spin = QtWidgets.QSpinBox(dialog)
         line_width_spin.setRange(1, 2_000_000_000)
-        line_width_spin.setValue(existing.line_width_500ths if isinstance(existing, TsdTransverseLineObject) else 5000)
+        line_width_spin.setValue(
+            existing.line_width_500ths
+            if isinstance(existing, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
+            else 5000
+        )
         dashed_line_thickness_spin = QtWidgets.QSpinBox(dialog)
         dashed_line_thickness_spin.setRange(1, 2_000_000_000)
         dashed_line_thickness_spin.setValue(
