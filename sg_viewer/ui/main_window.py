@@ -191,6 +191,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_import_from_3d_button = QtWidgets.QPushButton("Import TSOs from .3D file")
         self._tso_delete_all_button = QtWidgets.QPushButton("Delete All TSOs")
         self._tso_modify_elevations_button = QtWidgets.QPushButton("Modify elevations...")
+        self._tso_refresh_relative_boundary_button = QtWidgets.QPushButton("Refresh Z rel. boundary")
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
         self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
         self._three_d_file_selected_path_label.setWordWrap(True)
@@ -873,6 +874,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_buttons.addWidget(self._tso_import_from_3d_button)
         tso_buttons.addWidget(self._tso_delete_all_button)
         tso_buttons.addWidget(self._tso_modify_elevations_button)
+        tso_buttons.addWidget(self._tso_refresh_relative_boundary_button)
         tso_layout.addLayout(tso_buttons)
         tso_layout.addWidget(self._tso_generate_file_button)
         tso_layout.addWidget(self._tso_table)
@@ -1334,6 +1336,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_modify_elevations_button(self) -> QtWidgets.QPushButton:
         return self._tso_modify_elevations_button
+
+    @property
+    def tso_refresh_relative_boundary_button(self) -> QtWidgets.QPushButton:
+        return self._tso_refresh_relative_boundary_button
 
     @property
     def tso_import_from_3d_button(self) -> QtWidgets.QPushButton:
