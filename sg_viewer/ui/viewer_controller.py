@@ -3924,6 +3924,9 @@ class SGViewerController:
         self._update_tso_table_position_cells(move_indices)
 
     def _on_preview_tso_drag_ended(self, _anchor_index: int | None = None) -> None:
+        if _anchor_index is not None and _anchor_index not in self._selected_trackside_object_indices:
+            if 0 <= _anchor_index < len(self._trackside_objects):
+                self._selected_trackside_object_indices = [_anchor_index]
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
