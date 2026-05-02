@@ -1321,6 +1321,9 @@ class SGViewerController:
         )
         self._window.tso_delete_all_button.clicked.connect(self._on_tso_delete_all_requested)
         self._window.tso_modify_elevations_button.clicked.connect(self._on_tso_modify_elevations_requested)
+        self._window.tso_refresh_relative_boundary_button.clicked.connect(
+            self._on_tso_refresh_relative_boundary_requested
+        )
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
         self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
@@ -4632,8 +4635,13 @@ class SGViewerController:
             return
         self._trackside_objects[row] = obj
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        self._update_tso_table_position_cells([row], include_z=True)
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _on_tso_refresh_relative_boundary_requested(self) -> None:
+        self._refresh_tso_table()
+        self._window.show_status_message("Refreshed Z rel. boundary values from current track geometry.")
 
     def _on_tso_generate_file_requested(self) -> None:
         if not self._trackside_objects:

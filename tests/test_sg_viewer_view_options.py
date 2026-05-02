@@ -2840,6 +2840,53 @@ def test_modify_tso_elevations_raise_lower_uses_current_units(qapp):
         window.close()
 
 
+def test_editing_tso_relative_boundary_updates_absolute_z_cell(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="cone",
+                x=10,
+                y=20,
+                z=100,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            )
+        ]
+        monkeypatch.setattr(window.controller, "_closest_boundary_elevation_for_tso", lambda _obj: 80)
+        window.controller._refresh_tso_table()
+
+        relative_item = window.tso_table.item(0, 5)
+        assert relative_item is not None
+        relative_item.setText("30")
+
+        assert window.controller._trackside_objects[0].z == 110
+        assert window.tso_table.item(0, 4).text() == "110"
+        assert window.tso_table.item(0, 5).text() == "30"
+    finally:
+        window.close()
+
+
+def test_refresh_relative_boundary_button_refreshes_objects_table(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        called = {"count": 0}
+
+        def _tracked_refresh() -> None:
+            called["count"] += 1
+
+        monkeypatch.setattr(window.controller, "_refresh_tso_table", _tracked_refresh)
+        window.tso_refresh_relative_boundary_button.click()
+        assert called["count"] == 1
+    finally:
+        window.close()
+
+
 def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
