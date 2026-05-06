@@ -2,8 +2,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageFile, UnidentifiedImageError
 
+
+def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:
+    """Load an image as RGBA, retrying once with Pillow's tolerant truncated-image mode."""
+    try:
+        with Image.open(src) as image:
+            image.load()
+            return image.convert("RGBA")
+    except OSError:
+        original = ImageFile.LOAD_TRUNCATED_IMAGES
+        try:
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
+            with Image.open(src) as image:
+                image.load()
+                return image.convert("RGBA")
+        finally:
+            ImageFile.LOAD_TRUNCATED_IMAGES = original
 
 DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
 
@@ -79,12 +95,10 @@ def png_to_pmp(
     dst = Path(output_path)
 
     try:
-        with Image.open(src) as image:
-            image.load()
-            rgba = image.convert("RGBA")
-            alpha = rgba.getchannel("A")
-            indexed = _quantize_with_palette(rgba.convert("RGB"), palette_path)
-            width, height = indexed.size
+        rgba = _load_rgba_image_with_tolerant_fallback(src)
+        alpha = rgba.getchannel("A")
+        indexed = _quantize_with_palette(rgba.convert("RGB"), palette_path)
+        width, height = indexed.size
 
         if width > 256 or height > 256:
             raise ValueError("PMP only supports images up to 256x256 pixels")
