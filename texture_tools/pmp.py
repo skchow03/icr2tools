@@ -6,6 +6,9 @@ from pathlib import Path
 from PIL import Image, ImageFile, UnidentifiedImageError
 
 
+DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
+
+
 def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:
     """Load an image as RGBA from disk with strict-to-tolerant decoding fallbacks."""
     data = src.read_bytes()
@@ -35,18 +38,22 @@ def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:
         parsed.load()
         return parsed.convert("RGBA").copy()
     except Exception as exc:
-        message = str(exc).lower()
-        is_png = src.suffix.lower() == ".png" or data.startswith(b"\x89PNG\r\n\x1a\n")
-        if is_png and ("truncated" in message or "chunk" in message or len(data) < 64):
-            raise ValueError(f"PNG appears truncated/corrupted: {exc}") from exc
-        raise ValueError(f"Unable to decode image bytes: {exc}") from exc
+        raise ValueError(
+            f"Unable to decode image with Pillow: {exc}. "
+            "The image may be valid but use a PNG variant, chunk layout, color profile, "
+            "or interlacing mode that this Pillow version rejects. "
+            "Try re-exporting from GIMP as a non-interlaced 8-bit RGBA PNG."
+        ) from exc
     finally:
         ImageFile.LOAD_TRUNCATED_IMAGES = original_truncated_setting
 
-DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
 
-
-def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None, *, alpha_transparent_threshold: int = 0) -> bytes:
+def _encode_runs(
+    indexed: Image.Image,
+    alpha: Image.Image | None = None,
+    *,
+    alpha_transparent_threshold: int = 0,
+) -> bytes:
     width, height = indexed.size
     color_pixels = indexed.load()
     alpha_pixels = alpha.load() if alpha is not None else None
@@ -62,14 +69,17 @@ def _encode_runs(indexed: Image.Image, alpha: Image.Image | None = None, *, alph
             color = int(color_pixels[x, y])
             start = x
             x += 1
+
             while x < width:
                 if alpha_pixels is not None and int(alpha_pixels[x, y]) <= alpha_transparent_threshold:
                     break
                 if int(color_pixels[x, y]) != color:
                     break
                 x += 1
+
             end_exclusive = x
             data.extend((y, start, end_exclusive, color))
+
     return bytes(data)
 
 
@@ -77,11 +87,16 @@ def _quantize_with_palette(image: Image.Image, palette_path: str | Path | None) 
     if palette_path is None:
         return image.convert("P")
 
-    palette_img = Image.open(palette_path)
-    try:
+    with Image.open(palette_path) as palette_img:
         return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=palette_img)
-    finally:
-        palette_img.close()
+
+
+def _rgba_to_clean_rgb(rgba: Image.Image) -> Image.Image:
+    """Flatten RGBA into a clean RGB image without carrying PNG metadata/chunks forward."""
+    rgba = rgba.convert("RGBA").copy()
+    rgb = Image.new("RGB", rgba.size, (0, 0, 0))
+    rgb.paste(rgba, mask=rgba.getchannel("A"))
+    return rgb
 
 
 def png_to_pmp(
@@ -101,17 +116,10 @@ def png_to_pmp(
       - byte 2: signed int8 ``-left`` (pixels from image left edge to bbox left)
       - byte 3: signed int8 ``-top`` (pixels from image top edge to bbox top)
       - bytes 4-7: run data byte length (little-endian)
-      - bytes 8-11: opaque 4-byte field (defaults to ``1E 00 00 00``)
+      - bytes 8-11: opaque 4-byte field
 
     Run payload layout emitted by this converter:
       - 4 bytes per run: ``(y, x_start, x_end_exclusive, palette_index)``
-
-    The PMP format here uses 8-bit indexed colors and stores image rows as
-    runs of contiguous pixels of the same palette index.
-
-    For backward compatibility, ``size_field`` can still be provided. When it
-    is non-zero, bytes 2-3 are written directly from ``size_field`` as
-    little-endian metadata instead of auto-computing signed bbox origin bytes.
     """
     src = Path(input_path)
     dst = Path(output_path)
@@ -119,7 +127,10 @@ def png_to_pmp(
     try:
         rgba = _load_rgba_image_with_tolerant_fallback(src)
         alpha = rgba.getchannel("A")
-        indexed = _quantize_with_palette(rgba.convert("RGB"), palette_path)
+
+        rgb = _rgba_to_clean_rgb(rgba)
+        indexed = _quantize_with_palette(rgb, palette_path)
+
         width, height = indexed.size
 
         if width > 256 or height > 256:
@@ -128,20 +139,22 @@ def png_to_pmp(
         if len(unknown_field) != 4:
             raise ValueError("unknown_field must be exactly 4 bytes")
 
-        if not 0 <= int(alpha_transparent_threshold) <= 255:
+        threshold = int(alpha_transparent_threshold)
+        if not 0 <= threshold <= 255:
             raise ValueError("alpha_transparent_threshold must be in range 0..255")
 
-        alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= int(alpha_transparent_threshold) else 255)
-        encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=int(alpha_transparent_threshold))
+        alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= threshold else 255)
+        encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=threshold)
         bbox = alpha_thresholded.getbbox()
-    except (OSError, UnidentifiedImageError) as exc:
+
+    except (OSError, UnidentifiedImageError, ValueError) as exc:
         suffix = src.suffix.lower()
         file_size = src.stat().st_size if src.exists() else 0
         raise ValueError(
             f"Unable to read input image '{src}'. {exc}. "
             f"File details: extension={suffix or '<none>'}, size={file_size} bytes. "
-            "This usually means Pillow could not decode the PNG format variant. "
-            "re-save it as a standard non-interlaced PNG and try again."
+            "This usually means Pillow could not decode this image variant, "
+            "not necessarily that the PNG is bad."
         ) from exc
 
     if bbox is None:
@@ -158,13 +171,16 @@ def png_to_pmp(
 
     header = bytearray()
     header.extend((bbox_width % 256, bbox_height % 256))
+
     if int(size_field):
         header.extend(int(size_field).to_bytes(2, "little", signed=False))
     else:
         header.extend((bbox_left_margin_signed, bbox_top_margin_signed))
+
     header.extend(len(encoded_runs).to_bytes(4, "little", signed=False))
     header.extend(unknown_field)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(bytes(header) + encoded_runs)
+
     return dst
