@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 
 DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
@@ -78,11 +78,13 @@ def png_to_pmp(
     src = Path(input_path)
     dst = Path(output_path)
 
-    with Image.open(src) as image:
-        rgba = image.convert("RGBA")
-        alpha = rgba.getchannel("A")
-        indexed = _quantize_with_palette(rgba.convert("RGB"), palette_path)
-        width, height = indexed.size
+    try:
+        with Image.open(src) as image:
+            image.load()
+            rgba = image.convert("RGBA")
+            alpha = rgba.getchannel("A")
+            indexed = _quantize_with_palette(rgba.convert("RGB"), palette_path)
+            width, height = indexed.size
 
         if width > 256 or height > 256:
             raise ValueError("PMP only supports images up to 256x256 pixels")
@@ -96,6 +98,15 @@ def png_to_pmp(
         alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= int(alpha_transparent_threshold) else 255)
         encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=int(alpha_transparent_threshold))
         bbox = alpha_thresholded.getbbox()
+    except (OSError, UnidentifiedImageError) as exc:
+        suffix = src.suffix.lower()
+        file_size = src.stat().st_size if src.exists() else 0
+        raise ValueError(
+            f"Unable to read input image '{src}'. {exc}. "
+            f"File details: extension={suffix or '<none>'}, size={file_size} bytes. "
+            "This usually means the PNG is truncated/corrupted or not a real PNG export; "
+            "re-save it as a standard non-interlaced PNG and try again."
+        ) from exc
 
     if bbox is None:
         bbox_width = 0

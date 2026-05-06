@@ -159,3 +159,18 @@ def test_png_to_pmp_uses_given_palette(tmp_path: Path) -> None:
 
     runs = dst.read_bytes()[12:]
     assert runs == bytes((0, 0, 1, 1))
+
+def test_png_to_pmp_reports_useful_details_for_truncated_png(tmp_path: Path) -> None:
+    src = tmp_path / "broken.png"
+    src.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        png_to_pmp(src, tmp_path / "out.pmp", size_field=0, palette_path=None)
+    except ValueError as exc:
+        message = str(exc)
+        assert "Unable to read input image" in message
+        assert "extension=.png" in message
+        assert "size=8 bytes" in message
+        assert "truncated/corrupted" in message
+    else:
+        raise AssertionError("expected ValueError for truncated PNG")
