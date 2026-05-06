@@ -87,9 +87,44 @@ def _quantize_with_palette(image: Image.Image, palette_path: str | Path | None) 
     if palette_path is None:
         return image.convert("P")
 
-    with Image.open(palette_path) as palette_img:
-        return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=palette_img)
+    palette_file = Path(palette_path)
+    decode_error: Exception | None = None
 
+    try:
+        with Image.open(palette_file) as palette_img:
+            return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=palette_img)
+    except (OSError, UnidentifiedImageError, ValueError) as exc:
+        decode_error = exc
+
+    if palette_file.suffix.lower() != ".pcx":
+        raise ValueError(f"Pillow failed to decode palette image: {decode_error}") from decode_error
+
+    try:
+        fallback_palette = _load_palette_from_pcx_trailer(palette_file)
+        return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=fallback_palette)
+    except Exception as fallback_exc:
+        raise ValueError(
+            "Pillow failed to decode PCX palette and trailer extraction also failed: "
+            f"{fallback_exc}"
+        ) from decode_error
+
+
+
+def _load_palette_from_pcx_trailer(path: Path) -> Image.Image:
+    data = path.read_bytes()
+    if len(data) < 769:
+        raise ValueError(f"invalid palette trailer: file too short ({len(data)} bytes)")
+
+    trailer = data[-769:]
+    if trailer[0] != 0x0C:
+        raise ValueError(
+            f"invalid palette trailer: expected marker 0x0C, found 0x{trailer[0]:02X}"
+        )
+
+    palette_values = list(trailer[1:])
+    pal_img = Image.new("P", (1, 1))
+    pal_img.putpalette(palette_values)
+    return pal_img
 
 def _rgba_to_clean_rgb(rgba: Image.Image) -> Image.Image:
     """Flatten RGBA into a clean RGB image without carrying PNG metadata/chunks forward."""
