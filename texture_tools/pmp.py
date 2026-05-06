@@ -126,27 +126,6 @@ def png_to_pmp(
 
     try:
         rgba = _load_rgba_image_with_tolerant_fallback(src)
-        alpha = rgba.getchannel("A")
-
-        rgb = _rgba_to_clean_rgb(rgba)
-        indexed = _quantize_with_palette(rgb, palette_path)
-
-        width, height = indexed.size
-
-        if width > 256 or height > 256:
-            raise ValueError("PMP only supports images up to 256x256 pixels")
-
-        if len(unknown_field) != 4:
-            raise ValueError("unknown_field must be exactly 4 bytes")
-
-        threshold = int(alpha_transparent_threshold)
-        if not 0 <= threshold <= 255:
-            raise ValueError("alpha_transparent_threshold must be in range 0..255")
-
-        alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= threshold else 255)
-        encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=threshold)
-        bbox = alpha_thresholded.getbbox()
-
     except (OSError, UnidentifiedImageError, ValueError) as exc:
         suffix = src.suffix.lower()
         file_size = src.stat().st_size if src.exists() else 0
@@ -156,6 +135,33 @@ def png_to_pmp(
             "This usually means Pillow could not decode this image variant, "
             "not necessarily that the PNG is bad."
         ) from exc
+
+    alpha = rgba.getchannel("A")
+    rgb = _rgba_to_clean_rgb(rgba)
+
+    try:
+        indexed = _quantize_with_palette(rgb, palette_path)
+    except (OSError, UnidentifiedImageError, ValueError) as exc:
+        raise ValueError(
+            f"Unable to quantize image with palette '{palette_path}'. {exc}. "
+            "Check that the palette file exists and is a valid PCX or another palette source supported by Pillow."
+        ) from exc
+
+    width, height = indexed.size
+
+    if width > 256 or height > 256:
+        raise ValueError("PMP only supports images up to 256x256 pixels")
+
+    if len(unknown_field) != 4:
+        raise ValueError("unknown_field must be exactly 4 bytes")
+
+    threshold = int(alpha_transparent_threshold)
+    if not 0 <= threshold <= 255:
+        raise ValueError("alpha_transparent_threshold must be in range 0..255")
+
+    alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= threshold else 255)
+    encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=threshold)
+    bbox = alpha_thresholded.getbbox()
 
     if bbox is None:
         bbox_width = 0
