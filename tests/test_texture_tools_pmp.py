@@ -194,3 +194,63 @@ def test_png_to_pmp_retries_with_tolerant_loader_for_truncated_error(tmp_path: P
 
     png_to_pmp(src, dst, size_field=0, palette_path=None)
     assert dst.exists()
+
+
+def test_png_to_pmp_falls_back_to_pcx_trailer_palette_when_pillow_decode_fails(tmp_path: Path, monkeypatch) -> None:
+    src = tmp_path / "source.png"
+    dst = tmp_path / "out.pmp"
+    palette_path = tmp_path / "SUNNY.PCX"
+
+    Image.new("RGBA", (1, 1), color=(255, 0, 0, 255)).save(src)
+
+    palette_bytes = bytearray(b"PCXHDR")
+    palette_bytes.extend(b"\x00" * 100)
+    palette_bytes.append(0x0C)
+    trailer_pal = [0] * (256 * 3)
+    trailer_pal[3:6] = [255, 0, 0]
+    palette_bytes.extend(trailer_pal)
+    palette_path.write_bytes(bytes(palette_bytes))
+
+    original_open = Image.open
+
+    def flaky_open(fp, *args, **kwargs):
+        if Path(fp) == palette_path:
+            raise OSError("image file is truncated")
+        return original_open(fp, *args, **kwargs)
+
+    monkeypatch.setattr(Image, "open", flaky_open)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=palette_path)
+
+    runs = dst.read_bytes()[12:]
+    assert runs == bytes((0, 0, 1, 1))
+
+
+def test_png_to_pmp_reports_invalid_pcx_trailer_when_marker_missing(tmp_path: Path, monkeypatch) -> None:
+    src = tmp_path / "source.png"
+    palette_path = tmp_path / "broken.PCX"
+    Image.new("RGBA", (1, 1), color=(255, 0, 0, 255)).save(src)
+
+    bad = bytearray(b"PCXDATA" + (b"\x00" * 100))
+    bad.extend(b"\x00")
+    bad.extend(b"\x00" * 768)
+    palette_path.write_bytes(bytes(bad))
+
+    original_open = Image.open
+
+    def flaky_open(fp, *args, **kwargs):
+        if Path(fp) == palette_path:
+            raise OSError("image file is truncated")
+        return original_open(fp, *args, **kwargs)
+
+    monkeypatch.setattr(Image, "open", flaky_open)
+
+    try:
+        png_to_pmp(src, tmp_path / "out.pmp", size_field=0, palette_path=palette_path)
+    except ValueError as exc:
+        message = str(exc)
+        assert "Unable to quantize image with palette" in message
+        assert "invalid palette trailer" in message
+        assert "expected marker 0x0C" in message
+    else:
+        raise AssertionError("expected ValueError for invalid PCX palette trailer")
