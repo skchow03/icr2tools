@@ -452,7 +452,12 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:  # prototype surface
             self.compute_progress.setValue(0)
             self.compute_progress.setFormat("Failed")
-            QtWidgets.QMessageBox.critical(self, "Optimization failed", str(exc))
+            palette_filename = Path(palette_path).name if palette_path else "<unknown>"
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Optimization failed",
+                f"Failed to load palette from {palette_filename}: {exc}",
+            )
             return
         finally:
             self.compute_btn.setEnabled(True)
