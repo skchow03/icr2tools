@@ -174,3 +174,23 @@ def test_png_to_pmp_reports_useful_details_for_truncated_png(tmp_path: Path) -> 
         assert "truncated/corrupted" in message
     else:
         raise AssertionError("expected ValueError for truncated PNG")
+
+
+def test_png_to_pmp_retries_with_tolerant_loader_for_truncated_error(tmp_path: Path, monkeypatch) -> None:
+    src = tmp_path / "source.png"
+    dst = tmp_path / "out.pmp"
+    Image.new("RGBA", (1, 1), color=(255, 0, 0, 255)).save(src)
+
+    original_load = Image.Image.load
+
+    def flaky_load(self, *args, **kwargs):
+        from PIL import ImageFile
+
+        if not ImageFile.LOAD_TRUNCATED_IMAGES:
+            raise OSError("image file is truncated (0 bytes not processed)")
+        return original_load(self, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "load", flaky_load)
+
+    png_to_pmp(src, dst, size_field=0, palette_path=None)
+    assert dst.exists()
