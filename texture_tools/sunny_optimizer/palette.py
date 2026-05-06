@@ -11,9 +11,49 @@ except ImportError:  # pragma: no cover
 
 
 def load_sunny_palette(path: str | Path) -> np.ndarray:
-    data = Path(path).read_bytes()
-    if len(data) < 769 or data[-769] != 0x0C:
-        raise ValueError("Invalid or missing 256-color PCX palette marker")
+    resolved_path = Path(path)
+    data = resolved_path.read_bytes()
+    file_size = len(data)
+    if file_size < 128:
+        raise ValueError(
+            f"Invalid PCX palette file (file too small): path={resolved_path}, file_size={file_size}, "
+            "required_min_size=128"
+        )
+
+    manufacturer = data[0]
+    version = data[1]
+    encoding = data[2]
+    bits_per_pixel = data[3]
+    planes = data[65]
+    bytes_per_line = int.from_bytes(data[66:68], byteorder="little")
+    parsed_values = (
+        f"path={resolved_path}, file_size={file_size}, manufacturer={manufacturer}, version={version}, "
+        f"encoding={encoding}, bits_per_pixel={bits_per_pixel}, planes={planes}, bytes_per_line={bytes_per_line}"
+    )
+
+    if manufacturer != 0x0A:
+        raise ValueError(f"Invalid PCX palette file (unsupported manufacturer): expected=10, {parsed_values}")
+    if encoding != 1:
+        raise ValueError(f"Invalid PCX palette file (unsupported encoding): expected=1, {parsed_values}")
+    if version not in (0, 2, 3, 4, 5):
+        raise ValueError(f"Invalid PCX palette file (unsupported version): {parsed_values}")
+    if bits_per_pixel <= 0 or bytes_per_line <= 0:
+        raise ValueError(f"Invalid PCX palette file (invalid header dimensions): {parsed_values}")
+    if bits_per_pixel * planes != 8:
+        raise ValueError(
+            "Invalid PCX palette file (unsupported plane/bpp combination): "
+            f"expected_bits_total=8, {parsed_values}"
+        )
+
+    if file_size < 769:
+        raise ValueError(
+            f"Invalid PCX palette file (file too small for VGA palette tail): {parsed_values}, required_min_size=769"
+        )
+    if data[-769] != 0x0C:
+        raise ValueError(
+            "Invalid PCX palette file (missing VGA palette marker at expected tail location): "
+            f"expected_marker=12, found={data[-769]}, {parsed_values}"
+        )
     raw = np.frombuffer(data[-768:], dtype=np.uint8).reshape(256, 3)
     return raw.copy()
 
