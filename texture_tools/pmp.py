@@ -6,20 +6,55 @@ from PIL import Image, ImageFile, UnidentifiedImageError
 
 
 def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:
-    """Load an image as RGBA, retrying once with Pillow's tolerant truncated-image mode."""
+    """
+    Load an image as RGBA with multiple recovery strategies.
+
+    Handles:
+    - mildly malformed PNGs
+    - GIMP-exported PNG edge cases
+    - Pillow truncated-image false positives
+    """
+
+    original_truncated_setting = ImageFile.LOAD_TRUNCATED_IMAGES
+
     try:
+        # Normal path
         with Image.open(src) as image:
             image.load()
             return image.convert("RGBA")
-    except OSError:
-        original = ImageFile.LOAD_TRUNCATED_IMAGES
-        try:
-            ImageFile.LOAD_TRUNCATED_IMAGES = True
-            with Image.open(src) as image:
-                image.load()
-                return image.convert("RGBA")
-        finally:
-            ImageFile.LOAD_TRUNCATED_IMAGES = original
+
+    except Exception:
+        pass
+
+    try:
+        # Tolerant Pillow path
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+        with Image.open(src) as image:
+            image.load()
+            rgba = image.convert("RGBA")
+
+            # Force a fully detached in-memory copy
+            clean = Image.new("RGBA", rgba.size)
+            clean.paste(rgba)
+
+            return clean
+
+    except Exception as exc:
+        raise ValueError(
+            f"Unable to load image '{src}'. "
+            f"Pillow failed to decode the PNG.\n\n"
+            f"Original error:\n{exc}\n\n"
+            f"The PNG may use features unsupported by this Pillow version. "
+            f"Try exporting from GIMP as:\n"
+            f"- non-interlaced PNG\n"
+            f"- 8-bit RGBA\n"
+            f"- no color profile\n"
+            f"- no compression optimizations"
+        ) from exc
+
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = original_truncated_setting
 
 DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
 
@@ -118,7 +153,7 @@ def png_to_pmp(
         raise ValueError(
             f"Unable to read input image '{src}'. {exc}. "
             f"File details: extension={suffix or '<none>'}, size={file_size} bytes. "
-            "This usually means the PNG is truncated/corrupted or not a real PNG export; "
+            "This usually means Pillow could not decode the PNG format variant. "
             "re-save it as a standard non-interlaced PNG and try again."
         ) from exc
 
