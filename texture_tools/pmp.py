@@ -1,58 +1,45 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageFile, UnidentifiedImageError
 
 
 def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:
-    """
-    Load an image as RGBA with multiple recovery strategies.
-
-    Handles:
-    - mildly malformed PNGs
-    - GIMP-exported PNG edge cases
-    - Pillow truncated-image false positives
-    """
-
+    """Load an image as RGBA from disk with strict-to-tolerant decoding fallbacks."""
+    data = src.read_bytes()
     original_truncated_setting = ImageFile.LOAD_TRUNCATED_IMAGES
 
-    try:
-        # Normal path
-        with Image.open(src) as image:
+    def _decode_bytes(*, allow_truncated: bool) -> Image.Image:
+        ImageFile.LOAD_TRUNCATED_IMAGES = allow_truncated
+        with Image.open(BytesIO(data)) as image:
             image.load()
-            return image.convert("RGBA")
+            return image.convert("RGBA").copy()
 
+    try:
+        return _decode_bytes(allow_truncated=False)
     except Exception:
         pass
 
     try:
-        # Tolerant Pillow path
+        return _decode_bytes(allow_truncated=True)
+    except Exception:
+        pass
+
+    try:
         ImageFile.LOAD_TRUNCATED_IMAGES = True
-
-        with Image.open(src) as image:
-            image.load()
-            rgba = image.convert("RGBA")
-
-            # Force a fully detached in-memory copy
-            clean = Image.new("RGBA", rgba.size)
-            clean.paste(rgba)
-
-            return clean
-
+        parser = ImageFile.Parser()
+        parser.feed(data)
+        parsed = parser.close()
+        parsed.load()
+        return parsed.convert("RGBA").copy()
     except Exception as exc:
-        raise ValueError(
-            f"Unable to load image '{src}'. "
-            f"Pillow failed to decode the PNG.\n\n"
-            f"Original error:\n{exc}\n\n"
-            f"The PNG may use features unsupported by this Pillow version. "
-            f"Try exporting from GIMP as:\n"
-            f"- non-interlaced PNG\n"
-            f"- 8-bit RGBA\n"
-            f"- no color profile\n"
-            f"- no compression optimizations"
-        ) from exc
-
+        message = str(exc).lower()
+        is_png = src.suffix.lower() == ".png" or data.startswith(b"\x89PNG\r\n\x1a\n")
+        if is_png and ("truncated" in message or "chunk" in message or len(data) < 64):
+            raise ValueError(f"PNG appears truncated/corrupted: {exc}") from exc
+        raise ValueError(f"Unable to decode image bytes: {exc}") from exc
     finally:
         ImageFile.LOAD_TRUNCATED_IMAGES = original_truncated_setting
 
