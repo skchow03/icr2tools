@@ -34,6 +34,7 @@ class MipConversionWidget(QtWidgets.QWidget):
         mode_row.addWidget(QtWidgets.QLabel("Mode:"))
         self.mode_combo = QtWidgets.QComboBox()
         self.mode_combo.addItems(["track", "carset"])
+        self.mode_combo.setToolTip("Choose target format rules: 'track' for world textures, 'carset' for vehicle textures.")
         mode_row.addWidget(self.mode_combo)
         mode_row.addStretch(1)
         layout.addLayout(mode_row)
@@ -197,6 +198,9 @@ class PmpConversionWidget(QtWidgets.QWidget):
         self.size_field = QtWidgets.QLineEdit("0000")
         self.size_field.setMaxLength(4)
         self.size_field.setFixedWidth(100)
+        self.size_field.setToolTip(
+            "Optional hex override for PMP header bytes 002-003. Leave 0000 to use auto-generated origin offsets."
+        )
         settings_row.addWidget(self.size_field)
         settings_row.addSpacing(16)
         settings_row.addWidget(QtWidgets.QLabel("Treat alpha ≤ as transparent:"))
