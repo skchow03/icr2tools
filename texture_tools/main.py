@@ -20,6 +20,37 @@ from texture_tools.pmp_to_png import convert_pmp_to_png
 from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
 from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
+ERROR_STYLE = "QLineEdit { border: 1px solid #d93025; border-radius: 3px; }"
+
+
+def _set_field_error(field: QtWidgets.QLineEdit, error_label: QtWidgets.QLabel, message: str | None) -> None:
+    has_error = bool(message)
+    field.setStyleSheet(ERROR_STYLE if has_error else "")
+    error_label.setText(message or "")
+    error_label.setVisible(has_error)
+
+
+def _validate_path(
+    raw_path: str,
+    *,
+    label: str,
+    expected_suffixes: tuple[str, ...],
+    must_exist: bool = True,
+    folder_only: bool = False,
+) -> str | None:
+    if not raw_path:
+        return f"{label} is required."
+    path = Path(raw_path)
+    if must_exist and not path.exists():
+        return f"{label} does not exist."
+    if folder_only:
+        if path.exists() and not path.is_dir():
+            return f"{label} must be a folder."
+        return None
+    if expected_suffixes and path.suffix.lower() not in expected_suffixes:
+        return f"{label} must end with {', '.join(expected_suffixes)}."
+    return None
+
 
 class MipConversionWidget(QtWidgets.QWidget):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
@@ -39,13 +70,13 @@ class MipConversionWidget(QtWidgets.QWidget):
         mode_row.addStretch(1)
         layout.addLayout(mode_row)
 
-        self.input_edit = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input)
+        self.input_edit, self.input_error = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input)
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
-        self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
-        self.output_edit = self._make_browse_row(layout, "Output file:", self._browse_output)
+        self.output_edit, self.output_error = self._make_browse_row(layout, "Output file:", self._browse_output)
 
         layout.addStretch(1)
         convert_row = QtWidgets.QHBoxLayout()
@@ -60,8 +91,12 @@ class MipConversionWidget(QtWidgets.QWidget):
         self.status_label = QtWidgets.QLabel("Ready")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
+        for edit in (self.input_edit, self.palette_edit, self.output_edit):
+            edit.textChanged.connect(self._update_validation_state)
+        self._update_validation_state()
 
-    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
+    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
+        wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(label))
         edit = QtWidgets.QLineEdit()
@@ -69,8 +104,29 @@ class MipConversionWidget(QtWidgets.QWidget):
         browse.clicked.connect(callback)
         row.addWidget(edit, 1)
         row.addWidget(browse)
-        parent.addLayout(row)
-        return edit
+        error = QtWidgets.QLabel()
+        error.setStyleSheet("color: #d93025; font-size: 11px;")
+        error.setVisible(False)
+        wrap.addLayout(row)
+        wrap.addWidget(error)
+        parent.addLayout(wrap)
+        return edit, error
+
+    def _update_validation_state(self) -> bool:
+        errors = {
+            "input": _validate_path(self.input_edit.text().strip(), label="Input", expected_suffixes=(".bmp", ".png", ".mip")),
+            "palette": _validate_path(self.palette_edit.text().strip(), label="Palette", expected_suffixes=(".pcx",)),
+            "output": _validate_path(self.output_edit.text().strip(), label="Output", expected_suffixes=(".bmp", ".png", ".mip"), must_exist=False),
+        }
+        _set_field_error(self.input_edit, self.input_error, errors["input"])
+        _set_field_error(self.palette_edit, self.palette_error, errors["palette"])
+        _set_field_error(self.output_edit, self.output_error, errors["output"])
+        problems = [name for name, err in errors.items() if err]
+        valid = not problems
+        self.to_mip_btn.setEnabled(valid)
+        self.from_mip_btn.setEnabled(valid)
+        self.status_label.setText("Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
+        return valid
 
     def _browse_input(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -93,6 +149,8 @@ class MipConversionWidget(QtWidgets.QWidget):
             self.output_edit.setText(path)
 
     def _convert_to_mip(self) -> None:
+        if not self._update_validation_state():
+            return
         try:
             input_path = Path(self.input_edit.text().strip())
             palette_path = Path(self.palette_edit.text().strip())
@@ -106,6 +164,8 @@ class MipConversionWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "MIP conversion failed", str(exc))
 
     def _convert_from_mip(self) -> None:
+        if not self._update_validation_state():
+            return
         try:
             input_path = Path(self.input_edit.text().strip())
             palette_path = Path(self.palette_edit.text().strip())
@@ -126,24 +186,28 @@ class ChopHorizonWidget(QtWidgets.QWidget):
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("1. Choose input"))
-        self.input_edit = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
+        self.input_edit, self.input_error = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
-        self.output_edit = self._make_browse_row(layout, "Output folder:", self._browse_output)
+        self.output_edit, self.output_error = self._make_browse_row(layout, "Output folder:", self._browse_output)
 
         layout.addStretch(1)
-        run_btn = QtWidgets.QPushButton("Run")
-        run_btn.clicked.connect(self._run)
+        self.run_btn = QtWidgets.QPushButton("Run")
+        self.run_btn.clicked.connect(self._run)
         self.status_label = QtWidgets.QLabel("Ready")
         action_row = QtWidgets.QHBoxLayout()
         action_row.addStretch(1)
-        action_row.addWidget(run_btn)
+        action_row.addWidget(self.run_btn)
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
+        self.input_edit.textChanged.connect(self._update_validation_state)
+        self.output_edit.textChanged.connect(self._update_validation_state)
+        self._update_validation_state()
 
-    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
+    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
+        wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(label))
         edit = QtWidgets.QLineEdit()
@@ -151,8 +215,29 @@ class ChopHorizonWidget(QtWidgets.QWidget):
         browse.clicked.connect(callback)
         row.addWidget(edit, 1)
         row.addWidget(browse)
-        parent.addLayout(row)
-        return edit
+        error = QtWidgets.QLabel()
+        error.setStyleSheet("color: #d93025; font-size: 11px;")
+        error.setVisible(False)
+        wrap.addLayout(row)
+        wrap.addWidget(error)
+        parent.addLayout(wrap)
+        return edit, error
+
+    def _update_validation_state(self) -> bool:
+        input_error = _validate_path(self.input_edit.text().strip(), label="Input", expected_suffixes=(".png", ".bmp"))
+        output_error = _validate_path(
+            self.output_edit.text().strip(),
+            label="Output folder",
+            expected_suffixes=(),
+            folder_only=True,
+        )
+        _set_field_error(self.input_edit, self.input_error, input_error)
+        _set_field_error(self.output_edit, self.output_error, output_error)
+        problems = [name for name, err in (("input", input_error), ("output", output_error)) if err]
+        valid = not problems
+        self.run_btn.setEnabled(valid)
+        self.status_label.setText("Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
+        return valid
 
     def _browse_input(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select source image", "", "Images (*.png *.bmp)")
@@ -167,6 +252,8 @@ class ChopHorizonWidget(QtWidgets.QWidget):
             self.output_edit.setText(folder)
 
     def _run(self) -> None:
+        if not self._update_validation_state():
+            return
         try:
             out1, out2 = chop_horizon(self.input_edit.text().strip(), self.output_edit.text().strip())
             self.status_label.setText(f"Created: {out1.name}, {out2.name}")
