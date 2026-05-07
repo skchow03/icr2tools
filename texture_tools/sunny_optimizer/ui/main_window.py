@@ -207,8 +207,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.palette_details_label.setWordWrap(True)
         self.compute_btn = QtWidgets.QPushButton("Compute Palette")
         self.compute_btn.clicked.connect(self.compute_palette)
+        self.compute_hint_label = QtWidgets.QLabel()
+        self.compute_hint_label.setWordWrap(True)
         self.save_btn = QtWidgets.QPushButton("Save Palette")
         self.save_btn.clicked.connect(self.save_palette_dialog)
+        self.save_hint_label = QtWidgets.QLabel()
+        self.save_hint_label.setWordWrap(True)
         self.compute_progress = QtWidgets.QProgressBar()
         self.compute_progress.setRange(0, 100)
         self.compute_progress.setValue(0)
@@ -218,8 +222,10 @@ class MainWindow(QtWidgets.QMainWindow):
         right_panel.addWidget(self.palette_label)
         right_panel.addWidget(self.palette_details_label)
         right_panel.addWidget(self.compute_btn)
+        right_panel.addWidget(self.compute_hint_label)
         right_panel.addWidget(self.compute_progress)
         right_panel.addWidget(self.save_btn)
+        right_panel.addWidget(self.save_hint_label)
         right_panel.addStretch(1)
 
         root.addLayout(left_panel, 3)
@@ -227,6 +233,7 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addLayout(right_panel, 2)
         self.setCentralWidget(central)
         self._refresh_palette_view()
+        self._update_action_states()
         self._restore_last_texture_folder()
 
     def select_folder(self) -> None:
@@ -291,6 +298,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.loaded_texture_folder = resolved_folder
         self.settings.last_texture_folder = str(resolved_folder)
         self._save_settings()
+        self._update_action_states()
 
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
@@ -313,6 +321,23 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.settings.set_budgets_for_folder(self.loaded_texture_folder, self.per_texture_budget)
         self._save_settings()
+
+    def _update_action_states(self) -> None:
+        has_textures = bool(self.texture_images)
+        has_quantized_results = bool(self.quantized_images)
+
+        self.compute_btn.setEnabled(has_textures)
+        self.save_btn.setEnabled(has_quantized_results)
+
+        if has_textures:
+            self.compute_hint_label.setText("Step 2: Click Compute Palette when you are ready.")
+        else:
+            self.compute_hint_label.setText("Step 1: Select texture folder to enable palette computation.")
+
+        if has_quantized_results:
+            self.save_hint_label.setText("Step 3: Save palette to write your optimized .pcx file.")
+        else:
+            self.save_hint_label.setText("Step 3: Save is enabled after a palette has been computed.")
 
     def _on_current_item_changed(
         self,
@@ -460,7 +485,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return
         finally:
-            self.compute_btn.setEnabled(True)
+            self._update_action_states()
 
         self.compute_progress.setValue(100)
         self.compute_progress.setFormat("Done")
@@ -472,6 +497,7 @@ class MainWindow(QtWidgets.QMainWindow):
         widget = self.texture_list.itemWidget(current)
         if widget is not None:
             self._update_preview(widget.texture_name)
+        self._update_action_states()
 
 
     def _on_quantized_preview_clicked(self, point: QtCore.QPoint) -> None:
@@ -527,6 +553,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_palette_details(index)
 
     def save_palette_dialog(self) -> None:
+        if not self.quantized_images:
+            self._update_action_states()
+            return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Save optimized palette",

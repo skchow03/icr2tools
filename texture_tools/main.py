@@ -28,6 +28,13 @@ class MipConversionWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
+        self.empty_state_label = QtWidgets.QLabel(
+            "Step 1: Select an input image or MIP.\n"
+            "Step 2: Select palette and output path.\n"
+            "Step 3: Run the conversion button you need."
+        )
+        self.empty_state_label.setWordWrap(True)
+        layout.addWidget(self.empty_state_label)
 
         mode_row = QtWidgets.QHBoxLayout()
         mode_row.addWidget(QtWidgets.QLabel("Mode:"))
@@ -118,6 +125,13 @@ class ChopHorizonWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
+        self.empty_state_label = QtWidgets.QLabel(
+            "Step 1: Select a 2048x64 source horizon image.\n"
+            "Step 2: Select an output folder.\n"
+            "Step 3: Create 256x256 sheets."
+        )
+        self.empty_state_label.setWordWrap(True)
+        layout.addWidget(self.empty_state_label)
         self.input_edit = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
         self.output_edit = self._make_browse_row(layout, "Output folder:", self._browse_output)
         run_btn = QtWidgets.QPushButton("Create 256x256 Sheets")
@@ -164,6 +178,13 @@ class PmpConversionWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
+        self.empty_state_label = QtWidgets.QLabel(
+            "Step 1: Select PNG input.\n"
+            "Step 2: Confirm output PMP + palette.\n"
+            "Step 3: Convert PNG to PMP."
+        )
+        self.empty_state_label.setWordWrap(True)
+        layout.addWidget(self.empty_state_label)
         self.input_edit = self._make_browse_row(layout, "Input image (.png):", self._browse_input)
         self.output_edit = self._make_browse_row(layout, "Output file (.pmp):", self._browse_output)
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
@@ -257,6 +278,13 @@ class PmpToPngWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
+        self.empty_state_label = QtWidgets.QLabel(
+            "Step 1: Select PMP input.\n"
+            "Step 2: Set output PNG + palette.\n"
+            "Step 3: Convert PMP to PNG."
+        )
+        self.empty_state_label.setWordWrap(True)
+        layout.addWidget(self.empty_state_label)
         self.input_edit = self._make_browse_row(layout, "Input file (.pmp):", self._browse_input)
         self.output_edit = self._make_browse_row(layout, "Output image (.png):", self._browse_output)
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
@@ -320,6 +348,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.resize(960, 700)
 
         tabs = QtWidgets.QTabWidget()
+        tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
         tabs.addTab(self._build_sunny_tab(), "Palette Optimizer")
         tabs.addTab(ChopHorizonWidget(), "Chop Horizon")
         tabs.addTab(MipConversionWidget(), "MIP Conversion")
@@ -328,6 +357,28 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(tabs)
 
         self._sunny_windows: list[SunnyOptimizerWindow] = []
+        QtCore.QTimer.singleShot(0, self._show_overview_dialog)
+
+    def _build_overview_button(self) -> QtWidgets.QPushButton:
+        button = QtWidgets.QPushButton("Welcome / Overview")
+        button.clicked.connect(self._show_overview_dialog)
+        return button
+
+    def _show_overview_dialog(self) -> None:
+        message = (
+            "Welcome to Texture Tools.\n\n"
+            "Tabs:\n"
+            "• Palette Optimizer: launch Sunny Optimizer for multi-texture palette balancing.\n"
+            "• Chop Horizon: split a 2048x64 horizon strip into game-ready sheets.\n"
+            "• MIP Conversion: convert image ↔ MIP using a palette.\n"
+            "• PNG → PMP: encode indexed PMP sprites.\n"
+            "• PMP → PNG: decode PMP back to PNG for editing.\n\n"
+            "Recommended start:\n"
+            "1) Build or tune palette in Palette Optimizer.\n"
+            "2) Convert assets with PNG ↔ PMP or MIP tools.\n"
+            "3) Use Chop Horizon for sky/horizon sheets when needed."
+        )
+        QtWidgets.QMessageBox.information(self, "Texture Tools Overview", message)
 
     def _build_sunny_tab(self) -> QtWidgets.QWidget:
         container = QtWidgets.QWidget()
