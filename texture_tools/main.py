@@ -23,6 +23,40 @@ from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOpti
 ERROR_STYLE = "QLineEdit { border: 1px solid #d93025; border-radius: 3px; }"
 
 
+class DropPathLineEdit(QtWidgets.QLineEdit):
+    def __init__(self, *, acceptor, on_accept, on_reject=None, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._acceptor = acceptor
+        self._on_accept = on_accept
+        self._on_reject = on_reject
+        self.setAcceptDrops(True)
+
+    def _paths_from_event(self, event) -> list[Path]:
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return []
+        return [Path(url.toLocalFile()) for url in mime.urls() if url.isLocalFile()]
+
+    def dragEnterEvent(self, event) -> None:
+        paths = self._paths_from_event(event)
+        accepted, _ = self._acceptor(paths)
+        if accepted:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        paths = self._paths_from_event(event)
+        accepted, message = self._acceptor(paths)
+        if accepted:
+            self._on_accept(paths)
+            event.acceptProposedAction()
+            return
+        if self._on_reject is not None:
+            self._on_reject(message or 'Dropped item is not valid for this field.')
+        event.ignore()
+
+
 def _set_field_error(field: QtWidgets.QLineEdit, error_label: QtWidgets.QLabel, message: str | None) -> None:
     has_error = bool(message)
     field.setStyleSheet(ERROR_STYLE if has_error else "")
@@ -53,6 +87,9 @@ def _validate_path(
 
 
 class MipConversionWidget(QtWidgets.QWidget):
+    def _set_status_warning(self, message: str) -> None:
+        self.status_label.setText(message)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
@@ -71,12 +108,18 @@ class MipConversionWidget(QtWidgets.QWidget):
         layout.addLayout(mode_row)
 
         self.input_edit, self.input_error = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input)
+        self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".bmp", ".png", ".mip"}, "Drop a .bmp, .png, or .mip file.")
+        self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
+        self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit, self.output_error = self._make_browse_row(layout, "Output file:", self._browse_output)
+        self.output_edit._acceptor = lambda p: (len(p)==1 and ((p[0].suffix.lower() in {".bmp", ".png", ".mip"}) or not p[0].exists()), "Drop a target file path ending in .bmp, .png, or .mip.")
+        self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
         convert_row = QtWidgets.QHBoxLayout()
@@ -99,7 +142,7 @@ class MipConversionWidget(QtWidgets.QWidget):
         wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(label))
-        edit = QtWidgets.QLineEdit()
+        edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
         row.addWidget(edit, 1)
@@ -179,6 +222,9 @@ class MipConversionWidget(QtWidgets.QWidget):
 
 
 class ChopHorizonWidget(QtWidgets.QWidget):
+    def _set_status_warning(self, message: str) -> None:
+        self.status_label.setText(message)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
@@ -187,11 +233,15 @@ class ChopHorizonWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("1. Choose input"))
         self.input_edit, self.input_error = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
+        self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".png", ".bmp"}, "Drop a .png or .bmp image.")
+        self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit, self.output_error = self._make_browse_row(layout, "Output folder:", self._browse_output)
+        self.output_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a folder path.")
+        self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
         self.run_btn = QtWidgets.QPushButton("Run")
@@ -210,7 +260,7 @@ class ChopHorizonWidget(QtWidgets.QWidget):
         wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(label))
-        edit = QtWidgets.QLineEdit()
+        edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
         row.addWidget(edit, 1)
@@ -262,6 +312,9 @@ class ChopHorizonWidget(QtWidgets.QWidget):
 
 
 class PmpConversionWidget(QtWidgets.QWidget):
+    def _set_status_warning(self, message: str) -> None:
+        self.status_label.setText(message)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
@@ -270,9 +323,13 @@ class PmpConversionWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("1. Choose input"))
         self.input_edit = self._make_browse_row(layout, "Input image (.png):", self._browse_input)
+        self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".png", "Drop a .png image.")
+        self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
+        self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
         self.palette_edit.setText("SUNNY.PCX")
 
         advanced_box = QtWidgets.QGroupBox("Advanced")
@@ -310,6 +367,8 @@ class PmpConversionWidget(QtWidgets.QWidget):
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit = self._make_browse_row(layout, "Output file (.pmp):", self._browse_output)
+        self.output_edit._acceptor = lambda p: (len(p)==1 and (p[0].suffix.lower()==".pmp" or not p[0].exists()), "Drop a .pmp output file path.")
+        self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
         convert_btn = QtWidgets.QPushButton("Convert")
@@ -325,7 +384,7 @@ class PmpConversionWidget(QtWidgets.QWidget):
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(label))
-        edit = QtWidgets.QLineEdit()
+        edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
         row.addWidget(edit, 1)
@@ -373,6 +432,9 @@ class PmpConversionWidget(QtWidgets.QWidget):
 
 
 class PmpToPngWidget(QtWidgets.QWidget):
+    def _set_status_warning(self, message: str) -> None:
+        self.status_label.setText(message)
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
@@ -381,9 +443,13 @@ class PmpToPngWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel("1. Choose input"))
         self.input_edit = self._make_browse_row(layout, "Input file (.pmp):", self._browse_input)
+        self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pmp", "Drop a .pmp file.")
+        self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
+        self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
         self.palette_edit.setText("SUNNY.PCX")
 
         advanced_box = QtWidgets.QGroupBox("Advanced")
@@ -396,6 +462,8 @@ class PmpToPngWidget(QtWidgets.QWidget):
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit = self._make_browse_row(layout, "Output image (.png):", self._browse_output)
+        self.output_edit._acceptor = lambda p: (len(p)==1 and (p[0].suffix.lower()==".png" or not p[0].exists()), "Drop a .png output file path.")
+        self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
         convert_btn = QtWidgets.QPushButton("Export")
@@ -411,7 +479,7 @@ class PmpToPngWidget(QtWidgets.QWidget):
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
         row = QtWidgets.QHBoxLayout()
         row.addWidget(QtWidgets.QLabel(label))
-        edit = QtWidgets.QLineEdit()
+        edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
         row.addWidget(edit, 1)

@@ -162,6 +162,50 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.load()
 
         self._build_ui()
+        self.setAcceptDrops(True)
+
+    def _show_drop_message(self, message: str) -> None:
+        self.statusBar().showMessage(message, 5000)
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
+        if self._classify_drop(event.mimeData().urls()) is not None:
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dropEvent(self, event: QtGui.QDropEvent) -> None:
+        action = self._classify_drop(event.mimeData().urls())
+        if action is None:
+            self._show_drop_message("Drop rejected: provide a texture folder, palette .pcx, or image file.")
+            event.ignore()
+            return
+        kind, path = action
+        if kind == "folder":
+            self._load_folder(path)
+            self._show_drop_message(f"Loaded texture folder: {path}")
+        elif kind == "palette":
+            self._last_sunny_palette_path = path.resolve()
+            self.settings.last_sunny_palette = str(self._last_sunny_palette_path)
+            self._save_settings()
+            self._show_drop_message(f"Palette set for optimization: {path.name}")
+        elif kind == "image":
+            self._load_folder(path.parent)
+            self._show_drop_message(f"Loaded texture folder from image drop: {path.parent}")
+        event.acceptProposedAction()
+
+    def _classify_drop(self, urls) -> tuple[str, Path] | None:
+        local_paths = [Path(url.toLocalFile()) for url in urls if url.isLocalFile()]
+        if len(local_paths) != 1:
+            return None
+        path = local_paths[0]
+        if path.is_dir():
+            return ("folder", path)
+        suffix = path.suffix.lower()
+        if path.is_file() and suffix == ".pcx":
+            return ("palette", path)
+        if path.is_file() and suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
+            return ("image", path)
+        return None
 
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
@@ -238,6 +282,7 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addLayout(center_panel, 4)
         root.addLayout(right_panel, 2)
         self.setCentralWidget(central)
+        self.statusBar().showMessage("Ready")
         self._refresh_palette_view()
         self._update_action_states()
         self._restore_last_texture_folder()
