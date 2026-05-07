@@ -275,6 +275,13 @@ class MainWindow(QtWidgets.QMainWindow):
         batch_controls.addWidget(self.apply_batch_btn)
         left_panel.addLayout(folder_controls)
         left_panel.addLayout(filter_controls)
+        preset_controls = QtWidgets.QHBoxLayout()
+        preset_controls.addWidget(QtWidgets.QLabel("Presets:"))
+        preset_controls.addWidget(self.preset_combo, 1)
+        preset_controls.addWidget(self.save_preset_btn)
+        preset_controls.addWidget(self.load_preset_btn)
+        preset_controls.addWidget(self.delete_preset_btn)
+        left_panel.addLayout(preset_controls)
         left_panel.addLayout(batch_controls)
         left_panel.addWidget(self.texture_list, 1)
         left_panel.addWidget(self.dirt_checkbox)
@@ -362,6 +369,68 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_palette_view()
         self._update_action_states()
         self._restore_last_texture_folder()
+        self._refresh_preset_combo()
+
+    def _refresh_preset_combo(self) -> None:
+        current = self.preset_combo.currentText()
+        presets = self.settings.presets_for_tool("sunny_optimizer")
+        self.preset_combo.clear()
+        self.preset_combo.addItems(sorted(presets.keys()))
+        default_name = self.settings.default_preset_for_tool("sunny_optimizer")
+        target = current or default_name
+        if target:
+            idx = self.preset_combo.findText(target)
+            if idx >= 0:
+                self.preset_combo.setCurrentIndex(idx)
+
+    def _collect_preset_values(self) -> dict[str, str]:
+        return {
+            "palette_path": str(self._last_sunny_palette_path) if self._last_sunny_palette_path else "",
+            "include_dirt": str(self.dirt_checkbox.isChecked()),
+            "batch_budget": str(self.batch_budget_spinbox.value()),
+            "batch_mode": self.batch_actions_combo.currentText(),
+        }
+
+    def _save_preset_dialog(self) -> None:
+        name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        preset_name = name.strip()
+        values = self._collect_preset_values()
+        if self.loaded_texture_folder is not None:
+            values["texture_budgets"] = ",".join(f"{k}:{v}" for k, v in sorted(self.per_texture_budget.items()))
+        self.settings.set_preset_for_tool("sunny_optimizer", preset_name, values)
+        self.settings.set_default_preset("sunny_optimizer", preset_name)
+        self._save_settings()
+        self._refresh_preset_combo()
+
+    def _load_selected_preset(self) -> None:
+        name = self.preset_combo.currentText().strip()
+        if not name:
+            return
+        preset = self.settings.presets_for_tool("sunny_optimizer").get(name, {})
+        palette_path = preset.get("palette_path", "")
+        if palette_path:
+            self._last_sunny_palette_path = Path(palette_path)
+            self.settings.last_sunny_palette = palette_path
+        self.dirt_checkbox.setChecked(preset.get("include_dirt", "False").lower() == "true")
+        self.batch_actions_combo.setCurrentText(preset.get("batch_mode", self.batch_actions_combo.currentText()))
+        try:
+            self.batch_budget_spinbox.setValue(int(preset.get("batch_budget", str(self.batch_budget_spinbox.value()))))
+        except ValueError:
+            pass
+        self.settings.set_default_preset("sunny_optimizer", name)
+        self._save_settings()
+
+    def _delete_selected_preset(self) -> None:
+        name = self.preset_combo.currentText().strip()
+        if not name:
+            return
+        self.settings.delete_preset_for_tool("sunny_optimizer", name)
+        if self.settings.default_preset_for_tool("sunny_optimizer") == name:
+            self.settings.default_presets.pop("sunny_optimizer", None)
+        self._save_settings()
+        self._refresh_preset_combo()
 
     def select_folder(self) -> None:
         start_dir = self.settings.last_texture_folder if self.settings.last_texture_folder else ""
