@@ -21,6 +21,24 @@ from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
 from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
 ERROR_STYLE = "QLineEdit { border: 1px solid #d93025; border-radius: 3px; }"
+STATUS_IDLE = "idle"
+STATUS_VALIDATING = "validating"
+STATUS_PROCESSING = "processing"
+STATUS_SUCCESS = "success"
+STATUS_FAILURE = "failure"
+
+
+class SharedStatusMixin:
+    STATUS_PREFIX = {
+        STATUS_IDLE: "Idle",
+        STATUS_VALIDATING: "Validating",
+        STATUS_PROCESSING: "Processing",
+        STATUS_SUCCESS: "Success",
+        STATUS_FAILURE: "Failure",
+    }
+
+    def set_status(self, state: str, message: str) -> None:
+        self.status_label.setText(f"[{self.STATUS_PREFIX.get(state, 'Status')}] {message}")
 
 
 class DropPathLineEdit(QtWidgets.QLineEdit):
@@ -86,7 +104,7 @@ def _validate_path(
     return None
 
 
-class MipConversionWidget(QtWidgets.QWidget):
+class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
@@ -131,7 +149,7 @@ class MipConversionWidget(QtWidgets.QWidget):
         convert_row.addWidget(self.from_mip_btn)
         layout.addLayout(convert_row)
 
-        self.status_label = QtWidgets.QLabel("Ready")
+        self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
         for edit in (self.input_edit, self.palette_edit, self.output_edit):
@@ -168,7 +186,7 @@ class MipConversionWidget(QtWidgets.QWidget):
         valid = not problems
         self.to_mip_btn.setEnabled(valid)
         self.from_mip_btn.setEnabled(valid)
-        self.status_label.setText("Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
+        self.set_status(STATUS_IDLE if valid else STATUS_VALIDATING, "Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
         return valid
 
     def _browse_input(self) -> None:
@@ -202,8 +220,9 @@ class MipConversionWidget(QtWidgets.QWidget):
             image = Image.open(input_path)
             quantized = image.convert("P")
             img_to_mip(quantized, str(output_path), str(palette_path), mode)
-            self.status_label.setText(f"Created MIP: {output_path}")
+            self.set_status(STATUS_SUCCESS, f"Created MIP: {output_path}")
         except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"MIP conversion failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "MIP conversion failed", str(exc))
 
     def _convert_from_mip(self) -> None:
@@ -216,12 +235,13 @@ class MipConversionWidget(QtWidgets.QWidget):
             palette = load_palette(str(palette_path))
             mip_images = mip_to_img(str(input_path), palette)
             mip_images[0].save(output_path)
-            self.status_label.setText(f"Created image: {output_path}")
+            self.set_status(STATUS_SUCCESS, f"Created image: {output_path}")
         except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"MIP extraction failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "MIP extraction failed", str(exc))
 
 
-class ChopHorizonWidget(QtWidgets.QWidget):
+class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
@@ -246,7 +266,7 @@ class ChopHorizonWidget(QtWidgets.QWidget):
         layout.addStretch(1)
         self.run_btn = QtWidgets.QPushButton("Run")
         self.run_btn.clicked.connect(self._run)
-        self.status_label = QtWidgets.QLabel("Ready")
+        self.status_label = QtWidgets.QLabel()
         action_row = QtWidgets.QHBoxLayout()
         action_row.addStretch(1)
         action_row.addWidget(self.run_btn)
@@ -286,7 +306,7 @@ class ChopHorizonWidget(QtWidgets.QWidget):
         problems = [name for name, err in (("input", input_error), ("output", output_error)) if err]
         valid = not problems
         self.run_btn.setEnabled(valid)
-        self.status_label.setText("Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
+        self.set_status(STATUS_IDLE if valid else STATUS_VALIDATING, "Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
         return valid
 
     def _browse_input(self) -> None:
@@ -306,12 +326,13 @@ class ChopHorizonWidget(QtWidgets.QWidget):
             return
         try:
             out1, out2 = chop_horizon(self.input_edit.text().strip(), self.output_edit.text().strip())
-            self.status_label.setText(f"Created: {out1.name}, {out2.name}")
+            self.set_status(STATUS_SUCCESS, f"Created: {out1.name}, {out2.name}")
         except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"Chop Horizon failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "Chop Horizon failed", str(exc))
 
 
-class PmpConversionWidget(QtWidgets.QWidget):
+class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
@@ -373,13 +394,14 @@ class PmpConversionWidget(QtWidgets.QWidget):
         layout.addStretch(1)
         convert_btn = QtWidgets.QPushButton("Convert")
         convert_btn.clicked.connect(self._convert)
-        self.status_label = QtWidgets.QLabel("Ready")
+        self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
         action_row = QtWidgets.QHBoxLayout()
         action_row.addStretch(1)
         action_row.addWidget(convert_btn)
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
+        self.set_status(STATUS_IDLE, "Ready")
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
         row = QtWidgets.QHBoxLayout()
@@ -411,6 +433,7 @@ class PmpConversionWidget(QtWidgets.QWidget):
 
     def _convert(self) -> None:
         try:
+            self.set_status(STATUS_PROCESSING, "Converting PNG to PMP...")
             raw = self.size_field.text().strip()
             if raw.lower().startswith("0x"):
                 raw = raw[2:]
@@ -426,12 +449,13 @@ class PmpConversionWidget(QtWidgets.QWidget):
                 palette_path=palette_path,
                 alpha_transparent_threshold=self.alpha_threshold_spin.value(),
             )
-            self.status_label.setText(f"Created PMP: {out}")
+            self.set_status(STATUS_SUCCESS, f"Created PMP: {out}")
         except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"PMP conversion failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
 
 
-class PmpToPngWidget(QtWidgets.QWidget):
+class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin):
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
@@ -468,13 +492,14 @@ class PmpToPngWidget(QtWidgets.QWidget):
         layout.addStretch(1)
         convert_btn = QtWidgets.QPushButton("Export")
         convert_btn.clicked.connect(self._convert)
-        self.status_label = QtWidgets.QLabel("Ready")
+        self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
         action_row = QtWidgets.QHBoxLayout()
         action_row.addStretch(1)
         action_row.addWidget(convert_btn)
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
+        self.set_status(STATUS_IDLE, "Ready")
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
         row = QtWidgets.QHBoxLayout()
@@ -506,14 +531,16 @@ class PmpToPngWidget(QtWidgets.QWidget):
 
     def _convert(self) -> None:
         try:
+            self.set_status(STATUS_PROCESSING, "Exporting PNG from PMP...")
             convert_pmp_to_png(
                 self.input_edit.text().strip(),
                 self.output_edit.text().strip(),
                 self.palette_edit.text().strip(),
                 crop=self.crop_checkbox.isChecked(),
             )
-            self.status_label.setText(f"Created PNG: {self.output_edit.text().strip()}")
+            self.set_status(STATUS_SUCCESS, f"Created PNG: {self.output_edit.text().strip()}")
         except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"PMP conversion failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
 
 
