@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import numpy as np
@@ -494,9 +495,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             palette_path = selected_path
 
+        step_total = 4
+        started_at = time.perf_counter()
+
+        def set_progress(step_num: int, message: str, percent: int) -> None:
+            elapsed = time.perf_counter() - started_at
+            self.compute_progress.setValue(percent)
+            self.compute_progress.setFormat(f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)")
+
         self.compute_btn.setEnabled(False)
-        self.compute_progress.setValue(5)
-        self.compute_progress.setFormat("Loading base palette...")
+        set_progress(1, "Loading base palette", 10)
         QtWidgets.QApplication.processEvents()
 
         try:
@@ -505,8 +513,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._last_sunny_palette_path = resolved_palette
             self.settings.last_sunny_palette = str(resolved_palette)
             self._persist_current_folder_budgets()
-            self.compute_progress.setValue(20)
-            self.compute_progress.setFormat("Preparing optimizer...")
+            set_progress(2, "Preparing optimizer", 30)
             QtWidgets.QApplication.processEvents()
 
             optimizer = SunnyPaletteOptimizer(
@@ -516,21 +523,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 dirt_present=self.dirt_checkbox.isChecked(),
             )
 
-            self.compute_progress.setValue(45)
-            self.compute_progress.setFormat("Computing optimized palette...")
+            set_progress(3, "Computing optimized palette", 65)
             QtWidgets.QApplication.processEvents()
 
             self.current_palette = optimizer.compute_palette()
 
-            self.compute_progress.setValue(80)
-            self.compute_progress.setFormat("Building quantized previews...")
+            set_progress(4, "Building quantized previews", 90)
             QtWidgets.QApplication.processEvents()
 
             self.indexed_images, self.quantized_images = optimizer.compute_quantized_images(self.current_palette)
             self.selected_palette_index = None
         except Exception as exc:  # prototype surface
             self.compute_progress.setValue(0)
-            self.compute_progress.setFormat("Failed")
+            elapsed = time.perf_counter() - started_at
+            self.compute_progress.setFormat(f"Failure after {elapsed:.1f}s")
             palette_filename = Path(palette_path).name if palette_path else "<unknown>"
             QtWidgets.QMessageBox.critical(
                 self,
@@ -541,8 +547,9 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             self._update_action_states()
 
+        total_elapsed = time.perf_counter() - started_at
         self.compute_progress.setValue(100)
-        self.compute_progress.setFormat("Done")
+        self.compute_progress.setFormat(f"Success in {total_elapsed:.1f}s")
 
         self._refresh_palette_view()
         current = self.texture_list.currentItem()
@@ -619,6 +626,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path:
             return
         save_palette(path, self.current_palette)
+        output_path = Path(path).resolve()
+        msg = QtWidgets.QMessageBox(self)
+        msg.setWindowTitle("Palette saved")
+        msg.setText(f"Saved optimized palette:\n{output_path}")
+        open_location_btn = msg.addButton("Open location", QtWidgets.QMessageBox.ActionRole)
+        msg.addButton(QtWidgets.QMessageBox.Ok)
+        msg.exec_()
+        if msg.clickedButton() is open_location_btn:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(output_path.parent)))
 
 
 def main() -> None:
