@@ -26,6 +26,9 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
         self.spinbox = QtWidgets.QSpinBox()
         self.spinbox.setRange(1, OPTIMIZED_SLOTS)
         self.spinbox.setValue(initial_budget)
+        self.spinbox.setToolTip(
+            "Per-texture color budget: maximum optimized palette entries this texture can claim."
+        )
         self.spinbox.valueChanged.connect(self._emit_change)
         layout.addWidget(label, 1)
         layout.addWidget(self.spinbox)
@@ -166,13 +169,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         left_panel = QtWidgets.QVBoxLayout()
         folder_controls = QtWidgets.QHBoxLayout()
-        self.folder_btn = QtWidgets.QPushButton("Select Texture Folder")
+        self.folder_btn = QtWidgets.QPushButton("Select Texture Images Folder")
         self.folder_btn.clicked.connect(self.select_folder)
         self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
         self.texture_list = QtWidgets.QListWidget()
         self.texture_list.currentItemChanged.connect(self._on_current_item_changed)
-        self.dirt_checkbox = QtWidgets.QCheckBox("Dirt present")
+        self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
+        self.dirt_checkbox.setToolTip(
+            "Enable this if your textures include dirt/brown tones that should be reserved in the optimized palette."
+        )
 
         folder_controls.addWidget(self.folder_btn)
         folder_controls.addWidget(self.refresh_folder_btn)
@@ -205,7 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Palette selection: click a palette color tile to inspect index, hex, and RGB values."
         )
         self.palette_details_label.setWordWrap(True)
-        self.compute_btn = QtWidgets.QPushButton("Compute Palette")
+        self.compute_btn = QtWidgets.QPushButton("Generate Optimized Palette")
         self.compute_btn.clicked.connect(self.compute_palette)
         self.compute_hint_label = QtWidgets.QLabel()
         self.compute_hint_label.setWordWrap(True)
@@ -330,7 +336,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_btn.setEnabled(has_quantized_results)
 
         if has_textures:
-            self.compute_hint_label.setText("Step 2: Click Compute Palette when you are ready.")
+            self.compute_hint_label.setText("Step 2: Click Generate Optimized Palette when you are ready.")
         else:
             self.compute_hint_label.setText("Step 1: Select texture folder to enable palette computation.")
 
