@@ -155,6 +155,10 @@ class ClickablePaletteLabel(QtWidgets.QLabel):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    SORT_BY_NAME = "Name"
+    SORT_BY_COLOR_COUNT = "Color count"
+    SORT_BY_BUDGET = "Budget"
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Texture Tools - Sunny Optimizer")
@@ -162,6 +166,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.preview_max_dim = 512
         self.texture_images: dict[str, np.ndarray] = {}
+        self.texture_color_counts: dict[str, int] = {}
         self.per_texture_budget: dict[str, int] = {}
         self.current_palette = np.zeros((256, 3), dtype=np.uint8)
         self.quantized_images: dict[str, np.ndarray] = {}
@@ -230,8 +235,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_btn.clicked.connect(self.select_folder)
         self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
+        self.search_box = QtWidgets.QLineEdit()
+        self.search_box.setPlaceholderText("Search textures by name...")
+        self.search_box.textChanged.connect(self._refresh_texture_list)
+        self.sort_combo = QtWidgets.QComboBox()
+        self.sort_combo.addItems([self.SORT_BY_NAME, self.SORT_BY_COLOR_COUNT, self.SORT_BY_BUDGET])
+        self.sort_combo.currentTextChanged.connect(self._refresh_texture_list)
         self.texture_list = QtWidgets.QListWidget()
         self.texture_list.currentItemChanged.connect(self._on_current_item_changed)
+        self.batch_actions_combo = QtWidgets.QComboBox()
+        self.batch_actions_combo.addItems(
+            [
+                "Set all budgets equally",
+                "Normalize budgets",
+                "Apply value to selected textures only",
+            ]
+        )
+        self.batch_budget_spinbox = QtWidgets.QSpinBox()
+        self.batch_budget_spinbox.setRange(1, OPTIMIZED_SLOTS)
+        self.batch_budget_spinbox.setValue(OPTIMIZED_SLOTS)
+        self.apply_batch_btn = QtWidgets.QPushButton("Apply Batch Action")
+        self.apply_batch_btn.clicked.connect(self._apply_batch_action)
         self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
         self.dirt_checkbox.setToolTip(
             "Enable this if your textures include dirt/brown tones that should be reserved in the optimized palette."
@@ -239,7 +263,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         folder_controls.addWidget(self.folder_btn)
         folder_controls.addWidget(self.refresh_folder_btn)
+        filter_controls = QtWidgets.QHBoxLayout()
+        filter_controls.addWidget(QtWidgets.QLabel("Search:"))
+        filter_controls.addWidget(self.search_box, 1)
+        filter_controls.addWidget(QtWidgets.QLabel("Sort by:"))
+        filter_controls.addWidget(self.sort_combo)
+        batch_controls = QtWidgets.QHBoxLayout()
+        batch_controls.addWidget(self.batch_actions_combo, 1)
+        batch_controls.addWidget(QtWidgets.QLabel("Budget value:"))
+        batch_controls.addWidget(self.batch_budget_spinbox)
+        batch_controls.addWidget(self.apply_batch_btn)
         left_panel.addLayout(folder_controls)
+        left_panel.addLayout(filter_controls)
+        left_panel.addLayout(batch_controls)
         left_panel.addWidget(self.texture_list, 1)
         left_panel.addWidget(self.dirt_checkbox)
 
@@ -349,6 +385,7 @@ class MainWindow(QtWidgets.QMainWindow):
         resolved_folder = folder.resolve()
 
         self.texture_images.clear()
+        self.texture_color_counts.clear()
         self.per_texture_budget.clear()
         self.quantized_images.clear()
         self.indexed_images.clear()
@@ -372,19 +409,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 img.thumbnail((self.preview_max_dim, self.preview_max_dim), Image.Resampling.NEAREST)
                 arr = np.asarray(img, dtype=np.uint8)
             self.texture_images[path.name] = arr
+            self.texture_color_counts[path.name] = self._count_unique_rgb_colors(arr)
             budget = saved_budgets.get(path.name, equal_budget)
             budget = max(1, min(OPTIMIZED_SLOTS, int(budget)))
             self.per_texture_budget[path.name] = budget
-
-            item = QtWidgets.QListWidgetItem(self.texture_list)
-            widget = TextureBudgetItemWidget(path.name, budget)
-            widget.budget_changed.connect(self._on_budget_changed)
-            item.setSizeHint(widget.sizeHint())
-            self.texture_list.addItem(item)
-            self.texture_list.setItemWidget(item, widget)
-
-        if self.texture_list.count() > 0:
-            self.texture_list.setCurrentRow(0)
+        self._refresh_texture_list()
 
         self.loaded_texture_folder = resolved_folder
         self.settings.last_texture_folder = str(resolved_folder)
@@ -394,6 +423,88 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
         self._persist_current_folder_budgets()
+        if self.sort_combo.currentText() == self.SORT_BY_BUDGET:
+            self._refresh_texture_list()
+
+    def _sorted_texture_names(self) -> list[str]:
+        texture_names = list(self.texture_images.keys())
+        sort_mode = self.sort_combo.currentText()
+        if sort_mode == self.SORT_BY_COLOR_COUNT:
+            texture_names.sort(
+                key=lambda n: (-self.texture_color_counts.get(n, 0), n.lower())
+            )
+        elif sort_mode == self.SORT_BY_BUDGET:
+            texture_names.sort(key=lambda n: (-self.per_texture_budget.get(n, 0), n.lower()))
+        else:
+            texture_names.sort(key=str.lower)
+        return texture_names
+
+    def _refresh_texture_list(self) -> None:
+        selected_texture = ""
+        current = self.texture_list.currentItem()
+        if current is not None:
+            widget = self.texture_list.itemWidget(current)
+            if widget is not None:
+                selected_texture = widget.texture_name
+        query = self.search_box.text().strip().lower()
+        self.texture_list.clear()
+        for texture_name in self._sorted_texture_names():
+            if query and query not in texture_name.lower():
+                continue
+            item = QtWidgets.QListWidgetItem(self.texture_list)
+            widget = TextureBudgetItemWidget(texture_name, self.per_texture_budget[texture_name])
+            widget.budget_changed.connect(self._on_budget_changed)
+            tooltip = f"Unique colors: {self.texture_color_counts.get(texture_name, 0)}"
+            item.setToolTip(tooltip)
+            widget.setToolTip(tooltip)
+            item.setSizeHint(widget.sizeHint())
+            self.texture_list.addItem(item)
+            self.texture_list.setItemWidget(item, widget)
+        if self.texture_list.count() == 0:
+            self.orig_label.clear_base_pixmap("Original RGB")
+            self.quant_label.clear_base_pixmap("Quantized Preview")
+            return
+        for row in range(self.texture_list.count()):
+            item = self.texture_list.item(row)
+            widget = self.texture_list.itemWidget(item)
+            if widget is not None and widget.texture_name == selected_texture:
+                self.texture_list.setCurrentRow(row)
+                return
+        self.texture_list.setCurrentRow(0)
+
+    def _apply_batch_action(self) -> None:
+        if not self.texture_images:
+            QtWidgets.QMessageBox.information(self, "No textures", "Load textures before applying batch actions.")
+            return
+        mode = self.batch_actions_combo.currentText()
+        if mode == "Set all budgets equally":
+            equal_budget = max(1, OPTIMIZED_SLOTS // max(1, len(self.texture_images)))
+            for texture_name in self.texture_images:
+                self.per_texture_budget[texture_name] = equal_budget
+        elif mode == "Normalize budgets":
+            total_colors = sum(max(1, self.texture_color_counts.get(name, 1)) for name in self.texture_images)
+            allocated = 0
+            names = sorted(self.texture_images.keys())
+            for idx, texture_name in enumerate(names):
+                if idx == len(names) - 1:
+                    budget = max(1, OPTIMIZED_SLOTS - allocated)
+                else:
+                    portion = self.texture_color_counts.get(texture_name, 1) / max(1, total_colors)
+                    budget = max(1, int(round(portion * OPTIMIZED_SLOTS)))
+                    allocated += budget
+                self.per_texture_budget[texture_name] = min(OPTIMIZED_SLOTS, budget)
+        else:
+            selected_items = self.texture_list.selectedItems()
+            if not selected_items:
+                QtWidgets.QMessageBox.information(self, "No selection", "Select one or more textures first.")
+                return
+            budget_value = int(self.batch_budget_spinbox.value())
+            for item in selected_items:
+                widget = self.texture_list.itemWidget(item)
+                if widget is not None:
+                    self.per_texture_budget[widget.texture_name] = budget_value
+        self._persist_current_folder_budgets()
+        self._refresh_texture_list()
 
     def _restore_last_texture_folder(self) -> None:
         folder_text = self.settings.last_texture_folder
