@@ -552,7 +552,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
         self.intent_tabs = QtWidgets.QTabWidget()
         self.intent_tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
-        self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
+        self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette ↗")
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
         self.setCentralWidget(self.intent_tabs)
@@ -569,7 +569,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         message = (
             "Welcome to Texture Tools.\n\n"
             "Workflows by intent:\n"
-            "• Optimize palette: Sunny Optimizer (opens in a dedicated advanced workspace).\n"
+            "• Optimize palette ↗: Sunny Optimizer (opens in a dedicated advanced workspace).\n"
             "• Convert formats: MIP and PMP encode/decode tools.\n"
             "• Split/prepare textures: Chop Horizon helper.\n\n"
             "Why Sunny opens separately:\n"
@@ -585,7 +585,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         banner = QtWidgets.QFrame()
         banner.setStyleSheet("QFrame { background: #f5f0ff; border: 1px solid #b99cff; border-radius: 8px; }")
         banner_layout = QtWidgets.QVBoxLayout(banner)
-        title = QtWidgets.QLabel("Sunny Optimizer (Dedicated Workspace)")
+        title = QtWidgets.QLabel("Sunny Optimizer (opens in a separate window)")
         title.setStyleSheet("font-weight: 700;")
         desc = QtWidgets.QLabel(
             "Palette optimization opens in a separate advanced window. "
@@ -595,7 +595,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         banner_layout.addWidget(title)
         banner_layout.addWidget(desc)
 
-        button = QtWidgets.QPushButton("Open Sunny Optimizer")
+        button = QtWidgets.QPushButton("Open Sunny Optimizer in New Window ↗")
         button.clicked.connect(self._open_sunny_optimizer)
 
         layout.addWidget(banner)
