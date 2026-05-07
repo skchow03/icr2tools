@@ -18,6 +18,7 @@ from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
 from texture_tools.pmp import png_to_pmp
 from texture_tools.pmp_to_png import convert_pmp_to_png
 from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
+from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
 ERROR_STYLE = "QLineEdit { border: 1px solid #d93025; border-radius: 3px; }"
@@ -39,6 +40,78 @@ class SharedStatusMixin:
 
     def set_status(self, state: str, message: str) -> None:
         self.status_label.setText(f"[{self.STATUS_PREFIX.get(state, 'Status')}] {message}")
+
+
+class PresettableMixin:
+    TOOL_PRESET_KEY = ""
+
+    def _build_preset_controls(self, parent: QtWidgets.QVBoxLayout) -> None:
+        row = QtWidgets.QHBoxLayout()
+        self.preset_combo = QtWidgets.QComboBox()
+        self.preset_combo.setEditable(False)
+        self.save_preset_btn = QtWidgets.QPushButton("Save preset")
+        self.load_preset_btn = QtWidgets.QPushButton("Load preset")
+        self.delete_preset_btn = QtWidgets.QPushButton("Delete preset")
+        row.addWidget(QtWidgets.QLabel("Presets:"))
+        row.addWidget(self.preset_combo, 1)
+        row.addWidget(self.save_preset_btn)
+        row.addWidget(self.load_preset_btn)
+        row.addWidget(self.delete_preset_btn)
+        parent.addLayout(row)
+
+        self.save_preset_btn.clicked.connect(self._save_preset_dialog)
+        self.load_preset_btn.clicked.connect(self._load_selected_preset)
+        self.delete_preset_btn.clicked.connect(self._delete_selected_preset)
+        self._refresh_preset_combo()
+        default = self._settings.default_preset_for_tool(self.TOOL_PRESET_KEY)
+        if default:
+            idx = self.preset_combo.findText(default)
+            if idx >= 0:
+                self.preset_combo.setCurrentIndex(idx)
+                self._apply_preset(self._settings.presets_for_tool(self.TOOL_PRESET_KEY).get(default, {}))
+
+    def _refresh_preset_combo(self) -> None:
+        current = self.preset_combo.currentText() if hasattr(self, "preset_combo") else ""
+        self.preset_combo.clear()
+        self.preset_combo.addItems(sorted(self._settings.presets_for_tool(self.TOOL_PRESET_KEY).keys()))
+        if current:
+            idx = self.preset_combo.findText(current)
+            if idx >= 0:
+                self.preset_combo.setCurrentIndex(idx)
+
+    def _save_preset_dialog(self) -> None:
+        name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        preset_name = name.strip()
+        self._settings.set_preset_for_tool(self.TOOL_PRESET_KEY, preset_name, self._collect_preset_values())
+        self._settings.set_default_preset(self.TOOL_PRESET_KEY, preset_name)
+        self._settings.save()
+        self._refresh_preset_combo()
+        idx = self.preset_combo.findText(preset_name)
+        if idx >= 0:
+            self.preset_combo.setCurrentIndex(idx)
+
+    def _load_selected_preset(self) -> None:
+        preset_name = self.preset_combo.currentText().strip()
+        if not preset_name:
+            return
+        preset = self._settings.presets_for_tool(self.TOOL_PRESET_KEY).get(preset_name)
+        if not preset:
+            return
+        self._apply_preset(preset)
+        self._settings.set_default_preset(self.TOOL_PRESET_KEY, preset_name)
+        self._settings.save()
+
+    def _delete_selected_preset(self) -> None:
+        preset_name = self.preset_combo.currentText().strip()
+        if not preset_name:
+            return
+        self._settings.delete_preset_for_tool(self.TOOL_PRESET_KEY, preset_name)
+        if self._settings.default_preset_for_tool(self.TOOL_PRESET_KEY) == preset_name:
+            self._settings.default_presets.pop(self.TOOL_PRESET_KEY, None)
+        self._settings.save()
+        self._refresh_preset_combo()
 
 
 class DropPathLineEdit(QtWidgets.QLineEdit):
@@ -104,12 +177,14 @@ def _validate_path(
     return None
 
 
-class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
+class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
+    TOOL_PRESET_KEY = "mip_conversion"
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(self, settings: SunnyOptimizerSettings, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
+        self._settings = settings
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -140,6 +215,7 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
+        self._build_preset_controls(layout)
         convert_row = QtWidgets.QHBoxLayout()
         self.to_mip_btn = QtWidgets.QPushButton("Convert")
         self.to_mip_btn.clicked.connect(self._convert_to_mip)
@@ -155,6 +231,14 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
         for edit in (self.input_edit, self.palette_edit, self.output_edit):
             edit.textChanged.connect(self._update_validation_state)
         self._update_validation_state()
+
+    def _collect_preset_values(self) -> dict[str, str]:
+        return {"mode": self.mode_combo.currentText(), "palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip()}
+
+    def _apply_preset(self, preset: dict[str, str]) -> None:
+        self.mode_combo.setCurrentText(preset.get("mode", self.mode_combo.currentText()))
+        self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
+        self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
         wrap = QtWidgets.QVBoxLayout()
@@ -332,12 +416,14 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
             QtWidgets.QMessageBox.critical(self, "Chop Horizon failed", str(exc))
 
 
-class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
+class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
+    TOOL_PRESET_KEY = "png_to_pmp"
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(self, settings: SunnyOptimizerSettings, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
+        self._settings = settings
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -392,6 +478,7 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
+        self._build_preset_controls(layout)
         convert_btn = QtWidgets.QPushButton("Convert")
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel()
@@ -402,6 +489,18 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
         self.set_status(STATUS_IDLE, "Ready")
+
+    def _collect_preset_values(self) -> dict[str, str]:
+        return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "alpha_threshold": str(self.alpha_threshold_spin.value()), "header_size": self.size_field.text().strip()}
+
+    def _apply_preset(self, preset: dict[str, str]) -> None:
+        self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
+        self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
+        self.size_field.setText(preset.get("header_size", self.size_field.text()))
+        try:
+            self.alpha_threshold_spin.setValue(int(preset.get("alpha_threshold", str(self.alpha_threshold_spin.value()))))
+        except ValueError:
+            pass
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
         row = QtWidgets.QHBoxLayout()
@@ -455,12 +554,14 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin):
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
 
 
-class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin):
+class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
+    TOOL_PRESET_KEY = "pmp_to_png"
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(self, settings: SunnyOptimizerSettings, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
+        self._settings = settings
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -490,6 +591,7 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin):
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
         layout.addStretch(1)
+        self._build_preset_controls(layout)
         convert_btn = QtWidgets.QPushButton("Export")
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel()
@@ -500,6 +602,14 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin):
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
         self.set_status(STATUS_IDLE, "Ready")
+
+    def _collect_preset_values(self) -> dict[str, str]:
+        return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "crop_transparent_border": str(self.crop_checkbox.isChecked())}
+
+    def _apply_preset(self, preset: dict[str, str]) -> None:
+        self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
+        self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
+        self.crop_checkbox.setChecked(preset.get("crop_transparent_border", "False").lower() == "true")
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
         row = QtWidgets.QHBoxLayout()
@@ -549,6 +659,8 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Texture Tools")
         self.resize(980, 720)
+        self._settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
+        self._settings.load()
 
         self.intent_tabs = QtWidgets.QTabWidget()
         self.intent_tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
@@ -605,9 +717,9 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
     def _build_convert_formats_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(MipConversionWidget(), "MIP Conversion")
-        tabs.addTab(PmpConversionWidget(), "PNG → PMP")
-        tabs.addTab(PmpToPngWidget(), "PMP → PNG")
+        tabs.addTab(MipConversionWidget(self._settings), "MIP Conversion")
+        tabs.addTab(PmpConversionWidget(self._settings), "PNG → PMP")
+        tabs.addTab(PmpToPngWidget(self._settings), "PMP → PNG")
         return tabs
 
     def _build_split_prepare_tab(self) -> QtWidgets.QWidget:

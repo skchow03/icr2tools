@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from configparser import ConfigParser
+import json
 from pathlib import Path
 
 
@@ -10,6 +11,8 @@ class SunnyOptimizerSettings:
         self.last_texture_folder: str = ""
         self.last_sunny_palette: str = ""
         self.color_budgets: dict[str, dict[str, int]] = {}
+        self.tool_presets: dict[str, dict[str, dict[str, str]]] = {}
+        self.default_presets: dict[str, str] = {}
 
     @staticmethod
     def default_path() -> Path:
@@ -41,6 +44,26 @@ class SunnyOptimizerSettings:
                 budgets[folder] = folder_budgets
         self.color_budgets = budgets
 
+        presets: dict[str, dict[str, dict[str, str]]] = {}
+        for section in parser.sections():
+            if not section.startswith("presets:"):
+                continue
+            tool_name = section[len("presets:") :]
+            parsed: dict[str, dict[str, str]] = {}
+            for preset_name, raw_json in parser.items(section):
+                try:
+                    value = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, dict):
+                    parsed[preset_name] = {str(k): str(v) for k, v in value.items()}
+            presets[tool_name] = parsed
+        self.tool_presets = presets
+
+        self.default_presets = {}
+        if parser.has_section("preset_defaults"):
+            self.default_presets = {k: v for k, v in parser.items("preset_defaults")}
+
     def save(self) -> None:
         parser = ConfigParser()
         parser["recent"] = {
@@ -53,6 +76,16 @@ class SunnyOptimizerSettings:
                 continue
             parser[f"budgets:{folder}"] = {name: str(value) for name, value in sorted(budgets.items())}
 
+        for tool_name, presets in sorted(self.tool_presets.items()):
+            if not presets:
+                continue
+            parser[f"presets:{tool_name}"] = {
+                name: json.dumps(payload, sort_keys=True) for name, payload in sorted(presets.items())
+            }
+
+        if self.default_presets:
+            parser["preset_defaults"] = dict(sorted(self.default_presets.items()))
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as handle:
             parser.write(handle)
@@ -63,3 +96,20 @@ class SunnyOptimizerSettings:
     def set_budgets_for_folder(self, folder: Path, budgets: dict[str, int]) -> None:
         self.color_budgets[str(folder.resolve())] = dict(budgets)
 
+    def presets_for_tool(self, tool_name: str) -> dict[str, dict[str, str]]:
+        return {name: dict(values) for name, values in self.tool_presets.get(tool_name, {}).items()}
+
+    def set_preset_for_tool(self, tool_name: str, preset_name: str, values: dict[str, str]) -> None:
+        self.tool_presets.setdefault(tool_name, {})[preset_name] = {str(k): str(v) for k, v in values.items()}
+
+    def delete_preset_for_tool(self, tool_name: str, preset_name: str) -> None:
+        presets = self.tool_presets.get(tool_name, {})
+        presets.pop(preset_name, None)
+        if not presets and tool_name in self.tool_presets:
+            del self.tool_presets[tool_name]
+
+    def set_default_preset(self, tool_name: str, preset_name: str) -> None:
+        self.default_presets[tool_name] = preset_name
+
+    def default_preset_for_tool(self, tool_name: str) -> str:
+        return self.default_presets.get(tool_name, "")
