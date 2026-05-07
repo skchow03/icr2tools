@@ -105,9 +105,9 @@ class ZoomableImageLabel(QtWidgets.QWidget):
         self._base_pixmap = pixmap
         self._pixmap_item.setPixmap(self._base_pixmap)
         self._scene.setSceneRect(QtCore.QRectF(self._base_pixmap.rect()))
-        self._view.resetTransform()
+        self.reset_view()
         self.layout().setCurrentWidget(self._view)
-        self._view.fitInView(self._scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+        self.fit_to_view()
 
     def copy_view_from(self, other: ZoomableImageLabel) -> None:
         if self._base_pixmap.isNull() or other._base_pixmap.isNull():
@@ -123,6 +123,18 @@ class ZoomableImageLabel(QtWidgets.QWidget):
             self._placeholder_text = text
             self._placeholder.setText(text)
         self.layout().setCurrentWidget(self._placeholder)
+
+    def fit_to_view(self) -> None:
+        if self._base_pixmap.isNull():
+            return
+        self._view.fitInView(self._scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
+        self.view_changed.emit()
+
+    def reset_view(self) -> None:
+        self._view.resetTransform()
+        self._view.horizontalScrollBar().setValue(0)
+        self._view.verticalScrollBar().setValue(0)
+        self.view_changed.emit()
 
     def _on_view_clicked(self, scene_pos: QtCore.QPointF) -> None:
         if self._base_pixmap.isNull():
@@ -232,18 +244,45 @@ class MainWindow(QtWidgets.QMainWindow):
         left_panel.addWidget(self.dirt_checkbox)
 
         center_panel = QtWidgets.QVBoxLayout()
+        preview_hint = QtWidgets.QLabel(
+            "Scroll to zoom, drag to pan, click pixel to inspect palette index."
+        )
+        preview_hint.setWordWrap(True)
         self.orig_label = ZoomableImageLabel("Original RGB")
         self.orig_label.setMinimumSize(300, 250)
+        self.orig_fit_btn = QtWidgets.QPushButton("Fit Original")
+        self.orig_fit_btn.clicked.connect(self.orig_label.fit_to_view)
+        self.orig_reset_btn = QtWidgets.QPushButton("Reset Original")
+        self.orig_reset_btn.clicked.connect(self.orig_label.reset_view)
+        orig_view_controls = QtWidgets.QHBoxLayout()
+        orig_view_controls.addWidget(self.orig_fit_btn)
+        orig_view_controls.addWidget(self.orig_reset_btn)
+        orig_view_controls.addStretch(1)
         self.orig_unique_colors_label = QtWidgets.QLabel("Original unique colors: —")
         self.quant_label = ZoomableImageLabel("Quantized Preview")
         self.quant_label.setMinimumSize(300, 250)
+        self.quant_fit_btn = QtWidgets.QPushButton("Fit Quantized")
+        self.quant_fit_btn.clicked.connect(self.quant_label.fit_to_view)
+        self.quant_reset_btn = QtWidgets.QPushButton("Reset Quantized")
+        self.quant_reset_btn.clicked.connect(self.quant_label.reset_view)
+        quant_view_controls = QtWidgets.QHBoxLayout()
+        quant_view_controls.addWidget(self.quant_fit_btn)
+        quant_view_controls.addWidget(self.quant_reset_btn)
+        quant_view_controls.addStretch(1)
+        self.highlight_checkbox = QtWidgets.QCheckBox("Highlight selected palette index in preview")
+        self.highlight_checkbox.setChecked(True)
+        self.highlight_checkbox.toggled.connect(self._refresh_current_preview)
         self.paletted_unique_colors_label = QtWidgets.QLabel("Paletted unique colors: —")
         self.quant_label.image_clicked.connect(self._on_quantized_preview_clicked)
         self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
         self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
+        center_panel.addWidget(preview_hint)
         center_panel.addWidget(self.orig_label, 1)
+        center_panel.addLayout(orig_view_controls)
         center_panel.addWidget(self.orig_unique_colors_label)
         center_panel.addWidget(self.quant_label, 1)
+        center_panel.addLayout(quant_view_controls)
+        center_panel.addWidget(self.highlight_checkbox)
         center_panel.addWidget(self.paletted_unique_colors_label)
 
         right_panel = QtWidgets.QVBoxLayout()
@@ -428,13 +467,41 @@ class MainWindow(QtWidgets.QMainWindow):
             self.quant_label.clear_base_pixmap("Quantized Preview")
             self.paletted_unique_colors_label.setText("Paletted unique colors: —")
         else:
-            self.quant_label.set_base_pixmap(self._to_pixmap(quant))
+            quant_display = self._build_highlighted_quantized_preview(texture_name, quant)
+            self.quant_label.set_base_pixmap(self._to_pixmap(quant_display))
             if indexed is None:
                 self.paletted_unique_colors_label.setText("Paletted unique colors: —")
             else:
                 self.paletted_unique_colors_label.setText(
                     f"Paletted unique colors: {self._count_unique_palette_indices(indexed)}"
                 )
+
+    def _build_highlighted_quantized_preview(self, texture_name: str, quant: np.ndarray) -> np.ndarray:
+        indexed = self.indexed_images.get(texture_name)
+        if (
+            indexed is None
+            or self.selected_palette_index is None
+            or not self.highlight_checkbox.isChecked()
+        ):
+            return quant
+        if indexed.shape[:2] != quant.shape[:2]:
+            return quant
+        mask = indexed == self.selected_palette_index
+        if not np.any(mask):
+            return quant
+        result = quant.copy()
+        result[mask] = np.array([255, 255, 255], dtype=np.uint8)
+        result[~mask] = (result[~mask] * 0.35).astype(np.uint8)
+        return result
+
+    def _refresh_current_preview(self) -> None:
+        current = self.texture_list.currentItem()
+        if current is None:
+            return
+        widget = self.texture_list.itemWidget(current)
+        if widget is None:
+            return
+        self._update_preview(widget.texture_name)
 
     @staticmethod
     def _count_unique_rgb_colors(rgb_array: np.ndarray) -> int:
@@ -578,6 +645,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.selected_palette_index = int(indexed[y, x])
         self._refresh_palette_view()
         self._update_palette_details(self.selected_palette_index)
+        self._refresh_current_preview()
 
     @staticmethod
     def _rgb_to_hex(color: tuple[int, int, int]) -> str:
@@ -612,6 +680,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.selected_palette_index = index
         self._refresh_palette_view()
         self._update_palette_details(index)
+        self._refresh_current_preview()
 
     def save_palette_dialog(self) -> None:
         if not self.quantized_images:
