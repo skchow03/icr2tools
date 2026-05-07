@@ -28,13 +28,7 @@ class MipConversionWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        self.empty_state_label = QtWidgets.QLabel(
-            "Step 1: Select an input image or MIP.\n"
-            "Step 2: Select palette and output path.\n"
-            "Step 3: Run the conversion button you need."
-        )
-        self.empty_state_label.setWordWrap(True)
-        layout.addWidget(self.empty_state_label)
+        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
 
         mode_row = QtWidgets.QHBoxLayout()
         mode_row.addWidget(QtWidgets.QLabel("Mode:"))
@@ -45,13 +39,18 @@ class MipConversionWidget(QtWidgets.QWidget):
         layout.addLayout(mode_row)
 
         self.input_edit = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input)
+
+        layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+
+        layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit = self._make_browse_row(layout, "Output file:", self._browse_output)
 
+        layout.addStretch(1)
         convert_row = QtWidgets.QHBoxLayout()
-        self.to_mip_btn = QtWidgets.QPushButton("Convert Image → MIP")
+        self.to_mip_btn = QtWidgets.QPushButton("Convert")
         self.to_mip_btn.clicked.connect(self._convert_to_mip)
-        self.from_mip_btn = QtWidgets.QPushButton("Convert MIP → BMP")
+        self.from_mip_btn = QtWidgets.QPushButton("Export")
         self.from_mip_btn.clicked.connect(self._convert_from_mip)
         convert_row.addWidget(self.to_mip_btn)
         convert_row.addWidget(self.from_mip_btn)
@@ -125,19 +124,22 @@ class ChopHorizonWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        self.empty_state_label = QtWidgets.QLabel(
-            "Step 1: Select a 2048x64 source horizon image.\n"
-            "Step 2: Select an output folder.\n"
-            "Step 3: Create 256x256 sheets."
-        )
-        self.empty_state_label.setWordWrap(True)
-        layout.addWidget(self.empty_state_label)
+        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
         self.input_edit = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
+
+        layout.addWidget(QtWidgets.QLabel("2. Configure options"))
+
+        layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit = self._make_browse_row(layout, "Output folder:", self._browse_output)
-        run_btn = QtWidgets.QPushButton("Create 256x256 Sheets")
+
+        layout.addStretch(1)
+        run_btn = QtWidgets.QPushButton("Run")
         run_btn.clicked.connect(self._run)
         self.status_label = QtWidgets.QLabel("Ready")
-        layout.addWidget(run_btn)
+        action_row = QtWidgets.QHBoxLayout()
+        action_row.addStretch(1)
+        action_row.addWidget(run_btn)
+        layout.addLayout(action_row)
         layout.addWidget(self.status_label)
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
@@ -178,17 +180,17 @@ class PmpConversionWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        self.empty_state_label = QtWidgets.QLabel(
-            "Step 1: Select PNG input.\n"
-            "Step 2: Confirm output PMP + palette.\n"
-            "Step 3: Convert PNG to PMP."
-        )
-        self.empty_state_label.setWordWrap(True)
-        layout.addWidget(self.empty_state_label)
+        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
         self.input_edit = self._make_browse_row(layout, "Input image (.png):", self._browse_input)
-        self.output_edit = self._make_browse_row(layout, "Output file (.pmp):", self._browse_output)
+
+        layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
         self.palette_edit.setText("SUNNY.PCX")
+
+        advanced_box = QtWidgets.QGroupBox("Advanced")
+        advanced_box.setCheckable(True)
+        advanced_box.setChecked(False)
+        advanced_layout = QtWidgets.QVBoxLayout(advanced_box)
 
         settings_row = QtWidgets.QHBoxLayout()
         settings_row.addWidget(QtWidgets.QLabel("Header bytes 002-003 override (hex):"))
@@ -204,7 +206,7 @@ class PmpConversionWidget(QtWidgets.QWidget):
         self.alpha_threshold_spin.setToolTip("51 means pixels that are at least 80% transparent are dropped.")
         settings_row.addWidget(self.alpha_threshold_spin)
         settings_row.addStretch(1)
-        layout.addLayout(settings_row)
+        advanced_layout.addLayout(settings_row)
 
         note = QtWidgets.QLabel(
             "Note: bytes 000-001 are bbox width/height. By default bytes 002-003 "
@@ -212,13 +214,21 @@ class PmpConversionWidget(QtWidgets.QWidget):
             "override value writes raw bytes 002-003."
         )
         note.setWordWrap(True)
-        layout.addWidget(note)
+        advanced_layout.addWidget(note)
+        layout.addWidget(advanced_box)
 
-        convert_btn = QtWidgets.QPushButton("Convert PNG → PMP")
+        layout.addWidget(QtWidgets.QLabel("3. Export"))
+        self.output_edit = self._make_browse_row(layout, "Output file (.pmp):", self._browse_output)
+
+        layout.addStretch(1)
+        convert_btn = QtWidgets.QPushButton("Convert")
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel("Ready")
         self.status_label.setWordWrap(True)
-        layout.addWidget(convert_btn)
+        action_row = QtWidgets.QHBoxLayout()
+        action_row.addStretch(1)
+        action_row.addWidget(convert_btn)
+        layout.addLayout(action_row)
         layout.addWidget(self.status_label)
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
@@ -278,26 +288,33 @@ class PmpToPngWidget(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        self.empty_state_label = QtWidgets.QLabel(
-            "Step 1: Select PMP input.\n"
-            "Step 2: Set output PNG + palette.\n"
-            "Step 3: Convert PMP to PNG."
-        )
-        self.empty_state_label.setWordWrap(True)
-        layout.addWidget(self.empty_state_label)
+        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
         self.input_edit = self._make_browse_row(layout, "Input file (.pmp):", self._browse_input)
-        self.output_edit = self._make_browse_row(layout, "Output image (.png):", self._browse_output)
+
+        layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         self.palette_edit = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
         self.palette_edit.setText("SUNNY.PCX")
 
+        advanced_box = QtWidgets.QGroupBox("Advanced")
+        advanced_box.setCheckable(True)
+        advanced_box.setChecked(False)
+        advanced_layout = QtWidgets.QVBoxLayout(advanced_box)
         self.crop_checkbox = QtWidgets.QCheckBox("Crop transparent border")
-        layout.addWidget(self.crop_checkbox)
+        advanced_layout.addWidget(self.crop_checkbox)
+        layout.addWidget(advanced_box)
 
-        convert_btn = QtWidgets.QPushButton("Convert PMP → PNG")
+        layout.addWidget(QtWidgets.QLabel("3. Export"))
+        self.output_edit = self._make_browse_row(layout, "Output image (.png):", self._browse_output)
+
+        layout.addStretch(1)
+        convert_btn = QtWidgets.QPushButton("Export")
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel("Ready")
         self.status_label.setWordWrap(True)
-        layout.addWidget(convert_btn)
+        action_row = QtWidgets.QHBoxLayout()
+        action_row.addStretch(1)
+        action_row.addWidget(convert_btn)
+        layout.addLayout(action_row)
         layout.addWidget(self.status_label)
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
