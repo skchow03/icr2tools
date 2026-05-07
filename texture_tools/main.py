@@ -548,16 +548,14 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Texture Tools")
-        self.resize(960, 700)
+        self.resize(980, 720)
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
-        tabs.addTab(self._build_sunny_tab(), "Palette Optimizer")
-        tabs.addTab(ChopHorizonWidget(), "Chop Horizon")
-        tabs.addTab(MipConversionWidget(), "MIP Conversion")
-        tabs.addTab(PmpConversionWidget(), "PNG → PMP")
-        tabs.addTab(PmpToPngWidget(), "PMP → PNG")
-        self.setCentralWidget(tabs)
+        self.intent_tabs = QtWidgets.QTabWidget()
+        self.intent_tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
+        self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
+        self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
+        self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
+        self.setCentralWidget(self.intent_tabs)
 
         self._sunny_windows: list[SunnyOptimizerWindow] = []
         QtCore.QTimer.singleShot(0, self._show_overview_dialog)
@@ -570,33 +568,52 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
     def _show_overview_dialog(self) -> None:
         message = (
             "Welcome to Texture Tools.\n\n"
-            "Tabs:\n"
-            "• Palette Optimizer: launch Sunny Optimizer for multi-texture palette balancing.\n"
-            "• Chop Horizon: split a 2048x64 horizon strip into game-ready sheets.\n"
-            "• MIP Conversion: convert image ↔ MIP using a palette.\n"
-            "• PNG → PMP: encode indexed PMP sprites.\n"
-            "• PMP → PNG: decode PMP back to PNG for editing.\n\n"
-            "Recommended start:\n"
-            "1) Build or tune palette in Palette Optimizer.\n"
-            "2) Convert assets with PNG ↔ PMP or MIP tools.\n"
-            "3) Use Chop Horizon for sky/horizon sheets when needed."
+            "Workflows by intent:\n"
+            "• Optimize palette: Sunny Optimizer (opens in a dedicated advanced workspace).\n"
+            "• Convert formats: MIP and PMP encode/decode tools.\n"
+            "• Split/prepare textures: Chop Horizon helper.\n\n"
+            "Why Sunny opens separately:\n"
+            "Sunny Optimizer is a full multi-pane editor with drag/drop, palette visualizers, and large previews. "
+            "Keeping it in a dedicated window preserves its workspace while this launcher stays focused on quick tools."
         )
         QtWidgets.QMessageBox.information(self, "Texture Tools Overview", message)
 
-    def _build_sunny_tab(self) -> QtWidgets.QWidget:
+    def _build_optimize_palette_tab(self) -> QtWidgets.QWidget:
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
-        text = QtWidgets.QLabel(
-            "Launch the full Sunny Optimizer window from here. "
-            "This keeps all texture-focused tools grouped under Texture Tools."
+
+        banner = QtWidgets.QFrame()
+        banner.setStyleSheet("QFrame { background: #f5f0ff; border: 1px solid #b99cff; border-radius: 8px; }")
+        banner_layout = QtWidgets.QVBoxLayout(banner)
+        title = QtWidgets.QLabel("Sunny Optimizer (Dedicated Workspace)")
+        title.setStyleSheet("font-weight: 700;")
+        desc = QtWidgets.QLabel(
+            "Palette optimization opens in a separate advanced window. "
+            "This is intentional: Sunny uses a large, multi-pane UI optimized for side-by-side preview and palette editing."
         )
-        text.setWordWrap(True)
+        desc.setWordWrap(True)
+        banner_layout.addWidget(title)
+        banner_layout.addWidget(desc)
+
         button = QtWidgets.QPushButton("Open Sunny Optimizer")
         button.clicked.connect(self._open_sunny_optimizer)
-        layout.addWidget(text)
+
+        layout.addWidget(banner)
         layout.addWidget(button)
         layout.addStretch(1)
         return container
+
+    def _build_convert_formats_tab(self) -> QtWidgets.QWidget:
+        tabs = QtWidgets.QTabWidget()
+        tabs.addTab(MipConversionWidget(), "MIP Conversion")
+        tabs.addTab(PmpConversionWidget(), "PNG → PMP")
+        tabs.addTab(PmpToPngWidget(), "PMP → PNG")
+        return tabs
+
+    def _build_split_prepare_tab(self) -> QtWidgets.QWidget:
+        tabs = QtWidgets.QTabWidget()
+        tabs.addTab(ChopHorizonWidget(), "Chop Horizon")
+        return tabs
 
     def _open_sunny_optimizer(self) -> None:
         window = SunnyOptimizerWindow()
