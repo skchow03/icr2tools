@@ -329,7 +329,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_settings()
 
     def _update_action_states(self) -> None:
-        has_textures = bool(self.texture_images)
+        folder_ok = self.loaded_texture_folder is not None and self.loaded_texture_folder.exists() and self.loaded_texture_folder.is_dir()
+        has_textures = folder_ok and bool(self.texture_images)
         has_quantized_results = bool(self.quantized_images)
 
         self.compute_btn.setEnabled(has_textures)
@@ -337,8 +338,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if has_textures:
             self.compute_hint_label.setText("Step 2: Click Generate Optimized Palette when you are ready.")
+        elif not folder_ok:
+            self.compute_hint_label.setText("Missing: valid texture folder path.")
         else:
-            self.compute_hint_label.setText("Step 1: Select texture folder to enable palette computation.")
+            self.compute_hint_label.setText("Missing: texture images (.png/.jpg/.jpeg/.bmp) in selected folder.")
 
         if has_quantized_results:
             self.save_hint_label.setText("Step 3: Save palette to write your optimized .pcx file.")
