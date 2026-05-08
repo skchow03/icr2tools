@@ -242,6 +242,21 @@ def _validate_path(
 def _fmt_dimensions(image: Image.Image) -> str:
     return f"{image.width}x{image.height}"
 
+def _collect_folder_image_inputs(source_dir: Path) -> list[Path]:
+    preferred: dict[str, Path] = {}
+    for path in sorted(source_dir.iterdir(), key=lambda p: p.name.lower()):
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        if suffix not in {".png", ".bmp"}:
+            continue
+        stem_key = path.stem.lower()
+        if suffix == ".png":
+            preferred[stem_key] = path
+        elif stem_key not in preferred:
+            preferred[stem_key] = path
+    return list(preferred.values())
+
 
 def _confirm_summary(parent: QtWidgets.QWidget, *, dimensions: str, output_format: str, palette_source: str, destination: Path) -> bool:
     message = (
@@ -440,6 +455,17 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         convert_row.addWidget(self.to_mip_btn)
         convert_row.addWidget(self.from_mip_btn)
         form_layout.addLayout(convert_row)
+        form_layout.addWidget(QtWidgets.QLabel("Batch convert folder (.png/.bmp → .mip)"))
+        self.source_folder_edit, self.source_folder_error = self._make_browse_row(form_layout, "Source folder:", self._browse_source_folder, "source_folder")
+        self.source_folder_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a source folder path.")
+        self.source_folder_edit._on_accept = lambda p: self.source_folder_edit.setText(str(p[0]))
+        self.target_folder_edit, self.target_folder_error = self._make_browse_row(form_layout, "Target folder:", self._browse_target_folder, "target_folder")
+        self.target_folder_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a target folder path.")
+        self.target_folder_edit._on_accept = lambda p: self.target_folder_edit.setText(str(p[0]))
+        self.batch_btn = QtWidgets.QPushButton("Convert Folder to MIP")
+        _set_secondary_button(self.batch_btn)
+        self.batch_btn.clicked.connect(self._convert_folder_to_mip)
+        form_layout.addWidget(self.batch_btn)
 
         self.preview_pane = PreviewPane("Output preview")
         self.preview_pane.setMinimumWidth(320)
@@ -448,7 +474,7 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
         form_layout.addWidget(self.status_label)
-        for edit in (self.input_edit, self.palette_edit, self.output_edit):
+        for edit in (self.input_edit, self.palette_edit, self.output_edit, self.source_folder_edit, self.target_folder_edit):
             edit.textChanged.connect(self._update_validation_state)
         self.input_edit.textChanged.connect(self._refresh_preview)
         self.palette_edit.textChanged.connect(self._refresh_preview)
@@ -518,10 +544,25 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         _set_field_error(self.input_edit, self.input_error, errors["input"])
         _set_field_error(self.palette_edit, self.palette_error, errors["palette"])
         _set_field_error(self.output_edit, self.output_error, errors["output"])
+        source_folder_error = _validate_path(
+            self.source_folder_edit.text().strip(),
+            label="Source folder",
+            expected_suffixes=(),
+            folder_only=True,
+        )
+        target_folder_error = _validate_path(
+            self.target_folder_edit.text().strip(),
+            label="Target folder",
+            expected_suffixes=(),
+            folder_only=True,
+        )
+        _set_field_error(self.source_folder_edit, self.source_folder_error, source_folder_error)
+        _set_field_error(self.target_folder_edit, self.target_folder_error, target_folder_error)
         problems = [name for name, err in errors.items() if err]
         valid = not problems
         self.to_mip_btn.setEnabled(valid)
         self.from_mip_btn.setEnabled(valid)
+        self.batch_btn.setEnabled(not source_folder_error and not target_folder_error and not errors["palette"])
         self.set_status(STATUS_IDLE if valid else STATUS_VALIDATING, "Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
         return valid
 
@@ -547,6 +588,18 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         if path:
             self.output_edit.setText(path)
             self._record_recent_path("output", path)
+
+    def _browse_source_folder(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select source folder")
+        if path:
+            self.source_folder_edit.setText(path)
+            self._record_recent_path("source_folder", path)
+
+    def _browse_target_folder(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select target folder")
+        if path:
+            self.target_folder_edit.setText(path)
+            self._record_recent_path("target_folder", path)
 
     def _convert_to_mip(self) -> None:
         if not self._update_validation_state():
@@ -597,6 +650,45 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"MIP extraction failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "MIP extraction failed", str(exc))
+
+    def _convert_folder_to_mip(self) -> None:
+        source_error = _validate_path(self.source_folder_edit.text().strip(), label="Source folder", expected_suffixes=(), folder_only=True)
+        target_error = _validate_path(self.target_folder_edit.text().strip(), label="Target folder", expected_suffixes=(), folder_only=True)
+        palette_error = _validate_path(self.palette_edit.text().strip(), label="Palette", expected_suffixes=(".pcx",))
+        if source_error or target_error or palette_error:
+            self.set_status(STATUS_VALIDATING, "Missing/invalid batch fields.")
+            return
+        try:
+            source_dir = Path(self.source_folder_edit.text().strip())
+            target_dir = Path(self.target_folder_edit.text().strip())
+            palette_path = Path(self.palette_edit.text().strip())
+            mode = self.mode_combo.currentText()
+            selected_inputs = _collect_folder_image_inputs(source_dir)
+            if not selected_inputs:
+                self.set_status(STATUS_IDLE, "No .png or .bmp files found in source folder.")
+                return
+            overwrite_targets = [target_dir / f"{src.stem}.mip" for src in selected_inputs if (target_dir / f"{src.stem}.mip").exists()]
+            if overwrite_targets:
+                answer = QtWidgets.QMessageBox.warning(
+                    self,
+                    "Overwrite existing MIP files?",
+                    f"{len(overwrite_targets)} existing .mip file(s) will be overwritten in:\n{target_dir}\n\nContinue?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No,
+                )
+                if answer != QtWidgets.QMessageBox.Yes:
+                    self.set_status(STATUS_IDLE, "Folder conversion cancelled.")
+                    return
+            converted = 0
+            for source_path in selected_inputs:
+                out_path = target_dir / f"{source_path.stem}.mip"
+                quantized = Image.open(source_path).convert("P")
+                img_to_mip(quantized, str(out_path), str(palette_path), mode)
+                converted += 1
+            self.set_status(STATUS_SUCCESS, f"Converted {converted} file(s) to MIP in {target_dir}")
+        except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"Folder MIP conversion failed: {exc}")
+            QtWidgets.QMessageBox.critical(self, "Folder MIP conversion failed", str(exc))
 
 
 class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
