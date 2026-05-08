@@ -302,6 +302,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.batch_budget_spinbox.setValue(OPTIMIZED_SLOTS)
         self.apply_batch_btn = QtWidgets.QPushButton("Apply Batch Action")
         self.apply_batch_btn.clicked.connect(self._apply_batch_action)
+        self.preset_combo = QtWidgets.QComboBox()
+        self.preset_combo.setEditable(False)
+        self.save_preset_btn = QtWidgets.QPushButton("Save Preset")
+        self.save_preset_btn.clicked.connect(self._save_preset_dialog)
+        self.load_preset_btn = QtWidgets.QPushButton("Load Preset")
+        self.load_preset_btn.clicked.connect(self._load_selected_preset)
+        self.delete_preset_btn = QtWidgets.QPushButton("Delete Preset")
+        self.delete_preset_btn.clicked.connect(self._delete_selected_preset)
         self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
         self.dirt_checkbox.setToolTip(
             "Enable this if your textures include dirt/brown tones that should be reserved in the optimized palette."
