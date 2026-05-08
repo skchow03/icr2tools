@@ -13,6 +13,7 @@ class SunnyOptimizerSettings:
         self.color_budgets: dict[str, dict[str, int]] = {}
         self.tool_presets: dict[str, dict[str, dict[str, str]]] = {}
         self.default_presets: dict[str, str] = {}
+        self.recent_paths: dict[str, list[str]] = {}
 
     @staticmethod
     def default_path() -> Path:
@@ -64,6 +65,16 @@ class SunnyOptimizerSettings:
         if parser.has_section("preset_defaults"):
             self.default_presets = {k: v for k, v in parser.items("preset_defaults")}
 
+        self.recent_paths = {}
+        if parser.has_section("recent_paths"):
+            for key, raw_json in parser.items("recent_paths"):
+                try:
+                    value = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, list):
+                    self.recent_paths[key] = [str(v) for v in value if str(v).strip()]
+
     def save(self) -> None:
         parser = ConfigParser()
         parser["recent"] = {
@@ -85,6 +96,13 @@ class SunnyOptimizerSettings:
 
         if self.default_presets:
             parser["preset_defaults"] = dict(sorted(self.default_presets.items()))
+
+        if self.recent_paths:
+            parser["recent_paths"] = {
+                name: json.dumps(values)
+                for name, values in sorted(self.recent_paths.items())
+                if values
+            }
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as handle:
@@ -113,3 +131,15 @@ class SunnyOptimizerSettings:
 
     def default_preset_for_tool(self, tool_name: str) -> str:
         return self.default_presets.get(tool_name, "")
+
+
+    def get_recent_paths(self, key: str) -> list[str]:
+        return list(self.recent_paths.get(key, []))
+
+    def push_recent_path(self, key: str, value: str, *, limit: int = 10) -> None:
+        normalized = str(value).strip()
+        if not normalized:
+            return
+        values = [v for v in self.recent_paths.get(key, []) if v != normalized]
+        values.insert(0, normalized)
+        self.recent_paths[key] = values[: max(1, limit)]
