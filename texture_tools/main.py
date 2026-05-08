@@ -392,11 +392,18 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._build_ui()
 
     def _build_ui(self) -> None:
-        layout = QtWidgets.QVBoxLayout(self)
+        layout = QtWidgets.QHBoxLayout(self)
         _apply_panel_layout(layout)
+        layout.setSpacing(12)
+        form_panel = QtWidgets.QWidget()
+        form_layout = QtWidgets.QVBoxLayout(form_panel)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(UI_SECTION_SPACING)
+        layout.addWidget(form_panel, 3)
+
         section, section_layout = _make_section_card("1. Choose input")
         section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
-        layout.addWidget(section)
+        form_layout.addWidget(section)
 
         mode_row = QtWidgets.QHBoxLayout()
         mode_row.addWidget(QtWidgets.QLabel("Mode:"))
@@ -405,24 +412,24 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.mode_combo.setToolTip("Choose target format rules: 'track' for world textures, 'carset' for vehicle textures.")
         mode_row.addWidget(self.mode_combo)
         mode_row.addStretch(1)
-        layout.addLayout(mode_row)
+        form_layout.addLayout(mode_row)
 
-        self.input_edit, self.input_error = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input, "input")
+        self.input_edit, self.input_error = self._make_browse_row(form_layout, "Input image (.bmp/.png) or .mip:", self._browse_input, "input")
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".bmp", ".png", ".mip"}, "Drop a .bmp, .png, or .mip file.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
-        layout.addWidget(QtWidgets.QLabel("2. Configure options"))
-        self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette, "palette")
+        form_layout.addWidget(QtWidgets.QLabel("2. Configure options"))
+        self.palette_edit, self.palette_error = self._make_browse_row(form_layout, "Palette file (.pcx):", self._browse_palette, "palette")
         self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
         self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
 
-        layout.addWidget(QtWidgets.QLabel("3. Export"))
-        self.output_edit, self.output_error = self._make_browse_row(layout, "Output file:", self._browse_output, "output")
+        form_layout.addWidget(QtWidgets.QLabel("3. Export"))
+        self.output_edit, self.output_error = self._make_browse_row(form_layout, "Output file:", self._browse_output, "output")
         self.output_edit._acceptor = lambda p: (len(p)==1 and ((p[0].suffix.lower() in {".bmp", ".png", ".mip"}) or not p[0].exists()), "Drop a target file path ending in .bmp, .png, or .mip.")
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
-        layout.addStretch(1)
-        self._build_preset_controls(layout)
+        form_layout.addStretch(1)
+        self._build_preset_controls(form_layout)
         convert_row = QtWidgets.QHBoxLayout()
         self.to_mip_btn = QtWidgets.QPushButton("Convert")
         _set_primary_button(self.to_mip_btn)
@@ -432,13 +439,15 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.from_mip_btn.clicked.connect(self._convert_from_mip)
         convert_row.addWidget(self.to_mip_btn)
         convert_row.addWidget(self.from_mip_btn)
-        layout.addLayout(convert_row)
+        form_layout.addLayout(convert_row)
+
         self.preview_pane = PreviewPane("Output preview")
-        layout.addWidget(self.preview_pane)
+        self.preview_pane.setMinimumWidth(320)
+        layout.addWidget(self.preview_pane, 2)
 
         self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
+        form_layout.addWidget(self.status_label)
         for edit in (self.input_edit, self.palette_edit, self.output_edit):
             edit.textChanged.connect(self._update_validation_state)
         self.input_edit.textChanged.connect(self._refresh_preview)
