@@ -305,26 +305,81 @@ class PreviewPane(QtWidgets.QGroupBox):
     def __init__(self, title: str = "Preview", parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(title, parent)
         layout = QtWidgets.QVBoxLayout(self)
+        controls = QtWidgets.QHBoxLayout()
+        controls.addStretch(1)
+        self.fit_btn = QtWidgets.QPushButton("Fit to pane")
+        self.fit_btn.clicked.connect(self._fit_to_pane)
+        controls.addWidget(self.fit_btn)
+        layout.addLayout(controls)
+
+        self._scene = QtWidgets.QGraphicsScene(self)
+        self._pixmap_item = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._pixmap_item)
+
+        self.image_view = QtWidgets.QGraphicsView(self._scene)
+        self.image_view.setMinimumHeight(160)
+        self.image_view.setStyleSheet("border: 1px solid #d1d5db; background: #fff;")
+        self.image_view.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
+        self.image_view.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        self.image_view.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.image_view.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
+        self.image_view.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+        self.image_view.setInteractive(False)
+        self.image_view.viewport().installEventFilter(self)
+        self._zoom_factor = 1.0
+
         self.image_label = QtWidgets.QLabel("No preview available.")
         self.image_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.image_label.setMinimumHeight(160)
-        self.image_label.setStyleSheet("border: 1px solid #d1d5db; background: #fff;")
-        self.image_label.setScaledContents(False)
+        self.image_label.setStyleSheet("color: #6b7280; background: transparent;")
+        self.image_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self._scene.addWidget(self.image_label)
+
         self.meta_label = QtWidgets.QLabel("")
         self.meta_label.setStyleSheet("color: #6b7280;")
-        layout.addWidget(self.image_label)
+        layout.addWidget(self.image_view)
         layout.addWidget(self.meta_label)
 
     def set_preview(self, image: Image.Image, *, caption: str = "") -> None:
         pixmap = _pil_to_pixmap(image)
-        scaled = pixmap.scaled(440, 220, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        self.image_label.setPixmap(scaled)
+        self._pixmap_item.setPixmap(pixmap)
+        self.image_label.hide()
+        self.image_view.viewport().setCursor(QtCore.Qt.OpenHandCursor)
+        self._fit_to_pane()
         self.meta_label.setText(caption or _fmt_dimensions(image))
 
     def clear_preview(self, message: str = "No preview available.") -> None:
-        self.image_label.setPixmap(QtGui.QPixmap())
+        self._pixmap_item.setPixmap(QtGui.QPixmap())
         self.image_label.setText(message)
+        self.image_label.show()
+        self.image_view.viewport().unsetCursor()
+        self._fit_to_pane()
         self.meta_label.setText("")
+
+    def _fit_to_pane(self) -> None:
+        self.image_view.resetTransform()
+        self._zoom_factor = 1.0
+        pixmap = self._pixmap_item.pixmap()
+        if pixmap.isNull():
+            return
+        self.image_view.fitInView(self._pixmap_item, QtCore.Qt.KeepAspectRatio)
+        self._zoom_factor = self.image_view.transform().m11()
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if watched is self.image_view.viewport():
+            if event.type() == QtCore.QEvent.Wheel and not self._pixmap_item.pixmap().isNull():
+                delta = event.angleDelta().y()
+                if delta:
+                    factor = 1.15 if delta > 0 else 1 / 1.15
+                    new_zoom = self._zoom_factor * factor
+                    if 0.02 <= new_zoom <= 80:
+                        self.image_view.scale(factor, factor)
+                        self._zoom_factor = new_zoom
+                return True
+            if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
+                self.image_view.setCursor(QtCore.Qt.ClosedHandCursor)
+            elif event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
+                self.image_view.setCursor(QtCore.Qt.OpenHandCursor)
+        return super().eventFilter(watched, event)
 class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin, RecentPathMixin):
     TOOL_PRESET_KEY = "mip_conversion"
     TOOL_RECENT_KEY = "mip_conversion"
