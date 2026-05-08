@@ -10,9 +10,9 @@ if __package__ is None or __package__ == "":
 from PIL import Image
 
 try:
-    from PyQt5 import QtCore, QtWidgets
+    from PyQt5 import QtCore, QtGui, QtWidgets
 except ImportError:  # pragma: no cover
-    from PySide6 import QtCore, QtWidgets  # type: ignore
+    from PySide6 import QtCore, QtGui, QtWidgets  # type: ignore
 
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
 from texture_tools.pmp import png_to_pmp
@@ -237,6 +237,61 @@ def _validate_path(
     return None
 
 
+
+
+def _fmt_dimensions(image: Image.Image) -> str:
+    return f"{image.width}x{image.height}"
+
+
+def _confirm_summary(parent: QtWidgets.QWidget, *, dimensions: str, output_format: str, palette_source: str, destination: Path) -> bool:
+    message = (
+        "Output summary:\n"
+        f"• Dimensions: {dimensions}\n"
+        f"• Format: {output_format}\n"
+        f"• Palette: {palette_source}\n"
+        f"• Destination: {destination}"
+    )
+    result = QtWidgets.QMessageBox.question(
+        parent,
+        "Confirm output",
+        message,
+        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        QtWidgets.QMessageBox.Yes,
+    )
+    return result == QtWidgets.QMessageBox.Yes
+
+
+def _offer_preview(parent: QtWidgets.QWidget, image: Image.Image, title: str) -> bool:
+    preview_message = QtWidgets.QMessageBox(parent)
+    preview_message.setIcon(QtWidgets.QMessageBox.Question)
+    preview_message.setWindowTitle("Preview output")
+    preview_message.setText("Preview output before final write?")
+    preview_message.setStandardButtons(
+        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+    )
+    choice = preview_message.exec_()
+    if choice == QtWidgets.QMessageBox.Cancel:
+        return False
+    if choice == QtWidgets.QMessageBox.Yes:
+        rgb_image = image.convert("RGBA")
+        data = rgb_image.tobytes("raw", "RGBA")
+        qimage = QtGui.QImage(data, rgb_image.width, rgb_image.height, QtGui.QImage.Format_RGBA8888)
+        pixmap = QtGui.QPixmap.fromImage(qimage.copy())
+        dialog = QtWidgets.QDialog(parent)
+        dialog.setWindowTitle(title)
+        vbox = QtWidgets.QVBoxLayout(dialog)
+        scroll = QtWidgets.QScrollArea()
+        label = QtWidgets.QLabel()
+        label.setPixmap(pixmap)
+        scroll.setWidget(label)
+        scroll.setWidgetResizable(True)
+        vbox.addWidget(scroll)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        vbox.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        return dialog.exec_() == QtWidgets.QDialog.Accepted
+    return True
 class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin, RecentPathMixin):
     TOOL_PRESET_KEY = "mip_conversion"
     TOOL_RECENT_KEY = "mip_conversion"
@@ -379,6 +434,18 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             mode = self.mode_combo.currentText()
             image = Image.open(input_path)
             quantized = image.convert("P")
+            if not _offer_preview(self, quantized, "MIP preview"):
+                self.set_status(STATUS_IDLE, "Conversion cancelled.")
+                return
+            if not _confirm_summary(
+                self,
+                dimensions=_fmt_dimensions(quantized),
+                output_format="MIP",
+                palette_source=str(palette_path),
+                destination=output_path,
+            ):
+                self.set_status(STATUS_IDLE, "Conversion cancelled.")
+                return
             img_to_mip(quantized, str(output_path), str(palette_path), mode)
             self.set_status(STATUS_SUCCESS, f"Created MIP: {output_path}")
         except Exception as exc:  # pragma: no cover
@@ -394,7 +461,20 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             output_path = Path(self.output_edit.text().strip())
             palette = load_palette(str(palette_path))
             mip_images = mip_to_img(str(input_path), palette)
-            mip_images[0].save(output_path)
+            preview_image = mip_images[0]
+            if not _offer_preview(self, preview_image, "Image preview"):
+                self.set_status(STATUS_IDLE, "Export cancelled.")
+                return
+            if not _confirm_summary(
+                self,
+                dimensions=_fmt_dimensions(preview_image),
+                output_format=output_path.suffix.lstrip(".").upper() or "Image",
+                palette_source=str(palette_path),
+                destination=output_path,
+            ):
+                self.set_status(STATUS_IDLE, "Export cancelled.")
+                return
+            preview_image.save(output_path)
             self.set_status(STATUS_SUCCESS, f"Created image: {output_path}")
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"MIP extraction failed: {exc}")
@@ -627,6 +707,19 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
                 raise ValueError("Header size field must be in range 0000..FFFF")
             palette_raw = self.palette_edit.text().strip()
             palette_path = palette_raw if palette_raw else None
+            input_image = Image.open(self.input_edit.text().strip())
+            if not _offer_preview(self, input_image, "PNG preview"):
+                self.set_status(STATUS_IDLE, "Conversion cancelled.")
+                return
+            if not _confirm_summary(
+                self,
+                dimensions=_fmt_dimensions(input_image),
+                output_format="PMP",
+                palette_source=palette_path or "default internal palette",
+                destination=Path(self.output_edit.text().strip()),
+            ):
+                self.set_status(STATUS_IDLE, "Conversion cancelled.")
+                return
             out = png_to_pmp(
                 self.input_edit.text().strip(),
                 self.output_edit.text().strip(),
@@ -732,13 +825,30 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
     def _convert(self) -> None:
         try:
             self.set_status(STATUS_PROCESSING, "Exporting PNG from PMP...")
+            palette_path = self.palette_edit.text().strip()
+            input_path = self.input_edit.text().strip()
+            output_path = Path(self.output_edit.text().strip())
+            preview_palette = load_palette(palette_path)
+            preview_image = mip_to_img(input_path, preview_palette)[0]
+            if not _offer_preview(self, preview_image, "PNG preview"):
+                self.set_status(STATUS_IDLE, "Export cancelled.")
+                return
+            if not _confirm_summary(
+                self,
+                dimensions=_fmt_dimensions(preview_image),
+                output_format="PNG",
+                palette_source=palette_path,
+                destination=output_path,
+            ):
+                self.set_status(STATUS_IDLE, "Export cancelled.")
+                return
             convert_pmp_to_png(
-                self.input_edit.text().strip(),
-                self.output_edit.text().strip(),
-                self.palette_edit.text().strip(),
+                input_path,
+                str(output_path),
+                palette_path,
                 crop=self.crop_checkbox.isChecked(),
             )
-            self.set_status(STATUS_SUCCESS, f"Created PNG: {self.output_edit.text().strip()}")
+            self.set_status(STATUS_SUCCESS, f"Created PNG: {output_path}")
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"PMP conversion failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
