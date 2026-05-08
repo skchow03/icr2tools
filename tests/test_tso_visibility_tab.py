@@ -94,6 +94,29 @@ def test_add_selected_tso_inserts_after_selected_visible_tso() -> None:
     assert tab.tso_list.currentRow() == 1
     assert tab.tso_list.item(1).text() == "__TSO2"
 
+
+
+def test_unassigned_tso_filter_rows_are_highlighted_light_blue() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1, 2, 3])
+    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[2])])
+
+    unassigned_filter_item = tab.tso_filter_list.item(0, 0)
+    unassigned_tso_item = tab.tso_filter_list.item(0, 1)
+    assigned_filter_item = tab.tso_filter_list.item(1, 0)
+    assigned_tso_item = tab.tso_filter_list.item(1, 1)
+
+    assert unassigned_filter_item is not None
+    assert unassigned_tso_item is not None
+    assert assigned_filter_item is not None
+    assert assigned_tso_item is not None
+
+    assert unassigned_filter_item.background().color().name() == "#dbeeff"
+    assert unassigned_tso_item.background().color().name() == "#dbeeff"
+    assert assigned_filter_item.background().style() == 0
+    assert assigned_tso_item.background().style() == 0
+
 def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
     _app()
     dialog = TSOVisibilityReconcileDialog(
