@@ -160,6 +160,10 @@ class MainWindow(QtWidgets.QMainWindow):
     SORT_BY_BUDGET = "Budget"
     RECENT_TEXTURE_FOLDER_KEY = "sunny_optimizer:texture_folder"
     RECENT_PALETTE_KEY = "sunny_optimizer:palette"
+    WORKFLOW_PENDING = "Pending"
+    WORKFLOW_READY = "Ready"
+    WORKFLOW_DONE = "Done"
+    WORKFLOW_BLOCKED = "Blocked"
 
     def __init__(self) -> None:
         super().__init__()
@@ -184,6 +188,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self._build_ui()
         self.setAcceptDrops(True)
 
+    def _workflow_style(self, status: str) -> str:
+        styles = {
+            self.WORKFLOW_PENDING: "background: #eef2f7; color: #44546f;",
+            self.WORKFLOW_READY: "background: #dbeafe; color: #1d4ed8;",
+            self.WORKFLOW_DONE: "background: #dcfce7; color: #166534;",
+            self.WORKFLOW_BLOCKED: "background: #fee2e2; color: #991b1b;",
+        }
+        return styles.get(status, styles[self.WORKFLOW_PENDING])
+
+    def _set_workflow_step_status(self, step_key: str, status: str) -> None:
+        chip = self.workflow_status_chips.get(step_key)
+        if chip is None:
+            return
+        chip.setText(status)
+        chip.setStyleSheet(
+            f"{self._workflow_style(status)} border: 1px solid #cfd8e3; border-radius: 10px; padding: 2px 8px; font-weight: 600;"
+        )
+
     def _show_drop_message(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
 
@@ -202,13 +224,28 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.inline_status_label.setVisible(True)
         self.inline_action_row.setVisible(True)
+        self._update_action_states()
 
     def _clear_inline_status(self) -> None:
         self.inline_status_label.setVisible(False)
         self.inline_action_row.setVisible(False)
 
+    def _select_base_palette(self) -> str:
+        selected_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Load SUNNY palette",
+            "",
+            "PCX files (*.pcx *.PCX);;All files (*)",
+        )
+        if not selected_path:
+            return ""
+        resolved_palette = Path(selected_path).resolve()
+        self._set_palette_path(str(resolved_palette))
+        self._update_action_states()
+        return str(resolved_palette)
+
     def _focus_palette_selection(self) -> None:
-        self.compute_palette()
+        self._select_base_palette()
 
     def _focus_folder_selection(self) -> None:
         self.select_folder()
@@ -294,8 +331,40 @@ class MainWindow(QtWidgets.QMainWindow):
 
         left_panel = QtWidgets.QVBoxLayout()
         left_panel.setSpacing(10)
+        workflow_card = QtWidgets.QFrame()
+        workflow_card.setObjectName("sectionCard")
+        workflow_layout = QtWidgets.QVBoxLayout(workflow_card)
+        workflow_layout.setContentsMargins(10, 10, 10, 10)
+        workflow_layout.setSpacing(6)
+        workflow_title = QtWidgets.QLabel("Workflow")
+        workflow_title.setObjectName("sectionTitle")
+        workflow_layout.addWidget(workflow_title)
+        self.workflow_status_chips: dict[str, QtWidgets.QLabel] = {}
+        self.workflow_buttons: dict[str, QtWidgets.QPushButton] = {}
+        workflow_steps = [
+            ("folder", "1. Select folder", self.select_folder),
+            ("palette", "2. Select base palette", self._select_base_palette),
+            ("generate", "3. Generate optimized palette", self.compute_palette),
+            ("save", "4. Save result", self.save_palette_dialog),
+        ]
+        for step_key, text, handler in workflow_steps:
+            row = QtWidgets.QHBoxLayout()
+            button = QtWidgets.QPushButton(text)
+            button.setProperty("secondary", True)
+            button.clicked.connect(handler)
+            chip = QtWidgets.QLabel(self.WORKFLOW_PENDING)
+            chip.setAlignment(QtCore.Qt.AlignCenter)
+            chip.setMinimumWidth(68)
+            row.addWidget(button, 1)
+            row.addWidget(chip, 0)
+            workflow_layout.addLayout(row)
+            self.workflow_buttons[step_key] = button
+            self.workflow_status_chips[step_key] = chip
+            self._set_workflow_step_status(step_key, self.WORKFLOW_PENDING)
+
         left_panel.addWidget(self.inline_status_label)
         left_panel.addWidget(self.inline_action_row)
+        left_panel.addWidget(workflow_card)
         folder_controls = QtWidgets.QHBoxLayout()
         self.folder_btn = QtWidgets.QPushButton("Select Texture Images Folder")
         self.folder_btn.clicked.connect(self.select_folder)
@@ -728,13 +797,44 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_action_states(self) -> None:
         folder_ok = self.loaded_texture_folder is not None and self.loaded_texture_folder.exists() and self.loaded_texture_folder.is_dir()
         has_textures = folder_ok and bool(self.texture_images)
+        has_palette_path = self._last_sunny_palette_path is not None and self._last_sunny_palette_path.exists()
         has_quantized_results = bool(self.quantized_images)
+        has_inline_error = self.inline_status_label.isVisible()
+        has_inline_warning = has_inline_error and "warning" in self.inline_status_label.styleSheet()
 
-        self.compute_btn.setEnabled(has_textures)
+        self.compute_btn.setEnabled(has_textures and has_palette_path)
         self.save_btn.setEnabled(has_quantized_results)
+        self.workflow_buttons["folder"].setEnabled(True)
+        self.workflow_buttons["palette"].setEnabled(True)
+        self.workflow_buttons["generate"].setEnabled(has_textures and has_palette_path)
+        self.workflow_buttons["save"].setEnabled(has_quantized_results)
 
-        if has_textures:
+        self._set_workflow_step_status("folder", self.WORKFLOW_DONE if has_textures else self.WORKFLOW_READY)
+        if has_palette_path:
+            self._set_workflow_step_status("palette", self.WORKFLOW_DONE)
+        elif has_textures:
+            self._set_workflow_step_status("palette", self.WORKFLOW_READY)
+        else:
+            self._set_workflow_step_status("palette", self.WORKFLOW_PENDING)
+        if has_quantized_results:
+            self._set_workflow_step_status("generate", self.WORKFLOW_DONE)
+        elif has_textures and has_palette_path:
+            self._set_workflow_step_status("generate", self.WORKFLOW_READY)
+        elif has_textures:
+            self._set_workflow_step_status("generate", self.WORKFLOW_BLOCKED)
+        else:
+            self._set_workflow_step_status("generate", self.WORKFLOW_PENDING)
+        if has_quantized_results:
+            self._set_workflow_step_status("save", self.WORKFLOW_READY)
+        elif has_textures and has_palette_path:
+            self._set_workflow_step_status("save", self.WORKFLOW_PENDING)
+        else:
+            self._set_workflow_step_status("save", self.WORKFLOW_BLOCKED if has_inline_warning else self.WORKFLOW_PENDING)
+
+        if has_textures and has_palette_path:
             self.compute_hint_label.setText("Step 2: Click Generate Optimized Palette when you are ready.")
+        elif has_textures:
+            self.compute_hint_label.setText("Missing: select a base SUNNY .pcx palette.")
         elif not folder_ok:
             self.compute_hint_label.setText("Missing: valid texture folder path.")
         else:
@@ -853,30 +953,21 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_inline_status(
                 "No textures are loaded.",
                 level="warning",
-                next_action="Select a texture images folder, then recompute the palette.",
+                next_action="Use Workflow Step 1: Select folder.",
             )
             return
 
-        palette_path = ""
-        if self._last_sunny_palette_path is not None and self._last_sunny_palette_path.exists():
-            palette_path = str(self._last_sunny_palette_path)
-        else:
-            remembered = self.settings.last_sunny_palette
-            if remembered:
-                remembered_path = Path(remembered).expanduser()
-                if remembered_path.exists():
-                    palette_path = str(remembered_path)
-
+        palette_path = str(self._last_sunny_palette_path) if self._last_sunny_palette_path is not None else ""
+        if palette_path and not Path(palette_path).exists():
+            palette_path = ""
         if not palette_path:
-            selected_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self,
-                "Load SUNNY palette",
-                "",
-                "PCX files (*.pcx *.PCX);;All files (*)",
+            self._set_inline_status(
+                "No base palette is selected.",
+                level="warning",
+                next_action="Use Workflow Step 2: Select base palette.",
             )
-            if not selected_path:
-                return
-            palette_path = selected_path
+            self._update_action_states()
+            return
 
         step_total = 4
         started_at = time.perf_counter()
@@ -923,7 +1014,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_inline_status(
                 f"Optimization failed for {palette_filename}: {exc}",
                 level="error",
-                next_action="Select a valid .pcx palette file and retry optimization.",
+                next_action="Use Workflow Step 2 to pick a valid .pcx palette, then Step 3 to generate.",
             )
             return
         finally:
