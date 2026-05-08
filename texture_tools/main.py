@@ -872,12 +872,11 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
         self.intent_tabs = QtWidgets.QTabWidget()
         self.intent_tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
-        self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette ↗")
+        self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
         self.setCentralWidget(self.intent_tabs)
 
-        self._sunny_windows: list[SunnyOptimizerWindow] = []
         QtCore.QTimer.singleShot(0, self._show_overview_dialog)
 
     def _build_overview_button(self) -> QtWidgets.QPushButton:
@@ -889,39 +888,18 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         message = (
             "Welcome to Texture Tools.\n\n"
             "Workflows by intent:\n"
-            "• Optimize palette ↗: Sunny Optimizer (opens in a dedicated advanced workspace).\n"
+            "• Optimize palette: Sunny Optimizer (embedded in this window).\n"
             "• Convert formats: MIP and PMP encode/decode tools.\n"
             "• Split/prepare textures: Chop Horizon helper.\n\n"
-            "Why Sunny opens separately:\n"
-            "Sunny Optimizer is a full multi-pane editor with drag/drop, palette visualizers, and large previews. "
-            "Keeping it in a dedicated window preserves its workspace while this launcher stays focused on quick tools."
+            "Sunny Optimizer now lives directly in the Optimize palette tab for a single-window workflow."
         )
         QtWidgets.QMessageBox.information(self, "Texture Tools Overview", message)
 
     def _build_optimize_palette_tab(self) -> QtWidgets.QWidget:
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(container)
-
-        banner = QtWidgets.QFrame()
-        banner.setStyleSheet("QFrame { background: #f5f0ff; border: 1px solid #b99cff; border-radius: 8px; }")
-        banner_layout = QtWidgets.QVBoxLayout(banner)
-        title = QtWidgets.QLabel("Sunny Optimizer (opens in a separate window)")
-        title.setStyleSheet("font-weight: 700;")
-        desc = QtWidgets.QLabel(
-            "Palette optimization opens in a separate advanced window. "
-            "This is intentional: Sunny uses a large, multi-pane UI optimized for side-by-side preview and palette editing."
-        )
-        desc.setWordWrap(True)
-        banner_layout.addWidget(title)
-        banner_layout.addWidget(desc)
-
-        button = QtWidgets.QPushButton("Open Sunny Optimizer in New Window ↗")
-        button.clicked.connect(self._open_sunny_optimizer)
-
-        layout.addWidget(banner)
-        layout.addWidget(button)
-        layout.addStretch(1)
-        return container
+        sunny = SunnyOptimizerWindow()
+        sunny.setWindowFlags(QtCore.Qt.Widget)
+        sunny.setWindowTitle("Sunny Optimizer")
+        return sunny
 
     def _build_convert_formats_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
@@ -934,14 +912,6 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(ChopHorizonWidget(), "Chop Horizon")
         return tabs
-
-    def _open_sunny_optimizer(self) -> None:
-        window = SunnyOptimizerWindow()
-        window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-        window.setWindowTitle("Texture Tools - Sunny Optimizer")
-        window.destroyed.connect(lambda *_: self._sunny_windows.remove(window) if window in self._sunny_windows else None)
-        self._sunny_windows.append(window)
-        window.show()
 
 
 def main() -> None:
