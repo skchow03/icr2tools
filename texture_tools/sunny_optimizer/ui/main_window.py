@@ -185,6 +185,32 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_drop_message(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
 
+    def _set_inline_status(self, message: str, *, level: str = "info", next_action: str | None = None) -> None:
+        level_styles = {
+            "info": "#0b3d91",
+            "warning": "#8a6d3b",
+            "error": "#a94442",
+            "success": "#2d6a4f",
+        }
+        color = level_styles.get(level, level_styles["info"])
+        action_text = f" Next: {next_action}" if next_action else ""
+        self.inline_status_label.setText(f"{message}{action_text}")
+        self.inline_status_label.setStyleSheet(
+            f"background: #f8f9fa; border: 1px solid {color}; color: {color}; padding: 6px; border-radius: 4px;"
+        )
+        self.inline_status_label.setVisible(True)
+        self.inline_action_row.setVisible(True)
+
+    def _clear_inline_status(self) -> None:
+        self.inline_status_label.setVisible(False)
+        self.inline_action_row.setVisible(False)
+
+    def _focus_palette_selection(self) -> None:
+        self.compute_palette()
+
+    def _focus_folder_selection(self) -> None:
+        self.select_folder()
+
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
         if self._classify_drop(event.mimeData().urls()) is not None:
             event.acceptProposedAction()
@@ -229,7 +255,27 @@ class MainWindow(QtWidgets.QMainWindow):
         central = QtWidgets.QWidget()
         root = QtWidgets.QHBoxLayout(central)
 
+        self.inline_status_label = QtWidgets.QLabel("")
+        self.inline_status_label.setWordWrap(True)
+        self.inline_status_label.setVisible(False)
+        self.inline_action_row = QtWidgets.QWidget()
+        inline_actions = QtWidgets.QHBoxLayout(self.inline_action_row)
+        inline_actions.setContentsMargins(0, 0, 0, 0)
+        self.inline_fix_folder_btn = QtWidgets.QPushButton("Select Texture Folder")
+        self.inline_fix_folder_btn.clicked.connect(self._focus_folder_selection)
+        self.inline_fix_palette_btn = QtWidgets.QPushButton("Select Palette (.pcx)")
+        self.inline_fix_palette_btn.clicked.connect(self._focus_palette_selection)
+        self.inline_dismiss_btn = QtWidgets.QPushButton("Dismiss")
+        self.inline_dismiss_btn.clicked.connect(self._clear_inline_status)
+        self.inline_action_row.setVisible(False)
+        inline_actions.addWidget(self.inline_fix_folder_btn)
+        inline_actions.addWidget(self.inline_fix_palette_btn)
+        inline_actions.addStretch(1)
+        inline_actions.addWidget(self.inline_dismiss_btn)
+
         left_panel = QtWidgets.QVBoxLayout()
+        left_panel.addWidget(self.inline_status_label)
+        left_panel.addWidget(self.inline_action_row)
         folder_controls = QtWidgets.QHBoxLayout()
         self.folder_btn = QtWidgets.QPushButton("Select Texture Images Folder")
         self.folder_btn.clicked.connect(self.select_folder)
@@ -718,7 +764,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def compute_palette(self) -> None:
         if not self.texture_images:
-            QtWidgets.QMessageBox.warning(self, "No textures", "Load a folder with textures first.")
+            self._set_inline_status(
+                "No textures are loaded.",
+                level="warning",
+                next_action="Select a texture images folder, then recompute the palette.",
+            )
             return
 
         palette_path = ""
@@ -785,15 +835,16 @@ class MainWindow(QtWidgets.QMainWindow):
             elapsed = time.perf_counter() - started_at
             self.compute_progress.setFormat(f"Failure after {elapsed:.1f}s")
             palette_filename = Path(palette_path).name if palette_path else "<unknown>"
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Optimization failed",
-                f"Failed to load palette from {palette_filename}: {exc}",
+            self._set_inline_status(
+                f"Optimization failed for {palette_filename}: {exc}",
+                level="error",
+                next_action="Select a valid .pcx palette file and retry optimization.",
             )
             return
         finally:
             self._update_action_states()
 
+        self._clear_inline_status()
         total_elapsed = time.perf_counter() - started_at
         self.compute_progress.setValue(100)
         self.compute_progress.setFormat(f"Success in {total_elapsed:.1f}s")
