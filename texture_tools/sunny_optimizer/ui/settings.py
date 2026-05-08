@@ -20,7 +20,9 @@ class SunnyOptimizerSettings:
         return Path.home() / ".sunny_optimizer.ini"
 
     def load(self) -> None:
-        parser = ConfigParser()
+        # Use strict=False so malformed user-edited INI files with duplicate keys
+        # do not crash startup; ConfigParser keeps the last value encountered.
+        parser = ConfigParser(strict=False)
         if self.path.exists():
             parser.read(self.path, encoding="utf-8")
 
