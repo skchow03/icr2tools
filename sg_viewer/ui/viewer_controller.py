@@ -1308,6 +1308,9 @@ class SGViewerController:
         self._window.tsd_move_object_down_button.clicked.connect(self._on_tsd_move_object_down_requested)
         self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
         self._window.tsd_skid_marks_button.clicked.connect(self._on_tsd_skid_marks_requested)
+        self._window.tsd_hide_centerline_nodes_checkbox.toggled.connect(
+            self._on_tsd_hide_centerline_nodes_toggled
+        )
         self._window.tsd_objects_table.itemSelectionChanged.connect(self._on_tsd_object_selection_changed)
         self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
         self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
@@ -5250,11 +5253,29 @@ class SGViewerController:
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab or is_tso_visibility_tab)
         self._window.preview.set_show_trackside_objects(is_objects_tab or is_tso_visibility_tab)
+        self._apply_tsd_centerline_visibility_mode()
         self._apply_trackside_drag_scope()
         if is_mrk_tab:
             self._update_mrk_highlights_from_table()
         else:
             self._window.preview.set_highlighted_mrk_walls(())
+
+    def _on_tsd_hide_centerline_nodes_toggled(self, _checked: bool) -> None:
+        self._apply_tsd_centerline_visibility_mode()
+
+    def _apply_tsd_centerline_visibility_mode(self) -> None:
+        current_index = self._window.right_sidebar_tabs.currentIndex()
+        tab_name = (
+            self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+            if current_index >= 0
+            else ""
+        )
+        hide_centerline_nodes = (
+            tab_name == "TSD"
+            and self._window.tsd_hide_centerline_nodes_checkbox.isChecked()
+        )
+        self._window.preview.set_show_centerline_and_nodes(not hide_centerline_nodes)
+        self._window.preview.set_centerline_editing_enabled(not hide_centerline_nodes)
 
     def _is_tso_visibility_tab_active(self) -> bool:
         current_index = self._window.right_sidebar_tabs.currentIndex()
