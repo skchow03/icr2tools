@@ -158,6 +158,8 @@ class MainWindow(QtWidgets.QMainWindow):
     SORT_BY_NAME = "Name"
     SORT_BY_COLOR_COUNT = "Color count"
     SORT_BY_BUDGET = "Budget"
+    RECENT_TEXTURE_FOLDER_KEY = "sunny_optimizer:texture_folder"
+    RECENT_PALETTE_KEY = "sunny_optimizer:palette"
 
     def __init__(self) -> None:
         super().__init__()
@@ -276,11 +278,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.inline_fix_folder_btn.clicked.connect(self._focus_folder_selection)
         self.inline_fix_palette_btn = QtWidgets.QPushButton("Select Palette (.pcx)")
         self.inline_fix_palette_btn.clicked.connect(self._focus_palette_selection)
+        self.palette_recent_btn = QtWidgets.QToolButton()
+        self.palette_recent_btn.setText("▼")
+        self.palette_recent_btn.setToolTip("Recent palettes")
+        self.palette_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.palette_recent_btn.pressed.connect(self._show_recent_palette_menu)
         self.inline_dismiss_btn = QtWidgets.QPushButton("Dismiss")
         self.inline_dismiss_btn.clicked.connect(self._clear_inline_status)
         self.inline_action_row.setVisible(False)
         inline_actions.addWidget(self.inline_fix_folder_btn)
         inline_actions.addWidget(self.inline_fix_palette_btn)
+        inline_actions.addWidget(self.palette_recent_btn)
         inline_actions.addStretch(1)
         inline_actions.addWidget(self.inline_dismiss_btn)
 
@@ -291,6 +299,11 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_controls = QtWidgets.QHBoxLayout()
         self.folder_btn = QtWidgets.QPushButton("Select Texture Images Folder")
         self.folder_btn.clicked.connect(self.select_folder)
+        self.folder_recent_btn = QtWidgets.QToolButton()
+        self.folder_recent_btn.setText("▼")
+        self.folder_recent_btn.setToolTip("Recent texture folders")
+        self.folder_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.folder_recent_btn.pressed.connect(self._show_recent_folder_menu)
         self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
         self.search_box = QtWidgets.QLineEdit()
@@ -328,6 +341,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         folder_controls.addWidget(self.folder_btn)
+        folder_controls.addWidget(self.folder_recent_btn)
         folder_controls.addWidget(self.refresh_folder_btn)
         filter_controls = QtWidgets.QHBoxLayout()
         filter_controls.addWidget(QtWidgets.QLabel("Search:"))
@@ -527,6 +541,35 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._load_folder(Path(folder))
 
+    def _show_recent_folder_menu(self) -> None:
+        menu = QtWidgets.QMenu(self.folder_recent_btn)
+        values = self.settings.get_recent_paths(self.RECENT_TEXTURE_FOLDER_KEY)
+        if not values:
+            action = menu.addAction("No recent folders")
+            action.setEnabled(False)
+        for value in values:
+            action = menu.addAction(value)
+            action.triggered.connect(lambda _checked=False, v=value: self._load_folder(Path(v)))
+        self.folder_recent_btn.setMenu(menu)
+
+    def _show_recent_palette_menu(self) -> None:
+        menu = QtWidgets.QMenu(self.inline_fix_palette_btn)
+        values = self.settings.get_recent_paths(self.RECENT_PALETTE_KEY)
+        if not values:
+            action = menu.addAction("No recent palettes")
+            action.setEnabled(False)
+        for value in values:
+            action = menu.addAction(value)
+            action.triggered.connect(lambda _checked=False, v=value: self._set_palette_path(v))
+        self.inline_fix_palette_btn.setMenu(menu)
+
+    def _set_palette_path(self, palette_path: str) -> None:
+        resolved_palette = Path(palette_path).expanduser()
+        self._last_sunny_palette_path = resolved_palette
+        self.settings.last_sunny_palette = str(resolved_palette)
+        self.settings.push_recent_path(self.RECENT_PALETTE_KEY, str(resolved_palette))
+        self._save_settings()
+
     def refresh_folder(self) -> None:
         if self.loaded_texture_folder is None:
             QtWidgets.QMessageBox.information(self, "No folder", "No folder selected yet.")
@@ -574,6 +617,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.loaded_texture_folder = resolved_folder
         self.settings.last_texture_folder = str(resolved_folder)
+        self.settings.push_recent_path(self.RECENT_TEXTURE_FOLDER_KEY, str(resolved_folder))
         self._save_settings()
         self._update_action_states()
 
@@ -849,8 +893,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             fixed_palette = load_sunny_palette(palette_path)
             resolved_palette = Path(palette_path).resolve()
-            self._last_sunny_palette_path = resolved_palette
-            self.settings.last_sunny_palette = str(resolved_palette)
+            self._set_palette_path(str(resolved_palette))
             self._persist_current_folder_budgets()
             set_progress(2, "Preparing optimizer", 30)
             QtWidgets.QApplication.processEvents()

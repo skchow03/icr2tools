@@ -143,6 +143,37 @@ class PresettableMixin:
         self._refresh_preset_combo()
 
 
+class RecentPathMixin:
+    TOOL_RECENT_KEY = ""
+
+    def _recent_paths_key(self, field_name: str) -> str:
+        return f"{self.TOOL_RECENT_KEY}:{field_name}"
+
+    def _record_recent_path(self, field_name: str, path: str) -> None:
+        if not getattr(self, "_settings", None):
+            return
+        self._settings.push_recent_path(self._recent_paths_key(field_name), path)
+        self._settings.save()
+
+    def _apply_recent_menu(self, menu_btn: QtWidgets.QToolButton, edit: QtWidgets.QLineEdit, field_name: str) -> None:
+        if not getattr(self, "_settings", None):
+            menu_btn.setEnabled(False)
+            return
+        menu_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+
+        def _refresh_menu() -> None:
+            menu = QtWidgets.QMenu(menu_btn)
+            recents = self._settings.get_recent_paths(self._recent_paths_key(field_name))
+            if not recents:
+                action = menu.addAction("No recent paths")
+                action.setEnabled(False)
+            for value in recents:
+                action = menu.addAction(value)
+                action.triggered.connect(lambda _checked=False, v=value: edit.setText(v))
+            menu_btn.setMenu(menu)
+
+        menu_btn.pressed.connect(_refresh_menu)
+
 class DropPathLineEdit(QtWidgets.QLineEdit):
     def __init__(self, *, acceptor, on_accept, on_reject=None, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -206,8 +237,9 @@ def _validate_path(
     return None
 
 
-class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
+class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin, RecentPathMixin):
     TOOL_PRESET_KEY = "mip_conversion"
+    TOOL_RECENT_KEY = "mip_conversion"
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
@@ -232,17 +264,17 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         mode_row.addStretch(1)
         layout.addLayout(mode_row)
 
-        self.input_edit, self.input_error = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input)
+        self.input_edit, self.input_error = self._make_browse_row(layout, "Input image (.bmp/.png) or .mip:", self._browse_input, "input")
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".bmp", ".png", ".mip"}, "Drop a .bmp, .png, or .mip file.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
-        self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette, "palette")
         self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
         self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
-        self.output_edit, self.output_error = self._make_browse_row(layout, "Output file:", self._browse_output)
+        self.output_edit, self.output_error = self._make_browse_row(layout, "Output file:", self._browse_output, "output")
         self.output_edit._acceptor = lambda p: (len(p)==1 and ((p[0].suffix.lower() in {".bmp", ".png", ".mip"}) or not p[0].exists()), "Drop a target file path ending in .bmp, .png, or .mip.")
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
@@ -274,7 +306,7 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
         self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
 
-    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
+    def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback, field_name: str) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
         wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
         field_label = QtWidgets.QLabel(label)
@@ -283,8 +315,13 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
+        recent = QtWidgets.QToolButton()
+        recent.setText("▼")
+        recent.setToolTip("Recent paths")
         row.addWidget(edit, 1)
         row.addWidget(browse)
+        row.addWidget(recent)
+        self._apply_recent_menu(recent, edit, field_name)
         error = QtWidgets.QLabel()
         error.setStyleSheet("color: #d93025; font-size: 11px;")
         error.setVisible(False)
@@ -318,16 +355,19 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         )
         if path:
             self.input_edit.setText(path)
+            self._record_recent_path("input", path)
 
     def _browse_palette(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select palette file", "", "PCX (*.pcx);;All files (*.*)")
         if path:
             self.palette_edit.setText(path)
+            self._record_recent_path("palette", path)
 
     def _browse_output(self) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select output file")
         if path:
             self.output_edit.setText(path)
+            self._record_recent_path("output", path)
 
     def _convert_to_mip(self) -> None:
         if not self._update_validation_state():
