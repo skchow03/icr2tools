@@ -51,7 +51,12 @@ def bmp_to_img(bmp_file_path):
     im = Image.open(bmp_file_path)
     return im
 
-def img_to_mip(im, output_file_path, palette_path, mode, num_images=0):
+def _quantize_to_palette(im_rgb, palette_img, *, dither=False):
+    dither_mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
+    return im_rgb.quantize(colors=256, method=2, palette=palette_img, dither=dither_mode)
+
+
+def img_to_mip(im, output_file_path, palette_path, mode, num_images=0, dither=False):
     """ Loads an image from memory and converts it to a .mip file. Special
     handling for cars which use a limited palette. Palette_path should point to
     sunny.pcx for tracks and gamepal.pcx for cars.
@@ -65,8 +70,9 @@ def img_to_mip(im, output_file_path, palette_path, mode, num_images=0):
         how many images are appropriate depending on resolution)
     """
 
-    img_pixels = list(im.getdata())
     gamepal = Image.open(palette_path)
+    quantized_base = _quantize_to_palette(im.convert(mode="RGB"), gamepal, dither=dither)
+    img_pixels = list(quantized_base.getdata())
 
     # If this is for a car, create a dictionary of RGB values for each color
     # in the palette so that the tool can match the colors manually. This is
@@ -101,7 +107,7 @@ def img_to_mip(im, output_file_path, palette_path, mode, num_images=0):
         img_pixels = [adj_pixels_list]
 
     else:
-        img_pixels = [list(im.getdata())]
+        img_pixels = [img_pixels]
 
     # For both cars and tracks, get the full size of the image and convert it
     # to RGB for scaling later.
@@ -138,7 +144,7 @@ def img_to_mip(im, output_file_path, palette_path, mode, num_images=0):
         scaled_width.append(int(scaled_width[img_id-1]/2 + 0.5))
         scaled_height.append(int(scaled_height[img_id-1]/2 + 0.5))
         im_scaled = im.resize((scaled_width[img_id], scaled_height[img_id]), Image.LANCZOS)
-        im_scaled = im_scaled.quantize(colors=256, method=2, palette=gamepal)
+        im_scaled = _quantize_to_palette(im_scaled, gamepal, dither=dither)
 
         # Record the subimage size and the actual subimage as a list
         img_size.append(scaled_width[img_id] * scaled_height[img_id])
@@ -183,7 +189,7 @@ def img_to_mip(im, output_file_path, palette_path, mode, num_images=0):
 
     # Calculate the average color
     avg_color = im.resize((1,1), Image.LANCZOS)
-    avg_color = avg_color.quantize(colors=256, method=2, palette=gamepal)
+    avg_color = _quantize_to_palette(avg_color, gamepal, dither=dither)
     avg_color = list(avg_color.getdata())[0]
 
     # Calculate header size
