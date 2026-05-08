@@ -685,9 +685,26 @@ class TSOVisibilityTab(QWidget):
         elif self.tso_filter_list.rowCount() > 0:
             self.tso_filter_list.setCurrentCell(0, 1)
         self.tso_filter_list.blockSignals(False)
+        self._update_tso_filter_assignment_highlight()
 
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
         self.populate_table()
+
+    def _update_tso_filter_assignment_highlight(self) -> None:
+        assigned_ids = self._assigned_tso_ids()
+        unassigned_brush = QBrush(QColor("#dbeeff"))
+        assigned_brush = QBrush()
+        for row in range(self.tso_filter_list.rowCount()):
+            filter_item = self.tso_filter_list.item(row, 0)
+            tso_item = self.tso_filter_list.item(row, 1)
+            if filter_item is None or tso_item is None:
+                continue
+            tso_id = tso_item.data(QtCore.Qt.UserRole)
+            brush = assigned_brush
+            if isinstance(tso_id, int) and tso_id >= 0 and tso_id not in assigned_ids:
+                brush = unassigned_brush
+            filter_item.setBackground(brush)
+            tso_item.setBackground(brush)
 
     def _build_tso_pill_text(self, tso_id: int) -> str:
         label = f"__TSO{tso_id}"
@@ -981,6 +998,7 @@ class TSOVisibilityTab(QWidget):
                     preferred_row = row
                     break
         self.section_list.setCurrentRow(preferred_row)
+        self._update_tso_filter_assignment_highlight()
 
     def _on_tso_order_changed(self) -> None:
         object_list_index = self._find_object_list_index_for_current_selection()
