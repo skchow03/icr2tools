@@ -406,6 +406,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Apply value to selected textures only",
             ]
         )
+        self.batch_actions_combo.currentTextChanged.connect(self._update_batch_action_description)
+        self.batch_action_description_label = QtWidgets.QLabel()
+        self.batch_action_description_label.setWordWrap(True)
+        self.batch_action_description_label.setStyleSheet("color: #4b5563;")
         self.batch_budget_spinbox = QtWidgets.QSpinBox()
         self.batch_budget_spinbox.setRange(1, OPTIMIZED_SLOTS)
         self.batch_budget_spinbox.setValue(OPTIMIZED_SLOTS)
@@ -464,6 +468,7 @@ class MainWindow(QtWidgets.QMainWindow):
         budget_card_layout.addWidget(budget_title)
         budget_card_layout.addLayout(preset_controls)
         budget_card_layout.addLayout(batch_controls)
+        budget_card_layout.addWidget(self.batch_action_description_label)
         left_panel.addWidget(budget_card)
         left_panel.addWidget(self.texture_list, 1)
         left_panel.addWidget(self.dirt_checkbox)
@@ -579,9 +584,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
         self.statusBar().showMessage("Ready")
         self._refresh_palette_view()
+        self._update_batch_action_description()
         self._update_action_states()
         self._restore_last_texture_folder()
         self._refresh_preset_combo()
+
+    def _update_batch_action_description(self) -> None:
+        mode = self.batch_actions_combo.currentText()
+        description_map = {
+            "Set all budgets equally": "Equal split: distributes the total budget evenly across all loaded textures.",
+            "Normalize budgets": "Proportional to unique colors: allocates more slots to textures with higher unique-color counts.",
+            "Apply value to selected textures only": "Selected-only overwrite: applies the budget value only to currently selected texture rows.",
+        }
+        self.batch_action_description_label.setText(description_map.get(mode, ""))
 
     def _refresh_preset_combo(self) -> None:
         current = self.preset_combo.currentText()
@@ -797,14 +812,34 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "No textures", "Load textures before applying batch actions.")
             return
         mode = self.batch_actions_combo.currentText()
+        changed_textures: set[str] = set()
         if mode == "Set all budgets equally":
             equal_budget = max(1, OPTIMIZED_SLOTS // max(1, len(self.texture_images)))
+            texture_names = sorted(self.texture_images.keys())
+            summary_message = (
+                f"This will overwrite budgets for {len(texture_names)} textures.\n"
+                f"Resulting budget range: {equal_budget}–{equal_budget}\n"
+                f"Total allocated budget: {equal_budget * len(texture_names)}"
+            )
+            confirm = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm batch action",
+                summary_message,
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if confirm != QtWidgets.QMessageBox.Yes:
+                return
             for texture_name in self.texture_images:
+                previous_budget = self.per_texture_budget.get(texture_name)
                 self.per_texture_budget[texture_name] = equal_budget
+                if previous_budget != equal_budget:
+                    changed_textures.add(texture_name)
         elif mode == "Normalize budgets":
             total_colors = sum(max(1, self.texture_color_counts.get(name, 1)) for name in self.texture_images)
             allocated = 0
             names = sorted(self.texture_images.keys())
+            proposed_budgets: dict[str, int] = {}
             for idx, texture_name in enumerate(names):
                 if idx == len(names) - 1:
                     budget = max(1, OPTIMIZED_SLOTS - allocated)
@@ -812,7 +847,27 @@ class MainWindow(QtWidgets.QMainWindow):
                     portion = self.texture_color_counts.get(texture_name, 1) / max(1, total_colors)
                     budget = max(1, int(round(portion * OPTIMIZED_SLOTS)))
                     allocated += budget
-                self.per_texture_budget[texture_name] = min(OPTIMIZED_SLOTS, budget)
+                proposed_budgets[texture_name] = min(OPTIMIZED_SLOTS, budget)
+            normalized_values = list(proposed_budgets.values())
+            summary_message = (
+                f"This will overwrite budgets for {len(names)} textures.\n"
+                f"Resulting budget range: {min(normalized_values)}–{max(normalized_values)}\n"
+                f"Total allocated budget: {sum(normalized_values)}"
+            )
+            confirm = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm batch action",
+                summary_message,
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if confirm != QtWidgets.QMessageBox.Yes:
+                return
+            for texture_name, budget in proposed_budgets.items():
+                previous_budget = self.per_texture_budget.get(texture_name)
+                self.per_texture_budget[texture_name] = budget
+                if previous_budget != budget:
+                    changed_textures.add(texture_name)
         else:
             selected_items = self.texture_list.selectedItems()
             if not selected_items:
@@ -822,9 +877,13 @@ class MainWindow(QtWidgets.QMainWindow):
             for item in selected_items:
                 widget = self.texture_list.itemWidget(item)
                 if widget is not None:
+                    previous_budget = self.per_texture_budget.get(widget.texture_name)
                     self.per_texture_budget[widget.texture_name] = budget_value
+                    if previous_budget != budget_value:
+                        changed_textures.add(widget.texture_name)
         self._persist_current_folder_budgets()
         self._refresh_texture_list()
+        self.statusBar().showMessage(f"{mode}: updated {len(changed_textures)} texture(s).", 5000)
 
     def _restore_last_texture_folder(self) -> None:
         folder_text = self.settings.last_texture_folder
