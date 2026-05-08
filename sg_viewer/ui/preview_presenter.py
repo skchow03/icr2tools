@@ -34,7 +34,7 @@ class PreviewPresenter:
         transform = self._runtime.current_transform(widget_size)
 
         node_state = None
-        if transform is not None:
+        if transform is not None and self._runtime.show_centerline_and_nodes:
             node_state = preview_painter.NodeOverlayState(
                 node_positions=self._runtime.build_node_positions(),
                 node_status=self._runtime.node_status,
@@ -92,6 +92,8 @@ class PreviewPresenter:
             tso_pivot_color=self._colors.tso_pivot,
         )
 
+        show_centerline_and_nodes = self._runtime.show_centerline_and_nodes
+
         preview_painter.paint_preview(
             painter,
             preview_painter.BasePreviewState(
@@ -105,13 +107,15 @@ class PreviewPresenter:
                 background_origin=background.world_xy_at_image_uv_00,
                 track_opacity=self._runtime.track_opacity,
                 sampled_centerline=section_manager.sampled_centerline,
-                selected_section_points=selection.selected_section_points,
+                selected_section_points=(
+                    selection.selected_section_points if show_centerline_and_nodes else []
+                ),
                 section_endpoints=section_manager.section_endpoints,
                 selected_section_index=selection.selected_section_index,
                 show_curve_markers=self._runtime.show_curve_markers,
                 show_axes=self._runtime.show_axes,
                 show_crosshair=self._runtime.show_crosshair,
-                sections=section_manager.sections,
+                sections=section_manager.sections if show_centerline_and_nodes else (),
                 selected_curve_index=selection.selected_curve_index,
                 start_finish_mapping=self._runtime.start_finish_mapping,
                 status_message=self._runtime.status_message,

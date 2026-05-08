@@ -127,6 +127,8 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
         self._show_tsd_lines = False
         self._show_tsd_selected_section_only = False
+        self._show_centerline_and_nodes = True
+        self._centerline_editing_enabled = True
         self._tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
         self._tsd_lines_version = 0
         self._tsd_palette: tuple[QtGui.QColor, ...] = ()
@@ -374,6 +376,8 @@ class PreviewRuntime(PreviewRuntimeOps):
 
         inputs = self._interaction_inputs()
         if (
+            self._centerline_editing_enabled
+            and
             self._track_interaction_enabled
             and not inputs.delete_section_active
             and not inputs.creation_active
@@ -420,7 +424,11 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._apply_mouse_intent(intent, event)
             return
 
-        if self._track_interaction_enabled and self._interaction.handle_mouse_move(event):
+        if (
+            self._centerline_editing_enabled
+            and self._track_interaction_enabled
+            and self._interaction.handle_mouse_move(event)
+        ):
             self._request_interaction_repaint()
             return
 
@@ -496,7 +504,11 @@ class PreviewRuntime(PreviewRuntimeOps):
 
         was_dragging_node = self._interaction.is_dragging_node
         dragged_indices = self._interaction.last_dragged_indices
-        if self._track_interaction_enabled and self._interaction.handle_mouse_release(event):
+        if (
+            self._centerline_editing_enabled
+            and self._track_interaction_enabled
+            and self._interaction.handle_mouse_release(event)
+        ):
             if was_dragging_node:
                 affected_indices = (
                     list(dragged_indices) if dragged_indices is not None else None
@@ -509,6 +521,21 @@ class PreviewRuntime(PreviewRuntimeOps):
 
         intent = self._interaction_state.on_mouse_release(event, inputs)
         self._apply_mouse_intent(intent, event)
+
+    @property
+    def show_centerline_and_nodes(self) -> bool:
+        return bool(self._show_centerline_and_nodes)
+
+    def set_show_centerline_and_nodes(self, visible: bool) -> None:
+        self._show_centerline_and_nodes = bool(visible)
+        self._request_interaction_repaint()
+
+    @property
+    def centerline_editing_enabled(self) -> bool:
+        return bool(self._centerline_editing_enabled)
+
+    def set_centerline_editing_enabled(self, enabled: bool) -> None:
+        self._centerline_editing_enabled = bool(enabled)
 
     def on_leave(self, event: QtCore.QEvent) -> None:  # noqa: D401
         _ = event

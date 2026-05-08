@@ -161,6 +161,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
         self._tsd_remove_file_button = QtWidgets.QPushButton("Remove .TSD file from project")
         self._tsd_remove_file_button.setEnabled(False)
+        self._tsd_hide_centerline_nodes_checkbox = QtWidgets.QCheckBox(
+            "Hide centerline + nodes (lock editing)"
+        )
+        self._tsd_hide_centerline_nodes_checkbox.setChecked(False)
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
         self._tsd_duplicate_object_button = QtWidgets.QPushButton("Duplicate TSD Object")
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
@@ -818,6 +822,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_buttons.addWidget(self._tsd_move_line_up_button)
         tsd_buttons.addWidget(self._tsd_move_line_down_button)
         tsd_lines_layout.addLayout(tsd_buttons)
+        tsd_lines_layout.addWidget(self._tsd_hide_centerline_nodes_checkbox)
         tsd_lines_layout.addWidget(self._tsd_lines_table)
         tsd_lines_group.setLayout(tsd_lines_layout)
         tsd_layout.addWidget(tsd_lines_group)
@@ -854,6 +859,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_move_object_down_button.setToolTip("Move the selected TSD object down one row.")
         self._tsd_export_objects_button.setToolTip("Export all TSD objects as .TSD files.")
         self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
+        self._tsd_hide_centerline_nodes_checkbox.setToolTip(
+            "Hide centerline and endpoint nodes in the track diagram while editing TSDs, "
+            "and disable centerline editing interactions."
+        )
         self._tsd_sidebar.setLayout(tsd_layout)
 
         self._tso_sidebar = QtWidgets.QWidget()
@@ -1304,6 +1313,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_skid_marks_button(self) -> QtWidgets.QPushButton:
         return self._tsd_skid_marks_button
+
+    @property
+    def tsd_hide_centerline_nodes_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._tsd_hide_centerline_nodes_checkbox
 
     @property
     def tso_add_button(self) -> QtWidgets.QPushButton:
