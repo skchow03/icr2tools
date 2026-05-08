@@ -3974,6 +3974,46 @@ class SGViewerController:
         finally:
             table.blockSignals(previous_state)
 
+    def _upsert_tso_table_row(self, row: int, *, include_z: bool = True) -> None:
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        table = self._window.tso_table
+        self._update_tso_table_headers()
+        previous_state = table.blockSignals(True)
+        try:
+            if table.rowCount() <= row:
+                table.setRowCount(row + 1)
+            obj = self._trackside_objects[row]
+            values = [
+                f"__TSO{row}",
+                normalize_trackside_filename(obj.filename),
+                self._format_tso_distance_for_display(int(obj.x)),
+                self._format_tso_distance_for_display(int(obj.y)),
+                self._format_tso_distance_for_display(int(obj.z)),
+                (
+                    self._format_tso_distance_for_display(relative_z)
+                    if (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
+                    else ""
+                ),
+            ]
+            for column, value in enumerate(values):
+                item = table.item(row, column)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem(value)
+                    table.setItem(row, column, item)
+                else:
+                    item.setText(value)
+                if column == 0:
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                else:
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
+            button = QtWidgets.QPushButton("Edit…")
+            button.clicked.connect(lambda _checked=False, row_index=row: self._open_tso_attributes_dialog(row_index))
+            table.setCellWidget(row, 6, button)
+            self._update_tso_table_position_cells([row], include_z=include_z)
+        finally:
+            table.blockSignals(previous_state)
+
     def _update_tso_table_headers(self) -> None:
         unit_label = measurement_unit_label(self._window.current_measurement_unit())
         self._window.tso_table.setHorizontalHeaderLabels(
@@ -4119,8 +4159,32 @@ class SGViewerController:
             return True
         filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
         self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
-        self._selected_trackside_object_indices = [len(self._trackside_objects) - 1]
-        self._refresh_tso_table()
+        new_row_index = len(self._trackside_objects) - 1
+        self._selected_trackside_object_indices = [new_row_index]
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        self._upsert_tso_table_row(new_row_index)
+        self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
+        self._window.preview.set_selected_trackside_object_index(new_row_index)
+        selection_model = self._window.tso_table.selectionModel()
+        if selection_model is not None:
+            row_index = self._window.tso_table.model().index(new_row_index, 0)
+            selection_model.select(
+                row_index,
+                QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
+            )
+        selected_item = self._window.tso_table.item(new_row_index, 0)
+        if selected_item is not None:
+            self._window.tso_table.scrollToItem(
+                selected_item,
+                QtWidgets.QAbstractItemView.PositionAtCenter,
+            )
+        self._window.tso_visibility_sidebar.set_available_tso_ids(list(range(len(self._trackside_objects))))
+        self._window.tso_visibility_sidebar.set_tso_display_metadata(
+            {
+                index: (normalize_trackside_filename(obj.filename), obj.description.strip())
+                for index, obj in enumerate(self._trackside_objects)
+            }
+        )
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
         if self._tso_add_mode_active:
