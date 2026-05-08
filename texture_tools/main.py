@@ -28,6 +28,35 @@ STATUS_PROCESSING = "processing"
 STATUS_SUCCESS = "success"
 STATUS_FAILURE = "failure"
 
+UI_LABEL_WIDTH = 220
+UI_SECTION_SPACING = 10
+UI_PANEL_MARGINS = (12, 12, 12, 12)
+
+
+def _apply_panel_layout(layout: QtWidgets.QVBoxLayout) -> None:
+    layout.setContentsMargins(*UI_PANEL_MARGINS)
+    layout.setSpacing(UI_SECTION_SPACING)
+
+
+def _set_primary_button(button: QtWidgets.QPushButton) -> None:
+    button.setProperty("primary", True)
+
+
+def _set_secondary_button(button: QtWidgets.QPushButton) -> None:
+    button.setProperty("secondary", True)
+
+
+def _make_section_card(title: str, parent: QtWidgets.QWidget | None = None) -> tuple[QtWidgets.QFrame, QtWidgets.QVBoxLayout]:
+    card = QtWidgets.QFrame(parent)
+    card.setObjectName("sectionCard")
+    card_layout = QtWidgets.QVBoxLayout(card)
+    card_layout.setContentsMargins(10, 10, 10, 10)
+    card_layout.setSpacing(8)
+    header = QtWidgets.QLabel(title)
+    header.setObjectName("sectionTitle")
+    card_layout.addWidget(header)
+    return card, card_layout
+
 
 class SharedStatusMixin:
     STATUS_PREFIX = {
@@ -189,7 +218,10 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
+        _apply_panel_layout(layout)
+        section, section_layout = _make_section_card("1. Choose input")
+        section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
+        layout.addWidget(section)
 
         mode_row = QtWidgets.QHBoxLayout()
         mode_row.addWidget(QtWidgets.QLabel("Mode:"))
@@ -218,8 +250,10 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._build_preset_controls(layout)
         convert_row = QtWidgets.QHBoxLayout()
         self.to_mip_btn = QtWidgets.QPushButton("Convert")
+        _set_primary_button(self.to_mip_btn)
         self.to_mip_btn.clicked.connect(self._convert_to_mip)
         self.from_mip_btn = QtWidgets.QPushButton("Export")
+        _set_secondary_button(self.from_mip_btn)
         self.from_mip_btn.clicked.connect(self._convert_from_mip)
         convert_row.addWidget(self.to_mip_btn)
         convert_row.addWidget(self.from_mip_btn)
@@ -243,7 +277,9 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
         wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel(label))
+        field_label = QtWidgets.QLabel(label)
+        field_label.setMinimumWidth(UI_LABEL_WIDTH)
+        row.addWidget(field_label)
         edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
@@ -335,7 +371,10 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
+        _apply_panel_layout(layout)
+        section, section_layout = _make_section_card("1. Choose input")
+        section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
+        layout.addWidget(section)
         self.input_edit, self.input_error = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".png", ".bmp"}, "Drop a .png or .bmp image.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
@@ -349,6 +388,7 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
 
         layout.addStretch(1)
         self.run_btn = QtWidgets.QPushButton("Run")
+        _set_primary_button(self.run_btn)
         self.run_btn.clicked.connect(self._run)
         self.status_label = QtWidgets.QLabel()
         action_row = QtWidgets.QHBoxLayout()
@@ -363,7 +403,9 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
         wrap = QtWidgets.QVBoxLayout()
         row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel(label))
+        field_label = QtWidgets.QLabel(label)
+        field_label.setMinimumWidth(UI_LABEL_WIDTH)
+        row.addWidget(field_label)
         edit = DropPathLineEdit(acceptor=lambda _p: (False, None), on_accept=lambda _p: None, on_reject=self._set_status_warning)
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(callback)
@@ -428,7 +470,10 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
+        _apply_panel_layout(layout)
+        section, section_layout = _make_section_card("1. Choose input")
+        section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
+        layout.addWidget(section)
         self.input_edit = self._make_browse_row(layout, "Input image (.png):", self._browse_input)
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".png", "Drop a .png image.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
@@ -480,6 +525,7 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         layout.addStretch(1)
         self._build_preset_controls(layout)
         convert_btn = QtWidgets.QPushButton("Convert")
+        _set_primary_button(convert_btn)
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
@@ -566,7 +612,10 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(QtWidgets.QLabel("1. Choose input"))
+        _apply_panel_layout(layout)
+        section, section_layout = _make_section_card("1. Choose input")
+        section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
+        layout.addWidget(section)
         self.input_edit = self._make_browse_row(layout, "Input file (.pmp):", self._browse_input)
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pmp", "Drop a .pmp file.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
@@ -593,6 +642,7 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         layout.addStretch(1)
         self._build_preset_controls(layout)
         convert_btn = QtWidgets.QPushButton("Export")
+        _set_primary_button(convert_btn)
         convert_btn.clicked.connect(self._convert)
         self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
@@ -659,6 +709,14 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Texture Tools")
         self.resize(980, 720)
+        self.setStyleSheet(
+            """
+            QFrame#sectionCard { background: #f8f9fb; border: 1px solid #d9dce3; border-radius: 8px; }
+            QLabel#sectionTitle { font-weight: 700; }
+            QPushButton[primary="true"] { background: #2b6de6; color: white; font-weight: 700; padding: 6px 12px; border-radius: 6px; }
+            QPushButton[secondary="true"] { background: #f1f3f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 6px; }
+            """
+        )
         self._settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
         self._settings.load()
 
