@@ -258,6 +258,11 @@ def _collect_folder_image_inputs(source_dir: Path) -> list[Path]:
     return list(preferred.values())
 
 
+def _prepare_image_for_mip(image: Image.Image) -> Image.Image:
+    """Prepare image for MIP conversion without introducing implicit dithering."""
+    return image.convert("RGB")
+
+
 def _confirm_summary(parent: QtWidgets.QWidget, *, dimensions: str, output_format: str, palette_source: str, destination: Path) -> bool:
     message = (
         "Output summary:\n"
@@ -615,17 +620,17 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             output_path = Path(self.output_edit.text().strip())
             mode = self.mode_combo.currentText()
             image = Image.open(input_path)
-            quantized = image.convert("P")
+            prepared = _prepare_image_for_mip(image)
             if not _confirm_summary(
                 self,
-                dimensions=_fmt_dimensions(quantized),
+                dimensions=_fmt_dimensions(prepared),
                 output_format="MIP",
                 palette_source=str(palette_path),
                 destination=output_path,
             ):
                 self.set_status(STATUS_IDLE, "Conversion cancelled.")
                 return
-            img_to_mip(quantized, str(output_path), str(palette_path), mode, dither=self.dither_checkbox.isChecked())
+            img_to_mip(prepared, str(output_path), str(palette_path), mode, dither=self.dither_checkbox.isChecked())
             self.set_status(STATUS_SUCCESS, f"Created MIP: {output_path}")
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"MIP conversion failed: {exc}")
@@ -687,8 +692,8 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             converted = 0
             for source_path in selected_inputs:
                 out_path = target_dir / f"{source_path.stem}.mip"
-                quantized = Image.open(source_path).convert("P")
-                img_to_mip(quantized, str(out_path), str(palette_path), mode, dither=self.dither_checkbox.isChecked())
+                prepared = _prepare_image_for_mip(Image.open(source_path))
+                img_to_mip(prepared, str(out_path), str(palette_path), mode, dither=self.dither_checkbox.isChecked())
                 converted += 1
             self.set_status(STATUS_SUCCESS, f"Converted {converted} file(s) to MIP in {target_dir}")
         except Exception as exc:  # pragma: no cover
