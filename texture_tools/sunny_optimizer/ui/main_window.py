@@ -18,12 +18,20 @@ from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 class TextureBudgetItemWidget(QtWidgets.QWidget):
     budget_changed = QtCore.pyqtSignal(str, int)
 
-    def __init__(self, texture_name: str, initial_budget: int, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        texture_name: str,
+        initial_budget: int,
+        unique_color_count: int,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.texture_name = texture_name
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         label = QtWidgets.QLabel(texture_name)
+        color_count_label = QtWidgets.QLabel(f"{unique_color_count} colors")
+        color_count_label.setStyleSheet("color: palette(mid);")
         self.spinbox = QtWidgets.QSpinBox()
         self.spinbox.setRange(1, OPTIMIZED_SLOTS)
         self.spinbox.setValue(initial_budget)
@@ -32,6 +40,7 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
         )
         self.spinbox.valueChanged.connect(self._emit_change)
         layout.addWidget(label, 1)
+        layout.addWidget(color_count_label)
         layout.addWidget(self.spinbox)
 
     def _emit_change(self, value: int) -> None:
@@ -759,7 +768,11 @@ class MainWindow(QtWidgets.QMainWindow):
             if query and query not in texture_name.lower():
                 continue
             item = QtWidgets.QListWidgetItem(self.texture_list)
-            widget = TextureBudgetItemWidget(texture_name, self.per_texture_budget[texture_name])
+            widget = TextureBudgetItemWidget(
+                texture_name,
+                self.per_texture_budget[texture_name],
+                self.texture_color_counts.get(texture_name, 0),
+            )
             widget.budget_changed.connect(self._on_budget_changed)
             tooltip = f"Unique colors: {self.texture_color_counts.get(texture_name, 0)}"
             item.setToolTip(tooltip)
