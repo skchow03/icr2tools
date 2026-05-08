@@ -107,6 +107,7 @@ class BasePreviewState:
     radii_selected_color: QtGui.QColor
     xsect_dlat_line_color: QtGui.QColor
     integrity_boundary_violation_points: tuple[Point, ...]
+    show_centerline_and_nodes: bool = True
 
 
 @dataclass
@@ -274,31 +275,32 @@ def paint_preview(
                 highlighted_color=sg_preview_state.tso_box_highlighted_color,
                 pivot_color=sg_preview_state.tso_pivot_color,
             )
-        _draw_centerlines(
-            painter,
-            base_state.sections,
-            base_state.selected_section_points,
-            transform,
-            widget_height,
-            centerline_unselected_color=base_state.centerline_unselected_color,
-            centerline_selected_color=base_state.centerline_selected_color,
-            centerline_long_curve_color=base_state.centerline_long_curve_color,
-        )
-
-        if base_state.show_curve_markers:
-            _draw_curve_markers(
+        if base_state.show_centerline_and_nodes:
+            _draw_centerlines(
                 painter,
-                [
-                    sect
-                    for sect in base_state.sections
-                    if getattr(sect, "center", None) is not None
-                ],
-                base_state.selected_curve_index,
+                base_state.sections,
+                base_state.selected_section_points,
                 transform,
                 widget_height,
-                base_state.radii_unselected_color,
-                base_state.radii_selected_color,
+                centerline_unselected_color=base_state.centerline_unselected_color,
+                centerline_selected_color=base_state.centerline_selected_color,
+                centerline_long_curve_color=base_state.centerline_long_curve_color,
             )
+
+            if base_state.show_curve_markers:
+                _draw_curve_markers(
+                    painter,
+                    [
+                        sect
+                        for sect in base_state.sections
+                        if getattr(sect, "center", None) is not None
+                    ],
+                    base_state.selected_curve_index,
+                    transform,
+                    widget_height,
+                    base_state.radii_unselected_color,
+                    base_state.radii_selected_color,
+                )
 
         _draw_start_finish_line(
             painter,

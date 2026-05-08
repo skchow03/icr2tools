@@ -115,7 +115,7 @@ class PreviewPresenter:
                 show_curve_markers=self._runtime.show_curve_markers,
                 show_axes=self._runtime.show_axes,
                 show_crosshair=self._runtime.show_crosshair,
-                sections=section_manager.sections if show_centerline_and_nodes else (),
+                sections=section_manager.sections,
                 selected_curve_index=selection.selected_curve_index,
                 start_finish_mapping=self._runtime.start_finish_mapping,
                 status_message=self._runtime.status_message,
@@ -140,6 +140,7 @@ class PreviewPresenter:
                 radii_selected_color=self._colors.radii_selected,
                 xsect_dlat_line_color=self._colors.xsect_dlat_line,
                 integrity_boundary_violation_points=self._runtime.integrity_boundary_violation_points,
+                show_centerline_and_nodes=show_centerline_and_nodes,
             ),
             preview_painter.CreationOverlayState(
                 new_straight_active=creation_preview.new_straight_active,
