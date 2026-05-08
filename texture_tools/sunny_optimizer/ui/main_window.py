@@ -230,7 +230,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.inline_status_label.setVisible(False)
         self.inline_action_row.setVisible(False)
 
-    def _select_base_palette(self) -> str:
+    def _prompt_for_palette_path(self) -> str:
         selected_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Load SUNNY palette",
@@ -241,8 +241,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return ""
         resolved_palette = Path(selected_path).resolve()
         self._set_palette_path(str(resolved_palette))
-        self._update_action_states()
         return str(resolved_palette)
+
+    def _select_base_palette(self) -> str:
+        resolved_palette = self._prompt_for_palette_path()
+        if not resolved_palette:
+            return ""
+        self._update_action_states()
+        return resolved_palette
 
     def _focus_palette_selection(self) -> None:
         self._select_base_palette()
@@ -522,7 +528,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compute_progress.setValue(0)
         self.compute_progress.setFormat("Idle")
         self.compute_progress.setTextVisible(True)
+        palette_source_card = QtWidgets.QFrame()
+        palette_source_card.setObjectName("sectionCard")
+        palette_source_layout = QtWidgets.QVBoxLayout(palette_source_card)
+        palette_source_layout.setContentsMargins(10, 10, 10, 10)
+        palette_source_layout.setSpacing(8)
+        palette_source_title = QtWidgets.QLabel("Base SUNNY palette (.pcx)")
+        palette_source_title.setObjectName("sectionTitle")
+        palette_source_layout.addWidget(palette_source_title)
+        palette_path_row = QtWidgets.QHBoxLayout()
+        self.palette_path_label = QtWidgets.QLabel("No palette selected")
+        self.palette_path_label.setToolTip("No palette selected")
+        self.palette_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.palette_path_label.setStyleSheet("color: #4b5563;")
+        self.palette_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.palette_path_browse_btn = QtWidgets.QPushButton("Browse…")
+        self.palette_path_browse_btn.clicked.connect(self._select_base_palette)
+        self.palette_path_recent_btn = QtWidgets.QToolButton()
+        self.palette_path_recent_btn.setText("▼")
+        self.palette_path_recent_btn.setToolTip("Recent palettes")
+        self.palette_path_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.palette_path_recent_btn.pressed.connect(self._show_recent_palette_menu)
+        palette_path_row.addWidget(self.palette_path_label, 1)
+        palette_path_row.addWidget(self.palette_path_browse_btn)
+        palette_path_row.addWidget(self.palette_path_recent_btn)
+        palette_source_layout.addLayout(palette_path_row)
 
+        right_panel.addWidget(palette_source_card)
         right_panel.addWidget(self.palette_label)
         right_panel.addWidget(self.palette_details_label)
         right_panel.addWidget(self.compute_btn)
@@ -631,6 +663,8 @@ class MainWindow(QtWidgets.QMainWindow):
             action = menu.addAction(value)
             action.triggered.connect(lambda _checked=False, v=value: self._set_palette_path(v))
         self.inline_fix_palette_btn.setMenu(menu)
+        if hasattr(self, "palette_path_recent_btn"):
+            self.palette_path_recent_btn.setMenu(menu)
 
     def _set_palette_path(self, palette_path: str) -> None:
         resolved_palette = Path(palette_path).expanduser()
@@ -638,6 +672,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.last_sunny_palette = str(resolved_palette)
         self.settings.push_recent_path(self.RECENT_PALETTE_KEY, str(resolved_palette))
         self._save_settings()
+        if hasattr(self, "palette_path_label"):
+            self.palette_path_label.setText(str(resolved_palette))
+            self.palette_path_label.setToolTip(str(resolved_palette))
 
     def refresh_folder(self) -> None:
         if self.loaded_texture_folder is None:
@@ -961,13 +998,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if palette_path and not Path(palette_path).exists():
             palette_path = ""
         if not palette_path:
-            self._set_inline_status(
-                "No base palette is selected.",
-                level="warning",
-                next_action="Use Workflow Step 2: Select base palette.",
-            )
-            self._update_action_states()
-            return
+            palette_path = self._prompt_for_palette_path()
+            if not palette_path:
+                self._set_inline_status(
+                    "No base palette is selected.",
+                    level="warning",
+                    next_action="Use Workflow Step 2: Select base palette.",
+                )
+                self._update_action_states()
+                return
 
         step_total = 4
         started_at = time.perf_counter()
