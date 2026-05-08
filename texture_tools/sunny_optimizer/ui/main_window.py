@@ -254,6 +254,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
         root = QtWidgets.QHBoxLayout(central)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(12)
+        self.setStyleSheet(
+            """
+            QFrame#sectionCard { background: #f8f9fb; border: 1px solid #d9dce3; border-radius: 8px; }
+            QLabel#sectionTitle { font-weight: 700; margin-bottom: 4px; }
+            QPushButton[primary="true"] { background: #2b6de6; color: white; font-weight: 700; padding: 6px 12px; border-radius: 6px; }
+            QPushButton[primary="true"]:disabled { background: #9ab7f1; color: #eef3ff; }
+            QPushButton[secondary="true"] { background: #f1f3f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 6px; }
+            """
+        )
 
         self.inline_status_label = QtWidgets.QLabel("")
         self.inline_status_label.setWordWrap(True)
@@ -274,6 +285,7 @@ class MainWindow(QtWidgets.QMainWindow):
         inline_actions.addWidget(self.inline_dismiss_btn)
 
         left_panel = QtWidgets.QVBoxLayout()
+        left_panel.setSpacing(10)
         left_panel.addWidget(self.inline_status_label)
         left_panel.addWidget(self.inline_action_row)
         folder_controls = QtWidgets.QHBoxLayout()
@@ -327,20 +339,39 @@ class MainWindow(QtWidgets.QMainWindow):
         batch_controls.addWidget(QtWidgets.QLabel("Budget value:"))
         batch_controls.addWidget(self.batch_budget_spinbox)
         batch_controls.addWidget(self.apply_batch_btn)
-        left_panel.addLayout(folder_controls)
-        left_panel.addLayout(filter_controls)
+        top_card = QtWidgets.QFrame()
+        top_card.setObjectName("sectionCard")
+        top_card_layout = QtWidgets.QVBoxLayout(top_card)
+        top_card_layout.setContentsMargins(10, 10, 10, 10)
+        top_card_layout.setSpacing(8)
+        top_title = QtWidgets.QLabel("Texture source and filters")
+        top_title.setObjectName("sectionTitle")
+        top_card_layout.addWidget(top_title)
+        top_card_layout.addLayout(folder_controls)
+        top_card_layout.addLayout(filter_controls)
+        left_panel.addWidget(top_card)
         preset_controls = QtWidgets.QHBoxLayout()
         preset_controls.addWidget(QtWidgets.QLabel("Presets:"))
         preset_controls.addWidget(self.preset_combo, 1)
         preset_controls.addWidget(self.save_preset_btn)
         preset_controls.addWidget(self.load_preset_btn)
         preset_controls.addWidget(self.delete_preset_btn)
-        left_panel.addLayout(preset_controls)
-        left_panel.addLayout(batch_controls)
+        budget_card = QtWidgets.QFrame()
+        budget_card.setObjectName("sectionCard")
+        budget_card_layout = QtWidgets.QVBoxLayout(budget_card)
+        budget_card_layout.setContentsMargins(10, 10, 10, 10)
+        budget_card_layout.setSpacing(8)
+        budget_title = QtWidgets.QLabel("Budget and presets")
+        budget_title.setObjectName("sectionTitle")
+        budget_card_layout.addWidget(budget_title)
+        budget_card_layout.addLayout(preset_controls)
+        budget_card_layout.addLayout(batch_controls)
+        left_panel.addWidget(budget_card)
         left_panel.addWidget(self.texture_list, 1)
         left_panel.addWidget(self.dirt_checkbox)
 
         center_panel = QtWidgets.QVBoxLayout()
+        center_panel.setSpacing(10)
         preview_hint = QtWidgets.QLabel(
             "Scroll to zoom, drag to pan, click pixel to inspect palette index."
         )
@@ -383,6 +414,7 @@ class MainWindow(QtWidgets.QMainWindow):
         center_panel.addWidget(self.paletted_unique_colors_label)
 
         right_panel = QtWidgets.QVBoxLayout()
+        right_panel.setSpacing(10)
         self.palette_label = ClickablePaletteLabel()
         self.palette_label.setMinimumSize(256, 256)
         self.palette_label.setAlignment(QtCore.Qt.AlignCenter)
@@ -393,10 +425,12 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.palette_details_label.setWordWrap(True)
         self.compute_btn = QtWidgets.QPushButton("Generate Optimized Palette")
+        self.compute_btn.setProperty("primary", True)
         self.compute_btn.clicked.connect(self.compute_palette)
         self.compute_hint_label = QtWidgets.QLabel()
         self.compute_hint_label.setWordWrap(True)
         self.save_btn = QtWidgets.QPushButton("Save Palette")
+        self.save_btn.setProperty("secondary", True)
         self.save_btn.clicked.connect(self.save_palette_dialog)
         self.save_hint_label = QtWidgets.QLabel()
         self.save_hint_label.setWordWrap(True)
