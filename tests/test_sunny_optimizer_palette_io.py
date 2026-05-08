@@ -22,5 +22,6 @@ def test_save_palette_writes_320x200_white_image_data(tmp_path: Path) -> None:
     assert bytes_per_line == 320
 
     image_data = data[128:-769]
-    assert len(image_data) == 1024
-    assert image_data == bytes([0xFF, 0xFF]) * 512
+    assert len(image_data) == 2400
+    expected_scanline = bytes([0xFF, 0xFF]) * 5 + bytes([0xC5, 0xFF])
+    assert image_data == expected_scanline * 200

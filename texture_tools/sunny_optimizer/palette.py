@@ -78,12 +78,16 @@ def save_palette(path: str | Path, palette_array: np.ndarray) -> None:
     out[67] = (width >> 8) & 0xFF
     out[68] = 1
     out[69] = 0
-    pixels = width * height
-    while pixels > 0:
-        run = min(63, pixels)
-        out.append(0xC0 | run)
-        out.append(0xFF)
-        pixels -= run
+    # Encode one scanline at a time. Some PCX decoders reject files where RLE
+    # runs spill across scanline boundaries, even when the total decoded byte
+    # count matches width * height.
+    for _row in range(height):
+        remaining = width
+        while remaining > 0:
+            run = min(63, remaining)
+            out.append(0xC0 | run)
+            out.append(0xFF)
+            remaining -= run
     out.append(0x0C)
     out.extend(palette.tobytes())
     Path(path).write_bytes(bytes(out))
