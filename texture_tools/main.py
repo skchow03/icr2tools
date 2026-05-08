@@ -292,6 +292,39 @@ def _offer_preview(parent: QtWidgets.QWidget, image: Image.Image, title: str) ->
         buttons.rejected.connect(dialog.reject)
         return dialog.exec_() == QtWidgets.QDialog.Accepted
     return True
+
+
+def _pil_to_pixmap(image: Image.Image) -> QtGui.QPixmap:
+    rgba = image.convert("RGBA")
+    data = rgba.tobytes("raw", "RGBA")
+    qimage = QtGui.QImage(data, rgba.width, rgba.height, QtGui.QImage.Format_RGBA8888)
+    return QtGui.QPixmap.fromImage(qimage.copy())
+
+
+class PreviewPane(QtWidgets.QGroupBox):
+    def __init__(self, title: str = "Preview", parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(title, parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        self.image_label = QtWidgets.QLabel("No preview available.")
+        self.image_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.image_label.setMinimumHeight(160)
+        self.image_label.setStyleSheet("border: 1px solid #d1d5db; background: #fff;")
+        self.image_label.setScaledContents(False)
+        self.meta_label = QtWidgets.QLabel("")
+        self.meta_label.setStyleSheet("color: #6b7280;")
+        layout.addWidget(self.image_label)
+        layout.addWidget(self.meta_label)
+
+    def set_preview(self, image: Image.Image, *, caption: str = "") -> None:
+        pixmap = _pil_to_pixmap(image)
+        scaled = pixmap.scaled(440, 220, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        self.image_label.setPixmap(scaled)
+        self.meta_label.setText(caption or _fmt_dimensions(image))
+
+    def clear_preview(self, message: str = "No preview available.") -> None:
+        self.image_label.setPixmap(QtGui.QPixmap())
+        self.image_label.setText(message)
+        self.meta_label.setText("")
 class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin, RecentPathMixin):
     TOOL_PRESET_KEY = "mip_conversion"
     TOOL_RECENT_KEY = "mip_conversion"
@@ -345,13 +378,40 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         convert_row.addWidget(self.to_mip_btn)
         convert_row.addWidget(self.from_mip_btn)
         layout.addLayout(convert_row)
+        self.preview_pane = PreviewPane("Output preview")
+        layout.addWidget(self.preview_pane)
 
         self.status_label = QtWidgets.QLabel()
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
         for edit in (self.input_edit, self.palette_edit, self.output_edit):
             edit.textChanged.connect(self._update_validation_state)
+        self.input_edit.textChanged.connect(self._refresh_preview)
+        self.palette_edit.textChanged.connect(self._refresh_preview)
+        self.mode_combo.currentTextChanged.connect(self._refresh_preview)
         self._update_validation_state()
+        self._refresh_preview()
+
+    def _refresh_preview(self) -> None:
+        input_raw = self.input_edit.text().strip()
+        if not input_raw:
+            self.preview_pane.clear_preview()
+            return
+        try:
+            input_path = Path(input_raw)
+            if input_path.suffix.lower() == ".mip":
+                palette_path = self.palette_edit.text().strip()
+                if not palette_path:
+                    self.preview_pane.clear_preview("Palette file required for .mip preview.")
+                    return
+                preview = mip_to_img(str(input_path), load_palette(palette_path))[0]
+                self.preview_pane.set_preview(preview, caption=f"{_fmt_dimensions(preview)} • Decoded from MIP")
+                return
+            source = Image.open(input_path)
+            preview = source.convert("P")
+            self.preview_pane.set_preview(preview, caption=f"{_fmt_dimensions(preview)} • Quantized preview")
+        except Exception as exc:
+            self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
 
     def _collect_preset_values(self) -> dict[str, str]:
         return {"mode": self.mode_combo.currentText(), "palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip()}
@@ -434,9 +494,6 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             mode = self.mode_combo.currentText()
             image = Image.open(input_path)
             quantized = image.convert("P")
-            if not _offer_preview(self, quantized, "MIP preview"):
-                self.set_status(STATUS_IDLE, "Conversion cancelled.")
-                return
             if not _confirm_summary(
                 self,
                 dimensions=_fmt_dimensions(quantized),
@@ -462,9 +519,6 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             palette = load_palette(str(palette_path))
             mip_images = mip_to_img(str(input_path), palette)
             preview_image = mip_images[0]
-            if not _offer_preview(self, preview_image, "Image preview"):
-                self.set_status(STATUS_IDLE, "Export cancelled.")
-                return
             if not _confirm_summary(
                 self,
                 dimensions=_fmt_dimensions(preview_image),
@@ -653,8 +707,23 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         action_row.addStretch(1)
         action_row.addWidget(convert_btn)
         layout.addLayout(action_row)
+        self.preview_pane = PreviewPane("Output preview")
+        layout.addWidget(self.preview_pane)
         layout.addWidget(self.status_label)
         self.set_status(STATUS_IDLE, "Ready")
+        self.input_edit.textChanged.connect(self._refresh_preview)
+        self._refresh_preview()
+
+    def _refresh_preview(self) -> None:
+        raw = self.input_edit.text().strip()
+        if not raw:
+            self.preview_pane.clear_preview()
+            return
+        try:
+            preview = Image.open(raw)
+            self.preview_pane.set_preview(preview, caption=f"{_fmt_dimensions(preview)} • PNG source")
+        except Exception as exc:
+            self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
 
     def _collect_preset_values(self) -> dict[str, str]:
         return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "alpha_threshold": str(self.alpha_threshold_spin.value()), "header_size": self.size_field.text().strip()}
@@ -708,9 +777,6 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             palette_raw = self.palette_edit.text().strip()
             palette_path = palette_raw if palette_raw else None
             input_image = Image.open(self.input_edit.text().strip())
-            if not _offer_preview(self, input_image, "PNG preview"):
-                self.set_status(STATUS_IDLE, "Conversion cancelled.")
-                return
             if not _confirm_summary(
                 self,
                 dimensions=_fmt_dimensions(input_image),
@@ -783,8 +849,31 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         action_row.addStretch(1)
         action_row.addWidget(convert_btn)
         layout.addLayout(action_row)
+        self.preview_pane = PreviewPane("Output preview")
+        layout.addWidget(self.preview_pane)
         layout.addWidget(self.status_label)
         self.set_status(STATUS_IDLE, "Ready")
+        self.input_edit.textChanged.connect(self._refresh_preview)
+        self.palette_edit.textChanged.connect(self._refresh_preview)
+        self.crop_checkbox.toggled.connect(self._refresh_preview)
+        self._refresh_preview()
+
+    def _refresh_preview(self) -> None:
+        input_path = self.input_edit.text().strip()
+        palette_path = self.palette_edit.text().strip()
+        if not input_path:
+            self.preview_pane.clear_preview()
+            return
+        if not palette_path:
+            self.preview_pane.clear_preview("Palette file required for preview.")
+            return
+        try:
+            preview = mip_to_img(input_path, load_palette(palette_path))[0]
+            if self.crop_checkbox.isChecked():
+                preview = preview.crop(preview.getbbox()) if preview.getbbox() else preview
+            self.preview_pane.set_preview(preview, caption=f"{_fmt_dimensions(preview)} • PNG output preview")
+        except Exception as exc:
+            self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
 
     def _collect_preset_values(self) -> dict[str, str]:
         return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "crop_transparent_border": str(self.crop_checkbox.isChecked())}
@@ -830,9 +919,6 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
             output_path = Path(self.output_edit.text().strip())
             preview_palette = load_palette(palette_path)
             preview_image = mip_to_img(input_path, preview_palette)[0]
-            if not _offer_preview(self, preview_image, "PNG preview"):
-                self.set_status(STATUS_IDLE, "Export cancelled.")
-                return
             if not _confirm_summary(
                 self,
                 dimensions=_fmt_dimensions(preview_image),
