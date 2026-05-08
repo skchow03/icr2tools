@@ -83,16 +83,18 @@ def _encode_runs(
     return bytes(data)
 
 
-def _quantize_with_palette(image: Image.Image, palette_path: str | Path | None) -> Image.Image:
+def _quantize_with_palette(image: Image.Image, palette_path: str | Path | None, *, dither: bool = False) -> Image.Image:
     if palette_path is None:
-        return image.convert("P")
+        dither_mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
+        return image.convert("P", dither=dither_mode)
 
     palette_file = Path(palette_path)
     decode_error: Exception | None = None
 
     try:
         with Image.open(palette_file) as palette_img:
-            return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=palette_img)
+            dither_mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
+            return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=palette_img, dither=dither_mode)
     except (OSError, UnidentifiedImageError, ValueError) as exc:
         decode_error = exc
 
@@ -101,7 +103,8 @@ def _quantize_with_palette(image: Image.Image, palette_path: str | Path | None) 
 
     try:
         fallback_palette = _load_palette_from_pcx_trailer(palette_file)
-        return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=fallback_palette)
+        dither_mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
+        return image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, palette=fallback_palette, dither=dither_mode)
     except Exception as fallback_exc:
         raise ValueError(
             "Pillow failed to decode PCX palette and trailer extraction also failed: "
@@ -142,6 +145,7 @@ def png_to_pmp(
     palette_path: str | Path | None = "SUNNY.PCX",
     unknown_field: bytes = DEFAULT_UNKNOWN_FIELD,
     alpha_transparent_threshold: int = 0,
+    dither: bool = False,
 ) -> Path:
     """Convert an input PNG image to a PMP sprite file.
 
@@ -175,7 +179,7 @@ def png_to_pmp(
     rgb = _rgba_to_clean_rgb(rgba)
 
     try:
-        indexed = _quantize_with_palette(rgb, palette_path)
+        indexed = _quantize_with_palette(rgb, palette_path, dither=dither)
     except (OSError, UnidentifiedImageError, ValueError) as exc:
         raise ValueError(
             f"Unable to quantize image with palette '{palette_path}'. {exc}. "

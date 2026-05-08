@@ -254,3 +254,13 @@ def test_png_to_pmp_reports_invalid_pcx_trailer_when_marker_missing(tmp_path: Pa
         assert "expected marker 0x0C" in message
     else:
         raise AssertionError("expected ValueError for invalid PCX palette trailer")
+
+def test_png_to_pmp_accepts_dither_option(tmp_path: Path) -> None:
+    src = tmp_path / "in.png"
+    dst = tmp_path / "out.pmp"
+    Image.new("RGB", (2, 2), (127, 127, 127)).save(src)
+
+    out = png_to_pmp(src, dst, size_field=0, palette_path=None, dither=True)
+
+    assert out == dst
+    assert dst.exists()

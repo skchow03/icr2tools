@@ -438,6 +438,10 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
         self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
 
+        self.dither_checkbox = QtWidgets.QCheckBox("Use dithering when RGB is quantized to palette")
+        self.dither_checkbox.setChecked(False)
+        form_layout.addWidget(self.dither_checkbox)
+
         form_layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit, self.output_error = self._make_browse_row(form_layout, "Output file:", self._browse_output, "output")
         self.output_edit._acceptor = lambda p: (len(p)==1 and ((p[0].suffix.lower() in {".bmp", ".png", ".mip"}) or not p[0].exists()), "Drop a target file path ending in .bmp, .png, or .mip.")
@@ -504,12 +508,13 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
 
     def _collect_preset_values(self) -> dict[str, str]:
-        return {"mode": self.mode_combo.currentText(), "palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip()}
+        return {"mode": self.mode_combo.currentText(), "palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "dither": "1" if self.dither_checkbox.isChecked() else "0"}
 
     def _apply_preset(self, preset: dict[str, str]) -> None:
         self.mode_combo.setCurrentText(preset.get("mode", self.mode_combo.currentText()))
         self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
         self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
+        self.dither_checkbox.setChecked(preset.get("dither", "0") == "1")
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback, field_name: str) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
         wrap = QtWidgets.QVBoxLayout()
@@ -620,7 +625,7 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             ):
                 self.set_status(STATUS_IDLE, "Conversion cancelled.")
                 return
-            img_to_mip(quantized, str(output_path), str(palette_path), mode)
+            img_to_mip(quantized, str(output_path), str(palette_path), mode, dither=self.dither_checkbox.isChecked())
             self.set_status(STATUS_SUCCESS, f"Created MIP: {output_path}")
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"MIP conversion failed: {exc}")
@@ -683,7 +688,7 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             for source_path in selected_inputs:
                 out_path = target_dir / f"{source_path.stem}.mip"
                 quantized = Image.open(source_path).convert("P")
-                img_to_mip(quantized, str(out_path), str(palette_path), mode)
+                img_to_mip(quantized, str(out_path), str(palette_path), mode, dither=self.dither_checkbox.isChecked())
                 converted += 1
             self.set_status(STATUS_SUCCESS, f"Converted {converted} file(s) to MIP in {target_dir}")
         except Exception as exc:  # pragma: no cover
@@ -813,6 +818,9 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
         self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
         self.palette_edit.setText("SUNNY.PCX")
+        self.dither_checkbox = QtWidgets.QCheckBox("Use dithering when RGB is quantized to palette")
+        self.dither_checkbox.setChecked(False)
+        layout.addWidget(self.dither_checkbox)
 
         advanced_box = QtWidgets.QGroupBox("Advanced")
         advanced_box.setCheckable(True)
@@ -882,11 +890,12 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
 
     def _collect_preset_values(self) -> dict[str, str]:
-        return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "alpha_threshold": str(self.alpha_threshold_spin.value()), "header_size": self.size_field.text().strip()}
+        return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "alpha_threshold": str(self.alpha_threshold_spin.value()), "header_size": self.size_field.text().strip(), "dither": "1" if self.dither_checkbox.isChecked() else "0"}
 
     def _apply_preset(self, preset: dict[str, str]) -> None:
         self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
         self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
+        self.dither_checkbox.setChecked(preset.get("dither", "0") == "1")
         self.size_field.setText(preset.get("header_size", self.size_field.text()))
         try:
             self.alpha_threshold_spin.setValue(int(preset.get("alpha_threshold", str(self.alpha_threshold_spin.value()))))
@@ -948,6 +957,7 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
                 size_field=size_field,
                 palette_path=palette_path,
                 alpha_transparent_threshold=self.alpha_threshold_spin.value(),
+                dither=self.dither_checkbox.isChecked(),
             )
             self.set_status(STATUS_SUCCESS, f"Created PMP: {out}")
         except Exception as exc:  # pragma: no cover
@@ -980,6 +990,9 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
         self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
         self.palette_edit.setText("SUNNY.PCX")
+        self.dither_checkbox = QtWidgets.QCheckBox("Use dithering when RGB is quantized to palette")
+        self.dither_checkbox.setChecked(False)
+        layout.addWidget(self.dither_checkbox)
 
         advanced_box = QtWidgets.QGroupBox("Advanced")
         advanced_box.setCheckable(True)
@@ -1037,6 +1050,7 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
     def _apply_preset(self, preset: dict[str, str]) -> None:
         self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
         self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
+        self.dither_checkbox.setChecked(preset.get("dither", "0") == "1")
         self.crop_checkbox.setChecked(preset.get("crop_transparent_border", "False").lower() == "true")
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> QtWidgets.QLineEdit:
