@@ -126,6 +126,15 @@ class LoadedTsdFile:
     source_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class _TsoBoundaryElevationContext:
+    section_manager: object
+    centerline_index: object
+    sampled_dlongs: object
+    sections: object
+    track_length: float
+
+
 class _MrkTexturePatternDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(
         self,
@@ -3701,11 +3710,18 @@ class SGViewerController:
     def _refresh_tso_table(self) -> None:
         table = self._window.tso_table
         self._update_tso_table_headers()
+        boundary_context = self._build_tso_boundary_elevation_context()
+        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
         previous_state = table.blockSignals(True)
         try:
             table.setRowCount(len(self._trackside_objects))
             self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
             for row, obj in enumerate(self._trackside_objects):
+                relative_z = self._tso_relative_boundary_elevation(
+                    obj,
+                    context=boundary_context,
+                    memo=boundary_cache,
+                )
                 values = [
                     f"__TSO{row}",
                     normalize_trackside_filename(obj.filename),
@@ -3714,7 +3730,7 @@ class SGViewerController:
                     self._format_tso_distance_for_display(int(obj.z)),
                     (
                         self._format_tso_distance_for_display(relative_z)
-                        if (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
+                        if relative_z is not None
                         else ""
                     ),
                 ]
@@ -3949,6 +3965,8 @@ class SGViewerController:
 
     def _update_tso_table_position_cells(self, indices: list[int], *, include_z: bool = False) -> None:
         table = self._window.tso_table
+        boundary_context = self._build_tso_boundary_elevation_context()
+        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
         previous_state = table.blockSignals(True)
         try:
             for index in indices:
@@ -3967,7 +3985,11 @@ class SGViewerController:
                         z_item.setText(self._format_tso_distance_for_display(int(obj.z)))
                 relative_z_item = table.item(index, 5)
                 if relative_z_item is not None:
-                    relative_z = self._tso_relative_boundary_elevation(obj)
+                    relative_z = self._tso_relative_boundary_elevation(
+                        obj,
+                        context=boundary_context,
+                        memo=boundary_cache,
+                    )
                     relative_z_item.setText(
                         self._format_tso_distance_for_display(relative_z) if relative_z is not None else ""
                     )
@@ -4622,6 +4644,10 @@ class SGViewerController:
         )
 
     def _closest_boundary_elevation_for_tso(self, obj: TracksideObject) -> int | None:
+        context = self._build_tso_boundary_elevation_context()
+        return self._closest_boundary_elevation_for_tso_with_context(obj, context=context)
+
+    def _build_tso_boundary_elevation_context(self) -> _TsoBoundaryElevationContext | None:
         section_manager = self._window.preview.section_manager
         centerline_index = section_manager.centerline_index
         sampled_dlongs = section_manager.sampled_dlongs
@@ -4629,6 +4655,35 @@ class SGViewerController:
         track_length = float(sum(max(0.0, float(section.length)) for section in sections))
         if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
             return None
+        return _TsoBoundaryElevationContext(
+            section_manager=section_manager,
+            centerline_index=centerline_index,
+            sampled_dlongs=sampled_dlongs,
+            sections=sections,
+            track_length=track_length,
+        )
+
+    def _closest_boundary_elevation_for_tso_with_context(
+        self,
+        obj: TracksideObject,
+        *,
+        context: _TsoBoundaryElevationContext | None,
+        memo: dict[tuple[int, int, int, int, int], int | None] | None = None,
+    ) -> int | None:
+        if context is None:
+            return None
+        revision_token = (
+            id(context.centerline_index),
+            id(context.sampled_dlongs),
+            id(context.sections),
+        )
+        cache_key = (int(obj.x), int(obj.y), *revision_token)
+        if memo is not None and cache_key in memo:
+            return memo[cache_key]
+        centerline_index = context.centerline_index
+        sampled_dlongs = context.sampled_dlongs
+        sections = context.sections
+        track_length = context.track_length
         projected_point, projected_dlong, _distance_sq = project_point_to_centerline(
             (float(obj.x), float(obj.y)),
             centerline_index,
@@ -4664,10 +4719,22 @@ class SGViewerController:
             if best_distance_sq is None or distance_sq < best_distance_sq:
                 best_distance_sq = distance_sq
                 best_elevation = int(round(elevation))
+        if memo is not None:
+            memo[cache_key] = best_elevation
         return best_elevation
 
-    def _tso_relative_boundary_elevation(self, obj: TracksideObject) -> int | None:
-        boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
+    def _tso_relative_boundary_elevation(
+        self,
+        obj: TracksideObject,
+        *,
+        context: _TsoBoundaryElevationContext | None = None,
+        memo: dict[tuple[int, int, int, int, int], int | None] | None = None,
+    ) -> int | None:
+        boundary_elevation = self._closest_boundary_elevation_for_tso_with_context(
+            obj,
+            context=context if context is not None else self._build_tso_boundary_elevation_context(),
+            memo=memo,
+        )
         if boundary_elevation is None:
             return None
         return int(obj.z) - int(boundary_elevation)
@@ -4697,7 +4764,10 @@ class SGViewerController:
             )
             if item.column() == 5:
                 relative_z = self._parse_tso_distance_from_display(table.item(row, 5).text() if table.item(row, 5) else "0")
-                boundary_elevation = self._closest_boundary_elevation_for_tso(obj)
+                boundary_elevation = self._closest_boundary_elevation_for_tso_with_context(
+                    obj,
+                    context=self._build_tso_boundary_elevation_context(),
+                )
                 if boundary_elevation is None:
                     raise ValueError
                 obj = replace(obj, z=int(boundary_elevation) + relative_z)
