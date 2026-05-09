@@ -4082,7 +4082,11 @@ class SGViewerController:
                 else:
                     item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
             self._ensure_tso_table_row_button(row)
-            self._update_tso_table_position_cells([row], include_z=include_z)
+            self._update_tso_table_position_cells(
+                [row],
+                include_z=include_z,
+                include_relative_z=False,
+            )
         finally:
             table.blockSignals(previous_state)
 
@@ -4271,13 +4275,26 @@ class SGViewerController:
             logger.debug("Handled preview TSO map click in %.3f ms", (perf_counter() - start) * 1000.0)
             return True
         filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
+        step_start = perf_counter()
         self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
+        logger.debug("TSO add click: build/append object %.3f ms", (perf_counter() - step_start) * 1000.0)
         new_row_index = len(self._trackside_objects) - 1
         self._selected_trackside_object_indices = [new_row_index]
+
+        step_start = perf_counter()
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        logger.debug("TSO add click: preview set_trackside_objects %.3f ms", (perf_counter() - step_start) * 1000.0)
+
+        step_start = perf_counter()
         self._upsert_tso_table_row(new_row_index)
+        logger.debug("TSO add click: upsert table row %.3f ms", (perf_counter() - step_start) * 1000.0)
+
+        step_start = perf_counter()
         self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
         self._window.preview.set_selected_trackside_object_index(new_row_index)
+        logger.debug("TSO add click: preview selection %.3f ms", (perf_counter() - step_start) * 1000.0)
+
+        step_start = perf_counter()
         selection_model = self._window.tso_table.selectionModel()
         if selection_model is not None:
             row_index = self._window.tso_table.model().index(new_row_index, 0)
@@ -4285,21 +4302,31 @@ class SGViewerController:
                 row_index,
                 QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
             )
+        logger.debug("TSO add click: table selection %.3f ms", (perf_counter() - step_start) * 1000.0)
+
+        step_start = perf_counter()
         selected_item = self._window.tso_table.item(new_row_index, 0)
         if selected_item is not None:
             self._window.tso_table.scrollToItem(
                 selected_item,
                 QtWidgets.QAbstractItemView.PositionAtCenter,
             )
-        self._window.tso_visibility_sidebar.set_available_tso_ids(list(range(len(self._trackside_objects))))
-        self._window.tso_visibility_sidebar.set_tso_display_metadata(
-            {
-                index: (normalize_trackside_filename(obj.filename), obj.description.strip())
-                for index, obj in enumerate(self._trackside_objects)
-            }
+        logger.debug("TSO add click: table scroll %.3f ms", (perf_counter() - step_start) * 1000.0)
+
+        step_start = perf_counter()
+        self._window.tso_visibility_sidebar.append_available_tso_id(new_row_index)
+        new_obj = self._trackside_objects[new_row_index]
+        self._window.tso_visibility_sidebar.upsert_tso_display_metadata(
+            new_row_index,
+            normalize_trackside_filename(new_obj.filename),
+            new_obj.description.strip(),
         )
+        logger.debug("TSO add click: visibility sidebar incremental update %.3f ms", (perf_counter() - step_start) * 1000.0)
+
+        step_start = perf_counter()
         self._set_trackside_objects_dirty(True)
         self._schedule_trackside_objects_persist()
+        logger.debug("TSO add click: dirty + persist schedule %.3f ms", (perf_counter() - step_start) * 1000.0)
         if self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
         logger.debug("Handled preview TSO map click in %.3f ms", (perf_counter() - start) * 1000.0)

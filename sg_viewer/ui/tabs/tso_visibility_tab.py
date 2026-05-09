@@ -869,6 +869,22 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
         self._refresh_visible_tso_column()
 
+    def append_available_tso_id(self, tso_id: int) -> None:
+        if not isinstance(tso_id, int) or tso_id < 0:
+            return
+        if tso_id in self.available_tso_ids:
+            return
+        self.available_tso_ids.append(tso_id)
+        self.available_tso_ids.sort()
+        self._refresh_tso_filter_list()
+
+    def upsert_tso_display_metadata(self, tso_id: int, filename: str, description: str) -> None:
+        if not isinstance(tso_id, int) or tso_id < 0:
+            return
+        self._tso_display_metadata[tso_id] = (str(filename).strip(), str(description).strip())
+        self._refresh_tso_filter_list()
+        self._refresh_visible_tso_column()
+
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
