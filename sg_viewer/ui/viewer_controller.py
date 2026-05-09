@@ -264,6 +264,7 @@ class SGViewerController:
             | TsdDashedLinesObject
             | TsdPitStallsObject
         ] = []
+        self._auto_update_tso_relative_z = False
         self._tsd_object_dialog_preview_object: (
             TsdZebraCrossingObject
             | TsdTransverseLineObject
@@ -1336,6 +1337,9 @@ class SGViewerController:
         self._window.tso_refresh_relative_boundary_button.clicked.connect(
             self._on_tso_refresh_relative_boundary_requested
         )
+        self._window.tso_auto_update_relative_z_checkbox.toggled.connect(
+            self._on_tso_auto_update_relative_z_toggled
+        )
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
         self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
@@ -1643,6 +1647,10 @@ class SGViewerController:
             self._current_path,
             self._window.tso_visibility_sidebar.serialize_object_lists(),
         )
+        self._sg_settings_store.set_tso_auto_update_relative_z(
+            self._current_path,
+            self._auto_update_tso_relative_z,
+        )
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
@@ -1656,6 +1664,12 @@ class SGViewerController:
         self._sync_tso_visibility_section_dlongs()
         if self._current_path is None:
             return
+        persisted_auto_update_relative_z = self._sg_settings_store.get_tso_auto_update_relative_z(self._current_path)
+        self._auto_update_tso_relative_z = bool(persisted_auto_update_relative_z) if persisted_auto_update_relative_z is not None else False
+        checkbox = self._window.tso_auto_update_relative_z_checkbox
+        previous_state = checkbox.blockSignals(True)
+        checkbox.setChecked(self._auto_update_tso_relative_z)
+        checkbox.blockSignals(previous_state)
         persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(self._current_path)
         if isinstance(persisted_track3d_colors, dict):
             merged_colors = dict(DEFAULT_TRACK3D_COLORS)
@@ -3710,8 +3724,8 @@ class SGViewerController:
     def _refresh_tso_table(self) -> None:
         table = self._window.tso_table
         self._update_tso_table_headers()
-        boundary_context = self._build_tso_boundary_elevation_context()
-        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
+        boundary_context = self._build_tso_boundary_elevation_context() if self._auto_update_tso_relative_z else None
+        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {} if self._auto_update_tso_relative_z else {}
         previous_state = table.blockSignals(True)
         try:
             expected_row_count = len(self._trackside_objects)
@@ -3720,10 +3734,14 @@ class SGViewerController:
                 table.setRowCount(expected_row_count)
             self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
             for row, obj in enumerate(self._trackside_objects):
-                relative_z = self._tso_relative_boundary_elevation(
-                    obj,
-                    context=boundary_context,
-                    memo=boundary_cache,
+                relative_z = (
+                    self._tso_relative_boundary_elevation(
+                        obj,
+                        context=boundary_context,
+                        memo=boundary_cache,
+                    )
+                    if self._auto_update_tso_relative_z
+                    else None
                 )
                 values = [
                     f"__TSO{row}",
@@ -3964,9 +3982,16 @@ class SGViewerController:
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
 
-    def _update_tso_table_position_cells(self, indices: list[int], *, include_z: bool = False) -> None:
+    def _update_tso_table_position_cells(
+        self,
+        indices: list[int],
+        *,
+        include_z: bool = False,
+        include_relative_z: bool | None = None,
+    ) -> None:
         table = self._window.tso_table
-        boundary_context = self._build_tso_boundary_elevation_context()
+        should_update_relative_z = self._auto_update_tso_relative_z if include_relative_z is None else include_relative_z
+        boundary_context = self._build_tso_boundary_elevation_context() if should_update_relative_z else None
         boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
         previous_state = table.blockSignals(True)
         try:
@@ -3985,7 +4010,7 @@ class SGViewerController:
                     if z_item is not None:
                         z_item.setText(self._format_tso_distance_for_display(int(obj.z)))
                 relative_z_item = table.item(index, 5)
-                if relative_z_item is not None:
+                if relative_z_item is not None and should_update_relative_z:
                     relative_z = self._tso_relative_boundary_elevation(
                         obj,
                         context=boundary_context,
@@ -4015,7 +4040,8 @@ class SGViewerController:
                 self._format_tso_distance_for_display(int(obj.z)),
                 (
                     self._format_tso_distance_for_display(relative_z)
-                    if (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
+                    if self._auto_update_tso_relative_z
+                    and (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
                     else ""
                 ),
             ]
@@ -4819,7 +4845,17 @@ class SGViewerController:
         self._persist_tsd_state_for_current_track()
 
     def _on_tso_refresh_relative_boundary_requested(self) -> None:
-        self._refresh_tso_table()
+        self._update_tso_table_position_cells(list(range(len(self._trackside_objects))), include_z=False, include_relative_z=True)
+
+    def _on_tso_auto_update_relative_z_toggled(self, checked: bool) -> None:
+        self._auto_update_tso_relative_z = bool(checked)
+        if self._current_path is not None:
+            self._sg_settings_store.set_tso_auto_update_relative_z(
+                self._current_path,
+                self._auto_update_tso_relative_z,
+            )
+        if self._auto_update_tso_relative_z:
+            self._refresh_tso_table()
         self._window.show_status_message("Refreshed Z rel. boundary values from current track geometry.")
 
     def _on_tso_generate_file_requested(self) -> None:

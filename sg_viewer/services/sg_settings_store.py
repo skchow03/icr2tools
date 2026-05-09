@@ -294,3 +294,11 @@ class SGSettingsStore:
                 "length_multiplier": float(length_multiplier),
             },
         )
+
+    def get_tso_auto_update_relative_z(self, sg_path: Path) -> bool | None:
+        payload = self.load(sg_path)
+        value = payload.get("tso_auto_update_relative_z")
+        return value if isinstance(value, bool) else None
+
+    def set_tso_auto_update_relative_z(self, sg_path: Path, enabled: bool) -> None:
+        self.update(sg_path, tso_auto_update_relative_z=bool(enabled))
