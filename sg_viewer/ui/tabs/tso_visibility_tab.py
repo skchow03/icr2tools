@@ -1,3 +1,6 @@
+import logging
+from time import perf_counter
+
 from PyQt5 import QtCore
 from PyQt5.QtGui import QColor, QBrush, QPainter, QPen, QResizeEvent
 from PyQt5.QtWidgets import (
@@ -29,6 +32,8 @@ from sg_viewer.io.track3d_parser import (
     track3d_has_object_lists,
 )
 from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
+
+logger = logging.getLogger(__name__)
 
 
 class TSOVisibilityListWidget(QListWidget):
@@ -656,36 +661,37 @@ class TSOVisibilityTab(QWidget):
         return selected
 
     def _refresh_tso_filter_list(self) -> None:
+        start = perf_counter()
         selected_before = self._selected_filter_tso_ids()
         selected_item = self.tso_filter_list.currentItem()
         selected_tso_id_for_add = selected_item.data(QtCore.Qt.UserRole) if selected_item is not None else None
         all_ids = self._collect_all_tso_ids()
-        self.tso_filter_list.blockSignals(True)
-        self.tso_filter_list.clearContents()
-        self.tso_filter_list.setRowCount(0)
-        selected_row_for_add = -1
-        self.tso_filter_list.setRowCount(len(all_ids))
-        for row, tso_id in enumerate(all_ids):
-            filter_item = QTableWidgetItem("")
-            filter_item.setData(QtCore.Qt.UserRole, tso_id)
-            filter_item.setFlags(
-                QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsUserCheckable
-            )
-            filter_item.setCheckState(QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked)
-            self.tso_filter_list.setItem(row, 0, filter_item)
+        with QtCore.QSignalBlocker(self.tso_filter_list):
+            self.tso_filter_list.clearContents()
+            self.tso_filter_list.setRowCount(0)
+            selected_row_for_add = -1
+            self.tso_filter_list.setRowCount(len(all_ids))
+            for row, tso_id in enumerate(all_ids):
+                filter_item = QTableWidgetItem("")
+                filter_item.setData(QtCore.Qt.UserRole, tso_id)
+                filter_item.setFlags(
+                    QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsUserCheckable
+                )
+                filter_item.setCheckState(QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked)
+                self.tso_filter_list.setItem(row, 0, filter_item)
 
-            tso_item = QTableWidgetItem(self._build_tso_filter_label(tso_id))
-            tso_item.setData(QtCore.Qt.UserRole, tso_id)
-            tso_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-            self.tso_filter_list.setItem(row, 1, tso_item)
-            if selected_tso_id_for_add == tso_id:
-                selected_row_for_add = row
-        if selected_row_for_add >= 0:
-            self.tso_filter_list.setCurrentCell(selected_row_for_add, 1)
-        elif self.tso_filter_list.rowCount() > 0:
-            self.tso_filter_list.setCurrentCell(0, 1)
-        self.tso_filter_list.blockSignals(False)
+                tso_item = QTableWidgetItem(self._build_tso_filter_label(tso_id))
+                tso_item.setData(QtCore.Qt.UserRole, tso_id)
+                tso_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+                self.tso_filter_list.setItem(row, 1, tso_item)
+                if selected_tso_id_for_add == tso_id:
+                    selected_row_for_add = row
+            if selected_row_for_add >= 0:
+                self.tso_filter_list.setCurrentCell(selected_row_for_add, 1)
+            elif self.tso_filter_list.rowCount() > 0:
+                self.tso_filter_list.setCurrentCell(0, 1)
         self._update_tso_filter_assignment_highlight()
+        logger.debug("TSO visibility: _refresh_tso_filter_list %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
         self.populate_table()
@@ -870,20 +876,45 @@ class TSOVisibilityTab(QWidget):
         self._refresh_visible_tso_column()
 
     def append_available_tso_id(self, tso_id: int) -> None:
+        start = perf_counter()
         if not isinstance(tso_id, int) or tso_id < 0:
             return
         if tso_id in self.available_tso_ids:
             return
         self.available_tso_ids.append(tso_id)
         self.available_tso_ids.sort()
-        self._refresh_tso_filter_list()
+        logger.debug("TSO visibility: append_available_tso_id %.3f ms", (perf_counter() - start) * 1000.0)
 
     def upsert_tso_display_metadata(self, tso_id: int, filename: str, description: str) -> None:
+        start = perf_counter()
         if not isinstance(tso_id, int) or tso_id < 0:
             return
         self._tso_display_metadata[tso_id] = (str(filename).strip(), str(description).strip())
+        logger.debug("TSO visibility: upsert_tso_display_metadata %.3f ms", (perf_counter() - start) * 1000.0)
+
+    def update_available_tso_metadata(
+        self,
+        tso_ids: list[int] | tuple[int, ...],
+        metadata: dict[int, tuple[str, str]],
+        *,
+        refresh: bool = True,
+    ) -> None:
+        self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if isinstance(tso_id, int) and tso_id >= 0})
+        normalized: dict[int, tuple[str, str]] = {}
+        for tso_id, values in metadata.items():
+            if not isinstance(tso_id, int) or tso_id < 0:
+                continue
+            filename = ""
+            description = ""
+            if isinstance(values, tuple) and len(values) == 2:
+                filename = str(values[0]).strip()
+                description = str(values[1]).strip()
+            normalized[tso_id] = (filename, description)
+        self._tso_display_metadata = normalized
+        if not refresh:
+            return
         self._refresh_tso_filter_list()
-        self._refresh_visible_tso_column()
+        self._refresh_visible_tso_column(refresh_table=False)
 
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -979,6 +1010,7 @@ class TSOVisibilityTab(QWidget):
         self.objectListsChanged.emit()
 
     def populate_table(self):
+        start = perf_counter()
         current_object_index = self._find_object_list_index_for_current_selection()
         selected_tso_ids = self._selected_filter_tso_ids()
         left_section_items: list[QTableWidgetItem] = []
@@ -994,7 +1026,8 @@ class TSOVisibilityTab(QWidget):
             else:
                 left_section_items.append(item)
 
-        self.section_list.set_entries(left_section_items, right_section_items)
+        with QtCore.QSignalBlocker(self.section_list):
+            self.section_list.set_entries(left_section_items, right_section_items)
 
         if self.section_list.count() == 0:
             self.tso_list.clear()
@@ -1013,8 +1046,11 @@ class TSOVisibilityTab(QWidget):
                 if item.data(QtCore.Qt.UserRole) == current_object_index:
                     preferred_row = row
                     break
-        self.section_list.setCurrentRow(preferred_row)
+        with QtCore.QSignalBlocker(self.section_list):
+            self.section_list.setCurrentRow(preferred_row)
+        self._emit_selected_tsos()
         self._update_tso_filter_assignment_highlight()
+        logger.debug("TSO visibility: populate_table %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _on_tso_order_changed(self) -> None:
         object_list_index = self._find_object_list_index_for_current_selection()
@@ -1055,6 +1091,7 @@ class TSOVisibilityTab(QWidget):
         self.tso_list.update_item_widths()
 
     def _emit_selected_tsos(self) -> None:
+        start = perf_counter()
         row = self._find_object_list_index_for_current_selection()
         if row < 0 or row >= len(self.object_lists):
             self.selectedTSOsChanged.emit(tuple())
@@ -1075,6 +1112,7 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOPillChanged.emit(selected_tso_id)
         self._emit_track_section_and_order(row)
         self._refresh_current_tso_list(selected_tso_id)
+        logger.debug("TSO visibility: _emit_selected_tsos %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
         row = self._find_object_list_index_for_current_selection()
@@ -1108,8 +1146,11 @@ class TSOVisibilityTab(QWidget):
         self._resize_section_list()
         self.tso_list.update_item_widths()
 
-    def _refresh_visible_tso_column(self) -> None:
+    def _refresh_visible_tso_column(self, *, refresh_table: bool = True) -> None:
+        start = perf_counter()
+        _ = refresh_table
         self.tso_list.update_item_widths()
+        logger.debug("TSO visibility: _refresh_visible_tso_column %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _update_row_height(self, row: int, widget: TSOVisibilityListWidget) -> None:
         _ = (row, widget)

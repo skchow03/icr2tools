@@ -299,6 +299,8 @@ class SGViewerController:
         self._tso_persist_timer.setSingleShot(True)
         self._tso_persist_timer.setInterval(750)
         self._tso_persist_timer.timeout.connect(self._persist_trackside_objects_for_current_track)
+        self._tso_visibility_sidebar_dirty = False
+        self._tso_visibility_sidebar_refresh_pending = False
 
         self._create_actions()
         self._create_menus()
@@ -3813,12 +3815,13 @@ class SGViewerController:
         self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
         selected_index = self._selected_trackside_object_indices[0] if self._selected_trackside_object_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
-        self._window.tso_visibility_sidebar.set_available_tso_ids(list(range(len(self._trackside_objects))))
-        self._window.tso_visibility_sidebar.set_tso_display_metadata(
+        self._window.tso_visibility_sidebar.update_available_tso_metadata(
+            tuple(range(len(self._trackside_objects))),
             {
                 index: (normalize_trackside_filename(obj.filename), obj.description.strip())
                 for index, obj in enumerate(self._trackside_objects)
-            }
+            },
+            refresh=True,
         )
         logger.debug("Refreshed TSO table in %.3f ms", (perf_counter() - start) * 1000.0)
 
@@ -4314,14 +4317,9 @@ class SGViewerController:
         logger.debug("TSO add click: table scroll %.3f ms", (perf_counter() - step_start) * 1000.0)
 
         step_start = perf_counter()
-        self._window.tso_visibility_sidebar.append_available_tso_id(new_row_index)
-        new_obj = self._trackside_objects[new_row_index]
-        self._window.tso_visibility_sidebar.upsert_tso_display_metadata(
-            new_row_index,
-            normalize_trackside_filename(new_obj.filename),
-            new_obj.description.strip(),
-        )
-        logger.debug("TSO add click: visibility sidebar incremental update %.3f ms", (perf_counter() - step_start) * 1000.0)
+        self._mark_tso_visibility_sidebar_dirty()
+        self._schedule_tso_visibility_sidebar_refresh()
+        logger.debug("TSO add click: visibility sidebar deferred mark/schedule %.3f ms", (perf_counter() - step_start) * 1000.0)
 
         step_start = perf_counter()
         self._set_trackside_objects_dirty(True)
@@ -5522,6 +5520,8 @@ class SGViewerController:
             self._update_mrk_highlights_from_table()
         else:
             self._window.preview.set_highlighted_mrk_walls(())
+        if is_tso_visibility_tab:
+            self._flush_tso_visibility_sidebar_refresh_if_needed()
 
     def _on_tsd_hide_centerline_nodes_toggled(self, _checked: bool) -> None:
         self._apply_tsd_centerline_visibility_mode()
@@ -5553,6 +5553,36 @@ class SGViewerController:
             return False
         tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
         return tab_name == "Objects"
+
+    def _mark_tso_visibility_sidebar_dirty(self) -> None:
+        self._tso_visibility_sidebar_dirty = True
+
+    def _schedule_tso_visibility_sidebar_refresh(self) -> None:
+        if self._tso_visibility_sidebar_refresh_pending:
+            return
+        self._tso_visibility_sidebar_refresh_pending = True
+        QtCore.QTimer.singleShot(0, self._flush_tso_visibility_sidebar_refresh_if_needed)
+
+    def _flush_tso_visibility_sidebar_refresh_if_needed(self) -> None:
+        self._tso_visibility_sidebar_refresh_pending = False
+        if not self._tso_visibility_sidebar_dirty:
+            return
+        if not self._is_tso_visibility_tab_active():
+            return
+        start = perf_counter()
+        metadata: dict[int, tuple[str, str]] = {}
+        for index, tso in enumerate(self._trackside_objects):
+            metadata[index] = (
+                normalize_trackside_filename(tso.filename),
+                tso.description.strip(),
+            )
+        self._window.tso_visibility_sidebar.update_available_tso_metadata(
+            tuple(range(len(self._trackside_objects))),
+            metadata,
+            refresh=True,
+        )
+        self._tso_visibility_sidebar_dirty = False
+        logger.debug("TSO visibility sidebar deferred refresh %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _apply_trackside_drag_scope(self) -> None:
         if self._is_objects_tab_active():
