@@ -4194,7 +4194,23 @@ class SGViewerController:
             selected_indices = [hit_index] if hit_index is not None else []
             self._objects_tab_selected_trackside_object_indices = list(selected_indices)
             self._selected_trackside_object_indices = list(selected_indices)
-            self._refresh_tso_table()
+            selected_index = selected_indices[0] if selected_indices else None
+            self._window.preview.set_selected_trackside_object_index(selected_index)
+            self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+
+            table = self._window.tso_table
+            selection_model = table.selectionModel()
+            if selection_model is not None:
+                signal_blocker = QtCore.QSignalBlocker(selection_model)
+                selection_model.clearSelection()
+                if selected_indices:
+                    row_index = table.model().index(selected_indices[0], 0)
+                    selection_model.select(
+                        row_index,
+                        QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+                    )
+                del signal_blocker
+
             self._apply_trackside_drag_scope()
             if hit_index is not None:
                 self._window.show_status_message(
