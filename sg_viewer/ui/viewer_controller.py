@@ -295,6 +295,10 @@ class SGViewerController:
         self._tsd_preview_refresh_timer.setSingleShot(True)
         self._tsd_preview_refresh_timer.setInterval(60)
         self._tsd_preview_refresh_timer.timeout.connect(self._refresh_tsd_preview_lines)
+        self._tso_persist_timer = QtCore.QTimer(self._window)
+        self._tso_persist_timer.setSingleShot(True)
+        self._tso_persist_timer.setInterval(750)
+        self._tso_persist_timer.timeout.connect(self._persist_trackside_objects_for_current_track)
 
         self._create_actions()
         self._create_menus()
@@ -1620,6 +1624,7 @@ class SGViewerController:
 
 
     def _persist_tsd_state_for_current_track(self) -> None:
+        start = perf_counter()
         if self._current_path is None:
             return
         files = [
@@ -1651,6 +1656,22 @@ class SGViewerController:
             self._current_path,
             self._auto_update_tso_relative_z,
         )
+        logger.debug("Persisted full TSD state in %.3f ms", (perf_counter() - start) * 1000.0)
+
+    def _persist_trackside_objects_for_current_track(self) -> None:
+        start = perf_counter()
+        if self._current_path is None:
+            return
+        self._sg_settings_store.set_trackside_objects(
+            self._current_path,
+            [trackside_object_to_payload(obj) for obj in self._trackside_objects],
+        )
+        logger.debug("Persisted trackside objects in %.3f ms", (perf_counter() - start) * 1000.0)
+
+    def _schedule_trackside_objects_persist(self) -> None:
+        if self._current_path is None:
+            return
+        self._tso_persist_timer.start()
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
@@ -3722,6 +3743,7 @@ class SGViewerController:
 
 
     def _refresh_tso_table(self) -> None:
+        start = perf_counter()
         table = self._window.tso_table
         self._update_tso_table_headers()
         boundary_context = self._build_tso_boundary_elevation_context() if self._auto_update_tso_relative_z else None
@@ -3798,6 +3820,7 @@ class SGViewerController:
                 for index, obj in enumerate(self._trackside_objects)
             }
         )
+        logger.debug("Refreshed TSO table in %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _on_tso_selection_changed(self) -> None:
         table = self._window.tso_table
@@ -3975,12 +3998,14 @@ class SGViewerController:
         self._update_tso_table_position_cells(move_indices)
 
     def _on_preview_tso_drag_ended(self, _anchor_index: int | None = None) -> None:
+        start = perf_counter()
         if _anchor_index is not None and _anchor_index not in self._selected_trackside_object_indices:
             if 0 <= _anchor_index < len(self._trackside_objects):
                 self._selected_trackside_object_indices = [_anchor_index]
-        self._refresh_tso_table()
+        self._update_tso_table_position_cells(self._selected_trackside_object_indices)
         self._set_trackside_objects_dirty(True)
-        self._persist_tsd_state_for_current_track()
+        self._schedule_trackside_objects_persist()
+        logger.debug("Handled preview TSO drag end in %.3f ms", (perf_counter() - start) * 1000.0)
 
     def _update_tso_table_position_cells(
         self,
@@ -4213,6 +4238,7 @@ class SGViewerController:
             self._window.show_status_message("Box Select deactivated.")
 
     def _on_preview_tso_map_clicked(self, x: int, y: int) -> bool:
+        start = perf_counter()
         if not self._tso_add_mode_active and not self._tso_stamp_mode_active:
             if not self._is_objects_tab_active():
                 return False
@@ -4242,6 +4268,7 @@ class SGViewerController:
                 self._window.show_status_message(
                     "TSO selected: right-click and drag in the preview to move selected TSOs."
                 )
+            logger.debug("Handled preview TSO map click in %.3f ms", (perf_counter() - start) * 1000.0)
             return True
         filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
         self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
@@ -4272,9 +4299,10 @@ class SGViewerController:
             }
         )
         self._set_trackside_objects_dirty(True)
-        self._persist_tsd_state_for_current_track()
+        self._schedule_trackside_objects_persist()
         if self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
+        logger.debug("Handled preview TSO map click in %.3f ms", (perf_counter() - start) * 1000.0)
         return True
 
     def _find_trackside_object_at_point(self, x: float, y: float) -> int | None:
