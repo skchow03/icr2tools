@@ -3714,7 +3714,10 @@ class SGViewerController:
         boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
         previous_state = table.blockSignals(True)
         try:
-            table.setRowCount(len(self._trackside_objects))
+            expected_row_count = len(self._trackside_objects)
+            if table.rowCount() != expected_row_count:
+                table.clearContents()
+                table.setRowCount(expected_row_count)
             self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
             for row, obj in enumerate(self._trackside_objects):
                 relative_z = self._tso_relative_boundary_elevation(
@@ -3745,9 +3748,7 @@ class SGViewerController:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                     else:
                         item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
-                button = QtWidgets.QPushButton("Edit…")
-                button.clicked.connect(lambda _checked=False, row_index=row: self._open_tso_attributes_dialog(row_index))
-                table.setCellWidget(row, 6, button)
+                self._ensure_tso_table_row_button(row)
         finally:
             table.blockSignals(previous_state)
         selection_model = table.selectionModel()
@@ -4029,12 +4030,33 @@ class SGViewerController:
                     item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                 else:
                     item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
-            button = QtWidgets.QPushButton("Edit…")
-            button.clicked.connect(lambda _checked=False, row_index=row: self._open_tso_attributes_dialog(row_index))
-            table.setCellWidget(row, 6, button)
+            self._ensure_tso_table_row_button(row)
             self._update_tso_table_position_cells([row], include_z=include_z)
         finally:
             table.blockSignals(previous_state)
+
+    def _ensure_tso_table_row_button(self, row: int) -> None:
+        table = self._window.tso_table
+        existing_widget = table.cellWidget(row, 6)
+        button = existing_widget if isinstance(existing_widget, QtWidgets.QPushButton) else None
+        if button is None:
+            button = QtWidgets.QPushButton("Edit…")
+            table.setCellWidget(row, 6, button)
+        try:
+            button.clicked.disconnect(self._on_tso_attributes_button_clicked)
+        except TypeError:
+            pass
+        button.setProperty("tso_row_index", row)
+        button.clicked.connect(self._on_tso_attributes_button_clicked)
+
+    def _on_tso_attributes_button_clicked(self, _checked: bool = False) -> None:
+        sender = self._window.sender()
+        if not isinstance(sender, QtWidgets.QPushButton):
+            return
+        row_index = sender.property("tso_row_index")
+        if not isinstance(row_index, int):
+            return
+        self._open_tso_attributes_dialog(row_index)
 
     def _update_tso_table_headers(self) -> None:
         unit_label = measurement_unit_label(self._window.current_measurement_unit())
