@@ -202,6 +202,16 @@ class SGSettingsStore:
     def set_trackside_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
         self.update(sg_path, trackside_objects=objects)
 
+    def get_land_objects(self, sg_path: Path) -> list[dict[str, object]]:
+        payload = self.load(sg_path)
+        raw = payload.get("land_objects")
+        if not isinstance(raw, list):
+            return []
+        return [entry for entry in raw if isinstance(entry, dict)]
+
+    def set_land_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
+        self.update(sg_path, land_objects=objects)
+
     def get_track3d_file(self, sg_path: Path) -> Path | None:
         payload = self.load(sg_path)
         value = payload.get("track3d_file")

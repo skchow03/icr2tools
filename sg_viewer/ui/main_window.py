@@ -204,6 +204,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_object_name_edit = QtWidgets.QLineEdit()
         self._land_object_name_edit.setPlaceholderText("Object name")
         self._land_save_object_button = QtWidgets.QPushButton("Save Object")
+        self._land_add_object_button = QtWidgets.QPushButton("Add Object")
         self._land_saved_objects: list[dict[str, object]] = []
         self._land_objects_table.setHorizontalHeaderLabels(["Name", "Notes"])
         self._land_objects_table.horizontalHeader().setStretchLastSection(True)
@@ -933,6 +934,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_layout.addWidget(QtWidgets.QLabel("Land objects:"))
         land_object_header = QtWidgets.QHBoxLayout()
         land_object_header.addWidget(self._land_object_name_edit, 1)
+        land_object_header.addWidget(self._land_add_object_button)
         land_object_header.addWidget(self._land_save_object_button)
         land_layout.addLayout(land_object_header)
         land_layout.addWidget(self._land_objects_table)
@@ -964,6 +966,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._land_points_table.itemChanged.connect(self._on_land_points_table_item_changed)
         self._land_save_object_button.clicked.connect(self._save_current_land_object)
+        self._land_add_object_button.clicked.connect(self._add_land_object)
         self._land_objects_table.itemSelectionChanged.connect(self._load_selected_land_object)
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
         self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
@@ -2690,7 +2693,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QTableWidgetItem(f"{len(points)} points, {len(polygons)} polygons"),
         )
         self._land_objects_table.selectRow(row)
+        self._mark_land_objects_dirty()
         self.show_status_message(f"Saved land object '{name}'.")
+
+    def _add_land_object(self) -> None:
+        base_name = "Object"
+        existing_names = {
+            str(entry.get("name", "")).strip()
+            for entry in self._land_saved_objects
+            if isinstance(entry, dict)
+        }
+        index = 1
+        while f"{base_name} {index}" in existing_names:
+            index += 1
+        name = f"{base_name} {index}"
+        payload = {"name": name, "points": [], "polygons": []}
+        self._land_saved_objects.append(payload)
+        row = self._land_objects_table.rowCount()
+        self._land_objects_table.insertRow(row)
+        self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(name))
+        self._land_objects_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0 points, 0 polygons"))
+        self._land_objects_table.selectRow(row)
+        self._load_selected_land_object()
+        self._mark_land_objects_dirty()
+        self.show_status_message(f"Added land object '{name}'.")
 
     def _load_selected_land_object(self) -> None:
         row = self._land_objects_table.currentRow()
@@ -2720,6 +2746,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.blockSignals(False)
         self._land_object_name_edit.setText(str(entry.get("name", "")))
         self._sync_land_points_overlay()
+
+    def serialize_land_objects(self) -> list[dict[str, object]]:
+        return [dict(entry) for entry in self._land_saved_objects if isinstance(entry, dict)]
+
+    def load_land_objects(self, objects: list[dict[str, object]]) -> None:
+        self._land_saved_objects = [dict(entry) for entry in objects if isinstance(entry, dict)]
+        self._land_objects_table.setRowCount(0)
+        for row, entry in enumerate(self._land_saved_objects):
+            points = entry.get("points", [])
+            polygons = entry.get("polygons", [])
+            self._land_objects_table.insertRow(row)
+            self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(entry.get("name", ""))))
+            self._land_objects_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{len(points)} points, {len(polygons)} polygons"))
+        if self._land_saved_objects:
+            self._land_objects_table.selectRow(0)
+            self._load_selected_land_object()
+        else:
+            self._land_object_name_edit.clear()
+            self._land_points_table.setRowCount(0)
+            self._land_polygons_table.setRowCount(0)
+            self._sync_land_points_overlay()
+
+    def _mark_land_objects_dirty(self) -> None:
+        if self.controller is not None and hasattr(self.controller, "set_land_objects_dirty"):
+            self.controller.set_land_objects_dirty(True)
 
     def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
         centerline_index = self._preview.section_manager.centerline_index
