@@ -214,8 +214,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._land_points_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._land_polygons_table = QtWidgets.QTableWidget(0, 2)
-        self._land_polygons_table.setHorizontalHeaderLabels(["Point indices", "Color index"])
+        self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "SUNNY.PCX color index"])
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
+        self._land_polygons_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._land_polygons_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_add_polygon_button = QtWidgets.QPushButton("Add Polygon")
+        self._land_delete_polygon_button = QtWidgets.QPushButton("Delete Polygon")
         self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
         self._three_d_file_selected_path_label.setWordWrap(True)
         self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
@@ -920,8 +924,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_layout.addWidget(QtWidgets.QLabel("Points"))
         land_layout.addWidget(self._land_points_table)
         land_layout.addWidget(QtWidgets.QLabel("Polygons"))
+        land_polygon_buttons = QtWidgets.QHBoxLayout()
+        land_polygon_buttons.addWidget(self._land_add_polygon_button)
+        land_polygon_buttons.addWidget(self._land_delete_polygon_button)
+        land_layout.addLayout(land_polygon_buttons)
         land_layout.addWidget(self._land_polygons_table)
         self._land_objects_sidebar.setLayout(land_layout)
+        self._land_add_polygon_button.setToolTip(
+            "Add a polygon row. Enter point numbers separated by commas (example: 0, 1, 2, 3)."
+        )
+        self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
+        self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
+        self._land_delete_polygon_button.clicked.connect(self._delete_selected_land_polygon_row)
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
         three_d_intro = QtWidgets.QLabel(
@@ -2540,6 +2554,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             except ValueError:
                 continue
         self._preview.set_land_object_points_overlay(tuple(overlay_points))
+
+    def _add_land_polygon_row(self) -> None:
+        row = self._land_polygons_table.rowCount()
+        self._land_polygons_table.insertRow(row)
+        self._land_polygons_table.setItem(row, 0, QtWidgets.QTableWidgetItem(""))
+        self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0"))
+        self._land_polygons_table.setCurrentCell(row, 0)
+        self._land_polygons_table.editItem(self._land_polygons_table.item(row, 0))
+
+    def _delete_selected_land_polygon_row(self) -> None:
+        row = self._land_polygons_table.currentRow()
+        if row < 0 or row >= self._land_polygons_table.rowCount():
+            return
+        self._land_polygons_table.removeRow(row)
 
     def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
         centerline_index = self._preview.section_manager.centerline_index
