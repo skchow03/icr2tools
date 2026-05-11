@@ -358,6 +358,7 @@ def paint_preview(
                 painter,
                 base_state.land_object_points,
                 base_state.land_object_polygons,
+                sg_preview_state.tsd_palette if sg_preview_state is not None else (),
                 transform,
                 widget_height,
             )
@@ -439,6 +440,7 @@ def _draw_land_object_polygons_overlay(
     painter: QtGui.QPainter,
     points: tuple[Point, ...],
     polygons: tuple[tuple[tuple[int, ...], int, bool], ...],
+    palette: tuple[QtGui.QColor, ...],
     transform: Transform,
     widget_height: int,
 ) -> None:
@@ -450,8 +452,14 @@ def _draw_land_object_polygons_overlay(
         if len(indices) < 3:
             continue
         color_value = max(0, min(255, int(color_index)))
-        pen_color = QtGui.QColor(color_value, color_value, color_value, 220)
-        brush_color = QtGui.QColor(color_value, color_value, color_value, 255)
+        if palette:
+            base_color = QtGui.QColor(palette[color_value % len(palette)])
+        else:
+            base_color = QtGui.QColor(color_value, color_value, color_value)
+        pen_color = QtGui.QColor(base_color)
+        pen_color.setAlpha(220)
+        brush_color = QtGui.QColor(base_color)
+        brush_color.setAlpha(255)
         painter.setPen(QtGui.QPen(pen_color, 2.0))
         painter.setBrush(brush_color if filled else QtCore.Qt.NoBrush)
         polygon = QtGui.QPolygonF()
