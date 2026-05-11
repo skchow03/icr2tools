@@ -98,6 +98,7 @@ class BasePreviewState:
     ruler_start_point: Point | None
     ruler_end_point: Point | None
     ruler_label: str
+    land_object_points: tuple[Point, ...]
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
     centerline_unselected_color: QtGui.QColor
@@ -351,6 +352,13 @@ def paint_preview(
                 transform,
                 widget_height,
             )
+        if base_state.land_object_points:
+            _draw_land_object_points_overlay(
+                painter,
+                base_state.land_object_points,
+                transform,
+                widget_height,
+            )
 
     _draw_creation_overlays(painter, base_state.rect, creation_state, transform, widget_height)
     _draw_drag_heading_guide(
@@ -395,6 +403,27 @@ def _draw_center_crosshair(
         center.x(),
         center.y() + crosshair_half_size_px,
     )
+    painter.restore()
+
+
+def _draw_land_object_points_overlay(
+    painter: QtGui.QPainter,
+    points: tuple[Point, ...],
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    marker_brush = QtGui.QBrush(QtGui.QColor("#3FA9FF"))
+    marker_pen = QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0)
+    radius = 3.5
+    for index, point in enumerate(points, start=1):
+        mapped = sg_rendering.map_point(point[0], point[1], transform, widget_height)
+        painter.setPen(marker_pen)
+        painter.setBrush(marker_brush)
+        painter.drawEllipse(mapped, radius, radius)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawText(QtCore.QPointF(mapped.x() - 3.0, mapped.y() + 14.0), str(index))
     painter.restore()
 
 

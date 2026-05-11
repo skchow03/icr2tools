@@ -2508,12 +2508,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         delete_button = QtWidgets.QPushButton("Delete")
         delete_button.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
         self._land_points_table.setCellWidget(row, 4, delete_button)
+        self._sync_land_points_overlay()
 
     def _delete_land_point_row(self, row: int) -> None:
         if row < 0 or row >= self._land_points_table.rowCount():
             return
         self._land_points_table.removeRow(row)
         self._renumber_land_points_rows()
+        self._sync_land_points_overlay()
 
     def _renumber_land_points_rows(self) -> None:
         for row in range(self._land_points_table.rowCount()):
@@ -2525,6 +2527,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 except TypeError:
                     pass
                 widget.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
+
+    def _sync_land_points_overlay(self) -> None:
+        overlay_points: list[tuple[float, float]] = []
+        for row in range(self._land_points_table.rowCount()):
+            x_item = self._land_points_table.item(row, 1)
+            y_item = self._land_points_table.item(row, 2)
+            if x_item is None or y_item is None:
+                continue
+            try:
+                overlay_points.append((float(x_item.text()), float(y_item.text())))
+            except ValueError:
+                continue
+        self._preview.set_land_object_points_overlay(tuple(overlay_points))
 
     def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
         centerline_index = self._preview.section_manager.centerline_index
