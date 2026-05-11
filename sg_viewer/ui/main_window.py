@@ -205,12 +205,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_objects_table.horizontalHeader().setStretchLastSection(True)
         self._land_objects_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._land_objects_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self._land_points_table = QtWidgets.QTableWidget(0, 3)
-        self._land_points_table.setHorizontalHeaderLabels(["#", "X", "Y"])
+        self._land_points_table = QtWidgets.QTableWidget(0, 5)
+        self._land_points_table.setHorizontalHeaderLabels(["#", "X", "Y", "Z", ""])
         self._land_points_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
-        self._land_points_table.horizontalHeader().setStretchLastSection(True)
+        self._land_points_table.horizontalHeader().setStretchLastSection(False)
+        self._land_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._land_points_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._land_polygons_table = QtWidgets.QTableWidget(0, 2)
         self._land_polygons_table.setHorizontalHeaderLabels(["Point indices", "Color index"])
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
@@ -2488,11 +2490,77 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             transform,
         )
 
-    def _on_preview_pointer_clicked(self, point: QtCore.QPointF) -> None:
-        if not self._ruler_mode_active or self._ruler_frozen:
+    def _draw_land_objects_tab_active(self) -> bool:
+        active_index = self._right_sidebar_tabs.currentIndex()
+        if active_index < 0:
+            return False
+        return self._right_sidebar_tabs.tabText(active_index).strip() == "Draw land objects"
+
+    def _append_land_point_from_track(self, track_point: tuple[float, float]) -> None:
+        boundary_sample = self._nearest_boundary_sample(track_point)
+        z_value = boundary_sample[2] if boundary_sample is not None else None
+        row = self._land_points_table.rowCount()
+        self._land_points_table.insertRow(row)
+        self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row + 1)))
+        self._land_points_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}"))
+        self._land_points_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}"))
+        self._land_points_table.setItem(row, 3, QtWidgets.QTableWidgetItem("" if z_value is None else f"{float(z_value):.1f}"))
+        delete_button = QtWidgets.QPushButton("Delete")
+        delete_button.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
+        self._land_points_table.setCellWidget(row, 4, delete_button)
+
+    def _delete_land_point_row(self, row: int) -> None:
+        if row < 0 or row >= self._land_points_table.rowCount():
             return
+        self._land_points_table.removeRow(row)
+        self._renumber_land_points_rows()
+
+    def _renumber_land_points_rows(self) -> None:
+        for row in range(self._land_points_table.rowCount()):
+            self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row + 1)))
+            widget = self._land_points_table.cellWidget(row, 4)
+            if isinstance(widget, QtWidgets.QPushButton):
+                try:
+                    widget.clicked.disconnect()
+                except TypeError:
+                    pass
+                widget.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
+
+    def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
+        centerline_index = self._preview.section_manager.centerline_index
+        sampled_dlongs = self._preview.section_manager.sampled_dlongs
+        sections = self._preview.section_manager.sections
+        track_length = float(sum(max(0.0, float(section.length)) for section in sections))
+        if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
+            return None
+        projected_point, projected_dlong, _distance_sq = project_point_to_centerline(track_point, centerline_index, sampled_dlongs, track_length)
+        if projected_point is None or projected_dlong is None:
+            return None
+        mapped = dlong_to_section_position(sections, projected_dlong, track_length)
+        if mapped is None:
+            return None
+        section_index = int(mapped.section_index)
+        progress = max(0.0, min(1.0, float(mapped.fraction)))
+        fsects = self._preview.get_section_fsects(section_index)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+        nearest: tuple[int, float, float | None] | None = None
+        for row_index, boundary_number in sorted(boundary_number_by_row.items(), key=lambda item: int(item[1])):
+            fsect = fsects[row_index]
+            dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            elevation = self._sample_elevation_at_dlat(section_index, progress, dlat)
+            dist = abs(dlat)
+            if nearest is None or dist < nearest[1]:
+                nearest = (int(boundary_number), dist, elevation)
+        return nearest
+
+    def _on_preview_pointer_clicked(self, point: QtCore.QPointF) -> None:
         track_point = self._track_point_from_preview_position(point)
         if track_point is None:
+            return
+        if self._draw_land_objects_tab_active() and not self._ruler_mode_active:
+            self._append_land_point_from_track(track_point)
+            return
+        if not self._ruler_mode_active or self._ruler_frozen:
             return
         if self._ruler_start_point is None:
             self._ruler_start_point = track_point
