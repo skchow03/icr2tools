@@ -968,6 +968,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_save_object_button.clicked.connect(self._save_current_land_object)
         self._land_add_object_button.clicked.connect(self._add_land_object)
         self._land_objects_table.itemSelectionChanged.connect(self._load_selected_land_object)
+        self._update_land_object_edit_controls()
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
         self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
         self._three_d_file_sidebar = QtWidgets.QWidget()
@@ -2721,6 +2722,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _load_selected_land_object(self) -> None:
         row = self._land_objects_table.currentRow()
         if row < 0 or row >= len(self._land_saved_objects):
+            self._land_object_name_edit.clear()
+            self._land_points_table.setRowCount(0)
+            self._land_polygons_table.setRowCount(0)
+            self._update_land_object_edit_controls()
+            self._sync_land_points_overlay()
             return
         entry = self._land_saved_objects[row]
         points = entry.get("points", [])
@@ -2745,7 +2751,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
         self._land_object_name_edit.setText(str(entry.get("name", "")))
+        self._update_land_object_edit_controls()
         self._sync_land_points_overlay()
+
+    def _update_land_object_edit_controls(self) -> None:
+        has_selection = 0 <= self._land_objects_table.currentRow() < len(self._land_saved_objects)
+        for button in (
+            self._land_add_point_button,
+            self._land_edit_point_button,
+            self._land_add_polygon_button,
+            self._land_delete_polygon_button,
+        ):
+            button.setEnabled(has_selection)
+        if not has_selection:
+            self._land_add_point_button.blockSignals(True)
+            self._land_edit_point_button.blockSignals(True)
+            self._land_add_point_button.setChecked(False)
+            self._land_edit_point_button.setChecked(False)
+            self._land_add_point_button.blockSignals(False)
+            self._land_edit_point_button.blockSignals(False)
 
     def serialize_land_objects(self) -> list[dict[str, object]]:
         return [dict(entry) for entry in self._land_saved_objects if isinstance(entry, dict)]
@@ -2767,6 +2791,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_points_table.setRowCount(0)
             self._land_polygons_table.setRowCount(0)
             self._sync_land_points_overlay()
+            self._update_land_object_edit_controls()
 
     def _mark_land_objects_dirty(self) -> None:
         if self.controller is not None and hasattr(self.controller, "set_land_objects_dirty"):
