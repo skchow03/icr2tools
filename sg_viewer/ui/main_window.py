@@ -133,6 +133,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "TSD": "TSD",
             "Objects": "Objects",
             "TSO Visibility": "TSO Visibility",
+            "Draw land objects": "Draw land objects",
         }
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
@@ -199,6 +200,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_auto_update_relative_z_checkbox = QtWidgets.QCheckBox("Auto-update Z rel. boundary")
         self._tso_auto_update_relative_z_checkbox.setChecked(False)
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
+        self._land_objects_table = QtWidgets.QTableWidget(0, 2)
+        self._land_objects_table.setHorizontalHeaderLabels(["Name", "Notes"])
+        self._land_objects_table.horizontalHeader().setStretchLastSection(True)
+        self._land_objects_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._land_objects_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_points_table = QtWidgets.QTableWidget(0, 3)
+        self._land_points_table.setHorizontalHeaderLabels(["#", "X", "Y"])
+        self._land_points_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeToContents
+        )
+        self._land_points_table.horizontalHeader().setStretchLastSection(True)
+        self._land_polygons_table = QtWidgets.QTableWidget(0, 2)
+        self._land_polygons_table.setHorizontalHeaderLabels(["Point indices", "Color index"])
+        self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
         self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
         self._three_d_file_selected_path_label.setWordWrap(True)
         self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
@@ -896,6 +911,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tso_delete_all_button.setToolTip("Delete every TSO from the current project.")
         self._tso_visibility_sidebar = TSOVisibilityTab()
+        self._land_objects_sidebar = QtWidgets.QWidget()
+        land_layout = QtWidgets.QVBoxLayout()
+        land_layout.addWidget(QtWidgets.QLabel("Land objects (work-in-progress):"))
+        land_layout.addWidget(self._land_objects_table)
+        land_layout.addWidget(QtWidgets.QLabel("Points"))
+        land_layout.addWidget(self._land_points_table)
+        land_layout.addWidget(QtWidgets.QLabel("Polygons"))
+        land_layout.addWidget(self._land_polygons_table)
+        self._land_objects_sidebar.setLayout(land_layout)
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
         three_d_intro = QtWidgets.QLabel(
@@ -950,6 +974,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
         self._right_sidebar_tabs.addTab(self._tso_sidebar, "Objects")
         self._right_sidebar_tabs.addTab(self._tso_visibility_sidebar, "TSO Visibility")
+        self._right_sidebar_tabs.addTab(self._land_objects_sidebar, "Draw land objects")
         self._right_sidebar_tabs.addTab(self._three_d_file_sidebar, ".3D file")
         # Keep the right sidebar width fixed so window resizing only grows/shrinks
         # the track-diagram side of the window.

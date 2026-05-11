@@ -5537,6 +5537,8 @@ class SGViewerController:
             tab_name == "TSD"
             and self._window.tsd_hide_centerline_nodes_checkbox.isChecked()
         )
+        if tab_name == "Draw land objects":
+            hide_centerline_nodes = True
         self._window.preview.set_show_centerline_and_nodes(not hide_centerline_nodes)
         self._window.preview.set_centerline_editing_enabled(not hide_centerline_nodes)
 
