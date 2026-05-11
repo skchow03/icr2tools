@@ -220,6 +220,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._land_add_polygon_button = QtWidgets.QPushButton("Add Polygon")
         self._land_delete_polygon_button = QtWidgets.QPushButton("Delete Polygon")
+        self._land_add_point_button = QtWidgets.QPushButton("Add Point")
+        self._land_add_point_button.setCheckable(True)
+        self._land_polygon_fill_checkbox = QtWidgets.QCheckBox("Fill polygons")
+        self._land_polygon_fill_checkbox.setChecked(True)
+        self._dragging_land_point_row: int | None = None
         self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
         self._three_d_file_selected_path_label.setWordWrap(True)
         self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
@@ -922,12 +927,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_layout.addWidget(QtWidgets.QLabel("Land objects (work-in-progress):"))
         land_layout.addWidget(self._land_objects_table)
         land_layout.addWidget(QtWidgets.QLabel("Points"))
+        land_layout.addWidget(self._land_add_point_button)
         land_layout.addWidget(self._land_points_table)
         land_layout.addWidget(QtWidgets.QLabel("Polygons"))
         land_polygon_buttons = QtWidgets.QHBoxLayout()
         land_polygon_buttons.addWidget(self._land_add_polygon_button)
         land_polygon_buttons.addWidget(self._land_delete_polygon_button)
         land_layout.addLayout(land_polygon_buttons)
+        land_layout.addWidget(self._land_polygon_fill_checkbox)
         land_layout.addWidget(self._land_polygons_table)
         self._land_objects_sidebar.setLayout(land_layout)
         self._land_add_polygon_button.setToolTip(
@@ -938,6 +945,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_delete_polygon_button.clicked.connect(self._delete_selected_land_polygon_row)
         self._land_points_table.itemChanged.connect(self._on_land_points_table_item_changed)
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
+        self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
         three_d_intro = QtWidgets.QLabel(
@@ -1051,6 +1059,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.pointerMoved.connect(self._on_preview_pointer_moved)
         self._preview.pointerLeft.connect(self._on_preview_pointer_left)
         self._preview.pointerClicked.connect(self._on_preview_pointer_clicked)
+        self._preview.pointerReleased.connect(self._on_preview_pointer_released)
+        self._preview.pointerDragMoved.connect(self._on_preview_pointer_drag_moved)
         self._query_track_button.toggled.connect(self._on_query_track_toggled)
         self._ruler_button.clicked.connect(self._on_ruler_button_clicked)
         self._query_track_freeze_shortcut = QtWidgets.QShortcut(
@@ -2559,7 +2569,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_land_polygons_overlay()
 
     def _sync_land_polygons_overlay(self) -> None:
-        polygons: list[tuple[int, ...]] = []
+        polygons: list[tuple[tuple[int, ...], int, bool]] = []
         errors: list[str] = []
         point_count = self._land_points_table.rowCount()
         for row in range(self._land_polygons_table.rowCount()):
@@ -2585,7 +2595,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if invalid_index is not None:
                 errors.append(f"row {row + 1}: point {invalid_index + 1} does not exist")
                 continue
-            polygons.append(indices)
+            color_item = self._land_polygons_table.item(row, 1)
+            try:
+                color_index = int(color_item.text().strip()) if color_item is not None else 0
+            except ValueError:
+                errors.append(f"row {row + 1}: invalid color index")
+                continue
+            polygons.append((indices, color_index, self._land_polygon_fill_checkbox.isChecked()))
         self._preview.set_land_object_polygons_overlay(tuple(polygons))
         if errors:
             self.show_status_message(
@@ -2645,7 +2661,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if track_point is None:
             return
         if self._draw_land_objects_tab_active() and not self._ruler_mode_active:
-            self._append_land_point_from_track(track_point)
+            if self._land_add_point_button.isChecked():
+                self._append_land_point_from_track(track_point)
+                return
+            self._start_land_point_drag(point)
             return
         if not self._ruler_mode_active or self._ruler_frozen:
             return
@@ -2660,6 +2679,53 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.set_track_interaction_enabled(True)
         self._update_ruler_button_state()
         self.show_status_message("Ruler frozen. Click Clear Ruler to remove it.")
+
+    def _on_preview_pointer_drag_moved(self, point: QtCore.QPointF) -> None:
+        if self._dragging_land_point_row is None or not self._draw_land_objects_tab_active():
+            return
+        track_point = self._track_point_from_preview_position(point)
+        if track_point is None:
+            return
+        self._move_land_point_row(self._dragging_land_point_row, track_point)
+
+    def _on_preview_pointer_released(self, _point: QtCore.QPointF) -> None:
+        self._dragging_land_point_row = None
+
+    def _start_land_point_drag(self, point: QtCore.QPointF) -> None:
+        if self._land_add_point_button.isChecked():
+            return
+        track_point = self._track_point_from_preview_position(point)
+        if track_point is None:
+            return
+        self._dragging_land_point_row = self._nearest_land_point_row(track_point)
+
+    def _nearest_land_point_row(self, track_point: tuple[float, float], max_distance: float = 800.0) -> int | None:
+        nearest_row: int | None = None
+        nearest_distance_sq = max_distance * max_distance
+        for row in range(self._land_points_table.rowCount()):
+            x_item = self._land_points_table.item(row, 1)
+            y_item = self._land_points_table.item(row, 2)
+            if x_item is None or y_item is None:
+                continue
+            try:
+                px = float(x_item.text())
+                py = float(y_item.text())
+            except ValueError:
+                continue
+            distance_sq = (px - track_point[0]) ** 2 + (py - track_point[1]) ** 2
+            if distance_sq <= nearest_distance_sq:
+                nearest_distance_sq = distance_sq
+                nearest_row = row
+        return nearest_row
+
+    def _move_land_point_row(self, row: int, track_point: tuple[float, float]) -> None:
+        if row < 0 or row >= self._land_points_table.rowCount():
+            return
+        self._land_points_table.blockSignals(True)
+        self._land_points_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}"))
+        self._land_points_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}"))
+        self._land_points_table.blockSignals(False)
+        self._sync_land_points_overlay()
 
     def _on_ruler_button_clicked(self) -> None:
         if self._ruler_frozen:
