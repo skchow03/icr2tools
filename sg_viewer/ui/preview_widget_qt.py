@@ -114,9 +114,9 @@ class PreviewWidgetQt(QtWidgets.QWidget):
         self._presenter.paint(painter)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        self._runtime.on_mouse_press(event)
         if event.button() == QtCore.Qt.LeftButton:
             self.pointerClicked.emit(QtCore.QPointF(event.localPos()))
+        self._runtime.on_mouse_press(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         self._runtime.on_mouse_move(event)
