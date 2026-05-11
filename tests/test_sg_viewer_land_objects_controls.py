@@ -40,3 +40,15 @@ def test_land_point_and_polygon_buttons_require_object_selection(qapp):
         assert window._land_delete_polygon_button.isEnabled() is False
     finally:
         window.close()
+
+
+def test_draw_land_objects_tab_detection_is_widget_based(qapp):
+    window = SGViewerWindow()
+    try:
+        tab_index = window._right_sidebar_tabs.indexOf(window._land_objects_sidebar)
+        assert tab_index >= 0
+        window._right_sidebar_tabs.setCurrentIndex(tab_index)
+        window._right_sidebar_tabs.setTabText(tab_index, "Draw land Objects")
+        assert window._draw_land_objects_tab_active() is True
+    finally:
+        window.close()

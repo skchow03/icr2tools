@@ -2545,7 +2545,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         active_index = self._right_sidebar_tabs.currentIndex()
         if active_index < 0:
             return False
-        return self._right_sidebar_tabs.tabText(active_index).strip() == "Draw land objects"
+        active_widget = self._right_sidebar_tabs.widget(active_index)
+        return active_widget is self._land_objects_sidebar
 
     def _append_land_point_from_track(self, track_point: tuple[float, float]) -> None:
         boundary_sample = self._nearest_boundary_sample(track_point)
