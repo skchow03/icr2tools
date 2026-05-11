@@ -171,7 +171,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._ruler_end_point: Point | None = None
         self._ruler_label: str = ""
         self._land_object_points_overlay: tuple[Point, ...] = ()
-        self._land_object_polygons_overlay: tuple[tuple[int, ...], ...] = ()
+        self._land_object_polygons_overlay: tuple[tuple[tuple[int, ...], int, bool], ...] = ()
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -663,11 +663,14 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._context.request_repaint()
 
     @property
-    def land_object_polygons_overlay(self) -> tuple[tuple[int, ...], ...]:
+    def land_object_polygons_overlay(self) -> tuple[tuple[tuple[int, ...], int, bool], ...]:
         return self._land_object_polygons_overlay
 
-    def set_land_object_polygons_overlay(self, polygons: tuple[tuple[int, ...], ...]) -> None:
-        normalized = tuple(tuple(int(index) for index in polygon) for polygon in polygons)
+    def set_land_object_polygons_overlay(self, polygons: tuple[tuple[tuple[int, ...], int, bool], ...]) -> None:
+        normalized = tuple(
+            (tuple(int(index) for index in polygon_indices), int(color_index), bool(filled))
+            for polygon_indices, color_index, filled in polygons
+        )
         if normalized == self._land_object_polygons_overlay:
             return
         self._land_object_polygons_overlay = normalized

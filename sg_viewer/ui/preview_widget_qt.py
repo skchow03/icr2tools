@@ -22,6 +22,8 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     pointerMoved = QtCore.pyqtSignal(object)
     pointerLeft = QtCore.pyqtSignal()
     pointerClicked = QtCore.pyqtSignal(object)
+    pointerReleased = QtCore.pyqtSignal(object)
+    pointerDragMoved = QtCore.pyqtSignal(object)
 
     def __init__(
         self,
@@ -119,9 +121,13 @@ class PreviewWidgetQt(QtWidgets.QWidget):
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         self._runtime.on_mouse_move(event)
         self.pointerMoved.emit(QtCore.QPointF(event.localPos()))
+        if bool(event.buttons() & QtCore.Qt.LeftButton):
+            self.pointerDragMoved.emit(QtCore.QPointF(event.localPos()))
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         self._runtime.on_mouse_release(event)
+        if event.button() == QtCore.Qt.LeftButton:
+            self.pointerReleased.emit(QtCore.QPointF(event.localPos()))
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401
         self._runtime.on_wheel(event)

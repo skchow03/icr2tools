@@ -99,7 +99,7 @@ class BasePreviewState:
     ruler_end_point: Point | None
     ruler_label: str
     land_object_points: tuple[Point, ...]
-    land_object_polygons: tuple[tuple[int, ...], ...]
+    land_object_polygons: tuple[tuple[tuple[int, ...], int, bool], ...]
     xsect_dlat: float | None
     show_xsect_dlat_line: bool
     centerline_unselected_color: QtGui.QColor
@@ -438,7 +438,7 @@ def _draw_land_object_points_overlay(
 def _draw_land_object_polygons_overlay(
     painter: QtGui.QPainter,
     points: tuple[Point, ...],
-    polygons: tuple[tuple[int, ...], ...],
+    polygons: tuple[tuple[tuple[int, ...], int, bool], ...],
     transform: Transform,
     widget_height: int,
 ) -> None:
@@ -446,11 +446,14 @@ def _draw_land_object_polygons_overlay(
         return
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    painter.setPen(QtGui.QPen(QtGui.QColor(255, 220, 120, 220), 2.0))
-    painter.setBrush(QtGui.QColor(255, 220, 120, 55))
-    for indices in polygons:
+    for indices, color_index, filled in polygons:
         if len(indices) < 3:
             continue
+        color_value = max(0, min(255, int(color_index)))
+        pen_color = QtGui.QColor(color_value, color_value, color_value, 220)
+        brush_color = QtGui.QColor(color_value, color_value, color_value, 55)
+        painter.setPen(QtGui.QPen(pen_color, 2.0))
+        painter.setBrush(brush_color if filled else QtCore.Qt.NoBrush)
         polygon = QtGui.QPolygonF()
         for point_index in indices:
             if point_index < 0 or point_index >= len(points):
