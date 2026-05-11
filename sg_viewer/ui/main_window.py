@@ -222,6 +222,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_delete_polygon_button = QtWidgets.QPushButton("Delete Polygon")
         self._land_add_point_button = QtWidgets.QPushButton("Add Point")
         self._land_add_point_button.setCheckable(True)
+        self._land_edit_point_button = QtWidgets.QPushButton("Edit Point")
+        self._land_edit_point_button.setCheckable(True)
         self._land_polygon_fill_checkbox = QtWidgets.QCheckBox("Fill polygons")
         self._land_polygon_fill_checkbox.setChecked(True)
         self._dragging_land_point_row: int | None = None
@@ -927,7 +929,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_layout.addWidget(QtWidgets.QLabel("Land objects (work-in-progress):"))
         land_layout.addWidget(self._land_objects_table)
         land_layout.addWidget(QtWidgets.QLabel("Points"))
-        land_layout.addWidget(self._land_add_point_button)
+        land_point_buttons = QtWidgets.QHBoxLayout()
+        land_point_buttons.addWidget(self._land_add_point_button)
+        land_point_buttons.addWidget(self._land_edit_point_button)
+        land_layout.addLayout(land_point_buttons)
         land_layout.addWidget(self._land_points_table)
         land_layout.addWidget(QtWidgets.QLabel("Polygons"))
         land_polygon_buttons = QtWidgets.QHBoxLayout()
@@ -943,6 +948,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
         self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
         self._land_delete_polygon_button.clicked.connect(self._delete_selected_land_polygon_row)
+        self._land_add_point_button.toggled.connect(
+            lambda checked: self._on_land_point_mode_toggled("add", checked)
+        )
+        self._land_edit_point_button.toggled.connect(
+            lambda checked: self._on_land_point_mode_toggled("edit", checked)
+        )
         self._land_points_table.itemChanged.connect(self._on_land_points_table_item_changed)
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
         self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
@@ -2664,6 +2675,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if self._land_add_point_button.isChecked():
                 self._append_land_point_from_track(track_point)
                 return
+            if self._land_edit_point_button.isChecked():
+                selected_row = self._land_points_table.currentRow()
+                if selected_row < 0:
+                    self.show_status_message("Select a point row first, then click to move it.")
+                    return
+                self._move_land_point_row(selected_row, track_point)
+                return
             self._start_land_point_drag(point)
             return
         if not self._ruler_mode_active or self._ruler_frozen:
@@ -2692,7 +2710,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._dragging_land_point_row = None
 
     def _start_land_point_drag(self, point: QtCore.QPointF) -> None:
-        if self._land_add_point_button.isChecked():
+        if self._land_add_point_button.isChecked() or self._land_edit_point_button.isChecked():
             return
         track_point = self._track_point_from_preview_position(point)
         if track_point is None:
@@ -2726,6 +2744,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}"))
         self._land_points_table.blockSignals(False)
         self._sync_land_points_overlay()
+
+    def _on_land_point_mode_toggled(self, mode: str, checked: bool) -> None:
+        if not checked:
+            return
+        if mode == "add" and self._land_edit_point_button.isChecked():
+            self._land_edit_point_button.blockSignals(True)
+            self._land_edit_point_button.setChecked(False)
+            self._land_edit_point_button.blockSignals(False)
+        if mode == "edit" and self._land_add_point_button.isChecked():
+            self._land_add_point_button.blockSignals(True)
+            self._land_add_point_button.setChecked(False)
+            self._land_add_point_button.blockSignals(False)
 
     def _on_ruler_button_clicked(self) -> None:
         if self._ruler_frozen:

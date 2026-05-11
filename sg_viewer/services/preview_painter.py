@@ -451,7 +451,7 @@ def _draw_land_object_polygons_overlay(
             continue
         color_value = max(0, min(255, int(color_index)))
         pen_color = QtGui.QColor(color_value, color_value, color_value, 220)
-        brush_color = QtGui.QColor(color_value, color_value, color_value, 55)
+        brush_color = QtGui.QColor(color_value, color_value, color_value, 255)
         painter.setPen(QtGui.QPen(pen_color, 2.0))
         painter.setBrush(brush_color if filled else QtCore.Qt.NoBrush)
         polygon = QtGui.QPolygonF()
