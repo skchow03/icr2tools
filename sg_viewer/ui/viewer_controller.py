@@ -248,6 +248,7 @@ class SGViewerController:
         self._elevation_grade_is_dirty = False
         self._fsects_is_dirty = False
         self._trackside_objects_is_dirty = False
+        self._land_objects_is_dirty = False
         self._tso_visibility_is_dirty = False
         self._sunny_palette: list[QtGui.QColor] | None = None
         self._sunny_palette_path: Path | None = None
@@ -1559,6 +1560,10 @@ class SGViewerController:
         self._trackside_objects_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("Objects", dirty)
 
+    def set_land_objects_dirty(self, dirty: bool) -> None:
+        self._land_objects_is_dirty = dirty
+        self._window.set_sidebar_tab_dirty("Draw land objects", dirty)
+
     def _set_tso_visibility_dirty(self, dirty: bool) -> None:
         self._tso_visibility_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("TSO Visibility", dirty)
@@ -1585,6 +1590,8 @@ class SGViewerController:
             labels.append("TSD lines")
         if self._trackside_objects_is_dirty:
             labels.append("Trackside objects")
+        if self._land_objects_is_dirty:
+            labels.append("Draw land objects")
         if self._tso_visibility_is_dirty:
             labels.append("TSO visibility")
         return labels
@@ -1650,6 +1657,10 @@ class SGViewerController:
             self._current_path,
             [trackside_object_to_payload(obj) for obj in self._trackside_objects],
         )
+        self._sg_settings_store.set_land_objects(
+            self._current_path,
+            self._window.serialize_land_objects(),
+        )
         self._sg_settings_store.set_tso_visibility_object_lists(
             self._current_path,
             self._window.tso_visibility_sidebar.serialize_object_lists(),
@@ -1677,6 +1688,7 @@ class SGViewerController:
 
     def _load_tsd_state_for_current_track(self) -> None:
         self._clear_loaded_tsd_files()
+        self._window.load_land_objects([])
         self._generated_skid_mark_lines = ()
         self._skid_marks_rows_text = ""
         self._skid_marks_colors = DEFAULT_SKID_COLORS
@@ -1686,6 +1698,7 @@ class SGViewerController:
         self._window.set_selected_colors_path_text("defaults")
         self._sync_tso_visibility_section_dlongs()
         if self._current_path is None:
+            self.set_land_objects_dirty(False)
             return
         persisted_auto_update_relative_z = self._sg_settings_store.get_tso_auto_update_relative_z(self._current_path)
         self._auto_update_tso_relative_z = bool(persisted_auto_update_relative_z) if persisted_auto_update_relative_z is not None else False
@@ -1738,6 +1751,7 @@ class SGViewerController:
         self._window.tso_visibility_sidebar.load_object_lists_from_payload(
             self._sg_settings_store.get_tso_visibility_object_lists(self._current_path)
         )
+        self._window.load_land_objects(self._sg_settings_store.get_land_objects(self._current_path))
         for path in files:
             if not path.exists():
                 continue
@@ -1757,6 +1771,7 @@ class SGViewerController:
                 self._set_active_tsd_file(target_index)
         self._set_tsd_dirty(False)
         self._set_trackside_objects_dirty(False)
+        self.set_land_objects_dirty(False)
 
     def _track3d_path_for_current_project(self) -> Path | None:
         if self._selected_track3d_path is not None and self._selected_track3d_path.exists():

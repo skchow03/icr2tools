@@ -462,6 +462,7 @@ class DocumentController:
         self._host._set_mrk_dirty(False)
         self._host._set_tsd_dirty(False)
         self._host._set_trackside_objects_dirty(False)
+        self._host.set_land_objects_dirty(False)
         self._host._set_tso_visibility_dirty(False)
         self._persist_project_sg_reference(path)
         self._host._save_current_action.setEnabled(True)
