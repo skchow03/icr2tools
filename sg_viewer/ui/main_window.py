@@ -936,6 +936,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
         self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
         self._land_delete_polygon_button.clicked.connect(self._delete_selected_land_polygon_row)
+        self._land_points_table.itemChanged.connect(self._on_land_points_table_item_changed)
+        self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
         three_d_intro = QtWidgets.QLabel(
@@ -2554,6 +2556,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             except ValueError:
                 continue
         self._preview.set_land_object_points_overlay(tuple(overlay_points))
+        self._sync_land_polygons_overlay()
+
+    def _sync_land_polygons_overlay(self) -> None:
+        polygons: list[tuple[int, ...]] = []
+        errors: list[str] = []
+        point_count = self._land_points_table.rowCount()
+        for row in range(self._land_polygons_table.rowCount()):
+            points_item = self._land_polygons_table.item(row, 0)
+            if points_item is None:
+                continue
+            raw_text = points_item.text().strip()
+            if not raw_text:
+                continue
+            try:
+                indices = tuple(
+                    int(token.strip()) - 1
+                    for token in raw_text.split(",")
+                    if token.strip()
+                )
+            except ValueError:
+                errors.append(f"row {row + 1}: invalid point list")
+                continue
+            if len(indices) < 3:
+                errors.append(f"row {row + 1}: polygon needs at least 3 points")
+                continue
+            invalid_index = next((index for index in indices if index < 0 or index >= point_count), None)
+            if invalid_index is not None:
+                errors.append(f"row {row + 1}: point {invalid_index + 1} does not exist")
+                continue
+            polygons.append(indices)
+        self._preview.set_land_object_polygons_overlay(tuple(polygons))
+        if errors:
+            self.show_status_message(
+                "Land polygon preview skipped invalid rows: " + "; ".join(errors[:3])
+            )
+
+    def _on_land_points_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
+        self._sync_land_points_overlay()
+
+    def _on_land_polygons_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
+        self._sync_land_polygons_overlay()
 
     def _add_land_polygon_row(self) -> None:
         row = self._land_polygons_table.rowCount()
@@ -2568,6 +2611,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if row < 0 or row >= self._land_polygons_table.rowCount():
             return
         self._land_polygons_table.removeRow(row)
+        self._sync_land_polygons_overlay()
 
     def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
         centerline_index = self._preview.section_manager.centerline_index
