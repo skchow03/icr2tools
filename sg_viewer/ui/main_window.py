@@ -968,6 +968,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_save_object_button.clicked.connect(self._save_current_land_object)
         self._land_add_object_button.clicked.connect(self._add_land_object)
         self._land_objects_table.itemSelectionChanged.connect(self._load_selected_land_object)
+        self._land_object_name_edit.textChanged.connect(self._persist_selected_land_object)
         self._update_land_object_edit_controls()
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
         self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
@@ -2561,6 +2562,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         delete_button.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
         self._land_points_table.setCellWidget(row, 4, delete_button)
         self._sync_land_points_overlay()
+        self._persist_selected_land_object()
 
     def _delete_land_point_row(self, row: int) -> None:
         if row < 0 or row >= self._land_points_table.rowCount():
@@ -2568,6 +2570,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.removeRow(row)
         self._renumber_land_points_rows()
         self._sync_land_points_overlay()
+        self._persist_selected_land_object()
 
     def _renumber_land_points_rows(self) -> None:
         for row in range(self._land_points_table.rowCount()):
@@ -2636,9 +2639,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_land_points_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
         self._sync_land_points_overlay()
+        self._persist_selected_land_object()
 
     def _on_land_polygons_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
         self._sync_land_polygons_overlay()
+        self._persist_selected_land_object()
 
     def _add_land_polygon_row(self) -> None:
         row = self._land_polygons_table.rowCount()
@@ -2647,6 +2652,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0"))
         self._land_polygons_table.setCurrentCell(row, 0)
         self._land_polygons_table.editItem(self._land_polygons_table.item(row, 0))
+        self._persist_selected_land_object()
 
     def _delete_selected_land_polygon_row(self) -> None:
         row = self._land_polygons_table.currentRow()
@@ -2654,13 +2660,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         self._land_polygons_table.removeRow(row)
         self._sync_land_polygons_overlay()
+        self._persist_selected_land_object()
 
-
-    def _save_current_land_object(self) -> None:
+    def _collect_current_land_object_payload(self) -> dict[str, object]:
         name = self._land_object_name_edit.text().strip()
-        if not name:
-            self.show_status_message("Enter a land object name before saving.")
-            return
         points: list[tuple[str, str, str]] = []
         for row in range(self._land_points_table.rowCount()):
             x_item = self._land_points_table.item(row, 1)
@@ -2679,7 +2682,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "" if points_item is None else points_item.text(),
                 "0" if color_item is None else color_item.text(),
             ))
-        payload = {"name": name, "points": points, "polygons": polygons}
+        return {"name": name, "points": points, "polygons": polygons}
+
+    def _persist_selected_land_object(self) -> None:
+        row = self._land_objects_table.currentRow()
+        if row < 0 or row >= len(self._land_saved_objects):
+            return
+        payload = self._collect_current_land_object_payload()
+        self._land_saved_objects[row] = payload
+        self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(payload["name"])))
+        points = payload["points"] if isinstance(payload.get("points"), list) else []
+        polygons = payload["polygons"] if isinstance(payload.get("polygons"), list) else []
+        self._land_objects_table.setItem(
+            row,
+            1,
+            QtWidgets.QTableWidgetItem(f"{len(points)} points, {len(polygons)} polygons"),
+        )
+        self._mark_land_objects_dirty()
+
+    def _save_current_land_object(self) -> None:
+        name = self._land_object_name_edit.text().strip()
+        if not name:
+            self.show_status_message("Enter a land object name before saving.")
+            return
+        payload = self._collect_current_land_object_payload()
         existing_index = next((i for i, entry in enumerate(self._land_saved_objects) if str(entry.get("name", "")) == name), None)
         if existing_index is None:
             self._land_saved_objects.append(payload)
@@ -2692,7 +2718,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_objects_table.setItem(
             row,
             1,
-            QtWidgets.QTableWidgetItem(f"{len(points)} points, {len(polygons)} polygons"),
+            QtWidgets.QTableWidgetItem(
+                f"{len(payload['points'])} points, {len(payload['polygons'])} polygons"
+            ),
         )
         self._land_objects_table.selectRow(row)
         self._mark_land_objects_dirty()
@@ -2751,7 +2779,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_polygons_table.setItem(polygon_row, 1, QtWidgets.QTableWidgetItem(str(color_text)))
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
+        self._land_object_name_edit.blockSignals(True)
         self._land_object_name_edit.setText(str(entry.get("name", "")))
+        self._land_object_name_edit.blockSignals(False)
         self._update_land_object_edit_controls()
         self._sync_land_points_overlay()
 
