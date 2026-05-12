@@ -426,7 +426,7 @@ def _draw_land_object_points_overlay(
     marker_brush = QtGui.QBrush(QtGui.QColor("#3FA9FF"))
     marker_pen = QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0)
     radius = 3.5
-    for index, point in enumerate(points, start=1):
+    for index, point in enumerate(points):
         mapped = sg_rendering.map_point(point[0], point[1], transform, widget_height)
         painter.setPen(marker_pen)
         painter.setBrush(marker_brush)
