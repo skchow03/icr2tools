@@ -52,3 +52,62 @@ def test_draw_land_objects_tab_detection_is_widget_based(qapp):
         assert window._draw_land_objects_tab_active() is True
     finally:
         window.close()
+
+
+def test_land_object_rename_updates_list_and_save_does_not_duplicate(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects([{"name": "Object 1", "points": [], "polygons": []}])
+        window._land_object_name_edit.setText("Tree Line")
+        assert window._land_objects_table.item(0, 0).text() == "Tree Line"
+
+        window._save_current_land_object()
+        serialized = window.serialize_land_objects()
+        assert len(serialized) == 1
+        assert serialized[0]["name"] == "Tree Line"
+    finally:
+        window.close()
+
+
+def test_land_object_export_default_file_name_uses_underscores(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects([
+            {
+                "name": "My Object",
+                "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
+                "polygons": [("0,1,2", "0")],
+            }
+        ])
+        captured = {}
+
+        def _fake_get_save_file_name(*args, **kwargs):
+            captured["default_path"] = args[2]
+            return ("", "")
+
+        monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", _fake_get_save_file_name)
+        window._export_selected_land_object_to_3d()
+        assert captured["default_path"] == "My_Object.3D"
+    finally:
+        window.close()
+
+
+def test_land_polygon_move_up_down_reorders_rows(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects([
+            {
+                "name": "Object 1",
+                "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
+                "polygons": [("0,1,2", "1"), ("0,2,1", "2")],
+            }
+        ])
+        window._land_polygons_table.selectRow(1)
+        window._move_selected_land_polygon_row(-1)
+        assert window._land_polygons_table.item(0, 0).text() == "0,2,1"
+
+        window._land_polygons_table.selectRow(0)
+        window._move_selected_land_polygon_row(1)
+        assert window._land_polygons_table.item(1, 0).text() == "0,2,1"
+    finally:
+        window.close()
