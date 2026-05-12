@@ -2557,7 +2557,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         z_value = boundary_sample[2] if boundary_sample is not None else None
         row = self._land_points_table.rowCount()
         self._land_points_table.insertRow(row)
-        self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row + 1)))
+        self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row)))
         self._land_points_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}"))
         self._land_points_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}"))
         self._land_points_table.setItem(row, 3, QtWidgets.QTableWidgetItem("" if z_value is None else f"{float(z_value):.1f}"))
@@ -2577,7 +2577,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _renumber_land_points_rows(self) -> None:
         for row in range(self._land_points_table.rowCount()):
-            self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row + 1)))
+            self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row)))
             widget = self._land_points_table.cellWidget(row, 4)
             if isinstance(widget, QtWidgets.QPushButton):
                 try:
@@ -2613,7 +2613,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
             try:
                 indices = tuple(
-                    int(token.strip()) - 1
+                    int(token.strip())
                     for token in raw_text.split(",")
                     if token.strip()
                 )
@@ -2625,7 +2625,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
             invalid_index = next((index for index in indices if index < 0 or index >= point_count), None)
             if invalid_index is not None:
-                errors.append(f"row {row + 1}: point {invalid_index + 1} does not exist")
+                errors.append(f"row {row + 1}: point {invalid_index} does not exist")
                 continue
             color_item = self._land_polygons_table.item(row, 1)
             try:
@@ -2768,7 +2768,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setRowCount(0)
         for point_row, (x_text, y_text, z_text) in enumerate(points):
             self._land_points_table.insertRow(point_row)
-            self._land_points_table.setItem(point_row, 0, QtWidgets.QTableWidgetItem(str(point_row + 1)))
+            self._land_points_table.setItem(point_row, 0, QtWidgets.QTableWidgetItem(str(point_row)))
             self._land_points_table.setItem(point_row, 1, QtWidgets.QTableWidgetItem(str(x_text)))
             self._land_points_table.setItem(point_row, 2, QtWidgets.QTableWidgetItem(str(y_text)))
             self._land_points_table.setItem(point_row, 3, QtWidgets.QTableWidgetItem(str(z_text)))
@@ -2918,7 +2918,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "nil: NIL;",
         ]
         for point_index, (x, y, z) in enumerate(points):
-            lines.append(f"p{point_index}: [<{x}, {y}, {z}>];")
+            rounded_x = int(round(x))
+            rounded_y = int(round(y))
+            rounded_z = int(round(z))
+            lines.append(f"p{point_index}: [<{rounded_x}, {rounded_y}, {rounded_z}>];")
         lines.append("")
         for poly_index, (indices, color) in enumerate(polygons):
             refs = ", ".join(f"p{point_index}" for point_index in indices)
