@@ -219,6 +219,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.horizontalHeader().setStretchLastSection(False)
         self._land_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._land_points_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_points_table.verticalHeader().setVisible(False)
         self._land_polygons_table = QtWidgets.QTableWidget(0, 2)
         self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "SUNNY.PCX color index"])
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
