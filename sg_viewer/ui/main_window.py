@@ -205,6 +205,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_object_name_edit.setPlaceholderText("Object name")
         self._land_save_object_button = QtWidgets.QPushButton("Save Object")
         self._land_add_object_button = QtWidgets.QPushButton("Add Object")
+        self._land_export_object_button = QtWidgets.QPushButton("Export Object to .3D")
         self._land_saved_objects: list[dict[str, object]] = []
         self._land_objects_table.setHorizontalHeaderLabels(["Name", "Notes"])
         self._land_objects_table.horizontalHeader().setStretchLastSection(True)
@@ -936,6 +937,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_object_header.addWidget(self._land_object_name_edit, 1)
         land_object_header.addWidget(self._land_add_object_button)
         land_object_header.addWidget(self._land_save_object_button)
+        land_object_header.addWidget(self._land_export_object_button)
         land_layout.addLayout(land_object_header)
         land_layout.addWidget(self._land_objects_table)
         land_layout.addWidget(QtWidgets.QLabel("Points"))
@@ -967,6 +969,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.itemChanged.connect(self._on_land_points_table_item_changed)
         self._land_save_object_button.clicked.connect(self._save_current_land_object)
         self._land_add_object_button.clicked.connect(self._add_land_object)
+        self._land_export_object_button.clicked.connect(self._export_selected_land_object_to_3d)
         self._land_objects_table.itemSelectionChanged.connect(self._load_selected_land_object)
         self._land_object_name_edit.textChanged.connect(self._persist_selected_land_object)
         self._update_land_object_edit_controls()
@@ -2792,6 +2795,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_edit_point_button,
             self._land_add_polygon_button,
             self._land_delete_polygon_button,
+            self._land_export_object_button,
         ):
             button.setEnabled(has_selection)
         if not has_selection:
@@ -2827,6 +2831,110 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _mark_land_objects_dirty(self) -> None:
         if self.controller is not None and hasattr(self.controller, "set_land_objects_dirty"):
             self.controller.set_land_objects_dirty(True)
+
+    def _export_selected_land_object_to_3d(self) -> None:
+        row = self._land_objects_table.currentRow()
+        if row < 0 or row >= len(self._land_saved_objects):
+            self.show_status_message("Select a land object to export.")
+            return
+        payload = self._land_saved_objects[row]
+        name = str(payload.get("name", "")).strip() or f"object_{row + 1}"
+        points, polygons, error = self._parse_land_object_export_data(payload)
+        if error is not None:
+            QtWidgets.QMessageBox.warning(self, "Export Object to .3D", error)
+            return
+        default_path = f"{name}.3D"
+        file_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Object to .3D",
+            default_path,
+            "3D files (*.3D *.3d);;All Files (*)",
+        )
+        if not file_path:
+            return
+        export_text = self._build_land_object_3d_text(name=name, points=points, polygons=polygons)
+        try:
+            Path(file_path).write_text(export_text, encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "Export Object to .3D", f"Could not save file:\n{exc}")
+            return
+        self.show_status_message(f"Exported '{name}' to {file_path}")
+
+    def _parse_land_object_export_data(
+        self, payload: dict[str, object]
+    ) -> tuple[list[tuple[float, float, float]], list[tuple[tuple[int, ...], int]], str | None]:
+        raw_points = payload.get("points", [])
+        raw_polygons = payload.get("polygons", [])
+        if not isinstance(raw_points, list) or not raw_points:
+            return [], [], "The selected object has no points."
+        if not isinstance(raw_polygons, list) or not raw_polygons:
+            return [], [], "The selected object has no polygons."
+        points: list[tuple[float, float, float]] = []
+        for point_index, point_row in enumerate(raw_points, start=1):
+            if not (isinstance(point_row, (list, tuple)) and len(point_row) >= 3):
+                return [], [], f"Point row {point_index} is invalid."
+            x_text, y_text, z_text = point_row[0], point_row[1], point_row[2]
+            try:
+                x = float(str(x_text).strip())
+                y = float(str(y_text).strip())
+                z = float(str(z_text).strip() or "0")
+            except ValueError:
+                return [], [], f"Point row {point_index} must contain numeric X, Y, and Z values."
+            points.append((x, y, z))
+
+        polygons: list[tuple[tuple[int, ...], int]] = []
+        for polygon_index, polygon_row in enumerate(raw_polygons, start=1):
+            if not (isinstance(polygon_row, (list, tuple)) and len(polygon_row) >= 2):
+                return [], [], f"Polygon row {polygon_index} is invalid."
+            point_list_text, color_text = polygon_row[0], polygon_row[1]
+            try:
+                indices = tuple(
+                    int(chunk.strip())
+                    for chunk in str(point_list_text).split(",")
+                    if chunk.strip() != ""
+                )
+            except ValueError:
+                return [], [], f"Polygon row {polygon_index} has invalid point indices."
+            if len(indices) < 3:
+                return [], [], f"Polygon row {polygon_index} needs at least 3 points."
+            if any(index < 0 or index >= len(points) for index in indices):
+                return [], [], f"Polygon row {polygon_index} references a point outside the valid range."
+            try:
+                color = int(str(color_text).strip() or "0")
+            except ValueError:
+                return [], [], f"Polygon row {polygon_index} has an invalid color index."
+            polygons.append((indices, color))
+        return points, polygons, None
+
+    @staticmethod
+    def _build_land_object_3d_text(
+        *, name: str, points: list[tuple[float, float, float]], polygons: list[tuple[tuple[int, ...], int]]
+    ) -> str:
+        lines: list[str] = [
+            "3D VERSION 3.0;",
+            "% Generated by SG CREATE (land object export)",
+            f"% Object name: {name}",
+            "",
+            "nil: NIL;",
+        ]
+        for point_index, (x, y, z) in enumerate(points):
+            lines.append(f"p{point_index}: [<{x}, {y}, {z}>];")
+        lines.append("")
+        for poly_index, (indices, color) in enumerate(polygons):
+            refs = ", ".join(f"p{point_index}" for point_index in indices)
+            lines.append(f"poly{poly_index}: POLY <{color}> {{{refs}}};")
+        lines.append("")
+        prev_node = "nil"
+        for poly_index, (indices, _color) in enumerate(polygons):
+            v1, v2, v3 = (f"p{indices[0]}", f"p{indices[1]}", f"p{indices[2]}")
+            node_name = f"o{poly_index}"
+            lines.append(f"{node_name}: BSPF ({v1}, {v2}, {v3}), nil, poly{poly_index}, {prev_node};")
+            prev_node = node_name
+        last_poly_index = len(polygons) - 1
+        last_indices = polygons[last_poly_index][0]
+        rv1, rv2, rv3 = (f"p{last_indices[0]}", f"p{last_indices[1]}", f"p{last_indices[2]}")
+        lines.append(f"root: BSPF ({rv1}, {rv2}, {rv3}), nil, poly{last_poly_index}, {prev_node};")
+        return "\n".join(lines)
 
     def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
         centerline_index = self._preview.section_manager.centerline_index
