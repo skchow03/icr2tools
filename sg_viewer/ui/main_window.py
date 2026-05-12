@@ -227,6 +227,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._land_add_polygon_button = QtWidgets.QPushButton("Add Polygon")
         self._land_delete_polygon_button = QtWidgets.QPushButton("Delete Polygon")
+        self._land_move_polygon_up_button = QtWidgets.QPushButton("Move Up")
+        self._land_move_polygon_down_button = QtWidgets.QPushButton("Move Down")
         self._land_add_point_button = QtWidgets.QPushButton("Add Point")
         self._land_add_point_button.setCheckable(True)
         self._land_edit_point_button = QtWidgets.QPushButton("Edit Point")
@@ -951,6 +953,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_polygon_buttons = QtWidgets.QHBoxLayout()
         land_polygon_buttons.addWidget(self._land_add_polygon_button)
         land_polygon_buttons.addWidget(self._land_delete_polygon_button)
+        land_polygon_buttons.addWidget(self._land_move_polygon_up_button)
+        land_polygon_buttons.addWidget(self._land_move_polygon_down_button)
         land_layout.addLayout(land_polygon_buttons)
         land_layout.addWidget(self._land_polygon_fill_checkbox)
         land_layout.addWidget(self._land_polygons_table)
@@ -959,8 +963,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Add a polygon row. Enter point numbers separated by commas (example: 0, 1, 2, 3)."
         )
         self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
+        self._land_move_polygon_up_button.setToolTip("Move the selected polygon row up one position.")
+        self._land_move_polygon_down_button.setToolTip("Move the selected polygon row down one position.")
         self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
         self._land_delete_polygon_button.clicked.connect(self._delete_selected_land_polygon_row)
+        self._land_move_polygon_up_button.clicked.connect(lambda: self._move_selected_land_polygon_row(-1))
+        self._land_move_polygon_down_button.clicked.connect(lambda: self._move_selected_land_polygon_row(1))
         self._land_add_point_button.toggled.connect(
             lambda checked: self._on_land_point_mode_toggled("add", checked)
         )
@@ -2666,6 +2674,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_land_polygons_overlay()
         self._persist_selected_land_object()
 
+    def _move_selected_land_polygon_row(self, offset: int) -> None:
+        row = self._land_polygons_table.currentRow()
+        target_row = row + offset
+        if row < 0 or target_row < 0 or target_row >= self._land_polygons_table.rowCount():
+            return
+        current_points_item = self._land_polygons_table.item(row, 0)
+        current_color_item = self._land_polygons_table.item(row, 1)
+        target_points_item = self._land_polygons_table.item(target_row, 0)
+        target_color_item = self._land_polygons_table.item(target_row, 1)
+        current_points = "" if current_points_item is None else current_points_item.text()
+        current_color = "0" if current_color_item is None else current_color_item.text()
+        target_points = "" if target_points_item is None else target_points_item.text()
+        target_color = "0" if target_color_item is None else target_color_item.text()
+        self._land_polygons_table.blockSignals(True)
+        self._land_polygons_table.setItem(row, 0, QtWidgets.QTableWidgetItem(target_points))
+        self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem(target_color))
+        self._land_polygons_table.setItem(target_row, 0, QtWidgets.QTableWidgetItem(current_points))
+        self._land_polygons_table.setItem(target_row, 1, QtWidgets.QTableWidgetItem(current_color))
+        self._land_polygons_table.blockSignals(False)
+        self._land_polygons_table.selectRow(target_row)
+        self._sync_land_polygons_overlay()
+        self._persist_selected_land_object()
+
     def _collect_current_land_object_payload(self) -> dict[str, object]:
         name = self._land_object_name_edit.text().strip()
         points: list[tuple[str, str, str]] = []
@@ -2710,14 +2741,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self.show_status_message("Enter a land object name before saving.")
             return
         payload = self._collect_current_land_object_payload()
-        existing_index = next((i for i, entry in enumerate(self._land_saved_objects) if str(entry.get("name", "")) == name), None)
-        if existing_index is None:
+        current_row = self._land_objects_table.currentRow()
+        if 0 <= current_row < len(self._land_saved_objects):
+            self._land_saved_objects[current_row] = payload
+            row = current_row
+        else:
             self._land_saved_objects.append(payload)
             row = self._land_objects_table.rowCount()
             self._land_objects_table.insertRow(row)
-        else:
-            self._land_saved_objects[existing_index] = payload
-            row = existing_index
         self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(name))
         self._land_objects_table.setItem(
             row,
@@ -2796,6 +2827,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_edit_point_button,
             self._land_add_polygon_button,
             self._land_delete_polygon_button,
+            self._land_move_polygon_up_button,
+            self._land_move_polygon_down_button,
             self._land_export_object_button,
         ):
             button.setEnabled(has_selection)
@@ -2844,7 +2877,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if error is not None:
             QtWidgets.QMessageBox.warning(self, "Export Object to .3D", error)
             return
-        default_path = f"{name}.3D"
+        default_path = f"{name.replace(' ', '_')}.3D"
         file_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Object to .3D",
