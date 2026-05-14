@@ -185,3 +185,18 @@ def test_land_polygon_wall_mode_draws_two_point_segment(qapp):
             if QtGui.QColor(image.pixel(x, y)).alpha() > 0:
                 opaque_pixels += 1
     assert opaque_pixels > 0
+
+def test_land_polygon_export_applies_height_to_land_mode_vertices(qapp):
+    window = SGViewerWindow()
+    try:
+        points, polygons, error = window._parse_land_object_export_data(
+            {
+                "points": [("0", "0", "1"), ("10", "0", "2"), ("0", "10", "3")],
+                "polygons": [("0,1,2", "7", "Land", "5")],
+            }
+        )
+        assert error is None
+        assert polygons == [((3, 4, 5), 7)]
+        assert points[3:] == [(0.0, 0.0, 6.0), (10.0, 0.0, 7.0), (0.0, 10.0, 8.0)]
+    finally:
+        window.close()
