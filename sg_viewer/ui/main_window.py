@@ -980,6 +980,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_add_object_button.clicked.connect(self._add_land_object)
         self._land_export_object_button.clicked.connect(self._export_selected_land_object_to_3d)
         self._land_objects_table.itemSelectionChanged.connect(self._load_selected_land_object)
+        self._land_objects_table.itemChanged.connect(self._on_land_objects_table_item_changed)
         self._land_object_name_edit.textChanged.connect(self._persist_selected_land_object)
         self._update_land_object_edit_controls()
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
@@ -2629,8 +2630,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             except ValueError:
                 errors.append(f"row {row + 1}: invalid point list")
                 continue
-            if len(indices) < 3:
-                errors.append(f"row {row + 1}: polygon needs at least 3 points")
+            mode_text = self._land_polygon_mode_text(row)
+            min_points = 2 if mode_text == "Wall" else 3
+            if len(indices) < min_points:
+                errors.append(
+                    f"row {row + 1}: {mode_text.lower()} polygon needs at least {min_points} points"
+                )
                 continue
             invalid_index = next((index for index in indices if index < 0 or index >= point_count), None)
             if invalid_index is not None:
@@ -2642,7 +2647,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             except ValueError:
                 errors.append(f"row {row + 1}: invalid color index")
                 continue
-            mode_text = self._land_polygon_mode_text(row)
             is_wall = mode_text.lower() == "wall"
             polygons.append((indices, color_index, is_wall))
         self._preview.set_land_object_polygons_overlay(tuple(polygons))
@@ -2658,6 +2662,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_land_polygons_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
         self._sync_land_polygons_overlay()
         self._persist_selected_land_object()
+
+    def _on_land_objects_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if item.column() != 0:
+            return
+        row = item.row()
+        if row < 0 or row >= len(self._land_saved_objects):
+            return
+        name = item.text().strip()
+        self._land_saved_objects[row]["name"] = name
+        if row == self._land_objects_table.currentRow():
+            self._land_object_name_edit.blockSignals(True)
+            self._land_object_name_edit.setText(name)
+            self._land_object_name_edit.blockSignals(False)
+        self._mark_land_objects_dirty()
 
     def _add_land_polygon_row(self) -> None:
         row = self._land_polygons_table.rowCount()
@@ -2977,18 +2995,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
             except ValueError:
                 return [], [], f"Polygon row {polygon_index} has invalid point indices."
-            if len(indices) < 3:
-                return [], [], f"Polygon row {polygon_index} needs at least 3 points."
+            mode_text = str(polygon_row[2]).strip() if len(polygon_row) > 2 else "Land"
+            mode = mode_text.lower()
+            if mode not in ("land", "wall"):
+                return [], [], f"Polygon row {polygon_index} has invalid mode '{mode_text}'."
+            min_points = 2 if mode == "wall" else 3
+            if len(indices) < min_points:
+                return [], [], f"Polygon row {polygon_index} needs at least {min_points} points."
             if any(index < 0 or index >= len(points) for index in indices):
                 return [], [], f"Polygon row {polygon_index} references a point outside the valid range."
             try:
                 color = int(str(color_text).strip() or "0")
             except ValueError:
                 return [], [], f"Polygon row {polygon_index} has an invalid color index."
-            mode_text = str(polygon_row[2]).strip() if len(polygon_row) > 2 else "Land"
-            mode = mode_text.lower()
-            if mode not in ("land", "wall"):
-                return [], [], f"Polygon row {polygon_index} has invalid mode '{mode_text}'."
             if mode == "land":
                 polygons.append((indices, color))
                 continue
