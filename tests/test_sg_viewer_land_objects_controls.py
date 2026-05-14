@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 try:
-    from PyQt5 import QtWidgets
+    from PyQt5 import QtCore, QtGui, QtWidgets
+    from sg_viewer.services.preview_painter import _draw_land_object_polygons_overlay
     from sg_viewer.ui.app import SGViewerWindow
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -160,3 +161,27 @@ def test_land_object_name_table_edit_updates_editor_and_persists(qapp):
         assert window.serialize_land_objects()[0]["name"] == "Renamed"
     finally:
         window.close()
+
+
+def test_land_polygon_wall_mode_draws_two_point_segment(qapp):
+    image = QtGui.QImage(32, 32, QtGui.QImage.Format_ARGB32)
+    image.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(image)
+    try:
+        _draw_land_object_polygons_overlay(
+            painter=painter,
+            points=((2.0, 2.0), (28.0, 2.0)),
+            polygons=(((0, 1), 255, True),),
+            palette=(),
+            transform=(1.0, (0.0, 0.0)),
+            widget_height=32,
+        )
+    finally:
+        painter.end()
+
+    opaque_pixels = 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            if QtGui.QColor(image.pixel(x, y)).alpha() > 0:
+                opaque_pixels += 1
+    assert opaque_pixels > 0
