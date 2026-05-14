@@ -220,8 +220,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._land_points_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._land_points_table.verticalHeader().setVisible(False)
-        self._land_polygons_table = QtWidgets.QTableWidget(0, 2)
-        self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "SUNNY.PCX color index"])
+        self._land_polygons_table = QtWidgets.QTableWidget(0, 4)
+        self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "SUNNY.PCX color index", "Mode", "Height"])
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
         self._land_polygons_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._land_polygons_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -2662,6 +2662,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.insertRow(row)
         self._land_polygons_table.setItem(row, 0, QtWidgets.QTableWidgetItem(""))
         self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0"))
+        self._land_polygons_table.setItem(row, 2, QtWidgets.QTableWidgetItem("Land"))
+        self._land_polygons_table.setItem(row, 3, QtWidgets.QTableWidgetItem("0"))
         self._land_polygons_table.setCurrentCell(row, 0)
         self._land_polygons_table.editItem(self._land_polygons_table.item(row, 0))
         self._persist_selected_land_object()
@@ -2679,19 +2681,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         target_row = row + offset
         if row < 0 or target_row < 0 or target_row >= self._land_polygons_table.rowCount():
             return
-        current_points_item = self._land_polygons_table.item(row, 0)
-        current_color_item = self._land_polygons_table.item(row, 1)
-        target_points_item = self._land_polygons_table.item(target_row, 0)
-        target_color_item = self._land_polygons_table.item(target_row, 1)
-        current_points = "" if current_points_item is None else current_points_item.text()
-        current_color = "0" if current_color_item is None else current_color_item.text()
-        target_points = "" if target_points_item is None else target_points_item.text()
-        target_color = "0" if target_color_item is None else target_color_item.text()
+        current_values = [self._land_polygon_cell_text(row, col) for col in range(4)]
+        target_values = [self._land_polygon_cell_text(target_row, col) for col in range(4)]
         self._land_polygons_table.blockSignals(True)
-        self._land_polygons_table.setItem(row, 0, QtWidgets.QTableWidgetItem(target_points))
-        self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem(target_color))
-        self._land_polygons_table.setItem(target_row, 0, QtWidgets.QTableWidgetItem(current_points))
-        self._land_polygons_table.setItem(target_row, 1, QtWidgets.QTableWidgetItem(current_color))
+        for col in range(4):
+            self._land_polygons_table.setItem(row, col, QtWidgets.QTableWidgetItem(target_values[col]))
+            self._land_polygons_table.setItem(target_row, col, QtWidgets.QTableWidgetItem(current_values[col]))
         self._land_polygons_table.blockSignals(False)
         self._land_polygons_table.selectRow(target_row)
         self._sync_land_polygons_overlay()
@@ -2709,13 +2704,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "" if y_item is None else y_item.text(),
                 "" if z_item is None else z_item.text(),
             ))
-        polygons: list[tuple[str, str]] = []
+        polygons: list[tuple[str, str, str, str]] = []
         for row in range(self._land_polygons_table.rowCount()):
             points_item = self._land_polygons_table.item(row, 0)
             color_item = self._land_polygons_table.item(row, 1)
+            mode_item = self._land_polygons_table.item(row, 2)
+            height_item = self._land_polygons_table.item(row, 3)
             polygons.append((
                 "" if points_item is None else points_item.text(),
                 "0" if color_item is None else color_item.text(),
+                "Land" if mode_item is None else mode_item.text(),
+                "0" if height_item is None else height_item.text(),
             ))
         return {"name": name, "points": points, "polygons": polygons}
 
@@ -2808,10 +2807,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             delete_button.clicked.connect(lambda _checked=False, r=point_row: self._delete_land_point_row(r))
             self._land_points_table.setCellWidget(point_row, 4, delete_button)
         self._land_polygons_table.setRowCount(0)
-        for polygon_row, (point_list_text, color_text) in enumerate(polygons):
+        for polygon_row, polygon_data in enumerate(polygons):
+            point_list_text = polygon_data[0] if len(polygon_data) > 0 else ""
+            color_text = polygon_data[1] if len(polygon_data) > 1 else "0"
+            mode_text = polygon_data[2] if len(polygon_data) > 2 else "Land"
+            height_text = polygon_data[3] if len(polygon_data) > 3 else "0"
             self._land_polygons_table.insertRow(polygon_row)
             self._land_polygons_table.setItem(polygon_row, 0, QtWidgets.QTableWidgetItem(str(point_list_text)))
             self._land_polygons_table.setItem(polygon_row, 1, QtWidgets.QTableWidgetItem(str(color_text)))
+            self._land_polygons_table.setItem(polygon_row, 2, QtWidgets.QTableWidgetItem(str(mode_text)))
+            self._land_polygons_table.setItem(polygon_row, 3, QtWidgets.QTableWidgetItem(str(height_text)))
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
         self._land_object_name_edit.blockSignals(True)
@@ -2819,6 +2824,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_object_name_edit.blockSignals(False)
         self._update_land_object_edit_controls()
         self._sync_land_points_overlay()
+
+    def _land_polygon_cell_text(self, row: int, col: int) -> str:
+        item = self._land_polygons_table.item(row, col)
+        if item is None:
+            return "0" if col in (1, 3) else ("Land" if col == 2 else "")
+        return item.text()
 
     def _update_land_object_edit_controls(self) -> None:
         has_selection = 0 <= self._land_objects_table.currentRow() < len(self._land_saved_objects)
@@ -2937,7 +2948,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 color = int(str(color_text).strip() or "0")
             except ValueError:
                 return [], [], f"Polygon row {polygon_index} has an invalid color index."
-            polygons.append((indices, color))
+            mode_text = str(polygon_row[2]).strip() if len(polygon_row) > 2 else "Land"
+            mode = mode_text.lower()
+            if mode not in ("land", "wall"):
+                return [], [], f"Polygon row {polygon_index} has invalid mode '{mode_text}'."
+            if mode == "land":
+                polygons.append((indices, color))
+                continue
+            height_text = str(polygon_row[3]).strip() if len(polygon_row) > 3 else "0"
+            try:
+                height = float(height_text or "0")
+            except ValueError:
+                return [], [], f"Polygon row {polygon_index} has an invalid height."
+            if height <= 0.0:
+                return [], [], f"Polygon row {polygon_index} wall height must be greater than 0."
+            elevated_index_by_base: dict[int, int] = {}
+            for base_index in indices:
+                if base_index not in elevated_index_by_base:
+                    x, y, z = points[base_index]
+                    points.append((x, y, z + height))
+                    elevated_index_by_base[base_index] = len(points) - 1
+            for start, end in zip(indices, indices[1:]):
+                polygons.append((
+                    (start, end, elevated_index_by_base[end], elevated_index_by_base[start]),
+                    color,
+                ))
         return points, polygons, None
 
     @staticmethod
