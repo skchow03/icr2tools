@@ -111,3 +111,20 @@ def test_land_polygon_move_up_down_reorders_rows(qapp):
         assert window._land_polygons_table.item(1, 0).text() == "0,2,1"
     finally:
         window.close()
+
+
+def test_land_polygon_mode_is_combo_and_wall_mode_persists(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects([{"name": "Object 1", "points": [], "polygons": []}])
+        window._add_land_polygon_row()
+        mode_widget = window._land_polygons_table.cellWidget(0, 2)
+        assert isinstance(mode_widget, QtWidgets.QComboBox)
+        assert mode_widget.count() == 2
+        assert mode_widget.itemText(0) == "Land"
+        assert mode_widget.itemText(1) == "Wall"
+        mode_widget.setCurrentText("Wall")
+        serialized = window.serialize_land_objects()
+        assert serialized[0]["polygons"][0][2] == "Wall"
+    finally:
+        window.close()
