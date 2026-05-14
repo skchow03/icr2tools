@@ -449,7 +449,8 @@ def _draw_land_object_polygons_overlay(
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     for indices, color_index, is_wall in polygons:
-        if len(indices) < 3:
+        min_points = 2 if is_wall else 3
+        if len(indices) < min_points:
             continue
         color_value = max(0, min(255, int(color_index)))
         if palette:
@@ -469,7 +470,7 @@ def _draw_land_object_polygons_overlay(
                 break
             px, py = points[point_index]
             polygon.append(sg_rendering.map_point(px, py, transform, widget_height))
-        if polygon.size() >= 3:
+        if polygon.size() >= min_points:
             if is_wall:
                 painter.drawPolyline(polygon)
             else:
