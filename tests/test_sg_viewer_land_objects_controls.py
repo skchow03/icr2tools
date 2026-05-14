@@ -128,3 +128,35 @@ def test_land_polygon_mode_is_combo_and_wall_mode_persists(qapp):
         assert serialized[0]["polygons"][0][2] == "Wall"
     finally:
         window.close()
+
+
+def test_land_polygon_wall_mode_allows_two_points_but_land_needs_three(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects([
+            {
+                "name": "Object 1",
+                "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
+                "polygons": [],
+            }
+        ])
+        window._add_land_polygon_row()
+        window._land_polygons_table.item(0, 0).setText("0,1")
+        mode_widget = window._land_polygons_table.cellWidget(0, 2)
+        mode_widget.setCurrentText("Wall")
+        assert len(window._preview.land_object_polygons_overlay) == 1
+        mode_widget.setCurrentText("Land")
+        assert len(window._preview.land_object_polygons_overlay) == 0
+    finally:
+        window.close()
+
+
+def test_land_object_name_table_edit_updates_editor_and_persists(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects([{"name": "Object 1", "points": [], "polygons": []}])
+        window._land_objects_table.item(0, 0).setText("Renamed")
+        assert window._land_object_name_edit.text() == "Renamed"
+        assert window.serialize_land_objects()[0]["name"] == "Renamed"
+    finally:
+        window.close()
