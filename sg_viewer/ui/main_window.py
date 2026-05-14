@@ -2642,7 +2642,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             except ValueError:
                 errors.append(f"row {row + 1}: invalid color index")
                 continue
-            polygons.append((indices, color_index, self._land_polygon_fill_checkbox.isChecked()))
+            mode_text = self._land_polygon_mode_text(row)
+            is_wall = mode_text.lower() == "wall"
+            polygons.append((indices, color_index, is_wall))
         self._preview.set_land_object_polygons_overlay(tuple(polygons))
         if errors:
             self.show_status_message(
@@ -2662,7 +2664,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.insertRow(row)
         self._land_polygons_table.setItem(row, 0, QtWidgets.QTableWidgetItem(""))
         self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0"))
-        self._land_polygons_table.setItem(row, 2, QtWidgets.QTableWidgetItem("Land"))
+        self._land_set_polygon_mode_widget(row, "Land")
         self._land_polygons_table.setItem(row, 3, QtWidgets.QTableWidgetItem("0"))
         self._land_polygons_table.setCurrentCell(row, 0)
         self._land_polygons_table.editItem(self._land_polygons_table.item(row, 0))
@@ -2685,8 +2687,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         target_values = [self._land_polygon_cell_text(target_row, col) for col in range(4)]
         self._land_polygons_table.blockSignals(True)
         for col in range(4):
-            self._land_polygons_table.setItem(row, col, QtWidgets.QTableWidgetItem(target_values[col]))
-            self._land_polygons_table.setItem(target_row, col, QtWidgets.QTableWidgetItem(current_values[col]))
+            if col == 2:
+                self._land_set_polygon_mode_widget(row, target_values[col])
+                self._land_set_polygon_mode_widget(target_row, current_values[col])
+            else:
+                self._land_polygons_table.setItem(row, col, QtWidgets.QTableWidgetItem(target_values[col]))
+                self._land_polygons_table.setItem(target_row, col, QtWidgets.QTableWidgetItem(current_values[col]))
         self._land_polygons_table.blockSignals(False)
         self._land_polygons_table.selectRow(target_row)
         self._sync_land_polygons_overlay()
@@ -2708,12 +2714,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for row in range(self._land_polygons_table.rowCount()):
             points_item = self._land_polygons_table.item(row, 0)
             color_item = self._land_polygons_table.item(row, 1)
-            mode_item = self._land_polygons_table.item(row, 2)
             height_item = self._land_polygons_table.item(row, 3)
             polygons.append((
                 "" if points_item is None else points_item.text(),
                 "0" if color_item is None else color_item.text(),
-                "Land" if mode_item is None else mode_item.text(),
+                self._land_polygon_mode_text(row),
                 "0" if height_item is None else height_item.text(),
             ))
         return {"name": name, "points": points, "polygons": polygons}
@@ -2815,7 +2820,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_polygons_table.insertRow(polygon_row)
             self._land_polygons_table.setItem(polygon_row, 0, QtWidgets.QTableWidgetItem(str(point_list_text)))
             self._land_polygons_table.setItem(polygon_row, 1, QtWidgets.QTableWidgetItem(str(color_text)))
-            self._land_polygons_table.setItem(polygon_row, 2, QtWidgets.QTableWidgetItem(str(mode_text)))
+            self._land_set_polygon_mode_widget(polygon_row, str(mode_text))
             self._land_polygons_table.setItem(polygon_row, 3, QtWidgets.QTableWidgetItem(str(height_text)))
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
@@ -2826,10 +2831,42 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_land_points_overlay()
 
     def _land_polygon_cell_text(self, row: int, col: int) -> str:
+        if col == 2:
+            return self._land_polygon_mode_text(row)
         item = self._land_polygons_table.item(row, col)
         if item is None:
             return "0" if col in (1, 3) else ("Land" if col == 2 else "")
         return item.text()
+
+    def _land_polygon_mode_text(self, row: int) -> str:
+        mode_widget = self._land_polygons_table.cellWidget(row, 2)
+        if isinstance(mode_widget, QtWidgets.QComboBox):
+            selected = mode_widget.currentText().strip()
+            return selected if selected in {"Land", "Wall"} else "Land"
+        item = self._land_polygons_table.item(row, 2)
+        if item is None:
+            return "Land"
+        mode = item.text().strip()
+        return mode if mode in {"Land", "Wall"} else "Land"
+
+    def _land_set_polygon_mode_widget(self, row: int, mode_text: str) -> None:
+        combo = QtWidgets.QComboBox()
+        combo.addItems(["Land", "Wall"])
+        combo.setCurrentText("Wall" if mode_text.strip().lower() == "wall" else "Land")
+        combo.currentTextChanged.connect(self._on_land_polygon_mode_changed)
+        self._land_polygons_table.setCellWidget(row, 2, combo)
+        self._land_polygons_table.setItem(row, 2, QtWidgets.QTableWidgetItem(combo.currentText()))
+
+    def _on_land_polygon_mode_changed(self, mode_text: str) -> None:
+        combo = self.sender()
+        if not isinstance(combo, QtWidgets.QComboBox):
+            return
+        for row in range(self._land_polygons_table.rowCount()):
+            if self._land_polygons_table.cellWidget(row, 2) is combo:
+                self._land_polygons_table.setItem(row, 2, QtWidgets.QTableWidgetItem(mode_text))
+                break
+        self._sync_land_polygons_overlay()
+        self._persist_selected_land_object()
 
     def _update_land_object_edit_controls(self) -> None:
         has_selection = 0 <= self._land_objects_table.currentRow() < len(self._land_saved_objects)

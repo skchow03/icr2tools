@@ -448,7 +448,7 @@ def _draw_land_object_polygons_overlay(
         return
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-    for indices, color_index, filled in polygons:
+    for indices, color_index, is_wall in polygons:
         if len(indices) < 3:
             continue
         color_value = max(0, min(255, int(color_index)))
@@ -461,7 +461,7 @@ def _draw_land_object_polygons_overlay(
         brush_color = QtGui.QColor(base_color)
         brush_color.setAlpha(255)
         painter.setPen(QtGui.QPen(pen_color, 2.0))
-        painter.setBrush(brush_color if filled else QtCore.Qt.NoBrush)
+        painter.setBrush(brush_color if (not is_wall) else QtCore.Qt.NoBrush)
         polygon = QtGui.QPolygonF()
         for point_index in indices:
             if point_index < 0 or point_index >= len(points):
@@ -470,7 +470,10 @@ def _draw_land_object_polygons_overlay(
             px, py = points[point_index]
             polygon.append(sg_rendering.map_point(px, py, transform, widget_height))
         if polygon.size() >= 3:
-            painter.drawPolygon(polygon)
+            if is_wall:
+                painter.drawPolyline(polygon)
+            else:
+                painter.drawPolygon(polygon)
     painter.restore()
 
 
