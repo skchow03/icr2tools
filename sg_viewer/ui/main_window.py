@@ -3008,14 +3008,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 color = int(str(color_text).strip() or "0")
             except ValueError:
                 return [], [], f"Polygon row {polygon_index} has an invalid color index."
-            if mode == "land":
-                polygons.append((indices, color))
-                continue
             height_text = str(polygon_row[3]).strip() if len(polygon_row) > 3 else "0"
             try:
                 height = float(height_text or "0")
             except ValueError:
                 return [], [], f"Polygon row {polygon_index} has an invalid height."
+            if mode == "land":
+                if height == 0.0:
+                    polygons.append((indices, color))
+                    continue
+                elevated_index_by_base: dict[int, int] = {}
+                for base_index in indices:
+                    if base_index not in elevated_index_by_base:
+                        x, y, z = points[base_index]
+                        points.append((x, y, z + height))
+                        elevated_index_by_base[base_index] = len(points) - 1
+                polygons.append((tuple(elevated_index_by_base[index] for index in indices), color))
+                continue
             if height <= 0.0:
                 return [], [], f"Polygon row {polygon_index} wall height must be greater than 0."
             elevated_index_by_base: dict[int, int] = {}
