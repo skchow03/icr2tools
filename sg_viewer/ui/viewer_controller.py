@@ -1348,6 +1348,7 @@ class SGViewerController:
             self._on_tso_auto_update_relative_z_toggled
         )
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
+        self._window.tso_write_to_3d_file_button.clicked.connect(self._on_tso_write_to_3d_file_requested)
         self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
         self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
         self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
@@ -4949,6 +4950,64 @@ class SGViewerController:
             )
             return
         self._window.show_status_message(f"Saved objects.txt to {path}")
+
+    def _replace_tso_dynamic_section_in_3d_text(self, text: str) -> tuple[str, int]:
+        lines = text.splitlines(keepends=True)
+        matching_indices = [index for index, line in enumerate(lines) if _TSO_DYNAMIC_LINE_PATTERN.match(line)]
+        if not matching_indices:
+            return text, 0
+        start_index = min(matching_indices)
+        end_index = max(matching_indices)
+        newline = "\n"
+        first_line = lines[start_index]
+        if first_line.endswith("\r\n"):
+            newline = "\r\n"
+        replacement_lines = [
+            f"{obj.to_objects_txt_line(index)}{newline}"
+            for index, obj in enumerate(self._trackside_objects)
+        ]
+        updated_lines = lines[:start_index] + replacement_lines + lines[end_index + 1:]
+        return "".join(updated_lines), len(matching_indices)
+
+    def _on_tso_write_to_3d_file_requested(self) -> None:
+        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self._window,
+            "Select track .3D file to update",
+            str(self._track3d_path_for_current_project() or ""),
+            "Track 3D Files (*.3d *.3D);;All Files (*)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        try:
+            original_text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Write to .3D file",
+                f"Could not read file:\n{exc}",
+            )
+            return
+        updated_text, replaced_count = self._replace_tso_dynamic_section_in_3d_text(original_text)
+        if replaced_count <= 0:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Write to .3D file",
+                "No matching __TSO DYNAMIC lines were found in that .3D file.",
+            )
+            return
+        try:
+            path.write_text(updated_text, encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window,
+                "Write to .3D file",
+                f"Could not write file:\n{exc}",
+            )
+            return
+        self._window.show_status_message(
+            f"Updated {path.name}: replaced {replaced_count} TSO line(s) with {len(self._trackside_objects)} project TSO(s)."
+        )
 
     def _on_mrk_textures_requested(self) -> None:
         dialog = MrkTexturesDialog(self._window, self._mrk_texture_definitions)

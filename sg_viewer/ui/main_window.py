@@ -200,6 +200,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_auto_update_relative_z_checkbox = QtWidgets.QCheckBox("Auto-update Z rel. boundary")
         self._tso_auto_update_relative_z_checkbox.setChecked(False)
         self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
+        self._tso_write_to_3d_file_button = QtWidgets.QPushButton("Write to .3D file (in place)")
         self._land_objects_table = QtWidgets.QTableWidget(0, 2)
         self._land_object_name_edit = QtWidgets.QLineEdit()
         self._land_object_name_edit.setPlaceholderText("Object name")
@@ -925,7 +926,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_buttons.addWidget(self._tso_refresh_relative_boundary_button, 1, 3)
         tso_buttons.addWidget(self._tso_auto_update_relative_z_checkbox, 1, 4, 1, 2)
         tso_layout.addLayout(tso_buttons)
-        tso_layout.addWidget(self._tso_generate_file_button)
+        tso_export_buttons = QtWidgets.QHBoxLayout()
+        tso_export_buttons.addWidget(self._tso_generate_file_button)
+        tso_export_buttons.addWidget(self._tso_write_to_3d_file_button)
+        tso_layout.addLayout(tso_export_buttons)
         tso_layout.addWidget(self._tso_table)
         self._tso_sidebar.setLayout(tso_layout)
         self._tso_import_from_3d_button.setToolTip(
@@ -1440,6 +1444,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_generate_file_button(self) -> QtWidgets.QPushButton:
         return self._tso_generate_file_button
+
+    @property
+    def tso_write_to_3d_file_button(self) -> QtWidgets.QPushButton:
+        return self._tso_write_to_3d_file_button
 
     @property
     def tso_modify_elevations_button(self) -> QtWidgets.QPushButton:
