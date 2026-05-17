@@ -712,6 +712,12 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
         _apply_panel_layout(layout)
+        description = QtWidgets.QLabel(
+            "This tool takes a source horizon image and chops it into two 256×256 images "
+            "that can be used in a horizon 3D model."
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
         section, section_layout = _make_section_card("1. Choose input")
         section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
         layout.addWidget(section)
@@ -1217,29 +1223,10 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self._settings.load()
 
         self.intent_tabs = QtWidgets.QTabWidget()
-        self.intent_tabs.setCornerWidget(self._build_overview_button(), QtCore.Qt.TopRightCorner)
         self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
         self.setCentralWidget(self.intent_tabs)
-
-        QtCore.QTimer.singleShot(0, self._show_overview_dialog)
-
-    def _build_overview_button(self) -> QtWidgets.QPushButton:
-        button = QtWidgets.QPushButton("Welcome / Overview")
-        button.clicked.connect(self._show_overview_dialog)
-        return button
-
-    def _show_overview_dialog(self) -> None:
-        message = (
-            "Welcome to Texture Tools.\n\n"
-            "Workflows by intent:\n"
-            "• Optimize palette: Sunny Optimizer (embedded in this window).\n"
-            "• Convert formats: MIP and PMP encode/decode tools.\n"
-            "• Split/prepare textures: Chop Horizon helper.\n\n"
-            "Sunny Optimizer now lives directly in the Optimize palette tab for a single-window workflow."
-        )
-        QtWidgets.QMessageBox.information(self, "Texture Tools Overview", message)
 
     def _build_optimize_palette_tab(self) -> QtWidgets.QWidget:
         sunny = SunnyOptimizerWindow()
