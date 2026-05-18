@@ -10,10 +10,19 @@ try:
 except ImportError:  # pragma: no cover
     from PySide6 import QtCore, QtGui, QtWidgets  # type: ignore
 
-from texture_tools.sunny_optimizer.model import OPTIMIZED_SLOTS, SunnyPaletteOptimizer
 from texture_tools.sunny_optimizer.palette import load_sunny_palette, save_palette, visualize_palette
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 
+
+# Stable range in sunny_optimizer.model: OPTIMIZED_START=176, OPTIMIZED_END=245.
+# Keep local to avoid importing the heavy optimizer module at window creation time.
+OPTIMIZED_SLOTS = 70
+
+
+def _get_optimizer_class():
+    from texture_tools.sunny_optimizer.model import SunnyPaletteOptimizer
+
+    return SunnyPaletteOptimizer
 
 class TextureBudgetItemWidget(QtWidgets.QWidget):
     budget_changed = QtCore.pyqtSignal(str, int)
@@ -1100,7 +1109,8 @@ class MainWindow(QtWidgets.QMainWindow):
             set_progress(2, "Preparing optimizer", 30)
             QtWidgets.QApplication.processEvents()
 
-            optimizer = SunnyPaletteOptimizer(
+            optimizer_class = _get_optimizer_class()
+            optimizer = optimizer_class(
                 rgb_images=self.texture_images,
                 per_texture_color_budget=self.per_texture_budget,
                 fixed_palette=fixed_palette,
