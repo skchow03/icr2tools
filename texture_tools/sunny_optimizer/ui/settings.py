@@ -3,6 +3,7 @@ from __future__ import annotations
 from configparser import ConfigParser
 import json
 from pathlib import Path
+import sys
 
 
 class SunnyOptimizerSettings:
@@ -10,6 +11,9 @@ class SunnyOptimizerSettings:
         self.path = path
         self.last_texture_folder: str = ""
         self.last_sunny_palette: str = ""
+        self.last_mip_source_folder: str = ""
+        self.last_mip_target_folder: str = ""
+        self.last_mip_palette: str = ""
         self.color_budgets: dict[str, dict[str, int]] = {}
         self.tool_presets: dict[str, dict[str, dict[str, str]]] = {}
         self.default_presets: dict[str, str] = {}
@@ -17,7 +21,9 @@ class SunnyOptimizerSettings:
 
     @staticmethod
     def default_path() -> Path:
-        return Path.home() / ".sunny_optimizer.ini"
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent / "texture_tools.ini"
+        return Path(__file__).resolve().parents[2] / "texture_tools.ini"
 
     def load(self) -> None:
         # Use strict=False so malformed user-edited INI files with duplicate keys
@@ -28,6 +34,9 @@ class SunnyOptimizerSettings:
 
         self.last_texture_folder = parser.get("recent", "texture_folder", fallback="")
         self.last_sunny_palette = parser.get("recent", "sunny_palette", fallback="")
+        self.last_mip_source_folder = parser.get("recent", "mip_source_folder", fallback="")
+        self.last_mip_target_folder = parser.get("recent", "mip_target_folder", fallback="")
+        self.last_mip_palette = parser.get("recent", "mip_palette", fallback="")
 
         budgets: dict[str, dict[str, int]] = {}
         for section in parser.sections():
@@ -82,6 +91,9 @@ class SunnyOptimizerSettings:
         parser["recent"] = {
             "texture_folder": self.last_texture_folder,
             "sunny_palette": self.last_sunny_palette,
+            "mip_source_folder": self.last_mip_source_folder,
+            "mip_target_folder": self.last_mip_target_folder,
+            "mip_palette": self.last_mip_palette,
         }
 
         for folder, budgets in sorted(self.color_budgets.items()):
