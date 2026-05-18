@@ -1,25 +1,17 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 # Ensure repo root is on sys.path when running this file directly
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from PIL import Image
-
 try:
     from PyQt5 import QtCore, QtGui, QtWidgets
 except ImportError:  # pragma: no cover
     from PySide6 import QtCore, QtGui, QtWidgets  # type: ignore
-
-from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
-from texture_tools.pmp import png_to_pmp
-from texture_tools.pmp_to_png import convert_pmp_to_png
-from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
-from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
-from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
 ERROR_STYLE = "QLineEdit { border: 1px solid #d93025; border-radius: 3px; }"
 STATUS_IDLE = "idle"
@@ -31,6 +23,14 @@ STATUS_FAILURE = "failure"
 UI_LABEL_WIDTH = 220
 UI_SECTION_SPACING = 10
 UI_PANEL_MARGINS = (12, 12, 12, 12)
+
+
+def _timed_import(label: str, importer):
+    start = time.perf_counter()
+    result = importer()
+    elapsed = time.perf_counter() - start
+    print(f"[startup-lazy-import] {label}: {elapsed:.4f}s")
+    return result
 
 
 def _apply_panel_layout(layout: QtWidgets.QVBoxLayout) -> None:
@@ -239,7 +239,7 @@ def _validate_path(
 
 
 
-def _fmt_dimensions(image: Image.Image) -> str:
+def _fmt_dimensions(image) -> str:
     return f"{image.width}x{image.height}"
 
 def _collect_folder_image_inputs(source_dir: Path) -> list[Path]:
@@ -258,7 +258,7 @@ def _collect_folder_image_inputs(source_dir: Path) -> list[Path]:
     return list(preferred.values())
 
 
-def _prepare_image_for_mip(image: Image.Image) -> Image.Image:
+def _prepare_image_for_mip(image):
     """Prepare image for MIP conversion without introducing implicit dithering."""
     return image.convert("RGB")
 
@@ -281,7 +281,7 @@ def _confirm_summary(parent: QtWidgets.QWidget, *, dimensions: str, output_forma
     return result == QtWidgets.QMessageBox.Yes
 
 
-def _offer_preview(parent: QtWidgets.QWidget, image: Image.Image, title: str) -> bool:
+def _offer_preview(parent: QtWidgets.QWidget, image, title: str) -> bool:
     preview_message = QtWidgets.QMessageBox(parent)
     preview_message.setIcon(QtWidgets.QMessageBox.Question)
     preview_message.setWindowTitle("Preview output")
@@ -314,7 +314,7 @@ def _offer_preview(parent: QtWidgets.QWidget, image: Image.Image, title: str) ->
     return True
 
 
-def _pil_to_pixmap(image: Image.Image) -> QtGui.QPixmap:
+def _pil_to_pixmap(image) -> QtGui.QPixmap:
     rgba = image.convert("RGBA")
     data = rgba.tobytes("raw", "RGBA")
     qimage = QtGui.QImage(data, rgba.width, rgba.height, QtGui.QImage.Format_RGBA8888)
@@ -359,7 +359,7 @@ class PreviewPane(QtWidgets.QGroupBox):
         layout.addWidget(self.image_view)
         layout.addWidget(self.meta_label)
 
-    def set_preview(self, image: Image.Image, *, caption: str = "") -> None:
+    def set_preview(self, image, *, caption: str = "") -> None:
         pixmap = _pil_to_pixmap(image)
         self._pixmap_item.setPixmap(pixmap)
         self.image_label.hide()
@@ -492,6 +492,14 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._refresh_preview()
 
     def _refresh_preview(self) -> None:
+        mip_to_img, load_palette = _timed_import(
+            "icr2_core.mip.mips:mip_to_img/load_palette",
+            lambda: (
+                __import__("icr2_core.mip.mips", fromlist=["mip_to_img"]).mip_to_img,
+                __import__("icr2_core.mip.mips", fromlist=["load_palette"]).load_palette,
+            ),
+        )
+        Image = _timed_import("PIL.Image", lambda: __import__("PIL.Image", fromlist=["Image"]).Image)
         input_raw = self.input_edit.text().strip()
         if not input_raw:
             self.preview_pane.clear_preview()
@@ -619,6 +627,11 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             palette_path = Path(self.palette_edit.text().strip())
             output_path = Path(self.output_edit.text().strip())
             mode = self.mode_combo.currentText()
+            Image = _timed_import("PIL.Image", lambda: __import__("PIL.Image", fromlist=["Image"]).Image)
+            img_to_mip = _timed_import(
+                "icr2_core.mip.mips:img_to_mip",
+                lambda: __import__("icr2_core.mip.mips", fromlist=["img_to_mip"]).img_to_mip,
+            )
             image = Image.open(input_path)
             prepared = _prepare_image_for_mip(image)
             if not _confirm_summary(
@@ -643,6 +656,13 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             input_path = Path(self.input_edit.text().strip())
             palette_path = Path(self.palette_edit.text().strip())
             output_path = Path(self.output_edit.text().strip())
+            load_palette, mip_to_img = _timed_import(
+                "icr2_core.mip.mips:load_palette/mip_to_img",
+                lambda: (
+                    __import__("icr2_core.mip.mips", fromlist=["load_palette"]).load_palette,
+                    __import__("icr2_core.mip.mips", fromlist=["mip_to_img"]).mip_to_img,
+                ),
+            )
             palette = load_palette(str(palette_path))
             mip_images = mip_to_img(str(input_path), palette)
             preview_image = mip_images[0]
@@ -797,6 +817,10 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         if not self._update_validation_state():
             return
         try:
+            chop_horizon = _timed_import(
+                "texture_tools.sunny_optimizer.chop_horizon:chop_horizon",
+                lambda: __import__("texture_tools.sunny_optimizer.chop_horizon", fromlist=["chop_horizon"]).chop_horizon,
+            )
             out1, out2 = chop_horizon(self.input_edit.text().strip(), self.output_edit.text().strip())
             self.set_status(STATUS_SUCCESS, f"Created: {out1.name}, {out2.name}")
         except Exception as exc:  # pragma: no cover
@@ -809,7 +833,7 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
-    def __init__(self, settings: SunnyOptimizerSettings, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(self, settings, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._settings = settings
         self._build_ui()
@@ -905,6 +929,7 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._refresh_preview()
 
     def _refresh_preview(self) -> None:
+        Image = _timed_import("PIL.Image", lambda: __import__("PIL.Image", fromlist=["Image"]).Image)
         raw = self.input_edit.text().strip()
         if not raw:
             self.preview_pane.clear_preview()
@@ -1066,7 +1091,7 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
     def _set_status_warning(self, message: str) -> None:
         self.status_label.setText(message)
 
-    def __init__(self, settings: SunnyOptimizerSettings, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(self, settings, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._settings = settings
         self._build_ui()
@@ -1219,16 +1244,44 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
             QPushButton[secondary="true"] { background: #f1f3f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 6px; }
             """
         )
+        SunnyOptimizerSettings = _timed_import(
+            "texture_tools.sunny_optimizer.ui.settings:SunnyOptimizerSettings",
+            lambda: __import__("texture_tools.sunny_optimizer.ui.settings", fromlist=["SunnyOptimizerSettings"]).SunnyOptimizerSettings,
+        )
         self._settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
         self._settings.load()
 
         self.intent_tabs = QtWidgets.QTabWidget()
-        self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
-        self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
-        self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
+        self._tab_builders = [
+            self._build_optimize_palette_tab,
+            self._build_convert_formats_tab,
+            self._build_split_prepare_tab,
+        ]
+        self._tab_cache: dict[int, QtWidgets.QWidget] = {}
+        self.intent_tabs.addTab(QtWidgets.QWidget(), "Optimize palette")
+        self.intent_tabs.addTab(QtWidgets.QWidget(), "Convert formats")
+        self.intent_tabs.addTab(QtWidgets.QWidget(), "Split/prepare textures")
+        self.intent_tabs.currentChanged.connect(self._ensure_tab_loaded)
+        self._ensure_tab_loaded(0)
         self.setCentralWidget(self.intent_tabs)
 
+    def _ensure_tab_loaded(self, index: int) -> None:
+        if index < 0 or index in self._tab_cache:
+            return
+        widget = self._tab_builders[index]()
+        placeholder = self.intent_tabs.widget(index)
+        self.intent_tabs.removeTab(index)
+        self.intent_tabs.insertTab(index, widget, ["Optimize palette", "Convert formats", "Split/prepare textures"][index])
+        self.intent_tabs.setCurrentIndex(index)
+        if placeholder is not None:
+            placeholder.deleteLater()
+        self._tab_cache[index] = widget
+
     def _build_optimize_palette_tab(self) -> QtWidgets.QWidget:
+        SunnyOptimizerWindow = _timed_import(
+            "texture_tools.sunny_optimizer.ui.main_window:MainWindow",
+            lambda: __import__("texture_tools.sunny_optimizer.ui.main_window", fromlist=["MainWindow"]).MainWindow,
+        )
         sunny = SunnyOptimizerWindow()
         sunny.setWindowFlags(QtCore.Qt.Widget)
         sunny.setWindowTitle("Sunny Optimizer")
