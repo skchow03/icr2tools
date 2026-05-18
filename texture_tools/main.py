@@ -488,6 +488,12 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.input_edit.textChanged.connect(self._refresh_preview)
         self.palette_edit.textChanged.connect(self._refresh_preview)
         self.mode_combo.currentTextChanged.connect(self._refresh_preview)
+        if self._settings.last_mip_source_folder:
+            self.source_folder_edit.setText(self._settings.last_mip_source_folder)
+        if self._settings.last_mip_target_folder:
+            self.target_folder_edit.setText(self._settings.last_mip_target_folder)
+        if self._settings.last_mip_palette:
+            self.palette_edit.setText(self._settings.last_mip_palette)
         self._update_validation_state()
         self._refresh_preview()
 
@@ -591,6 +597,8 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select palette file", "", "PCX (*.pcx);;All files (*.*)")
         if path:
             self.palette_edit.setText(path)
+            self._settings.last_mip_palette = path
+            self._settings.save()
             self._record_recent_path("palette", path)
 
     def _browse_output(self) -> None:
@@ -603,12 +611,16 @@ class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select source folder")
         if path:
             self.source_folder_edit.setText(path)
+            self._settings.last_mip_source_folder = path
+            self._settings.save()
             self._record_recent_path("source_folder", path)
 
     def _browse_target_folder(self) -> None:
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select target folder")
         if path:
             self.target_folder_edit.setText(path)
+            self._settings.last_mip_target_folder = path
+            self._settings.save()
             self._record_recent_path("target_folder", path)
 
     def _convert_to_mip(self) -> None:
