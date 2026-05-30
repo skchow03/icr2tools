@@ -5,7 +5,6 @@ import math
 
 from PyQt5 import QtCore, QtGui
 
-from icr2_core.trk.trk_utils import getxyz
 from track_viewer import rendering
 from track_viewer.common.weather_compass import (
     heading_adjust_to_turns,
@@ -22,6 +21,7 @@ from track_viewer.widget.editing.camera_edit_controller import CameraEditControl
 from track_viewer.widget.editing.flag_edit_controller import FlagEditController
 from track_viewer.widget.editing.lp_edit_controller import LpEditController
 from track_viewer.widget.interaction import InteractionCallbacks, PreviewIntent
+from track_viewer.widget.interaction.projection_utils import track_elevation_at
 from track_viewer.widget.selection.selection_controller import SelectionController
 
 
@@ -470,11 +470,7 @@ class TrackPreviewMouseController:
             return self._state.set_projection_data(
                 None, None, None, None, None, None, None
             )
-        elevation = None
-        if best_dlong is not None and self._model.centerline:
-            _, _, elevation = getxyz(
-                self._model.trk, float(best_dlong), 0, self._model.centerline
-            )
+        elevation = track_elevation_at(self._model, best_dlong, 0.0)
         self._state.projection_cached_point = point
         self._state.projection_cached_result = (
             best_point,
@@ -602,13 +598,14 @@ class TrackPreviewMouseController:
                 None, None, None, None, None, None, None
             )
 
+        elevation = track_elevation_at(self._model, best_dlong, best_dlat)
         self._state.projection_cached_point = point
         self._state.projection_cached_result = (
             best_point,
             best_dlong,
             best_dlat,
             best_speed,
-            None,
+            elevation,
             best_accel,
             lp_name,
         )
@@ -617,7 +614,7 @@ class TrackPreviewMouseController:
             best_dlong,
             best_dlat,
             best_speed,
-            None,
+            elevation,
             best_accel,
             lp_name,
         )

@@ -75,9 +75,9 @@ class UiOverlay:
             painter.drawText(12, y, accel_text)
             y += 16
         if state.nearest_projection_elevation is not None:
-            elevation_text = (
-                f"Elevation: {state.nearest_projection_elevation:.2f} (DLAT = 0)"
-            )
+            elevation_text = f"Elevation: {state.nearest_projection_elevation:.2f}"
+            if state.nearest_projection_line == "center-line":
+                elevation_text += " (DLAT = 0)"
             painter.drawText(12, y, elevation_text)
 
     def draw_camera_guidance(
