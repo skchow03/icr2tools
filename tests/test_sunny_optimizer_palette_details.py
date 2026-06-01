@@ -44,3 +44,20 @@ def test_palette_click_selects_tile_and_updates_details(qapp) -> None:
 
     assert window.selected_palette_index == 17
     assert "Palette index: 17" in window.palette_details_label.text()
+
+
+def test_update_palette_details_displays_usage_when_indexed_images_exist(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+    window.current_palette = np.zeros((256, 3), dtype=np.uint8)
+    window.current_palette[42] = np.array([255, 0, 0], dtype=np.uint8)
+    window.indexed_images = {
+        "road.bmp": np.array([[42, 1], [42, 2]], dtype=np.uint8),
+        "grass.bmp": np.array([[42, 3]], dtype=np.uint8),
+    }
+
+    window._update_palette_details(42)
+
+    text = window.palette_details_label.text()
+    assert "Usage: 3 pixels" in text
+    assert "60.00% of indexed pixels" in text

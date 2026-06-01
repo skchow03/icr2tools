@@ -97,10 +97,19 @@ def visualize_palette(
     palette_array: np.ndarray,
     tile_size: int = 16,
     selected_index: int | None = None,
+    usage_counts: np.ndarray | None = None,
 ) -> QtGui.QImage:
     palette = np.asarray(palette_array, dtype=np.uint8)
     if palette.shape != (256, 3):
         raise ValueError("palette_array must be shape (256, 3)")
+
+    counts = None
+    max_count = 0
+    if usage_counts is not None:
+        counts = np.asarray(usage_counts, dtype=np.int64)
+        if counts.shape != (256,):
+            raise ValueError("usage_counts must be shape (256,)")
+        max_count = int(counts.max(initial=0))
 
     size = 16 * tile_size
     image = QtGui.QImage(size, size, QtGui.QImage.Format_RGB888)
@@ -108,7 +117,21 @@ def visualize_palette(
     for i, (r, g, b) in enumerate(palette):
         x = (i % 16) * tile_size
         y = (i // 16) * tile_size
-        painter.fillRect(x, y, tile_size, tile_size, QtGui.QColor(int(r), int(g), int(b)))
+        count = int(counts[i]) if counts is not None else 0
+        if counts is not None and count == 0:
+            fill_color = QtGui.QColor(int(r) // 3, int(g) // 3, int(b) // 3)
+        else:
+            fill_color = QtGui.QColor(int(r), int(g), int(b))
+        painter.fillRect(x, y, tile_size, tile_size, fill_color)
+        if counts is not None and count > 0 and max_count > 0:
+            bar_width = max(1, int(round((tile_size - 2) * count / max_count)))
+            painter.fillRect(
+                x + 1,
+                y + tile_size - 3,
+                bar_width,
+                2,
+                QtGui.QColor(255, 255, 255),
+            )
         if 176 <= i <= 245:
             pen = QtGui.QPen(QtGui.QColor(255, 255, 255) if i < 244 else QtGui.QColor(0, 0, 0))
             pen.setWidth(1)
