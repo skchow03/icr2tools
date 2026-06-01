@@ -27,11 +27,13 @@ def _get_optimizer_class():
 
 class TextureBudgetItemWidget(QtWidgets.QWidget):
     budget_changed = QtCore.pyqtSignal(str, int)
+    required_unique_changed = QtCore.pyqtSignal(str, int)
 
     def __init__(
         self,
         texture_name: str,
         initial_budget: int,
+        required_unique_colors: int,
         unique_color_count: int,
         paletted_unique_color_count: int | None = None,
         parent: QtWidgets.QWidget | None = None,
@@ -62,12 +64,33 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
             "Per-texture color budget: maximum optimized palette entries this texture can claim."
         )
         self.spinbox.valueChanged.connect(self._emit_change)
+        self.required_spinbox = QtWidgets.QSpinBox()
+        max_required = min(OPTIMIZED_SLOTS, max(0, unique_color_count))
+        self.required_spinbox.setRange(0, max_required)
+        self.required_spinbox.setValue(min(max_required, max(0, required_unique_colors)))
+        self.required_spinbox.setToolTip(
+            "Required paletted unique colors: the optimizer reserves representative "
+            "colors to try to make the quantized texture use at least this many "
+            "palette indices."
+        )
+        self.required_spinbox.valueChanged.connect(self._emit_required_change)
+        controls_layout = QtWidgets.QGridLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setHorizontalSpacing(4)
+        controls_layout.setVerticalSpacing(2)
+        controls_layout.addWidget(QtWidgets.QLabel("Budget"), 0, 0)
+        controls_layout.addWidget(self.spinbox, 0, 1)
+        controls_layout.addWidget(QtWidgets.QLabel("Required"), 1, 0)
+        controls_layout.addWidget(self.required_spinbox, 1, 1)
         layout.addWidget(label, 1)
         layout.addLayout(color_counts_layout)
-        layout.addWidget(self.spinbox)
+        layout.addLayout(controls_layout)
 
     def _emit_change(self, value: int) -> None:
         self.budget_changed.emit(self.texture_name, int(value))
+
+    def _emit_required_change(self, value: int) -> None:
+        self.required_unique_changed.emit(self.texture_name, int(value))
 
 
 class PannableGraphicsView(QtWidgets.QGraphicsView):
@@ -217,6 +240,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.texture_images: dict[str, np.ndarray] = {}
         self.texture_color_counts: dict[str, int] = {}
         self.per_texture_budget: dict[str, int] = {}
+        self.per_texture_required_unique_colors: dict[str, int] = {}
         self.current_palette = np.zeros((256, 3), dtype=np.uint8)
         self.quantized_images: dict[str, np.ndarray] = {}
         self.indexed_images: dict[str, np.ndarray] = {}
@@ -684,7 +708,12 @@ class MainWindow(QtWidgets.QMainWindow):
         preset_name = name.strip()
         values = self._collect_preset_values()
         if self.loaded_texture_folder is not None:
-            values["texture_budgets"] = ",".join(f"{k}:{v}" for k, v in sorted(self.per_texture_budget.items()))
+            values["texture_budgets"] = ",".join(
+                f"{k}:{v}" for k, v in sorted(self.per_texture_budget.items())
+            )
+            values["texture_required_unique_colors"] = ",".join(
+                f"{k}:{v}" for k, v in sorted(self.per_texture_required_unique_colors.items())
+            )
         self.settings.set_preset_for_tool("sunny_optimizer", preset_name, values)
         self.settings.set_default_preset("sunny_optimizer", preset_name)
         self._save_settings()
@@ -776,6 +805,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.texture_images.clear()
         self.texture_color_counts.clear()
         self.per_texture_budget.clear()
+        self.per_texture_required_unique_colors.clear()
         self.quantized_images.clear()
         self.indexed_images.clear()
         self.selected_palette_index = None
@@ -792,6 +822,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         equal_budget = max(1, OPTIMIZED_SLOTS // len(image_files))
         saved_budgets = self.settings.budgets_for_folder(resolved_folder)
+        saved_required_counts = self.settings.required_unique_colors_for_folder(resolved_folder)
         for path in image_files:
             with Image.open(path) as img:
                 img = img.convert("RGB")
@@ -802,6 +833,11 @@ class MainWindow(QtWidgets.QMainWindow):
             budget = saved_budgets.get(path.name, equal_budget)
             budget = max(1, min(OPTIMIZED_SLOTS, int(budget)))
             self.per_texture_budget[path.name] = budget
+            max_required = min(OPTIMIZED_SLOTS, self.texture_color_counts[path.name])
+            required_count = saved_required_counts.get(path.name, 0)
+            self.per_texture_required_unique_colors[path.name] = max(
+                0, min(max_required, int(required_count))
+            )
         self._refresh_texture_list()
 
         self.loaded_texture_folder = resolved_folder
@@ -813,6 +849,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
         self._persist_current_folder_budgets()
+        if self.sort_combo.currentText() == self.SORT_BY_BUDGET:
+            self._refresh_texture_list()
+
+    def _on_required_unique_changed(self, texture_name: str, required_count: int) -> None:
+        self.per_texture_required_unique_colors[texture_name] = required_count
+        self._persist_current_folder_budgets()
+        self.quantized_images.clear()
+        self.indexed_images.clear()
+        self.selected_palette_index = None
+        self._update_action_states()
         if self.sort_combo.currentText() == self.SORT_BY_BUDGET:
             self._refresh_texture_list()
 
@@ -846,15 +892,19 @@ class MainWindow(QtWidgets.QMainWindow):
             widget = TextureBudgetItemWidget(
                 texture_name,
                 self.per_texture_budget[texture_name],
+                self.per_texture_required_unique_colors.get(texture_name, 0),
                 self.texture_color_counts.get(texture_name, 0),
                 paletted_unique_color_count,
             )
             widget.budget_changed.connect(self._on_budget_changed)
+            widget.required_unique_changed.connect(self._on_required_unique_changed)
             paletted_tooltip = (
                 str(paletted_unique_color_count) if paletted_unique_color_count is not None else "—"
             )
             tooltip = (
                 f"Original unique colors: {self.texture_color_counts.get(texture_name, 0)}\n"
+                "Required paletted unique colors: "
+                f"{self.per_texture_required_unique_colors.get(texture_name, 0) or '—'}\n"
                 f"Paletted unique colors: {paletted_tooltip}"
             )
             item.setToolTip(tooltip)
@@ -968,6 +1018,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.loaded_texture_folder is None:
             return
         self.settings.set_budgets_for_folder(self.loaded_texture_folder, self.per_texture_budget)
+        self.settings.set_required_unique_colors_for_folder(
+            self.loaded_texture_folder, self.per_texture_required_unique_colors
+        )
         self._save_settings()
 
     def _update_action_states(self) -> None:
@@ -1085,11 +1138,14 @@ class MainWindow(QtWidgets.QMainWindow):
         safe_name = html.escape(texture_name) if texture_name else "—"
         budget = self.per_texture_budget.get(texture_name)
         budget_text = str(budget) if budget is not None else "—"
+        required = self.per_texture_required_unique_colors.get(texture_name, 0)
+        required_text = str(required) if required else "—"
         indexed = self.indexed_images.get(texture_name)
         if indexed is None or indexed.size == 0:
             self.texture_diagnostics_label.setText(
                 f"<b>Diagnostics for {safe_name}</b><br>"
                 f"Configured budget: {budget_text}<br>"
+                f"Required paletted unique colors: {required_text}<br>"
                 "Indexed preview: —<br>"
                 "Optimized range 176-245: —<br>"
                 "Top palette indices: —"
@@ -1102,6 +1158,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.texture_diagnostics_label.setText(
                 f"<b>Diagnostics for {safe_name}</b><br>"
                 f"Configured budget: {budget_text}<br>"
+                f"Required paletted unique colors: {required_text}<br>"
                 "Indexed preview: no valid palette indices<br>"
                 "Optimized range 176-245: 0 indices, 0 pixels<br>"
                 "Top palette indices: —"
@@ -1121,9 +1178,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self._format_palette_index_link(index, int(counts[index])) for index in top_indices
         ) or "—"
 
+        target_status = "—"
+        if required:
+            target_status = (
+                "met"
+                if len(used_indices) >= required
+                else f"short by {required - len(used_indices)}"
+            )
+
         self.texture_diagnostics_label.setText(
             f"<b>Diagnostics for {safe_name}</b><br>"
             f"Configured budget: {budget_text}<br>"
+            f"Required paletted unique colors: {required_text} ({target_status})<br>"
             f"Unique palette indices used: {len(used_indices)}<br>"
             f"Optimized range {opt_start}-{opt_end}: {len(optimized_used)} indices, "
             f"{int(optimized_counts.sum())} pixels<br>"
@@ -1307,6 +1373,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 rgb_images=self.texture_images,
                 per_texture_color_budget=self.per_texture_budget,
                 fixed_palette=fixed_palette,
+                per_texture_required_unique_colors=self.per_texture_required_unique_colors,
                 dirt_present=self.dirt_checkbox.isChecked(),
                 progress_callback=make_phase_progress(3, 30, 85),
             )

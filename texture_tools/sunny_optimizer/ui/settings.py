@@ -15,6 +15,7 @@ class SunnyOptimizerSettings:
         self.last_mip_target_folder: str = ""
         self.last_mip_palette: str = ""
         self.color_budgets: dict[str, dict[str, int]] = {}
+        self.required_unique_colors: dict[str, dict[str, int]] = {}
         self.tool_presets: dict[str, dict[str, dict[str, str]]] = {}
         self.default_presets: dict[str, str] = {}
         self.recent_paths: dict[str, list[str]] = {}
@@ -55,6 +56,24 @@ class SunnyOptimizerSettings:
             if folder_budgets:
                 budgets[folder] = folder_budgets
         self.color_budgets = budgets
+
+        required_counts: dict[str, dict[str, int]] = {}
+        for section in parser.sections():
+            if not section.startswith("required_unique_colors:"):
+                continue
+            folder = section[len("required_unique_colors:") :]
+            folder_required_counts: dict[str, int] = {}
+            for texture_name, raw_count in parser.items(section):
+                try:
+                    count = int(raw_count)
+                except ValueError:
+                    continue
+                if count < 0:
+                    continue
+                folder_required_counts[texture_name] = count
+            if folder_required_counts:
+                required_counts[folder] = folder_required_counts
+        self.required_unique_colors = required_counts
 
         presets: dict[str, dict[str, dict[str, str]]] = {}
         for section in parser.sections():
@@ -101,6 +120,15 @@ class SunnyOptimizerSettings:
                 continue
             parser[f"budgets:{folder}"] = {name: str(value) for name, value in sorted(budgets.items())}
 
+        for folder, required_counts in sorted(self.required_unique_colors.items()):
+            values = {
+                name: str(value)
+                for name, value in sorted(required_counts.items())
+                if value > 0
+            }
+            if values:
+                parser[f"required_unique_colors:{folder}"] = values
+
         for tool_name, presets in sorted(self.tool_presets.items()):
             if not presets:
                 continue
@@ -127,6 +155,16 @@ class SunnyOptimizerSettings:
 
     def set_budgets_for_folder(self, folder: Path, budgets: dict[str, int]) -> None:
         self.color_budgets[str(folder.resolve())] = dict(budgets)
+
+    def required_unique_colors_for_folder(self, folder: Path) -> dict[str, int]:
+        return dict(self.required_unique_colors.get(str(folder.resolve()), {}))
+
+    def set_required_unique_colors_for_folder(
+        self, folder: Path, values: dict[str, int]
+    ) -> None:
+        self.required_unique_colors[str(folder.resolve())] = {
+            name: int(value) for name, value in values.items() if int(value) > 0
+        }
 
     def presets_for_tool(self, tool_name: str) -> dict[str, dict[str, str]]:
         return {name: dict(values) for name, values in self.tool_presets.get(tool_name, {}).items()}
