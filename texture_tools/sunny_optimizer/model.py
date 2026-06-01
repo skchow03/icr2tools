@@ -136,6 +136,12 @@ class OptimizationResult:
     quantized_images: dict[str, np.ndarray]
 
 
+@dataclass
+class Stage1Centroids:
+    all_centroids: np.ndarray
+    required_centroids: np.ndarray
+
+
 class SunnyPaletteOptimizer:
     def __init__(
         self,
@@ -144,12 +150,14 @@ class SunnyPaletteOptimizer:
         fixed_palette: np.ndarray,
         dirt_present: bool,
         *,
+        per_texture_required_unique_colors: Dict[str, int] | None = None,
         random_state: int = 7,
         max_texture_samples: int = 50_000,
         progress_callback: ProgressCallback | None = None,
     ) -> None:
         self.rgb_images = rgb_images
         self.per_texture_color_budget = per_texture_color_budget
+        self.per_texture_required_unique_colors = per_texture_required_unique_colors or {}
         self.fixed_palette = np.asarray(fixed_palette, dtype=np.uint8)
         self.dirt_present = dirt_present
         self.random_state = random_state
@@ -180,12 +188,15 @@ class SunnyPaletteOptimizer:
         idx = rng.choice(flat.shape[0], size=self.max_texture_samples, replace=False)
         return flat[idx]
 
-    def _stage1_centroids(self) -> np.ndarray:
+    def _stage1_centroids(self) -> Stage1Centroids:
         all_centroids: list[np.ndarray] = []
+        required_centroids: list[np.ndarray] = []
         texture_items = list(self.rgb_images.items())
         texture_total = len(texture_items)
         for texture_index, (name, image) in enumerate(texture_items):
             budget = max(1, int(self.per_texture_color_budget.get(name, 1)))
+            required = max(0, int(self.per_texture_required_unique_colors.get(name, 0)))
+            cluster_count = max(budget, required, 1)
             self._emit_progress(
                 f"Sampling {name} ({texture_index + 1}/{texture_total})",
                 0.02 + (0.18 * texture_index / max(1, texture_total)),
@@ -196,8 +207,8 @@ class SunnyPaletteOptimizer:
                 0.02 + (0.18 * (texture_index + 0.35) / max(1, texture_total)),
             )
             sampled_lab = self._rgb_to_lab(sampled_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
-            if sampled_lab.shape[0] < budget:
-                budget = sampled_lab.shape[0]
+            if sampled_lab.shape[0] < cluster_count:
+                cluster_count = sampled_lab.shape[0]
             texture_start = 0.20 + (0.55 * texture_index / max(1, texture_total))
             texture_span = 0.55 / max(1, texture_total)
 
@@ -210,42 +221,74 @@ class SunnyPaletteOptimizer:
             ) -> None:
                 self._emit_progress(message, start + (span * fraction))
 
-            all_centroids.append(
-                _kmeans(
-                    sampled_lab,
-                    budget,
-                    n_init=5,
-                    random_state=self.random_state,
-                    progress_callback=texture_progress,
-                    progress_label=f"Clustering {name}",
-                )
+            texture_centroids = _kmeans(
+                sampled_lab,
+                cluster_count,
+                n_init=5,
+                random_state=self.random_state,
+                progress_callback=texture_progress,
+                progress_label=f"Clustering {name}",
             )
+            all_centroids.append(texture_centroids)
+            if required > 0:
+                required_centroids.append(
+                    texture_centroids[: min(required, texture_centroids.shape[0])]
+                )
             self._emit_progress(
                 f"Finished {name} ({texture_index + 1}/{texture_total})",
                 0.20 + (0.55 * (texture_index + 1) / max(1, texture_total)),
             )
         if not all_centroids:
             raise ValueError("No textures available for optimization")
-        return np.vstack(all_centroids)
+        required_array = (
+            np.vstack(required_centroids)
+            if required_centroids
+            else np.empty((0, 3), dtype=np.float64)
+        )
+        return Stage1Centroids(np.vstack(all_centroids), required_array)
 
     def _final_optimized_lab(
-        self, centroids: np.ndarray, slot_count: int
+        self, centroids: Stage1Centroids, slot_count: int
     ) -> np.ndarray:
-        n_clusters = min(slot_count, centroids.shape[0])
+        all_centroids = centroids.all_centroids
+        required_centroids = centroids.required_centroids
 
         def final_progress(message: str, fraction: float) -> None:
             self._emit_progress(message, 0.78 + (0.16 * fraction))
 
-        final_centers = _kmeans(
-            centroids,
-            n_clusters,
-            n_init=8,
-            random_state=self.random_state,
-            progress_callback=final_progress,
-            progress_label="Merging texture colors",
-        )
-        if n_clusters < slot_count:
-            repeats = np.tile(final_centers[-1:], (slot_count - n_clusters, 1))
+        if required_centroids.shape[0] >= slot_count:
+            final_progress("Prioritizing required texture colors", 0.0)
+            final_centers = _kmeans(
+                required_centroids,
+                slot_count,
+                n_init=8,
+                random_state=self.random_state,
+                progress_callback=final_progress,
+                progress_label="Prioritizing required texture colors",
+            )
+            return final_centers[:slot_count]
+
+        reserved_count = required_centroids.shape[0]
+        remaining_slots = slot_count - reserved_count
+        if remaining_slots > 0:
+            n_clusters = min(remaining_slots, all_centroids.shape[0])
+            merged_centers = _kmeans(
+                all_centroids,
+                n_clusters,
+                n_init=8,
+                random_state=self.random_state,
+                progress_callback=final_progress,
+                progress_label="Merging texture colors",
+            )
+            final_centers = (
+                np.vstack([required_centroids, merged_centers])
+                if reserved_count
+                else merged_centers
+            )
+        else:
+            final_centers = required_centroids
+        if final_centers.shape[0] < slot_count:
+            repeats = np.tile(final_centers[-1:], (slot_count - final_centers.shape[0], 1))
             final_centers = np.vstack([final_centers, repeats])
         return final_centers[:slot_count]
 
