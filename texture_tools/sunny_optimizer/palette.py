@@ -118,10 +118,7 @@ def visualize_palette(
         x = (i % 16) * tile_size
         y = (i // 16) * tile_size
         count = int(counts[i]) if counts is not None else 0
-        if counts is not None and count == 0:
-            fill_color = QtGui.QColor(int(r) // 3, int(g) // 3, int(b) // 3)
-        else:
-            fill_color = QtGui.QColor(int(r), int(g), int(b))
+        fill_color = QtGui.QColor(int(r), int(g), int(b))
         painter.fillRect(x, y, tile_size, tile_size, fill_color)
         if counts is not None and count > 0 and max_count > 0:
             bar_width = max(1, int(round((tile_size - 2) * count / max_count)))
