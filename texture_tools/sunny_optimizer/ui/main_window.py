@@ -179,6 +179,17 @@ class ZoomableImageLabel(QtWidgets.QWidget):
 
 class ClickablePaletteLabel(QtWidgets.QLabel):
     clicked = QtCore.pyqtSignal(QtCore.QPoint)
+    resized = QtCore.pyqtSignal()
+
+    def sizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(256, 256)
+
+    def minimumSizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(96, 96)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.resized.emit()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.LeftButton:
@@ -552,10 +563,14 @@ class MainWindow(QtWidgets.QMainWindow):
         right_panel = QtWidgets.QVBoxLayout()
         right_panel.setSpacing(10)
         self.palette_label = ClickablePaletteLabel()
-        self.palette_label.setMinimumSize(256, 256)
+        self.palette_label.setMinimumSize(96, 96)
+        self.palette_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred
+        )
         self.palette_label.setAlignment(QtCore.Qt.AlignCenter)
         self.palette_label.setStyleSheet("background: #202020; padding: 2px;")
         self.palette_label.clicked.connect(self._on_palette_clicked)
+        self.palette_label.resized.connect(self._refresh_palette_view)
         self.palette_details_label = QtWidgets.QLabel(
             "Palette selection: click a palette color tile to inspect index, hex, and RGB values."
         )
