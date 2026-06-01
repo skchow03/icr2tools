@@ -5,10 +5,7 @@ from pathlib import Path
 from typing import Dict
 
 import numpy as np
-from sklearn.cluster import KMeans
-from skimage import color
-from skimage.util import img_as_float
-
+from .color_utils import lab_to_rgb_u8, rgb_to_lab
 from .quantizer import Quantizer
 from .palette import load_sunny_palette, save_palette
 
@@ -17,6 +14,91 @@ OPTIMIZED_END = 245
 OPTIMIZED_SLOTS = OPTIMIZED_END - OPTIMIZED_START + 1
 BROWN_BASE_INDEX = 244
 BROWN_DARK_INDEX = 245
+
+
+def _nearest_centroid_indices(
+    samples: np.ndarray, centers: np.ndarray, chunk_size: int = 16_384
+) -> np.ndarray:
+    labels = np.empty(samples.shape[0], dtype=np.intp)
+    for start in range(0, samples.shape[0], chunk_size):
+        chunk = samples[start : start + chunk_size]
+        diff = chunk[:, None, :] - centers[None, :, :]
+        distances = np.einsum("ijk,ijk->ij", diff, diff, optimize=True)
+        labels[start : start + chunk.shape[0]] = np.argmin(distances, axis=1)
+    return labels
+
+
+def _initial_centers_kmeans_plus_plus(
+    samples: np.ndarray, n_clusters: int, rng: np.random.Generator
+) -> np.ndarray:
+    centers = np.empty((n_clusters, samples.shape[1]), dtype=np.float64)
+    first = int(rng.integers(samples.shape[0]))
+    centers[0] = samples[first]
+    closest_dist_sq = np.sum((samples - centers[0]) ** 2, axis=1)
+
+    for i in range(1, n_clusters):
+        total = float(np.sum(closest_dist_sq))
+        if total <= 0.0:
+            centers[i:] = centers[i - 1]
+            break
+        next_idx = int(rng.choice(samples.shape[0], p=closest_dist_sq / total))
+        centers[i] = samples[next_idx]
+        new_dist_sq = np.sum((samples - centers[i]) ** 2, axis=1)
+        closest_dist_sq = np.minimum(closest_dist_sq, new_dist_sq)
+    return centers
+
+
+def _kmeans(
+    samples: np.ndarray,
+    n_clusters: int,
+    *,
+    n_init: int,
+    random_state: int,
+    max_iter: int = 100,
+) -> np.ndarray:
+    samples = np.asarray(samples, dtype=np.float64)
+    if samples.ndim != 2 or samples.shape[1] != 3:
+        raise ValueError("samples must have shape (n_samples, 3)")
+    if n_clusters < 1:
+        raise ValueError("n_clusters must be at least 1")
+    if samples.shape[0] < n_clusters:
+        raise ValueError("n_clusters cannot exceed the number of samples")
+    if n_clusters == 1:
+        return np.mean(samples, axis=0, keepdims=True)
+
+    best_centers: np.ndarray | None = None
+    best_inertia = np.inf
+    seed_sequence = np.random.SeedSequence(random_state)
+
+    for child_seed in seed_sequence.spawn(max(1, n_init)):
+        rng = np.random.default_rng(child_seed)
+        centers = _initial_centers_kmeans_plus_plus(samples, n_clusters, rng)
+        labels = np.zeros(samples.shape[0], dtype=np.intp)
+
+        for _ in range(max_iter):
+            labels = _nearest_centroid_indices(samples, centers)
+            new_centers = centers.copy()
+            for cluster in range(n_clusters):
+                members = samples[labels == cluster]
+                if members.size:
+                    new_centers[cluster] = np.mean(members, axis=0)
+                else:
+                    distances = np.sum((samples - centers[labels]) ** 2, axis=1)
+                    new_centers[cluster] = samples[int(np.argmax(distances))]
+            if np.allclose(new_centers, centers, rtol=1e-5, atol=1e-5):
+                centers = new_centers
+                break
+            centers = new_centers
+
+        labels = _nearest_centroid_indices(samples, centers)
+        inertia = float(np.sum((samples - centers[labels]) ** 2))
+        if inertia < best_inertia:
+            best_inertia = inertia
+            best_centers = centers.copy()
+
+    if best_centers is None:
+        raise RuntimeError("k-means failed to initialize")
+    return best_centers
 
 
 def optimized_slot_count(dirt_present: bool) -> int:
@@ -53,14 +135,11 @@ class SunnyPaletteOptimizer:
 
     @staticmethod
     def _rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
-        rgb_float = img_as_float(rgb.astype(np.uint8))
-        return color.rgb2lab(rgb_float)
+        return rgb_to_lab(rgb.astype(np.uint8))
 
     @staticmethod
     def _lab_to_rgb_u8(lab: np.ndarray) -> np.ndarray:
-        rgb = color.lab2rgb(lab)
-        rgb = np.clip(np.round(rgb * 255.0), 0, 255)
-        return rgb.astype(np.uint8)
+        return lab_to_rgb_u8(lab)
 
     def _sample_pixels(self, rgb_image: np.ndarray) -> np.ndarray:
         flat = rgb_image.reshape(-1, 3)
@@ -78,24 +157,28 @@ class SunnyPaletteOptimizer:
             sampled_lab = self._rgb_to_lab(sampled_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
             if sampled_lab.shape[0] < budget:
                 budget = sampled_lab.shape[0]
-            kmeans = KMeans(n_clusters=budget, n_init=5, random_state=self.random_state)
-            kmeans.fit(sampled_lab)
-            all_centroids.append(kmeans.cluster_centers_)
+            all_centroids.append(
+                _kmeans(sampled_lab, budget, n_init=5, random_state=self.random_state)
+            )
         if not all_centroids:
             raise ValueError("No textures available for optimization")
         return np.vstack(all_centroids)
 
-    def _final_optimized_lab(self, centroids: np.ndarray, slot_count: int) -> np.ndarray:
+    def _final_optimized_lab(
+        self, centroids: np.ndarray, slot_count: int
+    ) -> np.ndarray:
         n_clusters = min(slot_count, centroids.shape[0])
-        kmeans = KMeans(n_clusters=n_clusters, n_init=8, random_state=self.random_state)
-        kmeans.fit(centroids)
-        final_centers = kmeans.cluster_centers_
+        final_centers = _kmeans(
+            centroids, n_clusters, n_init=8, random_state=self.random_state
+        )
         if n_clusters < slot_count:
             repeats = np.tile(final_centers[-1:], (slot_count - n_clusters, 1))
             final_centers = np.vstack([final_centers, repeats])
         return final_centers[:slot_count]
 
-    def _reorder_optimized_colors(self, optimized_rgb: np.ndarray, slot_count: int) -> np.ndarray:
+    def _reorder_optimized_colors(
+        self, optimized_rgb: np.ndarray, slot_count: int
+    ) -> np.ndarray:
         """Sort optimized colors into a more coherent progression.
 
         Neutrals are grouped first by lightness; chromatic colors are grouped by hue,
@@ -124,7 +207,11 @@ class SunnyPaletteOptimizer:
         candidates: list[np.ndarray] = []
         for image in self.rgb_images.values():
             flat = image.reshape(-1, 3)
-            mask = (flat[:, 0] > flat[:, 1]) & (flat[:, 1] > flat[:, 2]) & (flat[:, 0] < 200)
+            mask = (
+                (flat[:, 0] > flat[:, 1])
+                & (flat[:, 1] > flat[:, 2])
+                & (flat[:, 0] < 200)
+            )
             filtered = flat[mask]
             if filtered.size:
                 candidates.append(filtered)
@@ -132,12 +219,14 @@ class SunnyPaletteOptimizer:
             pixels = np.vstack(candidates)
             if pixels.shape[0] > self.max_texture_samples:
                 rng = np.random.default_rng(self.random_state)
-                idx = rng.choice(pixels.shape[0], size=self.max_texture_samples, replace=False)
+                idx = rng.choice(
+                    pixels.shape[0], size=self.max_texture_samples, replace=False
+                )
                 pixels = pixels[idx]
             lab_pixels = self._rgb_to_lab(pixels.reshape(-1, 1, 3)).reshape(-1, 3)
-            kmeans = KMeans(n_clusters=1, n_init=5, random_state=self.random_state)
-            kmeans.fit(lab_pixels)
-            base_lab = kmeans.cluster_centers_[0]
+            base_lab = _kmeans(lab_pixels, 1, n_init=5, random_state=self.random_state)[
+                0
+            ]
         else:
             fallback = np.array([[120, 90, 55]], dtype=np.uint8)
             base_lab = self._rgb_to_lab(fallback.reshape(-1, 1, 3)).reshape(-1, 3)[0]
@@ -165,8 +254,13 @@ class SunnyPaletteOptimizer:
             palette[BROWN_DARK_INDEX] = brown_dark
         return palette
 
-    def compute_quantized_images(self, full_palette: np.ndarray | None = None) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-        palette = np.asarray(full_palette if full_palette is not None else self.compute_palette(), dtype=np.uint8)
+    def compute_quantized_images(
+        self, full_palette: np.ndarray | None = None
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        palette = np.asarray(
+            full_palette if full_palette is not None else self.compute_palette(),
+            dtype=np.uint8,
+        )
         quantizer = Quantizer(palette)
         indexed: dict[str, np.ndarray] = {}
         quantized: dict[str, np.ndarray] = {}
@@ -197,7 +291,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prototype SUNNY palette optimizer")
     parser.add_argument("image_folder", type=Path)
     parser.add_argument("input_palette", type=Path, help="Path to existing sunny.pcx")
-    parser.add_argument("output_palette", type=Path, nargs="?", default=Path("sunny_optimized.pcx"))
+    parser.add_argument(
+        "output_palette", type=Path, nargs="?", default=Path("sunny_optimized.pcx")
+    )
     parser.add_argument("--dirt-present", action="store_true")
     args = parser.parse_args()
 
