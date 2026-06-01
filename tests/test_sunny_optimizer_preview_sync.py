@@ -43,3 +43,18 @@ def test_sync_preview_views_copies_zoom_and_pan(qapp) -> None:
     assert target_view.transform().m22() == pytest.approx(source_view.transform().m22())
     assert target_view.horizontalScrollBar().value() == source_view.horizontalScrollBar().value()
     assert target_view.verticalScrollBar().value() == source_view.verticalScrollBar().value()
+
+
+def test_append_optimization_log_shows_elapsed_percent_and_message(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+
+    assert window.optimization_log.toPlainText() == ""
+    assert window.optimization_log.placeholderText() == "Optimization log will appear here"
+
+    window._append_optimization_log("Preparing optimizer", 30, 1.25)
+
+    visible_log = window.optimization_log.toPlainText()
+    assert "Preparing optimizer" in visible_log
+    assert "30%" in visible_log
+    assert "1.2s" in visible_log

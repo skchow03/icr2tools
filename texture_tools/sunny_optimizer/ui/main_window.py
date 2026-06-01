@@ -551,6 +551,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compute_progress.setValue(0)
         self.compute_progress.setFormat("Idle")
         self.compute_progress.setTextVisible(True)
+        self.optimization_log = QtWidgets.QPlainTextEdit()
+        self.optimization_log.setReadOnly(True)
+        self.optimization_log.setPlaceholderText("Optimization log will appear here")
+        self.optimization_log.setMaximumBlockCount(200)
+        self.optimization_log.setMinimumHeight(120)
         palette_source_card = QtWidgets.QFrame()
         palette_source_card.setObjectName("sectionCard")
         palette_source_layout = QtWidgets.QVBoxLayout(palette_source_card)
@@ -583,6 +588,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_panel.addWidget(self.compute_btn)
         right_panel.addWidget(self.compute_hint_label)
         right_panel.addWidget(self.compute_progress)
+        right_panel.addWidget(QtWidgets.QLabel("Optimization log"))
+        right_panel.addWidget(self.optimization_log)
         right_panel.addWidget(self.save_btn)
         right_panel.addWidget(self.save_hint_label)
         right_panel.addStretch(1)
@@ -1083,6 +1090,15 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             self._syncing_previews = False
 
+    def _append_optimization_log(self, message: str, percent: int, elapsed: float) -> None:
+        clamped_percent = min(100, max(0, int(percent)))
+        self.optimization_log.appendPlainText(
+            f"[{elapsed:6.1f}s | {clamped_percent:3d}%] {message}"
+        )
+        self.optimization_log.verticalScrollBar().setValue(
+            self.optimization_log.verticalScrollBar().maximum()
+        )
+
     def compute_palette(self) -> None:
         if not self.texture_images:
             self._set_inline_status(
@@ -1108,6 +1124,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         step_total = 4
         started_at = time.perf_counter()
+        logged_messages: set[str] = set()
+        self.optimization_log.clear()
 
         def set_progress(step_num: int, message: str, percent: int) -> None:
             elapsed = time.perf_counter() - started_at
@@ -1116,6 +1134,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.compute_progress.setFormat(
                 f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)"
             )
+            if message and message not in logged_messages:
+                logged_messages.add(message)
+                self._append_optimization_log(message, clamped_percent, elapsed)
             QtWidgets.QApplication.processEvents()
 
         def make_phase_progress(
