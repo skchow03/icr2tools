@@ -1094,12 +1094,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def set_progress(step_num: int, message: str, percent: int) -> None:
             elapsed = time.perf_counter() - started_at
-            self.compute_progress.setValue(percent)
-            self.compute_progress.setFormat(f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)")
+            clamped_percent = min(100, max(0, int(percent)))
+            self.compute_progress.setValue(clamped_percent)
+            self.compute_progress.setFormat(
+                f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)"
+            )
+            QtWidgets.QApplication.processEvents()
+
+        def make_phase_progress(
+            step_num: int,
+            start_percent: int,
+            end_percent: int,
+        ):
+            span = end_percent - start_percent
+
+            def update(message: str, fraction: float) -> None:
+                percent = start_percent + round(span * min(1.0, max(0.0, fraction)))
+                set_progress(step_num, message, percent)
+
+            return update
 
         self.compute_btn.setEnabled(False)
         set_progress(1, "Loading base palette", 10)
-        QtWidgets.QApplication.processEvents()
 
         try:
             fixed_palette = load_sunny_palette(palette_path)
@@ -1115,17 +1131,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 per_texture_color_budget=self.per_texture_budget,
                 fixed_palette=fixed_palette,
                 dirt_present=self.dirt_checkbox.isChecked(),
+                progress_callback=make_phase_progress(3, 30, 85),
             )
 
-            set_progress(3, "Computing optimized palette", 65)
-            QtWidgets.QApplication.processEvents()
+            set_progress(3, "Starting optimized palette computation", 30)
 
             self.current_palette = optimizer.compute_palette()
 
-            set_progress(4, "Building quantized previews", 90)
-            QtWidgets.QApplication.processEvents()
+            set_progress(4, "Building quantized previews", 85)
+            optimizer.progress_callback = make_phase_progress(4, 85, 98)
 
-            self.indexed_images, self.quantized_images = optimizer.compute_quantized_images(self.current_palette)
+            self.indexed_images, self.quantized_images = optimizer.compute_quantized_images(
+                self.current_palette
+            )
             self.selected_palette_index = None
         except Exception as exc:  # prototype surface
             self.compute_progress.setValue(0)

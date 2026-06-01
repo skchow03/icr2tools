@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
+from typing import Callable, Dict
 
 import numpy as np
 from .color_utils import lab_to_rgb_u8, rgb_to_lab
 from .quantizer import Quantizer
 from .palette import load_sunny_palette, save_palette
+
+ProgressCallback = Callable[[str, float], None]
 
 OPTIMIZED_START = 176
 OPTIMIZED_END = 245
@@ -55,6 +57,8 @@ def _kmeans(
     n_init: int,
     random_state: int,
     max_iter: int = 100,
+    progress_callback: ProgressCallback | None = None,
+    progress_label: str = "k-means",
 ) -> np.ndarray:
     samples = np.asarray(samples, dtype=np.float64)
     if samples.ndim != 2 or samples.shape[1] != 3:
@@ -64,18 +68,32 @@ def _kmeans(
     if samples.shape[0] < n_clusters:
         raise ValueError("n_clusters cannot exceed the number of samples")
     if n_clusters == 1:
+        if progress_callback is not None:
+            progress_callback(f"{progress_label}: averaging one cluster", 1.0)
         return np.mean(samples, axis=0, keepdims=True)
 
     best_centers: np.ndarray | None = None
     best_inertia = np.inf
     seed_sequence = np.random.SeedSequence(random_state)
 
-    for child_seed in seed_sequence.spawn(max(1, n_init)):
+    init_count = max(1, n_init)
+
+    def emit(init_index: int, iteration: int, message: str) -> None:
+        if progress_callback is None:
+            return
+        progress = min(
+            1.0,
+            max(0.0, (init_index + (iteration / max_iter)) / init_count),
+        )
+        progress_callback(f"{progress_label}: {message}", progress)
+
+    for init_index, child_seed in enumerate(seed_sequence.spawn(init_count)):
         rng = np.random.default_rng(child_seed)
+        emit(init_index, 0, f"initializing pass {init_index + 1}/{init_count}")
         centers = _initial_centers_kmeans_plus_plus(samples, n_clusters, rng)
         labels = np.zeros(samples.shape[0], dtype=np.intp)
 
-        for _ in range(max_iter):
+        for iteration in range(max_iter):
             labels = _nearest_centroid_indices(samples, centers)
             new_centers = centers.copy()
             for cluster in range(n_clusters):
@@ -85,11 +103,17 @@ def _kmeans(
                 else:
                     distances = np.sum((samples - centers[labels]) ** 2, axis=1)
                     new_centers[cluster] = samples[int(np.argmax(distances))]
+            emit(
+                init_index,
+                iteration + 1,
+                f"pass {init_index + 1}/{init_count}, iteration {iteration + 1}/{max_iter}",
+            )
             if np.allclose(new_centers, centers, rtol=1e-5, atol=1e-5):
                 centers = new_centers
                 break
             centers = new_centers
 
+        emit(init_index + 1, 0, f"scoring pass {init_index + 1}/{init_count}")
         labels = _nearest_centroid_indices(samples, centers)
         inertia = float(np.sum((samples - centers[labels]) ** 2))
         if inertia < best_inertia:
@@ -122,6 +146,7 @@ class SunnyPaletteOptimizer:
         *,
         random_state: int = 7,
         max_texture_samples: int = 50_000,
+        progress_callback: ProgressCallback | None = None,
     ) -> None:
         self.rgb_images = rgb_images
         self.per_texture_color_budget = per_texture_color_budget
@@ -129,6 +154,7 @@ class SunnyPaletteOptimizer:
         self.dirt_present = dirt_present
         self.random_state = random_state
         self.max_texture_samples = max_texture_samples
+        self.progress_callback = progress_callback
 
         if self.fixed_palette.shape != (256, 3):
             raise ValueError("fixed_palette must have shape (256, 3)")
@@ -141,6 +167,11 @@ class SunnyPaletteOptimizer:
     def _lab_to_rgb_u8(lab: np.ndarray) -> np.ndarray:
         return lab_to_rgb_u8(lab)
 
+    def _emit_progress(self, message: str, fraction: float) -> None:
+        if self.progress_callback is None:
+            return
+        self.progress_callback(message, min(1.0, max(0.0, fraction)))
+
     def _sample_pixels(self, rgb_image: np.ndarray) -> np.ndarray:
         flat = rgb_image.reshape(-1, 3)
         if flat.shape[0] <= self.max_texture_samples:
@@ -151,14 +182,47 @@ class SunnyPaletteOptimizer:
 
     def _stage1_centroids(self) -> np.ndarray:
         all_centroids: list[np.ndarray] = []
-        for name, image in self.rgb_images.items():
+        texture_items = list(self.rgb_images.items())
+        texture_total = len(texture_items)
+        for texture_index, (name, image) in enumerate(texture_items):
             budget = max(1, int(self.per_texture_color_budget.get(name, 1)))
+            self._emit_progress(
+                f"Sampling {name} ({texture_index + 1}/{texture_total})",
+                0.02 + (0.18 * texture_index / max(1, texture_total)),
+            )
             sampled_rgb = self._sample_pixels(image)
+            self._emit_progress(
+                f"Converting {name} to Lab ({texture_index + 1}/{texture_total})",
+                0.02 + (0.18 * (texture_index + 0.35) / max(1, texture_total)),
+            )
             sampled_lab = self._rgb_to_lab(sampled_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
             if sampled_lab.shape[0] < budget:
                 budget = sampled_lab.shape[0]
+            texture_start = 0.20 + (0.55 * texture_index / max(1, texture_total))
+            texture_span = 0.55 / max(1, texture_total)
+
+            def texture_progress(
+                message: str,
+                fraction: float,
+                *,
+                start: float = texture_start,
+                span: float = texture_span,
+            ) -> None:
+                self._emit_progress(message, start + (span * fraction))
+
             all_centroids.append(
-                _kmeans(sampled_lab, budget, n_init=5, random_state=self.random_state)
+                _kmeans(
+                    sampled_lab,
+                    budget,
+                    n_init=5,
+                    random_state=self.random_state,
+                    progress_callback=texture_progress,
+                    progress_label=f"Clustering {name}",
+                )
+            )
+            self._emit_progress(
+                f"Finished {name} ({texture_index + 1}/{texture_total})",
+                0.20 + (0.55 * (texture_index + 1) / max(1, texture_total)),
             )
         if not all_centroids:
             raise ValueError("No textures available for optimization")
@@ -168,8 +232,17 @@ class SunnyPaletteOptimizer:
         self, centroids: np.ndarray, slot_count: int
     ) -> np.ndarray:
         n_clusters = min(slot_count, centroids.shape[0])
+
+        def final_progress(message: str, fraction: float) -> None:
+            self._emit_progress(message, 0.78 + (0.16 * fraction))
+
         final_centers = _kmeans(
-            centroids, n_clusters, n_init=8, random_state=self.random_state
+            centroids,
+            n_clusters,
+            n_init=8,
+            random_state=self.random_state,
+            progress_callback=final_progress,
+            progress_label="Merging texture colors",
         )
         if n_clusters < slot_count:
             repeats = np.tile(final_centers[-1:], (slot_count - n_clusters, 1))
@@ -187,6 +260,7 @@ class SunnyPaletteOptimizer:
         if optimized_rgb.shape != (slot_count, 3):
             raise ValueError("optimized_rgb must have shape (slot_count, 3)")
 
+        self._emit_progress("Sorting optimized colors", 0.96)
         lab = self._rgb_to_lab(optimized_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
         chroma = np.hypot(lab[:, 1], lab[:, 2])
         hue = (np.degrees(np.arctan2(lab[:, 2], lab[:, 1])) + 360.0) % 360.0
@@ -242,16 +316,21 @@ class SunnyPaletteOptimizer:
         palette = self.fixed_palette.copy()
         slot_count = optimized_slot_count(self.dirt_present)
         optimized_end = OPTIMIZED_START + slot_count - 1
+        self._emit_progress("Starting per-texture color clustering", 0.0)
         centroids = self._stage1_centroids()
+        self._emit_progress("Merging texture centroids into palette slots", 0.76)
         optimized_lab = self._final_optimized_lab(centroids, slot_count)
+        self._emit_progress("Converting optimized colors to RGB", 0.94)
         optimized_rgb = self._lab_to_rgb_u8(optimized_lab)
         optimized_rgb = self._reorder_optimized_colors(optimized_rgb, slot_count)
 
         palette[OPTIMIZED_START : optimized_end + 1] = optimized_rgb
         if self.dirt_present:
+            self._emit_progress("Computing reserved dirt colors", 0.98)
             brown_base, brown_dark = self._compute_brown_pair()
             palette[BROWN_BASE_INDEX] = brown_base
             palette[BROWN_DARK_INDEX] = brown_dark
+        self._emit_progress("Optimized palette ready", 1.0)
         return palette
 
     def compute_quantized_images(
@@ -264,10 +343,17 @@ class SunnyPaletteOptimizer:
         quantizer = Quantizer(palette)
         indexed: dict[str, np.ndarray] = {}
         quantized: dict[str, np.ndarray] = {}
-        for name, image in self.rgb_images.items():
+        image_items = list(self.rgb_images.items())
+        image_total = len(image_items)
+        for image_index, (name, image) in enumerate(image_items):
+            self._emit_progress(
+                f"Quantizing preview {name} ({image_index + 1}/{image_total})",
+                image_index / max(1, image_total),
+            )
             indexed_img, quantized_img = quantizer.quantize_image(image)
             indexed[name] = indexed_img
             quantized[name] = quantized_img
+        self._emit_progress("Quantized previews ready", 1.0)
         return indexed, quantized
 
 
