@@ -77,3 +77,56 @@ def test_quantize_image_returns_palette_indices_and_is_deterministic() -> None:
     np.testing.assert_array_equal(
         indexed_one, np.array([[1, 2], [3, 1]], dtype=np.uint8)
     )
+
+
+def test_compute_palette_reports_detailed_progress() -> None:
+    image = np.array(
+        [
+            [[255, 0, 0], [240, 20, 20], [0, 255, 0], [20, 240, 20]],
+            [[0, 0, 255], [20, 20, 240], [255, 255, 0], [230, 220, 20]],
+        ],
+        dtype=np.uint8,
+    )
+    events: list[tuple[str, float]] = []
+
+    optimizer = SunnyPaletteOptimizer(
+        rgb_images={"a.png": image},
+        per_texture_color_budget={"a.png": 4},
+        fixed_palette=_fixed_palette(),
+        dirt_present=False,
+        random_state=123,
+        progress_callback=lambda message, fraction: events.append((message, fraction)),
+    )
+
+    optimizer.compute_palette()
+
+    assert len(events) > 4
+    assert events[0][0] == "Starting per-texture color clustering"
+    assert events[-1] == ("Optimized palette ready", 1.0)
+    assert any("Clustering a.png" in message for message, _fraction in events)
+    assert all(0.0 <= fraction <= 1.0 for _message, fraction in events)
+
+
+def test_compute_quantized_images_reports_per_image_progress() -> None:
+    image = np.array(
+        [
+            [[255, 0, 0], [0, 255, 0]],
+            [[0, 0, 255], [255, 255, 0]],
+        ],
+        dtype=np.uint8,
+    )
+    events: list[tuple[str, float]] = []
+
+    optimizer = SunnyPaletteOptimizer(
+        rgb_images={"a.png": image, "b.png": image},
+        per_texture_color_budget={"a.png": 2, "b.png": 2},
+        fixed_palette=_fixed_palette(),
+        dirt_present=False,
+        progress_callback=lambda message, fraction: events.append((message, fraction)),
+    )
+
+    optimizer.compute_quantized_images(_fixed_palette())
+
+    assert events[0] == ("Quantizing preview a.png (1/2)", 0.0)
+    assert events[1] == ("Quantizing preview b.png (2/2)", 0.5)
+    assert events[-1] == ("Quantized previews ready", 1.0)
