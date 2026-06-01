@@ -1046,8 +1046,25 @@ class MainWindow(QtWidgets.QMainWindow):
             return 0
         return int(np.unique(indexed_array).shape[0])
 
+    def _compute_palette_usage_counts(self) -> np.ndarray:
+        counts = np.zeros(256, dtype=np.int64)
+        for indexed_image in self.indexed_images.values():
+            indices = np.asarray(indexed_image, dtype=np.int64).ravel()
+            if indices.size == 0:
+                continue
+            valid_indices = indices[(0 <= indices) & (indices < 256)]
+            if valid_indices.size == 0:
+                continue
+            counts += np.bincount(valid_indices, minlength=256)[:256]
+        return counts
+
     def _refresh_palette_view(self) -> None:
-        image = visualize_palette(self.current_palette, selected_index=self.selected_palette_index)
+        usage_counts = self._compute_palette_usage_counts() if self.indexed_images else None
+        image = visualize_palette(
+            self.current_palette,
+            selected_index=self.selected_palette_index,
+            usage_counts=usage_counts,
+        )
         self._palette_image_size = image.width()
         self.palette_label.setPixmap(
             QtGui.QPixmap.fromImage(image).scaled(
@@ -1200,9 +1217,22 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_palette_details(self, index: int) -> None:
         rgb = tuple(int(v) for v in self.current_palette[index])
         hex_code = self._rgb_to_hex(rgb)
-        self.palette_details_label.setText(
-            f"Palette index: {index} | Hex: {hex_code} | RGB: ({rgb[0]}, {rgb[1]}, {rgb[2]})"
-        )
+        detail_parts = [
+            f"Palette index: {index}",
+            f"Hex: {hex_code}",
+            f"RGB: ({rgb[0]}, {rgb[1]}, {rgb[2]})",
+        ]
+        if self.indexed_images:
+            usage_counts = self._compute_palette_usage_counts()
+            total_indexed_pixels = int(usage_counts.sum())
+            usage_count = int(usage_counts[index])
+            usage_percent = (
+                usage_count / total_indexed_pixels * 100 if total_indexed_pixels else 0.0
+            )
+            detail_parts.append(
+                f"Usage: {usage_count} pixels ({usage_percent:.2f}% of indexed pixels)"
+            )
+        self.palette_details_label.setText(" | ".join(detail_parts))
 
     def _on_palette_clicked(self, point: QtCore.QPoint) -> None:
         pixmap = self.palette_label.pixmap()
