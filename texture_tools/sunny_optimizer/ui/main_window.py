@@ -33,6 +33,7 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
         texture_name: str,
         initial_budget: int,
         unique_color_count: int,
+        paletted_unique_color_count: int | None = None,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -40,8 +41,20 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         label = QtWidgets.QLabel(texture_name)
-        color_count_label = QtWidgets.QLabel(f"{unique_color_count} colors")
-        color_count_label.setStyleSheet("color: palette(mid);")
+        color_counts_layout = QtWidgets.QVBoxLayout()
+        color_counts_layout.setContentsMargins(0, 0, 0, 0)
+        color_counts_layout.setSpacing(0)
+        self.original_color_count_label = QtWidgets.QLabel(f"Original: {unique_color_count} colors")
+        self.original_color_count_label.setStyleSheet("color: palette(mid);")
+        paletted_text = (
+            f"Paletted: {paletted_unique_color_count} colors"
+            if paletted_unique_color_count is not None
+            else "Paletted: —"
+        )
+        self.paletted_color_count_label = QtWidgets.QLabel(paletted_text)
+        self.paletted_color_count_label.setStyleSheet("color: palette(mid);")
+        color_counts_layout.addWidget(self.original_color_count_label)
+        color_counts_layout.addWidget(self.paletted_color_count_label)
         self.spinbox = QtWidgets.QSpinBox()
         self.spinbox.setRange(1, OPTIMIZED_SLOTS)
         self.spinbox.setValue(initial_budget)
@@ -50,7 +63,7 @@ class TextureBudgetItemWidget(QtWidgets.QWidget):
         )
         self.spinbox.valueChanged.connect(self._emit_change)
         layout.addWidget(label, 1)
-        layout.addWidget(color_count_label)
+        layout.addLayout(color_counts_layout)
         layout.addWidget(self.spinbox)
 
     def _emit_change(self, value: int) -> None:
@@ -557,11 +570,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_btn.clicked.connect(self.save_palette_dialog)
         self.save_hint_label = QtWidgets.QLabel()
         self.save_hint_label.setWordWrap(True)
+        self.compute_progress_label = QtWidgets.QLabel("Idle")
+        self.compute_progress_label.setWordWrap(True)
+        self.compute_progress_label.setStyleSheet("color: #4b5563;")
         self.compute_progress = QtWidgets.QProgressBar()
         self.compute_progress.setRange(0, 100)
         self.compute_progress.setValue(0)
-        self.compute_progress.setFormat("Idle")
-        self.compute_progress.setTextVisible(True)
+        self.compute_progress.setFormat("%p%")
+        self.compute_progress.setTextVisible(False)
         self.optimization_log = QtWidgets.QPlainTextEdit()
         self.optimization_log.setReadOnly(True)
         self.optimization_log.setPlaceholderText("Optimization log will appear here")
@@ -598,6 +614,7 @@ class MainWindow(QtWidgets.QMainWindow):
         right_panel.addWidget(self.palette_details_label)
         right_panel.addWidget(self.compute_btn)
         right_panel.addWidget(self.compute_hint_label)
+        right_panel.addWidget(self.compute_progress_label)
         right_panel.addWidget(self.compute_progress)
         right_panel.addWidget(QtWidgets.QLabel("Optimization log"))
         right_panel.addWidget(self.optimization_log)
@@ -810,13 +827,21 @@ class MainWindow(QtWidgets.QMainWindow):
             if query and query not in texture_name.lower():
                 continue
             item = QtWidgets.QListWidgetItem(self.texture_list)
+            paletted_unique_color_count = self._paletted_unique_color_count(texture_name)
             widget = TextureBudgetItemWidget(
                 texture_name,
                 self.per_texture_budget[texture_name],
                 self.texture_color_counts.get(texture_name, 0),
+                paletted_unique_color_count,
             )
             widget.budget_changed.connect(self._on_budget_changed)
-            tooltip = f"Unique colors: {self.texture_color_counts.get(texture_name, 0)}"
+            paletted_tooltip = (
+                str(paletted_unique_color_count) if paletted_unique_color_count is not None else "—"
+            )
+            tooltip = (
+                f"Original unique colors: {self.texture_color_counts.get(texture_name, 0)}\n"
+                f"Paletted unique colors: {paletted_tooltip}"
+            )
             item.setToolTip(tooltip)
             widget.setToolTip(tooltip)
             item.setSizeHint(widget.sizeHint())
@@ -1132,6 +1157,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._update_preview(widget.texture_name)
 
+
+    def _paletted_unique_color_count(self, texture_name: str) -> int | None:
+        indexed = self.indexed_images.get(texture_name)
+        if indexed is None:
+            return None
+        return self._count_unique_palette_indices(indexed)
+
     @staticmethod
     def _count_unique_rgb_colors(rgb_array: np.ndarray) -> int:
         if rgb_array.size == 0:
@@ -1222,10 +1254,10 @@ class MainWindow(QtWidgets.QMainWindow):
         def set_progress(step_num: int, message: str, percent: int) -> None:
             elapsed = time.perf_counter() - started_at
             clamped_percent = min(100, max(0, int(percent)))
+            progress_text = f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)"
+            self.compute_progress_label.setText(progress_text)
+            self.compute_progress.setToolTip(progress_text)
             self.compute_progress.setValue(clamped_percent)
-            self.compute_progress.setFormat(
-                f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)"
-            )
             if message and message not in logged_messages:
                 logged_messages.add(message)
                 self._append_optimization_log(message, clamped_percent, elapsed)
@@ -1278,7 +1310,9 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:  # prototype surface
             self.compute_progress.setValue(0)
             elapsed = time.perf_counter() - started_at
-            self.compute_progress.setFormat(f"Failure after {elapsed:.1f}s")
+            failure_text = f"Failure after {elapsed:.1f}s"
+            self.compute_progress_label.setText(failure_text)
+            self.compute_progress.setToolTip(failure_text)
             palette_filename = Path(palette_path).name if palette_path else "<unknown>"
             self._set_inline_status(
                 f"Optimization failed for {palette_filename}: {exc}",
@@ -1292,8 +1326,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clear_inline_status()
         total_elapsed = time.perf_counter() - started_at
         self.compute_progress.setValue(100)
-        self.compute_progress.setFormat(f"Success in {total_elapsed:.1f}s")
+        success_text = f"Success in {total_elapsed:.1f}s"
+        self.compute_progress_label.setText(success_text)
+        self.compute_progress.setToolTip(success_text)
 
+        self._refresh_texture_list()
         self._refresh_palette_view()
         current = self.texture_list.currentItem()
         if current is None:
