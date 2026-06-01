@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import time
 from pathlib import Path
 
@@ -513,6 +514,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.highlight_checkbox.setChecked(True)
         self.highlight_checkbox.toggled.connect(self._refresh_current_preview)
         self.paletted_unique_colors_label = QtWidgets.QLabel("Paletted unique colors: —")
+        self.texture_diagnostics_label = QtWidgets.QLabel("Diagnostics: generate a palette to inspect index usage.")
+        self.texture_diagnostics_label.setWordWrap(True)
+        self.texture_diagnostics_label.setTextFormat(QtCore.Qt.RichText)
+        self.texture_diagnostics_label.setTextInteractionFlags(QtCore.Qt.TextBrowserInteraction)
+        self.texture_diagnostics_label.setOpenExternalLinks(False)
+        self.texture_diagnostics_label.linkActivated.connect(self._on_diagnostics_index_clicked)
+        self.texture_diagnostics_label.setStyleSheet(
+            "background: #f8f9fb; border: 1px solid #d9dce3; border-radius: 6px; padding: 6px;"
+        )
         self.quant_label.image_clicked.connect(self._on_quantized_preview_clicked)
         self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
         self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
@@ -524,6 +534,7 @@ class MainWindow(QtWidgets.QMainWindow):
         center_panel.addLayout(quant_view_controls)
         center_panel.addWidget(self.highlight_checkbox)
         center_panel.addWidget(self.paletted_unique_colors_label)
+        center_panel.addWidget(self.texture_diagnostics_label)
 
         right_panel = QtWidgets.QVBoxLayout()
         right_panel.setSpacing(10)
@@ -991,6 +1002,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_preview(self, texture_name: str) -> None:
         if not texture_name or texture_name not in self.texture_images:
+            self._update_texture_diagnostics(texture_name)
             return
         orig = self.texture_images[texture_name]
         self.orig_label.set_base_pixmap(self._to_pixmap(orig))
@@ -1012,6 +1024,86 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.paletted_unique_colors_label.setText(
                     f"Paletted unique colors: {self._count_unique_palette_indices(indexed)}"
                 )
+        self._update_texture_diagnostics(texture_name)
+
+    @staticmethod
+    def _optimized_palette_indices() -> tuple[int, int]:
+        return 176, 245
+
+    def _format_palette_index_link(self, index: int, count: int) -> str:
+        rgb = tuple(int(v) for v in self.current_palette[index])
+        hex_code = self._rgb_to_hex(rgb)
+        escaped_hex = html.escape(hex_code)
+        return (
+            f'<a href="palette-index:{index}">{index}</a>'
+            f' ({count} px, {escaped_hex})'
+        )
+
+    def _update_texture_diagnostics(self, texture_name: str) -> None:
+        if not hasattr(self, "texture_diagnostics_label"):
+            return
+        safe_name = html.escape(texture_name) if texture_name else "—"
+        budget = self.per_texture_budget.get(texture_name)
+        budget_text = str(budget) if budget is not None else "—"
+        indexed = self.indexed_images.get(texture_name)
+        if indexed is None or indexed.size == 0:
+            self.texture_diagnostics_label.setText(
+                f"<b>Diagnostics for {safe_name}</b><br>"
+                f"Configured budget: {budget_text}<br>"
+                "Indexed preview: —<br>"
+                "Optimized range 176-245: —<br>"
+                "Top palette indices: —"
+            )
+            return
+
+        flat = np.asarray(indexed, dtype=np.int64).ravel()
+        valid_indices = flat[(0 <= flat) & (flat < 256)]
+        if valid_indices.size == 0:
+            self.texture_diagnostics_label.setText(
+                f"<b>Diagnostics for {safe_name}</b><br>"
+                f"Configured budget: {budget_text}<br>"
+                "Indexed preview: no valid palette indices<br>"
+                "Optimized range 176-245: 0 indices, 0 pixels<br>"
+                "Top palette indices: —"
+            )
+            return
+
+        counts = np.bincount(valid_indices, minlength=256)[:256]
+        used_indices = np.flatnonzero(counts)
+        opt_start, opt_end = self._optimized_palette_indices()
+        optimized_counts = counts[opt_start : opt_end + 1]
+        optimized_used = np.flatnonzero(optimized_counts) + opt_start
+        top_indices = sorted(
+            (int(index) for index in used_indices),
+            key=lambda index: (-int(counts[index]), index),
+        )[:8]
+        top_text = ", ".join(
+            self._format_palette_index_link(index, int(counts[index])) for index in top_indices
+        ) or "—"
+
+        self.texture_diagnostics_label.setText(
+            f"<b>Diagnostics for {safe_name}</b><br>"
+            f"Configured budget: {budget_text}<br>"
+            f"Unique palette indices used: {len(used_indices)}<br>"
+            f"Optimized range {opt_start}-{opt_end}: {len(optimized_used)} indices, "
+            f"{int(optimized_counts.sum())} pixels<br>"
+            f"Top palette indices: {top_text}"
+        )
+
+    def _on_diagnostics_index_clicked(self, link: str) -> None:
+        prefix = "palette-index:"
+        if not link.startswith(prefix):
+            return
+        try:
+            index = int(link[len(prefix) :])
+        except ValueError:
+            return
+        if not 0 <= index < 256:
+            return
+        self.selected_palette_index = index
+        self._refresh_palette_view()
+        self._update_palette_details(index)
+        self._refresh_current_preview()
 
     def _build_highlighted_quantized_preview(self, texture_name: str, quant: np.ndarray) -> np.ndarray:
         indexed = self.indexed_images.get(texture_name)
