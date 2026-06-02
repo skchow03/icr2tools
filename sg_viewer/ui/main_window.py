@@ -10,6 +10,7 @@ from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.color_utils import parse_hex_color
+from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.fsection_type_utils import (
     fsect_type_description,
     fsect_type_index,
@@ -103,6 +104,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._ruler_start_point: tuple[float, float] | None = None
         self._ruler_end_point: tuple[float, float] | None = None
         self._ruler_frozen = False
+        self._sunny_palette_colors: list[QtGui.QColor] | None = None
+        self._updating_land_polygon_color_cells = False
 
         shortcut_labels = {
             "previous_section": "Ctrl+PgUp",
@@ -222,10 +225,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._land_points_table.verticalHeader().setVisible(False)
         self._land_polygons_table = QtWidgets.QTableWidget(0, 4)
-        self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "SUNNY.PCX color index", "Mode", "Height"])
+        self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "Color", "Mode", "Height"])
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
         self._land_polygons_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._land_polygons_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_polygons_table.setToolTip(
+            "Double-click a Color cell to choose a SUNNY.PCX palette color."
+        )
         self._land_add_polygon_button = QtWidgets.QPushButton("Add Polygon")
         self._land_delete_polygon_button = QtWidgets.QPushButton("Delete Polygon")
         self._land_move_polygon_up_button = QtWidgets.QPushButton("Move Up")
@@ -988,6 +994,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_object_name_edit.textChanged.connect(self._persist_selected_land_object)
         self._update_land_object_edit_controls()
         self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
+        self._land_polygons_table.itemDoubleClicked.connect(self._on_land_polygons_table_item_double_clicked)
         self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
@@ -2618,6 +2625,116 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.set_land_object_points_overlay(tuple(overlay_points))
         self._sync_land_polygons_overlay()
 
+    def set_sunny_palette_colors(self, palette: list[QtGui.QColor] | None) -> None:
+        """Update SUNNY.PCX colors used for land polygon color cells."""
+        self._sunny_palette_colors = list(palette) if palette is not None else None
+        self._refresh_land_polygon_color_cells()
+
+    @staticmethod
+    def _parse_land_polygon_color_index(text: str) -> int | None:
+        try:
+            index = int(text.strip())
+        except ValueError:
+            return None
+        return index if 0 <= index <= 255 else None
+
+    def _land_polygon_color_item(self, value: str | int) -> QtWidgets.QTableWidgetItem:
+        item = QtWidgets.QTableWidgetItem(str(value))
+        item.setTextAlignment(QtCore.Qt.AlignCenter)
+        item.setToolTip("Double-click to choose from the SUNNY.PCX palette.")
+        return item
+
+    def _refresh_land_polygon_color_cells(self) -> None:
+        if self._updating_land_polygon_color_cells:
+            return
+        self._updating_land_polygon_color_cells = True
+        signals_blocked = self._land_polygons_table.blockSignals(True)
+        try:
+            for row in range(self._land_polygons_table.rowCount()):
+                self._update_land_polygon_color_cell(row)
+        finally:
+            self._land_polygons_table.blockSignals(signals_blocked)
+            self._updating_land_polygon_color_cells = False
+
+    def _update_land_polygon_color_cell(self, row: int) -> None:
+        item = self._land_polygons_table.item(row, 1)
+        if item is None:
+            item = self._land_polygon_color_item("0")
+            self._land_polygons_table.setItem(row, 1, item)
+        index = self._parse_land_polygon_color_index(item.text())
+        item.setTextAlignment(QtCore.Qt.AlignCenter)
+        item.setToolTip("Double-click to choose from the SUNNY.PCX palette.")
+        if index is None:
+            item.setBackground(QtGui.QBrush())
+            item.setForeground(QtGui.QBrush())
+            item.setToolTip(
+                "Invalid color index. Enter 0-255 or double-click to choose from the palette."
+            )
+            return
+        if self._sunny_palette_colors and index < len(self._sunny_palette_colors):
+            color = QtGui.QColor(self._sunny_palette_colors[index])
+            item.setBackground(QtGui.QBrush(color))
+            luminance = (
+                (0.299 * color.red())
+                + (0.587 * color.green())
+                + (0.114 * color.blue())
+            )
+            text_color = (
+                QtGui.QColor("black") if luminance >= 140 else QtGui.QColor("white")
+            )
+            item.setForeground(QtGui.QBrush(text_color))
+            item.setToolTip(
+                f"SUNNY.PCX palette index {index}: "
+                f"rgb({color.red()}, {color.green()}, {color.blue()}). "
+                "Double-click to choose another color."
+            )
+        else:
+            item.setBackground(QtGui.QBrush())
+            item.setForeground(QtGui.QBrush())
+            item.setToolTip(
+                f"SUNNY.PCX palette index {index}. Load SUNNY.PCX, then double-click "
+                "to choose from the palette."
+            )
+
+    def _on_land_polygons_table_item_double_clicked(
+        self, item: QtWidgets.QTableWidgetItem
+    ) -> None:
+        if item.column() == 1:
+            self._choose_land_polygon_color(item.row())
+
+    def _choose_land_polygon_color(self, row: int) -> None:
+        if row < 0 or row >= self._land_polygons_table.rowCount():
+            return
+        if not self._sunny_palette_colors:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Choose Polygon Color",
+                "Load SUNNY.PCX first from File → Import → Import SUNNY.PCX…",
+            )
+            return
+        item = self._land_polygons_table.item(row, 1)
+        current_index = (
+            self._parse_land_polygon_color_index(item.text())
+            if item is not None
+            else 0
+        )
+        dialog = PaletteColorDialog(
+            self._sunny_palette_colors,
+            self,
+            selection_mode=True,
+            initial_index=current_index,
+        )
+        if dialog.exec_() != QtWidgets.QDialog.Accepted or dialog.selected_index is None:
+            return
+        if item is None:
+            item = self._land_polygon_color_item(dialog.selected_index)
+            self._land_polygons_table.setItem(row, 1, item)
+        else:
+            item.setText(str(dialog.selected_index))
+        self._update_land_polygon_color_cell(row)
+        self._sync_land_polygons_overlay()
+        self._persist_selected_land_object()
+
     def _sync_land_polygons_overlay(self) -> None:
         polygons: list[tuple[tuple[int, ...], int, bool]] = []
         errors: list[str] = []
@@ -2667,7 +2784,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_land_points_overlay()
         self._persist_selected_land_object()
 
-    def _on_land_polygons_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
+    def _on_land_polygons_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if item.column() == 1 and not self._updating_land_polygon_color_cells:
+            self._updating_land_polygon_color_cells = True
+            signals_blocked = self._land_polygons_table.blockSignals(True)
+            try:
+                self._update_land_polygon_color_cell(item.row())
+            finally:
+                self._land_polygons_table.blockSignals(signals_blocked)
+                self._updating_land_polygon_color_cells = False
         self._sync_land_polygons_overlay()
         self._persist_selected_land_object()
 
@@ -2689,7 +2814,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         row = self._land_polygons_table.rowCount()
         self._land_polygons_table.insertRow(row)
         self._land_polygons_table.setItem(row, 0, QtWidgets.QTableWidgetItem(""))
-        self._land_polygons_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0"))
+        self._land_polygons_table.setItem(row, 1, self._land_polygon_color_item("0"))
         self._land_set_polygon_mode_widget(row, "Land")
         self._land_polygons_table.setItem(row, 3, QtWidgets.QTableWidgetItem("0"))
         self._land_polygons_table.setCurrentCell(row, 0)
@@ -2717,9 +2842,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 self._land_set_polygon_mode_widget(row, target_values[col])
                 self._land_set_polygon_mode_widget(target_row, current_values[col])
             else:
-                self._land_polygons_table.setItem(row, col, QtWidgets.QTableWidgetItem(target_values[col]))
-                self._land_polygons_table.setItem(target_row, col, QtWidgets.QTableWidgetItem(current_values[col]))
+                row_item = (
+                    self._land_polygon_color_item(target_values[col])
+                    if col == 1
+                    else QtWidgets.QTableWidgetItem(target_values[col])
+                )
+                target_item = (
+                    self._land_polygon_color_item(current_values[col])
+                    if col == 1
+                    else QtWidgets.QTableWidgetItem(current_values[col])
+                )
+                self._land_polygons_table.setItem(row, col, row_item)
+                self._land_polygons_table.setItem(target_row, col, target_item)
         self._land_polygons_table.blockSignals(False)
+        self._refresh_land_polygon_color_cells()
         self._land_polygons_table.selectRow(target_row)
         self._sync_land_polygons_overlay()
         self._persist_selected_land_object()
@@ -2845,11 +2981,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             height_text = polygon_data[3] if len(polygon_data) > 3 else "0"
             self._land_polygons_table.insertRow(polygon_row)
             self._land_polygons_table.setItem(polygon_row, 0, QtWidgets.QTableWidgetItem(str(point_list_text)))
-            self._land_polygons_table.setItem(polygon_row, 1, QtWidgets.QTableWidgetItem(str(color_text)))
+            self._land_polygons_table.setItem(polygon_row, 1, self._land_polygon_color_item(str(color_text)))
             self._land_set_polygon_mode_widget(polygon_row, str(mode_text))
             self._land_polygons_table.setItem(polygon_row, 3, QtWidgets.QTableWidgetItem(str(height_text)))
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
+        self._refresh_land_polygon_color_cells()
         self._land_object_name_edit.blockSignals(True)
         self._land_object_name_edit.setText(str(entry.get("name", "")))
         self._land_object_name_edit.blockSignals(False)

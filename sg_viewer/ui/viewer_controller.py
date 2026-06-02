@@ -851,6 +851,8 @@ class SGViewerController:
             self._sg_settings_store.set_sunny_palette(self._current_path, resolved_path)
 
         self._window.preview.set_tsd_palette(self._sunny_palette)
+        if hasattr(self._window, "set_sunny_palette_colors"):
+            self._window.set_sunny_palette_colors(self._sunny_palette)
         self._window.show_status_message(
             f"Loaded SUNNY palette from {resolved_path.name} ({len(self._sunny_palette)} colors)."
         )
