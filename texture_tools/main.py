@@ -32,6 +32,14 @@ UI_LABEL_WIDTH = 220
 UI_SECTION_SPACING = 10
 UI_PANEL_MARGINS = (12, 12, 12, 12)
 
+__version__ = "0.1.0"
+APP_TITLE = f"Texture Tools v{__version__}"
+ABOUT_TITLE = "About ICR2 Texture Tools"
+ABOUT_TEXT = (
+    f"ICR2 Texture Tools v{__version__}\n"
+    "by SK Chow (\"checkpoint10\" on the icr2.net forums)"
+)
+
 
 def _apply_panel_layout(layout: QtWidgets.QVBoxLayout) -> None:
     layout.setContentsMargins(*UI_PANEL_MARGINS)
@@ -1221,7 +1229,7 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
 class TextureToolsWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Texture Tools")
+        self.setWindowTitle(APP_TITLE)
         self.resize(980, 720)
         self.setStyleSheet(
             """
@@ -1239,6 +1247,16 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
         self.setCentralWidget(self.intent_tabs)
+        self._build_menu_bar()
+
+    def _build_menu_bar(self) -> None:
+        help_menu = self.menuBar().addMenu("&Help")
+        about_action = QtWidgets.QAction("About ICR2 Texture Tools", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_action)
+
+    def _show_about_dialog(self) -> None:
+        QtWidgets.QMessageBox.about(self, ABOUT_TITLE, ABOUT_TEXT)
 
     def _build_optimize_palette_tab(self) -> QtWidgets.QWidget:
         sunny = SunnyOptimizerWindow()
