@@ -120,3 +120,20 @@ def test_track3d_file_can_be_cleared(tmp_path):
 
     payload = json.loads(sg_path.with_suffix(".sgc").read_text(encoding="utf-8"))
     assert "track3d_file" not in payload
+
+
+def test_manual_wall_height_overrides_round_trip(tmp_path):
+    sg_path = tmp_path / "track.sg"
+    store = SGSettingsStore()
+
+    store.set_manual_wall_height_overrides(
+        sg_path,
+        [
+            {"boundary": 1, "start_dlong": 300, "end_dlong": 100, "height": 42},
+            {"boundary": -1, "start_dlong": 0, "end_dlong": 5, "height": 9},
+        ],
+    )
+
+    assert store.get_manual_wall_height_overrides(sg_path) == [
+        {"boundary": 1, "start_dlong": 100, "end_dlong": 300, "height": 42}
+    ]

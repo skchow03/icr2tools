@@ -86,6 +86,10 @@ from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.track3d_colors_dialog import Track3DColorDefinitionsDialog
+from sg_viewer.ui.manual_wall_height_dialog import (
+    ManualWallHeightOverride,
+    ManualWallHeightOverridesDialog,
+)
 from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
@@ -207,6 +211,7 @@ class SGViewerController:
         self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
         self._section_dlongs_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
+        self._manual_wall_height_overrides: list[ManualWallHeightOverride] = []
         self._project_working_directory: Path | None = None
         self._history = FileHistory()
         self._sg_settings_store = SGSettingsStore()
@@ -1095,6 +1100,19 @@ class SGViewerController:
         )
         self._window.show_status_message(f"3D tools fix complete: {input_path.name}")
 
+    def _on_manual_wall_height_overrides_requested(self) -> None:
+        dialog = ManualWallHeightOverridesDialog(
+            list(self._manual_wall_height_overrides),
+            self._window,
+        )
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        self._manual_wall_height_overrides = dialog.overrides()
+        self._persist_manual_wall_height_overrides_for_current_track()
+        self._window.show_status_message(
+            f"Saved {len(self._manual_wall_height_overrides)} manual wall height override(s)."
+        )
+
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
         if not sections:
@@ -1121,7 +1139,7 @@ class SGViewerController:
         if not path.suffix:
             path = path.with_suffix(".txt")
 
-        lines: list[str] = []
+        generated_entries: list[tuple[int, int, int, int]] = []
         for section_index, _section in enumerate(sections):
             section_range = self._window.adjusted_section_range_500ths(section_index)
             if section_range is None:
@@ -1148,13 +1166,9 @@ class SGViewerController:
             )
             for boundary_number, (_row_index, fsect) in enumerate(boundary_rows):
                 height = wall_height if fsect.surface_type == 7 else armco_height
-                lines.append(
-                    "BOUNDARY "
-                    f"{boundary_number}: "
-                    f"{start_dlong} "
-                    f"{end_dlong} "
-                    f"HEIGHT {height}"
-                )
+                generated_entries.append((boundary_number, start_dlong, end_dlong, height))
+
+        lines = self._pitwall_lines_with_manual_overrides(generated_entries)
 
         try:
             path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1292,6 +1306,9 @@ class SGViewerController:
             self._on_mrk_texture_pattern_display_mode_changed
         )
         self._window.generate_pitwall_button.clicked.connect(self._generate_pitwall_txt)
+        self._window.manual_wall_height_overrides_button.clicked.connect(
+            self._on_manual_wall_height_overrides_requested
+        )
         self._window.pitwall_wall_height_spin.valueChanged.connect(self._on_mrk_wall_height_changed)
         self._window.pitwall_armco_height_spin.valueChanged.connect(self._on_mrk_armco_height_changed)
         self._window.pitwall_length_multiplier_spin.valueChanged.connect(
@@ -1918,6 +1935,59 @@ class SGViewerController:
         for section, values in grouped.items():
             starts_by_section[section] = tuple(start for _, start in sorted(values, key=lambda item: item[0]))
         self._window.set_section_subindex_metadata(starts_by_section)
+
+    def _pitwall_lines_with_manual_overrides(
+        self, generated_entries: list[tuple[int, int, int, int]]
+    ) -> list[str]:
+        overrides = [override.normalized() for override in self._manual_wall_height_overrides]
+        output_entries: list[tuple[int, int, int, int]] = []
+        for boundary, start, end, height in generated_entries:
+            segments = [(min(start, end), max(start, end), height)]
+            for override in overrides:
+                if override.boundary != boundary:
+                    continue
+                next_segments: list[tuple[int, int, int]] = []
+                for seg_start, seg_end, seg_height in segments:
+                    overlap_start = max(seg_start, override.start_dlong)
+                    overlap_end = min(seg_end, override.end_dlong)
+                    if overlap_start >= overlap_end:
+                        next_segments.append((seg_start, seg_end, seg_height))
+                        continue
+                    if seg_start < overlap_start:
+                        next_segments.append((seg_start, overlap_start, seg_height))
+                    if overlap_end < seg_end:
+                        next_segments.append((overlap_end, seg_end, seg_height))
+                segments = next_segments
+            output_entries.extend((boundary, seg_start, seg_end, seg_height) for seg_start, seg_end, seg_height in segments)
+        output_entries.extend((item.boundary, item.start_dlong, item.end_dlong, item.height) for item in overrides)
+        output_entries.sort(key=lambda item: (item[1], item[2], item[0], item[3]))
+        return [
+            f"BOUNDARY {boundary}: {start} {end} HEIGHT {height}"
+            for boundary, start, end, height in output_entries
+            if start != end
+        ]
+
+    def _persist_manual_wall_height_overrides_for_current_track(self) -> None:
+        if self._current_path is None:
+            return
+        self._sg_settings_store.set_manual_wall_height_overrides(
+            self._current_path,
+            [override.__dict__ for override in self._manual_wall_height_overrides],
+        )
+
+    def _load_manual_wall_height_overrides_for_current_track(self) -> None:
+        self._manual_wall_height_overrides = []
+        if self._current_path is None:
+            return
+        self._manual_wall_height_overrides = [
+            ManualWallHeightOverride(
+                int(entry["boundary"]),
+                int(entry["start_dlong"]),
+                int(entry["end_dlong"]),
+                int(entry["height"]),
+            )
+            for entry in self._sg_settings_store.get_manual_wall_height_overrides(self._current_path)
+        ]
 
     def _persist_mrk_wall_heights_for_current_track(self) -> None:
         if self._current_path is None:
