@@ -364,7 +364,10 @@ def test_pitwall_controls_are_grouped_in_wall_heights_box(qapp):
         layout = wall_heights_group.layout()
         assert isinstance(layout, QtWidgets.QVBoxLayout)
         assert layout.itemAt(0).layout() is not None
-        assert layout.itemAt(1).widget() is window.generate_pitwall_button
+        buttons_layout = layout.itemAt(2).layout()
+        assert buttons_layout is not None
+        assert buttons_layout.itemAt(0).widget() is window.generate_pitwall_button
+        assert buttons_layout.itemAt(1).widget() is window.manual_wall_height_overrides_button
     finally:
         window.close()
 
@@ -3566,5 +3569,25 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
         assert events == ["created", "shown", "events", "closed"]
         assert progress_values == [0, 25, 100]
         assert progress_messages == ["Fixing section 1/4", "See-through elevation fix complete."]
+    finally:
+        window.close()
+
+
+def test_pitwall_manual_height_overrides_split_generated_ranges(qapp):
+    from sg_viewer.ui.manual_wall_height_dialog import ManualWallHeightOverride
+    from sg_viewer.ui.viewer_controller import SGViewerController
+
+    window = SGViewerWindow()
+    try:
+        controller = SGViewerController(window)
+        controller._manual_wall_height_overrides = [
+            ManualWallHeightOverride(boundary=0, start_dlong=25, end_dlong=75, height=99)
+        ]
+
+        assert controller._pitwall_lines_with_manual_overrides([(0, 0, 100, 20)]) == [
+            "BOUNDARY 0: 0 25 HEIGHT 20",
+            "BOUNDARY 0: 25 75 HEIGHT 99",
+            "BOUNDARY 0: 75 100 HEIGHT 20",
+        ]
     finally:
         window.close()

@@ -305,6 +305,38 @@ class SGSettingsStore:
             },
         )
 
+
+    def get_manual_wall_height_overrides(self, sg_path: Path) -> list[dict[str, int]]:
+        payload = self.load(sg_path)
+        raw = payload.get("manual_wall_height_overrides")
+        if not isinstance(raw, list):
+            return []
+        overrides: list[dict[str, int]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                boundary = int(entry["boundary"])
+                start_dlong = int(entry["start_dlong"])
+                end_dlong = int(entry["end_dlong"])
+                height = int(entry["height"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if boundary < 0 or height < 0 or start_dlong == end_dlong:
+                continue
+            overrides.append({
+                "boundary": boundary,
+                "start_dlong": min(start_dlong, end_dlong),
+                "end_dlong": max(start_dlong, end_dlong),
+                "height": height,
+            })
+        return overrides
+
+    def set_manual_wall_height_overrides(
+        self, sg_path: Path, overrides: list[dict[str, int]]
+    ) -> None:
+        self.update(sg_path, manual_wall_height_overrides=overrides)
+
     def get_tso_auto_update_relative_z(self, sg_path: Path) -> bool | None:
         payload = self.load(sg_path)
         value = payload.get("tso_auto_update_relative_z")

@@ -153,6 +153,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_load_button = QtWidgets.QPushButton("Import MRK entries")
         self._generate_pitwall_button = QtWidgets.QPushButton("Generate pitwall.txt")
         self._generate_pitwall_button.setEnabled(False)
+        self._manual_wall_height_overrides_button = QtWidgets.QPushButton("Manual Wall Height overrides")
+        self._manual_wall_height_overrides_button.setEnabled(False)
         self._pitwall_wall_height_spin = QtWidgets.QDoubleSpinBox()
         self._pitwall_armco_height_spin = QtWidgets.QDoubleSpinBox()
         self._pitwall_length_multiplier_spin = QtWidgets.QDoubleSpinBox()
@@ -821,7 +823,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         pitwall_multiplier_row.addWidget(self._pitwall_length_multiplier_spin)
         pitwall_multiplier_row.addStretch()
         pitwall_height_layout.addLayout(pitwall_multiplier_row)
-        pitwall_height_layout.addWidget(self._generate_pitwall_button)
+        pitwall_buttons_row = QtWidgets.QHBoxLayout()
+        pitwall_buttons_row.addWidget(self._generate_pitwall_button)
+        pitwall_buttons_row.addWidget(self._manual_wall_height_overrides_button)
+        pitwall_height_layout.addLayout(pitwall_buttons_row)
         pitwall_height_group.setLayout(pitwall_height_layout)
         mrk_layout.addWidget(pitwall_height_group)
 
@@ -1312,6 +1317,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def generate_pitwall_button(self) -> QtWidgets.QPushButton:
         return self._generate_pitwall_button
+
+    @property
+    def manual_wall_height_overrides_button(self) -> QtWidgets.QPushButton:
+        return self._manual_wall_height_overrides_button
 
     @property
     def pitwall_wall_height_spin(self) -> QtWidgets.QDoubleSpinBox:
