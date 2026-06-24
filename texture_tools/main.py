@@ -746,6 +746,17 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
+        start_row = QtWidgets.QHBoxLayout()
+        start_label = QtWidgets.QLabel("Start with panel:")
+        start_label.setMinimumWidth(UI_LABEL_WIDTH)
+        start_row.addWidget(start_label)
+        self.start_panel_spin = QtWidgets.QSpinBox()
+        self.start_panel_spin.setRange(1, 8)
+        self.start_panel_spin.setValue(1)
+        self.start_panel_spin.setToolTip("Panel number from the source horizon to place first in the chopped output.")
+        start_row.addWidget(self.start_panel_spin)
+        start_row.addStretch(1)
+        layout.addLayout(start_row)
 
         layout.addWidget(QtWidgets.QLabel("3. Export"))
         self.output_edit, self.output_error = self._make_browse_row(layout, "Output folder:", self._browse_output)
@@ -817,7 +828,11 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         if not self._update_validation_state():
             return
         try:
-            out1, out2 = chop_horizon(self.input_edit.text().strip(), self.output_edit.text().strip())
+            out1, out2 = chop_horizon(
+                self.input_edit.text().strip(),
+                self.output_edit.text().strip(),
+                start_panel=self.start_panel_spin.value(),
+            )
             self.set_status(STATUS_SUCCESS, f"Created: {out1.name}, {out2.name}")
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"Chop Horizon failed: {exc}")

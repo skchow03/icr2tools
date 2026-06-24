@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from tkinter import Button, Entry, Label, StringVar, Tk, filedialog, messagebox
+from tkinter import Button, Entry, Label, Spinbox, StringVar, Tk, filedialog, messagebox
 
 from PIL import Image
 
 
-def chop_horizon(input_path: str | Path, output_dir: str | Path) -> tuple[Path, Path]:
+def chop_horizon(input_path: str | Path, output_dir: str | Path, start_panel: int = 1) -> tuple[Path, Path]:
     input_path = Path(input_path)
     output_dir = Path(output_dir)
+
+    if not 1 <= start_panel <= 8:
+        raise ValueError(f"Start panel must be between 1 and 8, got {start_panel}")
 
     img = Image.open(input_path).convert("RGBA")
 
@@ -20,12 +23,15 @@ def chop_horizon(input_path: str | Path, output_dir: str | Path) -> tuple[Path, 
         left = i * 256
         segments.append(img.crop((left, 0, left + 256, 64)))
 
+    start_index = start_panel - 1
+    ordered_segments = segments[start_index:] + segments[:start_index]
+
     sheets = []
     for sheet_index in range(2):
         sheet = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
         for row in range(4):
             segment_index = sheet_index * 4 + row
-            sheet.paste(segments[segment_index], (0, row * 64))
+            sheet.paste(ordered_segments[segment_index], (0, row * 64))
         sheets.append(sheet)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -43,10 +49,11 @@ def chop_horizon(input_path: str | Path, output_dir: str | Path) -> tuple[Path, 
 def _build_gui() -> Tk:
     root = Tk()
     root.title("Texture Tools - Chop Horizon")
-    root.geometry("650x180")
+    root.geometry("650x220")
 
     source_var = StringVar()
     output_var = StringVar()
+    start_panel_var = StringVar(value="1")
 
     def choose_source() -> None:
         filename = filedialog.askopenfilename(
@@ -72,6 +79,12 @@ def _build_gui() -> Tk:
         source = source_var.get().strip()
         output = output_var.get().strip()
 
+        try:
+            start_panel = int(start_panel_var.get())
+        except ValueError:
+            messagebox.showerror("Invalid start panel", "Start panel must be a number from 1 to 8.")
+            return
+
         if not source:
             messagebox.showerror("Missing source image", "Choose a source PNG or BMP file.")
             return
@@ -81,7 +94,7 @@ def _build_gui() -> Tk:
             return
 
         try:
-            out1, out2 = chop_horizon(source, output)
+            out1, out2 = chop_horizon(source, output, start_panel=start_panel)
         except Exception as exc:
             messagebox.showerror("Conversion failed", str(exc))
             return
@@ -96,7 +109,10 @@ def _build_gui() -> Tk:
     Entry(root, textvariable=output_var, width=65).grid(row=1, column=1, padx=5, pady=10)
     Button(root, text="Browse...", command=choose_output_folder).grid(row=1, column=2, padx=10, pady=10)
 
-    Button(root, text="Create 256x256 Sheets", command=run_conversion).grid(row=2, column=1, pady=20)
+    Label(root, text="Start with panel:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+    Spinbox(root, from_=1, to=8, textvariable=start_panel_var, width=5).grid(row=2, column=1, padx=5, pady=10, sticky="w")
+
+    Button(root, text="Create 256x256 Sheets", command=run_conversion).grid(row=3, column=1, pady=20)
 
     return root
 
