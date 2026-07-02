@@ -261,6 +261,21 @@ def paint_preview(
                 section_geometry_version=sg_preview_state.section_geometry_version,
                 tsd_lines_version=sg_preview_state.tsd_lines_version,
             )
+        if base_state.land_object_points:
+            _draw_land_object_polygons_overlay(
+                painter,
+                base_state.land_object_points,
+                base_state.land_object_polygons,
+                sg_preview_state.tsd_palette if sg_preview_state is not None else (),
+                transform,
+                widget_height,
+            )
+            _draw_land_object_points_overlay(
+                painter,
+                base_state.land_object_points,
+                transform,
+                widget_height,
+            )
         if sg_preview_state and sg_preview_state.trackside_objects:
             _draw_trackside_objects(
                 painter,
@@ -350,21 +365,6 @@ def paint_preview(
                 base_state.ruler_start_point,
                 base_state.ruler_end_point,
                 base_state.ruler_label,
-                transform,
-                widget_height,
-            )
-        if base_state.land_object_points:
-            _draw_land_object_polygons_overlay(
-                painter,
-                base_state.land_object_points,
-                base_state.land_object_polygons,
-                sg_preview_state.tsd_palette if sg_preview_state is not None else (),
-                transform,
-                widget_height,
-            )
-            _draw_land_object_points_overlay(
-                painter,
-                base_state.land_object_points,
                 transform,
                 widget_height,
             )

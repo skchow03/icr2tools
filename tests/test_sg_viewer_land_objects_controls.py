@@ -200,3 +200,101 @@ def test_land_polygon_export_applies_height_to_land_mode_vertices(qapp):
         assert points[3:] == [(0.0, 0.0, 6.0), (10.0, 0.0, 7.0), (0.0, 10.0, 8.0)]
     finally:
         window.close()
+
+
+def test_paint_preview_draws_land_objects_before_tsos(qapp, monkeypatch):
+    from sg_viewer.services import preview_painter
+
+    calls = []
+
+    def record(name):
+        def _inner(*args, **kwargs):
+            calls.append(name)
+        return _inner
+
+    for name in (
+        "_draw_background",
+        "_draw_axes",
+        "render_sg_preview",
+        "_draw_tsd_lines",
+        "_draw_centerlines",
+        "_draw_start_finish_line",
+        "_draw_creation_overlays",
+        "_draw_drag_heading_guide",
+        "_draw_nodes",
+        "_draw_center_crosshair",
+        "_draw_query_track_overlay",
+        "_draw_status_overlay",
+    ):
+        monkeypatch.setattr(preview_painter, name, record(name))
+    monkeypatch.setattr(
+        preview_painter, "_draw_land_object_polygons_overlay", record("land_polygons")
+    )
+    monkeypatch.setattr(
+        preview_painter, "_draw_land_object_points_overlay", record("land_points")
+    )
+    monkeypatch.setattr(preview_painter, "_draw_trackside_objects", record("tsos"))
+
+    image = QtGui.QImage(16, 16, QtGui.QImage.Format_ARGB32)
+    painter = QtGui.QPainter(image)
+    try:
+        preview_painter.paint_preview(
+            painter,
+            preview_painter.BasePreviewState(
+                rect=QtCore.QRect(0, 0, 16, 16),
+                background_color=QtGui.QColor("black"),
+                background_image=None,
+                background_brightness=1.0,
+                background_scale_500ths_per_px=None,
+                background_origin=None,
+                track_opacity=1.0,
+                sampled_centerline=[(0.0, 0.0)],
+                selected_section_points=[],
+                section_endpoints=[],
+                selected_section_index=None,
+                show_curve_markers=False,
+                show_axes=False,
+                show_crosshair=False,
+                sections=[],
+                selected_curve_index=None,
+                start_finish_mapping=None,
+                status_message="",
+                split_section_mode=False,
+                split_hover_point=None,
+                query_track_hover_point=None,
+                query_track_overlay_message="",
+                ruler_start_point=None,
+                ruler_end_point=None,
+                ruler_label="",
+                land_object_points=((1.0, 1.0), (2.0, 1.0), (1.0, 2.0)),
+                land_object_polygons=(((0, 1, 2), 1, False),),
+                xsect_dlat=None,
+                show_xsect_dlat_line=False,
+                centerline_unselected_color=QtGui.QColor("white"),
+                centerline_selected_color=QtGui.QColor("yellow"),
+                centerline_long_curve_color=QtGui.QColor("red"),
+                radii_unselected_color=QtGui.QColor("gray"),
+                radii_selected_color=QtGui.QColor("magenta"),
+                xsect_dlat_line_color=QtGui.QColor("green"),
+                integrity_boundary_violation_points=(),
+            ),
+            preview_painter.CreationOverlayState(
+                False, None, None, False, None, None, None
+            ),
+            None,
+            None,
+            preview_painter.SgPreviewState(
+                model=None,
+                transform=None,
+                view_state=None,
+                enabled=False,
+                trackside_objects=(object(),),
+            ),
+            (1.0, (0.0, 0.0)),
+            16,
+        )
+    finally:
+        painter.end()
+
+    assert calls.index("land_polygons") < calls.index("tsos")
+    assert calls.index("land_points") < calls.index("tsos")
