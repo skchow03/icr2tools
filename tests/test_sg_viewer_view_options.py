@@ -1951,7 +1951,7 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         def fake_load_sg(path, **kwargs):
             progress = kwargs["progress"]
             progress.update(kwargs["progress_offset"] + 2, "Applying loaded track state…")
-            progress.update(kwargs["progress_offset"] + 6, "Project loaded.")
+            progress.update(kwargs["progress_offset"] + 18, "Project loaded.")
 
         monkeypatch.setattr(
             "sg_viewer.ui.controllers.features.document_controller.ProjectLoadProgress",
@@ -1962,13 +1962,47 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         window.controller._document_controller.open_project_path(project_path)
 
         assert closed
-        assert events[0] == (0, "Loading SG CREATE Project:8")
+        assert events[0] == (0, "Loading SG CREATE Project:20")
         assert (0, "Opening project file track.sgc…") in events
         assert (1, "Resolving referenced SG file…") in events
         assert (4, "Applying loaded track state…") in events
-        assert (8, "Project loaded.") in events
+        assert (20, "Project loaded.") in events
     finally:
         window.close()
+
+
+def test_restore_mrk_tsd_project_data_reports_tsd_substeps():
+    events: list[tuple[int, str]] = []
+
+    class FakeHost:
+        def _load_mrk_wall_heights_for_current_track(self):
+            events.append((-1, "loaded wall heights"))
+
+        def _load_manual_wall_height_overrides_for_current_track(self):
+            events.append((-1, "loaded manual wall heights"))
+
+        def _load_mrk_state_for_current_track(self):
+            events.append((-1, "loaded mrk"))
+
+        def _load_tsd_state_for_current_track(self, *, progress_callback=None):
+            assert progress_callback is not None
+            progress_callback(2, "Restoring TSD project data: applying Track3D settings…")
+            progress_callback(7, "Restoring TSD project data: reading referenced TSD files…")
+
+    class FakeProgress:
+        def update(self, value, message):
+            events.append((value, message))
+
+    controller = DocumentController(FakeHost(), viewer_controller_module.logger)
+
+    controller._restore_mrk_tsd_project_data(progress=FakeProgress(), progress_offset=5)
+
+    assert (5, "Restoring MRK wall-height data…") in events
+    assert (6, "Restoring manual wall-height overrides…") in events
+    assert (7, "Restoring MRK marker data…") in events
+    assert (8, "Restoring TSD project data: resetting cached objects…") in events
+    assert (10, "Restoring TSD project data: applying Track3D settings…") in events
+    assert (15, "Restoring TSD project data: reading referenced TSD files…") in events
 
 
 def test_project_sg_data_round_trips_through_document_controller_payload(qapp):

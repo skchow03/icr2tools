@@ -1728,7 +1728,7 @@ class SGViewerController:
             return
         self._tso_persist_timer.start()
 
-    def _load_tsd_state_for_current_track(self) -> None:
+    def _load_tsd_state_for_current_track(self, *, progress_callback=None) -> None:
         self._clear_loaded_tsd_files()
         self._window.load_land_objects([])
         self._generated_skid_mark_lines = ()
@@ -1739,12 +1739,16 @@ class SGViewerController:
         self._window.set_selected_track3d_path_text("none")
         self._window.set_selected_colors_path_text("defaults")
         self._sync_tso_visibility_section_dlongs()
+        if progress_callback is not None:
+            progress_callback(1, "Restoring TSD project data: reading project settings…")
         if self._current_path is None:
             self.set_land_objects_dirty(False)
             return
         project_state = self._sg_settings_store.project_state_from_payload(
             self._current_path, self._sg_settings_store.load(self._current_path)
         )
+        if progress_callback is not None:
+            progress_callback(2, "Restoring TSD project data: applying Track3D settings…")
         persisted_auto_update_relative_z = project_state.tso_auto_update_relative_z
         self._auto_update_tso_relative_z = bool(persisted_auto_update_relative_z) if persisted_auto_update_relative_z is not None else False
         checkbox = self._window.tso_auto_update_relative_z_checkbox
@@ -1767,6 +1771,8 @@ class SGViewerController:
             if auto_track3d_path is not None:
                 self._set_selected_track3d_path(auto_track3d_path, persist=False)
         files, active_index = project_state.tsd_files, project_state.tsd_active_index
+        if progress_callback is not None:
+            progress_callback(3, "Restoring TSD project data: rebuilding TSD object rows…")
         self._tsd_objects = []
         self._trackside_objects = []
         for raw_object in project_state.tsd_objects:
@@ -1786,6 +1792,8 @@ class SGViewerController:
                 except ValueError:
                     self._skid_marks_colors = DEFAULT_SKID_COLORS
         self._refresh_tsd_objects_table()
+        if progress_callback is not None:
+            progress_callback(4, "Restoring TSD project data: rebuilding trackside object rows…")
         self._trackside_objects = []
         for raw_object in project_state.trackside_objects:
             try:
@@ -1793,13 +1801,19 @@ class SGViewerController:
             except ValueError:
                 continue
         self._refresh_tso_table()
+        if progress_callback is not None:
+            progress_callback(5, "Restoring TSD project data: restoring visibility lists…")
         self._window.tso_visibility_sidebar.load_object_lists_from_payload(
             project_state.tso_visibility_object_lists
         )
         self._window.tso_visibility_sidebar.load_detail_lists_from_payload(
             project_state.tso_visibility_detail_lists
         )
+        if progress_callback is not None:
+            progress_callback(6, "Restoring TSD project data: loading land objects…")
         self._window.load_land_objects(project_state.land_objects)
+        if progress_callback is not None:
+            progress_callback(7, "Restoring TSD project data: reading referenced TSD files…")
         for path in files:
             if not path.exists():
                 continue
@@ -1809,6 +1823,8 @@ class SGViewerController:
                 logger.warning("Unable to restore TSD file %s", path, exc_info=True)
                 continue
             self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=False, source_path=path.resolve())
+        if progress_callback is not None:
+            progress_callback(8, "Restoring TSD project data: selecting active TSD file…")
         if self._loaded_tsd_files:
             target_index = active_index if isinstance(active_index, int) and 0 <= active_index < len(self._loaded_tsd_files) else None
             if target_index is None:
@@ -1817,6 +1833,8 @@ class SGViewerController:
             else:
                 self._window.tsd_files_combo.setCurrentIndex(target_index + 1)
                 self._set_active_tsd_file(target_index)
+        if progress_callback is not None:
+            progress_callback(9, "Restoring TSD project data: clearing dirty flags…")
         self._set_tsd_dirty(False)
         self._set_trackside_objects_dirty(False)
         self.set_land_objects_dirty(False)
