@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from PyQt5 import QtCore, QtWidgets
 
@@ -12,6 +12,8 @@ from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
+
+ProjectLoadProgressCallback = Callable[[int, str], None]
 
 
 class ProjectLoadProgress:
@@ -73,7 +75,9 @@ class DocumentControllerHost(Protocol):
     def _clear_loaded_tsd_files(self) -> None: ...
     def _load_mrk_state_for_current_track(self) -> None: ...
     def _persist_mrk_state_for_current_track(self) -> None: ...
-    def _load_tsd_state_for_current_track(self) -> None: ...
+    def _load_tsd_state_for_current_track(
+        self, *, progress_callback: ProjectLoadProgressCallback | None = None
+    ) -> None: ...
     def _persist_tsd_state_for_current_track(self) -> None: ...
     def _load_mrk_wall_heights_for_current_track(self) -> None: ...
     def _load_manual_wall_height_overrides_for_current_track(self) -> None: ...
@@ -204,7 +208,7 @@ class DocumentController:
         self._host._update_track_length_display()
         self._restore_mrk_tsd_project_data(progress=progress, progress_offset=progress_offset + 5)
         if progress is not None:
-            progress.update(progress_offset + 9, "Project loaded.")
+            progress.update(progress_offset + 18, "Project loaded.")
 
     def _restore_mrk_tsd_project_data(
         self,
@@ -221,9 +225,12 @@ class DocumentController:
         if progress is not None:
             progress.update(progress_offset + 2, "Restoring MRK marker data…")
         self._host._load_mrk_state_for_current_track()
-        if progress is not None:
-            progress.update(progress_offset + 3, "Restoring TSD project data…")
-        self._host._load_tsd_state_for_current_track()
+        def _update_tsd_progress(relative_step: int, message: str) -> None:
+            if progress is not None:
+                progress.update(progress_offset + 3 + relative_step, message)
+
+        _update_tsd_progress(0, "Restoring TSD project data: resetting cached objects…")
+        self._host._load_tsd_state_for_current_track(progress_callback=_update_tsd_progress)
 
     def import_trk_file_dialog(self) -> None:
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
@@ -375,7 +382,7 @@ class DocumentController:
         progress: ProjectLoadProgress | None = None
         raw_sg_file: object = None
         try:
-            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 11)
+            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 20)
             progress.update(0, f"Opening project file {project_path.name}…")
             payload = json.loads(project_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
@@ -633,7 +640,7 @@ class DocumentController:
         self._host._update_track_length_display()
         self._restore_mrk_tsd_project_data(progress=progress, progress_offset=7)
         if progress is not None:
-            progress.update(11, "Project loaded.")
+            progress.update(20, "Project loaded.")
 
     def _persist_project_sg_reference(self, sg_path: Path) -> None:
         settings_path = self._host._settings_path_for(sg_path)
