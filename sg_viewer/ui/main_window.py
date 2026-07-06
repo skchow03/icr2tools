@@ -2228,12 +2228,42 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             f"Section SubIndexes (.3d): {len(starts)}"
         )
         if starts:
-            starts_text = ", ".join(self.format_length(value) for value in starts)
+            formatted_starts = []
+            for subindex_position, value in enumerate(starts):
+                formatted_starts.append(
+                    self._format_section_subindex_start_label(
+                        int(section_index), subindex_position, value
+                    )
+                )
+            starts_text = ", ".join(formatted_starts)
         else:
             starts_text = "–"
         self._section_subindex_starts_label.setText(
             f"SubIndex Start DLONGs (.3d): {starts_text}"
         )
+
+    def _format_section_subindex_start_label(
+        self, section_index: int, subindex_position: int, value: object
+    ) -> str:
+        try:
+            return self.format_length(value)  # type: ignore[arg-type]
+        except Exception as exc:
+            value_repr = self._safe_repr(value)
+            raise ValueError(
+                "Could not format Section SubIndex start DLONG from SectionList DLONG "
+                "metadata in the loaded .3d file; "
+                f"selected SG section index={section_index}, "
+                f"SubIndex ordinal={subindex_position}, "
+                f"raw value type={type(value).__name__}, "
+                f"raw value repr={value_repr}"
+            ) from exc
+
+    @staticmethod
+    def _safe_repr(value: object) -> str:
+        try:
+            return repr(value)
+        except Exception as exc:
+            return f"<unrepresentable {type(value).__name__}: {exc}>"
 
     def _format_section_length(self, prefix: str, length: float | None) -> str:
         value = "–" if length is None else self.format_length_with_secondary(length)
