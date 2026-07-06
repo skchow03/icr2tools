@@ -208,7 +208,7 @@ class DocumentController:
         self._host._update_track_length_display()
         self._restore_mrk_tsd_project_data(progress=progress, progress_offset=progress_offset + 5)
         if progress is not None:
-            progress.update(progress_offset + 18, "Project loaded.")
+            progress.update(progress_offset + 21, "Project loaded.")
 
     def _restore_mrk_tsd_project_data(
         self,
@@ -382,7 +382,7 @@ class DocumentController:
         progress: ProjectLoadProgress | None = None
         raw_sg_file: object = None
         try:
-            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 20)
+            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 23)
             progress.update(0, f"Opening project file {project_path.name}…")
             payload = json.loads(project_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
@@ -640,7 +640,7 @@ class DocumentController:
         self._host._update_track_length_display()
         self._restore_mrk_tsd_project_data(progress=progress, progress_offset=7)
         if progress is not None:
-            progress.update(20, "Project loaded.")
+            progress.update(23, "Project loaded.")
 
     def _persist_project_sg_reference(self, sg_path: Path) -> None:
         settings_path = self._host._settings_path_for(sg_path)
