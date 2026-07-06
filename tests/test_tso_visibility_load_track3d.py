@@ -4,9 +4,9 @@ import pytest
 
 pytest.importorskip("PyQt5")
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.io.track3d_parser import Track3DObjectList
+from sg_viewer.io.track3d_parser import Track3DDetailList, Track3DObjectList
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 
 
@@ -140,3 +140,53 @@ def test_save_track3d_warns_when_layout_does_not_match(
             "Use Reconcile .3D first so every Sections / Side / SubIndex row lines up before saving.",
         )
     ]
+
+
+def test_load_detail_lists_button_imports_only_tso_items_from_detail_lists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN \"tree\";\n"
+        "__TSO2: DYNAMIC 1, 2, 3, 4, EXTERN \"sign\";\n"
+        "DetailList_4-0H: LIST { DetailO_1-0, __TSO1, DetailN_1-0, __TSO2 };\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+
+    tab.load_detail_lists_file()
+
+    assert [entry.tso_ids for entry in tab.detail_lists] == [[1, 2]]
+    assert tab.visibility_mode_combo.currentData() == "detail"
+    assert tab.tso_list.item(0).data(QtCore.Qt.UserRole) == 1
+    assert tab.tso_list.item(1).data(QtCore.Qt.UserRole) == 2
+
+
+def test_load_detail_lists_button_warns_before_overwriting_existing_detail_lists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_detail_lists([Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[7])])
+
+    path = tmp_path / "track.3d"
+    path.write_text("DetailList_4-0H: LIST { __TSO1 };\n", encoding="utf-8")
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    warnings: list[tuple[str, str]] = []
+
+    def _fake_warning(_parent, title, text, *args, **kwargs):
+        warnings.append((title, text))
+        return QtWidgets.QMessageBox.No
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "warning", _fake_warning)
+
+    tab.load_detail_lists_file()
+
+    assert warnings == [
+        ("Load DetailLists", "Loading DetailLists will overwrite the current DetailList visibility data. Continue?"),
+    ]
+    assert tab.detail_lists[0].tso_ids == [7]
