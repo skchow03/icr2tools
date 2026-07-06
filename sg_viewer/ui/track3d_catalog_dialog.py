@@ -40,9 +40,16 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         if current_section in sections:
             self._filter_combo.setCurrentIndex(self._filter_combo.findData(current_section))
 
+        self._lod_filter_combo = QtWidgets.QComboBox()
+        self._lod_filter_combo.addItem("HI, MED and LO", None)
+        for lod in ("HI", "MED", "LO"):
+            self._lod_filter_combo.addItem(lod, lod)
+
         filter_row = QtWidgets.QHBoxLayout()
-        filter_row.addWidget(QtWidgets.QLabel("Filter:"))
+        filter_row.addWidget(QtWidgets.QLabel("Section:"))
         filter_row.addWidget(self._filter_combo, stretch=1)
+        filter_row.addWidget(QtWidgets.QLabel("LOD:"))
+        filter_row.addWidget(self._lod_filter_combo)
         current_button = QtWidgets.QPushButton("Show current SG section")
         current_button.setEnabled(current_section is not None and current_section in sections)
         current_button.clicked.connect(self._filter_current_section)
@@ -60,7 +67,7 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         self._tabs = QtWidgets.QTabWidget()
         splitter.addWidget(self._tabs)
 
-        self._section_table = self._make_table(["Section", "Subsections", "LODs", "DLONG ranges", "ObjectLists", "DetailLists", "Section lists"])
+        self._section_table = self._make_table(["Section", "Subsection", "LOD", "DLONG start", "DLONG end", "ObjectLists", "DetailLists", "Section lists"])
         self._objects_tree = QtWidgets.QTreeWidget()
         self._objects_tree.setHeaderLabels(["Section / side / ObjectList", "TSO IDs", "Extern names", "Line"])
         self._tso_table = self._make_table(["ID", "Extern", "X", "Y", "Z", "Rot", "Line"])
@@ -94,6 +101,7 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         layout.addLayout(button_row)
 
         self._filter_combo.currentIndexChanged.connect(self._populate)
+        self._lod_filter_combo.currentIndexChanged.connect(self._populate)
         self._section_table.itemSelectionChanged.connect(self._show_selected_details)
         self._tso_table.itemSelectionChanged.connect(self._show_selected_details)
         self._face_table.itemSelectionChanged.connect(self._show_selected_details)
@@ -108,7 +116,17 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         table.horizontalHeader().setStretchLastSection(True)
+        table.setWordWrap(True)
+        table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         return table
+
+    @staticmethod
+    def _resize_table_to_wrapped_contents(table: QtWidgets.QTableWidget, max_column_width: int = 260) -> None:
+        table.resizeColumnsToContents()
+        for col in range(table.columnCount()):
+            if table.columnWidth(col) > max_column_width:
+                table.setColumnWidth(col, max_column_width)
+        table.resizeRowsToContents()
 
     def _filter_section(self) -> int | None:
         return self._filter_combo.currentData()
@@ -116,6 +134,14 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
     def _include_section(self, section: int) -> bool:
         selected = self._filter_section()
         return selected is None or section == selected
+
+    def _filter_lod(self) -> str | None:
+        value = self._lod_filter_combo.currentData()
+        return value if isinstance(value, str) else None
+
+    def _include_lod(self, lod: str) -> bool:
+        selected = self._filter_lod()
+        return selected is None or lod == selected
 
     @staticmethod
     def _item(text: object, copy_text: str | None = None, details: str | None = None, section: int | None = None) -> QtWidgets.QTableWidgetItem:
@@ -133,16 +159,45 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         self._details.clear()
 
     def _populate_sections(self) -> None:
-        rows = [s for s in self._catalog.section_summary if self._include_section(s.section)]
+        section_lists_by_section: dict[int, list[str]] = defaultdict(list)
+        for label, section_list in self._catalog.section_lists.items():
+            section_lists_by_section[section_list.section].append(label)
+
+        rows = [
+            face
+            for face in sorted(
+                self._catalog.faces,
+                key=lambda f: (f.section, f.subsection, ("HI", "MED", "LO").index(f.lod) if f.lod in ("HI", "MED", "LO") else 99, f.line),
+            )
+            if self._include_section(face.section) and self._include_lod(face.lod)
+        ]
         self._section_table.setRowCount(len(rows))
-        for row, summary in enumerate(rows):
-            lods = ", ".join(f"{k}:{v}" for k, v in sorted(summary.lod_counts.items()))
-            dlongs = ", ".join(f"{a}-{b}" for a, b in summary.dlong_ranges)
-            values = [summary.section, ", ".join(map(str, summary.subsections)), lods, dlongs, ", ".join(summary.object_lists), ", ".join(summary.detail_lists), ", ".join(summary.section_lists)]
-            details = f"Section {summary.section}\nObjectLists: {', '.join(summary.object_lists)}\nSection lists: {', '.join(summary.section_lists)}"
+        for row, face in enumerate(rows):
+            section_lists = sorted(section_lists_by_section.get(face.section, []))
+            values = [
+                face.section,
+                face.subsection,
+                face.lod,
+                "–" if face.dlong_start is None else face.dlong_start,
+                "–" if face.dlong_end is None else face.dlong_end,
+                ", ".join(face.object_lists),
+                ", ".join(face.detail_lists),
+                ", ".join(section_lists),
+            ]
+            details = (
+                f"{face.label}\n"
+                f"Section {face.section}, subsection {face.subsection}, LOD {face.lod}\n"
+                f"DLONG start: {face.dlong_start if face.dlong_start is not None else '–'}\n"
+                f"DLONG end: {face.dlong_end if face.dlong_end is not None else '–'}\n"
+                f"ObjectLists: {', '.join(face.object_lists)}\n"
+                f"DetailLists: {', '.join(face.detail_lists)}\n"
+                f"Section lists: {', '.join(section_lists)}\n\n"
+                f"{face.span.text}"
+            )
             for col, value in enumerate(values):
-                self._section_table.setItem(row, col, self._item(value, str(summary.section), details, summary.section))
-        self._section_table.resizeColumnsToContents()
+                copy_text = face.label if col == 0 else None
+                self._section_table.setItem(row, col, self._item(value, copy_text, details, face.section))
+        self._resize_table_to_wrapped_contents(self._section_table)
 
     def _populate_objects(self) -> None:
         self._objects_tree.clear()
@@ -182,17 +237,17 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
             values = [label, tso.extern, tso.x, tso.y, tso.z, tso.rot, tso.line]
             for col, value in enumerate(values):
                 self._tso_table.setItem(row, col, self._item(value, label if col == 0 else None, tso.span.text, None))
-        self._tso_table.resizeColumnsToContents()
+        self._resize_table_to_wrapped_contents(self._tso_table)
 
     def _populate_faces(self) -> None:
-        faces = [f for f in self._catalog.faces if self._include_section(f.section)]
+        faces = [f for f in self._catalog.faces if self._include_section(f.section) and self._include_lod(f.lod)]
         self._face_table.setRowCount(len(faces))
         for row, face in enumerate(faces):
             dlong = "–" if face.dlong_start is None else f"{face.dlong_start}-{face.dlong_end}"
             values = [face.label, face.section, face.subsection, face.lod, dlong, ", ".join(face.materials), ", ".join(face.object_lists), face.line]
             for col, value in enumerate(values):
                 self._face_table.setItem(row, col, self._item(value, face.label if col == 0 else None, face.span.text, face.section))
-        self._face_table.resizeColumnsToContents()
+        self._resize_table_to_wrapped_contents(self._face_table)
 
     def _filter_current_section(self) -> None:
         if self._current_section is None:
