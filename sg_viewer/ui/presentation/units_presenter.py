@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from numbers import Real
+
 from sg_viewer.ui.altitude_units import feet_from_500ths
 
 from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
@@ -22,10 +24,27 @@ def measurement_unit_step(unit: str) -> float:
     return UNIT_STEPS.get(unit, 50.0)
 
 
+def _coerce_length_value(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, Real):
+        raise TypeError(
+            f"Length values must be numeric 500ths units; got {type(value).__name__}: {value!r}"
+        )
+    return float(value)
+
+
 def format_length(value: float | int | None, *, unit: str) -> str:
+    value = _coerce_length_value(value)
     if value is None:
         return "–"
-    display = units_from_500ths(value, unit)
+    try:
+        display = units_from_500ths(value, unit)
+    except RecursionError as exc:
+        raise ValueError(
+            f"Could not format length value {value!r} in unit {unit!r}; "
+            "the project data may contain a self-referential or invalid numeric value."
+        ) from exc
     decimals = measurement_unit_decimals(unit)
     label = measurement_unit_label(unit)
     if decimals == 0:
@@ -37,6 +56,7 @@ def format_length_with_secondary(value: float | int | None, *, unit: str) -> str
     primary = format_length(value, unit=unit)
     if value is None:
         return primary
+    value = _coerce_length_value(value)
     feet_value = units_from_500ths(value, "feet")
     if unit == "feet":
         return f"{primary} ({feet_value / 5280.0:.3f} miles)"

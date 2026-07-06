@@ -16,3 +16,13 @@ def test_fsect_display_round_trip() -> None:
     display = fsect_dlat_to_display_units(value, unit="feet")
     round_trip = fsect_dlat_from_display_units(display, unit="feet")
     assert round_trip == value
+
+
+def test_length_formatting_rejects_non_numeric_values() -> None:
+    try:
+        format_length_with_secondary({"bad": "length"}, unit="feet")  # type: ignore[arg-type]
+    except TypeError as exc:
+        assert "numeric 500ths units" in str(exc)
+        assert "dict" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected TypeError")
