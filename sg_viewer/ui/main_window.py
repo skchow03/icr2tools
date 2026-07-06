@@ -249,6 +249,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_selected_path_label.setWordWrap(True)
         self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
         self._three_d_file_catalog_inspector_button = QtWidgets.QPushButton("Open catalog inspector (read-only)")
+        self._three_d_show_section_entries_button = QtWidgets.QPushButton("Show .3D entries for selected SG section")
+        self._three_d_show_section_object_lists_button = QtWidgets.QPushButton("Show ObjectLists referenced by selected section")
+        self._three_d_show_section_tsos_button = QtWidgets.QPushButton("Show TSOs used by selected section")
+        self._three_d_preview_object_list_changes_button = QtWidgets.QPushButton("Preview ObjectList changes for selected section")
+        self._three_d_apply_object_list_changes_button = QtWidgets.QPushButton("Apply ObjectList changes for selected section")
+        self._three_d_apply_tso_definitions_button = QtWidgets.QPushButton("Apply selected TSO definitions")
+        self._three_d_apply_face_materials_button = QtWidgets.QPushButton("Replace materials in selected FACE spans")
         self._three_d_file_inspect_button = QtWidgets.QPushButton("Inspect see-through candidates")
         self._three_d_file_fix_copy_button = QtWidgets.QPushButton("Fix see-through (save as copy)")
         self._three_d_file_fix_in_place_button = QtWidgets.QPushButton("Fix see-through (in place)")
@@ -1017,6 +1024,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         track_group_layout.addWidget(self._three_d_file_selected_path_label)
         track_group_layout.addWidget(self._three_d_file_select_button)
         track_group_layout.addWidget(self._three_d_file_catalog_inspector_button)
+        track_group_layout.addWidget(self._three_d_show_section_entries_button)
+        track_group_layout.addWidget(self._three_d_show_section_object_lists_button)
+        track_group_layout.addWidget(self._three_d_show_section_tsos_button)
+        track_group_layout.addWidget(self._three_d_preview_object_list_changes_button)
+        track_group_layout.addWidget(self._three_d_apply_object_list_changes_button)
+        track_group_layout.addWidget(self._three_d_apply_tso_definitions_button)
+        track_group_layout.addWidget(self._three_d_apply_face_materials_button)
         track_group.setLayout(track_group_layout)
         three_d_layout.addWidget(track_group)
 
@@ -1447,6 +1461,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def tso_stamp_button(self) -> QtWidgets.QPushButton:
         return self._tso_stamp_button
 
+
+    @property
+    def selected_section_index(self) -> int | None:
+        return self._selected_section_index
+
     @property
     def tso_box_select_button(self) -> QtWidgets.QPushButton:
         return self._tso_box_select_button
@@ -1502,6 +1521,35 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_file_catalog_inspector_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_catalog_inspector_button
+
+
+    @property
+    def three_d_show_section_entries_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_show_section_entries_button
+
+    @property
+    def three_d_show_section_object_lists_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_show_section_object_lists_button
+
+    @property
+    def three_d_show_section_tsos_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_show_section_tsos_button
+
+    @property
+    def three_d_preview_object_list_changes_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_preview_object_list_changes_button
+
+    @property
+    def three_d_apply_object_list_changes_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_apply_object_list_changes_button
+
+    @property
+    def three_d_apply_tso_definitions_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_apply_tso_definitions_button
+
+    @property
+    def three_d_apply_face_materials_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_apply_face_materials_button
 
     @property
     def three_d_file_inspect_button(self) -> QtWidgets.QPushButton:
