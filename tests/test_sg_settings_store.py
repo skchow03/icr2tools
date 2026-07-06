@@ -137,3 +137,28 @@ def test_manual_wall_height_overrides_round_trip(tmp_path):
     assert store.get_manual_wall_height_overrides(sg_path) == [
         {"boundary": 1, "start_dlong": 100, "end_dlong": 300, "height": 42}
     ]
+
+
+def test_tso_visibility_detail_lists_round_trip(tmp_path):
+    sg_path = tmp_path / "track.sg"
+    store = SGSettingsStore()
+
+    store.set_tso_visibility_detail_lists(
+        sg_path,
+        [
+            {
+                "section": 4,
+                "sub_index": 0,
+                "lod_suffix": "H",
+                "tso_ids": [1, 2],
+            }
+        ],
+    )
+
+    payload = json.loads(sg_path.with_suffix(".sgc").read_text(encoding="utf-8"))
+    assert payload["tso_visibility"]["detail_lists"] == [
+        {"section": 4, "sub_index": 0, "lod_suffix": "H", "tso_ids": [1, 2]}
+    ]
+    assert store.get_tso_visibility_detail_lists(sg_path) == [
+        {"section": 4, "sub_index": 0, "lod_suffix": "H", "tso_ids": [1, 2]}
+    ]

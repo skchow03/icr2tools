@@ -556,6 +556,7 @@ class TSOVisibilityTab(QWidget):
         layout = QVBoxLayout(self)
 
         self.load_button = QPushButton("Load ObjectLists from track.3D")
+        self.load_detail_lists_button = QPushButton("Load DetailLists from track.3D")
         self.reconcile_button = QPushButton("Reconcile Project vs track.3D")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
         self.save_detail_lists_to_track3d_button = QPushButton(
@@ -568,6 +569,9 @@ class TSOVisibilityTab(QWidget):
 
         self.load_button.setToolTip(
             "Load ObjectLists from a track.3D file. This replaces the current TSO visibility data."
+        )
+        self.load_detail_lists_button.setToolTip(
+            "Load DetailLists from a track.3D file. Only __TSO entries referenced by DetailLists are imported."
         )
         self.reconcile_button.setToolTip(
             "Compare current ObjectLists with another track.3D file and copy/add matching rows."
@@ -595,6 +599,7 @@ class TSOVisibilityTab(QWidget):
         top_button_row = QHBoxLayout()
         for button in (
             self.load_button,
+            self.load_detail_lists_button,
             self.reconcile_button,
         ):
             top_button_row.addWidget(button)
@@ -679,6 +684,7 @@ class TSOVisibilityTab(QWidget):
         right_panel.addWidget(self.tso_list)
 
         self.load_button.clicked.connect(self.load_file)
+        self.load_detail_lists_button.clicked.connect(self.load_detail_lists_file)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
@@ -722,6 +728,12 @@ class TSOVisibilityTab(QWidget):
 
     def set_detail_lists(self, detail_lists: list[Track3DDetailList]) -> None:
         self.detail_lists = list(detail_lists)
+        self._detail_list_tso_ids = {
+            tso_id
+            for entry in self.detail_lists
+            for tso_id in entry.tso_ids
+            if tso_id >= 0
+        }
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
@@ -749,6 +761,12 @@ class TSOVisibilityTab(QWidget):
         if self.detail_lists:
             return
         self.detail_lists = parse_track3d_detail_lists(path)
+        self._detail_list_tso_ids = {
+            tso_id
+            for entry in self.detail_lists
+            for tso_id in entry.tso_ids
+            if tso_id >= 0
+        }
         self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
         self._refresh_tso_filter_list()
         if self._is_detail_mode():
@@ -1003,6 +1021,7 @@ class TSOVisibilityTab(QWidget):
     def load_detail_lists_from_payload(self, payload: object) -> None:
         if not isinstance(payload, list):
             self.detail_lists = []
+            self._detail_list_tso_ids = set()
             return
         parsed_lists: list[Track3DDetailList] = []
         for raw_entry in payload:
@@ -1033,6 +1052,12 @@ class TSOVisibilityTab(QWidget):
                 )
             )
         self.detail_lists = parsed_lists
+        self._detail_list_tso_ids = {
+            tso_id
+            for entry in self.detail_lists
+            for tso_id in entry.tso_ids
+            if tso_id >= 0
+        }
         self._refresh_tso_filter_list()
         self.populate_table()
 
@@ -1166,6 +1191,51 @@ class TSOVisibilityTab(QWidget):
             return
         self._refresh_tso_filter_list()
         self._refresh_visible_tso_column(refresh_table=False)
+
+    def load_detail_lists_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open track.3D",
+            "",
+            "3D Files (*.3D *.3d);;All Files (*)",
+        )
+
+        if not path:
+            return
+
+        if self.detail_lists:
+            response = QMessageBox.warning(
+                self,
+                "Load DetailLists",
+                "Loading DetailLists will overwrite the current DetailList visibility data. Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if response != QMessageBox.Yes:
+                return
+
+        if not track3d_has_detail_lists(path):
+            QMessageBox.warning(
+                self,
+                "Load DetailLists",
+                "The selected track.3D file does not contain any DetailLists.",
+            )
+            return
+
+        self.detail_lists = parse_track3d_detail_lists(path)
+        self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
+        self._detail_list_tso_ids = {
+            tso_id
+            for entry in self.detail_lists
+            for tso_id in entry.tso_ids
+            if tso_id >= 0
+        }
+        self.visibility_mode_combo.setCurrentIndex(
+            self.visibility_mode_combo.findData("detail")
+        )
+        self._refresh_tso_filter_list()
+        self.populate_table()
+        self._emit_object_lists_changed()
 
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
