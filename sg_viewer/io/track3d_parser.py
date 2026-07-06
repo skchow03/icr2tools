@@ -4,6 +4,8 @@ from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
+from sg_viewer.io.track3d_catalog import parse_track3d_catalog
+
 
 @dataclass
 class Track3DObjectList:
@@ -21,75 +23,51 @@ class Track3DSectionDlongList:
 
 
 LINE_RE = re.compile(r"ObjectList_([LR])(\d+)_(\d+): LIST\s*\{([^}]*)\};")
-SECTION_LIST_RE = re.compile(r"sec(\d+)_l(\d+):\s*LIST\s*\{(.*?)\};", re.IGNORECASE | re.DOTALL)
-DATA_RE = re.compile(r"DATA\s*\{([^}]*)\}", re.IGNORECASE | re.DOTALL)
 
 
 def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
+    catalog = parse_track3d_catalog(path)
     results: list[Track3DObjectList] = []
 
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            match = LINE_RE.search(line)
-            if not match:
+    for object_list in catalog.object_lists.values():
+        tso_ids: list[int] = []
+        for item in object_list.items:
+            if not item.startswith("__TSO"):
+                continue
+            try:
+                tso_ids.append(int(item.removeprefix("__TSO")))
+            except ValueError:
                 continue
 
-            side = match.group(1)
-            section = int(match.group(2))
-            sub_index = int(match.group(3))
-            raw = match.group(4).strip()
-
-            tso_ids: list[int] = []
-            if raw:
-                for item in raw.split(","):
-                    item = item.strip()
-                    if item.startswith("__TSO"):
-                        tso_ids.append(int(item.replace("__TSO", "")))
-
-            results.append(
-                Track3DObjectList(
-                    side=side,
-                    section=section,
-                    sub_index=sub_index,
-                    tso_ids=tso_ids,
-                )
+        results.append(
+            Track3DObjectList(
+                side=object_list.side,
+                section=object_list.section,
+                sub_index=object_list.subsection,
+                tso_ids=tso_ids,
             )
+        )
 
     return results
 
 
 def track3d_has_object_lists(path: str | Path) -> bool:
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            if LINE_RE.search(line):
-                return True
-    return False
+    return bool(parse_track3d_catalog(path).object_lists)
 
 
 def parse_track3d_section_dlongs(path: str | Path) -> list[Track3DSectionDlongList]:
-    text = Path(path).read_text(encoding="utf-8", errors="ignore")
+    catalog = parse_track3d_catalog(path)
     results: list[Track3DSectionDlongList] = []
 
-    for section_match in SECTION_LIST_RE.finditer(text):
-        data_match = DATA_RE.search(section_match.group(3))
-        if data_match is None:
+    for section_list in catalog.section_lists.values():
+        if not section_list.dlongs:
             continue
-
-        dlongs: list[int] = []
-        for item in data_match.group(1).split(","):
-            value = item.strip()
-            if not value:
-                continue
-            try:
-                dlongs.append(int(value))
-            except ValueError:
-                continue
 
         results.append(
             Track3DSectionDlongList(
-                section=int(section_match.group(1)),
-                sub_index=int(section_match.group(2)),
-                dlongs=tuple(dlongs),
+                section=section_list.section,
+                sub_index=section_list.layout,
+                dlongs=tuple(section_list.dlongs),
             )
         )
 
