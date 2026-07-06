@@ -202,14 +202,28 @@ class DocumentController:
         self._host._reset_altitude_range_for_track()
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
+        self._restore_mrk_tsd_project_data(progress=progress, progress_offset=progress_offset + 5)
         if progress is not None:
-            progress.update(progress_offset + 5, "Restoring MRK and TSD project data…")
+            progress.update(progress_offset + 9, "Project loaded.")
+
+    def _restore_mrk_tsd_project_data(
+        self,
+        *,
+        progress: ProjectLoadProgress | None = None,
+        progress_offset: int = 0,
+    ) -> None:
+        if progress is not None:
+            progress.update(progress_offset, "Restoring MRK wall-height data…")
         self._host._load_mrk_wall_heights_for_current_track()
-        self._host._load_manual_wall_height_overrides_for_current_track()
-        self._host._load_mrk_state_for_current_track()
-        self._host._load_tsd_state_for_current_track()
         if progress is not None:
-            progress.update(progress_offset + 6, "Project loaded.")
+            progress.update(progress_offset + 1, "Restoring manual wall-height overrides…")
+        self._host._load_manual_wall_height_overrides_for_current_track()
+        if progress is not None:
+            progress.update(progress_offset + 2, "Restoring MRK marker data…")
+        self._host._load_mrk_state_for_current_track()
+        if progress is not None:
+            progress.update(progress_offset + 3, "Restoring TSD project data…")
+        self._host._load_tsd_state_for_current_track()
 
     def import_trk_file_dialog(self) -> None:
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
@@ -361,7 +375,7 @@ class DocumentController:
         progress: ProjectLoadProgress | None = None
         raw_sg_file: object = None
         try:
-            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 8)
+            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 11)
             progress.update(0, f"Opening project file {project_path.name}…")
             payload = json.loads(project_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
@@ -617,14 +631,9 @@ class DocumentController:
         self._host._reset_altitude_range_for_track()
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
+        self._restore_mrk_tsd_project_data(progress=progress, progress_offset=7)
         if progress is not None:
-            progress.update(7, "Restoring MRK and TSD project data…")
-        self._host._load_mrk_wall_heights_for_current_track()
-        self._host._load_manual_wall_height_overrides_for_current_track()
-        self._host._load_mrk_state_for_current_track()
-        self._host._load_tsd_state_for_current_track()
-        if progress is not None:
-            progress.update(8, "Project loaded.")
+            progress.update(11, "Project loaded.")
 
     def _persist_project_sg_reference(self, sg_path: Path) -> None:
         settings_path = self._host._settings_path_for(sg_path)
