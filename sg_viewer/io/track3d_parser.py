@@ -18,6 +18,7 @@ class Track3DSectionDlongList:
     section: int
     sub_index: int
     dlongs: tuple[int, ...]
+    line_number: int | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,24 @@ def parse_track3d_section_dlongs(path: str | Path) -> list[Track3DSectionDlongLi
                 section=int(section_match.group(1)),
                 sub_index=int(section_match.group(2)),
                 dlongs=tuple(dlongs),
+                line_number=text.count("\n", 0, section_match.start()) + 1,
+            )
+        )
+
+    pointer_rows = parse_track3d_section_pointers(path)
+    seen = {(row.section, row.sub_index, row.dlongs) for row in results}
+    for pointer in pointer_rows:
+        dlongs = (pointer.dlong_start, pointer.dlong_end)
+        key = (pointer.section, pointer.sub_index, dlongs)
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(
+            Track3DSectionDlongList(
+                section=pointer.section,
+                sub_index=pointer.sub_index,
+                dlongs=dlongs,
+                line_number=pointer.line_number,
             )
         )
 

@@ -152,3 +152,36 @@ sec1_s4_LO: FACE
     assert rows[2].dlong_start == 1062909
     assert rows[2].dlong_end == 1200000
     assert rows[2].line_number == 8
+
+
+def test_parse_track3d_section_dlongs_extracts_comment_backed_face_sections(tmp_path: Path):
+    sample = """% Outputing section from dlong = 1417213 to dlong = 1705867.
+sec1_s0_HI: FACE
+  ([< -1059364, 3474879, 16602 >]),
+  LIST { DetailList_1-0H }
+;
+% Outputing section from dlong = 1705867 to dlong = 1994522.
+sec1_s1_HI: FACE
+  ([< -900913, 3233596, 15439 >]),
+  LIST { DetailList_1-1H }
+;
+% Outputing section from dlong = 1417213 to dlong = 1705867.
+sec1_s0_HI: FACE
+  ([< -1059364, 3474879, 16602 >]),
+  LIST { DetailList_1-0H }
+;
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(sample, encoding="utf-8")
+
+    rows = parse_track3d_section_dlongs(path)
+
+    assert len(rows) == 2
+    assert rows[0].section == 1
+    assert rows[0].sub_index == 0
+    assert rows[0].dlongs == (1417213, 1705867)
+    assert rows[0].line_number == 2
+    assert rows[1].section == 1
+    assert rows[1].sub_index == 1
+    assert rows[1].dlongs == (1705867, 1994522)
+    assert rows[1].line_number == 7
