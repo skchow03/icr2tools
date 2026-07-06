@@ -4,6 +4,7 @@ from sg_viewer.io.track3d_parser import (
     Track3DObjectList,
     parse_track3d,
     parse_track3d_section_dlongs,
+    parse_track3d_section_pointers,
     save_object_lists_to_track3d,
     track3d_has_object_lists,
 )
@@ -118,3 +119,36 @@ sec3_l2: LIST { sec3_s8_HI, DATA { 1, BAD, 2, , 3 } };
     assert rows[0].section == 3
     assert rows[0].sub_index == 2
     assert rows[0].dlongs == (1, 2, 3)
+
+
+def test_parse_track3d_section_pointers_extracts_ranges_and_line_numbers(tmp_path: Path):
+    sample = """3D VERSION 3.0;
+% Outputing section from dlong = 708606 to dlong = 1062909.
+sec0_s2_HI: FACE
+  ([< -1441064, 4076686, 21036 >]),
+% Outputing section from dlong = 0 to dlong = 708606.
+sec0_s0_MED: FACE
+% Outputting section from dlong = 1062909 to dlong = 1200000.
+sec1_s4_LO: FACE
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(sample, encoding="utf-8")
+
+    rows = parse_track3d_section_pointers(path)
+
+    assert len(rows) == 3
+    assert rows[0].pointer_name == "sec0_s2_HI"
+    assert rows[0].section == 0
+    assert rows[0].sub_index == 2
+    assert rows[0].resolution == "HI"
+    assert rows[0].dlong_start == 708606
+    assert rows[0].dlong_end == 1062909
+    assert rows[0].line_number == 3
+    assert rows[1].pointer_name == "sec0_s0_MED"
+    assert rows[1].resolution == "MED"
+    assert rows[1].line_number == 6
+    assert rows[2].pointer_name == "sec1_s4_LO"
+    assert rows[2].resolution == "LO"
+    assert rows[2].dlong_start == 1062909
+    assert rows[2].dlong_end == 1200000
+    assert rows[2].line_number == 8
