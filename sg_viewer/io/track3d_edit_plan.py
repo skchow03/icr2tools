@@ -9,11 +9,12 @@ at time, using :class:`sg_viewer.io.track3d_catalog.Track3DSourceSpan` metadata.
 from __future__ import annotations
 
 import difflib
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Protocol
+from typing import Iterable, Mapping, Protocol, Sequence
 
 
 class Track3DEditPlanError(ValueError):
@@ -197,3 +198,100 @@ def create_timestamped_backup(path: str | Path, timestamp: datetime | None = Non
         counter += 1
     shutil.copy2(source_path, backup_path)
     return backup_path
+
+
+def _format_object_list_row(side: str, section: int, subsection: int, items: Sequence[str]) -> str:
+    return f"ObjectList_{side}{section}_{subsection}: LIST {{ {', '.join(items)} }};"
+
+def build_selected_object_list_edit_plan(
+    original_path: str | Path,
+    object_lists: Iterable[object],
+    *,
+    section: int,
+    subindices: Iterable[int] | None = None,
+) -> Track3DEditPlan:
+    """Plan ObjectList replacements only for selected section/subindex rows."""
+    from sg_viewer.io.track3d_catalog import parse_track3d_catalog
+
+    wanted_subindices = set(subindices) if subindices is not None else None
+    catalog = parse_track3d_catalog(original_path)
+    edits: list[Track3DTextEdit] = []
+    warnings: list[str] = []
+    for entry in object_lists:
+        entry_section = int(getattr(entry, "section"))
+        entry_subindex = int(getattr(entry, "sub_index"))
+        if entry_section != section:
+            continue
+        if wanted_subindices is not None and entry_subindex not in wanted_subindices:
+            continue
+        side = str(getattr(entry, "side"))
+        label = f"ObjectList_{side}{entry_section}_{entry_subindex}"
+        existing = catalog.object_lists.get(label)
+        if existing is None:
+            warnings.append(f"Skipped missing {label}; targeted ObjectList edits do not insert new rows.")
+            continue
+        items = [f"__TSO{int(tso_id)}" for tso_id in getattr(entry, "tso_ids")]
+        edits.append(
+            Track3DTextEdit.from_source_span(
+                existing.span,
+                _format_object_list_row(side, entry_section, entry_subindex, items),
+                f"Update {label}",
+            )
+        )
+    return Track3DEditPlan(original_path, tuple(edits), tuple(warnings))
+
+def build_selected_tso_definition_edit_plan(
+    original_path: str | Path,
+    replacements: Mapping[str, str],
+) -> Track3DEditPlan:
+    """Plan replacements for selected ``__TSO`` definitions only."""
+    from sg_viewer.io.track3d_catalog import parse_track3d_catalog
+
+    catalog = parse_track3d_catalog(original_path)
+    edits: list[Track3DTextEdit] = []
+    warnings: list[str] = []
+    def label_sort_key(item: tuple[str, str]) -> int | str:
+        label_id = item[0].removeprefix("__TSO")
+        return int(label_id) if label_id.isdigit() else item[0]
+
+    for label, replacement in sorted(replacements.items(), key=label_sort_key):
+        existing = catalog.tsos.get(label)
+        if existing is None:
+            warnings.append(f"Skipped missing {label}.")
+            continue
+        edits.append(Track3DTextEdit.from_source_span(existing.span, replacement, f"Update {label}"))
+    return Track3DEditPlan(original_path, tuple(edits), tuple(warnings))
+
+def _replace_materials_in_face_text(text: str, material_replacements: Mapping[str, str]) -> str:
+    updated = text
+    for old, new in material_replacements.items():
+        updated = re.sub(rf'(MIP\s*=\s*")({re.escape(old)})(")', rf'\1{new}\3', updated)
+        updated = re.sub(rf'__{re.escape(old)}__\.c', f'__{new}__.c', updated)
+    return updated
+
+def build_selected_face_material_edit_plan(
+    original_path: str | Path,
+    *,
+    section: int,
+    subsections: Iterable[int] | None = None,
+    lods: Iterable[str] | None = None,
+    material_replacements: Mapping[str, str],
+) -> Track3DEditPlan:
+    """Plan material replacements constrained to selected FACE block spans."""
+    from sg_viewer.io.track3d_catalog import parse_track3d_catalog
+
+    wanted_subsections = set(subsections) if subsections is not None else None
+    wanted_lods = {lod.upper() for lod in lods} if lods is not None else None
+    catalog = parse_track3d_catalog(original_path)
+    edits: list[Track3DTextEdit] = []
+    for face in catalog.faces:
+        if face.section != section:
+            continue
+        if wanted_subsections is not None and face.subsection not in wanted_subsections:
+            continue
+        if wanted_lods is not None and face.lod.upper() not in wanted_lods:
+            continue
+        replacement = _replace_materials_in_face_text(face.span.text, material_replacements)
+        if replacement != face.span.text:
+            edits.append(Track3DTextEdit.from_source_span(face.span, replacement, f"Replace materials in {face.label}"))
+    return Track3DEditPlan(original_path, tuple(edits))

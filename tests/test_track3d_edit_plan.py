@@ -99,3 +99,79 @@ def test_write_preserves_existing_newlines_around_replacement(tmp_path: Path):
 
     assert path.open("r", encoding="utf-8", newline="").read() == "alpha\r\nBETA\r\ngamma\r\n"
     assert backup.open("r", encoding="utf-8", newline="").read() == original
+
+from sg_viewer.io.track3d_edit_plan import (
+    build_selected_face_material_edit_plan,
+    build_selected_object_list_edit_plan,
+    build_selected_tso_definition_edit_plan,
+)
+from sg_viewer.io.track3d_parser import Track3DObjectList
+
+
+def test_build_selected_object_list_edit_plan_targets_section_only(tmp_path: Path):
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "ObjectList_L1_0: LIST { __TSO1 };\n"
+        "ObjectList_R1_0: LIST { __TSO2 };\n"
+        "ObjectList_L2_0: LIST { __TSO3 };\n",
+        encoding="utf-8",
+    )
+
+    plan = build_selected_object_list_edit_plan(
+        path,
+        [
+            Track3DObjectList("L", 1, 0, [4, 5]),
+            Track3DObjectList("R", 1, 0, [6]),
+            Track3DObjectList("L", 2, 0, [7]),
+        ],
+        section=1,
+    )
+
+    assert len(plan.edits) == 2
+    assert plan.apply_to_text(path.read_text(encoding="utf-8")) == (
+        "ObjectList_L1_0: LIST { __TSO4, __TSO5 };\n"
+        "ObjectList_R1_0: LIST { __TSO6 };\n"
+        "ObjectList_L2_0: LIST { __TSO3 };\n"
+    )
+
+
+def test_build_selected_tso_definition_edit_plan_targets_labels_only(tmp_path: Path):
+    path = tmp_path / "track.3d"
+    path.write_text(
+        '__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN "tree";\n'
+        '__TSO2: DYNAMIC 5, 6, 7, 8, EXTERN "house";\n',
+        encoding="utf-8",
+    )
+
+    plan = build_selected_tso_definition_edit_plan(
+        path,
+        {"__TSO2": '__TSO2: DYNAMIC 9, 8, 7, 6, EXTERN "barn";'},
+    )
+    updated = plan.apply_to_text(path.read_text(encoding="utf-8"))
+
+    assert len(plan.edits) == 1
+    assert '__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN "tree";' in updated
+    assert '__TSO2: DYNAMIC 9, 8, 7, 6, EXTERN "barn";' in updated
+
+
+def test_build_selected_face_material_edit_plan_limits_replacements_to_selected_faces(tmp_path: Path):
+    path = tmp_path / "track.3d"
+    path.write_text(
+        'sec1_s0_HI: FACE MIP = "grass";\n'
+        'sec2_s0_HI: FACE MIP = "grass";\n'
+        'sec1_s1_LO: FACE __asphalt__.c;\n',
+        encoding="utf-8",
+    )
+
+    plan = build_selected_face_material_edit_plan(
+        path,
+        section=1,
+        material_replacements={"grass": "sand", "asphalt": "concrete"},
+    )
+
+    assert len(plan.edits) == 2
+    assert plan.apply_to_text(path.read_text(encoding="utf-8")) == (
+        'sec1_s0_HI: FACE MIP = "sand";\n'
+        'sec2_s0_HI: FACE MIP = "grass";\n'
+        'sec1_s1_LO: FACE __concrete__.c;\n'
+    )

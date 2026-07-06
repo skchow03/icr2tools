@@ -92,6 +92,12 @@ from sg_viewer.ui.manual_wall_height_dialog import (
     ManualWallHeightOverridesDialog,
 )
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
+from sg_viewer.io.track3d_edit_plan import (
+    Track3DEditPlan,
+    build_selected_face_material_edit_plan,
+    build_selected_object_list_edit_plan,
+    build_selected_tso_definition_edit_plan,
+)
 from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
@@ -1374,6 +1380,13 @@ class SGViewerController:
         self._window.three_d_file_catalog_inspector_button.clicked.connect(
             self._on_three_d_catalog_inspector_requested
         )
+        self._window.three_d_show_section_entries_button.clicked.connect(self._on_three_d_show_selected_section_entries)
+        self._window.three_d_show_section_object_lists_button.clicked.connect(self._on_three_d_show_selected_section_object_lists)
+        self._window.three_d_show_section_tsos_button.clicked.connect(self._on_three_d_show_selected_section_tsos)
+        self._window.three_d_preview_object_list_changes_button.clicked.connect(self._on_three_d_preview_selected_object_lists)
+        self._window.three_d_apply_object_list_changes_button.clicked.connect(self._on_three_d_apply_selected_object_lists)
+        self._window.three_d_apply_tso_definitions_button.clicked.connect(self._on_three_d_apply_selected_tso_definitions)
+        self._window.three_d_apply_face_materials_button.clicked.connect(self._on_three_d_apply_selected_face_materials)
         self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
         self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
         self._window.three_d_file_fix_in_place_button.clicked.connect(self._on_three_d_fix_in_place_requested)
@@ -1883,6 +1896,180 @@ class SGViewerController:
             parent=self._window,
         )
         dialog.exec_()
+
+    def _selected_sg_section_index(self) -> int | None:
+        if self._active_selection is not None:
+            return self._active_selection.index
+        return self._window.selected_section_index
+
+    def _show_track3d_text_report(self, title: str, text: str) -> None:
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle(title)
+        dialog.resize(760, 520)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        edit = QtWidgets.QPlainTextEdit()
+        edit.setReadOnly(True)
+        edit.setPlainText(text)
+        layout.addWidget(edit)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec_()
+
+    def _selected_section_catalog(self) -> tuple[Path, Track3DCatalog, int] | None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return None
+        section = self._selected_sg_section_index()
+        if section is None:
+            QtWidgets.QMessageBox.information(self._window, "3D section tools", "Select an SG section first.")
+            return None
+        try:
+            return input_path, parse_track3d_catalog(input_path), int(section)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D section tools", f"Could not read 3D file:\n{exc}")
+            return None
+
+    def _on_three_d_show_selected_section_entries(self) -> None:
+        payload = self._selected_section_catalog()
+        if payload is None:
+            return
+        path, catalog, section = payload
+        faces = [face for face in catalog.faces if face.section == section]
+        section_lists = [label for label, item in catalog.section_lists.items() if item.section == section]
+        object_lists = sorted({name for face in faces for name in face.object_lists})
+        lines = [f".3D entries for SG section {section} in {path}", "", "FACE blocks:"]
+        lines.extend(f"  {face.label} (lines {face.span.start_line}-{face.span.end_line}, LOD {face.lod})" for face in faces)
+        lines.append("Section lists:")
+        lines.extend(f"  {label}" for label in section_lists)
+        lines.append("ObjectLists referenced:")
+        lines.extend(f"  {label}" for label in object_lists)
+        self._show_track3d_text_report(".3D entries for selected SG section", "\n".join(lines) if faces or section_lists or object_lists else "No .3D entries found.")
+
+    def _on_three_d_show_selected_section_object_lists(self) -> None:
+        payload = self._selected_section_catalog()
+        if payload is None:
+            return
+        _path, catalog, section = payload
+        refs = sorted({name for face in catalog.faces if face.section == section for name in face.object_lists})
+        rows = []
+        for name in refs:
+            obj = catalog.object_lists.get(name)
+            rows.append(f"{name}: missing definition" if obj is None else f"{name} (line {obj.line}): {', '.join(obj.items) or '(empty)'}")
+        self._show_track3d_text_report("ObjectLists referenced by selected section", "\n".join(rows) or "No ObjectLists referenced by selected section.")
+
+    def _tso_labels_for_section(self, catalog: Track3DCatalog, section: int) -> list[str]:
+        return sorted(
+            {
+                item
+                for face in catalog.faces
+                if face.section == section
+                for name in face.object_lists
+                for item in (catalog.object_lists.get(name).items if catalog.object_lists.get(name) else [])
+                if item.startswith("__TSO")
+            },
+            key=lambda x: int(x[5:]) if x[5:].isdigit() else x,
+        )
+
+    def _on_three_d_show_selected_section_tsos(self) -> None:
+        payload = self._selected_section_catalog()
+        if payload is None:
+            return
+        _path, catalog, section = payload
+        rows = []
+        for label in self._tso_labels_for_section(catalog, section):
+            tso = catalog.tsos.get(label)
+            rows.append(f'{label}: EXTERN "{tso.extern}" at ({tso.x}, {tso.y}, {tso.z})' if tso else f"{label}: missing definition")
+        self._show_track3d_text_report("TSOs used by selected section", "\n".join(rows) or "No TSOs used by selected section.")
+
+    def _selected_section_object_list_plan(self) -> Track3DEditPlan | None:
+        payload = self._selected_section_catalog()
+        if payload is None:
+            return None
+        path, _catalog, section = payload
+        return build_selected_object_list_edit_plan(path, self._window.tso_visibility_sidebar.object_lists, section=section)
+
+    def _confirm_and_apply_track3d_plan(self, title: str, plan: Track3DEditPlan) -> bool:
+        if not plan.edits:
+            QtWidgets.QMessageBox.information(self._window, title, "No changes are available for the selected scope.")
+            return False
+        diff = plan.preview_unified_diff(context=3)
+        warning_text = "\n".join(plan.warnings)
+        message = "Review the diff before applying edits in place. A timestamped backup will be created."
+        if warning_text:
+            message += f"\n\nWarnings:\n{warning_text}"
+        box = QtWidgets.QMessageBox(self._window)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle(title)
+        box.setText(message)
+        box.setDetailedText(diff or "(No textual diff)")
+        box.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        box.setDefaultButton(QtWidgets.QMessageBox.No)
+        if box.exec_() != QtWidgets.QMessageBox.Yes:
+            return False
+        try:
+            backup_path = plan.write()
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(self._window, title, f"Could not apply edits:\n{exc}")
+            return False
+        self._window.show_status_message(f"Updated {plan.original_path.name}; backup saved to {backup_path.name}.")
+        return True
+
+    def _on_three_d_preview_selected_object_lists(self) -> None:
+        plan = self._selected_section_object_list_plan()
+        if plan is None:
+            return
+        diff = plan.preview_unified_diff(context=3) if plan.edits else "No ObjectList changes for selected section."
+        if plan.warnings:
+            diff = "Warnings:\n" + "\n".join(plan.warnings) + "\n\n" + diff
+        self._show_track3d_text_report("Preview ObjectList changes for selected section", diff)
+
+    def _on_three_d_apply_selected_object_lists(self) -> None:
+        plan = self._selected_section_object_list_plan()
+        if plan is not None:
+            self._confirm_and_apply_track3d_plan("Apply ObjectList changes", plan)
+
+    def _on_three_d_apply_selected_tso_definitions(self) -> None:
+        payload = self._selected_section_catalog()
+        if payload is None:
+            return
+        path, catalog, section = payload
+        replacements = {}
+        for label in self._tso_labels_for_section(catalog, section):
+            index_text = label.removeprefix("__TSO")
+            if not index_text.isdigit():
+                continue
+            index = int(index_text)
+            if 0 <= index < len(self._trackside_objects):
+                replacements[label] = self._format_tso_dynamic_line(label, self._trackside_objects[index])
+        plan = build_selected_tso_definition_edit_plan(path, replacements)
+        self._confirm_and_apply_track3d_plan("Apply selected TSO definitions", plan)
+
+    def _on_three_d_apply_selected_face_materials(self) -> None:
+        payload = self._selected_section_catalog()
+        if payload is None:
+            return
+        path, _catalog, section = payload
+        text, ok = QtWidgets.QInputDialog.getMultiLineText(
+            self._window,
+            "Replace materials in selected FACE spans",
+            "Enter one replacement per line as old=new. Only FACE blocks for the selected SG section are edited.",
+            "",
+        )
+        if not ok:
+            return
+        replacements = {}
+        for raw_line in text.splitlines():
+            if "=" not in raw_line:
+                continue
+            old, new = [part.strip() for part in raw_line.split("=", 1)]
+            if old and new:
+                replacements[old] = new
+        if not replacements:
+            QtWidgets.QMessageBox.information(self._window, "Replace materials", "No material replacements were entered.")
+            return
+        plan = build_selected_face_material_edit_plan(path, section=section, material_replacements=replacements)
+        self._confirm_and_apply_track3d_plan("Replace materials in selected FACE spans", plan)
 
     def _on_edit_track3d_colors_requested(self) -> None:
         dialog = Track3DColorDefinitionsDialog(
