@@ -17,6 +17,7 @@ from typing import Any
 LABEL_RE = re.compile(r"^([A-Za-z_][\w\-.]*):\s*(.*)")
 TSO_RE = re.compile(r'^(__TSO\d+):\s*DYNAMIC\s+(.+?)\s*,\s*EXTERN\s+"([^"]+)"\s*;', re.S)
 OBJ_RE = re.compile(r"^(ObjectList_([LR])(\d+)_(\d+)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
+DETAIL_RE = re.compile(r"^(DetailList_(\d+)-(\d+)([HML]?)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
 FACE_RE = re.compile(r"^(sec(?P<section>\d+)_s(?P<sub>\d+)_(?P<lod>HI|MED|LO)):\s+FACE\b")
 SEC_LIST_RE = re.compile(r"^(sec(\d+)_l(\d+)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
 DLONG_RE = re.compile(r"Outputing section from dlong\s*=\s*(\d+)\s*to dlong\s*=\s*(\d+)")
@@ -50,6 +51,17 @@ class Track3DObjectListDefinition:
     side: str
     section: int
     subsection: int
+    items: list[str]
+    externs: list[str | None]
+
+
+@dataclass(frozen=True)
+class Track3DDetailListDefinition:
+    line: int
+    span: Track3DSourceSpan
+    section: int
+    subsection: int
+    lod_suffix: str
     items: list[str]
     externs: list[str | None]
 
@@ -97,6 +109,7 @@ class Track3DCatalog:
     counts: dict[str, int]
     tsos: dict[str, Track3DTsoDefinition] = field(default_factory=dict)
     object_lists: dict[str, Track3DObjectListDefinition] = field(default_factory=dict)
+    detail_lists: dict[str, Track3DDetailListDefinition] = field(default_factory=dict)
     faces: list[Track3DFaceBlock] = field(default_factory=list)
     section_lists: dict[str, Track3DSectionList] = field(default_factory=dict)
     index: list[str] = field(default_factory=list)
@@ -201,6 +214,25 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
             side=m.group(2),
             section=int(m.group(3)),
             subsection=int(m.group(4)),
+            items=items,
+            externs=[tsos.get(item).extern if item in tsos else None for item in items],
+        )
+
+    detail_lists: dict[str, Track3DDetailListDefinition] = {}
+    for i, label, _rest in labels:
+        if not label.startswith("DetailList_"):
+            continue
+        stmt, start, end = capture_statement(lines, i)
+        m = DETAIL_RE.match(stmt.strip())
+        if not m:
+            continue
+        items = [x.strip() for x in m.group(5).replace("\n", " ").split(",") if x.strip()]
+        detail_lists[label] = Track3DDetailListDefinition(
+            line=i + 1,
+            span=source_span(lines, offsets, start, end),
+            section=int(m.group(2)),
+            subsection=int(m.group(3)),
+            lod_suffix=m.group(4),
             items=items,
             externs=[tsos.get(item).extern if item in tsos else None for item in items],
         )
@@ -319,12 +351,14 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
         counts={
             "tsos": len(tsos),
             "object_lists": len(object_lists),
+            "detail_lists": len(detail_lists),
             "faces": len(faces),
             "section_lists": len(section_lists),
             "index_entries": len(index_entries),
         },
         tsos=tsos,
         object_lists=object_lists,
+        detail_lists=detail_lists,
         faces=faces,
         section_lists=section_lists,
         index=index_entries,
