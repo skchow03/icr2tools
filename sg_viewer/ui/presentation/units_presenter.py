@@ -27,11 +27,24 @@ def measurement_unit_step(unit: str) -> float:
 def _coerce_length_value(value: float | int | None) -> float | None:
     if value is None:
         return None
-    if not isinstance(value, Real):
+    try:
+        is_real = isinstance(value, Real)
+    except RecursionError as exc:
+        raise ValueError(
+            "Length values must be plain numeric 500ths units; "
+            f"got recursive {type(value).__name__}: {value!r}"
+        ) from exc
+    if not is_real:
         raise TypeError(
             f"Length values must be numeric 500ths units; got {type(value).__name__}: {value!r}"
         )
-    return float(value)
+    try:
+        return float(value)
+    except RecursionError as exc:
+        raise ValueError(
+            "Length values must be plain numeric 500ths units; "
+            f"got recursive {type(value).__name__}: {value!r}"
+        ) from exc
 
 
 def format_length(value: float | int | None, *, unit: str) -> str:

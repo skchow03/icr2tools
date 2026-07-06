@@ -1803,14 +1803,19 @@ class SGViewerController:
             except ValueError:
                 continue
         self._refresh_tso_table()
+        def _update_visibility_progress(relative_step: int, message: str) -> None:
+            if progress_callback is not None:
+                progress_callback(relative_step, message)
+
+        _update_visibility_progress(5, "Restoring TSD project data: restoring visibility lists…")
+        self._restore_tso_visibility_lists(
+            project_state, progress_callback=_update_visibility_progress
+        )
         if progress_callback is not None:
-            progress_callback(5, "Restoring TSD project data: restoring visibility lists…")
-        self._restore_tso_visibility_lists(project_state)
-        if progress_callback is not None:
-            progress_callback(6, "Restoring TSD project data: loading land objects…")
+            progress_callback(8, "Restoring TSD project data: loading land objects…")
         self._window.load_land_objects(project_state.land_objects)
         if progress_callback is not None:
-            progress_callback(7, "Restoring TSD project data: reading referenced TSD files…")
+            progress_callback(9, "Restoring TSD project data: reading referenced TSD files…")
         for path in files:
             if not path.exists():
                 continue
@@ -1821,7 +1826,7 @@ class SGViewerController:
                 continue
             self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=False, source_path=path.resolve())
         if progress_callback is not None:
-            progress_callback(8, "Restoring TSD project data: selecting active TSD file…")
+            progress_callback(10, "Restoring TSD project data: selecting active TSD file…")
         if self._loaded_tsd_files:
             target_index = active_index if isinstance(active_index, int) and 0 <= active_index < len(self._loaded_tsd_files) else None
             if target_index is None:
@@ -1831,7 +1836,7 @@ class SGViewerController:
                 self._window.tsd_files_combo.setCurrentIndex(target_index + 1)
                 self._set_active_tsd_file(target_index)
         if progress_callback is not None:
-            progress_callback(9, "Restoring TSD project data: clearing dirty flags…")
+            progress_callback(11, "Restoring TSD project data: clearing dirty flags…")
         self._set_tsd_dirty(False)
         self._set_trackside_objects_dirty(False)
         self.set_land_objects_dirty(False)
@@ -2170,24 +2175,51 @@ class SGViewerController:
             f"3D tools color fix complete: {input_path.name} ({replacement_count} updated)"
         )
 
-    def _restore_tso_visibility_lists(self, project_state) -> None:
+    def _restore_tso_visibility_lists(self, project_state, *, progress_callback=None) -> None:
         sidebar = self._window.tso_visibility_sidebar
+        object_payload = project_state.tso_visibility_object_lists
+        detail_payload = project_state.tso_visibility_detail_lists
+        object_count = len(object_payload) if isinstance(object_payload, list) else 0
+        detail_count = len(detail_payload) if isinstance(detail_payload, list) else 0
+
+        if progress_callback is not None:
+            progress_callback(
+                5, f"Restoring visibility lists: validating {object_count} ObjectList entries…"
+            )
         try:
-            sidebar.load_object_lists_from_payload(project_state.tso_visibility_object_lists)
+            sidebar.load_object_lists_from_payload(object_payload)
         except Exception as exc:
             raise RuntimeError(
                 self._format_tso_visibility_restore_error(
-                    "ObjectLists", project_state.tso_visibility_object_lists, exc
+                    "ObjectLists", object_payload, exc
                 )
             ) from exc
+
+        if progress_callback is not None:
+            restored_object_count = len(getattr(sidebar, "object_lists", ()))
+            progress_callback(
+                6,
+                "Restoring visibility lists: "
+                f"loaded {restored_object_count}/{object_count} ObjectList entries; "
+                f"validating {detail_count} DetailList entries…",
+            )
         try:
-            sidebar.load_detail_lists_from_payload(project_state.tso_visibility_detail_lists)
+            sidebar.load_detail_lists_from_payload(detail_payload)
         except Exception as exc:
             raise RuntimeError(
                 self._format_tso_visibility_restore_error(
-                    "DetailLists", project_state.tso_visibility_detail_lists, exc
+                    "DetailLists", detail_payload, exc
                 )
             ) from exc
+
+        if progress_callback is not None:
+            restored_detail_count = len(getattr(sidebar, "detail_lists", ()))
+            progress_callback(
+                7,
+                "Restoring visibility lists: "
+                f"loaded {restored_object_count}/{object_count} ObjectList entries and "
+                f"{restored_detail_count}/{detail_count} DetailList entries.",
+            )
 
     def _format_tso_visibility_restore_error(
         self, list_name: str, payload: object, exc: BaseException
