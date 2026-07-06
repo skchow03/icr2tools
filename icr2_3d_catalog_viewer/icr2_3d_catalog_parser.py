@@ -36,21 +36,28 @@ except ModuleNotFoundError:  # Allow running this script directly from its own d
 
 
 LABEL_RE = re.compile(r"^([A-Za-z_][\w\-.]*):\s*(.*)")
-TSO_RE = re.compile(r'^(__TSO\d+):\s*DYNAMIC\s+(.+?)\s*,\s*EXTERN\s+"([^"]+)"\s*;')
+TSO_RE = re.compile(r'^(__TSO\d+):\s*DYNAMIC\s+(.+?)\s*,\s*EXTERN\s+"([^"]+)"\s*;', re.S)
 OBJ_RE = re.compile(r"^(ObjectList_([LR])(\d+)_(\d+)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
 FACE_RE = re.compile(r"^(sec(?P<section>\d+)_s(?P<sub>\d+)_(?P<lod>HI|MED|LO)):\s+FACE\b")
 SEC_LIST_RE = re.compile(r"^(sec(\d+)_l(\d+)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
 DLONG_RE = re.compile(r"Outputing section from dlong\s*=\s*(\d+)\s*to dlong\s*=\s*(\d+)")
 
 
-def capture_statement(lines: list[str], start_idx: int) -> tuple[str, int]:
-    """Capture a label statement until the first semicolon line."""
+def capture_statement(lines: list[str], start_idx: int) -> tuple[str, int, int]:
+    """Capture a label statement and return text plus 0-based start/end lines.
+
+    Capture stops at the first semicolon in the statement, or immediately before
+    the next label if no semicolon has been seen. This keeps malformed or
+    block-style labels from consuming the following label statement.
+    """
     chunk: list[str] = []
     for j in range(start_idx, len(lines)):
+        if j > start_idx and LABEL_RE.match(lines[j]):
+            return "\n".join(chunk), start_idx, j - 1
         chunk.append(lines[j])
         if ";" in lines[j]:
-            return "\n".join(chunk), j
-    return "\n".join(chunk), len(lines) - 1
+            return "\n".join(chunk), start_idx, j
+    return "\n".join(chunk), start_idx, len(lines) - 1
 
 
 def label_positions(lines: list[str]) -> list[tuple[int, str, str]]:
@@ -112,6 +119,7 @@ def write_outputs(catalog: dict[str, Any], output_prefix: str | Path) -> None:
                 "topo_lists",
                 "materials",
             ],
+            extrasaction="ignore",
         )
         writer.writeheader()
         for row in catalog["faces"]:

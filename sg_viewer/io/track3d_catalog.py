@@ -15,7 +15,7 @@ from typing import Any
 
 
 LABEL_RE = re.compile(r"^([A-Za-z_][\w\-.]*):\s*(.*)")
-TSO_RE = re.compile(r'^(__TSO\d+):\s*DYNAMIC\s+(.+?)\s*,\s*EXTERN\s+"([^"]+)"\s*;')
+TSO_RE = re.compile(r'^(__TSO\d+):\s*DYNAMIC\s+(.+?)\s*,\s*EXTERN\s+"([^"]+)"\s*;', re.S)
 OBJ_RE = re.compile(r"^(ObjectList_([LR])(\d+)_(\d+)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
 FACE_RE = re.compile(r"^(sec(?P<section>\d+)_s(?P<sub>\d+)_(?P<lod>HI|MED|LO)):\s+FACE\b")
 SEC_LIST_RE = re.compile(r"^(sec(\d+)_l(\d+)):\s*LIST\s*\{(.*?)\}\s*;", re.S)
@@ -23,8 +23,18 @@ DLONG_RE = re.compile(r"Outputing section from dlong\s*=\s*(\d+)\s*to dlong\s*=\
 
 
 @dataclass(frozen=True)
+class Track3DSourceSpan:
+    start_line: int
+    end_line: int
+    start_offset: int | None
+    end_offset: int | None
+    text: str
+
+
+@dataclass(frozen=True)
 class Track3DTsoDefinition:
     line: int
+    span: Track3DSourceSpan
     x: int
     y: int
     z: int
@@ -36,6 +46,7 @@ class Track3DTsoDefinition:
 @dataclass(frozen=True)
 class Track3DObjectListDefinition:
     line: int
+    span: Track3DSourceSpan
     side: str
     section: int
     subsection: int
@@ -47,6 +58,7 @@ class Track3DObjectListDefinition:
 class Track3DFaceBlock:
     label: str
     line: int
+    span: Track3DSourceSpan
     section: int
     subsection: int
     lod: str
@@ -61,6 +73,7 @@ class Track3DFaceBlock:
 @dataclass(frozen=True)
 class Track3DSectionList:
     line: int
+    span: Track3DSourceSpan
     section: int
     layout: int
     entries: list[str]
@@ -87,17 +100,55 @@ class Track3DCatalog:
     faces: list[Track3DFaceBlock] = field(default_factory=list)
     section_lists: dict[str, Track3DSectionList] = field(default_factory=dict)
     index: list[str] = field(default_factory=list)
+    index_span: Track3DSourceSpan | None = None
     section_summary: list[Track3DSectionSummary] = field(default_factory=list)
 
 
-def capture_statement(lines: list[str], start_idx: int) -> tuple[str, int]:
-    """Capture a label statement until the first semicolon line."""
+def capture_statement(lines: list[str], start_idx: int) -> tuple[str, int, int]:
+    """Capture a label statement and return text plus 0-based start/end lines.
+
+    Capture stops at the first semicolon in the statement, or immediately before
+    the next label if no semicolon has been seen. This keeps malformed or
+    block-style labels from consuming the following label statement.
+    """
     chunk: list[str] = []
     for j in range(start_idx, len(lines)):
+        if j > start_idx and LABEL_RE.match(lines[j]):
+            return "\n".join(chunk), start_idx, j - 1
         chunk.append(lines[j])
         if ";" in lines[j]:
-            return "\n".join(chunk), j
-    return "\n".join(chunk), len(lines) - 1
+            return "\n".join(chunk), start_idx, j
+    return "\n".join(chunk), start_idx, len(lines) - 1
+
+
+def line_offsets(text: str) -> list[int]:
+    offsets: list[int] = []
+    cursor = 0
+    for raw_line in text.splitlines(keepends=True):
+        offsets.append(cursor)
+        cursor += len(raw_line)
+    if not offsets and text == "":
+        offsets.append(0)
+    return offsets
+
+
+def source_span(
+    lines: list[str], offsets: list[int], start_idx: int, end_idx: int
+) -> Track3DSourceSpan:
+    text = "\n".join(lines[start_idx : end_idx + 1])
+    start_offset = offsets[start_idx] if start_idx < len(offsets) else None
+    end_offset = (
+        offsets[end_idx] + len(lines[end_idx])
+        if end_idx < len(lines) and end_idx < len(offsets)
+        else None
+    )
+    return Track3DSourceSpan(
+        start_line=start_idx + 1,
+        end_line=end_idx + 1,
+        start_offset=start_offset,
+        end_offset=end_offset,
+        text=text,
+    )
 
 
 def label_positions(lines: list[str]) -> list[tuple[int, str, str]]:
@@ -114,16 +165,19 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
     path = Path(path)
     text = path.read_text(errors="replace")
     lines = text.splitlines()
+    offsets = line_offsets(text)
     labels = label_positions(lines)
 
     tsos: dict[str, Track3DTsoDefinition] = {}
-    for i, line in enumerate(lines, 1):
-        m = TSO_RE.match(line.strip())
+    for i, label, _rest in labels:
+        stmt, start, end = capture_statement(lines, i)
+        m = TSO_RE.match(stmt.strip())
         if not m:
             continue
-        nums = [int(x.strip()) for x in m.group(2).split(",")]
+        nums = [int(x.strip()) for x in m.group(2).replace("\n", " ").split(",")]
         tsos[m.group(1)] = Track3DTsoDefinition(
-            line=i,
+            line=i + 1,
+            span=source_span(lines, offsets, start, end),
             x=nums[0],
             y=nums[1],
             z=nums[2],
@@ -136,13 +190,14 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
     for i, label, _rest in labels:
         if not label.startswith("ObjectList_"):
             continue
-        stmt, _end = capture_statement(lines, i)
+        stmt, start, end = capture_statement(lines, i)
         m = OBJ_RE.match(stmt.strip())
         if not m:
             continue
         items = [x.strip() for x in m.group(5).replace("\n", " ").split(",") if x.strip()]
         object_lists[label] = Track3DObjectListDefinition(
             line=i + 1,
+            span=source_span(lines, offsets, start, end),
             side=m.group(2),
             section=int(m.group(3)),
             subsection=int(m.group(4)),
@@ -163,8 +218,10 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
         face_positions.append((i, m.group(1), int(m.group("section")), int(m.group("sub")), m.group("lod"), dlong))
 
     faces: list[Track3DFaceBlock] = []
+    label_indices = [pos for pos, _label, _rest in labels]
     for idx, (i, label, section, subsection, lod, dlong) in enumerate(face_positions):
-        end = face_positions[idx + 1][0] if idx + 1 < len(face_positions) else len(lines)
+        next_labels = [pos for pos in label_indices if pos > i]
+        end = next_labels[0] if next_labels else len(lines)
         block = "\n".join(lines[i:end])
         object_refs = sorted(set(re.findall(r"\bObjectList_[LR]\d+_\d+\b", block)))
         detail_refs = sorted(set(re.findall(r"\bDetailList_\d+-\d+[HML]?\b", block)))
@@ -175,6 +232,7 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
         faces.append(Track3DFaceBlock(
             label=label,
             line=i + 1,
+            span=source_span(lines, offsets, i, end - 1),
             section=section,
             subsection=subsection,
             lod=lod,
@@ -190,7 +248,7 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
     for i, label, _rest in labels:
         if not re.match(r"^sec\d+_l\d+$", label):
             continue
-        stmt, _end = capture_statement(lines, i)
+        stmt, start, end = capture_statement(lines, i)
         m = SEC_LIST_RE.match(stmt.strip())
         if not m:
             continue
@@ -201,6 +259,7 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
         entries = [x.strip() for x in front.split(",") if x.strip()]
         section_lists[label] = Track3DSectionList(
             line=i + 1,
+            span=source_span(lines, offsets, start, end),
             section=int(m.group(2)),
             layout=int(m.group(3)),
             entries=entries,
@@ -208,10 +267,12 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
         )
 
     index_entries: list[str] = []
+    index_span: Track3DSourceSpan | None = None
     for i, label, _rest in labels:
         if label != "index":
             continue
-        stmt, _end = capture_statement(lines, i)
+        stmt, start, end = capture_statement(lines, i)
+        index_span = source_span(lines, offsets, start, end)
         body = re.search(r"\{(.*?)\}", stmt, re.S)
         if body:
             index_entries = [x.strip() for x in body.group(1).replace("\n", " ").split(",") if x.strip()]
@@ -267,5 +328,6 @@ def parse_track3d_catalog(path: str | Path) -> Track3DCatalog:
         faces=faces,
         section_lists=section_lists,
         index=index_entries,
+        index_span=index_span,
         section_summary=section_summary,
     )
