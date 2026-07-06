@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sg_viewer.io.track3d_catalog import (
+    Track3DDetailListDefinition,
     Track3DObjectListDefinition,
     parse_track3d_catalog,
 )
@@ -17,12 +18,28 @@ class Track3DObjectList:
     tso_ids: list[int]
 
 
+@dataclass
+class Track3DDetailList:
+    section: int
+    sub_index: int
+    lod_suffix: str
+    tso_ids: list[int]
+
+
+@dataclass(frozen=True)
+class Track3DDetailListDlongRange:
+    section: int
+    sub_index: int
+    lod_suffix: str
+    start_dlong: int | None
+    end_dlong: int | None
+
+
 @dataclass(frozen=True)
 class Track3DSectionDlongList:
     section: int
     sub_index: int
     dlongs: tuple[int, ...]
-
 
 
 def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
@@ -53,6 +70,65 @@ def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
 
 def track3d_has_object_lists(path: str | Path) -> bool:
     return bool(parse_track3d_catalog(path).object_lists)
+
+
+def parse_track3d_detail_lists(path: str | Path) -> list[Track3DDetailList]:
+    catalog = parse_track3d_catalog(path)
+    results: list[Track3DDetailList] = []
+
+    for detail_list in catalog.detail_lists.values():
+        tso_ids: list[int] = []
+        for item in detail_list.items:
+            if not item.startswith("__TSO"):
+                continue
+            try:
+                tso_ids.append(int(item.removeprefix("__TSO")))
+            except ValueError:
+                continue
+
+        results.append(
+            Track3DDetailList(
+                section=detail_list.section,
+                sub_index=detail_list.subsection,
+                lod_suffix=detail_list.lod_suffix,
+                tso_ids=tso_ids,
+            )
+        )
+
+    return results
+
+
+def track3d_has_detail_lists(path: str | Path) -> bool:
+    return bool(parse_track3d_catalog(path).detail_lists)
+
+
+def parse_track3d_detail_list_dlong_ranges(
+    path: str | Path,
+) -> list[Track3DDetailListDlongRange]:
+    catalog = parse_track3d_catalog(path)
+    ranges: dict[str, list[tuple[int | None, int | None]]] = {
+        label: [] for label in catalog.detail_lists
+    }
+    for face in catalog.faces:
+        for label in face.detail_lists:
+            if label in ranges:
+                ranges[label].append((face.dlong_start, face.dlong_end))
+
+    results: list[Track3DDetailListDlongRange] = []
+    for label, detail in catalog.detail_lists.items():
+        face_ranges = ranges.get(label, [])
+        starts = [start for start, _end in face_ranges if start is not None]
+        ends = [end for _start, end in face_ranges if end is not None]
+        results.append(
+            Track3DDetailListDlongRange(
+                section=detail.section,
+                sub_index=detail.subsection,
+                lod_suffix=detail.lod_suffix,
+                start_dlong=min(starts) if starts else None,
+                end_dlong=max(ends) if ends else None,
+            )
+        )
+    return results
 
 
 def parse_track3d_section_dlongs(path: str | Path) -> list[Track3DSectionDlongList]:
@@ -179,8 +255,59 @@ def save_object_lists_to_track3d(
         key=lambda edit: (edit[0], edit[1]),
         reverse=True,
     ):
-        updated_text = updated_text[:start_offset] + replacement_text + updated_text[end_offset:]
+        updated_text = (
+            updated_text[:start_offset] + replacement_text + updated_text[end_offset:]
+        )
 
     track3d_path.write_text(updated_text, encoding="utf-8")
 
+    return backup_path
+
+
+def _detail_list_label(entry: Track3DDetailList) -> str:
+    return f"DetailList_{entry.section}-{entry.sub_index}{entry.lod_suffix}"
+
+
+def _format_detail_list_row(
+    existing: Track3DDetailListDefinition, entry: Track3DDetailList
+) -> str:
+    non_tso_items = [item for item in existing.items if not item.startswith("__TSO")]
+    items = non_tso_items + [f"__TSO{tso_id}" for tso_id in entry.tso_ids]
+    return f"{_detail_list_label(entry)}: LIST {{ {', '.join(items)} }};"
+
+
+def save_detail_lists_to_track3d(
+    path: str | Path,
+    detail_lists: list[Track3DDetailList],
+) -> Path:
+    track3d_path = Path(path)
+    original_text = track3d_path.read_text(encoding="utf-8", errors="ignore")
+    catalog = parse_track3d_catalog(track3d_path)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = track3d_path.with_suffix(f"{track3d_path.suffix}.bak_{timestamp}")
+    shutil.copy2(track3d_path, backup_path)
+
+    edits: list[tuple[int, int, str]] = []
+    for entry in detail_lists:
+        existing = catalog.detail_lists.get(_detail_list_label(entry))
+        if existing is None:
+            continue
+        start_offset = existing.span.start_offset
+        end_offset = existing.span.end_offset
+        if start_offset is None or end_offset is None:
+            continue
+        edits.append(
+            (start_offset, end_offset, _format_detail_list_row(existing, entry))
+        )
+
+    updated_text = original_text
+    for start_offset, end_offset, replacement_text in sorted(
+        edits, key=lambda edit: (edit[0], edit[1]), reverse=True
+    ):
+        updated_text = (
+            updated_text[:start_offset] + replacement_text + updated_text[end_offset:]
+        )
+
+    track3d_path.write_text(updated_text, encoding="utf-8")
     return backup_path

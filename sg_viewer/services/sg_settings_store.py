@@ -36,7 +36,9 @@ class SGSettingsStore:
         payload.update(fields)
         self.save(sg_path, payload)
 
-    def get_background(self, sg_path: Path) -> tuple[Path, float, tuple[float, float]] | None:
+    def get_background(
+        self, sg_path: Path
+    ) -> tuple[Path, float, tuple[float, float]] | None:
         payload = self.load(sg_path)
         raw = payload.get("background")
         if not isinstance(raw, dict):
@@ -92,7 +94,9 @@ class SGSettingsStore:
             path = (sg_path.parent / path).resolve()
         return path
 
-    def get_sunny_palette_colors(self, sg_path: Path) -> list[tuple[int, int, int]] | None:
+    def get_sunny_palette_colors(
+        self, sg_path: Path
+    ) -> list[tuple[int, int, int]] | None:
         payload = self.load(sg_path)
         raw_colors = payload.get("sunny_palette_colors")
         if not isinstance(raw_colors, list) or len(raw_colors) != 256:
@@ -114,7 +118,9 @@ class SGSettingsStore:
         stored_path = palette_path
         if palette_path.is_absolute():
             try:
-                stored_path = palette_path.resolve().relative_to(sg_path.parent.resolve())
+                stored_path = palette_path.resolve().relative_to(
+                    sg_path.parent.resolve()
+                )
             except ValueError:
                 stored_path = palette_path.resolve()
         payload = self.load(sg_path)
@@ -142,7 +148,9 @@ class SGSettingsStore:
         active_index = active if isinstance(active, int) and active >= 0 else None
         return result, active_index
 
-    def set_tsd_files(self, sg_path: Path, files: list[Path], active_index: int | None) -> None:
+    def set_tsd_files(
+        self, sg_path: Path, files: list[Path], active_index: int | None
+    ) -> None:
         serialized: list[str] = []
         base = sg_path.parent.resolve()
         for path in files:
@@ -199,7 +207,9 @@ class SGSettingsStore:
             return []
         return [entry for entry in raw if isinstance(entry, dict)]
 
-    def set_trackside_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
+    def set_trackside_objects(
+        self, sg_path: Path, objects: list[dict[str, object]]
+    ) -> None:
         self.update(sg_path, trackside_objects=objects)
 
     def get_land_objects(self, sg_path: Path) -> list[dict[str, object]]:
@@ -231,7 +241,9 @@ class SGSettingsStore:
         stored_path = track3d_path
         if track3d_path.is_absolute():
             try:
-                stored_path = track3d_path.resolve().relative_to(sg_path.parent.resolve())
+                stored_path = track3d_path.resolve().relative_to(
+                    sg_path.parent.resolve()
+                )
             except ValueError:
                 stored_path = track3d_path.resolve()
         self.update(sg_path, track3d_file=str(stored_path))
@@ -258,7 +270,6 @@ class SGSettingsStore:
             serialized[str(key)] = max(0, min(255, int(value)))
         self.update(sg_path, track3d_colors=serialized)
 
-
     def get_tso_visibility_object_lists(self, sg_path: Path) -> list[dict[str, object]]:
         payload = self.load(sg_path)
         raw = payload.get("tso_visibility")
@@ -269,11 +280,36 @@ class SGSettingsStore:
             return []
         return [entry for entry in object_lists if isinstance(entry, dict)]
 
-    def set_tso_visibility_object_lists(self, sg_path: Path, object_lists: list[dict[str, object]]) -> None:
+    def set_tso_visibility_object_lists(
+        self, sg_path: Path, object_lists: list[dict[str, object]]
+    ) -> None:
         payload = self.load(sg_path)
         raw_visibility = payload.get("tso_visibility")
-        visibility_state = dict(raw_visibility) if isinstance(raw_visibility, dict) else {}
+        visibility_state = (
+            dict(raw_visibility) if isinstance(raw_visibility, dict) else {}
+        )
         visibility_state["object_lists"] = object_lists
+        self.update(sg_path, tso_visibility=visibility_state)
+
+    def get_tso_visibility_detail_lists(self, sg_path: Path) -> list[dict[str, object]]:
+        payload = self.load(sg_path)
+        raw = payload.get("tso_visibility")
+        if not isinstance(raw, dict):
+            return []
+        detail_lists = raw.get("detail_lists")
+        if not isinstance(detail_lists, list):
+            return []
+        return [entry for entry in detail_lists if isinstance(entry, dict)]
+
+    def set_tso_visibility_detail_lists(
+        self, sg_path: Path, detail_lists: list[dict[str, object]]
+    ) -> None:
+        payload = self.load(sg_path)
+        raw_visibility = payload.get("tso_visibility")
+        visibility_state = (
+            dict(raw_visibility) if isinstance(raw_visibility, dict) else {}
+        )
+        visibility_state["detail_lists"] = detail_lists
         self.update(sg_path, tso_visibility=visibility_state)
 
     def get_mrk_wall_heights(self, sg_path: Path) -> tuple[float, float, float] | None:
@@ -305,7 +341,6 @@ class SGSettingsStore:
             },
         )
 
-
     def get_manual_wall_height_overrides(self, sg_path: Path) -> list[dict[str, int]]:
         payload = self.load(sg_path)
         raw = payload.get("manual_wall_height_overrides")
@@ -324,12 +359,14 @@ class SGSettingsStore:
                 continue
             if boundary < 0 or height < 0 or start_dlong == end_dlong:
                 continue
-            overrides.append({
-                "boundary": boundary,
-                "start_dlong": min(start_dlong, end_dlong),
-                "end_dlong": max(start_dlong, end_dlong),
-                "height": height,
-            })
+            overrides.append(
+                {
+                    "boundary": boundary,
+                    "start_dlong": min(start_dlong, end_dlong),
+                    "end_dlong": max(start_dlong, end_dlong),
+                    "height": height,
+                }
+            )
         return overrides
 
     def set_manual_wall_height_overrides(

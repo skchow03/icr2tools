@@ -5,7 +5,10 @@ pytest.importorskip("PyQt5")
 from PyQt5 import QtWidgets
 
 from sg_viewer.io.track3d_parser import Track3DObjectList
-from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityReconcileDialog, TSOVisibilityTab
+from sg_viewer.ui.tabs.tso_visibility_tab import (
+    TSOVisibilityReconcileDialog,
+    TSOVisibilityTab,
+)
 
 
 def _app() -> QtWidgets.QApplication:
@@ -19,7 +22,9 @@ def test_pills_include_filename_and_description_metadata() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_tso_display_metadata({1: ("tree", "oak"), 2: ("house", "")})
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 2, 3])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 2, 3])]
+    )
 
     assert tab.tso_list.item(0).text() == "__TSO1 (tree — oak)"
     assert tab.tso_list.item(1).text() == "__TSO2 (house)"
@@ -29,7 +34,9 @@ def test_pills_include_filename_and_description_metadata() -> None:
 def test_row_selection_emits_track_section_and_order() -> None:
     _app()
     tab = TSOVisibilityTab()
-    tab.set_object_lists([Track3DObjectList(side="L", section=4, sub_index=0, tso_ids=[7, 2, 7])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=4, sub_index=0, tso_ids=[7, 2, 7])]
+    )
 
     sections: list[object] = []
     orders: list[object] = []
@@ -65,7 +72,9 @@ def test_add_selected_tso_uses_tso_filter_list_selection() -> None:
     tab = TSOVisibilityTab()
     tab.set_tso_display_metadata({1: ("tree", "oak"), 2: ("house", "")})
     tab.set_available_tso_ids([1, 2, 3])
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
     tab.section_list.setCurrentRow(0)
     tab.tso_filter_list.setCurrentRow(1)
 
@@ -77,13 +86,13 @@ def test_add_selected_tso_uses_tso_filter_list_selection() -> None:
     assert tab.tso_list.currentRow() == 1
 
 
-
-
 def test_add_selected_tso_inserts_after_selected_visible_tso() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_available_tso_ids([1, 2, 3, 4])
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 3, 4])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 3, 4])]
+    )
     tab.section_list.setCurrentRow(0)
     tab.tso_list.setCurrentRow(0)
     tab.tso_filter_list.setCurrentRow(1)
@@ -95,12 +104,13 @@ def test_add_selected_tso_inserts_after_selected_visible_tso() -> None:
     assert tab.tso_list.item(1).text() == "__TSO2"
 
 
-
 def test_unassigned_tso_filter_rows_are_highlighted_light_blue() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_available_tso_ids([1, 2, 3])
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[2])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[2])]
+    )
 
     unassigned_filter_item = tab.tso_filter_list.item(0, 0)
     unassigned_tso_item = tab.tso_filter_list.item(0, 1)
@@ -122,7 +132,9 @@ def test_detail_list_tso_filter_rows_are_highlighted_blue() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_available_tso_ids([1, 2])
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
     tab.set_detail_list_tso_ids({1})
 
     detail_filter_item = tab.tso_filter_list.item(0, 0)
@@ -135,7 +147,9 @@ def test_detail_list_tso_filter_rows_are_highlighted_blue() -> None:
 
     assert detail_filter_item.background().color().name() == "#c7e8ff"
     assert detail_tso_item.background().color().name() == "#c7e8ff"
-    assert detail_tso_item.toolTip() == "This TSO is referenced directly by a DetailList."
+    assert (
+        detail_tso_item.toolTip() == "This TSO is referenced directly by a DetailList."
+    )
     assert unassigned_filter_item.background().color().name() == "#dbeeff"
 
 
@@ -157,8 +171,10 @@ def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
 
     reconciled = dialog.reconciled_object_lists()
     assert reconciled[0].tso_ids == [4, 5]
-    assert any((entry.side, entry.section, entry.sub_index, entry.tso_ids) == ("R", 2, 1, [6]) for entry in reconciled)
-
+    assert any(
+        (entry.side, entry.section, entry.sub_index, entry.tso_ids) == ("R", 2, 1, [6])
+        for entry in reconciled
+    )
 
 
 def test_reconcile_dialog_highlights_rows_missing_from_opposite_list_in_red() -> None:
@@ -185,7 +201,9 @@ def test_reconcile_dialog_highlights_rows_missing_from_opposite_list_in_red() ->
     assert track3d_missing.foreground().color().name() == "#ff0000"
 
 
-def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex() -> None:
+def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex() -> (
+    None
+):
     _app()
     dialog = TSOVisibilityReconcileDialog(
         current_lists=[
@@ -203,9 +221,33 @@ def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex
     dialog.sort_lists_button.click()
 
     assert [
-        (entry.side, entry.section, entry.sub_index) for entry in dialog.reconciled_object_lists()
+        (entry.side, entry.section, entry.sub_index)
+        for entry in dialog.reconciled_object_lists()
     ] == [("L", 2, 0), ("L", 3, 1), ("R", 2, 2)]
     assert [
         dialog.track3d_list_widget.item(row).text().split(" — ", 1)[0]
         for row in range(dialog.track3d_list_widget.count())
     ] == ["L / 5 / 0", "R / 1 / 0", "R / 1 / 1"]
+
+
+from sg_viewer.io.track3d_parser import Track3DDetailList
+
+
+def test_detail_list_mode_disables_copy_previous_and_emits_dlong_range() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_detail_lists(
+        [Track3DDetailList(section=2, sub_index=1, lod_suffix="H", tso_ids=[4])]
+    )
+    tab._detail_list_dlong_ranges[(2, 1, "H")] = (100, 200)
+    sections: list[object] = []
+    tab.selectedTrackSectionChanged.connect(sections.append)
+
+    tab.visibility_mode_combo.setCurrentIndex(1)
+    tab.section_list.setCurrentRow(0)
+
+    assert not tab.copy_prev_button.isEnabled()
+    assert sections[-1]["section"] == 2
+    assert sections[-1]["sub_index"] == 1
+    assert sections[-1]["start_dlong"] == 100
+    assert sections[-1]["end_dlong"] == 200
