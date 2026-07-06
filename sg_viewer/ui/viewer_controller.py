@@ -90,6 +90,7 @@ from sg_viewer.ui.manual_wall_height_dialog import (
     ManualWallHeightOverride,
     ManualWallHeightOverridesDialog,
 )
+from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
 from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
@@ -4526,27 +4527,49 @@ class SGViewerController:
     def _on_tso_move_down_requested(self) -> None:
         self._move_tso(direction=1)
 
-    def _parse_trackside_objects_from_3d_text(self, text: str) -> list[TracksideObject]:
+    @staticmethod
+    def _trackside_object_catalog_key(obj: TracksideObject) -> tuple[str, int, int, int, int, int, int]:
+        return (
+            normalize_trackside_filename(obj.filename).lower(),
+            int(obj.x),
+            int(obj.y),
+            int(obj.z),
+            int(obj.yaw),
+            int(obj.pitch),
+            int(obj.tilt),
+        )
+
+    @staticmethod
+    def _trackside_objects_from_track3d_catalog(catalog: Track3DCatalog) -> list[TracksideObject]:
         parsed_objects: list[TracksideObject] = []
-        for raw_line in text.splitlines():
-            match = _TSO_DYNAMIC_LINE_PATTERN.match(raw_line)
-            if match is None:
-                continue
-            filename = normalize_trackside_filename(match.group(7))
+        for _label, definition in sorted(catalog.tsos.items(), key=lambda item: item[1].span.start_offset or 0):
+            filename = normalize_trackside_filename(definition.extern)
             if not filename:
                 continue
             parsed_objects.append(
                 TracksideObject(
                     filename=filename,
-                    x=int(match.group(1)),
-                    y=int(match.group(2)),
-                    z=int(match.group(3)),
-                    yaw=int(match.group(4)),
-                    pitch=int(match.group(5)),
-                    tilt=int(match.group(6)),
+                    x=int(definition.x),
+                    y=int(definition.y),
+                    z=int(definition.z),
+                    yaw=int(definition.rot),
+                    pitch=int(definition.params[4]) if len(definition.params) > 4 else 0,
+                    tilt=int(definition.params[5]) if len(definition.params) > 5 else 0,
                 )
             )
         return parsed_objects
+
+    def _parse_trackside_objects_from_3d_text(self, text: str) -> list[TracksideObject]:
+        """Compatibility adapter for tests; UI workflows parse the selected file directly."""
+        from tempfile import NamedTemporaryFile
+
+        with NamedTemporaryFile("w", suffix=".3d", encoding="utf-8", delete=False) as temp_file:
+            temp_file.write(text)
+            temp_path = Path(temp_file.name)
+        try:
+            return self._trackside_objects_from_track3d_catalog(parse_track3d_catalog(temp_path))
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _on_tso_import_from_3d_requested(self) -> None:
         proceed = QtWidgets.QMessageBox.warning(
@@ -4578,7 +4601,7 @@ class SGViewerController:
 
         path = Path(path_str)
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            catalog = parse_track3d_catalog(path)
         except OSError as exc:
             QtWidgets.QMessageBox.critical(
                 self._window,
@@ -4587,7 +4610,7 @@ class SGViewerController:
             )
             return
 
-        parsed_objects = self._parse_trackside_objects_from_3d_text(text)
+        parsed_objects = self._trackside_objects_from_track3d_catalog(catalog)
         if not parsed_objects:
             QtWidgets.QMessageBox.information(
                 self._window,
@@ -5023,23 +5046,128 @@ class SGViewerController:
             return
         self._window.show_status_message(f"Saved objects.txt to {path}")
 
-    def _replace_tso_dynamic_section_in_3d_text(self, text: str) -> tuple[str, int]:
-        lines = text.splitlines(keepends=True)
-        matching_indices = [index for index, line in enumerate(lines) if _TSO_DYNAMIC_LINE_PATTERN.match(line)]
-        if not matching_indices:
-            return text, 0
-        start_index = min(matching_indices)
-        end_index = max(matching_indices)
-        newline = "\n"
-        first_line = lines[start_index]
-        if first_line.endswith("\r\n"):
-            newline = "\r\n"
-        replacement_lines = [
-            f"{obj.to_objects_txt_line(index)}{newline}"
-            for index, obj in enumerate(self._trackside_objects)
+    @staticmethod
+    def _track3d_newline_style(text: str) -> str:
+        first_crlf = text.find("\r\n")
+        first_lf = text.find("\n")
+        if first_crlf >= 0 and (first_lf < 0 or first_crlf <= first_lf):
+            return "\r\n"
+        return "\n"
+
+    @staticmethod
+    def _format_tso_dynamic_line(label: str, obj: TracksideObject) -> str:
+        return (
+            f'{label}: DYNAMIC {obj.x}, {obj.y}, {obj.z}, {obj.yaw}, '
+            f'{obj.pitch}, {obj.tilt}, 1, EXTERN "{normalize_trackside_filename(obj.filename)}";'
+        )
+
+    def _replace_tso_dynamic_section_in_3d_text(
+        self,
+        text: str,
+        catalog: Track3DCatalog | None = None,
+    ) -> tuple[str, int, int]:
+        if catalog is None:
+            from tempfile import NamedTemporaryFile
+
+            with NamedTemporaryFile("w", suffix=".3d", encoding="utf-8", delete=False) as temp_file:
+                temp_file.write(text)
+                temp_path = Path(temp_file.name)
+            try:
+                catalog = parse_track3d_catalog(temp_path)
+            finally:
+                temp_path.unlink(missing_ok=True)
+        if not catalog.tsos:
+            return text, 0, 0
+
+        project_objects = list(self._trackside_objects)
+        existing_by_label = sorted(catalog.tsos.items(), key=lambda item: int(item[0][5:]))
+        available_labels = [label for label, _definition in existing_by_label]
+        assigned_labels: dict[int, str] = {}
+        used_labels: set[str] = set()
+
+        unmatched_by_key: dict[tuple[str, int, int, int, int, int, int], list[str]] = {}
+        for label, definition in existing_by_label:
+            existing_obj = TracksideObject(
+                filename=normalize_trackside_filename(definition.extern),
+                x=int(definition.x),
+                y=int(definition.y),
+                z=int(definition.z),
+                yaw=int(definition.rot),
+                pitch=int(definition.params[4]) if len(definition.params) > 4 else 0,
+                tilt=int(definition.params[5]) if len(definition.params) > 5 else 0,
+            )
+            unmatched_by_key.setdefault(self._trackside_object_catalog_key(existing_obj), []).append(label)
+
+        for index, obj in enumerate(project_objects):
+            labels = unmatched_by_key.get(self._trackside_object_catalog_key(obj))
+            if labels:
+                label = labels.pop(0)
+                assigned_labels[index] = label
+                used_labels.add(label)
+
+        unused_existing_labels = [label for label in available_labels if label not in used_labels]
+        for index, _obj in enumerate(project_objects):
+            if index in assigned_labels:
+                continue
+            if unused_existing_labels:
+                label = unused_existing_labels.pop(0)
+            else:
+                next_id = 0
+                existing_ids = {int(label[5:]) for label in available_labels}
+                while next_id in existing_ids:
+                    next_id += 1
+                label = f"__TSO{next_id}"
+                available_labels.append(label)
+            assigned_labels[index] = label
+            used_labels.add(label)
+
+        replacements: list[tuple[int, int, str]] = []
+        newline = self._track3d_newline_style(text)
+        for index, label in assigned_labels.items():
+            if label not in catalog.tsos:
+                continue
+            span = catalog.tsos[label].span
+            if span.start_offset is None or span.end_offset is None:
+                continue
+            replacements.append(
+                (
+                    span.start_offset,
+                    span.end_offset,
+                    self._format_tso_dynamic_line(label, project_objects[index]),
+                )
+            )
+
+        deleted_labels = [label for label in catalog.tsos if label not in used_labels]
+        for label in deleted_labels:
+            span = catalog.tsos[label].span
+            if span.start_offset is None or span.end_offset is None:
+                continue
+            start = span.start_offset
+            end = span.end_offset
+            if end < len(text) and text[end : end + 2] == "\r\n":
+                end += 2
+            elif end < len(text) and text[end : end + 1] == "\n":
+                end += 1
+            replacements.append((start, end, ""))
+
+        new_entries = [
+            self._format_tso_dynamic_line(assigned_labels[index], obj)
+            for index, obj in enumerate(project_objects)
+            if assigned_labels[index] not in catalog.tsos
         ]
-        updated_lines = lines[:start_index] + replacement_lines + lines[end_index + 1:]
-        return "".join(updated_lines), len(matching_indices)
+        if new_entries:
+            last_span = max(
+                (definition.span for definition in catalog.tsos.values() if definition.span.end_offset is not None),
+                key=lambda span: span.end_offset or 0,
+            )
+            insert_at = last_span.end_offset or len(text)
+            insertion_prefix = "" if text[insert_at : insert_at + len(newline)] == newline else newline
+            replacements.append((insert_at, insert_at, insertion_prefix + newline.join(new_entries)))
+
+        updated = text
+        for start, end, replacement in sorted(replacements, key=lambda item: item[0], reverse=True):
+            updated = updated[:start] + replacement + updated[end:]
+        return updated, len(catalog.tsos), len(deleted_labels)
 
     def _on_tso_write_to_3d_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
@@ -5053,6 +5181,7 @@ class SGViewerController:
         path = Path(path_str)
         try:
             original_text = path.read_text(encoding="utf-8", errors="ignore")
+            catalog = parse_track3d_catalog(path)
         except OSError as exc:
             QtWidgets.QMessageBox.critical(
                 self._window,
@@ -5060,7 +5189,38 @@ class SGViewerController:
                 f"Could not read file:\n{exc}",
             )
             return
-        updated_text, replaced_count = self._replace_tso_dynamic_section_in_3d_text(original_text)
+        project_keys = {self._trackside_object_catalog_key(obj) for obj in self._trackside_objects}
+        deleted_labels: list[str] = []
+        for label, definition in sorted(catalog.tsos.items(), key=lambda item: int(item[0][5:])):
+            obj = TracksideObject(
+                filename=normalize_trackside_filename(definition.extern),
+                x=int(definition.x),
+                y=int(definition.y),
+                z=int(definition.z),
+                yaw=int(definition.rot),
+                pitch=int(definition.params[4]) if len(definition.params) > 4 else 0,
+                tilt=int(definition.params[5]) if len(definition.params) > 5 else 0,
+            )
+            if self._trackside_object_catalog_key(obj) not in project_keys:
+                deleted_labels.append(label)
+        if deleted_labels:
+            proceed = QtWidgets.QMessageBox.warning(
+                self._window,
+                "Write to .3D file",
+                (
+                    "The selected .3D file contains catalog TSO definitions that are not present "
+                    "in the current SG CREATE project and will be deleted:\n\n"
+                    f"{', '.join(deleted_labels)}\n\nContinue?"
+                ),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if proceed != QtWidgets.QMessageBox.Yes:
+                return
+        updated_text, replaced_count, _deleted_count = self._replace_tso_dynamic_section_in_3d_text(
+            original_text,
+            catalog,
+        )
         if replaced_count <= 0:
             QtWidgets.QMessageBox.information(
                 self._window,
