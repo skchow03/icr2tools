@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
+    QComboBox,
     QDialogButtonBox,
     QFileDialog,
     QGridLayout,
@@ -24,11 +25,16 @@ from PyQt5.QtWidgets import (
 )
 
 from sg_viewer.io.track3d_parser import (
+    Track3DDetailList,
     Track3DObjectList,
     Track3DSectionDlongList,
     parse_track3d,
+    parse_track3d_detail_list_dlong_ranges,
+    parse_track3d_detail_lists,
     parse_track3d_section_dlongs,
+    save_detail_lists_to_track3d,
     save_object_lists_to_track3d,
+    track3d_has_detail_lists,
     track3d_has_object_lists,
 )
 from sg_viewer.io.track3d_catalog import parse_track3d_catalog
@@ -70,7 +76,9 @@ class TSOVisibilityListWidget(QListWidget):
             return self.frameWidth() * 2 + 4
         item_height = self.sizeHintForRow(0)
         spacing_total = self.spacing() * max(self.count() - 1, 0)
-        return (item_height * self.count()) + spacing_total + (self.frameWidth() * 2) + 4
+        return (
+            (item_height * self.count()) + spacing_total + (self.frameWidth() * 2) + 4
+        )
 
     def _update_drop_indicator_position(self, event_pos: QtCore.QPoint) -> None:
         indicator_y = self._calculate_drop_indicator_y(event_pos)
@@ -183,7 +191,11 @@ class TrackSectionListWidget(QTableWidget):
             return
         self.setCurrentItem(item)
 
-    def set_entries(self, left_entries: list[QTableWidgetItem], right_entries: list[QTableWidgetItem]) -> None:
+    def set_entries(
+        self,
+        left_entries: list[QTableWidgetItem],
+        right_entries: list[QTableWidgetItem],
+    ) -> None:
         row_count = max(len(left_entries), len(right_entries))
         self.clear()
         self.setRowCount(row_count)
@@ -211,11 +223,21 @@ class TSOVisibilityReconcileDialog(QDialog):
         self.resize(1100, 620)
 
         self._current_lists = [
-            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            Track3DObjectList(
+                side=entry.side,
+                section=entry.section,
+                sub_index=entry.sub_index,
+                tso_ids=list(entry.tso_ids),
+            )
             for entry in current_lists
         ]
         self._track3d_lists = [
-            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            Track3DObjectList(
+                side=entry.side,
+                section=entry.section,
+                sub_index=entry.sub_index,
+                tso_ids=list(entry.tso_ids),
+            )
             for entry in track3d_lists
         ]
 
@@ -265,24 +287,36 @@ class TSOVisibilityReconcileDialog(QDialog):
         grid.addLayout(command_column, 1, 1)
         grid.addWidget(self.track3d_list_widget, 1, 2)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self.current_list_widget.currentRowChanged.connect(self._sync_selection_to_track3d)
-        self.track3d_list_widget.currentRowChanged.connect(self._sync_selection_to_current)
+        self.current_list_widget.currentRowChanged.connect(
+            self._sync_selection_to_track3d
+        )
+        self.track3d_list_widget.currentRowChanged.connect(
+            self._sync_selection_to_current
+        )
         self.match_button.clicked.connect(self._match_same_key)
-        self.copy_to_current_button.clicked.connect(self._copy_selected_track3d_to_current)
+        self.copy_to_current_button.clicked.connect(
+            self._copy_selected_track3d_to_current
+        )
         self.copy_all_matching_button.clicked.connect(self._copy_all_matching_rows)
         self.add_selected_button.clicked.connect(self._add_selected_track3d_row)
         self.add_missing_button.clicked.connect(self._add_missing_track3d_rows)
         self.delete_current_button.clicked.connect(self._delete_selected_current_row)
         self.copy_current_ids_button.clicked.connect(
-            lambda: self._copy_selected_ids(self.current_list_widget, self._current_lists)
+            lambda: self._copy_selected_ids(
+                self.current_list_widget, self._current_lists
+            )
         )
         self.copy_track3d_ids_button.clicked.connect(
-            lambda: self._copy_selected_ids(self.track3d_list_widget, self._track3d_lists)
+            lambda: self._copy_selected_ids(
+                self.track3d_list_widget, self._track3d_lists
+            )
         )
         self.sort_lists_button.clicked.connect(self._sort_both_lists)
 
@@ -298,7 +332,11 @@ class TSOVisibilityReconcileDialog(QDialog):
 
     @classmethod
     def _format_entry(cls, entry: Track3DObjectList) -> str:
-        tso_text = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids) if entry.tso_ids else "(empty)"
+        tso_text = (
+            ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids)
+            if entry.tso_ids
+            else "(empty)"
+        )
         return f"{entry.side} / {entry.section} / {entry.sub_index} — {tso_text}"
 
     @staticmethod
@@ -354,7 +392,9 @@ class TSOVisibilityReconcileDialog(QDialog):
     def _sync_selection_to_track3d(self, row: int) -> None:
         if row < 0 or row >= len(self._current_lists):
             return
-        match_row = self._find_row_by_key(self._track3d_lists, self._entry_key(self._current_lists[row]))
+        match_row = self._find_row_by_key(
+            self._track3d_lists, self._entry_key(self._current_lists[row])
+        )
         if match_row >= 0:
             self.track3d_list_widget.blockSignals(True)
             self.track3d_list_widget.setCurrentRow(match_row)
@@ -363,7 +403,9 @@ class TSOVisibilityReconcileDialog(QDialog):
     def _sync_selection_to_current(self, row: int) -> None:
         if row < 0 or row >= len(self._track3d_lists):
             return
-        match_row = self._find_row_by_key(self._current_lists, self._entry_key(self._track3d_lists[row]))
+        match_row = self._find_row_by_key(
+            self._current_lists, self._entry_key(self._track3d_lists[row])
+        )
         if match_row >= 0:
             self.current_list_widget.blockSignals(True)
             self.current_list_widget.setCurrentRow(match_row)
@@ -383,13 +425,17 @@ class TSOVisibilityReconcileDialog(QDialog):
         track3d_row = self.track3d_list_widget.currentRow()
         if current_row < 0 or track3d_row < 0:
             return
-        self._current_lists[current_row].tso_ids = list(self._track3d_lists[track3d_row].tso_ids)
+        self._current_lists[current_row].tso_ids = list(
+            self._track3d_lists[track3d_row].tso_ids
+        )
         self._refresh_lists()
         self.current_list_widget.setCurrentRow(current_row)
         self.track3d_list_widget.setCurrentRow(track3d_row)
 
     def _copy_all_matching_rows(self) -> None:
-        track3d_by_key = {self._entry_key(entry): list(entry.tso_ids) for entry in self._track3d_lists}
+        track3d_by_key = {
+            self._entry_key(entry): list(entry.tso_ids) for entry in self._track3d_lists
+        }
         changed = False
         for entry in self._current_lists:
             replacement = track3d_by_key.get(self._entry_key(entry))
@@ -431,7 +477,12 @@ class TSOVisibilityReconcileDialog(QDialog):
     def _add_missing_track3d_rows(self) -> None:
         existing_keys = {self._entry_key(entry) for entry in self._current_lists}
         additions = [
-            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            Track3DObjectList(
+                side=entry.side,
+                section=entry.section,
+                sub_index=entry.sub_index,
+                tso_ids=list(entry.tso_ids),
+            )
             for entry in self._track3d_lists
             if self._entry_key(entry) not in existing_keys
         ]
@@ -461,14 +512,18 @@ class TSOVisibilityReconcileDialog(QDialog):
         del self._current_lists[current_row]
         self._refresh_lists()
         if self.current_list_widget.count() > 0:
-            self.current_list_widget.setCurrentRow(min(current_row, self.current_list_widget.count() - 1))
+            self.current_list_widget.setCurrentRow(
+                min(current_row, self.current_list_widget.count() - 1)
+            )
 
     def _sort_both_lists(self) -> None:
         self._current_lists.sort(key=self._sort_key)
         self._track3d_lists.sort(key=self._sort_key)
         self._refresh_lists()
 
-    def _copy_selected_ids(self, widget: QListWidget, entries: list[Track3DObjectList]) -> None:
+    def _copy_selected_ids(
+        self, widget: QListWidget, entries: list[Track3DObjectList]
+    ) -> None:
         row = widget.currentRow()
         if row < 0 or row >= len(entries):
             return
@@ -477,7 +532,12 @@ class TSOVisibilityReconcileDialog(QDialog):
 
     def reconciled_object_lists(self) -> list[Track3DObjectList]:
         return [
-            Track3DObjectList(side=entry.side, section=entry.section, sub_index=entry.sub_index, tso_ids=list(entry.tso_ids))
+            Track3DObjectList(
+                side=entry.side,
+                section=entry.section,
+                sub_index=entry.sub_index,
+                tso_ids=list(entry.tso_ids),
+            )
             for entry in self._current_lists
         ]
 
@@ -498,6 +558,9 @@ class TSOVisibilityTab(QWidget):
         self.load_button = QPushButton("Load ObjectLists from track.3D")
         self.reconcile_button = QPushButton("Reconcile Project vs track.3D")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
+        self.save_detail_lists_to_track3d_button = QPushButton(
+            "Save DetailLists to track.3D"
+        )
         self.export_button = QPushButton("Export ObjectLists to File")
         self.add_tso_button = QPushButton("Add selected TSO to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
@@ -512,7 +575,12 @@ class TSOVisibilityTab(QWidget):
         self.save_to_track3d_button.setToolTip(
             "Write the current ObjectLists back into a selected track.3D file."
         )
-        self.export_button.setToolTip("Export the current ObjectLists to a standalone text file.")
+        self.save_detail_lists_to_track3d_button.setToolTip(
+            "Write current DetailList TSO assignments to a selected track.3D file while preserving TSD entries."
+        )
+        self.export_button.setToolTip(
+            "Export the current ObjectLists to a standalone text file."
+        )
         self.add_tso_button.setToolTip(
             "Add the selected TSO from the filter list to the currently selected section/sub-index."
         )
@@ -535,11 +603,20 @@ class TSOVisibilityTab(QWidget):
         bottom_button_row = QHBoxLayout()
         for button in (
             self.save_to_track3d_button,
+            self.save_detail_lists_to_track3d_button,
             self.export_button,
         ):
             bottom_button_row.addWidget(button)
         button_rows.addLayout(bottom_button_row)
         layout.addLayout(button_rows)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Visibility list type"))
+        self.visibility_mode_combo = QComboBox()
+        self.visibility_mode_combo.addItem("ObjectLists", "object")
+        self.visibility_mode_combo.addItem("DetailLists", "detail")
+        mode_row.addWidget(self.visibility_mode_combo, 1)
+        layout.addLayout(mode_row)
 
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
         self.section_list = TrackSectionListWidget()
@@ -556,14 +633,20 @@ class TSOVisibilityTab(QWidget):
         lists_row.addLayout(right_panel, 1)
 
         tso_filter_label = QLabel("TSO list")
-        tso_filter_label.setToolTip("Check Filter to narrow sections. Select a TSO row for Add selected TSO to section.")
+        tso_filter_label.setToolTip(
+            "Check Filter to narrow sections. Select a TSO row for Add selected TSO to section."
+        )
         left_panel.addWidget(tso_filter_label)
         self.tso_filter_list = QTableWidget()
         self.tso_filter_list.setColumnCount(2)
         self.tso_filter_list.setHorizontalHeaderLabels(["Filter", "TSO"])
         self.tso_filter_list.verticalHeader().setVisible(False)
-        self.tso_filter_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.tso_filter_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tso_filter_list.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeToContents
+        )
+        self.tso_filter_list.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.Stretch
+        )
         self.tso_filter_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tso_filter_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tso_filter_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -602,24 +685,74 @@ class TSOVisibilityTab(QWidget):
         self.reconcile_button.clicked.connect(self._on_reconcile_requested)
         self.export_button.clicked.connect(self._on_export_requested)
         self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
+        self.save_detail_lists_to_track3d_button.clicked.connect(
+            self._on_save_detail_lists_to_track3d_requested
+        )
+        self.visibility_mode_combo.currentIndexChanged.connect(
+            self._on_visibility_mode_changed
+        )
         self.section_list.rowSelectionChanged.connect(self._emit_selected_tsos)
         self.tso_list.orderChanged.connect(self._on_tso_order_changed)
         self.tso_list.itemClicked.connect(self._on_tso_pill_selected)
 
         self.object_lists = []
+        self.detail_lists: list[Track3DDetailList] = []
+        self._detail_list_dlong_ranges: dict[
+            tuple[int, int, str], tuple[int | None, int | None]
+        ] = {}
         self.available_tso_ids: list[int] = []
         self._tso_display_metadata: dict[int, tuple[str, str]] = {}
         self._detail_list_tso_ids: set[int] = set()
-        self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
+        self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = (
+            {}
+        )
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
         self._current_track_section_count: int | None = None
         QtCore.QTimer.singleShot(0, self._resize_section_list)
+
+    def _is_detail_mode(self) -> bool:
+        return self.visibility_mode_combo.currentData() == "detail"
+
+    def _active_lists(self):
+        return self.detail_lists if self._is_detail_mode() else self.object_lists
+
+    def _on_visibility_mode_changed(self) -> None:
+        self.copy_prev_button.setEnabled(not self._is_detail_mode())
+        self.populate_table()
+
+    def set_detail_lists(self, detail_lists: list[Track3DDetailList]) -> None:
+        self.detail_lists = list(detail_lists)
+        self._refresh_tso_filter_list()
+        self.populate_table()
+        self.selectedTSOsChanged.emit(tuple())
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTrackSectionChanged.emit(None)
+        self.selectedTSOOrderChanged.emit({})
+        self.objectListsSaved.emit()
 
     def set_current_track_section_count(self, count: int | None) -> None:
         if isinstance(count, int) and count >= 0:
             self._current_track_section_count = count
             return
         self._current_track_section_count = None
+
+    def set_detail_list_dlong_rows(self, rows) -> None:
+        self._detail_list_dlong_ranges = {
+            (int(row.section), int(row.sub_index), str(row.lod_suffix)): (
+                row.start_dlong,
+                row.end_dlong,
+            )
+            for row in rows
+        }
+
+    def load_detail_lists_from_track3d_if_empty(self, path: str) -> None:
+        if self.detail_lists:
+            return
+        self.detail_lists = parse_track3d_detail_lists(path)
+        self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
+        self._refresh_tso_filter_list()
+        if self._is_detail_mode():
+            self.populate_table()
 
     def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
         ranges, subindex_starts = build_subsection_dlong_metadata(rows)
@@ -631,7 +764,9 @@ class TSOVisibilityTab(QWidget):
         if item is None:
             return -1
         mapped_index = item.data(QtCore.Qt.UserRole)
-        if isinstance(mapped_index, int) and 0 <= mapped_index < len(self.object_lists):
+        if isinstance(mapped_index, int) and 0 <= mapped_index < len(
+            self._active_lists()
+        ):
             return mapped_index
         return -1
 
@@ -641,13 +776,17 @@ class TSOVisibilityTab(QWidget):
     def _collect_all_tso_ids(self) -> list[int]:
         all_ids = {
             tso_id
-            for object_list in self.object_lists
+            for object_list in (self.object_lists + self.detail_lists)
             for tso_id in object_list.tso_ids
             if tso_id >= 0
         }
         all_ids.update({tso_id for tso_id in self.available_tso_ids if tso_id >= 0})
         all_ids.update(
-            {tso_id for tso_id in self._tso_display_metadata.keys() if isinstance(tso_id, int) and tso_id >= 0}
+            {
+                tso_id
+                for tso_id in self._tso_display_metadata.keys()
+                if isinstance(tso_id, int) and tso_id >= 0
+            }
         )
         return sorted(all_ids)
 
@@ -666,7 +805,11 @@ class TSOVisibilityTab(QWidget):
         start = perf_counter()
         selected_before = self._selected_filter_tso_ids()
         selected_item = self.tso_filter_list.currentItem()
-        selected_tso_id_for_add = selected_item.data(QtCore.Qt.UserRole) if selected_item is not None else None
+        selected_tso_id_for_add = (
+            selected_item.data(QtCore.Qt.UserRole)
+            if selected_item is not None
+            else None
+        )
         all_ids = self._collect_all_tso_ids()
         with QtCore.QSignalBlocker(self.tso_filter_list):
             self.tso_filter_list.clearContents()
@@ -677,9 +820,15 @@ class TSOVisibilityTab(QWidget):
                 filter_item = QTableWidgetItem("")
                 filter_item.setData(QtCore.Qt.UserRole, tso_id)
                 filter_item.setFlags(
-                    QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsUserCheckable
+                    QtCore.Qt.ItemIsEnabled
+                    | QtCore.Qt.ItemIsSelectable
+                    | QtCore.Qt.ItemIsUserCheckable
                 )
-                filter_item.setCheckState(QtCore.Qt.Checked if tso_id in selected_before else QtCore.Qt.Unchecked)
+                filter_item.setCheckState(
+                    QtCore.Qt.Checked
+                    if tso_id in selected_before
+                    else QtCore.Qt.Unchecked
+                )
                 self.tso_filter_list.setItem(row, 0, filter_item)
 
                 tso_item = QTableWidgetItem(self._build_tso_filter_label(tso_id))
@@ -693,7 +842,10 @@ class TSOVisibilityTab(QWidget):
             elif self.tso_filter_list.rowCount() > 0:
                 self.tso_filter_list.setCurrentCell(0, 1)
         self._update_tso_filter_assignment_highlight()
-        logger.debug("TSO visibility: _refresh_tso_filter_list %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "TSO visibility: _refresh_tso_filter_list %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
 
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
         self.populate_table()
@@ -713,10 +865,14 @@ class TSOVisibilityTab(QWidget):
             if isinstance(tso_id, int) and tso_id >= 0:
                 if tso_id in self._detail_list_tso_ids:
                     brush = detail_list_brush
-                    tso_item.setToolTip("This TSO is referenced directly by a DetailList.")
+                    tso_item.setToolTip(
+                        "This TSO is referenced directly by a DetailList."
+                    )
                 elif tso_id not in assigned_ids:
                     brush = unassigned_brush
-                    tso_item.setToolTip("This TSO is not currently assigned to an ObjectList.")
+                    tso_item.setToolTip(
+                        "This TSO is not currently assigned to an ObjectList."
+                    )
                 else:
                     tso_item.setToolTip("")
             filter_item.setBackground(brush)
@@ -742,7 +898,7 @@ class TSOVisibilityTab(QWidget):
     def _assigned_tso_ids(self) -> set[int]:
         return {
             tso_id
-            for object_list in self.object_lists
+            for object_list in (self.object_lists + self.detail_lists)
             for tso_id in object_list.tso_ids
             if tso_id >= 0
         }
@@ -755,7 +911,9 @@ class TSOVisibilityTab(QWidget):
 
     def clear_object_lists(self) -> None:
         self.object_lists = []
+        self.detail_lists = []
         self._detail_list_tso_ids = set()
+        self._detail_list_dlong_ranges = {}
         self._subsection_dlong_ranges = {}
         self._section_subindex_starts = {}
         self.section_list.clear()
@@ -779,23 +937,34 @@ class TSOVisibilityTab(QWidget):
         self.objectListsSaved.emit()
 
     def _emit_track_section_and_order(self, row: int) -> None:
-        if row < 0 or row >= len(self.object_lists):
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
             return
-        entry = self.object_lists[row]
-        start_dlong, end_dlong = self._subsection_dlong_ranges.get(
-            (int(entry.section), int(entry.sub_index)),
-            (None, None),
-        )
+        entry = active_lists[row]
+        if isinstance(entry, Track3DDetailList):
+            start_dlong, end_dlong = self._detail_list_dlong_ranges.get(
+                (int(entry.section), int(entry.sub_index), str(entry.lod_suffix)),
+                (None, None),
+            )
+        else:
+            start_dlong, end_dlong = self._subsection_dlong_ranges.get(
+                (int(entry.section), int(entry.sub_index)),
+                (None, None),
+            )
         self.selectedTrackSectionChanged.emit(
             {
                 "section": int(entry.section),
                 "sub_index": int(entry.sub_index),
                 "start_dlong": start_dlong,
                 "end_dlong": end_dlong,
-                "subindex_count": len(self._section_subindex_starts.get(int(entry.section), tuple())),
-                "subindex_starts": self._section_subindex_starts.get(int(entry.section), tuple()),
+                "subindex_count": len(
+                    self._section_subindex_starts.get(int(entry.section), tuple())
+                ),
+                "subindex_starts": self._section_subindex_starts.get(
+                    int(entry.section), tuple()
+                ),
             }
         )
         order_map: dict[int, int] = {}
@@ -817,6 +986,55 @@ class TSOVisibilityTab(QWidget):
                 }
             )
         return payload
+
+    def serialize_detail_lists(self) -> list[dict[str, object]]:
+        payload: list[dict[str, object]] = []
+        for entry in self.detail_lists:
+            payload.append(
+                {
+                    "section": int(entry.section),
+                    "sub_index": int(entry.sub_index),
+                    "lod_suffix": str(entry.lod_suffix),
+                    "tso_ids": [int(tso_id) for tso_id in entry.tso_ids],
+                }
+            )
+        return payload
+
+    def load_detail_lists_from_payload(self, payload: object) -> None:
+        if not isinstance(payload, list):
+            self.detail_lists = []
+            return
+        parsed_lists: list[Track3DDetailList] = []
+        for raw_entry in payload:
+            if not isinstance(raw_entry, dict):
+                continue
+            try:
+                section = int(raw_entry.get("section", 0))
+                sub_index = int(raw_entry.get("sub_index", 0))
+            except (TypeError, ValueError):
+                continue
+            lod_suffix = str(raw_entry.get("lod_suffix", "")).strip().upper()
+            raw_tso_ids = raw_entry.get("tso_ids", [])
+            tso_ids: list[int] = []
+            if isinstance(raw_tso_ids, list):
+                for tso_id in raw_tso_ids:
+                    try:
+                        parsed_id = int(tso_id)
+                    except (TypeError, ValueError):
+                        continue
+                    if parsed_id >= 0:
+                        tso_ids.append(parsed_id)
+            parsed_lists.append(
+                Track3DDetailList(
+                    section=section,
+                    sub_index=sub_index,
+                    lod_suffix=lod_suffix,
+                    tso_ids=tso_ids,
+                )
+            )
+        self.detail_lists = parsed_lists
+        self._refresh_tso_filter_list()
+        self.populate_table()
 
     @staticmethod
     def _object_list_layout_signature(
@@ -870,8 +1088,12 @@ class TSOVisibilityTab(QWidget):
         self._refresh_tso_filter_list()
         self.populate_table()
 
-    def set_detail_list_tso_ids(self, tso_ids: set[int] | list[int] | tuple[int, ...]) -> None:
-        self._detail_list_tso_ids = {int(tso_id) for tso_id in tso_ids if isinstance(tso_id, int) and tso_id >= 0}
+    def set_detail_list_tso_ids(
+        self, tso_ids: set[int] | list[int] | tuple[int, ...]
+    ) -> None:
+        self._detail_list_tso_ids = {
+            int(tso_id) for tso_id in tso_ids if isinstance(tso_id, int) and tso_id >= 0
+        }
         self._refresh_tso_filter_list()
         self.populate_table()
 
@@ -899,14 +1121,25 @@ class TSOVisibilityTab(QWidget):
             return
         self.available_tso_ids.append(tso_id)
         self.available_tso_ids.sort()
-        logger.debug("TSO visibility: append_available_tso_id %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "TSO visibility: append_available_tso_id %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
 
-    def upsert_tso_display_metadata(self, tso_id: int, filename: str, description: str) -> None:
+    def upsert_tso_display_metadata(
+        self, tso_id: int, filename: str, description: str
+    ) -> None:
         start = perf_counter()
         if not isinstance(tso_id, int) or tso_id < 0:
             return
-        self._tso_display_metadata[tso_id] = (str(filename).strip(), str(description).strip())
-        logger.debug("TSO visibility: upsert_tso_display_metadata %.3f ms", (perf_counter() - start) * 1000.0)
+        self._tso_display_metadata[tso_id] = (
+            str(filename).strip(),
+            str(description).strip(),
+        )
+        logger.debug(
+            "TSO visibility: upsert_tso_display_metadata %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
 
     def update_available_tso_metadata(
         self,
@@ -915,7 +1148,9 @@ class TSOVisibilityTab(QWidget):
         *,
         refresh: bool = True,
     ) -> None:
-        self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if isinstance(tso_id, int) and tso_id >= 0})
+        self.available_tso_ids = sorted(
+            {tso_id for tso_id in tso_ids if isinstance(tso_id, int) and tso_id >= 0}
+        )
         normalized: dict[int, tuple[str, str]] = {}
         for tso_id, values in metadata.items():
             if not isinstance(tso_id, int) or tso_id < 0:
@@ -943,7 +1178,7 @@ class TSOVisibilityTab(QWidget):
         if not path:
             return
 
-        if self.object_lists:
+        if self.object_lists or self.detail_lists:
             response = QMessageBox.warning(
                 self,
                 "Load track.3D",
@@ -986,6 +1221,15 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists = parse_track3d(path)
+        if not self.detail_lists:
+            self.detail_lists = parse_track3d_detail_lists(path)
+            self._detail_list_dlong_ranges = {
+                (row.section, row.sub_index, row.lod_suffix): (
+                    row.start_dlong,
+                    row.end_dlong,
+                )
+                for row in parse_track3d_detail_list_dlong_ranges(path)
+            }
         catalog = parse_track3d_catalog(path)
         self._detail_list_tso_ids = {
             int(item[5:])
@@ -999,7 +1243,7 @@ class TSOVisibilityTab(QWidget):
             self.available_tso_ids = sorted(
                 {
                     tso_id
-                    for object_list in self.object_lists
+                    for object_list in (self.object_lists + self.detail_lists)
                     for tso_id in object_list.tso_ids
                     if tso_id >= 0
                 }
@@ -1038,13 +1282,21 @@ class TSOVisibilityTab(QWidget):
         selected_tso_ids = self._selected_filter_tso_ids()
         left_section_items: list[QTableWidgetItem] = []
         right_section_items: list[QTableWidgetItem] = []
-        for object_list_index, entry in enumerate(self.object_lists):
-            if selected_tso_ids and not any(tso_id in selected_tso_ids for tso_id in entry.tso_ids):
+        for object_list_index, entry in enumerate(self._active_lists()):
+            if selected_tso_ids and not any(
+                tso_id in selected_tso_ids for tso_id in entry.tso_ids
+            ):
                 continue
-            label = f"{entry.section} / {entry.sub_index}"
+            if isinstance(entry, Track3DDetailList):
+                label = f"{entry.section} / {entry.sub_index}{entry.lod_suffix}"
+            else:
+                label = f"{entry.section} / {entry.sub_index}"
             item = QTableWidgetItem(label)
             item.setData(QtCore.Qt.UserRole, object_list_index)
-            if str(entry.side).strip().upper() == "R":
+            if (
+                isinstance(entry, Track3DObjectList)
+                and str(entry.side).strip().upper() == "R"
+            ):
                 right_section_items.append(item)
             else:
                 left_section_items.append(item)
@@ -1073,7 +1325,9 @@ class TSOVisibilityTab(QWidget):
             self.section_list.setCurrentRow(preferred_row)
         self._emit_selected_tsos()
         self._update_tso_filter_assignment_highlight()
-        logger.debug("TSO visibility: populate_table %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "TSO visibility: populate_table %.3f ms", (perf_counter() - start) * 1000.0
+        )
 
     def _on_tso_order_changed(self) -> None:
         object_list_index = self._find_object_list_index_for_current_selection()
@@ -1093,7 +1347,7 @@ class TSOVisibilityTab(QWidget):
                     reordered_ids.append(int(text.replace("__TSO", "", 1)))
                 except ValueError:
                     continue
-        self.object_lists[object_list_index].tso_ids = reordered_ids
+        self._active_lists()[object_list_index].tso_ids = reordered_ids
         self._emit_object_lists_changed()
         self.selectedTSOsChanged.emit(tuple(reordered_ids))
         self._emit_track_section_and_order(object_list_index)
@@ -1102,12 +1356,17 @@ class TSOVisibilityTab(QWidget):
     def _refresh_current_tso_list(self, selected_tso_id: int | None = None) -> None:
         row = self._find_object_list_index_for_current_selection()
         self.tso_list.clear()
-        if row < 0 or row >= len(self.object_lists):
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             return
         selected_row = -1
-        for tso_id in self.object_lists[row].tso_ids:
+        for tso_id in active_lists[row].tso_ids:
             self.tso_list.addItem(self._make_tso_list_item(tso_id))
-            if selected_tso_id is not None and selected_row < 0 and tso_id == selected_tso_id:
+            if (
+                selected_tso_id is not None
+                and selected_row < 0
+                and tso_id == selected_tso_id
+            ):
                 selected_row = self.tso_list.count() - 1
         if selected_row >= 0:
             self.tso_list.setCurrentRow(selected_row)
@@ -1116,17 +1375,19 @@ class TSOVisibilityTab(QWidget):
     def _emit_selected_tsos(self) -> None:
         start = perf_counter()
         row = self._find_object_list_index_for_current_selection()
-        if row < 0 or row >= len(self.object_lists):
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
             return
-        self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
         selected_item = self.tso_list.currentItem()
         selected_tso_id = (
             selected_item.data(QtCore.Qt.UserRole)
-            if selected_item is not None and isinstance(selected_item.data(QtCore.Qt.UserRole), int)
+            if selected_item is not None
+            and isinstance(selected_item.data(QtCore.Qt.UserRole), int)
             else None
         )
         if selected_tso_id is None:
@@ -1135,11 +1396,15 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOPillChanged.emit(selected_tso_id)
         self._emit_track_section_and_order(row)
         self._refresh_current_tso_list(selected_tso_id)
-        logger.debug("TSO visibility: _emit_selected_tsos %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "TSO visibility: _emit_selected_tsos %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
         row = self._find_object_list_index_for_current_selection()
-        if row < 0 or row >= len(self.object_lists):
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             self.selectedTSOPillChanged.emit(None)
             return
         if item is None:
@@ -1173,14 +1438,18 @@ class TSOVisibilityTab(QWidget):
         start = perf_counter()
         _ = refresh_table
         self.tso_list.update_item_widths()
-        logger.debug("TSO visibility: _refresh_visible_tso_column %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "TSO visibility: _refresh_visible_tso_column %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
 
     def _update_row_height(self, row: int, widget: TSOVisibilityListWidget) -> None:
         _ = (row, widget)
 
     def _on_add_tso_requested(self) -> None:
         row = self._find_object_list_index_for_current_selection()
-        if row < 0 or row >= len(self.object_lists):
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             return
         current_row = self.tso_filter_list.currentRow()
         if current_row < 0:
@@ -1193,26 +1462,27 @@ class TSOVisibilityTab(QWidget):
             return
 
         selected_pill = self.tso_list.currentItem()
-        insert_index = len(self.object_lists[row].tso_ids)
+        insert_index = len(active_lists[row].tso_ids)
         if selected_pill is not None:
             selected_row = self.tso_list.row(selected_pill)
             if selected_row >= 0:
-                insert_index = min(selected_row + 1, len(self.object_lists[row].tso_ids))
+                insert_index = min(selected_row + 1, len(active_lists[row].tso_ids))
 
-        self.object_lists[row].tso_ids.insert(insert_index, tso_id)
+        active_lists[row].tso_ids.insert(insert_index, tso_id)
         self._emit_object_lists_changed()
         self._refresh_current_tso_list()
         item = self.tso_list.item(insert_index)
         if item is not None:
             self.tso_list.setCurrentItem(item)
         self.selectedTSOPillChanged.emit(tso_id)
-        self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
         self._emit_track_section_and_order(row)
         self.populate_table()
 
     def _on_delete_tso_requested(self) -> None:
         row = self._find_object_list_index_for_current_selection()
-        if row < 0 or row >= len(self.object_lists):
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             return
         item = self.tso_list.currentItem()
         if item is None:
@@ -1221,12 +1491,12 @@ class TSOVisibilityTab(QWidget):
         if item_row < 0:
             return
         self.tso_list.takeItem(item_row)
-        if item_row < len(self.object_lists[row].tso_ids):
-            del self.object_lists[row].tso_ids[item_row]
+        if item_row < len(active_lists[row].tso_ids):
+            del active_lists[row].tso_ids[item_row]
             self._emit_object_lists_changed()
         self.tso_list.update_item_widths()
         self.selectedTSOPillChanged.emit(None)
-        self.selectedTSOsChanged.emit(tuple(self.object_lists[row].tso_ids))
+        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
         self._emit_track_section_and_order(row)
         self.populate_table()
 
@@ -1250,7 +1520,6 @@ class TSOVisibilityTab(QWidget):
             )
         with open(path, "w", encoding="utf-8") as output_file:
             output_file.write("\n".join(lines) + "\n")
-
 
     def _on_save_to_track3d_requested(self) -> None:
         if not self.object_lists:
@@ -1303,8 +1572,69 @@ class TSOVisibilityTab(QWidget):
         )
         self.objectListsSaved.emit()
 
+    def _detail_list_layout_signature(
+        self,
+        detail_lists: list[Track3DDetailList],
+    ) -> tuple[tuple[int, int, str], ...]:
+        return tuple(
+            (int(entry.section), int(entry.sub_index), str(entry.lod_suffix))
+            for entry in detail_lists
+        )
+
+    def _on_save_detail_lists_to_track3d_requested(self) -> None:
+        if not self.detail_lists:
+            QMessageBox.information(self, "Save DetailLists", "No DetailLists to save.")
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select track.3D to update",
+            "",
+            "3D Files (*.3D *.3d);;All Files (*)",
+        )
+        if not path:
+            return
+        if not track3d_has_detail_lists(path):
+            QMessageBox.warning(
+                self,
+                "Save DetailLists",
+                "The selected track.3D file does not contain any DetailLists.",
+            )
+            return
+
+        file_detail_lists = parse_track3d_detail_lists(path)
+        if self._detail_list_layout_signature(
+            self.detail_lists
+        ) != self._detail_list_layout_signature(file_detail_lists):
+            QMessageBox.warning(
+                self,
+                "Save DetailLists",
+                "The selected track.3D file does not perfectly match the current app DetailList layout.",
+            )
+            return
+
+        try:
+            backup_path = save_detail_lists_to_track3d(path, self.detail_lists)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Save DetailLists",
+                f"Failed to update track.3D:\n{exc}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Save DetailLists",
+            "Updated track.3D with current DetailList TSO rows. Existing TSD entries were preserved.\n"
+            f"Backup created at:\n{backup_path}",
+        )
+        self.objectListsSaved.emit()
+
     def _on_copy_from_previous_requested(self) -> None:
         row = self._find_object_list_index_for_current_selection()
+        if self._is_detail_mode():
+            return
         if row <= 0 or row >= len(self.object_lists):
             return
 
@@ -1336,7 +1666,9 @@ class TSOVisibilityTab(QWidget):
             )
             return
 
-        dialog = TSOVisibilityReconcileDialog(self.object_lists, parse_track3d(path), self)
+        dialog = TSOVisibilityReconcileDialog(
+            self.object_lists, parse_track3d(path), self
+        )
         if dialog.exec_() != QDialog.Accepted:
             return
         self.set_object_lists(dialog.reconciled_object_lists())

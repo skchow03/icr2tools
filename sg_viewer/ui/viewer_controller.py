@@ -98,7 +98,7 @@ from sg_viewer.io.track3d_edit_plan import (
     build_selected_object_list_edit_plan,
     build_selected_tso_definition_edit_plan,
 )
-from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
+from sg_viewer.io.track3d_parser import parse_track3d_detail_list_dlong_ranges, parse_track3d_section_dlongs
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
     MrkTexturePatternDialog,
@@ -1703,6 +1703,10 @@ class SGViewerController:
             self._current_path,
             self._window.tso_visibility_sidebar.serialize_object_lists(),
         )
+        self._sg_settings_store.set_tso_visibility_detail_lists(
+            self._current_path,
+            self._window.tso_visibility_sidebar.serialize_detail_lists(),
+        )
         self._sg_settings_store.set_tso_auto_update_relative_z(
             self._current_path,
             self._auto_update_tso_relative_z,
@@ -1788,6 +1792,9 @@ class SGViewerController:
         self._refresh_tso_table()
         self._window.tso_visibility_sidebar.load_object_lists_from_payload(
             self._sg_settings_store.get_tso_visibility_object_lists(self._current_path)
+        )
+        self._window.tso_visibility_sidebar.load_detail_lists_from_payload(
+            self._sg_settings_store.get_tso_visibility_detail_lists(self._current_path)
         )
         self._window.load_land_objects(self._sg_settings_store.get_land_objects(self._current_path))
         for path in files:
@@ -2149,6 +2156,9 @@ class SGViewerController:
         track3d_path = self._track3d_path_for_current_project()
         rows = parse_track3d_section_dlongs(track3d_path) if track3d_path is not None else []
         self._window.tso_visibility_sidebar.set_section_dlong_rows(rows)
+        if track3d_path is not None:
+            self._window.tso_visibility_sidebar.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(track3d_path))
+            self._window.tso_visibility_sidebar.load_detail_lists_from_track3d_if_empty(str(track3d_path))
 
         starts_by_section: dict[int, tuple[int, ...]] = {}
         grouped: dict[int, list[tuple[int, int]]] = {}

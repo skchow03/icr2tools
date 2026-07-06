@@ -97,8 +97,12 @@ def test_write_preserves_existing_newlines_around_replacement(tmp_path: Path):
 
     backup = plan.write(timestamp=datetime(2026, 7, 6, 1, 2, 3))
 
-    assert path.open("r", encoding="utf-8", newline="").read() == "alpha\r\nBETA\r\ngamma\r\n"
+    assert (
+        path.open("r", encoding="utf-8", newline="").read()
+        == "alpha\r\nBETA\r\ngamma\r\n"
+    )
     assert backup.open("r", encoding="utf-8", newline="").read() == original
+
 
 from sg_viewer.io.track3d_edit_plan import (
     build_selected_face_material_edit_plan,
@@ -154,12 +158,14 @@ def test_build_selected_tso_definition_edit_plan_targets_labels_only(tmp_path: P
     assert '__TSO2: DYNAMIC 9, 8, 7, 6, EXTERN "barn";' in updated
 
 
-def test_build_selected_face_material_edit_plan_limits_replacements_to_selected_faces(tmp_path: Path):
+def test_build_selected_face_material_edit_plan_limits_replacements_to_selected_faces(
+    tmp_path: Path,
+):
     path = tmp_path / "track.3d"
     path.write_text(
         'sec1_s0_HI: FACE MIP = "grass";\n'
         'sec2_s0_HI: FACE MIP = "grass";\n'
-        'sec1_s1_LO: FACE __asphalt__.c;\n',
+        "sec1_s1_LO: FACE __asphalt__.c;\n",
         encoding="utf-8",
     )
 
@@ -173,5 +179,36 @@ def test_build_selected_face_material_edit_plan_limits_replacements_to_selected_
     assert plan.apply_to_text(path.read_text(encoding="utf-8")) == (
         'sec1_s0_HI: FACE MIP = "sand";\n'
         'sec2_s0_HI: FACE MIP = "grass";\n'
-        'sec1_s1_LO: FACE __concrete__.c;\n'
+        "sec1_s1_LO: FACE __concrete__.c;\n"
+    )
+
+
+from sg_viewer.io.track3d_parser import (
+    Track3DDetailList,
+    parse_track3d_detail_list_dlong_ranges,
+    parse_track3d_detail_lists,
+    save_detail_lists_to_track3d,
+)
+
+
+def test_parse_and_save_detail_lists_preserves_tsd_and_replaces_only_tsos(
+    tmp_path: Path,
+):
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "# Outputing section from dlong = 100 to dlong = 200\n"
+        "sec1_s0_HI: FACE DetailList_1-0H;\n"
+        "DetailList_1-0H: LIST { TSD_A, __TSO1, TSD_B, __TSO2 };\n",
+        encoding="utf-8",
+    )
+
+    assert parse_track3d_detail_lists(path) == [Track3DDetailList(1, 0, "H", [1, 2])]
+    ranges = parse_track3d_detail_list_dlong_ranges(path)
+    assert ranges[0].start_dlong == 100
+    assert ranges[0].end_dlong == 200
+
+    save_detail_lists_to_track3d(path, [Track3DDetailList(1, 0, "H", [7, 8])])
+
+    assert "DetailList_1-0H: LIST { TSD_A, TSD_B, __TSO7, __TSO8 };" in path.read_text(
+        encoding="utf-8"
     )
