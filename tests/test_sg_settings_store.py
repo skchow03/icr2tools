@@ -162,3 +162,57 @@ def test_tso_visibility_detail_lists_round_trip(tmp_path):
     assert store.get_tso_visibility_detail_lists(sg_path) == [
         {"section": 4, "sub_index": 0, "lod_suffix": "H", "tso_ids": [1, 2]}
     ]
+
+
+def test_load_project_state_resolves_payload_once_with_existing_getter_behavior(tmp_path):
+    sg_path = tmp_path / "tracks" / "test.sg"
+    sg_path.parent.mkdir(parents=True, exist_ok=True)
+    track3d_path = sg_path.parent / "track.3d"
+    tsd_path = sg_path.parent / "details" / "base.tsd"
+    settings_path = sg_path.with_suffix(".sgc")
+    settings_path.write_text(
+        json.dumps(
+            {
+                "tsd": {
+                    "files": ["details/base.tsd", "", 3],
+                    "active_index": 0,
+                    "objects": [{"name": "Crossing A"}, "bad"],
+                    "skid_marks": {"rows_csv": "rows", "colors_csv": "45,28"},
+                },
+                "track3d_file": "track.3d",
+                "track3d_colors": {"TSO": 42},
+                "trackside_objects": [{"filename": "tower"}, None],
+                "land_objects": [{"name": "tree line"}, "bad"],
+                "tso_visibility": {
+                    "object_lists": [{"section": 1}, "bad"],
+                    "detail_lists": [{"section": 2}, "bad"],
+                },
+                "tso_auto_update_relative_z": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class CountingStore(SGSettingsStore):
+        def __init__(self):
+            self.load_count = 0
+
+        def load(self, path):
+            self.load_count += 1
+            return super().load(path)
+
+    store = CountingStore()
+    state = store.load_project_state(sg_path)
+
+    assert store.load_count == 1
+    assert state.tsd_files == [tsd_path.resolve()]
+    assert state.tsd_active_index == 0
+    assert state.tsd_objects == [{"name": "Crossing A"}]
+    assert state.tsd_skid_marks_state == {"rows_csv": "rows", "colors_csv": "45,28"}
+    assert state.track3d_file == track3d_path.resolve()
+    assert state.track3d_colors == {"TSO": 42}
+    assert state.trackside_objects == [{"filename": "tower"}]
+    assert state.land_objects == [{"name": "tree line"}]
+    assert state.tso_visibility_object_lists == [{"section": 1}]
+    assert state.tso_visibility_detail_lists == [{"section": 2}]
+    assert state.tso_auto_update_relative_z is True

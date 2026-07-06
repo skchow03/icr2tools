@@ -1742,13 +1742,16 @@ class SGViewerController:
         if self._current_path is None:
             self.set_land_objects_dirty(False)
             return
-        persisted_auto_update_relative_z = self._sg_settings_store.get_tso_auto_update_relative_z(self._current_path)
+        project_state = self._sg_settings_store.project_state_from_payload(
+            self._current_path, self._sg_settings_store.load(self._current_path)
+        )
+        persisted_auto_update_relative_z = project_state.tso_auto_update_relative_z
         self._auto_update_tso_relative_z = bool(persisted_auto_update_relative_z) if persisted_auto_update_relative_z is not None else False
         checkbox = self._window.tso_auto_update_relative_z_checkbox
         previous_state = checkbox.blockSignals(True)
         checkbox.setChecked(self._auto_update_tso_relative_z)
         checkbox.blockSignals(previous_state)
-        persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(self._current_path)
+        persisted_track3d_colors = project_state.track3d_colors
         if isinstance(persisted_track3d_colors, dict):
             merged_colors = dict(DEFAULT_TRACK3D_COLORS)
             for name, value in persisted_track3d_colors.items():
@@ -1756,22 +1759,22 @@ class SGViewerController:
                     merged_colors[name] = int(value)
             self._track3d_colors = merged_colors
             self._window.set_selected_colors_path_text("custom")
-        persisted_track3d_path = self._sg_settings_store.get_track3d_file(self._current_path)
+        persisted_track3d_path = project_state.track3d_file
         if persisted_track3d_path is not None:
             self._set_selected_track3d_path(persisted_track3d_path, persist=False)
         else:
             auto_track3d_path = self._track3d_path_for_current_project()
             if auto_track3d_path is not None:
                 self._set_selected_track3d_path(auto_track3d_path, persist=False)
-        files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
+        files, active_index = project_state.tsd_files, project_state.tsd_active_index
         self._tsd_objects = []
         self._trackside_objects = []
-        for raw_object in self._sg_settings_store.get_tsd_objects(self._current_path):
+        for raw_object in project_state.tsd_objects:
             try:
                 self._tsd_objects.append(tsd_object_from_payload(raw_object))
             except (ValueError, TypeError, KeyError):
                 logger.warning("Unable to restore TSD object %s", raw_object, exc_info=True)
-        skid_state = self._sg_settings_store.get_tsd_skid_marks_state(self._current_path)
+        skid_state = project_state.tsd_skid_marks_state
         if isinstance(skid_state, dict):
             raw_rows = skid_state.get("rows_csv")
             raw_colors = skid_state.get("colors_csv")
@@ -1784,19 +1787,19 @@ class SGViewerController:
                     self._skid_marks_colors = DEFAULT_SKID_COLORS
         self._refresh_tsd_objects_table()
         self._trackside_objects = []
-        for raw_object in self._sg_settings_store.get_trackside_objects(self._current_path):
+        for raw_object in project_state.trackside_objects:
             try:
                 self._trackside_objects.append(trackside_object_from_payload(raw_object))
             except ValueError:
                 continue
         self._refresh_tso_table()
         self._window.tso_visibility_sidebar.load_object_lists_from_payload(
-            self._sg_settings_store.get_tso_visibility_object_lists(self._current_path)
+            project_state.tso_visibility_object_lists
         )
         self._window.tso_visibility_sidebar.load_detail_lists_from_payload(
-            self._sg_settings_store.get_tso_visibility_detail_lists(self._current_path)
+            project_state.tso_visibility_detail_lists
         )
-        self._window.load_land_objects(self._sg_settings_store.get_land_objects(self._current_path))
+        self._window.load_land_objects(project_state.land_objects)
         for path in files:
             if not path.exists():
                 continue
