@@ -31,6 +31,7 @@ from sg_viewer.io.track3d_parser import (
     save_object_lists_to_track3d,
     track3d_has_object_lists,
 )
+from sg_viewer.io.track3d_catalog import parse_track3d_catalog
 from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
 
 logger = logging.getLogger(__name__)
@@ -608,6 +609,7 @@ class TSOVisibilityTab(QWidget):
         self.object_lists = []
         self.available_tso_ids: list[int] = []
         self._tso_display_metadata: dict[int, tuple[str, str]] = {}
+        self._detail_list_tso_ids: set[int] = set()
         self._subsection_dlong_ranges: dict[tuple[int, int], tuple[int, int | None]] = {}
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
         self._current_track_section_count: int | None = None
@@ -699,6 +701,7 @@ class TSOVisibilityTab(QWidget):
     def _update_tso_filter_assignment_highlight(self) -> None:
         assigned_ids = self._assigned_tso_ids()
         unassigned_brush = QBrush(QColor("#dbeeff"))
+        detail_list_brush = QBrush(QColor("#c7e8ff"))
         assigned_brush = QBrush()
         for row in range(self.tso_filter_list.rowCount()):
             filter_item = self.tso_filter_list.item(row, 0)
@@ -707,8 +710,15 @@ class TSOVisibilityTab(QWidget):
                 continue
             tso_id = tso_item.data(QtCore.Qt.UserRole)
             brush = assigned_brush
-            if isinstance(tso_id, int) and tso_id >= 0 and tso_id not in assigned_ids:
-                brush = unassigned_brush
+            if isinstance(tso_id, int) and tso_id >= 0:
+                if tso_id in self._detail_list_tso_ids:
+                    brush = detail_list_brush
+                    tso_item.setToolTip("This TSO is referenced directly by a DetailList.")
+                elif tso_id not in assigned_ids:
+                    brush = unassigned_brush
+                    tso_item.setToolTip("This TSO is not currently assigned to an ObjectList.")
+                else:
+                    tso_item.setToolTip("")
             filter_item.setBackground(brush)
             tso_item.setBackground(brush)
 
@@ -745,6 +755,7 @@ class TSOVisibilityTab(QWidget):
 
     def clear_object_lists(self) -> None:
         self.object_lists = []
+        self._detail_list_tso_ids = set()
         self._subsection_dlong_ranges = {}
         self._section_subindex_starts = {}
         self.section_list.clear()
@@ -859,6 +870,11 @@ class TSOVisibilityTab(QWidget):
         self._refresh_tso_filter_list()
         self.populate_table()
 
+    def set_detail_list_tso_ids(self, tso_ids: set[int] | list[int] | tuple[int, ...]) -> None:
+        self._detail_list_tso_ids = {int(tso_id) for tso_id in tso_ids if isinstance(tso_id, int) and tso_id >= 0}
+        self._refresh_tso_filter_list()
+        self.populate_table()
+
     def set_tso_display_metadata(self, metadata: dict[int, tuple[str, str]]) -> None:
         normalized: dict[int, tuple[str, str]] = {}
         for tso_id, values in metadata.items():
@@ -970,6 +986,13 @@ class TSOVisibilityTab(QWidget):
             return
 
         self.object_lists = parse_track3d(path)
+        catalog = parse_track3d_catalog(path)
+        self._detail_list_tso_ids = {
+            int(item[5:])
+            for detail in catalog.detail_lists.values()
+            for item in detail.items
+            if item.startswith("__TSO") and item[5:].isdigit() and item in catalog.tsos
+        }
         self.set_section_dlong_rows(section_rows)
         self._refresh_tso_filter_list()
         if not self.available_tso_ids:

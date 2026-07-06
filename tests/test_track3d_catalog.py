@@ -122,3 +122,35 @@ trailing_label: LIST { should_not_be_consumed };
     assert (catalog.index_span.start_line, catalog.index_span.end_line) == (25, 27)
     assert "sec12_l0" in catalog.index_span.text
     assert "trailing_label:" not in catalog.index_span.text
+
+
+def test_catalog_inspector_detail_lists_hide_tso_extern_column_and_color_tso_items(tmp_path: Path):
+    pytest = __import__("pytest")
+    pytest.importorskip("PyQt5")
+    from PyQt5 import QtGui, QtWidgets
+    from sg_viewer.ui.track3d_catalog_dialog import Track3DCatalogInspectorDialog
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    _ = app
+    sample = '''__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN "tree";
+DetailList_12-0H: LIST { __TSO1, DetailO_263-0 };
+'''
+    path = tmp_path / "track.3d"
+    path.write_text(sample, encoding="utf-8")
+
+    dialog = Track3DCatalogInspectorDialog(parse_track3d_catalog(path), path_text=str(path))
+
+    assert [dialog._details_tree.headerItem().text(i) for i in range(dialog._details_tree.columnCount())] == [
+        "Section / LOD / DetailList",
+        "Items",
+        "Line",
+    ]
+    section_item = dialog._details_tree.topLevelItem(0)
+    lod_item = section_item.child(0)
+    detail_item = lod_item.child(0)
+    tso_item = detail_item.child(0)
+
+    assert "TSO extern names" not in detail_item.data(0, 257)
+    assert detail_item.foreground(1).color().name() == "#0057d8"
+    assert tso_item.text(1) == "__TSO1"
+    assert tso_item.foreground(1).color().name() == "#0057d8"

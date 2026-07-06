@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Callable
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.io.track3d_catalog import Track3DCatalog
 
@@ -76,7 +76,7 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         self._objects_tree = QtWidgets.QTreeWidget()
         self._objects_tree.setHeaderLabels(["Section / side / ObjectList", "TSO IDs", "Extern names", "Line"])
         self._details_tree = QtWidgets.QTreeWidget()
-        self._details_tree.setHeaderLabels(["Section / LOD / DetailList", "Items", "TSO extern names", "Line"])
+        self._details_tree.setHeaderLabels(["Section / LOD / DetailList", "Items", "Line"])
         self._tso_table = self._make_table(["ID", "Extern", "X", "Y", "Z", "Rot", "Line"])
         self._face_table = self._make_table(["Label", "Section", "Sub", "LOD", "DLONG range", "Materials", "ObjectLists", "Line"])
         self._tabs.addTab(self._section_table, "Sections")
@@ -247,11 +247,11 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
             if self._include_section(detail.section):
                 grouped[detail.section][detail.lod_suffix or "unspecified"].append((label, detail))
         for section, lods in sorted(grouped.items()):
-            section_item = QtWidgets.QTreeWidgetItem([f"Section {section}", "", "", ""])
+            section_item = QtWidgets.QTreeWidgetItem([f"Section {section}", "", ""])
             section_item.setData(0, QtCore.Qt.UserRole, str(section))
             section_item.setData(0, QtCore.Qt.UserRole + 2, section)
             for lod, entries in sorted(lods.items(), key=lambda kv: lod_order.get(kv[0], 99)):
-                lod_item = QtWidgets.QTreeWidgetItem([f"LOD {lod}", "", "", ""])
+                lod_item = QtWidgets.QTreeWidgetItem([f"LOD {lod}", "", ""])
                 lod_item.setData(0, QtCore.Qt.UserRole, lod)
                 lod_item.setData(0, QtCore.Qt.UserRole + 2, section)
                 for label, detail in entries:
@@ -259,20 +259,32 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
                         f"{label}\n"
                         f"Section {detail.section}, subsection {detail.subsection}, LOD suffix {detail.lod_suffix or '–'}\n"
                         f"Items: {', '.join(detail.items)}\n"
-                        f"TSO extern names: {', '.join(x or '?' for x in detail.externs)}\n\n"
+                        f"DetailList items that are also TSO pointers are shown in blue.\n\n"
                         f"{detail.span.text}"
                     )
                     child = QtWidgets.QTreeWidgetItem(
                         [
                             label,
                             ", ".join(detail.items),
-                            ", ".join(x or "?" for x in detail.externs),
                             str(detail.line),
                         ]
                     )
+                    detail_tso_items = [item for item in detail.items if item in self._catalog.tsos]
+                    if detail_tso_items:
+                        child.setForeground(1, QtGui.QBrush(QtGui.QColor("#0057d8")))
+                        child.setToolTip(1, "TSO pointer(s) in this DetailList: " + ", ".join(detail_tso_items))
                     child.setData(0, QtCore.Qt.UserRole, label)
                     child.setData(0, QtCore.Qt.UserRole + 1, details)
                     child.setData(0, QtCore.Qt.UserRole + 2, section)
+                    for detail_item in detail.items:
+                        item_child = QtWidgets.QTreeWidgetItem(["", detail_item, ""])
+                        item_child.setData(0, QtCore.Qt.UserRole, detail_item)
+                        item_child.setData(0, QtCore.Qt.UserRole + 1, details)
+                        item_child.setData(0, QtCore.Qt.UserRole + 2, section)
+                        if detail_item in self._catalog.tsos:
+                            item_child.setForeground(1, QtGui.QBrush(QtGui.QColor("#0057d8")))
+                            item_child.setToolTip(1, "This DetailList item points directly at a TSO.")
+                        child.addChild(item_child)
                     lod_item.addChild(child)
                 section_item.addChild(lod_item)
             self._details_tree.addTopLevelItem(section_item)
