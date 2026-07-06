@@ -86,6 +86,7 @@ from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.track3d_colors_dialog import Track3DColorDefinitionsDialog
+from sg_viewer.ui.track3d_catalog_dialog import Track3DCatalogInspectorDialog
 from sg_viewer.ui.manual_wall_height_dialog import (
     ManualWallHeightOverride,
     ManualWallHeightOverridesDialog,
@@ -1370,6 +1371,9 @@ class SGViewerController:
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.tso_write_to_3d_file_button.clicked.connect(self._on_tso_write_to_3d_file_requested)
         self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
+        self._window.three_d_file_catalog_inspector_button.clicked.connect(
+            self._on_three_d_catalog_inspector_requested
+        )
         self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
         self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
         self._window.three_d_file_fix_in_place_button.clicked.connect(self._on_three_d_fix_in_place_requested)
@@ -1847,6 +1851,38 @@ class SGViewerController:
             return
         self._set_selected_track3d_path(selected_path, persist=True)
         self._window.show_status_message(f"Selected .3D file: {selected_path.name}")
+
+    def _on_three_d_catalog_inspector_requested(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+        try:
+            catalog = parse_track3d_catalog(input_path)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self._window, "3D Catalog Inspector", f"Could not read 3D file:\n{exc}")
+            return
+        current_section = self._active_selection.index if self._active_selection is not None else None
+
+        def jump_to_section(section: int) -> None:
+            sections, _xsects = self._window.preview.get_section_set()
+            if 0 <= section < len(sections):
+                self._window.preview.selection_manager.set_selected_section(section)
+                self._window.show_status_message(f"Jumped to SG section {section} from .3D catalog inspector.")
+            else:
+                QtWidgets.QMessageBox.information(
+                    self._window,
+                    "3D Catalog Inspector",
+                    f"Section {section} is not available in the current SG project.",
+                )
+
+        dialog = Track3DCatalogInspectorDialog(
+            catalog,
+            path_text=str(input_path),
+            current_section=current_section,
+            jump_to_section=jump_to_section,
+            parent=self._window,
+        )
+        dialog.exec_()
 
     def _on_edit_track3d_colors_requested(self) -> None:
         dialog = Track3DColorDefinitionsDialog(

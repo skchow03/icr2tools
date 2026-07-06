@@ -248,6 +248,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
         self._three_d_file_selected_path_label.setWordWrap(True)
         self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
+        self._three_d_file_catalog_inspector_button = QtWidgets.QPushButton("Open catalog inspector (read-only)")
         self._three_d_file_inspect_button = QtWidgets.QPushButton("Inspect see-through candidates")
         self._three_d_file_fix_copy_button = QtWidgets.QPushButton("Fix see-through (save as copy)")
         self._three_d_file_fix_in_place_button = QtWidgets.QPushButton("Fix see-through (in place)")
@@ -1015,6 +1016,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         track_group_layout = QtWidgets.QVBoxLayout()
         track_group_layout.addWidget(self._three_d_file_selected_path_label)
         track_group_layout.addWidget(self._three_d_file_select_button)
+        track_group_layout.addWidget(self._three_d_file_catalog_inspector_button)
         track_group.setLayout(track_group_layout)
         three_d_layout.addWidget(track_group)
 
@@ -1496,6 +1498,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_file_select_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_select_button
+
+    @property
+    def three_d_file_catalog_inspector_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_file_catalog_inspector_button
 
     @property
     def three_d_file_inspect_button(self) -> QtWidgets.QPushButton:
