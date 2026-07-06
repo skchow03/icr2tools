@@ -34,7 +34,12 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
 
         self._filter_combo = QtWidgets.QComboBox()
         self._filter_combo.addItem("All sections", None)
-        sections = sorted({s.section for s in catalog.section_summary} | {o.section for o in catalog.object_lists.values()} | {f.section for f in catalog.faces})
+        sections = sorted(
+            {s.section for s in catalog.section_summary}
+            | {o.section for o in catalog.object_lists.values()}
+            | {d.section for d in catalog.detail_lists.values()}
+            | {f.section for f in catalog.faces}
+        )
         for section in sections:
             self._filter_combo.addItem(f"Section {section}", section)
         if current_section in sections:
@@ -70,10 +75,13 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         self._section_table = self._make_table(["Section", "Subsection", "LOD", "DLONG start", "DLONG end", "ObjectLists", "DetailLists", "Section lists"])
         self._objects_tree = QtWidgets.QTreeWidget()
         self._objects_tree.setHeaderLabels(["Section / side / ObjectList", "TSO IDs", "Extern names", "Line"])
+        self._details_tree = QtWidgets.QTreeWidget()
+        self._details_tree.setHeaderLabels(["Section / LOD / DetailList", "Items", "TSO extern names", "Line"])
         self._tso_table = self._make_table(["ID", "Extern", "X", "Y", "Z", "Rot", "Line"])
         self._face_table = self._make_table(["Label", "Section", "Sub", "LOD", "DLONG range", "Materials", "ObjectLists", "Line"])
         self._tabs.addTab(self._section_table, "Sections")
         self._tabs.addTab(self._objects_tree, "ObjectLists")
+        self._tabs.addTab(self._details_tree, "DetailLists")
         self._tabs.addTab(self._tso_table, "TSOs")
         self._tabs.addTab(self._face_table, "FACE blocks")
 
@@ -106,6 +114,7 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         self._tso_table.itemSelectionChanged.connect(self._show_selected_details)
         self._face_table.itemSelectionChanged.connect(self._show_selected_details)
         self._objects_tree.itemSelectionChanged.connect(self._show_selected_details)
+        self._details_tree.itemSelectionChanged.connect(self._show_selected_details)
         self._populate()
 
     @staticmethod
@@ -154,6 +163,7 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
     def _populate(self) -> None:
         self._populate_sections()
         self._populate_objects()
+        self._populate_detail_lists()
         self._populate_tsos()
         self._populate_faces()
         self._details.clear()
@@ -226,6 +236,50 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
         for col in range(self._objects_tree.columnCount()):
             self._objects_tree.resizeColumnToContents(col)
 
+    def _populate_detail_lists(self) -> None:
+        self._details_tree.clear()
+        grouped: dict[int, dict[str, list[tuple[str, object]]]] = defaultdict(lambda: defaultdict(list))
+        lod_order = {"H": 0, "M": 1, "L": 2, "": 3}
+        for label, detail in sorted(
+            self._catalog.detail_lists.items(),
+            key=lambda kv: (kv[1].section, lod_order.get(kv[1].lod_suffix, 99), kv[1].subsection, kv[0]),
+        ):
+            if self._include_section(detail.section):
+                grouped[detail.section][detail.lod_suffix or "unspecified"].append((label, detail))
+        for section, lods in sorted(grouped.items()):
+            section_item = QtWidgets.QTreeWidgetItem([f"Section {section}", "", "", ""])
+            section_item.setData(0, QtCore.Qt.UserRole, str(section))
+            section_item.setData(0, QtCore.Qt.UserRole + 2, section)
+            for lod, entries in sorted(lods.items(), key=lambda kv: lod_order.get(kv[0], 99)):
+                lod_item = QtWidgets.QTreeWidgetItem([f"LOD {lod}", "", "", ""])
+                lod_item.setData(0, QtCore.Qt.UserRole, lod)
+                lod_item.setData(0, QtCore.Qt.UserRole + 2, section)
+                for label, detail in entries:
+                    details = (
+                        f"{label}\n"
+                        f"Section {detail.section}, subsection {detail.subsection}, LOD suffix {detail.lod_suffix or '–'}\n"
+                        f"Items: {', '.join(detail.items)}\n"
+                        f"TSO extern names: {', '.join(x or '?' for x in detail.externs)}\n\n"
+                        f"{detail.span.text}"
+                    )
+                    child = QtWidgets.QTreeWidgetItem(
+                        [
+                            label,
+                            ", ".join(detail.items),
+                            ", ".join(x or "?" for x in detail.externs),
+                            str(detail.line),
+                        ]
+                    )
+                    child.setData(0, QtCore.Qt.UserRole, label)
+                    child.setData(0, QtCore.Qt.UserRole + 1, details)
+                    child.setData(0, QtCore.Qt.UserRole + 2, section)
+                    lod_item.addChild(child)
+                section_item.addChild(lod_item)
+            self._details_tree.addTopLevelItem(section_item)
+        self._details_tree.expandAll()
+        for col in range(self._details_tree.columnCount()):
+            self._details_tree.resizeColumnToContents(col)
+
     def _populate_tsos(self) -> None:
         section_filter = self._filter_section()
         allowed_ids = None
@@ -258,8 +312,9 @@ class Track3DCatalogInspectorDialog(QtWidgets.QDialog):
 
     def _selected_payload(self) -> tuple[str, str, int | None]:
         widget = self._tabs.currentWidget()
-        if widget is self._objects_tree:
-            item = self._objects_tree.currentItem()
+        if widget in (self._objects_tree, self._details_tree):
+            tree = widget if isinstance(widget, QtWidgets.QTreeWidget) else self._objects_tree
+            item = tree.currentItem()
             if item is None:
                 return "", "", None
             return str(item.data(0, QtCore.Qt.UserRole) or item.text(0)), str(item.data(0, QtCore.Qt.UserRole + 1) or ""), item.data(0, QtCore.Qt.UserRole + 2)
