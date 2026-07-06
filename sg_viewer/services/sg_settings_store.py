@@ -1,7 +1,25 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class SGProjectState:
+    """Normalized project state restored from an SG companion file."""
+
+    tsd_files: list[Path]
+    tsd_active_index: int | None
+    tsd_objects: list[dict[str, object]]
+    tsd_skid_marks_state: dict[str, object] | None
+    trackside_objects: list[dict[str, object]]
+    land_objects: list[dict[str, object]]
+    track3d_file: Path | None
+    track3d_colors: dict[str, int] | None
+    tso_visibility_object_lists: list[dict[str, object]]
+    tso_visibility_detail_lists: list[dict[str, object]]
+    tso_auto_update_relative_z: bool | None
 
 
 class SGSettingsStore:
@@ -25,6 +43,136 @@ class SGSettingsStore:
         if not isinstance(payload, dict):
             return {}
         return payload
+
+    @staticmethod
+    def _resolve_project_path(sg_path: Path, value: object) -> Path | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value)
+        if not path.is_absolute():
+            path = (sg_path.parent / path).resolve()
+        return path
+
+    def _get_tsd_files_from_payload(
+        self, sg_path: Path, payload: dict[str, object]
+    ) -> tuple[list[Path], int | None]:
+        raw = payload.get("tsd")
+        if not isinstance(raw, dict):
+            return [], None
+        raw_paths = raw.get("files")
+        result: list[Path] = []
+        if isinstance(raw_paths, list):
+            for entry in raw_paths:
+                candidate = self._resolve_project_path(sg_path, entry)
+                if candidate is not None:
+                    result.append(candidate)
+        active = raw.get("active_index")
+        active_index = active if isinstance(active, int) and active >= 0 else None
+        return result, active_index
+
+    @staticmethod
+    def _get_tsd_objects_from_payload(
+        payload: dict[str, object],
+    ) -> list[dict[str, object]]:
+        raw = payload.get("tsd")
+        if not isinstance(raw, dict):
+            return []
+        objects = raw.get("objects")
+        if not isinstance(objects, list):
+            return []
+        return [entry for entry in objects if isinstance(entry, dict)]
+
+    @staticmethod
+    def _get_tsd_skid_marks_state_from_payload(
+        payload: dict[str, object],
+    ) -> dict[str, object] | None:
+        raw = payload.get("tsd")
+        if not isinstance(raw, dict):
+            return None
+        skid_marks = raw.get("skid_marks")
+        return skid_marks if isinstance(skid_marks, dict) else None
+
+    @staticmethod
+    def _get_object_list_from_payload(
+        payload: dict[str, object], key: str
+    ) -> list[dict[str, object]]:
+        raw = payload.get(key)
+        if not isinstance(raw, list):
+            return []
+        return [entry for entry in raw if isinstance(entry, dict)]
+
+    def _get_track3d_file_from_payload(
+        self, sg_path: Path, payload: dict[str, object]
+    ) -> Path | None:
+        return self._resolve_project_path(sg_path, payload.get("track3d_file"))
+
+    @staticmethod
+    def _get_track3d_colors_from_payload(
+        payload: dict[str, object],
+    ) -> dict[str, int] | None:
+        raw = payload.get("track3d_colors")
+        if not isinstance(raw, dict):
+            return None
+        resolved: dict[str, int] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                return None
+            if not isinstance(value, int):
+                return None
+            if value < 0 or value > 255:
+                return None
+            resolved[key] = value
+        return resolved
+
+    @staticmethod
+    def _get_tso_visibility_list_from_payload(
+        payload: dict[str, object], key: str
+    ) -> list[dict[str, object]]:
+        raw = payload.get("tso_visibility")
+        if not isinstance(raw, dict):
+            return []
+        values = raw.get(key)
+        if not isinstance(values, list):
+            return []
+        return [entry for entry in values if isinstance(entry, dict)]
+
+    @staticmethod
+    def _get_tso_auto_update_relative_z_from_payload(
+        payload: dict[str, object],
+    ) -> bool | None:
+        value = payload.get("tso_auto_update_relative_z")
+        return value if isinstance(value, bool) else None
+
+    def project_state_from_payload(
+        self, sg_path: Path, payload: dict[str, object]
+    ) -> SGProjectState:
+        tsd_files, tsd_active_index = self._get_tsd_files_from_payload(
+            sg_path, payload
+        )
+        return SGProjectState(
+            tsd_files=tsd_files,
+            tsd_active_index=tsd_active_index,
+            tsd_objects=self._get_tsd_objects_from_payload(payload),
+            tsd_skid_marks_state=self._get_tsd_skid_marks_state_from_payload(payload),
+            trackside_objects=self._get_object_list_from_payload(
+                payload, "trackside_objects"
+            ),
+            land_objects=self._get_object_list_from_payload(payload, "land_objects"),
+            track3d_file=self._get_track3d_file_from_payload(sg_path, payload),
+            track3d_colors=self._get_track3d_colors_from_payload(payload),
+            tso_visibility_object_lists=self._get_tso_visibility_list_from_payload(
+                payload, "object_lists"
+            ),
+            tso_visibility_detail_lists=self._get_tso_visibility_list_from_payload(
+                payload, "detail_lists"
+            ),
+            tso_auto_update_relative_z=self._get_tso_auto_update_relative_z_from_payload(
+                payload
+            ),
+        )
+
+    def load_project_state(self, sg_path: Path) -> SGProjectState:
+        return self.project_state_from_payload(sg_path, self.load(sg_path))
 
     def save(self, sg_path: Path, payload: dict[str, object]) -> None:
         path = self._settings_path(sg_path)
@@ -130,23 +278,7 @@ class SGSettingsStore:
         self.save(sg_path, payload)
 
     def get_tsd_files(self, sg_path: Path) -> tuple[list[Path], int | None]:
-        payload = self.load(sg_path)
-        raw = payload.get("tsd")
-        if not isinstance(raw, dict):
-            return [], None
-        raw_paths = raw.get("files")
-        result: list[Path] = []
-        if isinstance(raw_paths, list):
-            for entry in raw_paths:
-                if not isinstance(entry, str) or not entry.strip():
-                    continue
-                candidate = Path(entry)
-                if not candidate.is_absolute():
-                    candidate = (sg_path.parent / candidate).resolve()
-                result.append(candidate)
-        active = raw.get("active_index")
-        active_index = active if isinstance(active, int) and active >= 0 else None
-        return result, active_index
+        return self._get_tsd_files_from_payload(sg_path, self.load(sg_path))
 
     def set_tsd_files(
         self, sg_path: Path, files: list[Path], active_index: int | None
@@ -169,14 +301,7 @@ class SGSettingsStore:
         self.update(sg_path, tsd=tsd_state)
 
     def get_tsd_objects(self, sg_path: Path) -> list[dict[str, object]]:
-        payload = self.load(sg_path)
-        raw = payload.get("tsd")
-        if not isinstance(raw, dict):
-            return []
-        objects = raw.get("objects")
-        if not isinstance(objects, list):
-            return []
-        return [entry for entry in objects if isinstance(entry, dict)]
+        return self._get_tsd_objects_from_payload(self.load(sg_path))
 
     def set_tsd_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
         payload = self.load(sg_path)
@@ -186,12 +311,7 @@ class SGSettingsStore:
         self.update(sg_path, tsd=tsd_state)
 
     def get_tsd_skid_marks_state(self, sg_path: Path) -> dict[str, object] | None:
-        payload = self.load(sg_path)
-        raw = payload.get("tsd")
-        if not isinstance(raw, dict):
-            return None
-        skid_marks = raw.get("skid_marks")
-        return skid_marks if isinstance(skid_marks, dict) else None
+        return self._get_tsd_skid_marks_state_from_payload(self.load(sg_path))
 
     def set_tsd_skid_marks_state(self, sg_path: Path, state: dict[str, object]) -> None:
         payload = self.load(sg_path)
@@ -201,11 +321,9 @@ class SGSettingsStore:
         self.update(sg_path, tsd=tsd_state)
 
     def get_trackside_objects(self, sg_path: Path) -> list[dict[str, object]]:
-        payload = self.load(sg_path)
-        raw = payload.get("trackside_objects")
-        if not isinstance(raw, list):
-            return []
-        return [entry for entry in raw if isinstance(entry, dict)]
+        return self._get_object_list_from_payload(
+            self.load(sg_path), "trackside_objects"
+        )
 
     def set_trackside_objects(
         self, sg_path: Path, objects: list[dict[str, object]]
@@ -213,24 +331,13 @@ class SGSettingsStore:
         self.update(sg_path, trackside_objects=objects)
 
     def get_land_objects(self, sg_path: Path) -> list[dict[str, object]]:
-        payload = self.load(sg_path)
-        raw = payload.get("land_objects")
-        if not isinstance(raw, list):
-            return []
-        return [entry for entry in raw if isinstance(entry, dict)]
+        return self._get_object_list_from_payload(self.load(sg_path), "land_objects")
 
     def set_land_objects(self, sg_path: Path, objects: list[dict[str, object]]) -> None:
         self.update(sg_path, land_objects=objects)
 
     def get_track3d_file(self, sg_path: Path) -> Path | None:
-        payload = self.load(sg_path)
-        value = payload.get("track3d_file")
-        if not isinstance(value, str) or not value.strip():
-            return None
-        path = Path(value)
-        if not path.is_absolute():
-            path = (sg_path.parent / path).resolve()
-        return path
+        return self._get_track3d_file_from_payload(sg_path, self.load(sg_path))
 
     def set_track3d_file(self, sg_path: Path, track3d_path: Path | None) -> None:
         if track3d_path is None:
@@ -249,20 +356,7 @@ class SGSettingsStore:
         self.update(sg_path, track3d_file=str(stored_path))
 
     def get_track3d_colors(self, sg_path: Path) -> dict[str, int] | None:
-        payload = self.load(sg_path)
-        raw = payload.get("track3d_colors")
-        if not isinstance(raw, dict):
-            return None
-        resolved: dict[str, int] = {}
-        for key, value in raw.items():
-            if not isinstance(key, str):
-                return None
-            if not isinstance(value, int):
-                return None
-            if value < 0 or value > 255:
-                return None
-            resolved[key] = value
-        return resolved
+        return self._get_track3d_colors_from_payload(self.load(sg_path))
 
     def set_track3d_colors(self, sg_path: Path, colors: dict[str, int]) -> None:
         serialized: dict[str, int] = {}
@@ -271,14 +365,9 @@ class SGSettingsStore:
         self.update(sg_path, track3d_colors=serialized)
 
     def get_tso_visibility_object_lists(self, sg_path: Path) -> list[dict[str, object]]:
-        payload = self.load(sg_path)
-        raw = payload.get("tso_visibility")
-        if not isinstance(raw, dict):
-            return []
-        object_lists = raw.get("object_lists")
-        if not isinstance(object_lists, list):
-            return []
-        return [entry for entry in object_lists if isinstance(entry, dict)]
+        return self._get_tso_visibility_list_from_payload(
+            self.load(sg_path), "object_lists"
+        )
 
     def set_tso_visibility_object_lists(
         self, sg_path: Path, object_lists: list[dict[str, object]]
@@ -292,14 +381,9 @@ class SGSettingsStore:
         self.update(sg_path, tso_visibility=visibility_state)
 
     def get_tso_visibility_detail_lists(self, sg_path: Path) -> list[dict[str, object]]:
-        payload = self.load(sg_path)
-        raw = payload.get("tso_visibility")
-        if not isinstance(raw, dict):
-            return []
-        detail_lists = raw.get("detail_lists")
-        if not isinstance(detail_lists, list):
-            return []
-        return [entry for entry in detail_lists if isinstance(entry, dict)]
+        return self._get_tso_visibility_list_from_payload(
+            self.load(sg_path), "detail_lists"
+        )
 
     def set_tso_visibility_detail_lists(
         self, sg_path: Path, detail_lists: list[dict[str, object]]
@@ -375,9 +459,7 @@ class SGSettingsStore:
         self.update(sg_path, manual_wall_height_overrides=overrides)
 
     def get_tso_auto_update_relative_z(self, sg_path: Path) -> bool | None:
-        payload = self.load(sg_path)
-        value = payload.get("tso_auto_update_relative_z")
-        return value if isinstance(value, bool) else None
+        return self._get_tso_auto_update_relative_z_from_payload(self.load(sg_path))
 
     def set_tso_auto_update_relative_z(self, sg_path: Path, enabled: bool) -> None:
         self.update(sg_path, tso_auto_update_relative_z=bool(enabled))
