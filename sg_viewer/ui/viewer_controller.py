@@ -1805,12 +1805,7 @@ class SGViewerController:
         self._refresh_tso_table()
         if progress_callback is not None:
             progress_callback(5, "Restoring TSD project data: restoring visibility lists…")
-        self._window.tso_visibility_sidebar.load_object_lists_from_payload(
-            project_state.tso_visibility_object_lists
-        )
-        self._window.tso_visibility_sidebar.load_detail_lists_from_payload(
-            project_state.tso_visibility_detail_lists
-        )
+        self._restore_tso_visibility_lists(project_state)
         if progress_callback is not None:
             progress_callback(6, "Restoring TSD project data: loading land objects…")
         self._window.load_land_objects(project_state.land_objects)
@@ -2174,6 +2169,64 @@ class SGViewerController:
         self._window.show_status_message(
             f"3D tools color fix complete: {input_path.name} ({replacement_count} updated)"
         )
+
+    def _restore_tso_visibility_lists(self, project_state) -> None:
+        sidebar = self._window.tso_visibility_sidebar
+        try:
+            sidebar.load_object_lists_from_payload(project_state.tso_visibility_object_lists)
+        except Exception as exc:
+            raise RuntimeError(
+                self._format_tso_visibility_restore_error(
+                    "ObjectLists", project_state.tso_visibility_object_lists, exc
+                )
+            ) from exc
+        try:
+            sidebar.load_detail_lists_from_payload(project_state.tso_visibility_detail_lists)
+        except Exception as exc:
+            raise RuntimeError(
+                self._format_tso_visibility_restore_error(
+                    "DetailLists", project_state.tso_visibility_detail_lists, exc
+                )
+            ) from exc
+
+    def _format_tso_visibility_restore_error(
+        self, list_name: str, payload: object, exc: BaseException
+    ) -> str:
+        lines = [
+            f"Failed while restoring TSO visibility {list_name}.",
+            f"Project SG file: {self._current_path}",
+            f"Error: {type(exc).__name__}: {exc}",
+            f"Payload type: {type(payload).__name__}",
+        ]
+        if isinstance(payload, list):
+            lines.append(f"Payload entries: {len(payload)}")
+            for index, entry in enumerate(payload[:10]):
+                lines.append(f"  [{index}] {self._summarize_tso_visibility_entry(entry)}")
+            if len(payload) > 10:
+                lines.append(f"  ... {len(payload) - 10} more entries not shown")
+        else:
+            lines.append(f"Payload value: {payload!r}")
+        lines.append(
+            "Check this project's tso_visibility/object_lists or tso_visibility/detail_lists "
+            "entries in the SG CREATE project settings file."
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _summarize_tso_visibility_entry(entry: object) -> str:
+        if not isinstance(entry, dict):
+            return f"non-object entry: {entry!r}"
+        fields = []
+        for key in ("side", "section", "sub_index", "lod_suffix"):
+            if key in entry:
+                fields.append(f"{key}={entry.get(key)!r}")
+        raw_tso_ids = entry.get("tso_ids")
+        if isinstance(raw_tso_ids, list):
+            fields.append(f"tso_ids_count={len(raw_tso_ids)}")
+            fields.append(f"tso_ids_preview={raw_tso_ids[:8]!r}")
+        elif "tso_ids" in entry:
+            fields.append(f"tso_ids={raw_tso_ids!r}")
+        return ", ".join(fields) if fields else repr(entry)
 
     def _sync_tso_visibility_section_dlongs(self) -> None:
         track3d_path = self._track3d_path_for_current_project()

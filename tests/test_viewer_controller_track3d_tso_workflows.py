@@ -241,3 +241,35 @@ def test_selection_change_sync_coalesces_reentrant_selection_updates():
     assert controller._active_selection is reentrant_selection
     assert controller._syncing_selection_change is False
     assert controller._pending_selection_sync is False
+
+
+def test_tso_visibility_restore_error_includes_payload_context(tmp_path):
+    class BrokenSidebar:
+        def load_object_lists_from_payload(self, payload):
+            raise RecursionError("maximum recursion depth exceeded")
+
+    class Window:
+        tso_visibility_sidebar = BrokenSidebar()
+
+    class ProjectState:
+        tso_visibility_object_lists = [
+            {"side": "L", "section": 12, "sub_index": 3, "tso_ids": [4, 5, 6]}
+        ]
+        tso_visibility_detail_lists = []
+
+    controller = SGViewerController.__new__(SGViewerController)
+    controller._window = Window()
+    controller._current_path = tmp_path / "bad.sg"
+
+    try:
+        controller._restore_tso_visibility_lists(ProjectState())
+    except RuntimeError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected RuntimeError")
+
+    assert "Failed while restoring TSO visibility ObjectLists" in message
+    assert "bad.sg" in message
+    assert "RecursionError: maximum recursion depth exceeded" in message
+    assert "[0] side='L', section=12, sub_index=3" in message
+    assert "tso_ids_count=3" in message
