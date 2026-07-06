@@ -79,8 +79,8 @@ TailThing: 2;
     assert backup_path.read_text(encoding="utf-8") == original
 
     updated = path.read_text(encoding="utf-8")
-    assert "ObjectList_L9_4" not in updated
-    assert "ObjectList_R22_2" not in updated
+    assert "ObjectList_L9_4: LIST {__TSO111, __TSO105, __TSO107};" in updated
+    assert "ObjectList_R22_2: LIST {__TSO301, __TSO302};" in updated
     assert "ObjectList_L1_0: LIST { __TSO5, __TSO6 };" in updated
     assert "ObjectList_R7_3: LIST {  };" in updated
     assert "HeaderThing: 1;" in updated
@@ -118,3 +118,119 @@ sec3_l2: LIST { sec3_s8_HI, DATA { 1, BAD, 2, , 3 } };
     assert rows[0].section == 3
     assert rows[0].sub_index == 2
     assert rows[0].dlongs == (1, 2, 3)
+
+
+def test_save_object_lists_to_track3d_replaces_single_matching_object_list(tmp_path: Path):
+    original = """3D VERSION 3.0;
+ObjectList_L9_4: LIST { __TSO111, __TSO105 };
+ObjectList_R22_2: LIST { __TSO301, __TSO302 };
+TailThing: 2;
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(original, encoding="utf-8")
+
+    backup_path = save_object_lists_to_track3d(
+        path,
+        [Track3DObjectList(side="L", section=9, sub_index=4, tso_ids=[5, 6])],
+    )
+
+    assert backup_path.exists()
+    assert backup_path.read_text(encoding="utf-8") == original
+    updated = path.read_text(encoding="utf-8")
+    assert "ObjectList_L9_4: LIST { __TSO5, __TSO6 };" in updated
+    assert "ObjectList_R22_2: LIST { __TSO301, __TSO302 };" in updated
+    assert "__TSO111" not in updated
+
+
+def test_save_object_lists_to_track3d_replaces_multiline_object_list_span(tmp_path: Path):
+    original = """3D VERSION 3.0;
+ObjectList_L9_4: LIST {
+  __TSO111,
+  __TSO105
+};
+ObjectList_R9_4: LIST { __TSO301 };
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(original, encoding="utf-8")
+
+    save_object_lists_to_track3d(
+        path,
+        [Track3DObjectList(side="L", section=9, sub_index=4, tso_ids=[7])],
+    )
+
+    updated = path.read_text(encoding="utf-8")
+    assert "ObjectList_L9_4: LIST { __TSO7 };" in updated
+    assert "  __TSO111" not in updated
+    assert "ObjectList_R9_4: LIST { __TSO301 };" in updated
+
+
+def test_save_object_lists_to_track3d_inserts_missing_object_list_near_same_section_side(
+    tmp_path: Path,
+):
+    original = """3D VERSION 3.0;
+ObjectList_L9_0: LIST { __TSO100 };
+ObjectList_R9_0: LIST { __TSO200 };
+TailThing: 2;
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(original, encoding="utf-8")
+
+    save_object_lists_to_track3d(
+        path,
+        [Track3DObjectList(side="L", section=9, sub_index=1, tso_ids=[101])],
+    )
+
+    updated_lines = path.read_text(encoding="utf-8").splitlines()
+    assert updated_lines == [
+        "3D VERSION 3.0;",
+        "ObjectList_L9_0: LIST { __TSO100 };",
+        "ObjectList_L9_1: LIST { __TSO101 };",
+        "ObjectList_R9_0: LIST { __TSO200 };",
+        "TailThing: 2;",
+    ]
+
+
+def test_save_object_lists_to_track3d_preserves_unrelated_comments_and_labels(
+    tmp_path: Path,
+):
+    original = """3D VERSION 3.0;
+// keep this ObjectList comment
+ObjectList_L9_4: LIST { __TSO111 };
+CustomLabel: LIST { still_here };
+// trailing comment
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(original, encoding="utf-8")
+
+    save_object_lists_to_track3d(
+        path,
+        [Track3DObjectList(side="L", section=9, sub_index=4, tso_ids=[222])],
+    )
+
+    updated = path.read_text(encoding="utf-8")
+    assert "// keep this ObjectList comment" in updated
+    assert "CustomLabel: LIST { still_here };" in updated
+    assert "// trailing comment" in updated
+    assert "ObjectList_L9_4: LIST { __TSO222 };" in updated
+
+
+def test_save_object_lists_to_track3d_does_not_remove_non_target_object_lists(
+    tmp_path: Path,
+):
+    original = """ObjectList_L1_0: LIST { __TSO10 };
+ObjectList_L1_1: LIST { __TSO11 };
+ObjectList_R1_0: LIST { __TSO20 };
+"""
+    path = tmp_path / "track.3D"
+    path.write_text(original, encoding="utf-8")
+
+    save_object_lists_to_track3d(
+        path,
+        [Track3DObjectList(side="L", section=1, sub_index=1, tso_ids=[99])],
+    )
+
+    updated = path.read_text(encoding="utf-8")
+    assert "ObjectList_L1_0: LIST { __TSO10 };" in updated
+    assert "ObjectList_L1_1: LIST { __TSO99 };" in updated
+    assert "ObjectList_R1_0: LIST { __TSO20 };" in updated
+    assert "__TSO11" not in updated
