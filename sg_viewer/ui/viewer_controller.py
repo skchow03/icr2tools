@@ -230,6 +230,8 @@ class SGViewerController:
         self._move_section_default_style = window.move_section_button.styleSheet()
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
+        self._syncing_selection_change = False
+        self._pending_selection_sync = False
         self._elevation_controller = ElevationController()
         self._calibrator_window: Calibrator | None = None
         self._delete_shortcut = QtWidgets.QShortcut(
@@ -6653,7 +6655,19 @@ class SGViewerController:
 
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
         self._active_selection = selection
-        self._sync_after_selection_change()
+        if self._syncing_selection_change:
+            self._pending_selection_sync = True
+            return
+
+        self._syncing_selection_change = True
+        try:
+            while True:
+                self._pending_selection_sync = False
+                self._sync_after_selection_change()
+                if not self._pending_selection_sync:
+                    break
+        finally:
+            self._syncing_selection_change = False
 
     def _on_xsect_node_clicked(self, xsect_index: int) -> None:
         combo = self._window.xsect_combo

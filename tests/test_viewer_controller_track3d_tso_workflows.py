@@ -216,3 +216,28 @@ def test_project_restore_reads_settings_payload_once(monkeypatch, tmp_path):
     assert controller._trackside_objects[0].filename == "tower"
     assert controller._skid_marks_rows_text == "rows"
     assert controller._skid_marks_colors == (45, 28)
+
+
+def test_selection_change_sync_coalesces_reentrant_selection_updates():
+    controller = object.__new__(SGViewerController)
+    controller._active_selection = None
+    controller._syncing_selection_change = False
+    controller._pending_selection_sync = False
+    calls = []
+
+    first_selection = object()
+    reentrant_selection = object()
+
+    def sync_after_selection_change():
+        calls.append(controller._active_selection)
+        if len(calls) == 1:
+            controller._on_selected_section_changed(reentrant_selection)
+
+    controller._sync_after_selection_change = sync_after_selection_change
+
+    controller._on_selected_section_changed(first_selection)
+
+    assert calls == [first_selection, reentrant_selection]
+    assert controller._active_selection is reentrant_selection
+    assert controller._syncing_selection_change is False
+    assert controller._pending_selection_sync is False
