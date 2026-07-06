@@ -90,7 +90,7 @@ from sg_viewer.ui.manual_wall_height_dialog import (
     ManualWallHeightOverride,
     ManualWallHeightOverridesDialog,
 )
-from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs
+from sg_viewer.io.track3d_parser import parse_track3d_section_dlongs, parse_track3d_section_pointers
 from sg_viewer.ui.mrk_textures_dialog import (
     MrkTextureDefinition,
     MrkTexturePatternDialog,
@@ -521,6 +521,11 @@ class SGViewerController:
         self._show_section_dlongs_action = QtWidgets.QAction("Track Section DLONGs…", self._window)
         self._show_section_dlongs_action.triggered.connect(self._show_track_section_dlongs_dialog)
 
+        self._show_track3d_section_pointers_action = QtWidgets.QAction(
+            "Track .3D Section Pointers…", self._window
+        )
+        self._show_track3d_section_pointers_action.triggered.connect(self._show_track3d_section_pointers_dialog)
+
         self._three_d_tools_action = QtWidgets.QAction("Run 3D Tools…", self._window)
         self._three_d_tools_action.triggered.connect(self._open_three_d_tools_dialog)
 
@@ -743,6 +748,7 @@ class SGViewerController:
         tools_menu.addAction(self._show_palette_colors_action)
         tools_menu.addAction(self._show_unique_tso_filenames_action)
         tools_menu.addAction(self._three_d_tools_action)
+        tools_menu.addAction(self._show_track3d_section_pointers_action)
         tools_menu.addSeparator()
         tools_menu.addAction(self._run_integrity_checks_action)
         tools_menu.addSeparator()
@@ -1369,6 +1375,9 @@ class SGViewerController:
         self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
         self._window.tso_write_to_3d_file_button.clicked.connect(self._on_tso_write_to_3d_file_requested)
         self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
+        self._window.three_d_file_section_pointers_button.clicked.connect(
+            self._show_track3d_section_pointers_dialog
+        )
         self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
         self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
         self._window.three_d_file_fix_in_place_button.clicked.connect(self._on_three_d_fix_in_place_requested)
@@ -1826,6 +1835,66 @@ class SGViewerController:
             "Select a track .3D file first.",
         )
         return None
+
+    def _show_track3d_section_pointers_dialog(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+        try:
+            rows = parse_track3d_section_pointers(input_path)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window, "Track .3D Section Pointers", f"Could not read 3D file:\n{exc}"
+            )
+            return
+        if not rows:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Track .3D Section Pointers",
+                "No secX_sX_HI/MED/LO pointers with dlong range comments were found in the selected .3D file.",
+            )
+            return
+
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle(f"Track .3D Section Pointers - {input_path.name}")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        note = QtWidgets.QLabel(
+            "Section pointer rows parsed from Papyrus TRK23D dlong range comments and secX_sX_HI/MED/LO labels."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        table = QtWidgets.QTableWidget(len(rows), 7, dialog)
+        table.setHorizontalHeaderLabels(
+            ["Pointer", "Section", "Subsection", "Resolution", "DLONG From", "DLONG To", "Line"]
+        )
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.setSortingEnabled(True)
+        for row_index, row in enumerate(rows):
+            values = [
+                row.pointer_name,
+                str(row.section),
+                str(row.sub_index),
+                row.resolution,
+                str(row.dlong_start),
+                str(row.dlong_end),
+                str(row.line_number),
+            ]
+            for column, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(value)
+                if column != 0 and value.lstrip("-").isdigit():
+                    item.setData(QtCore.Qt.DisplayRole, int(value))
+                table.setItem(row_index, column, item)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table)
+
+        close_button = QtWidgets.QPushButton("Close", dialog)
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.resize(780, 520)
+        dialog.exec_()
 
     def _on_select_track3d_file_requested(self) -> None:
         default_path = ""

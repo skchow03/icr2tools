@@ -20,9 +20,26 @@ class Track3DSectionDlongList:
     dlongs: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class Track3DSectionPointer:
+    section: int
+    sub_index: int
+    resolution: str
+    pointer_name: str
+    dlong_start: int
+    dlong_end: int
+    line_number: int
+
+
 LINE_RE = re.compile(r"ObjectList_([LR])(\d+)_(\d+): LIST\s*\{([^}]*)\};")
 SECTION_LIST_RE = re.compile(r"sec(\d+)_l(\d+):\s*LIST\s*\{(.*?)\};", re.IGNORECASE | re.DOTALL)
 DATA_RE = re.compile(r"DATA\s*\{([^}]*)\}", re.IGNORECASE | re.DOTALL)
+SECTION_POINTER_RE = re.compile(r"\b(sec(\d+)_s(\d+)_(HI|MED|LO))\s*:", re.IGNORECASE)
+DLONG_RANGE_COMMENT_RE = re.compile(
+    r"%\s*Output(?:t?ing)?\s+section\s+from\s+dlong\s*=\s*(-?\d+)\s+"
+    r"to\s+dlong\s*=\s*(-?\d+)",
+    re.IGNORECASE,
+)
 
 
 def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
@@ -95,6 +112,36 @@ def parse_track3d_section_dlongs(path: str | Path) -> list[Track3DSectionDlongLi
 
     return results
 
+
+def parse_track3d_section_pointers(path: str | Path) -> list[Track3DSectionPointer]:
+    results: list[Track3DSectionPointer] = []
+    pending_range: tuple[int, int] | None = None
+
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line_number, line in enumerate(f, start=1):
+            range_match = DLONG_RANGE_COMMENT_RE.search(line)
+            if range_match is not None:
+                pending_range = (int(range_match.group(1)), int(range_match.group(2)))
+
+            pointer_match = SECTION_POINTER_RE.search(line)
+            if pointer_match is None:
+                continue
+
+            dlong_start, dlong_end = pending_range if pending_range is not None else (0, 0)
+            results.append(
+                Track3DSectionPointer(
+                    section=int(pointer_match.group(2)),
+                    sub_index=int(pointer_match.group(3)),
+                    resolution=pointer_match.group(4).upper(),
+                    pointer_name=pointer_match.group(1),
+                    dlong_start=dlong_start,
+                    dlong_end=dlong_end,
+                    line_number=line_number,
+                )
+            )
+            pending_range = None
+
+    return results
 
 def save_object_lists_to_track3d(
     path: str | Path,
