@@ -70,3 +70,24 @@ def test_track3d_tso_writer_preserves_comments_between_declarations_and_crlf():
     assert "\n" not in updated.replace("\r\n", "")
     assert '__TSO0: DYNAMIC 10, 20, 30, 40, 50, 60, 1, EXTERN "tree";\r\n' in updated
     assert '__TSO1: DYNAMIC 11, 21, 31, 41, 51, 61, 1, EXTERN "sign";\r\n' in updated
+
+
+def test_track3d_tso_writer_inserts_new_declaration_on_its_own_line():
+    controller = _controller_with_objects([
+        TracksideObject("tree", 1, 2, 3, 4, 5, 6),
+        TracksideObject("sign", 7, 8, 9, 10, 11, 12),
+    ])
+    text = (
+        '__TSO0: DYNAMIC 1, 2, 3, 4, 5, 6, 1, EXTERN "tree";\n'
+        'ObjectList_L0_0: LIST { __TSO0, __TSO1 };\n'
+    )
+
+    updated, replaced_count, deleted_count = controller._replace_tso_dynamic_section_in_3d_text(text)
+
+    assert replaced_count == 1
+    assert deleted_count == 0
+    assert (
+        '__TSO0: DYNAMIC 1, 2, 3, 4, 5, 6, 1, EXTERN "tree";\n'
+        '__TSO1: DYNAMIC 7, 8, 9, 10, 11, 12, 1, EXTERN "sign";\n'
+        'ObjectList_L0_0: LIST { __TSO0, __TSO1 };\n'
+    ) == updated

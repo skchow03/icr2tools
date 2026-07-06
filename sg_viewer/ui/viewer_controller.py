@@ -5394,8 +5394,11 @@ class SGViewerController:
                 key=lambda span: span.end_offset or 0,
             )
             insert_at = last_span.end_offset or len(text)
-            insertion_prefix = "" if text[insert_at : insert_at + len(newline)] == newline else newline
-            replacements.append((insert_at, insert_at, insertion_prefix + newline.join(new_entries)))
+            line_break_follows = text[insert_at : insert_at + len(newline)] == newline
+            insertion = newline + newline.join(new_entries)
+            if not line_break_follows:
+                insertion += newline
+            replacements.append((insert_at, insert_at, insertion))
 
         updated = text
         for start, end, replacement in sorted(replacements, key=lambda item: item[0], reverse=True):
