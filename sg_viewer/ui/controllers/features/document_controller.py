@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import traceback
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -20,6 +21,8 @@ class ProjectLoadProgress:
     """Small modal progress window for long-running project loads."""
 
     def __init__(self, parent: QtWidgets.QWidget, title: str, maximum: int) -> None:
+        self._last_value = 0
+        self._last_message = "Starting project load…"
         self._dialog = QtWidgets.QProgressDialog("", None, 0, maximum, parent)
         self._dialog.setWindowTitle(title)
         self._dialog.setWindowModality(QtCore.Qt.WindowModal)
@@ -30,8 +33,26 @@ class ProjectLoadProgress:
         self._dialog.setValue(0)
 
     def update(self, value: int, message: str) -> None:
-        self._dialog.setLabelText(message)
+        self._last_value = value
+        self._last_message = message
+        self._dialog.setLabelText(f"Step {value}/{self._dialog.maximum()}: {message}")
         self._dialog.setValue(value)
+        self._dialog.show()
+        QtWidgets.QApplication.processEvents()
+
+    @property
+    def last_message(self) -> str:
+        return self._last_message
+
+    @property
+    def last_value(self) -> int:
+        return self._last_value
+
+    def fail(self, message: str) -> None:
+        self._dialog.setLabelText(
+            f"Failed at step {self._last_value}/{self._dialog.maximum()}: "
+            f"{self._last_message}\n{message}"
+        )
         self._dialog.show()
         QtWidgets.QApplication.processEvents()
 
@@ -415,17 +436,38 @@ class DocumentController:
                             progress.close()
                 raise ValueError("Project file must include either 'sg_data' or an 'sg_file' path.")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
+            last_step = progress.last_message if progress is not None else "Opening project file"
+            detail = self._format_project_load_failure(exc, last_step)
             if progress is not None:
+                progress.fail(str(exc))
                 progress.close()
-            QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
-            self._logger.exception("Failed to open project file")
+            QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", detail)
+            self._logger.exception("Failed to open project file while %s", last_step)
             return
         self._host._set_project_working_directory(project_working_directory, persist=False)
         try:
             self._load_sg(sg_path, attach_path=True, confirm=False, progress=progress, progress_offset=2)
+        except Exception as exc:
+            last_step = progress.last_message if progress is not None else "Loading project"
+            detail = self._format_project_load_failure(exc, last_step)
+            if progress is not None:
+                progress.fail(str(exc))
+            QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", detail)
+            self._logger.exception("Failed to open project file while %s", last_step)
+            return
         finally:
             if progress is not None:
                 progress.close()
+
+    def _format_project_load_failure(self, exc: Exception, last_step: str) -> str:
+        traceback_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        return (
+            "The project could not be opened.\n\n"
+            f"Failed while: {last_step}\n"
+            f"Error: {exc}\n\n"
+            "Technical details:\n"
+            f"{traceback_text}"
+        )
 
     def save_project_file_dialog(self) -> None:
         if self._host._window.preview.sgfile is None:

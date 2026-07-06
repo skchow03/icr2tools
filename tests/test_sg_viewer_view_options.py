@@ -1962,7 +1962,7 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         window.controller._document_controller.open_project_path(project_path)
 
         assert closed
-        assert events[0] == (0, "Loading SG CREATE Project:20")
+        assert events[0] == (0, "Loading SG CREATE Project:23")
         assert (0, "Opening project file track.sgc…") in events
         assert (1, "Resolving referenced SG file…") in events
         assert (4, "Applying loaded track state…") in events

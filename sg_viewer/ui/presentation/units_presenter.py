@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from numbers import Real
-
 from sg_viewer.ui.altitude_units import feet_from_500ths
 
 from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
@@ -27,14 +25,7 @@ def measurement_unit_step(unit: str) -> float:
 def _coerce_length_value(value: float | int | None) -> float | None:
     if value is None:
         return None
-    try:
-        is_real = isinstance(value, Real)
-    except RecursionError as exc:
-        raise ValueError(
-            "Length values must be plain numeric 500ths units; "
-            f"got recursive {type(value).__name__}: {value!r}"
-        ) from exc
-    if not is_real:
+    if type(value) not in (int, float):
         raise TypeError(
             f"Length values must be numeric 500ths units; got {type(value).__name__}: {value!r}"
         )
