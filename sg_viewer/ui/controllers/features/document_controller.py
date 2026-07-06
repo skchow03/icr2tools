@@ -5,13 +5,38 @@ import logging
 from pathlib import Path
 from typing import Protocol
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from icr2_core.dat.unpackdat import extract_file_bytes, list_dat_entries
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_classes import TRKFile
 from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
+
+
+class ProjectLoadProgress:
+    """Small modal progress window for long-running project loads."""
+
+    def __init__(self, parent: QtWidgets.QWidget, title: str, maximum: int) -> None:
+        self._dialog = QtWidgets.QProgressDialog("", None, 0, maximum, parent)
+        self._dialog.setWindowTitle(title)
+        self._dialog.setWindowModality(QtCore.Qt.WindowModal)
+        self._dialog.setMinimumDuration(0)
+        self._dialog.setAutoClose(False)
+        self._dialog.setAutoReset(False)
+        self._dialog.setCancelButton(None)
+        self._dialog.setValue(0)
+
+    def update(self, value: int, message: str) -> None:
+        self._dialog.setLabelText(message)
+        self._dialog.setValue(value)
+        self._dialog.show()
+        QtWidgets.QApplication.processEvents()
+
+    def close(self) -> None:
+        self._dialog.close()
+        self._dialog.deleteLater()
+        QtWidgets.QApplication.processEvents()
 
 
 class DocumentControllerHost(Protocol):
@@ -80,13 +105,25 @@ class DocumentController:
     def import_sg(self, path: Path) -> None:
         self._load_sg(path, attach_path=False)
 
-    def _load_sg(self, path: Path, *, attach_path: bool) -> None:
+    def _load_sg(
+        self,
+        path: Path,
+        *,
+        attach_path: bool,
+        confirm: bool = True,
+        progress: ProjectLoadProgress | None = None,
+        progress_offset: int = 0,
+    ) -> None:
         path = path.resolve()
-        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
+        if confirm and not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
             return
+        if progress is not None:
+            progress.update(progress_offset, f"Preparing to load {path.name}…")
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
         self._logger.info("Loading SG file %s", path)
+        if progress is not None:
+            progress.update(progress_offset + 1, f"Reading SG geometry from {path.name}…")
         try:
             self._host._window.preview.load_sg_file(path)
         except Exception as exc:
@@ -108,6 +145,9 @@ class DocumentController:
                 "The track has been loaded, but some sections may be unlinked.\n\n"
                 f"{details}",
             )
+
+        if progress is not None:
+            progress.update(progress_offset + 2, "Applying loaded track state…")
 
         if attach_path:
             self._host._window.show_status_message(f"Loaded {path}")
@@ -148,9 +188,13 @@ class DocumentController:
         self._host._window.split_section_button.setChecked(False)
         self._host._save_action.setEnabled(True)
         self._host._save_current_action.setEnabled(attach_path)
+        if progress is not None:
+            progress.update(progress_offset + 3, "Restoring saved project appearance…")
         self._host._apply_saved_background(path if attach_path else None)
         self._host._apply_saved_sunny_palette(path if attach_path else None)
         self._host._refresh_recent_menu()
+        if progress is not None:
+            progress.update(progress_offset + 4, "Refreshing section tables…")
         self._host._update_section_table()
         self._host._update_heading_table()
         self._host._update_xsect_table()
@@ -158,10 +202,14 @@ class DocumentController:
         self._host._reset_altitude_range_for_track()
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
+        if progress is not None:
+            progress.update(progress_offset + 5, "Restoring MRK and TSD project data…")
         self._host._load_mrk_wall_heights_for_current_track()
         self._host._load_manual_wall_height_overrides_for_current_track()
         self._host._load_mrk_state_for_current_track()
         self._host._load_tsd_state_for_current_track()
+        if progress is not None:
+            progress.update(progress_offset + 6, "Project loaded.")
 
     def import_trk_file_dialog(self) -> None:
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
@@ -308,10 +356,17 @@ class DocumentController:
 
     def open_project_path(self, project_path: Path) -> None:
         project_path = project_path.resolve()
+        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
+            return
+        progress: ProjectLoadProgress | None = None
+        raw_sg_file: object = None
         try:
+            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 8)
+            progress.update(0, f"Opening project file {project_path.name}…")
             payload = json.loads(project_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("Project file must contain a JSON object.")
+            progress.update(1, "Resolving referenced SG file…")
             raw_sg_file = payload.get("sg_file")
             if raw_sg_file is not None and (not isinstance(raw_sg_file, str) or not raw_sg_file.strip()):
                 raise ValueError("Project 'sg_file' path must be a non-empty string when provided.")
@@ -331,15 +386,25 @@ class DocumentController:
             embedded_sg = payload.get("sg_data")
             if raw_sg_file is None:
                 if embedded_sg is not None:
-                    self._load_project_embedded_sg(project_path, sg_path, embedded_sg)
-                    return
+                    try:
+                        self._load_project_embedded_sg(project_path, sg_path, embedded_sg, confirm=False, progress=progress)
+                        return
+                    finally:
+                        if progress is not None:
+                            progress.close()
                 raise ValueError("Project file must include either 'sg_data' or an 'sg_file' path.")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
+            if progress is not None:
+                progress.close()
             QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
             self._logger.exception("Failed to open project file")
             return
         self._host._set_project_working_directory(project_working_directory, persist=False)
-        self.load_sg(sg_path)
+        try:
+            self._load_sg(sg_path, attach_path=True, confirm=False, progress=progress, progress_offset=2)
+        finally:
+            if progress is not None:
+                progress.close()
 
     def save_project_file_dialog(self) -> None:
         if self._host._window.preview.sgfile is None:
@@ -480,18 +545,32 @@ class DocumentController:
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
 
-    def _load_project_embedded_sg(self, project_path: Path, sg_path: Path, embedded_sg: object) -> None:
-        if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
+    def _load_project_embedded_sg(
+        self,
+        project_path: Path,
+        sg_path: Path,
+        embedded_sg: object,
+        *,
+        confirm: bool = True,
+        progress: ProjectLoadProgress | None = None,
+    ) -> None:
+        if confirm and not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
             return
+        if progress is not None:
+            progress.update(2, "Deserializing embedded SG geometry…")
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
 
         sgfile = self._deserialize_sg_data_payload(embedded_sg)
+        if progress is not None:
+            progress.update(3, "Loading embedded SG geometry into the preview…")
         self._host._window.preview.load_sg_data(
             sgfile,
             status_message=f"Loaded {project_path.name}",
         )
 
+        if progress is not None:
+            progress.update(4, "Applying loaded project state…")
         self._host._window.show_status_message(f"Loaded project {project_path}")
         self._host._current_path = sg_path
         self._host._is_untitled = False
@@ -524,9 +603,13 @@ class DocumentController:
         self._host._window.split_section_button.setChecked(False)
         self._host._save_action.setEnabled(True)
         self._host._save_current_action.setEnabled(True)
+        if progress is not None:
+            progress.update(5, "Restoring saved project appearance…")
         self._host._apply_saved_background(sg_path)
         self._host._apply_saved_sunny_palette(sg_path)
         self._host._refresh_recent_menu()
+        if progress is not None:
+            progress.update(6, "Refreshing section tables…")
         self._host._update_section_table()
         self._host._update_heading_table()
         self._host._update_xsect_table()
@@ -534,10 +617,14 @@ class DocumentController:
         self._host._reset_altitude_range_for_track()
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
+        if progress is not None:
+            progress.update(7, "Restoring MRK and TSD project data…")
         self._host._load_mrk_wall_heights_for_current_track()
         self._host._load_manual_wall_height_overrides_for_current_track()
         self._host._load_mrk_state_for_current_track()
         self._host._load_tsd_state_for_current_track()
+        if progress is not None:
+            progress.update(8, "Project loaded.")
 
     def _persist_project_sg_reference(self, sg_path: Path) -> None:
         settings_path = self._host._settings_path_for(sg_path)

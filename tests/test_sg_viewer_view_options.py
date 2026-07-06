@@ -1905,10 +1905,15 @@ def test_open_project_loads_sg_from_sgc(qapp, monkeypatch, tmp_path):
     window = SGViewerWindow()
     try:
         project_path = tmp_path / "track.sgc"
+        (tmp_path / "track.sg").write_bytes(b"")
         project_path.write_text(json.dumps({"sg_file": "track.sg"}), encoding="utf-8")
 
         loaded_paths: list[Path] = []
-        monkeypatch.setattr(window.controller._document_controller, "load_sg", lambda path: loaded_paths.append(path))
+        monkeypatch.setattr(
+            window.controller._document_controller,
+            "_load_sg",
+            lambda path, **kwargs: loaded_paths.append(path),
+        )
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
             "getOpenFileName",
@@ -1918,6 +1923,50 @@ def test_open_project_loads_sg_from_sgc(qapp, monkeypatch, tmp_path):
         window.controller._open_project_action.trigger()
 
         assert loaded_paths == [(tmp_path / "track.sg").resolve()]
+    finally:
+        window.close()
+
+
+def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        project_path = tmp_path / "track.sgc"
+        (tmp_path / "track.sg").write_bytes(b"")
+        project_path.write_text(json.dumps({"sg_file": "track.sg"}), encoding="utf-8")
+
+        events: list[tuple[int, str]] = []
+        closed = False
+
+        class FakeProgress:
+            def __init__(self, parent, title, maximum):
+                events.append((0, f"{title}:{maximum}"))
+
+            def update(self, value, message):
+                events.append((value, message))
+
+            def close(self):
+                nonlocal closed
+                closed = True
+
+        def fake_load_sg(path, **kwargs):
+            progress = kwargs["progress"]
+            progress.update(kwargs["progress_offset"] + 2, "Applying loaded track state…")
+            progress.update(kwargs["progress_offset"] + 6, "Project loaded.")
+
+        monkeypatch.setattr(
+            "sg_viewer.ui.controllers.features.document_controller.ProjectLoadProgress",
+            FakeProgress,
+        )
+        monkeypatch.setattr(window.controller._document_controller, "_load_sg", fake_load_sg)
+
+        window.controller._document_controller.open_project_path(project_path)
+
+        assert closed
+        assert events[0] == (0, "Loading SG CREATE Project:8")
+        assert (0, "Opening project file track.sgc…") in events
+        assert (1, "Resolving referenced SG file…") in events
+        assert (4, "Applying loaded track state…") in events
+        assert (8, "Project loaded.") in events
     finally:
         window.close()
 
