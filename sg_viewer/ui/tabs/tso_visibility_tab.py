@@ -714,6 +714,7 @@ class TSOVisibilityTab(QWidget):
         )
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
         self._current_track_section_count: int | None = None
+        self._emitting_selected_tsos = False
         QtCore.QTimer.singleShot(0, self._resize_section_list)
 
     def _is_detail_mode(self) -> bool:
@@ -1066,7 +1067,7 @@ class TSOVisibilityTab(QWidget):
                 if tso_id >= 0
             }
             self._refresh_tso_filter_list()
-            self.populate_table()
+            self.populate_table(emit_selection=False)
         except Exception as exc:
             raise RuntimeError(f"Failed while loading {current_context}.") from exc
 
@@ -1122,7 +1123,10 @@ class TSOVisibilityTab(QWidget):
                 )
 
             current_context = "applying parsed ObjectList entries"
-            self.set_object_lists(parsed_lists)
+            self.object_lists = parsed_lists
+            self._refresh_tso_filter_list()
+            self.populate_table(emit_selection=False)
+            self.objectListsSaved.emit()
         except Exception as exc:
             raise RuntimeError(f"Failed while loading {current_context}.") from exc
 
@@ -1364,7 +1368,7 @@ class TSOVisibilityTab(QWidget):
     def _emit_object_lists_changed(self) -> None:
         self.objectListsChanged.emit()
 
-    def populate_table(self):
+    def populate_table(self, *, emit_selection: bool = True):
         start = perf_counter()
         current_object_index = self._find_object_list_index_for_current_selection()
         selected_tso_ids = self._selected_filter_tso_ids()
@@ -1394,10 +1398,11 @@ class TSOVisibilityTab(QWidget):
 
         if self.section_list.count() == 0:
             self.tso_list.clear()
-            self.selectedTSOsChanged.emit(tuple())
-            self.selectedTSOPillChanged.emit(None)
-            self.selectedTrackSectionChanged.emit(None)
-            self.selectedTSOOrderChanged.emit({})
+            if emit_selection:
+                self.selectedTSOsChanged.emit(tuple())
+                self.selectedTSOPillChanged.emit(None)
+                self.selectedTrackSectionChanged.emit(None)
+                self.selectedTSOOrderChanged.emit({})
             return
 
         preferred_row = 0
@@ -1411,7 +1416,8 @@ class TSOVisibilityTab(QWidget):
                     break
         with QtCore.QSignalBlocker(self.section_list):
             self.section_list.setCurrentRow(preferred_row)
-        self._emit_selected_tsos()
+        if emit_selection:
+            self._emit_selected_tsos()
         self._update_tso_filter_assignment_highlight()
         logger.debug(
             "TSO visibility: populate_table %.3f ms", (perf_counter() - start) * 1000.0
@@ -1461,33 +1467,40 @@ class TSOVisibilityTab(QWidget):
         self.tso_list.update_item_widths()
 
     def _emit_selected_tsos(self) -> None:
-        start = perf_counter()
-        row = self._find_object_list_index_for_current_selection()
-        active_lists = self._active_lists()
-        if row < 0 or row >= len(active_lists):
-            self.selectedTSOsChanged.emit(tuple())
-            self.selectedTSOPillChanged.emit(None)
-            self.selectedTrackSectionChanged.emit(None)
-            self.selectedTSOOrderChanged.emit({})
+        if self._emitting_selected_tsos:
+            logger.debug("TSO visibility: _emit_selected_tsos ignored reentrant call")
             return
-        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
-        selected_item = self.tso_list.currentItem()
-        selected_tso_id = (
-            selected_item.data(QtCore.Qt.UserRole)
-            if selected_item is not None
-            and isinstance(selected_item.data(QtCore.Qt.UserRole), int)
-            else None
-        )
-        if selected_tso_id is None:
-            self.selectedTSOPillChanged.emit(None)
-        else:
-            self.selectedTSOPillChanged.emit(selected_tso_id)
-        self._emit_track_section_and_order(row)
-        self._refresh_current_tso_list(selected_tso_id)
-        logger.debug(
-            "TSO visibility: _emit_selected_tsos %.3f ms",
-            (perf_counter() - start) * 1000.0,
-        )
+        self._emitting_selected_tsos = True
+        start = perf_counter()
+        try:
+            row = self._find_object_list_index_for_current_selection()
+            active_lists = self._active_lists()
+            if row < 0 or row >= len(active_lists):
+                self.selectedTSOsChanged.emit(tuple())
+                self.selectedTSOPillChanged.emit(None)
+                self.selectedTrackSectionChanged.emit(None)
+                self.selectedTSOOrderChanged.emit({})
+                return
+            self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
+            selected_item = self.tso_list.currentItem()
+            selected_tso_id = (
+                selected_item.data(QtCore.Qt.UserRole)
+                if selected_item is not None
+                and isinstance(selected_item.data(QtCore.Qt.UserRole), int)
+                else None
+            )
+            if selected_tso_id is None:
+                self.selectedTSOPillChanged.emit(None)
+            else:
+                self.selectedTSOPillChanged.emit(selected_tso_id)
+            self._emit_track_section_and_order(row)
+            self._refresh_current_tso_list(selected_tso_id)
+        finally:
+            logger.debug(
+                "TSO visibility: _emit_selected_tsos %.3f ms",
+                (perf_counter() - start) * 1000.0,
+            )
+            self._emitting_selected_tsos = False
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
         row = self._find_object_list_index_for_current_selection()

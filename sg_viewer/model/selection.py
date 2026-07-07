@@ -101,7 +101,9 @@ class SelectionManager(QtCore.QObject):
             if self._selected_section_index >= len(sections):
                 self.set_selected_section(None)
             else:
-                self.set_selected_section(self._selected_section_index)
+                selected_index = self._selected_section_index
+                self._selected_section_index = None
+                self.set_selected_section(selected_index)
 
     def reset(
         self,
@@ -165,6 +167,9 @@ class SelectionManager(QtCore.QObject):
 
     def set_selected_section(self, index: int | None) -> None:
         if index is None:
+            if self._selected_section_index is None:
+                logger.debug("Selection.set_selected_section ignored unchanged clear")
+                return
             self._selected_section_index = None
             self._selected_section_points = []
             self._selected_curve_index = None
@@ -178,6 +183,10 @@ class SelectionManager(QtCore.QObject):
                 index,
                 len(self._sections),
             )
+            return
+
+        if self._selected_section_index == index:
+            logger.debug("Selection.set_selected_section ignored unchanged index %s", index)
             return
 
         self._selected_section_index = index
