@@ -229,6 +229,11 @@ class DocumentController:
         self._host._update_track_length_display()
         self._restore_mrk_tsd_project_data(progress=progress, progress_offset=progress_offset + 5)
         if progress is not None:
+            progress.update(progress_offset + 20, "Refreshing current selection sidebar…")
+        self._host._window.update_selection_sidebar(
+            getattr(self._host, "_active_selection", None)
+        )
+        if progress is not None:
             progress.update(progress_offset + 21, "Project loaded.")
 
     def _restore_mrk_tsd_project_data(
@@ -681,6 +686,11 @@ class DocumentController:
         self._host._refresh_elevation_profile()
         self._host._update_track_length_display()
         self._restore_mrk_tsd_project_data(progress=progress, progress_offset=7)
+        if progress is not None:
+            progress.update(22, "Refreshing current selection sidebar…")
+        self._host._window.update_selection_sidebar(
+            getattr(self._host, "_active_selection", None)
+        )
         if progress is not None:
             progress.update(23, "Project loaded.")
 
