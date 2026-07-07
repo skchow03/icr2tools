@@ -150,9 +150,12 @@ def test_set_selected_section_is_idempotent_for_same_index_and_clear():
 
     manager.set_selected_section(0)
     manager.set_selected_section(0)
+
+    assert len(emissions) == 1
+    assert emissions[0] is not None
+
     manager.set_selected_section(None)
     manager.set_selected_section(None)
 
     assert len(emissions) == 2
-    assert emissions[0] is not None
     assert emissions[1] is None

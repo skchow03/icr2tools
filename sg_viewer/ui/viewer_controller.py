@@ -4334,8 +4334,12 @@ class SGViewerController:
         self._window.preview.set_focused_trackside_object_index(tso_id)
 
     def _on_tso_visibility_track_section_selected(self, section_data: object) -> None:
+        selection_manager = self._window.preview.selection_manager
         if isinstance(section_data, int):
-            self._window.preview.selection_manager.set_selected_section(int(section_data))
+            section_index = int(section_data)
+            if selection_manager.selected_section_index == section_index:
+                return
+            selection_manager.set_selected_section(section_index)
             return
         if not isinstance(section_data, dict):
             return
@@ -4344,7 +4348,9 @@ class SGViewerController:
         if not isinstance(section_index, int):
             return
 
-        self._window.preview.selection_manager.set_selected_section(int(section_index))
+        if selection_manager.selected_section_index == int(section_index):
+            return
+        selection_manager.set_selected_section(int(section_index))
         start_dlong = section_data.get("start_dlong")
         end_dlong = section_data.get("end_dlong")
         if isinstance(start_dlong, (int, float)):

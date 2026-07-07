@@ -190,3 +190,69 @@ def test_load_detail_lists_button_warns_before_overwriting_existing_detail_lists
         ("Load DetailLists", "Loading DetailLists will overwrite the current DetailList visibility data. Continue?"),
     ]
     assert tab.detail_lists[0].tso_ids == [7]
+
+
+def _capture_selection_signal_counts(tab: TSOVisibilityTab) -> dict[str, int]:
+    counts = {"tsos": 0, "pill": 0, "section": 0, "order": 0}
+    tab.selectedTSOsChanged.connect(lambda _value: counts.__setitem__("tsos", counts["tsos"] + 1))
+    tab.selectedTSOPillChanged.connect(lambda _value: counts.__setitem__("pill", counts["pill"] + 1))
+    tab.selectedTrackSectionChanged.connect(lambda _value: counts.__setitem__("section", counts["section"] + 1))
+    tab.selectedTSOOrderChanged.connect(lambda _value: counts.__setitem__("order", counts["order"] + 1))
+    return counts
+
+
+def test_load_object_lists_from_track3d_suppresses_selection_signals(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    counts = _capture_selection_signal_counts(tab)
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN \"tree\";\n"
+        "ObjectList_L0_0: LIST {__TSO1};\n"
+        "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+
+    tab.load_file()
+
+    assert counts == {"tsos": 0, "pill": 0, "section": 0, "order": 0}
+    assert [entry.tso_ids for entry in tab.object_lists] == [[1]]
+
+
+def test_load_detail_lists_from_track3d_suppresses_selection_signals(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    counts = _capture_selection_signal_counts(tab)
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN \"tree\";\n"
+        "DetailList_4-0H: LIST { __TSO1 };\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+
+    tab.load_detail_lists_file()
+
+    assert counts == {"tsos": 0, "pill": 0, "section": 0, "order": 0}
+    assert [entry.tso_ids for entry in tab.detail_lists] == [[1]]
+
+
+def test_user_row_selection_after_suppressed_load_still_emits() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [
+            Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[1]),
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[2]),
+        ]
+    )
+    counts = _capture_selection_signal_counts(tab)
+
+    tab.section_list.setCurrentRow(1)
+
+    assert counts == {"tsos": 1, "pill": 1, "section": 1, "order": 1}

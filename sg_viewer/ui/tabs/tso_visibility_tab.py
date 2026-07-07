@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import logging
 from time import perf_counter
 
@@ -715,7 +716,38 @@ class TSOVisibilityTab(QWidget):
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
         self._current_track_section_count: int | None = None
         self._emitting_selected_tsos = False
+        self._suppress_selection_emits = False
+        self._populating_visibility_ui = False
         QtCore.QTimer.singleShot(0, self._resize_section_list)
+
+    @contextmanager
+    def _suppress_programmatic_selection_emits(self):
+        previous_suppress = self._suppress_selection_emits
+        previous_populating = self._populating_visibility_ui
+        self._suppress_selection_emits = True
+        self._populating_visibility_ui = True
+        try:
+            yield
+        finally:
+            self._suppress_selection_emits = previous_suppress
+            self._populating_visibility_ui = previous_populating
+
+    def _selection_emits_suppressed(self) -> bool:
+        return bool(
+            getattr(self, "_suppress_selection_emits", False)
+            or getattr(self, "_populating_visibility_ui", False)
+        )
+
+    def _emit_cleared_selection(self) -> None:
+        if self._selection_emits_suppressed():
+            logger.debug(
+                "TSO visibility: suppressed selection emit during programmatic rebuild"
+            )
+            return
+        self.selectedTSOsChanged.emit(tuple())
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTrackSectionChanged.emit(None)
+        self.selectedTSOOrderChanged.emit({})
 
     def _is_detail_mode(self) -> bool:
         return self.visibility_mode_combo.currentData() == "detail"
@@ -728,19 +760,17 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
 
     def set_detail_lists(self, detail_lists: list[Track3DDetailList]) -> None:
-        self.detail_lists = list(detail_lists)
-        self._detail_list_tso_ids = {
-            tso_id
-            for entry in self.detail_lists
-            for tso_id in entry.tso_ids
-            if tso_id >= 0
-        }
-        self._refresh_tso_filter_list()
-        self.populate_table()
-        self.selectedTSOsChanged.emit(tuple())
-        self.selectedTSOPillChanged.emit(None)
-        self.selectedTrackSectionChanged.emit(None)
-        self.selectedTSOOrderChanged.emit({})
+        with self._suppress_programmatic_selection_emits():
+            self.detail_lists = list(detail_lists)
+            self._detail_list_tso_ids = {
+                tso_id
+                for entry in self.detail_lists
+                for tso_id in entry.tso_ids
+                if tso_id >= 0
+            }
+            self._refresh_tso_filter_list()
+            self.populate_table()
+            self._emit_cleared_selection()
         self.objectListsSaved.emit()
 
     def set_current_track_section_count(self, count: int | None) -> None:
@@ -761,17 +791,18 @@ class TSOVisibilityTab(QWidget):
     def load_detail_lists_from_track3d_if_empty(self, path: str) -> None:
         if self.detail_lists:
             return
-        self.detail_lists = parse_track3d_detail_lists(path)
-        self._detail_list_tso_ids = {
-            tso_id
-            for entry in self.detail_lists
-            for tso_id in entry.tso_ids
-            if tso_id >= 0
-        }
-        self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
-        self._refresh_tso_filter_list()
-        if self._is_detail_mode():
-            self.populate_table()
+        with self._suppress_programmatic_selection_emits():
+            self.detail_lists = parse_track3d_detail_lists(path)
+            self._detail_list_tso_ids = {
+                tso_id
+                for entry in self.detail_lists
+                for tso_id in entry.tso_ids
+                if tso_id >= 0
+            }
+            self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
+            self._refresh_tso_filter_list()
+            if self._is_detail_mode():
+                self.populate_table()
 
     def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
         ranges, subindex_starts = build_subsection_dlong_metadata(rows)
@@ -939,23 +970,23 @@ class TSOVisibilityTab(QWidget):
         self.tso_list.clear()
         self.tso_filter_list.clearContents()
         self.tso_filter_list.setRowCount(0)
-        self.selectedTSOsChanged.emit(tuple())
-        self.selectedTSOPillChanged.emit(None)
-        self.selectedTrackSectionChanged.emit(None)
-        self.selectedTSOOrderChanged.emit({})
+        self._emit_cleared_selection()
         self.objectListsSaved.emit()
 
     def set_object_lists(self, object_lists: list[Track3DObjectList]) -> None:
-        self.object_lists = list(object_lists)
-        self._refresh_tso_filter_list()
-        self.populate_table()
-        self.selectedTSOsChanged.emit(tuple())
-        self.selectedTSOPillChanged.emit(None)
-        self.selectedTrackSectionChanged.emit(None)
-        self.selectedTSOOrderChanged.emit({})
+        with self._suppress_programmatic_selection_emits():
+            self.object_lists = list(object_lists)
+            self._refresh_tso_filter_list()
+            self.populate_table()
+            self._emit_cleared_selection()
         self.objectListsSaved.emit()
 
     def _emit_track_section_and_order(self, row: int) -> None:
+        if self._selection_emits_suppressed():
+            logger.debug(
+                "TSO visibility: suppressed selection emit during programmatic rebuild"
+            )
+            return
         active_lists = self._active_lists()
         if row < 0 or row >= len(active_lists):
             self.selectedTrackSectionChanged.emit(None)
@@ -1059,15 +1090,16 @@ class TSOVisibilityTab(QWidget):
                     )
                 )
             current_context = "applying parsed DetailList entries"
-            self.detail_lists = parsed_lists
-            self._detail_list_tso_ids = {
-                tso_id
-                for entry in self.detail_lists
-                for tso_id in entry.tso_ids
-                if tso_id >= 0
-            }
-            self._refresh_tso_filter_list()
-            self.populate_table(emit_selection=False)
+            with self._suppress_programmatic_selection_emits():
+                self.detail_lists = parsed_lists
+                self._detail_list_tso_ids = {
+                    tso_id
+                    for entry in self.detail_lists
+                    for tso_id in entry.tso_ids
+                    if tso_id >= 0
+                }
+                self._refresh_tso_filter_list()
+                self.populate_table(emit_selection=False)
         except Exception as exc:
             raise RuntimeError(f"Failed while loading {current_context}.") from exc
 
@@ -1123,9 +1155,10 @@ class TSOVisibilityTab(QWidget):
                 )
 
             current_context = "applying parsed ObjectList entries"
-            self.object_lists = parsed_lists
-            self._refresh_tso_filter_list()
-            self.populate_table(emit_selection=False)
+            with self._suppress_programmatic_selection_emits():
+                self.object_lists = parsed_lists
+                self._refresh_tso_filter_list()
+                self.populate_table(emit_selection=False)
             self.objectListsSaved.emit()
         except Exception as exc:
             raise RuntimeError(f"Failed while loading {current_context}.") from exc
@@ -1244,19 +1277,20 @@ class TSOVisibilityTab(QWidget):
             )
             return
 
-        self.detail_lists = parse_track3d_detail_lists(path)
-        self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
-        self._detail_list_tso_ids = {
-            tso_id
-            for entry in self.detail_lists
-            for tso_id in entry.tso_ids
-            if tso_id >= 0
-        }
-        self.visibility_mode_combo.setCurrentIndex(
-            self.visibility_mode_combo.findData("detail")
-        )
-        self._refresh_tso_filter_list()
-        self.populate_table()
+        with self._suppress_programmatic_selection_emits():
+            self.detail_lists = parse_track3d_detail_lists(path)
+            self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
+            self._detail_list_tso_ids = {
+                tso_id
+                for entry in self.detail_lists
+                for tso_id in entry.tso_ids
+                if tso_id >= 0
+            }
+            self.visibility_mode_combo.setCurrentIndex(
+                self.visibility_mode_combo.findData("detail")
+            )
+            self._refresh_tso_filter_list()
+            self.populate_table()
         self._emit_object_lists_changed()
 
     def load_file(self):
@@ -1312,36 +1346,37 @@ class TSOVisibilityTab(QWidget):
             )
             return
 
-        self.object_lists = parse_track3d(path)
-        if not self.detail_lists:
-            self.detail_lists = parse_track3d_detail_lists(path)
-            self._detail_list_dlong_ranges = {
-                (row.section, row.sub_index, row.lod_suffix): (
-                    row.start_dlong,
-                    row.end_dlong,
-                )
-                for row in parse_track3d_detail_list_dlong_ranges(path)
-            }
-        catalog = parse_track3d_catalog(path)
-        self._detail_list_tso_ids = {
-            int(item[5:])
-            for detail in catalog.detail_lists.values()
-            for item in detail.items
-            if item.startswith("__TSO") and item[5:].isdigit() and item in catalog.tsos
-        }
-        self.set_section_dlong_rows(section_rows)
-        self._refresh_tso_filter_list()
-        if not self.available_tso_ids:
-            self.available_tso_ids = sorted(
-                {
-                    tso_id
-                    for object_list in (self.object_lists + self.detail_lists)
-                    for tso_id in object_list.tso_ids
-                    if tso_id >= 0
+        with self._suppress_programmatic_selection_emits():
+            self.object_lists = parse_track3d(path)
+            if not self.detail_lists:
+                self.detail_lists = parse_track3d_detail_lists(path)
+                self._detail_list_dlong_ranges = {
+                    (row.section, row.sub_index, row.lod_suffix): (
+                        row.start_dlong,
+                        row.end_dlong,
+                    )
+                    for row in parse_track3d_detail_list_dlong_ranges(path)
                 }
-            )
+            catalog = parse_track3d_catalog(path)
+            self._detail_list_tso_ids = {
+                int(item[5:])
+                for detail in catalog.detail_lists.values()
+                for item in detail.items
+                if item.startswith("__TSO") and item[5:].isdigit() and item in catalog.tsos
+            }
+            self.set_section_dlong_rows(section_rows)
+            self._refresh_tso_filter_list()
+            if not self.available_tso_ids:
+                self.available_tso_ids = sorted(
+                    {
+                        tso_id
+                        for object_list in (self.object_lists + self.detail_lists)
+                        for tso_id in object_list.tso_ids
+                        if tso_id >= 0
+                    }
+                )
 
-        self.populate_table()
+            self.populate_table()
         self.objectListsSaved.emit()
 
     def remap_tso_ids(self, remap: dict[int, int]) -> None:
@@ -1369,59 +1404,62 @@ class TSOVisibilityTab(QWidget):
         self.objectListsChanged.emit()
 
     def populate_table(self, *, emit_selection: bool = True):
+        previous_populating = self._populating_visibility_ui
+        self._populating_visibility_ui = True
         start = perf_counter()
-        current_object_index = self._find_object_list_index_for_current_selection()
-        selected_tso_ids = self._selected_filter_tso_ids()
-        left_section_items: list[QTableWidgetItem] = []
-        right_section_items: list[QTableWidgetItem] = []
-        for object_list_index, entry in enumerate(self._active_lists()):
-            if selected_tso_ids and not any(
-                tso_id in selected_tso_ids for tso_id in entry.tso_ids
-            ):
-                continue
-            if isinstance(entry, Track3DDetailList):
-                label = f"{entry.section} / {entry.sub_index}{entry.lod_suffix}"
-            else:
-                label = f"{entry.section} / {entry.sub_index}"
-            item = QTableWidgetItem(label)
-            item.setData(QtCore.Qt.UserRole, object_list_index)
-            if (
-                isinstance(entry, Track3DObjectList)
-                and str(entry.side).strip().upper() == "R"
-            ):
-                right_section_items.append(item)
-            else:
-                left_section_items.append(item)
-
-        with QtCore.QSignalBlocker(self.section_list):
-            self.section_list.set_entries(left_section_items, right_section_items)
-
-        if self.section_list.count() == 0:
-            self.tso_list.clear()
-            if emit_selection:
-                self.selectedTSOsChanged.emit(tuple())
-                self.selectedTSOPillChanged.emit(None)
-                self.selectedTrackSectionChanged.emit(None)
-                self.selectedTSOOrderChanged.emit({})
-            return
-
-        preferred_row = 0
-        if current_object_index >= 0:
-            for row in range(self.section_list.count()):
-                item = self.section_list.item(row)
-                if item is None:
+        try:
+            current_object_index = self._find_object_list_index_for_current_selection()
+            selected_tso_ids = self._selected_filter_tso_ids()
+            left_section_items: list[QTableWidgetItem] = []
+            right_section_items: list[QTableWidgetItem] = []
+            for object_list_index, entry in enumerate(self._active_lists()):
+                if selected_tso_ids and not any(
+                    tso_id in selected_tso_ids for tso_id in entry.tso_ids
+                ):
                     continue
-                if item.data(QtCore.Qt.UserRole) == current_object_index:
-                    preferred_row = row
-                    break
-        with QtCore.QSignalBlocker(self.section_list):
-            self.section_list.setCurrentRow(preferred_row)
-        if emit_selection:
-            self._emit_selected_tsos()
-        self._update_tso_filter_assignment_highlight()
-        logger.debug(
-            "TSO visibility: populate_table %.3f ms", (perf_counter() - start) * 1000.0
-        )
+                if isinstance(entry, Track3DDetailList):
+                    label = f"{entry.section} / {entry.sub_index}{entry.lod_suffix}"
+                else:
+                    label = f"{entry.section} / {entry.sub_index}"
+                item = QTableWidgetItem(label)
+                item.setData(QtCore.Qt.UserRole, object_list_index)
+                if (
+                    isinstance(entry, Track3DObjectList)
+                    and str(entry.side).strip().upper() == "R"
+                ):
+                    right_section_items.append(item)
+                else:
+                    left_section_items.append(item)
+
+            with QtCore.QSignalBlocker(self.section_list):
+                self.section_list.set_entries(left_section_items, right_section_items)
+
+            if self.section_list.count() == 0:
+                self.tso_list.clear()
+                if emit_selection:
+                    self._emit_cleared_selection()
+                return
+
+            preferred_row = 0
+            if current_object_index >= 0:
+                for row in range(self.section_list.count()):
+                    item = self.section_list.item(row)
+                    if item is None:
+                        continue
+                    if item.data(QtCore.Qt.UserRole) == current_object_index:
+                        preferred_row = row
+                        break
+            with QtCore.QSignalBlocker(self.section_list):
+                self.section_list.setCurrentRow(preferred_row)
+            self._refresh_current_tso_list()
+            if emit_selection:
+                self._emit_selected_tsos()
+            self._update_tso_filter_assignment_highlight()
+        finally:
+            self._populating_visibility_ui = previous_populating
+            logger.debug(
+                "TSO visibility: populate_table %.3f ms", (perf_counter() - start) * 1000.0
+            )
 
     def _on_tso_order_changed(self) -> None:
         object_list_index = self._find_object_list_index_for_current_selection()
@@ -1467,6 +1505,12 @@ class TSOVisibilityTab(QWidget):
         self.tso_list.update_item_widths()
 
     def _emit_selected_tsos(self) -> None:
+        if self._selection_emits_suppressed():
+            logger.debug(
+                "TSO visibility: suppressed selection emit during programmatic rebuild"
+            )
+            self._refresh_current_tso_list()
+            return
         if self._emitting_selected_tsos:
             logger.debug("TSO visibility: _emit_selected_tsos ignored reentrant call")
             return
