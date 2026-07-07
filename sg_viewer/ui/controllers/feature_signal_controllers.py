@@ -80,18 +80,19 @@ class Track3DController:
 
     def connect_signals(self) -> None:
         h = self._host
+        c = h._track3d_tools_controller
         w = h._window
-        w.three_d_file_select_button.clicked.connect(h._on_select_track3d_file_requested)
-        w.three_d_file_catalog_inspector_button.clicked.connect(h._on_three_d_catalog_inspector_requested)
-        w.three_d_show_section_entries_button.clicked.connect(h._on_three_d_show_selected_section_entries)
-        w.three_d_show_section_object_lists_button.clicked.connect(h._on_three_d_show_selected_section_object_lists)
-        w.three_d_show_section_tsos_button.clicked.connect(h._on_three_d_show_selected_section_tsos)
-        w.three_d_preview_object_list_changes_button.clicked.connect(h._on_three_d_preview_selected_object_lists)
-        w.three_d_apply_object_list_changes_button.clicked.connect(h._on_three_d_apply_selected_object_lists)
-        w.three_d_apply_tso_definitions_button.clicked.connect(h._on_three_d_apply_selected_tso_definitions)
-        w.three_d_apply_face_materials_button.clicked.connect(h._on_three_d_apply_selected_face_materials)
-        w.three_d_file_inspect_button.clicked.connect(h._on_three_d_inspect_requested)
-        w.three_d_file_fix_copy_button.clicked.connect(h._on_three_d_fix_copy_requested)
-        w.three_d_file_fix_in_place_button.clicked.connect(h._on_three_d_fix_in_place_requested)
-        w.three_d_file_select_colors_button.clicked.connect(h._on_edit_track3d_colors_requested)
-        w.three_d_file_apply_colors_button.clicked.connect(h._on_three_d_apply_color_replacements_requested)
+        w.three_d_file_select_button.clicked.connect(c._on_select_track3d_file_requested)
+        w.three_d_file_catalog_inspector_button.clicked.connect(c._on_three_d_catalog_inspector_requested)
+        w.three_d_show_section_entries_button.clicked.connect(c._on_three_d_show_selected_section_entries)
+        w.three_d_show_section_object_lists_button.clicked.connect(c._on_three_d_show_selected_section_object_lists)
+        w.three_d_show_section_tsos_button.clicked.connect(c._on_three_d_show_selected_section_tsos)
+        w.three_d_preview_object_list_changes_button.clicked.connect(c._on_three_d_preview_selected_object_lists)
+        w.three_d_apply_object_list_changes_button.clicked.connect(c._on_three_d_apply_selected_object_lists)
+        w.three_d_apply_tso_definitions_button.clicked.connect(c._on_three_d_apply_selected_tso_definitions)
+        w.three_d_apply_face_materials_button.clicked.connect(c._on_three_d_apply_selected_face_materials)
+        w.three_d_file_inspect_button.clicked.connect(c._on_three_d_inspect_requested)
+        w.three_d_file_fix_copy_button.clicked.connect(c._on_three_d_fix_copy_requested)
+        w.three_d_file_fix_in_place_button.clicked.connect(c._on_three_d_fix_in_place_requested)
+        w.three_d_file_select_colors_button.clicked.connect(c._on_edit_track3d_colors_requested)
+        w.three_d_file_apply_colors_button.clicked.connect(c._on_three_d_apply_color_replacements_requested)
