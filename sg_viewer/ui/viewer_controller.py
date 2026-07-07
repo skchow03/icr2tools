@@ -118,7 +118,7 @@ from sg_viewer.ui.controllers import (
     SectionsController,
 )
 from sg_viewer.model.track_model import TrackModel
-from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
+from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 
 logger = logging.getLogger(__name__)
 

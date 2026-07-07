@@ -23,7 +23,7 @@ from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
 from sg_viewer.services.trackside_objects import TracksideObject
 from sg_viewer.ui.preview_editor import PreviewEditor
 from sg_viewer.ui.preview_interaction import PreviewInteraction
-from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
+from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 from sg_viewer.ui.preview_section_manager import PreviewSectionManager
 from sg_viewer.ui.preview_state_controller import PreviewStateController
 from sg_viewer.ui.preview_viewport import PreviewViewport

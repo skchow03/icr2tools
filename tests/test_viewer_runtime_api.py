@@ -8,7 +8,7 @@ import math
 
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.model.sg_model import SectionPreview
-from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
+from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 
 
 def _straight(section_id: int, start, end, prev=-1, nxt=-1):
