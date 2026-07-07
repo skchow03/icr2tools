@@ -126,8 +126,16 @@ class PreviewPresenter:
                 ruler_start_point=self._runtime.ruler_start_point,
                 ruler_end_point=self._runtime.ruler_end_point,
                 ruler_label=self._runtime.ruler_label,
-                land_object_points=self._runtime.land_object_points_overlay,
-                land_object_polygons=self._runtime.land_object_polygons_overlay,
+                land_object_points=(
+                    self._runtime.land_object_points_overlay
+                    if self._runtime.show_land_objects
+                    else ()
+                ),
+                land_object_polygons=(
+                    self._runtime.land_object_polygons_overlay
+                    if self._runtime.show_land_objects
+                    else ()
+                ),
                 xsect_dlat=self._runtime.selected_xsect_dlat
                 if self._runtime.show_sg_fsects
                 else None,

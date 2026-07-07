@@ -965,7 +965,11 @@ class SGViewerController:
             self._set_tso_box_select_mode_active(False)
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab or is_tso_visibility_tab)
-        self._window.preview.set_show_trackside_objects(is_objects_tab or is_tso_visibility_tab)
+        self._window.preview.set_show_trackside_objects(
+            is_objects_tab
+            or is_tso_visibility_tab
+            or self._window.trackside_objects_overlay_checkbox.isChecked()
+        )
         self._apply_tsd_centerline_visibility_mode()
         self._apply_trackside_drag_scope()
         if is_mrk_tab:
@@ -974,6 +978,18 @@ class SGViewerController:
             self._window.preview.set_highlighted_mrk_walls(())
         if is_tso_visibility_tab:
             self._flush_tso_visibility_sidebar_refresh_if_needed()
+
+
+    def _on_trackside_objects_overlay_toggled(self, checked: bool) -> None:
+        current_index = self._window.right_sidebar_tabs.currentIndex()
+        tab_name = (
+            self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+            if current_index >= 0
+            else ""
+        )
+        self._window.preview.set_show_trackside_objects(
+            bool(checked) or tab_name in {"Objects", "TSO Visibility"}
+        )
 
     def _on_tsd_hide_centerline_nodes_toggled(self, _checked: bool) -> None:
         self._apply_tsd_centerline_visibility_mode()

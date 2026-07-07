@@ -172,6 +172,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._ruler_label: str = ""
         self._land_object_points_overlay: tuple[Point, ...] = ()
         self._land_object_polygons_overlay: tuple[tuple[tuple[int, ...], int, bool], ...] = ()
+        self._show_land_objects = True
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -649,6 +650,14 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._ruler_start_point = start_point
         self._ruler_end_point = end_point
         self._ruler_label = normalized_label
+        self._context.request_repaint()
+
+    @property
+    def show_land_objects(self) -> bool:
+        return bool(self._show_land_objects)
+
+    def set_show_land_objects(self, visible: bool) -> None:
+        self._show_land_objects = bool(visible)
         self._context.request_repaint()
 
     @property
