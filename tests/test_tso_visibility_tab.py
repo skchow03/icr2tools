@@ -251,3 +251,37 @@ def test_detail_list_mode_disables_copy_previous_and_emits_dlong_range() -> None
     assert sections[-1]["sub_index"] == 1
     assert sections[-1]["start_dlong"] == 100
     assert sections[-1]["end_dlong"] == 200
+
+
+def test_load_object_lists_from_payload_does_not_emit_track_section_selection() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    sections: list[object] = []
+    tab.selectedTrackSectionChanged.connect(sections.append)
+
+    tab.load_object_lists_from_payload(
+        [{"side": "R", "section": 38, "sub_index": 0, "tso_ids": []}]
+    )
+
+    assert tab.object_lists[0].section == 38
+    assert sections == []
+
+
+def test_selected_tso_emit_is_reentrant_safe() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[])]
+    )
+    sections: list[object] = []
+
+    def reenter(section: object) -> None:
+        sections.append(section)
+        tab._emit_selected_tsos()
+
+    tab.selectedTrackSectionChanged.connect(reenter)
+
+    tab._emit_selected_tsos()
+
+    assert len(sections) == 1
+    assert sections[0]["section"] == 0

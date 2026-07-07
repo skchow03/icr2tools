@@ -139,3 +139,20 @@ def test_section_ranges_follow_trk_data():
     assert math.isclose(
         sum(end - start for start, end in manager._section_ranges), manager._track_length
     )
+
+
+def test_set_selected_section_is_idempotent_for_same_index_and_clear():
+    sections = [_make_section(0, [(0.0, 0.0), (1.0, 0.0)], 0.0)]
+    manager = SelectionManager()
+    manager.update_context(sections, track_length=50.0, centerline_index=None, sampled_dlongs=[])
+    emissions: list[object] = []
+    manager.selectionChanged.connect(emissions.append)
+
+    manager.set_selected_section(0)
+    manager.set_selected_section(0)
+    manager.set_selected_section(None)
+    manager.set_selected_section(None)
+
+    assert len(emissions) == 2
+    assert emissions[0] is not None
+    assert emissions[1] is None
