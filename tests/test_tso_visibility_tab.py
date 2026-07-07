@@ -150,12 +150,9 @@ def test_detail_list_tso_filter_rows_are_not_highlighted_blue() -> None:
     assert assigned_filter_item.background().style() == 0
     assert assigned_tso_item.background().style() == 0
     assert assigned_tso_item.toolTip() == ""
-    assert unassigned_filter_item.background().color().name() == "#dbeeff"
-    assert unassigned_tso_item.background().color().name() == "#dbeeff"
-    assert (
-        unassigned_tso_item.toolTip()
-        == "This TSO is not currently assigned to an ObjectList."
-    )
+    assert unassigned_filter_item.background().style() == 0
+    assert unassigned_tso_item.background().style() == 0
+    assert unassigned_tso_item.toolTip() == ""
 
 
 def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
