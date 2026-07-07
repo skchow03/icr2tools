@@ -55,10 +55,10 @@ class DocumentControllerHost(Protocol):
     _delete_default_style: str
     _history: object
     _project_working_directory: Path | None
+    _track3d_tools_controller: object
 
     def _clear_background_state(self) -> None: ...
     def _apply_saved_background(self, sg_path: Path | None = None) -> None: ...
-    def _apply_saved_sunny_palette(self, sg_path: Path | None = None) -> None: ...
     def _refresh_recent_menu(self) -> None: ...
     def _update_section_table(self) -> None: ...
     def _update_heading_table(self) -> None: ...
@@ -191,7 +191,7 @@ class DocumentController:
         if progress is not None:
             progress.update(progress_offset + 3, "Restoring saved project appearance…")
         self._host._apply_saved_background(path if attach_path else None)
-        self._host._apply_saved_sunny_palette(path if attach_path else None)
+        self._host._track3d_tools_controller._apply_saved_sunny_palette(path if attach_path else None)
         self._host._refresh_recent_menu()
         if progress is not None:
             progress.update(progress_offset + 4, "Refreshing section tables…")
@@ -615,7 +615,7 @@ class DocumentController:
         if progress is not None:
             progress.update(5, "Restoring saved project appearance…")
         self._host._apply_saved_background(sg_path)
-        self._host._apply_saved_sunny_palette(sg_path)
+        self._host._track3d_tools_controller._apply_saved_sunny_palette(sg_path)
         self._host._refresh_recent_menu()
         if progress is not None:
             progress.update(6, "Refreshing section tables…")

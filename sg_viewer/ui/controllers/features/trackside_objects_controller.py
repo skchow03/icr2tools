@@ -887,7 +887,7 @@ class TracksideObjectsController:
             return
 
         default_path = ""
-        selected_track3d = self._track3d_path_for_current_project()
+        selected_track3d = self._host._track3d_tools_controller._track3d_path_for_current_project()
         if selected_track3d is not None:
             default_path = str(selected_track3d)
 
@@ -1381,7 +1381,7 @@ class TracksideObjectsController:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
             self._window,
             "Select track .3D file to update",
-            str(self._track3d_path_for_current_project() or ""),
+            str(self._host._track3d_tools_controller._track3d_path_for_current_project() or ""),
             "Track 3D Files (*.3d *.3D);;All Files (*)",
         )
         if not path_str:
