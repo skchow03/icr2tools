@@ -6,6 +6,12 @@ from sg_viewer.ui.controllers.elevation_ui_coordinator import ElevationUiCoordin
 from sg_viewer.ui.controllers.file_menu_coordinator import FileMenuCoordinator
 from sg_viewer.ui.controllers.interaction_controller import InteractionController
 from sg_viewer.ui.controllers.section_editing_coordinator import SectionEditingCoordinator
+from sg_viewer.ui.controllers.feature_signal_controllers import (
+    MrkController,
+    TsdController,
+    Track3DController,
+    TracksideObjectsController,
+)
 from sg_viewer.ui.controllers.features import (
     BackgroundController,
     DocumentController,
@@ -24,4 +30,8 @@ __all__ = [
     "SectionEditingCoordinator",
     "ElevationUiCoordinator",
     "BackgroundUiCoordinator",
+    "MrkController",
+    "TsdController",
+    "TracksideObjectsController",
+    "Track3DController",
 ]

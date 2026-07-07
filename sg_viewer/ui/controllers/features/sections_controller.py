@@ -49,6 +49,63 @@ class SectionsController:
     def __init__(self, host: SectionsControllerHost) -> None:
         self._host = host
 
+    def connect_signals(self) -> None:
+        host = self._host
+        window = host._window
+        preview = window.preview
+        preview.selectedSectionChanged.connect(host._on_selected_section_changed)
+        preview.sectionsChanged.connect(host._on_sections_changed)
+        window.prev_button.clicked.connect(preview.select_previous_section)
+        window.next_button.clicked.connect(preview.select_next_section)
+        host._previous_section_action.triggered.connect(preview.select_previous_section)
+        host._next_section_action.triggered.connect(preview.select_next_section)
+        window.new_straight_button.toggled.connect(host._toggle_new_straight_mode)
+        host._new_straight_mode_action.toggled.connect(host._toggle_new_straight_mode)
+        window.new_curve_button.toggled.connect(host._toggle_new_curve_mode)
+        host._new_curve_mode_action.toggled.connect(host._toggle_new_curve_mode)
+        window.set_start_finish_button.clicked.connect(preview.activate_set_start_finish_mode)
+        host._set_start_finish_action.triggered.connect(preview.activate_set_start_finish_mode)
+        preview.newStraightModeChanged.connect(host._on_new_straight_mode_changed)
+        preview.newCurveModeChanged.connect(host._on_new_curve_mode_changed)
+        window.delete_section_button.toggled.connect(host._toggle_delete_section_mode)
+        host._delete_section_mode_action.toggled.connect(host._toggle_delete_section_mode)
+        window.split_section_button.toggled.connect(host._toggle_split_section_mode)
+        host._split_section_mode_action.toggled.connect(host._toggle_split_section_mode)
+        window.move_section_button.toggled.connect(host._toggle_move_section_mode)
+        host._move_section_mode_action.toggled.connect(host._toggle_move_section_mode)
+        preview.deleteModeChanged.connect(host._on_delete_mode_changed)
+        preview.splitSectionModeChanged.connect(host._on_split_mode_changed)
+        preview.interactionDragChanged.connect(host._on_preview_drag_state_changed)
+        host._delete_shortcut.activated.connect(host._handle_delete_shortcut)
+        window.radii_button.toggled.connect(preview.set_show_curve_markers)
+        window.axes_button.toggled.connect(preview.set_show_axes)
+        window.crosshair_button.toggled.connect(preview.set_show_crosshair)
+        host._show_radii_action.toggled.connect(window.radii_button.setChecked)
+        host._show_axes_action.toggled.connect(window.axes_button.setChecked)
+        host._show_crosshair_action.toggled.connect(window.crosshair_button.setChecked)
+        host._new_straight_mode_action.toggled.connect(window.new_straight_button.setChecked)
+        host._new_curve_mode_action.toggled.connect(window.new_curve_button.setChecked)
+        host._split_section_mode_action.toggled.connect(window.split_section_button.setChecked)
+        host._move_section_mode_action.toggled.connect(window.move_section_button.setChecked)
+        host._delete_section_mode_action.toggled.connect(window.delete_section_button.setChecked)
+        window.radii_button.toggled.connect(host._show_radii_action.setChecked)
+        window.axes_button.toggled.connect(host._show_axes_action.setChecked)
+        window.crosshair_button.toggled.connect(host._show_crosshair_action.setChecked)
+        window.new_straight_button.toggled.connect(host._new_straight_mode_action.setChecked)
+        window.new_curve_button.toggled.connect(host._new_curve_mode_action.setChecked)
+        window.split_section_button.toggled.connect(host._split_section_mode_action.setChecked)
+        window.move_section_button.toggled.connect(host._move_section_mode_action.setChecked)
+        window.delete_section_button.toggled.connect(host._delete_section_mode_action.setChecked)
+        window.sg_fsects_checkbox.toggled.connect(preview.set_show_sg_fsects)
+        window.right_sidebar_tabs.currentChanged.connect(host._on_right_sidebar_tab_changed)
+        for key, (hex_edit, color_swatch) in window.preview_color_controls.items():
+            hex_edit.editingFinished.connect(
+                lambda color_key=key, widget=hex_edit: host._on_preview_color_text_changed(color_key, widget)
+            )
+            color_swatch.clicked.connect(
+                lambda _checked=False, color_key=key: host._on_pick_preview_color(color_key)
+            )
+
     def toggle_delete_section_mode(self, checked: bool) -> None:
         if checked:
             self._host._window.new_straight_button.setChecked(False)

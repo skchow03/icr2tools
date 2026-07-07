@@ -22,6 +22,27 @@ class ElevationUiCoordinator:
         self._host = host
         self._elevation_panel_controller = elevation_panel_controller
 
+    def connect_signals(self) -> None:
+        host = self._host
+        window = host._window
+        window.xsect_combo.currentIndexChanged.connect(host._refresh_elevation_profile)
+        window.copy_xsect_button.clicked.connect(self.copy_xsect_data_to_targets)
+        window.generate_elevation_change_button.clicked.connect(host._open_generate_elevation_change_dialog)
+        window.generateElevationChangeApplied.connect(host._on_generate_elevation_change_applied)
+        window.altitude_slider.valueChanged.connect(host._on_altitude_slider_changed)
+        window.altitude_slider.sliderReleased.connect(host._on_altitude_slider_released)
+        window.altitude_min_spin.valueChanged.connect(lambda _value: self.on_altitude_range_changed("min"))
+        window.altitude_max_spin.valueChanged.connect(lambda _value: self.on_altitude_range_changed("max"))
+        window.altitude_set_range_button.clicked.connect(host._open_altitude_range_dialog)
+        window.grade_spin.valueChanged.connect(host._on_grade_slider_changed)
+        window.grade_spin.sliderReleased.connect(host._on_grade_edit_finished)
+        window.grade_set_range_button.clicked.connect(host._open_grade_range_dialog)
+        window.preview.scaleChanged.connect(host._on_scale_changed)
+        window.profile_widget.sectionClicked.connect(self.on_profile_section_clicked)
+        window.profile_widget.altitudeDragged.connect(self.on_profile_altitude_dragged)
+        window.profile_widget.altitudeDragFinished.connect(self.on_profile_altitude_drag_finished)
+        window.measurement_units_combo.currentIndexChanged.connect(host._on_measurement_units_changed)
+
     def on_profile_section_clicked(self, section_index: int) -> None:
         self._host._window.preview.selection_manager.set_selected_section(section_index)
 

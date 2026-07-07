@@ -23,6 +23,15 @@ class BackgroundController:
         self._host = host
         self._logger = logger
 
+    def connect_signals(self) -> None:
+        host = self._host
+        window = host._window
+        window.background_image_checkbox.toggled.connect(window.preview.set_show_background_image)
+        host._show_background_image_action.toggled.connect(window.background_image_checkbox.setChecked)
+        window.background_image_checkbox.toggled.connect(host._show_background_image_action.setChecked)
+        window.background_brightness_slider.valueChanged.connect(host._on_background_brightness_changed)
+        window.track_opacity_slider.valueChanged.connect(host._on_track_opacity_changed)
+
     def open_background_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
