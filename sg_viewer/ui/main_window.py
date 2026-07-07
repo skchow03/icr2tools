@@ -2249,14 +2249,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return self.format_length(value)  # type: ignore[arg-type]
         except Exception as exc:
             value_repr = self._safe_repr(value)
-            raise ValueError(
-                "Could not format Section SubIndex start DLONG from SectionList DLONG "
-                "metadata in the loaded .3d file; "
-                f"selected SG section index={section_index}, "
-                f"SubIndex ordinal={subindex_position}, "
-                f"raw value type={type(value).__name__}, "
-                f"raw value repr={value_repr}"
-            ) from exc
+            return (
+                "Invalid SectionList DLONG "
+                f"(section={section_index}, SubIndex={subindex_position}, "
+                f"type={type(value).__name__}, value={value_repr}, "
+                f"error={type(exc).__name__}: {exc})"
+            )
 
     @staticmethod
     def _safe_repr(value: object) -> str:
