@@ -119,6 +119,19 @@ from sg_viewer.ui.controllers import (
 )
 from sg_viewer.model.track_model import TrackModel
 from sg_viewer.ui.controllers.features.setup_builders import ViewerActionBuilder, ViewerMenuBuilder
+from sg_viewer.ui.actions import (
+    FileActions,
+    FsectActions,
+    HelpActions,
+    MrkActions,
+    SectionEditingActions,
+    Track3DActions,
+    TsdActions,
+    TsoActions,
+    ViewActions,
+    ViewerActionGroups,
+    build_viewer_menu_bar,
+)
 from sg_viewer.ui.controllers.features.state_controllers import (
     MrkFeatureState,
     Track3dPaletteFeatureState,
@@ -464,419 +477,77 @@ class SGViewerController:
         self._action_builder.create_actions()
 
     def _create_actions_impl(self) -> None:
-        self._new_action = QtWidgets.QAction("New Project", self._window)
-        self._new_action.setShortcut("Ctrl+N")
-        self._new_action.triggered.connect(self._start_new_track)
-
-
-        self._import_sg_action = QtWidgets.QAction("Import .SG…", self._window)
-        self._import_sg_action.setShortcut("Ctrl+O")
-        self._import_sg_action.triggered.connect(self._file_menu_coordinator.import_sg_file_dialog)
-
-        self._open_project_action = QtWidgets.QAction("Open Project…", self._window)
-        self._open_project_action.triggered.connect(self._file_menu_coordinator.open_project_file_dialog)
-
-        self._load_sunny_palette_action = QtWidgets.QAction("Import SUNNY.PCX…", self._window)
-        self._load_sunny_palette_action.triggered.connect(self._load_sunny_palette_dialog)
-
-        self._import_trk_action = QtWidgets.QAction("Import TRK…", self._window)
-        self._import_trk_action.triggered.connect(self._file_menu_coordinator.import_trk_file_dialog)
-
-        self._import_trk_from_dat_action = QtWidgets.QAction(
-            "Import TRK from DAT…",
-            self._window,
+        self._action_groups = ViewerActionGroups(
+            file=FileActions(
+                self._window,
+                self._start_new_track,
+                self._file_menu_coordinator.import_sg_file_dialog,
+                self._file_menu_coordinator.open_project_file_dialog,
+                self._load_sunny_palette_dialog,
+                self._file_menu_coordinator.import_trk_file_dialog,
+                self._file_menu_coordinator.import_trk_from_dat_file_dialog,
+                self._file_menu_coordinator.save_current_file,
+                self._file_menu_coordinator.save_project_file_dialog,
+                self._file_menu_coordinator.save_file_dialog,
+                self._convert_sg_to_trk,
+                self._export_current_sg_to_csv,
+                self._window.close,
+            ),
+            view=ViewActions(
+                self._window,
+                self._open_background_file_dialog,
+                self._show_background_settings_dialog,
+                self._window.show_view_options_dialog,
+                self._choose_project_working_folder,
+                self._clear_project_working_folder,
+                self._show_track_section_dlongs_dialog,
+            ),
+            section_editing=SectionEditingActions(
+                self._window,
+                self._scale_track,
+                self._open_rotate_track_dialog,
+                self._reverse_track,
+                self._section_editing_coordinator.show_section_table,
+                self._section_editing_coordinator.show_heading_table,
+                self._section_editing_coordinator.show_xsect_table,
+            ),
+            fsect=FsectActions(
+                self._window,
+                self._open_generate_fsects_dialog,
+                self._open_raise_lower_elevations_dialog,
+                self._open_flatten_all_elevations_and_grade_dialog,
+                self._open_generate_elevation_change_dialog,
+                self._generate_pitwall_txt,
+            ),
+            mrk=MrkActions(self._window),
+            tsd=TsdActions(self._window, self._show_palette_colors_dialog),
+            tso=TsoActions(
+                self._window,
+                self._launch_tso_generator,
+                self._show_unique_tso_filenames_dialog,
+            ),
+            track3d=Track3DActions(
+                self._window,
+                self._launch_background_calibrator,
+                self._open_three_d_tools_dialog,
+                self._run_sg_integrity_checks,
+            ),
+            help=HelpActions(self._window, self._show_about_dialog),
         )
-        self._import_trk_from_dat_action.triggered.connect(self._file_menu_coordinator.import_trk_from_dat_file_dialog)
+        self._publish_action_group_attributes()
 
-        self._open_recent_menu = QtWidgets.QMenu("Open Recent", self._window)
-
-        self._save_current_action = QtWidgets.QAction("Save Project", self._window)
-        self._save_current_action.setShortcut("Ctrl+S")
-        self._save_current_action.setEnabled(False)
-        self._save_current_action.triggered.connect(self._file_menu_coordinator.save_current_file)
-
-        self._save_action = QtWidgets.QAction("Save Project As…", self._window)
-        self._save_action.setShortcut("Ctrl+Shift+S")
-        self._save_action.setEnabled(True)
-        self._save_action.triggered.connect(self._file_menu_coordinator.save_project_file_dialog)
-
-        self._save_project_action = QtWidgets.QAction("Export to SG file…", self._window)
-        self._save_project_action.triggered.connect(self._file_menu_coordinator.save_file_dialog)
-
-        self._scale_track_action = QtWidgets.QAction(
-            "Scale Track to Length…",
-            self._window,
-        )
-        self._scale_track_action.setEnabled(False)
-        self._scale_track_action.triggered.connect(self._scale_track)
-
-        self._rotate_track_action = QtWidgets.QAction(
-            "Rotate Track…",
-            self._window,
-        )
-        self._rotate_track_action.setEnabled(False)
-        self._rotate_track_action.triggered.connect(self._open_rotate_track_dialog)
-
-        self._reverse_track_action = QtWidgets.QAction(
-            "Reverse Track",
-            self._window,
-        )
-        self._reverse_track_action.setEnabled(False)
-        self._reverse_track_action.triggered.connect(self._reverse_track)
-
-        self._convert_trk_action = QtWidgets.QAction(
-            "Export to TRK…",
-            self._window,
-        )
-        self._convert_trk_action.triggered.connect(self._convert_sg_to_trk)
-
-        self._export_csv_action = QtWidgets.QAction("Export .SG data to .CSV", self._window)
-        self._export_csv_action.triggered.connect(self._export_current_sg_to_csv)
-
-        self._generate_fsects_action = QtWidgets.QAction(
-            "Generate Fsects…",
-            self._window,
-        )
-        self._generate_fsects_action.triggered.connect(self._open_generate_fsects_dialog)
-
-        self._raise_lower_elevations_action = QtWidgets.QAction(
-            "Raise/lower all elevations…",
-            self._window,
-        )
-        self._raise_lower_elevations_action.setEnabled(False)
-        self._raise_lower_elevations_action.triggered.connect(
-            self._open_raise_lower_elevations_dialog
-        )
-
-        self._flatten_all_elevations_and_grade_action = QtWidgets.QAction(
-            "Flatten all elevations + grade…",
-            self._window,
-        )
-        self._flatten_all_elevations_and_grade_action.setEnabled(False)
-        self._flatten_all_elevations_and_grade_action.triggered.connect(
-            self._open_flatten_all_elevations_and_grade_dialog
-        )
-
-        self._generate_elevation_change_action = QtWidgets.QAction(
-            "Generate elevation change…",
-            self._window,
-        )
-        self._generate_elevation_change_action.setEnabled(False)
-        self._generate_elevation_change_action.triggered.connect(
-            self._open_generate_elevation_change_dialog
-        )
-
-        self._generate_pitwall_action = QtWidgets.QAction(
-            "Generate pitwall.txt…",
-            self._window,
-        )
-        self._generate_pitwall_action.setEnabled(False)
-        self._generate_pitwall_action.triggered.connect(self._generate_pitwall_txt)
-
-        self._open_background_action = QtWidgets.QAction(
-            "Load Background Image…", self._window
-        )
-        self._open_background_action.setShortcut("Ctrl+B")
-        self._open_background_action.triggered.connect(
-            self._open_background_file_dialog
-        )
-
-        self._background_settings_action = QtWidgets.QAction(
-            "Background Image Settings…", self._window
-        )
-        self._background_settings_action.setEnabled(False)
-        self._background_settings_action.triggered.connect(
-            self._show_background_settings_dialog
-        )
-
-        self._calibrate_background_action = QtWidgets.QAction(
-            "Open Background Calibrator", self._window
-        )
-        self._calibrate_background_action.triggered.connect(
-            self._launch_background_calibrator
-        )
-
-        self._launch_tso_generator_action = QtWidgets.QAction(
-            "Open TSO Generator", self._window
-        )
-        self._launch_tso_generator_action.triggered.connect(
-            self._launch_tso_generator
-        )
-
-        self._show_radii_action = QtWidgets.QAction("Show Radii", self._window)
-        self._show_radii_action.setCheckable(True)
-        self._show_radii_action.setChecked(self._window.radii_button.isChecked())
-
-        self._show_axes_action = QtWidgets.QAction("Show Axes", self._window)
-        self._show_axes_action.setCheckable(True)
-        self._show_axes_action.setChecked(self._window.axes_button.isChecked())
-
-        self._show_crosshair_action = QtWidgets.QAction("Show Crosshair", self._window)
-        self._show_crosshair_action.setCheckable(True)
-        self._show_crosshair_action.setChecked(self._window.crosshair_button.isChecked())
-
-        self._show_background_image_action = QtWidgets.QAction(
-            "Show Background Image", self._window
-        )
-        self._show_background_image_action.setCheckable(True)
-        self._show_background_image_action.setChecked(
-            self._window.background_image_checkbox.isChecked()
-        )
-
-        self._view_options_action = QtWidgets.QAction("View Options…", self._window)
-        self._view_options_action.triggered.connect(self._window.show_view_options_dialog)
-
-        self._set_project_working_folder_action = QtWidgets.QAction("Set Project Working Folder…", self._window)
-        self._set_project_working_folder_action.triggered.connect(self._choose_project_working_folder)
-        self._clear_project_working_folder_action = QtWidgets.QAction("Clear Project Working Folder", self._window)
-        self._clear_project_working_folder_action.triggered.connect(self._clear_project_working_folder)
-        self._clear_project_working_folder_action.setEnabled(False)
-
-        self._show_section_dlongs_action = QtWidgets.QAction("Track Section DLONGs…", self._window)
-        self._show_section_dlongs_action.triggered.connect(self._show_track_section_dlongs_dialog)
-
-        self._three_d_tools_action = QtWidgets.QAction("Run 3D Tools…", self._window)
-        self._three_d_tools_action.triggered.connect(self._open_three_d_tools_dialog)
-
-        self._section_table_action = QtWidgets.QAction("Section Table", self._window)
-        self._section_table_action.setEnabled(False)
-        self._section_table_action.triggered.connect(self._section_editing_coordinator.show_section_table)
-
-        self._heading_table_action = QtWidgets.QAction("Heading Table", self._window)
-        self._heading_table_action.setEnabled(False)
-        self._heading_table_action.triggered.connect(self._section_editing_coordinator.show_heading_table)
-
-        self._xsect_table_action = QtWidgets.QAction("X-Section Table", self._window)
-        self._xsect_table_action.setEnabled(False)
-        self._xsect_table_action.triggered.connect(self._section_editing_coordinator.show_xsect_table)
-
-        self._mrk_add_entry_action = QtWidgets.QAction("Add MRK Entry", self._window)
-        self._mrk_add_entry_action.setEnabled(self._window.mrk_add_entry_button.isEnabled())
-
-        self._mrk_delete_entry_action = QtWidgets.QAction("Delete MRK Entry", self._window)
-        self._mrk_delete_entry_action.setEnabled(self._window.mrk_delete_entry_button.isEnabled())
-
-        self._mrk_move_up_action = QtWidgets.QAction("Move MRK Entry Up", self._window)
-        self._mrk_move_up_action.setEnabled(self._window.mrk_move_up_button.isEnabled())
-
-        self._mrk_move_down_action = QtWidgets.QAction("Move MRK Entry Down", self._window)
-        self._mrk_move_down_action.setEnabled(self._window.mrk_move_down_button.isEnabled())
-
-        self._mrk_textures_action = QtWidgets.QAction("MRK Textures…", self._window)
-        self._mrk_textures_action.setEnabled(self._window.mrk_textures_button.isEnabled())
-
-        self._mrk_generate_file_action = QtWidgets.QAction("Generate .MRK file…", self._window)
-        self._mrk_generate_file_action.setEnabled(self._window.mrk_generate_file_button.isEnabled())
-
-        self._mrk_save_entries_action = QtWidgets.QAction("Export MRK entries…", self._window)
-        self._mrk_save_entries_action.setEnabled(self._window.mrk_save_button.isEnabled())
-
-        self._mrk_load_entries_action = QtWidgets.QAction("Import MRK entries…", self._window)
-        self._mrk_load_entries_action.setEnabled(self._window.mrk_load_button.isEnabled())
-
-        self._previous_section_action = QtWidgets.QAction("Previous Section", self._window)
-        self._previous_section_action.setShortcut("Ctrl+PgUp")
-
-        self._next_section_action = QtWidgets.QAction("Next Section", self._window)
-        self._next_section_action.setShortcut("Ctrl+PgDown")
-
-        self._new_straight_mode_action = QtWidgets.QAction("New Straight", self._window)
-        self._new_straight_mode_action.setShortcut("Ctrl+Alt+S")
-        self._new_straight_mode_action.setCheckable(True)
-        self._new_straight_mode_action.setChecked(self._window.new_straight_button.isChecked())
-        self._previous_section_action.setEnabled(self._window.prev_button.isEnabled())
-        self._next_section_action.setEnabled(self._window.next_button.isEnabled())
-        self._new_straight_mode_action.setEnabled(self._window.new_straight_button.isEnabled())
-
-        self._new_curve_mode_action = QtWidgets.QAction("New Curve", self._window)
-        self._new_curve_mode_action.setShortcut("Ctrl+Alt+C")
-        self._new_curve_mode_action.setCheckable(True)
-        self._new_curve_mode_action.setChecked(self._window.new_curve_button.isChecked())
-        self._new_curve_mode_action.setEnabled(self._window.new_curve_button.isEnabled())
-
-        self._split_section_mode_action = QtWidgets.QAction("Split Section", self._window)
-        self._split_section_mode_action.setCheckable(True)
-        self._split_section_mode_action.setChecked(self._window.split_section_button.isChecked())
-        self._split_section_mode_action.setEnabled(self._window.split_section_button.isEnabled())
-
-        self._move_section_mode_action = QtWidgets.QAction("Move Section", self._window)
-        self._move_section_mode_action.setShortcut("Ctrl+Alt+M")
-        self._move_section_mode_action.setCheckable(True)
-        self._move_section_mode_action.setChecked(self._window.move_section_button.isChecked())
-        self._move_section_mode_action.setEnabled(self._window.move_section_button.isEnabled())
-
-        self._delete_section_mode_action = QtWidgets.QAction("Delete Section", self._window)
-        self._delete_section_mode_action.setShortcut("Ctrl+Alt+D")
-        self._delete_section_mode_action.setCheckable(True)
-        self._delete_section_mode_action.setChecked(self._window.delete_section_button.isChecked())
-        self._delete_section_mode_action.setEnabled(self._window.delete_section_button.isEnabled())
-
-        self._set_start_finish_action = QtWidgets.QAction("Set Start/Finish", self._window)
-        self._set_start_finish_action.setEnabled(self._window.set_start_finish_button.isEnabled())
-
-        self._copy_fsects_prev_action = QtWidgets.QAction(
-            "Copy Fsects to Previous Section",
-            self._window,
-        )
-        self._copy_fsects_prev_action.setEnabled(
-            self._window.copy_fsects_prev_button.isEnabled()
-        )
-
-        self._copy_fsects_next_action = QtWidgets.QAction(
-            "Copy Fsects to Next Section",
-            self._window,
-        )
-        self._copy_fsects_next_action.setEnabled(
-            self._window.copy_fsects_next_button.isEnabled()
-        )
-
-        self._add_fsect_action = QtWidgets.QAction("Insert Fsect", self._window)
-        self._add_fsect_action.setEnabled(self._window.add_fsect_button.isEnabled())
-
-        self._delete_fsect_action = QtWidgets.QAction("Delete Fsect", self._window)
-        self._delete_fsect_action.setEnabled(self._window.delete_fsect_button.isEnabled())
-        self._move_fsect_up_action = QtWidgets.QAction("Move Fsect Up", self._window)
-        self._move_fsect_up_action.setEnabled(self._window.move_fsect_up_button.isEnabled())
-        self._move_fsect_down_action = QtWidgets.QAction("Move Fsect Down", self._window)
-        self._move_fsect_down_action.setEnabled(self._window.move_fsect_down_button.isEnabled())
-        self._swap_fsect_types_action = QtWidgets.QAction(
-            "Swap Fsect Type Across All Sections…",
-            self._window,
-        )
-        self._swap_fsect_types_action.setEnabled(
-            self._window.swap_fsect_types_button.isEnabled()
-        )
-
-        self._run_integrity_checks_action = QtWidgets.QAction("Run SG Integrity Checks", self._window)
-        self._run_integrity_checks_action.setEnabled(False)
-        self._run_integrity_checks_action.triggered.connect(self._run_sg_integrity_checks)
-
-        self._show_palette_colors_action = QtWidgets.QAction("Show SUNNY Palette Colors…", self._window)
-        self._show_palette_colors_action.triggered.connect(self._show_palette_colors_dialog)
-
-        self._show_unique_tso_filenames_action = QtWidgets.QAction(
-            "Show list of unique TSOs",
-            self._window,
-        )
-        self._show_unique_tso_filenames_action.triggered.connect(
-            self._show_unique_tso_filenames_dialog
-        )
-
-        self._quit_action = QtWidgets.QAction("Quit", self._window)
-        self._quit_action.setShortcut("Ctrl+Q")
-        self._quit_action.triggered.connect(self._window.close)
-
-        self._about_action = QtWidgets.QAction("About SG CREATE", self._window)
-        self._about_action.triggered.connect(self._show_about_dialog)
+    def _publish_action_group_attributes(self) -> None:
+        for group in self._action_groups.__dict__.values():
+            for name, value in group.__dict__.items():
+                if name == "parent" or callable(value):
+                    continue
+                setattr(self, f"_{name}", value)
 
     def _create_menus(self) -> None:
         self._menu_builder.create_menus()
 
     def _create_menus_impl(self) -> None:
-        file_menu = self._window.menuBar().addMenu("&File")
-        file_menu.addAction(self._new_action)
-        file_menu.addAction(self._open_project_action)
-        file_menu.addMenu(self._open_recent_menu)
-        import_menu = file_menu.addMenu("Import")
-        import_menu.addAction(self._import_sg_action)
-        import_menu.addAction(self._load_sunny_palette_action)
-        import_menu.addAction(self._import_trk_action)
-        import_menu.addAction(self._import_trk_from_dat_action)
-        file_menu.addSeparator()
-        file_menu.addAction(self._save_current_action)
-        file_menu.addAction(self._save_action)
-        export_menu = file_menu.addMenu("Export")
-        export_menu.addAction(self._save_project_action)
-        export_menu.addAction(self._convert_trk_action)
-        export_menu.addAction(self._export_csv_action)
-        file_menu.addSeparator()
-        file_menu.addAction(self._quit_action)
-
-        view_menu = self._window.menuBar().addMenu("View")
-        view_menu.addAction(self._open_background_action)
-        view_menu.addAction(self._background_settings_action)
-        view_menu.addAction(self._view_options_action)
-        view_menu.addSeparator()
-        view_menu.addAction(self._set_project_working_folder_action)
-        view_menu.addAction(self._clear_project_working_folder_action)
-        view_menu.addSeparator()
-        view_menu.addAction(self._show_section_dlongs_action)
-        view_menu.addAction(self._show_radii_action)
-        view_menu.addAction(self._show_axes_action)
-        view_menu.addAction(self._show_crosshair_action)
-        view_menu.addAction(self._show_background_image_action)
-
-        tools_menu = self._window.menuBar().addMenu("Tools")
-
-        section_editing_menu = tools_menu.addMenu("Section Editing")
-        section_editing_menu.addAction(self._previous_section_action)
-        section_editing_menu.addAction(self._next_section_action)
-        section_editing_menu.addSeparator()
-        section_editing_menu.addAction(self._new_straight_mode_action)
-        section_editing_menu.addAction(self._new_curve_mode_action)
-        section_editing_menu.addAction(self._split_section_mode_action)
-        section_editing_menu.addAction(self._move_section_mode_action)
-        section_editing_menu.addAction(self._delete_section_mode_action)
-        section_editing_menu.addSeparator()
-        section_editing_menu.addAction(self._set_start_finish_action)
-
-        transform_menu = tools_menu.addMenu("Transform")
-        transform_menu.addAction(self._scale_track_action)
-        transform_menu.addAction(self._rotate_track_action)
-        transform_menu.addAction(self._reverse_track_action)
-
-        generate_menu = tools_menu.addMenu("Generate")
-        generate_menu.addAction(self._generate_fsects_action)
-        generate_menu.addAction(self._generate_pitwall_action)
-        generate_menu.addAction(self._generate_elevation_change_action)
-
-        elevation_menu = tools_menu.addMenu("Elevation")
-        elevation_menu.addAction(self._raise_lower_elevations_action)
-        elevation_menu.addAction(self._flatten_all_elevations_and_grade_action)
-
-        fsects_menu = tools_menu.addMenu("Fsects")
-        fsects_menu.addAction(self._copy_fsects_prev_action)
-        fsects_menu.addAction(self._copy_fsects_next_action)
-        fsects_menu.addSeparator()
-        fsects_menu.addAction(self._add_fsect_action)
-        fsects_menu.addAction(self._delete_fsect_action)
-        fsects_menu.addAction(self._move_fsect_up_action)
-        fsects_menu.addAction(self._move_fsect_down_action)
-        fsects_menu.addSeparator()
-        fsects_menu.addAction(self._swap_fsect_types_action)
-
-        mrk_menu = tools_menu.addMenu("MRK")
-        mrk_menu.addAction(self._mrk_add_entry_action)
-        mrk_menu.addAction(self._mrk_delete_entry_action)
-        mrk_menu.addAction(self._mrk_move_up_action)
-        mrk_menu.addAction(self._mrk_move_down_action)
-        mrk_menu.addSeparator()
-        mrk_menu.addAction(self._mrk_textures_action)
-        mrk_menu.addAction(self._mrk_generate_file_action)
-        mrk_menu.addAction(self._mrk_save_entries_action)
-        mrk_menu.addAction(self._mrk_load_entries_action)
-
-        tools_menu.addSeparator()
-        tools_menu.addAction(self._show_palette_colors_action)
-        tools_menu.addAction(self._show_unique_tso_filenames_action)
-        tools_menu.addAction(self._three_d_tools_action)
-        tools_menu.addSeparator()
-        tools_menu.addAction(self._run_integrity_checks_action)
-        tools_menu.addSeparator()
-        tools_menu.addAction(self._calibrate_background_action)
-        tools_menu.addAction(self._launch_tso_generator_action)
-
-        window_menu = self._window.menuBar().addMenu("Window")
-        window_menu.addAction(self._section_table_action)
-        window_menu.addAction(self._heading_table_action)
-        window_menu.addAction(self._xsect_table_action)
-
-        self._window.set_section_table_action(self._section_table_action)
-        self._window.set_heading_table_action(self._heading_table_action)
-        self._window.set_xsect_table_action(self._xsect_table_action)
-
-        help_menu = self._window.menuBar().addMenu("Help")
-        help_menu.addAction(self._about_action)
+        build_viewer_menu_bar(self._window, self._action_groups)
 
     def _show_about_dialog(self) -> None:
         show_about_dialog(self._window)
