@@ -2181,17 +2181,37 @@ class SGViewerController:
         detail_payload = project_state.tso_visibility_detail_lists
         object_count = len(object_payload) if isinstance(object_payload, list) else 0
         detail_count = len(detail_payload) if isinstance(detail_payload, list) else 0
+        object_progress_context = "before first ObjectList entry"
+
+        def _object_entry_progress(index: int, total: int, context: str, entry: object) -> None:
+            nonlocal object_progress_context
+            object_progress_context = context
+            if progress_callback is None:
+                return
+            progress_callback(
+                5,
+                "Restoring visibility lists: "
+                f"validating ObjectList {index + 1}/{max(total, 1)} "
+                f"({self._summarize_tso_visibility_entry(entry)})…",
+            )
 
         if progress_callback is not None:
             progress_callback(
                 5, f"Restoring visibility lists: validating {object_count} ObjectList entries…"
             )
         try:
-            sidebar.load_object_lists_from_payload(object_payload)
+            try:
+                sidebar.load_object_lists_from_payload(
+                    object_payload, progress_callback=_object_entry_progress
+                )
+            except TypeError as exc:
+                if "progress_callback" not in str(exc):
+                    raise
+                sidebar.load_object_lists_from_payload(object_payload)
         except Exception as exc:
             raise RuntimeError(
                 self._format_tso_visibility_restore_error(
-                    "ObjectLists", object_payload, exc
+                    "ObjectLists", object_payload, exc, current_context=object_progress_context
                 )
             ) from exc
 
@@ -2203,12 +2223,33 @@ class SGViewerController:
                 f"loaded {restored_object_count}/{object_count} ObjectList entries; "
                 f"validating {detail_count} DetailList entries…",
             )
+        detail_progress_context = "before first DetailList entry"
+
+        def _detail_entry_progress(index: int, total: int, context: str, entry: object) -> None:
+            nonlocal detail_progress_context
+            detail_progress_context = context
+            if progress_callback is None:
+                return
+            progress_callback(
+                6,
+                "Restoring visibility lists: "
+                f"validating DetailList {index + 1}/{max(total, 1)} "
+                f"({self._summarize_tso_visibility_entry(entry)})…",
+            )
+
         try:
-            sidebar.load_detail_lists_from_payload(detail_payload)
+            try:
+                sidebar.load_detail_lists_from_payload(
+                    detail_payload, progress_callback=_detail_entry_progress
+                )
+            except TypeError as exc:
+                if "progress_callback" not in str(exc):
+                    raise
+                sidebar.load_detail_lists_from_payload(detail_payload)
         except Exception as exc:
             raise RuntimeError(
                 self._format_tso_visibility_restore_error(
-                    "DetailLists", detail_payload, exc
+                    "DetailLists", detail_payload, exc, current_context=detail_progress_context
                 )
             ) from exc
 
@@ -2222,7 +2263,7 @@ class SGViewerController:
             )
 
     def _format_tso_visibility_restore_error(
-        self, list_name: str, payload: object, exc: BaseException
+        self, list_name: str, payload: object, exc: BaseException, *, current_context: str | None = None
     ) -> str:
         lines = [
             f"Failed while restoring TSO visibility {list_name}.",
@@ -2230,6 +2271,8 @@ class SGViewerController:
             f"Error: {type(exc).__name__}: {exc}",
             f"Payload type: {type(payload).__name__}",
         ]
+        if current_context:
+            lines.append(f"Current item: {current_context}")
         if isinstance(payload, list):
             lines.append(f"Payload entries: {len(payload)}")
             for index, entry in enumerate(payload[:10]):
