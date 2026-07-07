@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore
 
-from sg_viewer.preview.runtime_ops.base import Point, Transform
+from sg_viewer.preview.runtime_ops.base_context import Point, Transform
 
 
 class _RuntimeCoreDragPolylineMixin:
