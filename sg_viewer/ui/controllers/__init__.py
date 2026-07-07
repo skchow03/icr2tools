@@ -10,8 +10,8 @@ from sg_viewer.ui.controllers.feature_signal_controllers import (
     MrkController,
     TsdSignalController,
     Track3DController,
-    TracksideObjectsController,
 )
+from sg_viewer.ui.controllers.features.trackside_objects_controller import TracksideObjectsController
 from sg_viewer.ui.controllers.features import (
     BackgroundController,
     DocumentController,
