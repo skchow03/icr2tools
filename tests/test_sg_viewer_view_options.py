@@ -1951,7 +1951,11 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         def fake_load_sg(path, **kwargs):
             progress = kwargs["progress"]
             progress.update(kwargs["progress_offset"] + 2, "Applying loaded track state…")
-            progress.update(kwargs["progress_offset"] + 6, "Project loaded.")
+            progress.update(kwargs["progress_offset"] + 5, "Restoring MRK wall heights…")
+            progress.update(kwargs["progress_offset"] + 6, "Restoring manual wall height overrides…")
+            progress.update(kwargs["progress_offset"] + 7, "Restoring MRK objects and metadata…")
+            progress.update(kwargs["progress_offset"] + 8, "Restoring TSD files and project data…")
+            progress.update(kwargs["progress_offset"] + 9, "Project loaded.")
 
         monkeypatch.setattr(
             "sg_viewer.ui.controllers.features.document_controller.ProjectLoadProgress",
@@ -1962,11 +1966,15 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         window.controller._document_controller.open_project_path(project_path)
 
         assert closed
-        assert events[0] == (0, "Loading SG CREATE Project:8")
+        assert events[0] == (0, "Loading SG CREATE Project:11")
         assert (0, "Opening project file track.sgc…") in events
         assert (1, "Resolving referenced SG file…") in events
         assert (4, "Applying loaded track state…") in events
-        assert (8, "Project loaded.") in events
+        assert (7, "Restoring MRK wall heights…") in events
+        assert (8, "Restoring manual wall height overrides…") in events
+        assert (9, "Restoring MRK objects and metadata…") in events
+        assert (10, "Restoring TSD files and project data…") in events
+        assert (11, "Project loaded.") in events
     finally:
         window.close()
 
