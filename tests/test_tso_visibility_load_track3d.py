@@ -113,6 +113,7 @@ def test_refresh_tso_filter_reports_detailed_progress() -> None:
     tab = TSOVisibilityTab()
     tab.object_lists = [Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[1, 2])]
     tab.detail_lists = [Track3DDetailList(section=0, sub_index=0, lod_suffix="H", tso_ids=[3])]
+    tab.set_detail_list_tso_ids({3})
     tab.available_tso_ids = [4]
     tab.set_tso_display_metadata({5: ("grandstand.3do", "Grandstand")})
 
@@ -127,6 +128,17 @@ def test_refresh_tso_filter_reports_detailed_progress() -> None:
     assert "Building TSO filter row 1/5 for __TSO1." in details
     assert "Building TSO filter row 5/5 for __TSO5." in details
     assert "Highlighting assigned and DetailList-only TSOs." in details
+    assert "Highlighting assigned and DetailList-only TSOs: starting row scan." in details
+    assert (
+        "Highlighting assigned and DetailList-only TSOs: "
+        "3 assigned IDs, 1 DetailList IDs, 1 DetailList-only IDs, 5 filter rows."
+    ) in details
+    assert "Highlighting assigned and DetailList-only TSOs: checking row 1/5." in details
+    assert "Highlighting assigned and DetailList-only TSOs: checking row 5/5." in details
+    assert (
+        "Highlighting assigned and DetailList-only TSOs: finished "
+        "5 rows (2 ObjectList-assigned, 1 DetailList-highlighted, 1 DetailList-only, 2 unassigned)."
+    ) in details
     assert "Finished refreshing 5 available TSO filter rows." in details
 
 

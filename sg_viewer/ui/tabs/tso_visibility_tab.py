@@ -879,7 +879,10 @@ class TSOVisibilityTab(QWidget):
                 self.tso_filter_list.setCurrentCell(0, 1)
         if progress_detail is not None:
             progress_detail("Highlighting assigned and DetailList-only TSOs.")
-        self._update_tso_filter_assignment_highlight()
+            progress_detail(
+                "Highlighting assigned and DetailList-only TSOs: starting row scan."
+            )
+        self._update_tso_filter_assignment_highlight(progress_detail)
         if progress_detail is not None:
             progress_detail(
                 f"Finished refreshing {len(all_ids)} available TSO filter rows."
@@ -892,12 +895,46 @@ class TSOVisibilityTab(QWidget):
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
         self.populate_table()
 
-    def _update_tso_filter_assignment_highlight(self) -> None:
+    def _update_tso_filter_assignment_highlight(
+        self,
+        progress_detail: Callable[[str], None] | None = None,
+    ) -> None:
+        if progress_detail is not None:
+            progress_detail(
+                "Highlighting assigned and DetailList-only TSOs: collecting assigned IDs."
+            )
         assigned_ids = self._assigned_tso_ids()
+        object_list_assigned_ids = {
+            tso_id
+            for object_list in self.object_lists
+            for tso_id in object_list.tso_ids
+            if tso_id >= 0
+        }
+        detail_list_only_ids = self._detail_list_tso_ids - object_list_assigned_ids
+        row_count = self.tso_filter_list.rowCount()
+        if progress_detail is not None:
+            progress_detail(
+                "Highlighting assigned and DetailList-only TSOs: "
+                f"{len(assigned_ids)} assigned IDs, "
+                f"{len(self._detail_list_tso_ids)} DetailList IDs, "
+                f"{len(detail_list_only_ids)} DetailList-only IDs, "
+                f"{row_count} filter rows."
+            )
         unassigned_brush = QBrush(QColor("#dbeeff"))
         detail_list_brush = QBrush(QColor("#c7e8ff"))
         assigned_brush = QBrush()
-        for row in range(self.tso_filter_list.rowCount()):
+        assigned_row_count = 0
+        detail_list_row_count = 0
+        detail_list_only_row_count = 0
+        unassigned_row_count = 0
+        for row in range(row_count):
+            if progress_detail is not None and (
+                row == 0 or row == row_count - 1 or (row + 1) % 100 == 0
+            ):
+                progress_detail(
+                    "Highlighting assigned and DetailList-only TSOs: "
+                    f"checking row {row + 1}/{row_count}."
+                )
             filter_item = self.tso_filter_list.item(row, 0)
             tso_item = self.tso_filter_list.item(row, 1)
             if filter_item is None or tso_item is None:
@@ -907,18 +944,31 @@ class TSOVisibilityTab(QWidget):
             if isinstance(tso_id, int) and tso_id >= 0:
                 if tso_id in self._detail_list_tso_ids:
                     brush = detail_list_brush
+                    detail_list_row_count += 1
+                    if tso_id in detail_list_only_ids:
+                        detail_list_only_row_count += 1
                     tso_item.setToolTip(
                         "This TSO is referenced directly by a DetailList."
                     )
                 elif tso_id not in assigned_ids:
                     brush = unassigned_brush
+                    unassigned_row_count += 1
                     tso_item.setToolTip(
                         "This TSO is not currently assigned to an ObjectList."
                     )
                 else:
+                    assigned_row_count += 1
                     tso_item.setToolTip("")
             filter_item.setBackground(brush)
             tso_item.setBackground(brush)
+        if progress_detail is not None:
+            progress_detail(
+                "Highlighting assigned and DetailList-only TSOs: finished "
+                f"{row_count} rows ({assigned_row_count} ObjectList-assigned, "
+                f"{detail_list_row_count} DetailList-highlighted, "
+                f"{detail_list_only_row_count} DetailList-only, "
+                f"{unassigned_row_count} unassigned)."
+            )
 
     def _build_tso_pill_text(self, tso_id: int) -> str:
         label = f"__TSO{tso_id}"
