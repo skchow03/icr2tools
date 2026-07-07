@@ -128,29 +128,34 @@ def test_unassigned_tso_filter_rows_are_highlighted_light_blue() -> None:
     assert assigned_tso_item.background().style() == 0
 
 
-def test_detail_list_tso_filter_rows_are_highlighted_blue() -> None:
+def test_detail_list_tso_filter_rows_are_not_highlighted_blue() -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_available_tso_ids([1, 2])
     tab.set_object_lists(
         [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
     )
-    tab.set_detail_list_tso_ids({1})
+    tab.set_detail_list_tso_ids({1, 2})
 
-    detail_filter_item = tab.tso_filter_list.item(0, 0)
-    detail_tso_item = tab.tso_filter_list.item(0, 1)
+    assigned_filter_item = tab.tso_filter_list.item(0, 0)
+    assigned_tso_item = tab.tso_filter_list.item(0, 1)
     unassigned_filter_item = tab.tso_filter_list.item(1, 0)
+    unassigned_tso_item = tab.tso_filter_list.item(1, 1)
 
-    assert detail_filter_item is not None
-    assert detail_tso_item is not None
+    assert assigned_filter_item is not None
+    assert assigned_tso_item is not None
     assert unassigned_filter_item is not None
+    assert unassigned_tso_item is not None
 
-    assert detail_filter_item.background().color().name() == "#c7e8ff"
-    assert detail_tso_item.background().color().name() == "#c7e8ff"
-    assert (
-        detail_tso_item.toolTip() == "This TSO is referenced directly by a DetailList."
-    )
+    assert assigned_filter_item.background().style() == 0
+    assert assigned_tso_item.background().style() == 0
+    assert assigned_tso_item.toolTip() == ""
     assert unassigned_filter_item.background().color().name() == "#dbeeff"
+    assert unassigned_tso_item.background().color().name() == "#dbeeff"
+    assert (
+        unassigned_tso_item.toolTip()
+        == "This TSO is not currently assigned to an ObjectList."
+    )
 
 
 def test_reconcile_dialog_can_copy_matching_rows_and_add_missing_rows() -> None:
