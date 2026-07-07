@@ -8,6 +8,11 @@ from typing import Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from sg_viewer.services.mrk_logic import (
+    auto_detect_mrk_side,
+    mrk_target_length_for_surface_type,
+    normalize_mrk_side,
+)
 from sg_viewer.services.mrk_io import (
     MarkBoundaryEntry,
     MarkFile,
