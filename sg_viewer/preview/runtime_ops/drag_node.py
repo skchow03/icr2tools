@@ -8,7 +8,7 @@ from sg_viewer.preview.creation_controller import (
     CreationEventContext,
 )
 from sg_viewer.preview.interaction_state import InteractionInputs, MouseIntent
-from sg_viewer.preview.runtime_ops.base import Point, logger
+from sg_viewer.preview.runtime_ops.base_context import Point, logger
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 
 
