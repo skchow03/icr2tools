@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from time import perf_counter
 
 from PyQt5 import QtCore
@@ -820,8 +821,13 @@ class TSOVisibilityTab(QWidget):
                 selected.add(tso_id)
         return selected
 
-    def _refresh_tso_filter_list(self) -> None:
+    def _refresh_tso_filter_list(
+        self,
+        progress_detail: Callable[[str], None] | None = None,
+    ) -> None:
         start = perf_counter()
+        if progress_detail is not None:
+            progress_detail("Reading current TSO filter selections.")
         selected_before = self._selected_filter_tso_ids()
         selected_item = self.tso_filter_list.currentItem()
         selected_tso_id_for_add = (
@@ -829,13 +835,24 @@ class TSOVisibilityTab(QWidget):
             if selected_item is not None
             else None
         )
+        if progress_detail is not None:
+            progress_detail("Collecting ObjectList, DetailList, and catalog TSO IDs.")
         all_ids = self._collect_all_tso_ids()
+        if progress_detail is not None:
+            progress_detail(f"Rebuilding filter rows for {len(all_ids)} available TSOs.")
         with QtCore.QSignalBlocker(self.tso_filter_list):
             self.tso_filter_list.clearContents()
             self.tso_filter_list.setRowCount(0)
             selected_row_for_add = -1
             self.tso_filter_list.setRowCount(len(all_ids))
             for row, tso_id in enumerate(all_ids):
+                if progress_detail is not None and (
+                    row == 0 or row == len(all_ids) - 1 or (row + 1) % 100 == 0
+                ):
+                    progress_detail(
+                        f"Building TSO filter row {row + 1}/{len(all_ids)} "
+                        f"for __TSO{tso_id}."
+                    )
                 filter_item = QTableWidgetItem("")
                 filter_item.setData(QtCore.Qt.UserRole, tso_id)
                 filter_item.setFlags(
@@ -860,7 +877,13 @@ class TSOVisibilityTab(QWidget):
                 self.tso_filter_list.setCurrentCell(selected_row_for_add, 1)
             elif self.tso_filter_list.rowCount() > 0:
                 self.tso_filter_list.setCurrentCell(0, 1)
+        if progress_detail is not None:
+            progress_detail("Highlighting assigned and DetailList-only TSOs.")
         self._update_tso_filter_assignment_highlight()
+        if progress_detail is not None:
+            progress_detail(
+                f"Finished refreshing {len(all_ids)} available TSO filter rows."
+            )
         logger.debug(
             "TSO visibility: _refresh_tso_filter_list %.3f ms",
             (perf_counter() - start) * 1000.0,
@@ -1354,8 +1377,12 @@ class TSOVisibilityTab(QWidget):
             update_progress(6, "Storing section/subsection DLONG ranges in the visibility tab.")
             self.set_section_dlong_rows(section_rows)
             update_progress(7, "Refreshing the available TSO filter list.")
-            self._refresh_tso_filter_list()
+            self._refresh_tso_filter_list(lambda detail: update_progress(7, detail))
             if not self.available_tso_ids:
+                update_progress(
+                    7,
+                    "No existing available TSO list found; deriving it from loaded ObjectLists.",
+                )
                 self.available_tso_ids = sorted(
                     {
                         tso_id
@@ -1363,6 +1390,10 @@ class TSOVisibilityTab(QWidget):
                         for tso_id in object_list.tso_ids
                         if tso_id >= 0
                     }
+                )
+                update_progress(
+                    7,
+                    f"Derived {len(self.available_tso_ids)} available TSOs from loaded lists.",
                 )
 
             update_progress(8, "Repopulating section and TSO list widgets.")
