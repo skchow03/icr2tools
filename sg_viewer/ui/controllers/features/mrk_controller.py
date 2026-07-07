@@ -475,10 +475,7 @@ class MrkController:
         return ",".join(pattern)
 
     def _normalize_mrk_side(self, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized == "right":
-            return "Right"
-        return "Left"
+        return normalize_mrk_side(value)
 
     def _set_mrk_side_cell(self, row: int, side: str) -> None:
         table = self._window.mrk_entries_table
@@ -499,22 +496,7 @@ class MrkController:
         return self._normalize_mrk_side(self._table_text_value(self._window.mrk_entries_table, row, 4))
 
     def _auto_detect_mrk_side(self, section_index: int, boundary_index: int) -> str:
-        model = self._window.preview.sg_preview_model
-        if model is None or section_index < 0 or section_index >= len(model.fsects):
-            return "Left"
-        fsect = model.fsects[section_index]
-        if boundary_index < 0 or boundary_index >= len(fsect.boundaries):
-            return "Left"
-        boundary = fsect.boundaries[boundary_index]
-        start = boundary.attrs.get("dlat_start")
-        end = boundary.attrs.get("dlat_end")
-        if start is not None and end is not None:
-            mean_dlat = (float(start) + float(end)) * 0.5
-            if mean_dlat < 0:
-                return "Right"
-            if mean_dlat > 0:
-                return "Left"
-        return "Left"
+        return auto_detect_mrk_side(self._window.preview.sg_preview_model, section_index, boundary_index)
 
     def _on_mrk_entry_selection_changed(self) -> None:
         table = self._window.mrk_entries_table
@@ -910,10 +892,12 @@ class MrkController:
         return [(cuts[index], cuts[index + 1]) for index in range(len(cuts) - 1)]
 
     def _mrk_target_length_for_surface_type(self, surface_type: int) -> float:
-        multiplier = max(0.1, self._window.pitwall_length_multiplier())
-        if surface_type == 8:
-            return max(1.0, float(self._window.pitwall_armco_height_500ths()) * multiplier)
-        return max(1.0, float(self._window.pitwall_wall_height_500ths()) * multiplier)
+        return mrk_target_length_for_surface_type(
+            surface_type,
+            length_multiplier=self._window.pitwall_length_multiplier(),
+            armco_height_500ths=self._window.pitwall_armco_height_500ths(),
+            wall_height_500ths=self._window.pitwall_wall_height_500ths(),
+        )
 
     def _mark_track_position(
         self,

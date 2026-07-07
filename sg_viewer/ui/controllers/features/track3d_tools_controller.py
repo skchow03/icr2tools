@@ -4,6 +4,8 @@ from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from sg_viewer.services.pcx_palette import read_pcx_256_palette
+
 from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
 from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS, replace_color_section_from_indices
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
@@ -64,16 +66,7 @@ class Track3DToolsController:
 
     def _sync_tso_visibility_section_dlongs(self) -> None:
         self._host._sync_tso_visibility_section_dlongs()
-    @staticmethod
-    def _read_pcx_256_palette(path: Path) -> list[tuple[int, int, int]]:
-        data = path.read_bytes()
-        if len(data) < 769 or data[-769] != 0x0C:
-            raise ValueError("Invalid or missing 256-color PCX palette marker")
-        raw_palette = data[-768:]
-        return [
-            (int(raw_palette[i]), int(raw_palette[i + 1]), int(raw_palette[i + 2]))
-            for i in range(0, 768, 3)
-        ]
+    _read_pcx_256_palette = staticmethod(read_pcx_256_palette)
 
     @staticmethod
     def _as_qcolors(colors: list[tuple[int, int, int]]) -> list[QtGui.QColor]:

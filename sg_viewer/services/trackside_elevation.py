@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 
 from sg_viewer.model.dlong_mapping import dlong_to_section_position
-from sg_viewer.model.sg_model import Point, SectionPreview
+
+if TYPE_CHECKING:
+    from sg_viewer.model.sg_model import Point, SectionPreview
+else:
+    Point = tuple[float, float]
+    SectionPreview = object
 from sg_viewer.services.trackside_objects import TracksideObject
-from sg_viewer.ui.presentation.fsect_table_presenter import boundary_numbers_for_fsects
 from track_viewer.geometry import project_point_to_centerline
 
 
@@ -19,6 +23,22 @@ class TsoBoundaryElevationContext:
     track_length: float
     get_section_fsects: Callable[[int], object]
     sample_elevation_at_dlat: Callable[[int, float, float], float | None]
+
+
+def _boundary_numbers_for_fsects(fsects) -> dict[int, str]:
+    boundary_rows = [
+        (row_index, fsect)
+        for row_index, fsect in enumerate(fsects)
+        if fsect.surface_type in {7, 8}
+    ]
+    boundary_rows.sort(
+        key=lambda row_fsect: (
+            min(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
+            max(row_fsect[1].start_dlat, row_fsect[1].end_dlat),
+            row_fsect[0],
+        )
+    )
+    return {row_index: str(boundary_number) for boundary_number, (row_index, _fsect) in enumerate(boundary_rows)}
 
 
 def point_on_section(section: SectionPreview, fraction: float, dlat: float) -> Point:
@@ -102,7 +122,7 @@ def closest_boundary_elevation_for_tso_with_context(
     progress = max(0.0, min(1.0, float(mapped.fraction)))
     section = context.sections[section_index]
     fsects = context.get_section_fsects(section_index)
-    boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+    boundary_number_by_row = _boundary_numbers_for_fsects(fsects)
     if not boundary_number_by_row:
         return None
     best_distance_sq: float | None = None
@@ -123,3 +143,19 @@ def closest_boundary_elevation_for_tso_with_context(
     if memo is not None:
         memo[cache_key] = best_elevation
     return best_elevation
+
+
+def tso_relative_boundary_elevation(
+    obj: TracksideObject,
+    *,
+    context: TsoBoundaryElevationContext | None,
+    memo: dict[tuple[int, int, int, int, int], int | None] | None = None,
+) -> int | None:
+    boundary_elevation = closest_boundary_elevation_for_tso_with_context(
+        obj,
+        context=context,
+        memo=memo,
+    )
+    if boundary_elevation is None:
+        return None
+    return int(obj.z) - int(boundary_elevation)
