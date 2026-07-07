@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QHeaderView,
+    QProgressDialog,
     QMessageBox,
     QHBoxLayout,
     QLabel,
@@ -1259,68 +1260,119 @@ class TSOVisibilityTab(QWidget):
             if response != QMessageBox.Yes:
                 return
 
-        if not track3d_has_object_lists(path):
-            QMessageBox.warning(
-                self,
-                "Load track.3D",
-                "The selected track.3D file does not contain any ObjectLists.",
-            )
-            return
+        progress_steps = [
+            "Checking for ObjectLists…",
+            "Reading section ObjectList/DATA rows…",
+            "Validating section count…",
+            "Parsing ObjectLists…",
+            "Parsing DetailLists…",
+            "Parsing track.3D catalog…",
+            "Applying section DLONG ranges…",
+            "Refreshing TSO filters…",
+            "Rebuilding ObjectList table…",
+            "Notifying SG CREATE that ObjectLists changed…",
+        ]
+        progress = QProgressDialog(
+            f"Preparing to load ObjectLists from {path}…",
+            None,
+            0,
+            len(progress_steps),
+            self,
+        )
+        progress.setWindowTitle("Load ObjectLists from track.3D")
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
 
-        section_rows = parse_track3d_section_dlongs(path)
-        if not section_rows:
-            QMessageBox.warning(
-                self,
-                "Load track.3D",
-                "The selected track.3D file does not contain any section ObjectLists/DATA rows.",
-            )
-            return
+        def update_progress(step: int, detail: str | None = None) -> None:
+            index = max(0, min(step, len(progress_steps) - 1))
+            message = progress_steps[index]
+            if detail:
+                message = f"{message}\n{detail}"
+            progress.setLabelText(message)
+            progress.setValue(max(0, min(step, len(progress_steps))))
+            QApplication.processEvents()
 
-        loaded_section_count = len({int(row.section) for row in section_rows})
-        if (
-            self._current_track_section_count is not None
-            and loaded_section_count != self._current_track_section_count
-        ):
-            QMessageBox.warning(
-                self,
-                "Load track.3D",
-                "The selected track.3D file has a different number of sections than the current track.\n\n"
-                f"Current track sections: {self._current_track_section_count}\n"
-                f"track.3D sections: {loaded_section_count}",
-            )
-            return
-
-        self.object_lists = parse_track3d(path)
-        if not self.detail_lists:
-            self.detail_lists = parse_track3d_detail_lists(path)
-            self._detail_list_dlong_ranges = {
-                (row.section, row.sub_index, row.lod_suffix): (
-                    row.start_dlong,
-                    row.end_dlong,
+        try:
+            progress.show()
+            update_progress(0, "Scanning the selected file for ObjectLists blocks.")
+            if not track3d_has_object_lists(path):
+                QMessageBox.warning(
+                    self,
+                    "Load track.3D",
+                    "The selected track.3D file does not contain any ObjectLists.",
                 )
-                for row in parse_track3d_detail_list_dlong_ranges(path)
-            }
-        catalog = parse_track3d_catalog(path)
-        self._detail_list_tso_ids = {
-            int(item[5:])
-            for detail in catalog.detail_lists.values()
-            for item in detail.items
-            if item.startswith("__TSO") and item[5:].isdigit() and item in catalog.tsos
-        }
-        self.set_section_dlong_rows(section_rows)
-        self._refresh_tso_filter_list()
-        if not self.available_tso_ids:
-            self.available_tso_ids = sorted(
-                {
-                    tso_id
-                    for object_list in (self.object_lists + self.detail_lists)
-                    for tso_id in object_list.tso_ids
-                    if tso_id >= 0
-                }
-            )
+                return
 
-        self.populate_table()
-        self.objectListsSaved.emit()
+            update_progress(1, "Collecting section/subsection DLONG ranges from DATA rows.")
+            section_rows = parse_track3d_section_dlongs(path)
+            if not section_rows:
+                QMessageBox.warning(
+                    self,
+                    "Load track.3D",
+                    "The selected track.3D file does not contain any section ObjectLists/DATA rows.",
+                )
+                return
+
+            update_progress(2, f"Found {len(section_rows)} section ObjectList/DATA rows.")
+            loaded_section_count = len({int(row.section) for row in section_rows})
+            if (
+                self._current_track_section_count is not None
+                and loaded_section_count != self._current_track_section_count
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Load track.3D",
+                    "The selected track.3D file has a different number of sections than the current track.\n\n"
+                    f"Current track sections: {self._current_track_section_count}\n"
+                    f"track.3D sections: {loaded_section_count}",
+                )
+                return
+
+            update_progress(3, "Parsing ObjectList entries and TSO references.")
+            self.object_lists = parse_track3d(path)
+            update_progress(4, "Parsing DetailLists only if they are not already loaded.")
+            if not self.detail_lists:
+                self.detail_lists = parse_track3d_detail_lists(path)
+                self._detail_list_dlong_ranges = {
+                    (row.section, row.sub_index, row.lod_suffix): (
+                        row.start_dlong,
+                        row.end_dlong,
+                    )
+                    for row in parse_track3d_detail_list_dlong_ranges(path)
+                }
+            update_progress(5, "Building catalog metadata for DetailList TSO IDs.")
+            catalog = parse_track3d_catalog(path)
+            self._detail_list_tso_ids = {
+                int(item[5:])
+                for detail in catalog.detail_lists.values()
+                for item in detail.items
+                if item.startswith("__TSO") and item[5:].isdigit() and item in catalog.tsos
+            }
+            update_progress(6, "Storing section/subsection DLONG ranges in the visibility tab.")
+            self.set_section_dlong_rows(section_rows)
+            update_progress(7, "Refreshing the available TSO filter list.")
+            self._refresh_tso_filter_list()
+            if not self.available_tso_ids:
+                self.available_tso_ids = sorted(
+                    {
+                        tso_id
+                        for object_list in (self.object_lists + self.detail_lists)
+                        for tso_id in object_list.tso_ids
+                        if tso_id >= 0
+                    }
+                )
+
+            update_progress(8, "Repopulating section and TSO list widgets.")
+            self.populate_table()
+            update_progress(9, "Emitting ObjectLists saved/changed notification.")
+            self.objectListsSaved.emit()
+            progress.setValue(len(progress_steps))
+            QApplication.processEvents()
+        finally:
+            progress.close()
 
     def remap_tso_ids(self, remap: dict[int, int]) -> None:
         if not remap:
