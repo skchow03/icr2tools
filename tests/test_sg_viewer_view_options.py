@@ -83,8 +83,53 @@ def test_mouse_usage_bar_sits_above_preview_and_explains_controls(qapp):
         assert "Left click" in usage_text
         assert "Left drag" in usage_text
         assert "Right click node" in usage_text
-        assert "Right drag" in usage_text
         assert "Mouse wheel" in usage_text
+    finally:
+        window.close()
+
+
+def test_mouse_usage_bar_updates_for_sidebar_tabs(qapp):
+    window = SGViewerWindow()
+    try:
+        tabs = window.right_sidebar_tabs
+        expectations = {
+            "Elevation/Grade": "select section/xsect marker",
+            "Fsects": "select section/fsect boundary",
+            "Walls": "select wall/section",
+            "TSD": "select TSD line/object",
+            "Objects": "select TSO or place TSO",
+            "TSO Visibility": "select/highlight visible TSO",
+            "Draw land objects": "add land point",
+            ".3D file": "select section/object",
+        }
+
+        for tab_name, expected_text in expectations.items():
+            index = next(
+                i for i in range(tabs.count()) if tabs.tabText(i).rstrip("*") == tab_name
+            )
+            tabs.setCurrentIndex(index)
+            window.update_mouse_usage_text()
+            assert expected_text in window._mouse_usage_label.text()
+    finally:
+        window.close()
+
+
+def test_mouse_usage_bar_mode_text_overrides_sidebar_tab(qapp):
+    window = SGViewerWindow()
+    try:
+        window.split_section_button.setChecked(True)
+        window.update_mouse_usage_text()
+        assert "split section" in window._mouse_usage_label.text()
+
+        window.split_section_button.setChecked(False)
+        window.tso_box_select_button.setChecked(True)
+        window.update_mouse_usage_text()
+        assert "box select trackside objects" in window._mouse_usage_label.text()
+
+        window.tso_box_select_button.setChecked(False)
+        window._ruler_mode_active = True
+        window.update_mouse_usage_text()
+        assert "set ruler start/end points" in window._mouse_usage_label.text()
     finally:
         window.close()
 

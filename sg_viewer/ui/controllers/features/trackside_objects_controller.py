@@ -601,6 +601,7 @@ class TracksideObjectsController:
             self._set_tso_add_mode_active(False)
         if self._tso_box_select_mode_active and self._tso_stamp_mode_active:
             self._set_tso_stamp_mode_active(False)
+        self._window.update_mouse_usage_text()
 
     def _on_tso_add_requested(self) -> None:
         self._set_tso_add_mode_active(self._window.tso_add_button.isChecked())
