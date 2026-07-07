@@ -8,7 +8,7 @@ import math
 
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.model.sg_model import SectionPreview
-from sg_viewer.runtime.preview_geometry_service import NodeDragRequest, PreviewGeometryService
+from sg_viewer.geometry_domain import NodeDragRequest, PreviewGeometryDomainService
 
 
 def _make_curve_section(
@@ -83,7 +83,7 @@ def test_shared_curve_node_drag_constrains_to_arc():
         center[1] + math.sin(target_angle) * radius,
     )
 
-    response = PreviewGeometryService().update_dragged_section(
+    response = PreviewGeometryDomainService().update_dragged_section(
         NodeDragRequest(
             sections=[s1, s2],
             active_node=(0, "end"),
