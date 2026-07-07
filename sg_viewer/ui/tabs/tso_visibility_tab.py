@@ -898,23 +898,34 @@ class TSOVisibilityTab(QWidget):
         progress_detail: Callable[[str], None] | None = None,
     ) -> None:
         if progress_detail is not None:
-            progress_detail("Highlighting unassigned TSOs: collecting ObjectList IDs.")
+            progress_detail(
+                "Highlighting unassigned TSOs: collecting ObjectList and DetailList IDs."
+            )
         assigned_ids = {
             tso_id
             for object_list in self.object_lists
             for tso_id in object_list.tso_ids
             if tso_id >= 0
         }
+        detail_list_ids = {
+            tso_id
+            for tso_id in self._detail_list_tso_ids
+            if isinstance(tso_id, int) and tso_id >= 0
+        }
+        detail_only_ids = detail_list_ids - assigned_ids
         row_count = self.tso_filter_list.rowCount()
         if progress_detail is not None:
             progress_detail(
                 "Highlighting unassigned TSOs: "
                 f"{len(assigned_ids)} ObjectList-assigned IDs, "
+                f"{len(detail_list_ids)} DetailList IDs, "
+                f"{len(detail_only_ids)} DetailList-only IDs, "
                 f"{row_count} filter rows."
             )
         unassigned_brush = QBrush(QColor("#dbeeff"))
-        assigned_brush = QBrush()
+        default_brush = QBrush()
         assigned_row_count = 0
+        detail_only_row_count = 0
         unassigned_row_count = 0
         for row in range(row_count):
             if progress_detail is not None and (
@@ -929,23 +940,27 @@ class TSOVisibilityTab(QWidget):
             if filter_item is None or tso_item is None:
                 continue
             tso_id = tso_item.data(QtCore.Qt.UserRole)
-            brush = assigned_brush
+            brush = default_brush
             if isinstance(tso_id, int) and tso_id >= 0:
-                if tso_id not in assigned_ids:
+                if tso_id in assigned_ids:
+                    assigned_row_count += 1
+                    tso_item.setToolTip("")
+                elif tso_id in detail_only_ids:
+                    detail_only_row_count += 1
+                    tso_item.setToolTip("")
+                else:
                     brush = unassigned_brush
                     unassigned_row_count += 1
                     tso_item.setToolTip(
                         "This TSO is not currently assigned to an ObjectList."
                     )
-                else:
-                    assigned_row_count += 1
-                    tso_item.setToolTip("")
             filter_item.setBackground(brush)
             tso_item.setBackground(brush)
         if progress_detail is not None:
             progress_detail(
                 "Highlighting unassigned TSOs: finished "
                 f"{row_count} rows ({assigned_row_count} ObjectList-assigned, "
+                f"{detail_only_row_count} DetailList-only, "
                 f"{unassigned_row_count} unassigned)."
             )
 
