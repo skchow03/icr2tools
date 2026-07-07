@@ -1059,7 +1059,10 @@ def test_mrk_textures_button_saves_texture_definitions(qapp, monkeypatch):
             def texture_definitions(self):
                 return (MrkTextureDefinition("stone03", "stone03", 1, 2, 3, 4),)
 
-        monkeypatch.setattr("sg_viewer.ui.viewer_controller.MrkTexturesDialog", _FakeDialog)
+        monkeypatch.setattr(
+            "sg_viewer.ui.controllers.features.mrk_controller.MrkTexturesDialog",
+            _FakeDialog,
+        )
 
         window.mrk_textures_button.click()
 
