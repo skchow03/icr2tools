@@ -509,6 +509,35 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         quick_display_layout.addWidget(self._track_opacity_value_label)
         quick_display_layout.addStretch()
         self._quick_display_toolbar.setLayout(quick_display_layout)
+
+        self._mouse_usage_bar = QtWidgets.QFrame()
+        self._mouse_usage_bar.setObjectName("mouseUsageBar")
+        self._mouse_usage_bar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self._mouse_usage_bar.setFrameShadow(QtWidgets.QFrame.Plain)
+        self._mouse_usage_bar.setStyleSheet(
+            "#mouseUsageBar {"
+            " background-color: #f6f2d8;"
+            " border: 1px solid #c9bd75;"
+            " border-radius: 3px;"
+            "}"
+        )
+        mouse_usage_layout = QtWidgets.QHBoxLayout()
+        mouse_usage_layout.setContentsMargins(8, 4, 8, 4)
+        mouse_usage_layout.setSpacing(8)
+        mouse_usage_title = QtWidgets.QLabel("Mouse:")
+        mouse_usage_title.setStyleSheet("font-weight: bold;")
+        self._mouse_usage_label = QtWidgets.QLabel(
+            "Left click: select / place / split / set points • "
+            "Left drag: pan view, drag selected section/node/land point • "
+            "Right click node: disconnect • "
+            "Right drag: no viewport action • "
+            "Mouse wheel: zoom at cursor"
+        )
+        self._mouse_usage_label.setWordWrap(True)
+        self._mouse_usage_label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+        mouse_usage_layout.addWidget(mouse_usage_title)
+        mouse_usage_layout.addWidget(self._mouse_usage_label, stretch=1)
+        self._mouse_usage_bar.setLayout(mouse_usage_layout)
         self._preview_color_controls: dict[
             str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]
         ] = {}
@@ -1089,6 +1118,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addWidget(toolbar_panel.widget)
         preview_column_layout.addWidget(self._quick_display_toolbar)
+        preview_column_layout.addWidget(self._mouse_usage_bar)
         preview_column_layout.addWidget(self._preview, stretch=5)
         stats_panel = create_stats_sidebar_panel(
             self._track_stats_label,

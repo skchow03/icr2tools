@@ -71,6 +71,24 @@ def test_measurement_units_are_global(qapp):
         window.close()
 
 
+def test_mouse_usage_bar_sits_above_preview_and_explains_controls(qapp):
+    window = SGViewerWindow()
+    try:
+        preview_layout = window._preview.parentWidget().layout()
+
+        assert preview_layout.indexOf(window._mouse_usage_bar) < preview_layout.indexOf(
+            window.preview
+        )
+        usage_text = window._mouse_usage_label.text()
+        assert "Left click" in usage_text
+        assert "Left drag" in usage_text
+        assert "Right click node" in usage_text
+        assert "Right drag" in usage_text
+        assert "Mouse wheel" in usage_text
+    finally:
+        window.close()
+
+
 def test_fsect_delta_columns_follow_and_edit_next_fsect(qapp):
     window = SGViewerWindow()
     try:
