@@ -1018,48 +1018,57 @@ class TSOVisibilityTab(QWidget):
             )
         return payload
 
-    def load_detail_lists_from_payload(self, payload: object) -> None:
+    def load_detail_lists_from_payload(self, payload: object, *, progress_callback=None) -> None:
         if not isinstance(payload, list):
             self.detail_lists = []
             self._detail_list_tso_ids = set()
             return
         parsed_lists: list[Track3DDetailList] = []
-        for raw_entry in payload:
-            if not isinstance(raw_entry, dict):
-                continue
-            try:
-                section = int(raw_entry.get("section", 0))
-                sub_index = int(raw_entry.get("sub_index", 0))
-            except (TypeError, ValueError):
-                continue
-            lod_suffix = str(raw_entry.get("lod_suffix", "")).strip().upper()
-            raw_tso_ids = raw_entry.get("tso_ids", [])
-            tso_ids: list[int] = []
-            if isinstance(raw_tso_ids, list):
-                for tso_id in raw_tso_ids:
-                    try:
-                        parsed_id = int(tso_id)
-                    except (TypeError, ValueError):
-                        continue
-                    if parsed_id >= 0:
-                        tso_ids.append(parsed_id)
-            parsed_lists.append(
-                Track3DDetailList(
-                    section=section,
-                    sub_index=sub_index,
-                    lod_suffix=lod_suffix,
-                    tso_ids=tso_ids,
+        total_entries = len(payload)
+        current_context = "before first DetailList entry"
+        try:
+            for index, raw_entry in enumerate(payload):
+                current_context = f"DetailList entry {index + 1}/{total_entries}"
+                if progress_callback is not None:
+                    progress_callback(index, total_entries, current_context, raw_entry)
+                if not isinstance(raw_entry, dict):
+                    continue
+                try:
+                    section = int(raw_entry.get("section", 0))
+                    sub_index = int(raw_entry.get("sub_index", 0))
+                except (TypeError, ValueError):
+                    continue
+                lod_suffix = str(raw_entry.get("lod_suffix", "")).strip().upper()
+                raw_tso_ids = raw_entry.get("tso_ids", [])
+                tso_ids: list[int] = []
+                if isinstance(raw_tso_ids, list):
+                    for tso_id in raw_tso_ids:
+                        try:
+                            parsed_id = int(tso_id)
+                        except (TypeError, ValueError):
+                            continue
+                        if parsed_id >= 0:
+                            tso_ids.append(parsed_id)
+                parsed_lists.append(
+                    Track3DDetailList(
+                        section=section,
+                        sub_index=sub_index,
+                        lod_suffix=lod_suffix,
+                        tso_ids=tso_ids,
+                    )
                 )
-            )
-        self.detail_lists = parsed_lists
-        self._detail_list_tso_ids = {
-            tso_id
-            for entry in self.detail_lists
-            for tso_id in entry.tso_ids
-            if tso_id >= 0
-        }
-        self._refresh_tso_filter_list()
-        self.populate_table()
+            current_context = "applying parsed DetailList entries"
+            self.detail_lists = parsed_lists
+            self._detail_list_tso_ids = {
+                tso_id
+                for entry in self.detail_lists
+                for tso_id in entry.tso_ids
+                if tso_id >= 0
+            }
+            self._refresh_tso_filter_list()
+            self.populate_table()
+        except Exception as exc:
+            raise RuntimeError(f"Failed while loading {current_context}.") from exc
 
     @staticmethod
     def _object_list_layout_signature(
@@ -1070,43 +1079,52 @@ class TSOVisibilityTab(QWidget):
             for entry in object_lists
         )
 
-    def load_object_lists_from_payload(self, payload: object) -> None:
+    def load_object_lists_from_payload(self, payload: object, *, progress_callback=None) -> None:
         if not isinstance(payload, list):
             self.clear_object_lists()
             return
 
         parsed_lists = []
-        for raw_entry in payload:
-            if not isinstance(raw_entry, dict):
-                continue
-            side = str(raw_entry.get("side", "")).strip().upper()
-            if side not in {"L", "R"}:
-                continue
-            try:
-                section = int(raw_entry.get("section", 0))
-                sub_index = int(raw_entry.get("sub_index", 0))
-            except (TypeError, ValueError):
-                continue
-            raw_tso_ids = raw_entry.get("tso_ids", [])
-            tso_ids: list[int] = []
-            if isinstance(raw_tso_ids, list):
-                for tso_id in raw_tso_ids:
-                    try:
-                        parsed_id = int(tso_id)
-                    except (TypeError, ValueError):
-                        continue
-                    if parsed_id >= 0:
-                        tso_ids.append(parsed_id)
-            parsed_lists.append(
-                Track3DObjectList(
-                    side=side,
-                    section=section,
-                    sub_index=sub_index,
-                    tso_ids=tso_ids,
+        total_entries = len(payload)
+        current_context = "before first ObjectList entry"
+        try:
+            for index, raw_entry in enumerate(payload):
+                current_context = f"ObjectList entry {index + 1}/{total_entries}"
+                if progress_callback is not None:
+                    progress_callback(index, total_entries, current_context, raw_entry)
+                if not isinstance(raw_entry, dict):
+                    continue
+                side = str(raw_entry.get("side", "")).strip().upper()
+                if side not in {"L", "R"}:
+                    continue
+                try:
+                    section = int(raw_entry.get("section", 0))
+                    sub_index = int(raw_entry.get("sub_index", 0))
+                except (TypeError, ValueError):
+                    continue
+                raw_tso_ids = raw_entry.get("tso_ids", [])
+                tso_ids: list[int] = []
+                if isinstance(raw_tso_ids, list):
+                    for tso_id in raw_tso_ids:
+                        try:
+                            parsed_id = int(tso_id)
+                        except (TypeError, ValueError):
+                            continue
+                        if parsed_id >= 0:
+                            tso_ids.append(parsed_id)
+                parsed_lists.append(
+                    Track3DObjectList(
+                        side=side,
+                        section=section,
+                        sub_index=sub_index,
+                        tso_ids=tso_ids,
+                    )
                 )
-            )
 
-        self.set_object_lists(parsed_lists)
+            current_context = "applying parsed ObjectList entries"
+            self.set_object_lists(parsed_lists)
+        except Exception as exc:
+            raise RuntimeError(f"Failed while loading {current_context}.") from exc
 
     def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
         self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})

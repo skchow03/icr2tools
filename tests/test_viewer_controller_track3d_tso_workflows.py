@@ -273,3 +273,75 @@ def test_tso_visibility_restore_error_includes_payload_context(tmp_path):
     assert "RecursionError: maximum recursion depth exceeded" in message
     assert "[0] side='L', section=12, sub_index=3" in message
     assert "tso_ids_count=3" in message
+
+
+def test_tso_visibility_restore_progress_includes_current_objectlist(tmp_path):
+    class Sidebar:
+        object_lists = []
+        detail_lists = []
+
+        def load_object_lists_from_payload(self, payload, *, progress_callback=None):
+            if progress_callback is not None:
+                progress_callback(0, len(payload), "ObjectList entry 1/1", payload[0])
+            self.object_lists = payload
+
+        def load_detail_lists_from_payload(self, payload, *, progress_callback=None):
+            self.detail_lists = payload
+
+    class Window:
+        tso_visibility_sidebar = Sidebar()
+
+    class ProjectState:
+        tso_visibility_object_lists = [
+            {"side": "R", "section": 7, "sub_index": 2, "tso_ids": [10, 11]}
+        ]
+        tso_visibility_detail_lists = []
+
+    controller = SGViewerController.__new__(SGViewerController)
+    controller._window = Window()
+    controller._current_path = tmp_path / "progress.sg"
+    messages = []
+
+    controller._restore_tso_visibility_lists(
+        ProjectState(), progress_callback=lambda step, message: messages.append((step, message))
+    )
+
+    assert any(
+        step == 5
+        and "validating ObjectList 1/1" in message
+        and "side='R', section=7, sub_index=2" in message
+        for step, message in messages
+    )
+
+
+def test_tso_visibility_restore_error_includes_current_objectlist(tmp_path):
+    class BrokenSidebar:
+        object_lists = []
+
+        def load_object_lists_from_payload(self, payload, *, progress_callback=None):
+            if progress_callback is not None:
+                progress_callback(0, len(payload), "ObjectList entry 1/1", payload[0])
+            raise RecursionError("maximum recursion depth exceeded")
+
+    class Window:
+        tso_visibility_sidebar = BrokenSidebar()
+
+    class ProjectState:
+        tso_visibility_object_lists = [
+            {"side": "L", "section": 12, "sub_index": 3, "tso_ids": [4, 5, 6]}
+        ]
+        tso_visibility_detail_lists = []
+
+    controller = SGViewerController.__new__(SGViewerController)
+    controller._window = Window()
+    controller._current_path = tmp_path / "bad.sg"
+
+    try:
+        controller._restore_tso_visibility_lists(ProjectState(), progress_callback=lambda *_args: None)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected RuntimeError")
+
+    assert "Current item: ObjectList entry 1/1" in message
+    assert "[0] side='L', section=12, sub_index=3" in message
