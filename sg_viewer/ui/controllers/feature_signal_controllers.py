@@ -1,41 +1,6 @@
 from __future__ import annotations
 
 
-class MrkController:
-    def __init__(self, host: object) -> None:
-        self._host = host
-
-    def connect_signals(self) -> None:
-        h = self._host
-        w = h._window
-        w.mrk_add_entry_button.clicked.connect(h._on_mrk_add_entry_requested)
-        w.mrk_delete_entry_button.clicked.connect(h._on_mrk_delete_entry_requested)
-        w.mrk_move_up_button.clicked.connect(h._on_mrk_move_up_requested)
-        w.mrk_move_down_button.clicked.connect(h._on_mrk_move_down_requested)
-        w.mrk_textures_button.clicked.connect(h._on_mrk_textures_requested)
-        w.mrk_generate_file_button.clicked.connect(h._on_mrk_generate_file_requested)
-        w.mrk_save_button.clicked.connect(h._on_mrk_save_requested)
-        w.mrk_load_button.clicked.connect(h._on_mrk_load_requested)
-        w.mrk_texture_pattern_show_colors_checkbox.toggled.connect(h._on_mrk_texture_pattern_display_mode_changed)
-        w.generate_pitwall_button.clicked.connect(h._generate_pitwall_txt)
-        w.manual_wall_height_overrides_button.clicked.connect(h._on_manual_wall_height_overrides_requested)
-        w.pitwall_wall_height_spin.valueChanged.connect(h._on_mrk_wall_height_changed)
-        w.pitwall_armco_height_spin.valueChanged.connect(h._on_mrk_armco_height_changed)
-        w.pitwall_length_multiplier_spin.valueChanged.connect(h._on_mrk_length_multiplier_changed)
-        w.preview.set_mrk_length_multiplier(w.pitwall_length_multiplier())
-        h._mrk_add_entry_action.triggered.connect(h._on_mrk_add_entry_requested)
-        h._mrk_delete_entry_action.triggered.connect(h._on_mrk_delete_entry_requested)
-        h._mrk_move_up_action.triggered.connect(h._on_mrk_move_up_requested)
-        h._mrk_move_down_action.triggered.connect(h._on_mrk_move_down_requested)
-        h._mrk_textures_action.triggered.connect(h._on_mrk_textures_requested)
-        h._mrk_generate_file_action.triggered.connect(h._on_mrk_generate_file_requested)
-        h._mrk_save_entries_action.triggered.connect(h._on_mrk_save_requested)
-        h._mrk_load_entries_action.triggered.connect(h._on_mrk_load_requested)
-        w.mrk_entries_table.itemSelectionChanged.connect(h._on_mrk_entry_selection_changed)
-        w.mrk_entries_table.itemChanged.connect(h._on_mrk_entry_item_changed)
-        w.mrk_entries_table.cellDoubleClicked.connect(h._on_mrk_entry_cell_double_clicked)
-
-
 class TsdSignalController:
     def __init__(self, host: object) -> None:
         self._host = host
