@@ -8,7 +8,7 @@ from sg_viewer.ui.controllers.interaction_controller import InteractionControlle
 from sg_viewer.ui.controllers.section_editing_coordinator import SectionEditingCoordinator
 from sg_viewer.ui.controllers.feature_signal_controllers import (
     MrkController,
-    TsdController,
+    TsdSignalController,
     Track3DController,
     TracksideObjectsController,
 )
@@ -31,7 +31,7 @@ __all__ = [
     "ElevationUiCoordinator",
     "BackgroundUiCoordinator",
     "MrkController",
-    "TsdController",
+    "TsdSignalController",
     "TracksideObjectsController",
     "Track3DController",
 ]

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
     from sg_viewer.ui.manual_wall_height_dialog import ManualWallHeightOverride
     from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
-    from sg_viewer.ui.viewer_controller import LoadedTsdFile
+    from sg_viewer.ui.controllers.features.tsd_controller import LoadedTsdFile
     from sg_viewer.services.tsd_objects import (
         TsdDashedLinesObject,
         TsdDoubleSolidLineObject,
