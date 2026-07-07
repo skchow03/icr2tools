@@ -94,9 +94,9 @@ def test_mouse_usage_bar_updates_for_sidebar_tabs(qapp):
         tabs = window.right_sidebar_tabs
         expectations = {
             "Elevation/Grade": "select section/xsect marker",
-            "Fsects": "select section/fsect boundary",
+            "Fsects": "Select/edit fsect rows in the fsect table or diagram",
             "Walls": "select wall/section",
-            "TSD": "select TSD line/object",
+            "TSD": "selecting a row centers the viewport on it",
             "Objects": "select TSO or place TSO",
             "TSO Visibility": "select/highlight visible TSO",
             "Draw land objects": "add land point",

@@ -1358,13 +1358,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             usage_by_tab = {
                 "Elevation/Grade": (
                     "Left click: select section/xsect marker • "
-                    "Left drag: pan view or drag selected node/section when Move is active • "
+                    "Left drag node directly, or drag section only when Move is active; "
+                    "drag empty space to pan • "
                     "Right click node: disconnect • "
                     "Mouse wheel: zoom at cursor"
                 ),
                 "Fsects": (
-                    "Left click: select section/fsect boundary • "
-                    "Left drag: pan view or drag selected node/section when Move is active • "
+                    "Left click viewport: select section • "
+                    "Select/edit fsect rows in the fsect table or diagram • "
+                    "Left drag node directly, or drag section only when Move is active; "
+                    "drag empty space to pan • "
                     "Right click node: disconnect • "
                     "Mouse wheel: zoom at cursor"
                 ),
@@ -1375,7 +1378,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     "Mouse wheel: zoom at cursor"
                 ),
                 "TSD": (
-                    "Left click: select TSD line/object • "
+                    "Select TSD rows in the TSD table; selecting a row centers the viewport on it • "
                     "Left drag: pan view • "
                     "Mouse wheel: zoom at cursor"
                 ),
