@@ -1868,3 +1868,47 @@ class SGViewerController:
         if row_index < 0:
             return
         self._on_xsect_node_clicked(row_index)
+
+
+def _install_feature_controller_wrapper_methods() -> None:
+    """Expose extracted feature methods on SGViewerController during migration.
+
+    Historically callers reached feature behavior directly through
+    SGViewerController.  The feature implementations now live on smaller
+    controller objects, but tests and third-party extensions still need a
+    stable migration window.  Install thin wrappers for extracted methods that
+    are not already implemented directly on SGViewerController.
+    """
+
+    feature_controllers = (
+        ("_tsd_controller", TsdController),
+        ("_mrk_controller", MrkController),
+        ("_track3d_tools_controller", Track3DToolsController),
+        ("_trackside_objects_controller", TracksideObjectsController),
+    )
+
+    def _make_wrapper(controller_attr: str, method_name: str):
+        def _wrapper(self, *args, **kwargs):
+            return getattr(getattr(self, controller_attr), method_name)(*args, **kwargs)
+
+        _wrapper.__name__ = method_name
+        _wrapper.__qualname__ = f"SGViewerController.{method_name}"
+        _wrapper.__doc__ = f"Compatibility wrapper for {controller_attr}.{method_name}."
+        return _wrapper
+
+    for controller_attr, controller_type in feature_controllers:
+        for method_name, method in controller_type.__dict__.items():
+            if not method_name.startswith("_") or method_name.startswith("__"):
+                continue
+            if isinstance(method, property) or not callable(method):
+                continue
+            if method_name in SGViewerController.__dict__:
+                continue
+            setattr(
+                SGViewerController,
+                method_name,
+                _make_wrapper(controller_attr, method_name),
+            )
+
+
+_install_feature_controller_wrapper_methods()
