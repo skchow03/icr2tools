@@ -198,6 +198,9 @@ class TrackSectionListWidget(QTableWidget):
         left_entries: list[QTableWidgetItem],
         right_entries: list[QTableWidgetItem],
     ) -> None:
+        self.setColumnCount(2)
+        self.setHorizontalHeaderLabels(["L sections", "R sections"])
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         row_count = max(len(left_entries), len(right_entries))
         self.clear()
         self.setRowCount(row_count)
@@ -211,6 +214,17 @@ class TrackSectionListWidget(QTableWidget):
                 item = right_entries[row]
                 self.setItem(row, 1, item)
                 self._flat_items.append(item)
+
+    def set_detail_entries(self, entries: list[QTableWidgetItem]) -> None:
+        self.setColumnCount(1)
+        self.setHorizontalHeaderLabels(["DetailLists"])
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.clear()
+        self.setRowCount(len(entries))
+        self._flat_items = []
+        for row, item in enumerate(entries):
+            self.setItem(row, 0, item)
+            self._flat_items.append(item)
 
 
 class TSOVisibilityReconcileDialog(QDialog):
@@ -842,7 +856,9 @@ class TSOVisibilityTab(QWidget):
             progress_detail("Collecting ObjectList and catalog TSO IDs.")
         all_ids = self._collect_all_tso_ids()
         if progress_detail is not None:
-            progress_detail(f"Rebuilding filter rows for {len(all_ids)} available TSOs.")
+            progress_detail(
+                f"Rebuilding filter rows for {len(all_ids)} available TSOs."
+            )
         with QtCore.QSignalBlocker(self.tso_filter_list):
             self.tso_filter_list.clearContents()
             self.tso_filter_list.setRowCount(0)
@@ -1312,7 +1328,9 @@ class TSOVisibilityTab(QWidget):
                 )
                 return
 
-            update_progress(1, "Collecting section/subsection DLONG ranges from DATA rows.")
+            update_progress(
+                1, "Collecting section/subsection DLONG ranges from DATA rows."
+            )
             section_rows = parse_track3d_section_dlongs(path)
             if not section_rows:
                 QMessageBox.warning(
@@ -1322,7 +1340,9 @@ class TSOVisibilityTab(QWidget):
                 )
                 return
 
-            update_progress(2, f"Found {len(section_rows)} section ObjectList/DATA rows.")
+            update_progress(
+                2, f"Found {len(section_rows)} section ObjectList/DATA rows."
+            )
             loaded_section_count = len({int(row.section) for row in section_rows})
             if (
                 self._current_track_section_count is not None
@@ -1339,7 +1359,9 @@ class TSOVisibilityTab(QWidget):
 
             update_progress(3, "Parsing ObjectList entries and TSO references.")
             self.object_lists = parse_track3d(path)
-            update_progress(4, "Parsing DetailLists only if they are not already loaded.")
+            update_progress(
+                4, "Parsing DetailLists only if they are not already loaded."
+            )
             if not self.detail_lists:
                 self.detail_lists = parse_track3d_detail_lists(path)
                 self._detail_list_dlong_ranges = {
@@ -1355,9 +1377,13 @@ class TSOVisibilityTab(QWidget):
                 int(item[5:])
                 for detail in catalog.detail_lists.values()
                 for item in detail.items
-                if item.startswith("__TSO") and item[5:].isdigit() and item in catalog.tsos
+                if item.startswith("__TSO")
+                and item[5:].isdigit()
+                and item in catalog.tsos
             }
-            update_progress(6, "Storing section/subsection DLONG ranges in the visibility tab.")
+            update_progress(
+                6, "Storing section/subsection DLONG ranges in the visibility tab."
+            )
             self.set_section_dlong_rows(section_rows)
             update_progress(7, "Refreshing the available TSO filter list.")
             self._refresh_tso_filter_list(lambda detail: update_progress(7, detail))
@@ -1418,27 +1444,34 @@ class TSOVisibilityTab(QWidget):
         selected_tso_ids = self._selected_filter_tso_ids()
         left_section_items: list[QTableWidgetItem] = []
         right_section_items: list[QTableWidgetItem] = []
+        detail_section_items: list[QTableWidgetItem] = []
         for object_list_index, entry in enumerate(self._active_lists()):
             if selected_tso_ids and not any(
                 tso_id in selected_tso_ids for tso_id in entry.tso_ids
             ):
                 continue
             if isinstance(entry, Track3DDetailList):
+                if str(entry.lod_suffix).strip().upper() != "H":
+                    continue
                 label = f"{entry.section} / {entry.sub_index}{entry.lod_suffix}"
-            else:
-                label = f"{entry.section} / {entry.sub_index}"
+                item = QTableWidgetItem(label)
+                item.setData(QtCore.Qt.UserRole, object_list_index)
+                detail_section_items.append(item)
+                continue
+
+            label = f"{entry.section} / {entry.sub_index}"
             item = QTableWidgetItem(label)
             item.setData(QtCore.Qt.UserRole, object_list_index)
-            if (
-                isinstance(entry, Track3DObjectList)
-                and str(entry.side).strip().upper() == "R"
-            ):
+            if str(entry.side).strip().upper() == "R":
                 right_section_items.append(item)
             else:
                 left_section_items.append(item)
 
         with QtCore.QSignalBlocker(self.section_list):
-            self.section_list.set_entries(left_section_items, right_section_items)
+            if self._is_detail_mode():
+                self.section_list.set_detail_entries(detail_section_items)
+            else:
+                self.section_list.set_entries(left_section_items, right_section_items)
 
         if self.section_list.count() == 0:
             self.tso_list.clear()
