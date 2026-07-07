@@ -127,18 +127,9 @@ def test_refresh_tso_filter_reports_detailed_progress() -> None:
     assert "Rebuilding filter rows for 5 available TSOs." in details
     assert "Building TSO filter row 1/5 for __TSO1." in details
     assert "Building TSO filter row 5/5 for __TSO5." in details
-    assert "Highlighting unassigned TSOs." in details
-    assert "Highlighting unassigned TSOs: starting row scan." in details
-    assert (
-        "Highlighting unassigned TSOs: "
-        "2 ObjectList-assigned IDs, 1 DetailList IDs, 1 DetailList-only IDs, 5 filter rows."
-    ) in details
-    assert "Highlighting unassigned TSOs: checking row 1/5." in details
-    assert "Highlighting unassigned TSOs: checking row 5/5." in details
-    assert (
-        "Highlighting unassigned TSOs: finished "
-        "5 rows (2 ObjectList-assigned, 1 DetailList-only, 2 unassigned)."
-    ) in details
+    assert not any(
+        detail.startswith("Highlighting unassigned TSOs") for detail in details
+    )
     assert "Finished refreshing 5 available TSO filter rows." in details
 
 
