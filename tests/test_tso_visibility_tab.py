@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("PyQt5")
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.io.track3d_parser import Track3DObjectList
 from sg_viewer.ui.tabs.tso_visibility_tab import (
@@ -248,6 +248,34 @@ def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex
 
 
 from sg_viewer.io.track3d_parser import Track3DDetailList
+
+
+def test_detail_list_mode_shows_only_h_lod_in_single_column() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_detail_lists(
+        [
+            Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[1]),
+            Track3DDetailList(section=1, sub_index=0, lod_suffix="M", tso_ids=[2]),
+            Track3DDetailList(section=2, sub_index=0, lod_suffix="H", tso_ids=[3]),
+        ]
+    )
+
+    tab.visibility_mode_combo.setCurrentIndex(1)
+
+    assert tab.section_list.columnCount() == 1
+    assert tab.section_list.horizontalHeaderItem(0).text() == "DetailLists"
+    assert tab.section_list.count() == 2
+    assert [
+        tab.section_list.item(row).text() for row in range(tab.section_list.count())
+    ] == [
+        "1 / 0H",
+        "2 / 0H",
+    ]
+    assert [
+        tab.section_list.item(row).data(QtCore.Qt.UserRole)
+        for row in range(tab.section_list.count())
+    ] == [0, 2]
 
 
 def test_detail_list_mode_disables_copy_previous_and_emits_dlong_range() -> None:
