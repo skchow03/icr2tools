@@ -108,6 +108,28 @@ def test_load_track3d_warns_when_object_lists_are_missing(
     ]
 
 
+def test_refresh_tso_filter_reports_detailed_progress() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.object_lists = [Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[1, 2])]
+    tab.detail_lists = [Track3DDetailList(section=0, sub_index=0, lod_suffix="H", tso_ids=[3])]
+    tab.available_tso_ids = [4]
+    tab.set_tso_display_metadata({5: ("grandstand.3do", "Grandstand")})
+
+    details: list[str] = []
+
+    tab._refresh_tso_filter_list(details.append)
+
+    assert tab.tso_filter_list.rowCount() == 5
+    assert "Reading current TSO filter selections." in details
+    assert "Collecting ObjectList, DetailList, and catalog TSO IDs." in details
+    assert "Rebuilding filter rows for 5 available TSOs." in details
+    assert "Building TSO filter row 1/5 for __TSO1." in details
+    assert "Building TSO filter row 5/5 for __TSO5." in details
+    assert "Highlighting assigned and DetailList-only TSOs." in details
+    assert "Finished refreshing 5 available TSO filter rows." in details
+
+
 def test_save_track3d_warns_when_layout_does_not_match(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
