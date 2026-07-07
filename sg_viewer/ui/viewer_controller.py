@@ -953,6 +953,7 @@ class SGViewerController:
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.right_sidebar_tabs.tabText(index).rstrip("*")
+        self._window.update_mouse_usage_text()
         if tab_name != self._ELEVATION_TAB_BASE_LABEL:
             self._elevation_panel_controller.cancel_live_edits()
         if tab_name in {"Fsects", "Walls"} and not self._window.sg_fsects_checkbox.isChecked():
@@ -1207,6 +1208,7 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3f51b5; color: white;")
         else:
             button.setStyleSheet(self._new_straight_default_style)
+        self._window.update_mouse_usage_text()
 
     def _on_new_curve_mode_changed(self, active: bool) -> None:
         button = self._window.new_curve_button
@@ -1215,6 +1217,7 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3f51b5; color: white;")
         else:
             button.setStyleSheet(self._new_curve_default_style)
+        self._window.update_mouse_usage_text()
 
     def _on_delete_mode_changed(self, active: bool) -> None:
         button = self._window.delete_section_button
@@ -1223,6 +1226,7 @@ class SGViewerController:
             button.setStyleSheet("background-color: #b53f3f; color: white;")
         else:
             button.setStyleSheet(self._delete_default_style)
+        self._window.update_mouse_usage_text()
 
     def _on_split_mode_changed(self, active: bool) -> None:
         button = self._window.split_section_button
@@ -1231,6 +1235,7 @@ class SGViewerController:
             button.setStyleSheet("background-color: #3fb5b5; color: white;")
         else:
             button.setStyleSheet(self._split_default_style)
+        self._window.update_mouse_usage_text()
 
     def _on_move_section_mode_changed(self, active: bool) -> None:
         button = self._window.move_section_button
@@ -1239,6 +1244,7 @@ class SGViewerController:
             button.setStyleSheet("background-color: #4caf50; color: white;")
         else:
             button.setStyleSheet(self._move_section_default_style)
+        self._window.update_mouse_usage_text()
 
     def _on_scale_changed(self, scale: float) -> None:
         _ = scale

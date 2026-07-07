@@ -526,18 +526,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mouse_usage_layout.setSpacing(8)
         mouse_usage_title = QtWidgets.QLabel("Mouse:")
         mouse_usage_title.setStyleSheet("font-weight: bold;")
-        self._mouse_usage_label = QtWidgets.QLabel(
-            "Left click: select / place / split / set points • "
-            "Left drag: pan view, drag selected section/node/land point • "
-            "Right click node: disconnect • "
-            "Right drag: no viewport action • "
-            "Mouse wheel: zoom at cursor"
-        )
+        self._mouse_usage_label = QtWidgets.QLabel()
         self._mouse_usage_label.setWordWrap(True)
         self._mouse_usage_label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
         mouse_usage_layout.addWidget(mouse_usage_title)
         mouse_usage_layout.addWidget(self._mouse_usage_label, stretch=1)
         self._mouse_usage_bar.setLayout(mouse_usage_layout)
+        self.update_mouse_usage_text()
         self._preview_color_controls: dict[
             str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]
         ] = {}
@@ -1323,6 +1318,95 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def right_sidebar_tabs(self) -> QtWidgets.QTabWidget:
         return self._right_sidebar_tabs
+
+    def active_sidebar_tab_name(self) -> str:
+        current_index = self._right_sidebar_tabs.currentIndex()
+        if current_index < 0:
+            return ""
+        return self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+
+    def update_mouse_usage_text(self) -> None:
+        """Refresh the viewport mouse help for the active tab/mode."""
+        if self._ruler_mode_active:
+            usage_text = (
+                "Left click: set ruler start/end points • "
+                "Mouse move: preview ruler after start point • "
+                "Mouse wheel: zoom at cursor"
+            )
+        elif self._delete_section_button.isChecked():
+            usage_text = "Left click section: delete section • Mouse wheel: zoom at cursor"
+        elif self._split_section_button.isChecked():
+            usage_text = (
+                "Mouse move: choose split location • "
+                "Left click highlighted section: split section • "
+                "Mouse wheel: zoom at cursor"
+            )
+        elif self._new_straight_button.isChecked() or self._new_curve_button.isChecked():
+            usage_text = (
+                "Left click: place/connect new section endpoints • "
+                "Mouse move: preview new section • "
+                "Mouse wheel: zoom at cursor"
+            )
+        elif self._tso_box_select_button.isChecked():
+            usage_text = (
+                "Left drag: box select trackside objects • "
+                "Right drag TSO: move selected object • "
+                "Mouse wheel: zoom at cursor"
+            )
+        else:
+            tab_name = self.active_sidebar_tab_name()
+            usage_by_tab = {
+                "Elevation/Grade": (
+                    "Left click: select section/xsect marker • "
+                    "Left drag: pan view or drag selected node/section when Move is active • "
+                    "Right click node: disconnect • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Fsects": (
+                    "Left click: select section/fsect boundary • "
+                    "Left drag: pan view or drag selected node/section when Move is active • "
+                    "Right click node: disconnect • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Walls": (
+                    "Left click: select wall/section • "
+                    "Left drag: pan view • "
+                    "Right click node: disconnect • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "TSD": (
+                    "Left click: select TSD line/object • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Objects": (
+                    "Left click: select TSO or place TSO when Add/Stamp is active • "
+                    "Right drag selected TSO: move object • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "TSO Visibility": (
+                    "Left click: select/highlight visible TSO • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Draw land objects": (
+                    "Left click: add land point • "
+                    "Left drag land point: move point • "
+                    "Left drag empty space: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                ".3D file": (
+                    "Left click: select section/object in viewport • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+            }
+            usage_text = usage_by_tab.get(
+                tab_name,
+                "Left click: select • Left drag: pan view • Mouse wheel: zoom at cursor",
+            )
+        self._mouse_usage_label.setText(usage_text)
 
     def show_view_options_dialog(self) -> None:
         if self._view_options_dialog is None:
@@ -3458,6 +3542,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._preview.set_track_interaction_enabled(False)
             self.show_status_message("Ruler mode active. Click to set start point.")
         self._update_ruler_button_state()
+        self.update_mouse_usage_text()
 
     def _update_ruler_overlay(
         self,
@@ -3479,6 +3564,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.set_track_interaction_enabled(True)
         self._preview.set_ruler_overlay(None, None, "")
         self._update_ruler_button_state()
+        self.update_mouse_usage_text()
 
     def _update_ruler_button_state(self) -> None:
         if self._ruler_frozen:
