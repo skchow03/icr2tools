@@ -7,10 +7,10 @@ from sg_viewer.ui.controllers.file_menu_coordinator import FileMenuCoordinator
 from sg_viewer.ui.controllers.interaction_controller import InteractionController
 from sg_viewer.ui.controllers.section_editing_coordinator import SectionEditingCoordinator
 from sg_viewer.ui.controllers.feature_signal_controllers import (
-    MrkController,
     TsdSignalController,
     Track3DController,
 )
+from sg_viewer.ui.controllers.features.mrk_controller import MrkController
 from sg_viewer.ui.controllers.features.trackside_objects_controller import TracksideObjectsController
 from sg_viewer.ui.controllers.features import (
     BackgroundController,
