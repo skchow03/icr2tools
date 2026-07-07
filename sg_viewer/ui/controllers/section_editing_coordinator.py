@@ -176,6 +176,33 @@ class SectionEditingCoordinator:
         self._host._populate_xsect_choices(preferred_index=new_selected)
         self._host._refresh_elevation_profile()
 
+    def connect_signals(self) -> None:
+        host = self._host
+        window = host._window
+        window.xsect_dlat_line_checkbox.toggled.connect(window.preview.set_show_xsect_dlat_line)
+        window.copy_fsects_prev_button.clicked.connect(self.copy_fsects_to_previous)
+        host._copy_fsects_prev_action.triggered.connect(self.copy_fsects_to_previous)
+        window.copy_fsects_next_button.clicked.connect(self.copy_fsects_to_next)
+        host._copy_fsects_next_action.triggered.connect(self.copy_fsects_to_next)
+        window.add_fsect_button.clicked.connect(host._add_fsect_below_selected)
+        host._add_fsect_action.triggered.connect(host._add_fsect_below_selected)
+        window.delete_fsect_button.clicked.connect(host._delete_selected_fsect)
+        host._delete_fsect_action.triggered.connect(host._delete_selected_fsect)
+        window.fsect_table.itemSelectionChanged.connect(host._update_fsect_edit_buttons)
+        window.move_fsect_up_button.clicked.connect(host._move_selected_fsect_up)
+        host._move_fsect_up_action.triggered.connect(host._move_selected_fsect_up)
+        window.move_fsect_down_button.clicked.connect(host._move_selected_fsect_down)
+        host._move_fsect_down_action.triggered.connect(host._move_selected_fsect_down)
+        window.swap_fsect_types_button.clicked.connect(self.swap_fsect_type_across_sections)
+        host._swap_fsect_types_action.triggered.connect(self.swap_fsect_type_across_sections)
+        window.edit_xsect_list_button.clicked.connect(self.show_xsect_table)
+        window.xsect_elevation_widget.xsectClicked.connect(host._on_xsect_node_clicked)
+        window.xsect_elevation_table.itemSelectionChanged.connect(host._on_xsect_table_selection_changed)
+        window.xsect_elevation_table.cellChanged.connect(host._on_xsect_table_cell_changed)
+        window.fsectDiagramDlatChangeRequested.connect(host._on_fsect_diagram_dlat_change_requested)
+        window.fsectDiagramDragRefreshRequested.connect(window.preview.refresh_fsections_preview_lightweight)
+        window.fsectDiagramDragCommitRequested.connect(host._on_fsect_diagram_drag_commit_requested)
+
     def copy_fsects_to_previous(self) -> None:
         self._sections_controller.copy_fsects_to_previous()
 

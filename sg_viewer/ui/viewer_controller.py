@@ -116,6 +116,10 @@ from sg_viewer.ui.controllers import (
     InteractionController,
     SectionEditingCoordinator,
     SectionsController,
+    MrkController,
+    TsdController,
+    TracksideObjectsController,
+    Track3DController,
 )
 from sg_viewer.model.track_model import TrackModel
 from sg_viewer.ui.controllers.features.setup_builders import ViewerActionBuilder, ViewerMenuBuilder
@@ -267,6 +271,10 @@ class SGViewerController:
         self._section_editing_coordinator = SectionEditingCoordinator(self, self._sections_controller)
         self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
+        self._mrk_controller = MrkController(self)
+        self._tsd_controller = TsdController(self)
+        self._trackside_objects_controller = TracksideObjectsController(self)
+        self._track3d_controller = Track3DController(self)
         self._tsd_state = TsdFeatureState(self._window)
         self._tso_state = TsoFeatureState(self._window)
         self._track3d_palette_state = Track3dPaletteFeatureState()
@@ -278,8 +286,6 @@ class SGViewerController:
         self._mrk_texture_pattern_delegate.set_show_color_boxes(
             self._window.mrk_texture_pattern_show_colors_checkbox.isChecked()
         )
-        self._tsd_preview_refresh_timer.timeout.connect(self._refresh_tsd_preview_lines)
-        self._tso_persist_timer.timeout.connect(self._persist_trackside_objects_for_current_track)
         self._elevation_grade_is_dirty = False
         self._fsects_is_dirty = False
         self._trackside_objects_is_dirty = False
@@ -292,10 +298,6 @@ class SGViewerController:
         self._create_actions()
         self._create_menus()
         self._connect_signals()
-        self._window.preview.set_trackside_object_drag_callback(self._on_preview_tso_dragged)
-        self._window.preview.set_trackside_object_drag_end_callback(self._on_preview_tso_drag_ended)
-        self._window.preview.set_trackside_map_click_callback(self._on_preview_tso_map_clicked)
-        self._window.preview.set_trackside_box_select_callback(self._on_preview_tso_box_selected)
         self._on_track_opacity_changed(self._window.track_opacity_slider.value())
         self._on_background_brightness_changed(
             self._window.background_brightness_slider.value()
@@ -971,340 +973,14 @@ class SGViewerController:
         self._window.show_status_message(f"Generated {path.name} successfully.")
 
     def _connect_signals(self) -> None:
-        self._window.preview.selectedSectionChanged.connect(
-            self._on_selected_section_changed
-        )
-        self._window.preview.sectionsChanged.connect(self._on_sections_changed)
-        self._window.prev_button.clicked.connect(self._window.preview.select_previous_section)
-        self._window.next_button.clicked.connect(self._window.preview.select_next_section)
-        self._previous_section_action.triggered.connect(self._window.preview.select_previous_section)
-        self._next_section_action.triggered.connect(self._window.preview.select_next_section)
-        #self._window.new_track_button.clicked.connect(self._start_new_track)
-        self._window.new_straight_button.toggled.connect(
-            self._toggle_new_straight_mode
-        )
-        self._new_straight_mode_action.toggled.connect(
-            self._toggle_new_straight_mode
-        )
-        self._window.new_curve_button.toggled.connect(self._toggle_new_curve_mode)
-        self._new_curve_mode_action.toggled.connect(self._toggle_new_curve_mode)
-        self._window.set_start_finish_button.clicked.connect(
-            self._window.preview.activate_set_start_finish_mode
-        )
-        self._set_start_finish_action.triggered.connect(
-            self._window.preview.activate_set_start_finish_mode
-        )
-        self._window.preview.newStraightModeChanged.connect(
-            self._on_new_straight_mode_changed
-        )
-        self._window.preview.newCurveModeChanged.connect(self._on_new_curve_mode_changed)
-        self._window.delete_section_button.toggled.connect(
-            self._toggle_delete_section_mode
-        )
-        self._delete_section_mode_action.toggled.connect(
-            self._toggle_delete_section_mode
-        )
-        self._window.split_section_button.toggled.connect(
-            self._toggle_split_section_mode
-        )
-        self._split_section_mode_action.toggled.connect(
-            self._toggle_split_section_mode
-        )
-        self._window.move_section_button.toggled.connect(
-            self._toggle_move_section_mode
-        )
-        self._move_section_mode_action.toggled.connect(
-            self._toggle_move_section_mode
-        )
-        self._window.preview.deleteModeChanged.connect(self._on_delete_mode_changed)
-        self._window.preview.splitSectionModeChanged.connect(self._on_split_mode_changed)
-        self._window.preview.interactionDragChanged.connect(
-            self._on_preview_drag_state_changed
-        )
-        self._delete_shortcut.activated.connect(self._handle_delete_shortcut)
-        self._window.radii_button.toggled.connect(self._window.preview.set_show_curve_markers)
-        self._window.axes_button.toggled.connect(self._window.preview.set_show_axes)
-        self._window.crosshair_button.toggled.connect(self._window.preview.set_show_crosshair)
-        self._window.background_image_checkbox.toggled.connect(
-            self._window.preview.set_show_background_image
-        )
-        self._show_radii_action.toggled.connect(self._window.radii_button.setChecked)
-        self._show_axes_action.toggled.connect(self._window.axes_button.setChecked)
-        self._show_crosshair_action.toggled.connect(self._window.crosshair_button.setChecked)
-        self._show_background_image_action.toggled.connect(
-            self._window.background_image_checkbox.setChecked
-        )
-        self._new_straight_mode_action.toggled.connect(
-            self._window.new_straight_button.setChecked
-        )
-        self._new_curve_mode_action.toggled.connect(
-            self._window.new_curve_button.setChecked
-        )
-        self._split_section_mode_action.toggled.connect(
-            self._window.split_section_button.setChecked
-        )
-        self._move_section_mode_action.toggled.connect(
-            self._window.move_section_button.setChecked
-        )
-        self._delete_section_mode_action.toggled.connect(
-            self._window.delete_section_button.setChecked
-        )
-        self._window.radii_button.toggled.connect(self._show_radii_action.setChecked)
-        self._window.axes_button.toggled.connect(self._show_axes_action.setChecked)
-        self._window.crosshair_button.toggled.connect(self._show_crosshair_action.setChecked)
-        self._window.background_image_checkbox.toggled.connect(
-            self._show_background_image_action.setChecked
-        )
-        self._window.new_straight_button.toggled.connect(
-            self._new_straight_mode_action.setChecked
-        )
-        self._window.new_curve_button.toggled.connect(
-            self._new_curve_mode_action.setChecked
-        )
-        self._window.split_section_button.toggled.connect(
-            self._split_section_mode_action.setChecked
-        )
-        self._window.move_section_button.toggled.connect(
-            self._move_section_mode_action.setChecked
-        )
-        self._window.delete_section_button.toggled.connect(
-            self._delete_section_mode_action.setChecked
-        )
-        self._window.background_brightness_slider.valueChanged.connect(
-            self._on_background_brightness_changed
-        )
-        self._window.track_opacity_slider.valueChanged.connect(
-            self._on_track_opacity_changed
-        )
-        self._window.sg_fsects_checkbox.toggled.connect(
-            self._window.preview.set_show_sg_fsects
-        )
-        self._window.right_sidebar_tabs.currentChanged.connect(
-            self._on_right_sidebar_tab_changed
-        )
-        self._window.mrk_add_entry_button.clicked.connect(self._on_mrk_add_entry_requested)
-        self._window.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
-        self._window.mrk_move_up_button.clicked.connect(self._on_mrk_move_up_requested)
-        self._window.mrk_move_down_button.clicked.connect(self._on_mrk_move_down_requested)
-        self._window.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
-        self._window.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
-        self._window.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
-        self._window.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
-        self._window.mrk_texture_pattern_show_colors_checkbox.toggled.connect(
-            self._on_mrk_texture_pattern_display_mode_changed
-        )
-        self._window.generate_pitwall_button.clicked.connect(self._generate_pitwall_txt)
-        self._window.manual_wall_height_overrides_button.clicked.connect(
-            self._on_manual_wall_height_overrides_requested
-        )
-        self._window.pitwall_wall_height_spin.valueChanged.connect(self._on_mrk_wall_height_changed)
-        self._window.pitwall_armco_height_spin.valueChanged.connect(self._on_mrk_armco_height_changed)
-        self._window.pitwall_length_multiplier_spin.valueChanged.connect(
-            self._on_mrk_length_multiplier_changed
-        )
-        self._window.preview.set_mrk_length_multiplier(
-            self._window.pitwall_length_multiplier()
-        )
-        self._mrk_add_entry_action.triggered.connect(self._on_mrk_add_entry_requested)
-        self._mrk_delete_entry_action.triggered.connect(self._on_mrk_delete_entry_requested)
-        self._mrk_move_up_action.triggered.connect(self._on_mrk_move_up_requested)
-        self._mrk_move_down_action.triggered.connect(self._on_mrk_move_down_requested)
-        self._mrk_textures_action.triggered.connect(self._on_mrk_textures_requested)
-        self._mrk_generate_file_action.triggered.connect(self._on_mrk_generate_file_requested)
-        self._mrk_save_entries_action.triggered.connect(self._on_mrk_save_requested)
-        self._mrk_load_entries_action.triggered.connect(self._on_mrk_load_requested)
-        self._window.mrk_entries_table.itemSelectionChanged.connect(self._on_mrk_entry_selection_changed)
-        self._window.mrk_entries_table.itemChanged.connect(self._on_mrk_entry_item_changed)
-        self._window.mrk_entries_table.cellDoubleClicked.connect(self._on_mrk_entry_cell_double_clicked)
-        self._window.tsd_add_line_button.clicked.connect(self._on_tsd_add_line_requested)
-        self._window.tsd_delete_line_button.clicked.connect(self._on_tsd_delete_line_requested)
-        self._window.tsd_move_line_up_button.clicked.connect(self._on_tsd_move_line_up_requested)
-        self._window.tsd_move_line_down_button.clicked.connect(self._on_tsd_move_line_down_requested)
-        self._window.tsd_save_file_button.clicked.connect(self._on_tsd_save_file_requested)
-        self._window.tsd_generate_file_button.clicked.connect(self._on_tsd_generate_file_requested)
-        self._window.tsd_load_file_button.clicked.connect(self._on_tsd_load_file_requested)
-        self._window.tsd_remove_file_button.clicked.connect(self._on_tsd_remove_file_requested)
-        self._window.tsd_files_combo.currentIndexChanged.connect(self._on_tsd_file_selection_changed)
-        self._window.tsd_add_object_button.clicked.connect(self._on_tsd_add_object_requested)
-        self._window.tsd_duplicate_object_button.clicked.connect(self._on_tsd_duplicate_object_requested)
-        self._window.tsd_remove_selected_object_button.clicked.connect(self._on_tsd_remove_selected_object_requested)
-        self._window.tsd_move_object_up_button.clicked.connect(self._on_tsd_move_object_up_requested)
-        self._window.tsd_move_object_down_button.clicked.connect(self._on_tsd_move_object_down_requested)
-        self._window.tsd_export_objects_button.clicked.connect(self._on_tsd_export_objects_requested)
-        self._window.tsd_skid_marks_button.clicked.connect(self._on_tsd_skid_marks_requested)
-        self._window.tsd_hide_centerline_nodes_checkbox.toggled.connect(
-            self._on_tsd_hide_centerline_nodes_toggled
-        )
-        self._window.tsd_objects_table.itemSelectionChanged.connect(self._on_tsd_object_selection_changed)
-        self._window.tsd_objects_table.cellClicked.connect(self._on_tsd_objects_table_cell_clicked)
-        self._window.tso_add_button.clicked.connect(self._on_tso_add_requested)
-        self._window.tso_stamp_button.clicked.connect(self._on_tso_stamp_requested)
-        self._window.tso_box_select_button.clicked.connect(self._on_tso_box_select_requested)
-        self._window.tso_delete_button.clicked.connect(self._on_tso_delete_requested)
-        self._window.tso_move_up_button.clicked.connect(self._on_tso_move_up_requested)
-        self._window.tso_move_down_button.clicked.connect(self._on_tso_move_down_requested)
-        self._window.tso_import_from_3d_button.clicked.connect(
-            self._on_tso_import_from_3d_requested
-        )
-        self._window.tso_delete_all_button.clicked.connect(self._on_tso_delete_all_requested)
-        self._window.tso_modify_elevations_button.clicked.connect(self._on_tso_modify_elevations_requested)
-        self._window.tso_refresh_relative_boundary_button.clicked.connect(
-            self._on_tso_refresh_relative_boundary_requested
-        )
-        self._window.tso_auto_update_relative_z_checkbox.toggled.connect(
-            self._on_tso_auto_update_relative_z_toggled
-        )
-        self._window.tso_generate_file_button.clicked.connect(self._on_tso_generate_file_requested)
-        self._window.tso_write_to_3d_file_button.clicked.connect(self._on_tso_write_to_3d_file_requested)
-        self._window.three_d_file_select_button.clicked.connect(self._on_select_track3d_file_requested)
-        self._window.three_d_file_catalog_inspector_button.clicked.connect(
-            self._on_three_d_catalog_inspector_requested
-        )
-        self._window.three_d_show_section_entries_button.clicked.connect(self._on_three_d_show_selected_section_entries)
-        self._window.three_d_show_section_object_lists_button.clicked.connect(self._on_three_d_show_selected_section_object_lists)
-        self._window.three_d_show_section_tsos_button.clicked.connect(self._on_three_d_show_selected_section_tsos)
-        self._window.three_d_preview_object_list_changes_button.clicked.connect(self._on_three_d_preview_selected_object_lists)
-        self._window.three_d_apply_object_list_changes_button.clicked.connect(self._on_three_d_apply_selected_object_lists)
-        self._window.three_d_apply_tso_definitions_button.clicked.connect(self._on_three_d_apply_selected_tso_definitions)
-        self._window.three_d_apply_face_materials_button.clicked.connect(self._on_three_d_apply_selected_face_materials)
-        self._window.three_d_file_inspect_button.clicked.connect(self._on_three_d_inspect_requested)
-        self._window.three_d_file_fix_copy_button.clicked.connect(self._on_three_d_fix_copy_requested)
-        self._window.three_d_file_fix_in_place_button.clicked.connect(self._on_three_d_fix_in_place_requested)
-        self._window.three_d_file_select_colors_button.clicked.connect(
-            self._on_edit_track3d_colors_requested
-        )
-        self._window.three_d_file_apply_colors_button.clicked.connect(
-            self._on_three_d_apply_color_replacements_requested
-        )
-        self._window.tso_table.itemChanged.connect(self._on_tso_item_changed)
-        self._window.tso_table.itemSelectionChanged.connect(self._on_tso_selection_changed)
-        self._window.tso_table.cellClicked.connect(self._on_tso_table_cell_clicked)
-        self._window.tso_visibility_sidebar.selectedTSOsChanged.connect(self._on_tso_visibility_row_selected)
-        self._window.tso_visibility_sidebar.selectedTSOPillChanged.connect(self._on_tso_visibility_pill_selected)
-        self._window.tso_visibility_sidebar.selectedTrackSectionChanged.connect(self._on_tso_visibility_track_section_selected)
-        self._window.tso_visibility_sidebar.selectedTSOOrderChanged.connect(self._on_tso_visibility_order_changed)
-        self._window.tso_visibility_sidebar.objectListsChanged.connect(self._on_tso_visibility_lists_changed)
-        self._window.tso_visibility_sidebar.objectListsSaved.connect(self._on_tso_visibility_lists_saved)
-        self._tsd_lines_model.dataChanged.connect(self._on_tsd_data_changed)
-        self._tsd_lines_model.rowsInserted.connect(self._schedule_tsd_preview_refresh)
-        self._tsd_lines_model.rowsRemoved.connect(self._schedule_tsd_preview_refresh)
-        self._tsd_lines_model.modelReset.connect(self._schedule_tsd_preview_refresh)
-        tsd_selection_model = self._window.tsd_lines_table.selectionModel()
-        if tsd_selection_model is not None:
-            tsd_selection_model.selectionChanged.connect(self._on_tsd_selection_changed)
-        self._window.xsect_dlat_line_checkbox.toggled.connect(
-            self._window.preview.set_show_xsect_dlat_line
-        )
-        self._window.copy_fsects_prev_button.clicked.connect(
-            self._section_editing_coordinator.copy_fsects_to_previous
-        )
-        self._copy_fsects_prev_action.triggered.connect(
-            self._section_editing_coordinator.copy_fsects_to_previous
-        )
-        self._window.copy_fsects_next_button.clicked.connect(
-            self._section_editing_coordinator.copy_fsects_to_next
-        )
-        self._copy_fsects_next_action.triggered.connect(
-            self._section_editing_coordinator.copy_fsects_to_next
-        )
-        self._window.add_fsect_button.clicked.connect(
-            self._add_fsect_below_selected
-        )
-        self._add_fsect_action.triggered.connect(self._add_fsect_below_selected)
-        self._window.delete_fsect_button.clicked.connect(
-            self._delete_selected_fsect
-        )
-        self._delete_fsect_action.triggered.connect(self._delete_selected_fsect)
-        self._window.fsect_table.itemSelectionChanged.connect(
-            self._update_fsect_edit_buttons
-        )
-        self._window.move_fsect_up_button.clicked.connect(self._move_selected_fsect_up)
-        self._move_fsect_up_action.triggered.connect(self._move_selected_fsect_up)
-        self._window.move_fsect_down_button.clicked.connect(self._move_selected_fsect_down)
-        self._move_fsect_down_action.triggered.connect(self._move_selected_fsect_down)
-        self._window.swap_fsect_types_button.clicked.connect(
-            self._section_editing_coordinator.swap_fsect_type_across_sections
-        )
-        self._swap_fsect_types_action.triggered.connect(
-            self._section_editing_coordinator.swap_fsect_type_across_sections
-        )
-        self._window.xsect_combo.currentIndexChanged.connect(
-            self._refresh_elevation_profile
-        )
-        self._window.edit_xsect_list_button.clicked.connect(
-            self._section_editing_coordinator.show_xsect_table
-        )
-        self._window.copy_xsect_button.clicked.connect(
-            self._elevation_ui_coordinator.copy_xsect_data_to_targets
-        )
-        self._window.generate_elevation_change_button.clicked.connect(
-            self._open_generate_elevation_change_dialog
-        )
-        self._window.generateElevationChangeApplied.connect(
-            self._on_generate_elevation_change_applied
-        )
-        self._window.altitude_slider.valueChanged.connect(
-            self._on_altitude_slider_changed
-        )
-        self._window.altitude_slider.sliderReleased.connect(
-            self._on_altitude_slider_released
-        )
-        self._window.altitude_min_spin.valueChanged.connect(
-            lambda _value: self._elevation_ui_coordinator.on_altitude_range_changed("min")
-        )
-        self._window.altitude_max_spin.valueChanged.connect(
-            lambda _value: self._elevation_ui_coordinator.on_altitude_range_changed("max")
-        )
-        self._window.altitude_set_range_button.clicked.connect(
-            self._open_altitude_range_dialog
-        )
-        self._window.grade_spin.valueChanged.connect(self._on_grade_slider_changed)
-        self._window.grade_spin.sliderReleased.connect(
-            self._on_grade_edit_finished
-        )
-        self._window.grade_set_range_button.clicked.connect(
-            self._open_grade_range_dialog
-        )
-        self._window.preview.scaleChanged.connect(self._on_scale_changed)
-        self._window.profile_widget.sectionClicked.connect(
-            self._elevation_ui_coordinator.on_profile_section_clicked
-        )
-        self._window.profile_widget.altitudeDragged.connect(
-            self._elevation_ui_coordinator.on_profile_altitude_dragged
-        )
-        self._window.profile_widget.altitudeDragFinished.connect(
-            self._elevation_ui_coordinator.on_profile_altitude_drag_finished
-        )
-        self._window.xsect_elevation_widget.xsectClicked.connect(
-            self._on_xsect_node_clicked
-        )
-        self._window.xsect_elevation_table.itemSelectionChanged.connect(
-            self._on_xsect_table_selection_changed
-        )
-        self._window.xsect_elevation_table.cellChanged.connect(
-            self._on_xsect_table_cell_changed
-        )
-        self._window.fsectDiagramDlatChangeRequested.connect(
-            self._on_fsect_diagram_dlat_change_requested
-        )
-        self._window.fsectDiagramDragRefreshRequested.connect(
-            self._window.preview.refresh_fsections_preview_lightweight
-        )
-        self._window.fsectDiagramDragCommitRequested.connect(
-            self._on_fsect_diagram_drag_commit_requested
-        )
-        self._window.measurement_units_combo.currentIndexChanged.connect(
-            self._on_measurement_units_changed
-        )
-        for key, (hex_edit, color_swatch) in self._window.preview_color_controls.items():
-            hex_edit.editingFinished.connect(
-                lambda color_key=key, widget=hex_edit: self._on_preview_color_text_changed(
-                    color_key, widget
-                )
-            )
-            color_swatch.clicked.connect(
-                lambda _checked=False, color_key=key: self._on_pick_preview_color(color_key)
-            )
+        self._sections_controller.connect_signals()
+        self._section_editing_coordinator.connect_signals()
+        self._elevation_ui_coordinator.connect_signals()
+        self._background_controller.connect_signals()
+        self._mrk_controller.connect_signals()
+        self._tsd_controller.connect_signals()
+        self._trackside_objects_controller.connect_signals()
+        self._track3d_controller.connect_signals()
 
     def confirm_close(self) -> bool:
         return self.confirm_discard_unsaved_for_action("Close SG Viewer")
