@@ -67,6 +67,21 @@ def test_assigned_tso_ids_and_add_dialog_asterisk_labels() -> None:
     assert tab._build_add_tso_dialog_label(2, assigned) == "__TSO2 *"
 
 
+def test_tso_filter_selection_emits_highlighted_tso() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1, 2, 3])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
+    highlighted: list[object] = []
+    tab.selectedTSOPillChanged.connect(highlighted.append)
+
+    tab.tso_filter_list.setCurrentRow(1)
+
+    assert highlighted[-1] == 2
+
+
 def test_add_selected_tso_uses_tso_filter_list_selection() -> None:
     _app()
     tab = TSOVisibilityTab()

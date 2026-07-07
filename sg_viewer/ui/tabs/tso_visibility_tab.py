@@ -658,6 +658,9 @@ class TSOVisibilityTab(QWidget):
         self.tso_filter_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tso_filter_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tso_filter_list.itemChanged.connect(self._on_tso_filter_changed)
+        self.tso_filter_list.itemSelectionChanged.connect(
+            self._on_tso_filter_selection_changed
+        )
         left_panel.addWidget(self.tso_filter_list)
 
         center_panel.addStretch(1)
@@ -888,6 +891,17 @@ class TSOVisibilityTab(QWidget):
 
     def _on_tso_filter_changed(self, _item: QListWidgetItem) -> None:
         self.populate_table()
+
+    def _on_tso_filter_selection_changed(self) -> None:
+        selected_item = self.tso_filter_list.currentItem()
+        if selected_item is None:
+            self.selectedTSOPillChanged.emit(None)
+            return
+        tso_id = selected_item.data(QtCore.Qt.UserRole)
+        if isinstance(tso_id, int):
+            self.selectedTSOPillChanged.emit(tso_id)
+            return
+        self.selectedTSOPillChanged.emit(None)
 
     def _build_tso_pill_text(self, tso_id: int) -> str:
         label = f"__TSO{tso_id}"
