@@ -10,6 +10,13 @@ UNIT_DECIMALS = {"feet": 1, "meter": 3, "inch": 1, "500ths": 0}
 UNIT_STEPS = {"feet": 0.1, "meter": 0.05, "inch": 1.0, "500ths": 50.0}
 
 
+def _safe_value_repr(value: object) -> str:
+    try:
+        return repr(value)
+    except Exception as exc:
+        return f"<unrepresentable {type(value).__name__}: {exc}>"
+
+
 def measurement_unit_label(unit: str) -> str:
     return UNIT_LABELS.get(unit, "500ths")
 
@@ -25,16 +32,18 @@ def measurement_unit_step(unit: str) -> float:
 def _coerce_length_value(value: float | int | None) -> float | None:
     if value is None:
         return None
-    if type(value) not in (int, float):
+    value_type = type(value)
+    if value_type is not int and value_type is not float:
         raise TypeError(
-            f"Length values must be numeric 500ths units; got {type(value).__name__}: {value!r}"
+            "Length values must be numeric 500ths units; "
+            f"got {value_type.__name__}: {_safe_value_repr(value)}"
         )
     try:
         return float(value)
     except RecursionError as exc:
         raise ValueError(
             "Length values must be plain numeric 500ths units; "
-            f"got recursive {type(value).__name__}: {value!r}"
+            f"got recursive {type(value).__name__}: {_safe_value_repr(value)}"
         ) from exc
 
 

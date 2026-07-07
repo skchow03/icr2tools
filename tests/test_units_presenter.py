@@ -26,3 +26,20 @@ def test_length_formatting_rejects_non_numeric_values() -> None:
         assert "dict" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected TypeError")
+
+
+def test_length_formatting_rejects_values_with_recursive_type_comparison() -> None:
+    class RecursiveComparisonType(type):
+        def __eq__(cls, other: object) -> bool:  # noqa: N805
+            return cls == other
+
+    class InvalidLength(metaclass=RecursiveComparisonType):
+        pass
+
+    try:
+        format_length_with_secondary(InvalidLength(), unit="feet")  # type: ignore[arg-type]
+    except TypeError as exc:
+        assert "numeric 500ths units" in str(exc)
+        assert "InvalidLength" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("expected TypeError")
