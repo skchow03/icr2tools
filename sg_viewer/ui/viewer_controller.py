@@ -118,6 +118,13 @@ from sg_viewer.ui.controllers import (
     SectionsController,
 )
 from sg_viewer.model.track_model import TrackModel
+from sg_viewer.ui.controllers.features.setup_builders import ViewerActionBuilder, ViewerMenuBuilder
+from sg_viewer.ui.controllers.features.state_controllers import (
+    MrkFeatureState,
+    Track3dPaletteFeatureState,
+    TsdFeatureState,
+    TsoFeatureState,
+)
 from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 
 logger = logging.getLogger(__name__)
@@ -219,7 +226,7 @@ class SGViewerController:
         self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
         self._section_dlongs_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
-        self._manual_wall_height_overrides: list[ManualWallHeightOverride] = []
+        self._mrk_state = MrkFeatureState()
         self._project_working_directory: Path | None = None
         self._history = FileHistory()
         self._sg_settings_store = SGSettingsStore()
@@ -247,7 +254,9 @@ class SGViewerController:
         self._section_editing_coordinator = SectionEditingCoordinator(self, self._sections_controller)
         self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
         self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
-        self._mrk_texture_definitions: tuple[MrkTextureDefinition, ...] = ()
+        self._tsd_state = TsdFeatureState(self._window)
+        self._tso_state = TsoFeatureState(self._window)
+        self._track3d_palette_state = Track3dPaletteFeatureState()
         self._mrk_texture_pattern_delegate = _MrkTexturePatternDelegate(
             self._window.mrk_entries_table,
             self._mrk_texture_color_lookup,
@@ -256,66 +265,17 @@ class SGViewerController:
         self._mrk_texture_pattern_delegate.set_show_color_boxes(
             self._window.mrk_texture_pattern_show_colors_checkbox.isChecked()
         )
-        self._mrk_is_dirty = False
-        self._tsd_is_dirty = False
+        self._tsd_preview_refresh_timer.timeout.connect(self._refresh_tsd_preview_lines)
+        self._tso_persist_timer.timeout.connect(self._persist_trackside_objects_for_current_track)
         self._elevation_grade_is_dirty = False
         self._fsects_is_dirty = False
         self._trackside_objects_is_dirty = False
         self._land_objects_is_dirty = False
         self._tso_visibility_is_dirty = False
-        self._sunny_palette: list[QtGui.QColor] | None = None
-        self._sunny_palette_path: Path | None = None
-        self._palette_colors_dialog: PaletteColorDialog | None = None
-        self._skid_marks_dialog: QtWidgets.QDialog | None = None
         self._tso_modify_elevations_dialog: QtWidgets.QDialog | None = None
-        self._loaded_tsd_files: list[LoadedTsdFile] = []
-        self._selected_track3d_path: Path | None = None
-        self._track3d_colors: dict[str, int] = dict(DEFAULT_TRACK3D_COLORS)
-        self._tsd_objects: list[
-            TsdZebraCrossingObject
-            | TsdTransverseLineObject
-            | TsdDoubleSolidLineObject
-            | TsdDashedLinesObject
-            | TsdPitStallsObject
-        ] = []
-        self._auto_update_tso_relative_z = False
-        self._tsd_object_dialog_preview_object: (
-            TsdZebraCrossingObject
-            | TsdTransverseLineObject
-            | TsdDoubleSolidLineObject
-            | TsdDashedLinesObject
-            | TsdPitStallsObject
-            | None
-        ) = None
-        self._editing_tsd_object_index: int | None = None
-        self._generated_skid_mark_lines: tuple[TrackSurfaceDetailLine, ...] = ()
-        self._skid_marks_rows_text = ""
-        self._skid_marks_colors = DEFAULT_SKID_COLORS
-        self._trackside_objects: list[TracksideObject] = []
-        self._selected_trackside_object_indices: list[int] = []
-        self._objects_tab_selected_trackside_object_indices: list[int] = []
-        self._tso_add_mode_active = False
-        self._tso_stamp_mode_active = False
-        self._tso_box_select_mode_active = False
-        self._tso_stamp_filename: str | None = None
-        self._active_tsd_file_index: int | None = None
-        self._suspend_tsd_preview_refresh = False
-        self._debug_tsd_perf = False
-        self._last_tsd_preview_lines: list[TrackSurfaceDetailLine] = []
-        self._last_tsd_adjusted_to_sg_ranges: tuple[list[tuple[float, float, float, float]], list[float]] = ([], [])
-        self._tsd_lines_model = TsdLinesTableModel(self._window)
-        self._window.tsd_lines_table.setModel(self._tsd_lines_model)
-        self._tsd_preview_refresh_timer = QtCore.QTimer(self._window)
-        self._tsd_preview_refresh_timer.setSingleShot(True)
-        self._tsd_preview_refresh_timer.setInterval(60)
-        self._tsd_preview_refresh_timer.timeout.connect(self._refresh_tsd_preview_lines)
-        self._tso_persist_timer = QtCore.QTimer(self._window)
-        self._tso_persist_timer.setSingleShot(True)
-        self._tso_persist_timer.setInterval(750)
-        self._tso_persist_timer.timeout.connect(self._persist_trackside_objects_for_current_track)
-        self._tso_visibility_sidebar_dirty = False
-        self._tso_visibility_sidebar_refresh_pending = False
 
+        self._action_builder = ViewerActionBuilder(self)
+        self._menu_builder = ViewerMenuBuilder(self)
         self._create_actions()
         self._create_menus()
         self._connect_signals()
@@ -356,8 +316,154 @@ class SGViewerController:
     def load_sg(self, path: Path) -> None:
         self._document_controller.load_sg(path)
 
+    @property
+    def _mrk_texture_definitions(self): return self._mrk_state.texture_definitions
+    @_mrk_texture_definitions.setter
+    def _mrk_texture_definitions(self, value): self._mrk_state.texture_definitions = value
+    @property
+    def _mrk_is_dirty(self): return self._mrk_state.is_dirty
+    @_mrk_is_dirty.setter
+    def _mrk_is_dirty(self, value): self._mrk_state.is_dirty = value
+    @property
+    def _manual_wall_height_overrides(self): return self._mrk_state.manual_wall_height_overrides
+    @_manual_wall_height_overrides.setter
+    def _manual_wall_height_overrides(self, value): self._mrk_state.manual_wall_height_overrides = value
+
+    @property
+    def _loaded_tsd_files(self): return self._tsd_state.loaded_files
+    @_loaded_tsd_files.setter
+    def _loaded_tsd_files(self, value): self._tsd_state.loaded_files = value
+    @property
+    def _tsd_objects(self): return self._tsd_state.objects
+    @_tsd_objects.setter
+    def _tsd_objects(self, value): self._tsd_state.objects = value
+    @property
+    def _tsd_lines_model(self): return self._tsd_state.lines_model
+    @_tsd_lines_model.setter
+    def _tsd_lines_model(self, value): self._tsd_state.lines_model = value
+    @property
+    def _tsd_preview_refresh_timer(self): return self._tsd_state.preview_refresh_timer
+    @_tsd_preview_refresh_timer.setter
+    def _tsd_preview_refresh_timer(self, value): self._tsd_state.preview_refresh_timer = value
+    @property
+    def _tsd_is_dirty(self): return self._tsd_state.is_dirty
+    @_tsd_is_dirty.setter
+    def _tsd_is_dirty(self, value): self._tsd_state.is_dirty = value
+    @property
+    def _tsd_object_dialog_preview_object(self): return self._tsd_state.object_dialog_preview_object
+    @_tsd_object_dialog_preview_object.setter
+    def _tsd_object_dialog_preview_object(self, value): self._tsd_state.object_dialog_preview_object = value
+    @property
+    def _editing_tsd_object_index(self): return self._tsd_state.editing_object_index
+    @_editing_tsd_object_index.setter
+    def _editing_tsd_object_index(self, value): self._tsd_state.editing_object_index = value
+    @property
+    def _active_tsd_file_index(self): return self._tsd_state.active_file_index
+    @_active_tsd_file_index.setter
+    def _active_tsd_file_index(self, value): self._tsd_state.active_file_index = value
+    @property
+    def _suspend_tsd_preview_refresh(self): return self._tsd_state.suspend_preview_refresh
+    @_suspend_tsd_preview_refresh.setter
+    def _suspend_tsd_preview_refresh(self, value): self._tsd_state.suspend_preview_refresh = value
+    @property
+    def _debug_tsd_perf(self): return self._tsd_state.debug_perf
+    @_debug_tsd_perf.setter
+    def _debug_tsd_perf(self, value): self._tsd_state.debug_perf = value
+    @property
+    def _last_tsd_preview_lines(self): return self._tsd_state.last_preview_lines
+    @_last_tsd_preview_lines.setter
+    def _last_tsd_preview_lines(self, value): self._tsd_state.last_preview_lines = value
+    @property
+    def _last_tsd_adjusted_to_sg_ranges(self): return self._tsd_state.last_adjusted_to_sg_ranges
+    @_last_tsd_adjusted_to_sg_ranges.setter
+    def _last_tsd_adjusted_to_sg_ranges(self, value): self._tsd_state.last_adjusted_to_sg_ranges = value
+
+    @property
+    def _trackside_objects(self): return self._tso_state.trackside_objects
+    @_trackside_objects.setter
+    def _trackside_objects(self, value): self._tso_state.trackside_objects = value
+    @property
+    def _selected_trackside_object_indices(self): return self._tso_state.selected_trackside_object_indices
+    @_selected_trackside_object_indices.setter
+    def _selected_trackside_object_indices(self, value): self._tso_state.selected_trackside_object_indices = value
+    @property
+    def _objects_tab_selected_trackside_object_indices(self): return self._tso_state.objects_tab_selected_trackside_object_indices
+    @_objects_tab_selected_trackside_object_indices.setter
+    def _objects_tab_selected_trackside_object_indices(self, value): self._tso_state.objects_tab_selected_trackside_object_indices = value
+    @property
+    def _tso_add_mode_active(self): return self._tso_state.add_mode_active
+    @_tso_add_mode_active.setter
+    def _tso_add_mode_active(self, value): self._tso_state.add_mode_active = value
+    @property
+    def _tso_stamp_mode_active(self): return self._tso_state.stamp_mode_active
+    @_tso_stamp_mode_active.setter
+    def _tso_stamp_mode_active(self, value): self._tso_state.stamp_mode_active = value
+    @property
+    def _tso_box_select_mode_active(self): return self._tso_state.box_select_mode_active
+    @_tso_box_select_mode_active.setter
+    def _tso_box_select_mode_active(self, value): self._tso_state.box_select_mode_active = value
+    @property
+    def _tso_stamp_filename(self): return self._tso_state.stamp_filename
+    @_tso_stamp_filename.setter
+    def _tso_stamp_filename(self, value): self._tso_state.stamp_filename = value
+    @property
+    def _auto_update_tso_relative_z(self): return self._tso_state.auto_update_relative_z
+    @_auto_update_tso_relative_z.setter
+    def _auto_update_tso_relative_z(self, value): self._tso_state.auto_update_relative_z = value
+    @property
+    def _tso_persist_timer(self): return self._tso_state.persist_timer
+    @_tso_persist_timer.setter
+    def _tso_persist_timer(self, value): self._tso_state.persist_timer = value
+    @property
+    def _tso_visibility_sidebar_dirty(self): return self._tso_state.visibility_sidebar_dirty
+    @_tso_visibility_sidebar_dirty.setter
+    def _tso_visibility_sidebar_dirty(self, value): self._tso_state.visibility_sidebar_dirty = value
+    @property
+    def _tso_visibility_sidebar_refresh_pending(self): return self._tso_state.visibility_sidebar_refresh_pending
+    @_tso_visibility_sidebar_refresh_pending.setter
+    def _tso_visibility_sidebar_refresh_pending(self, value): self._tso_state.visibility_sidebar_refresh_pending = value
+
+    @property
+    def _selected_track3d_path(self): return self._track3d_palette_state.selected_track3d_path
+    @_selected_track3d_path.setter
+    def _selected_track3d_path(self, value): self._track3d_palette_state.selected_track3d_path = value
+    @property
+    def _track3d_colors(self): return self._track3d_palette_state.track3d_colors
+    @_track3d_colors.setter
+    def _track3d_colors(self, value): self._track3d_palette_state.track3d_colors = value
+    @property
+    def _sunny_palette(self): return self._track3d_palette_state.sunny_palette
+    @_sunny_palette.setter
+    def _sunny_palette(self, value): self._track3d_palette_state.sunny_palette = value
+    @property
+    def _sunny_palette_path(self): return self._track3d_palette_state.sunny_palette_path
+    @_sunny_palette_path.setter
+    def _sunny_palette_path(self, value): self._track3d_palette_state.sunny_palette_path = value
+    @property
+    def _palette_colors_dialog(self): return self._track3d_palette_state.palette_colors_dialog
+    @_palette_colors_dialog.setter
+    def _palette_colors_dialog(self, value): self._track3d_palette_state.palette_colors_dialog = value
+    @property
+    def _skid_marks_dialog(self): return self._track3d_palette_state.skid_marks_dialog
+    @_skid_marks_dialog.setter
+    def _skid_marks_dialog(self, value): self._track3d_palette_state.skid_marks_dialog = value
+    @property
+    def _generated_skid_mark_lines(self): return self._track3d_palette_state.generated_skid_mark_lines
+    @_generated_skid_mark_lines.setter
+    def _generated_skid_mark_lines(self, value): self._track3d_palette_state.generated_skid_mark_lines = value
+    @property
+    def _skid_marks_rows_text(self): return self._track3d_palette_state.skid_marks_rows_text
+    @_skid_marks_rows_text.setter
+    def _skid_marks_rows_text(self, value): self._track3d_palette_state.skid_marks_rows_text = value
+    @property
+    def _skid_marks_colors(self): return self._track3d_palette_state.skid_marks_colors
+    @_skid_marks_colors.setter
+    def _skid_marks_colors(self, value): self._track3d_palette_state.skid_marks_colors = value
 
     def _create_actions(self) -> None:
+        self._action_builder.create_actions()
+
+    def _create_actions_impl(self) -> None:
         self._new_action = QtWidgets.QAction("New Project", self._window)
         self._new_action.setShortcut("Ctrl+N")
         self._new_action.triggered.connect(self._start_new_track)
@@ -664,6 +770,9 @@ class SGViewerController:
         self._about_action.triggered.connect(self._show_about_dialog)
 
     def _create_menus(self) -> None:
+        self._menu_builder.create_menus()
+
+    def _create_menus_impl(self) -> None:
         file_menu = self._window.menuBar().addMenu("&File")
         file_menu.addAction(self._new_action)
         file_menu.addAction(self._open_project_action)
