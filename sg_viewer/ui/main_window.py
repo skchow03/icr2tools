@@ -7,7 +7,7 @@ from track_viewer.geometry import project_point_to_centerline
 
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.model.dlong_mapping import dlong_to_section_position
-from sg_viewer.runtime.viewer_runtime_api import ViewerRuntimeApi
+from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.ui.color_utils import parse_hex_color
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
