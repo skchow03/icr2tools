@@ -8,12 +8,12 @@ import math
 
 from sg_viewer.geometry.sg_geometry import update_section_geometry
 from sg_viewer.model.sg_model import SectionPreview
-from sg_viewer.runtime.preview_geometry_service import (
+from sg_viewer.geometry_domain import (
     ConnectionSolveRequest,
     ConnectNodesRequest,
     NodeDisconnectRequest,
     NodeDragRequest,
-    PreviewGeometryService,
+    PreviewGeometryDomainService,
 )
 
 
@@ -68,7 +68,7 @@ def _curve(section_id: int, start, end, center, radius, prev=-1, nxt=-1):
 
 
 def test_connect_and_disconnect_nodes_round_trip():
-    service = PreviewGeometryService()
+    service = PreviewGeometryDomainService()
     sections = [_straight(0, (0.0, 0.0), (100.0, 0.0)), _straight(1, (100.0, 0.0), (200.0, 0.0))]
 
     connected = service.connect_nodes(ConnectNodesRequest(sections, (0, "end"), (1, "start")))
@@ -83,7 +83,7 @@ def test_connect_and_disconnect_nodes_round_trip():
 
 
 def test_shared_straight_node_constraint_applies_projection_and_updates_both_segments():
-    service = PreviewGeometryService()
+    service = PreviewGeometryDomainService()
     s1 = _straight(0, (0.0, 0.0), (100.0, 0.0), nxt=1)
     s2 = _straight(1, (100.0, 0.0), (200.0, 0.0), prev=0)
     response = service.update_dragged_section(
@@ -100,7 +100,7 @@ def test_shared_straight_node_constraint_applies_projection_and_updates_both_seg
 
 
 def test_closed_loop_transition_canonicalizes_when_loop_is_completed():
-    service = PreviewGeometryService()
+    service = PreviewGeometryDomainService()
     old_sections = [
         _straight(0, (0.0, 0.0), (100.0, 0.0), prev=2, nxt=1),
         _straight(1, (100.0, 0.0), (100.0, 100.0), prev=0, nxt=2),
@@ -119,7 +119,7 @@ def test_closed_loop_transition_canonicalizes_when_loop_is_completed():
 
 
 def test_solve_connection_allows_straight_to_straight_when_headings_match_and_join_is_straight():
-    service = PreviewGeometryService()
+    service = PreviewGeometryDomainService()
     dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
     target = _straight(1, (20.0, 0.0), (30.0, 0.0))
 
@@ -138,7 +138,7 @@ def test_solve_connection_allows_straight_to_straight_when_headings_match_and_jo
 
 
 def test_solve_connection_rejects_straight_to_straight_when_join_would_not_be_straight():
-    service = PreviewGeometryService()
+    service = PreviewGeometryDomainService()
     dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
     target = _straight(1, (20.0, 1.0), (30.0, 1.0), prev=2)
     attached = _straight(2, (0.0, 1.0), (20.0, 1.0), nxt=1)
@@ -158,7 +158,7 @@ def test_solve_connection_rejects_straight_to_straight_when_join_would_not_be_st
 
 
 def test_solve_connection_allows_straight_to_straight_by_rotating_disconnected_target():
-    service = PreviewGeometryService()
+    service = PreviewGeometryDomainService()
     dragged = _straight(0, (0.0, 0.0), (10.0, 0.0))
     target = _straight(1, (20.0, 20.0), (20.0, 30.0))
 
