@@ -376,6 +376,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._crosshair_button.setChecked(False)
         self._background_image_checkbox = QtWidgets.QCheckBox("Show Background Image")
         self._background_image_checkbox.setChecked(True)
+        self._land_objects_overlay_checkbox = QtWidgets.QCheckBox("Land Objects")
+        self._land_objects_overlay_checkbox.setChecked(True)
+        self._land_objects_overlay_checkbox.setToolTip("Show or hide drawn land-object overlays in the viewport.")
+        self._trackside_objects_overlay_checkbox = QtWidgets.QCheckBox("TSOs")
+        self._trackside_objects_overlay_checkbox.setChecked(False)
+        self._trackside_objects_overlay_checkbox.setToolTip("Show or hide trackside-object bounding boxes in the viewport.")
         self._background_brightness_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._background_brightness_slider.setRange(-100, 100)
         self._background_brightness_slider.setValue(0)
@@ -491,6 +497,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         quick_display_layout.addSpacing(4)
         quick_display_layout.addWidget(self._xsect_dlat_line_checkbox)
         quick_display_layout.addWidget(self._sg_fsects_checkbox)
+        quick_display_layout.addWidget(self._land_objects_overlay_checkbox)
+        quick_display_layout.addWidget(self._trackside_objects_overlay_checkbox)
+        quick_display_layout.addSpacing(4)
+        quick_display_layout.addWidget(QtWidgets.QLabel("BG Brightness:"))
+        quick_display_layout.addWidget(self._background_brightness_slider, stretch=1)
+        quick_display_layout.addWidget(self._background_brightness_value_label)
         quick_display_layout.addSpacing(4)
         quick_display_layout.addWidget(QtWidgets.QLabel("Track Opacity:"))
         quick_display_layout.addWidget(self._track_opacity_slider, stretch=1)
@@ -732,15 +744,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         general_layout = QtWidgets.QVBoxLayout()
         general_layout.setSpacing(10)
         general_layout.addWidget(self._background_image_checkbox)
-        background_brightness_layout = QtWidgets.QHBoxLayout()
-        background_brightness_layout.addWidget(QtWidgets.QLabel("Background Brightness"))
-        background_brightness_layout.addWidget(
-            self._background_brightness_slider, stretch=1
-        )
-        background_brightness_layout.addWidget(
-            self._background_brightness_value_label
-        )
-        general_layout.addLayout(background_brightness_layout)
         toggles_layout = QtWidgets.QGridLayout()
         toggles_layout.setHorizontalSpacing(12)
         toggles_layout.setVerticalSpacing(8)
@@ -1214,6 +1217,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def background_image_checkbox(self) -> QtWidgets.QCheckBox:
         return self._background_image_checkbox
+
+    @property
+    def land_objects_overlay_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._land_objects_overlay_checkbox
+
+    @property
+    def trackside_objects_overlay_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._trackside_objects_overlay_checkbox
 
     @property
     def background_brightness_slider(self) -> QtWidgets.QSlider:
