@@ -63,6 +63,7 @@ class TsdController:
         self._window.tsd_lines_table.selectRow(row)
         self._autosize_tsd_lines_table_columns()
         self._sync_active_tsd_file_from_model()
+        self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -77,6 +78,8 @@ class TsdController:
         self._tsd_lines_model.remove_row(selected_rows[0].row())
         self._autosize_tsd_lines_table_columns()
         self._sync_active_tsd_file_from_model()
+        if self._tsd_lines_model.rowCount() > 0:
+            self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -95,6 +98,7 @@ class TsdController:
         self._window.tsd_lines_table.selectRow(target_row)
         self._autosize_tsd_lines_table_columns()
         self._sync_active_tsd_file_from_model()
+        self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -393,6 +397,8 @@ class TsdController:
             self._suspend_tsd_preview_refresh = False
 
         self._autosize_tsd_lines_table_columns()
+        if detail_file.lines:
+            self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._log_tsd_perf("TSD table populate duration", started)
 
@@ -815,6 +821,7 @@ class TsdController:
                 rng=random.Random(),
             )
             _persist_dialog_values()
+            self._enable_tsd_preview_overlay()
             self._refresh_tsd_preview_lines()
             self._window.show_status_message(
                 f"Generated {len(self._generated_skid_mark_lines)} randomized skid mark lines."
@@ -987,6 +994,8 @@ class TsdController:
             if 0 <= row < len(self._tsd_objects):
                 del self._tsd_objects[row]
         self._refresh_tsd_objects_table()
+        if self._tsd_objects:
+            self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -1028,6 +1037,7 @@ class TsdController:
         self._refresh_tsd_objects_table()
         self._window.tsd_objects_table.selectRow(target_row)
         self._center_viewport_on_tsd_object(target_row)
+        self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -1051,6 +1061,7 @@ class TsdController:
             self._refresh_tsd_preview_lines()
             return
         self._tsd_objects[row] = updated
+        self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._refresh_tsd_objects_table()
         self._set_tsd_dirty(True)

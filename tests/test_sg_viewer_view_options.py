@@ -650,6 +650,44 @@ def test_save_tsd_file_writes_to_selected_loaded_path(qapp, tmp_path, monkeypatc
         window.close()
 
 
+def test_add_default_tsd_line_enables_preview_overlay(qapp):
+    window = SGViewerWindow()
+    try:
+        window.preview.set_tsd_lines(())
+        window.preview.set_show_tsd_lines(False)
+
+        window.controller._on_tsd_add_line_requested()
+
+        assert window.preview.tsd_lines
+        assert window.preview.show_tsd_lines is True
+    finally:
+        window.close()
+
+
+def test_generate_skid_marks_enables_preview_overlay(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._skid_marks_rows_text = (
+            "Test,0,500,1000,100,200,50,1,-1000,1000,-1000,1000,-1000,1000"
+        )
+        window.controller._skid_marks_colors = (36,)
+        window.preview.set_tsd_lines(())
+        window.preview.set_show_tsd_lines(False)
+
+        window.controller._on_tsd_skid_marks_requested()
+        buttons = window.controller._skid_marks_dialog.findChildren(QtWidgets.QPushButton)
+        randomize_button = next(
+            button for button in buttons if button.text() == "Randomize skid marks"
+        )
+        randomize_button.click()
+
+        assert window.preview.tsd_lines
+        assert window.preview.show_tsd_lines is True
+    finally:
+        window.controller._skid_marks_dialog.close()
+        window.close()
+
+
 def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
