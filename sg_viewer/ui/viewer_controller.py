@@ -1549,13 +1549,21 @@ class SGViewerController:
             target_index = xsect_index
         combo.setCurrentIndex(target_index)
 
+    def _update_elevation_toolbar_buttons(self) -> None:
+        sections, _ = self._window.preview.get_section_set()
+        enabled = bool(sections) and self._window.is_elevation_workflow_active()
+        self._window.raise_lower_elevations_button.setEnabled(enabled)
+        self._window.flatten_elevations_button.setEnabled(enabled)
+
     def _update_copy_xsect_button(self) -> None:
+        self._update_elevation_toolbar_buttons()
         combo_enabled = self._window.xsect_combo.isEnabled()
         sections, _ = self._window.preview.get_section_set()
-        can_generate = combo_enabled and bool(sections)
+        elevation_active = self._window.is_elevation_workflow_active()
+        can_generate = combo_enabled and bool(sections) and elevation_active
         self._window.copy_xsect_button.setEnabled(can_generate)
         self._window.generate_elevation_change_button.setEnabled(can_generate)
-        self._generate_elevation_change_action.setEnabled(can_generate)
+        self._generate_elevation_change_action.setEnabled(combo_enabled and bool(sections))
 
     def _update_copy_fsects_buttons(self) -> None:
         selection = self._active_selection

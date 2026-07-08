@@ -109,6 +109,7 @@ class BasePreviewState:
     radii_selected_color: QtGui.QColor
     xsect_dlat_line_color: QtGui.QColor
     integrity_boundary_violation_points: tuple[Point, ...]
+    centerline_elevation_segments: tuple[tuple[Point, Point, QtGui.QColor, bool], ...] = ()
     show_centerline_and_nodes: bool = True
 
 
@@ -302,6 +303,7 @@ def paint_preview(
                 centerline_unselected_color=base_state.centerline_unselected_color,
                 centerline_selected_color=base_state.centerline_selected_color,
                 centerline_long_curve_color=base_state.centerline_long_curve_color,
+                elevation_segments=base_state.centerline_elevation_segments,
             )
 
             if base_state.show_curve_markers:
@@ -1112,9 +1114,26 @@ def _draw_centerlines(
     centerline_unselected_color: QtGui.QColor,
     centerline_selected_color: QtGui.QColor,
     centerline_long_curve_color: QtGui.QColor,
+    elevation_segments: tuple[tuple[Point, Point, QtGui.QColor, bool], ...] = (),
 ) -> None:
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+
+    if elevation_segments:
+        for start, end, color, selected in elevation_segments:
+            pen = QtGui.QPen(color)
+            pen.setWidthF(BASE_WIDTH + (1.5 if selected else 0.0))
+            pen.setCapStyle(QtCore.Qt.RoundCap)
+            pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            painter.setPen(pen)
+            painter.drawLine(
+                QtCore.QLineF(
+                    sg_rendering.map_point(start[0], start[1], transform, widget_height),
+                    sg_rendering.map_point(end[0], end[1], transform, widget_height),
+                )
+            )
+        painter.restore()
+        return
 
     for section in sections:
         polyline = section.polyline
