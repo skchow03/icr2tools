@@ -569,12 +569,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_combo.setEnabled(False)
         self._edit_xsect_list_button = QtWidgets.QPushButton("Edit Xsect data...")
         self._edit_xsect_list_button.setEnabled(False)
-        self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section data to...")
+        self._copy_xsect_button = QtWidgets.QPushButton("Copy Xsect")
+        self._copy_xsect_button.setToolTip("Copy selected Xsect data to other sections.")
         self._copy_xsect_button.setEnabled(False)
-        self._generate_elevation_change_button = QtWidgets.QPushButton(
-            "Generate elevation change..."
-        )
+        self._generate_elevation_change_button = QtWidgets.QPushButton("Generate Change")
+        self._generate_elevation_change_button.setToolTip("Generate an elevation change for the selected Xsect.")
         self._generate_elevation_change_button.setEnabled(False)
+        self._raise_lower_elevations_button = QtWidgets.QPushButton("Raise/Lower")
+        self._raise_lower_elevations_button.setToolTip("Raise or lower all elevations.")
+        self._raise_lower_elevations_button.setEnabled(False)
+        self._flatten_elevations_button = QtWidgets.QPushButton("Flatten")
+        self._flatten_elevations_button.setToolTip("Flatten all elevations and grade values.")
+        self._flatten_elevations_button.setEnabled(False)
         self._generate_elevation_change_dialog: QtWidgets.QDialog | None = None
         self._elevation_summary_label = QtWidgets.QLabel(
             "Select a section and xsect to inspect elevation data."
@@ -824,8 +830,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             xsect_table=self._xsect_elevation_table,
             edit_xsect_list_button=self._edit_xsect_list_button,
             xsect_combo=self._xsect_combo,
-            copy_xsect_button=self._copy_xsect_button,
-            generate_elevation_change_button=self._generate_elevation_change_button,
             profile_widget=self._profile_widget,
             altitude_control=altitude_container,
             altitude_set_range_button=self._altitude_set_range_button,
@@ -1717,6 +1721,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
             )
             layout.addWidget(button)
+
+        elevation_title = QtWidgets.QLabel("Elevations")
+        elevation_title.setAlignment(QtCore.Qt.AlignCenter)
+        elevation_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        layout.addWidget(elevation_title)
+        for button in self._elevation_toolbar_buttons():
+            button.setSizePolicy(
+                QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
+            )
+            layout.addWidget(button)
         layout.addStretch(1)
         return toolbar
 
@@ -1728,6 +1742,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._move_section_button,
             self._delete_section_button,
             self._set_start_finish_button,
+        )
+
+    def _elevation_toolbar_buttons(self) -> tuple[QtWidgets.QPushButton, ...]:
+        return (
+            self._copy_xsect_button,
+            self._generate_elevation_change_button,
+            self._flatten_elevations_button,
+            self._raise_lower_elevations_button,
         )
 
     def _on_workflow_tab_changed(self, _index: int) -> None:
@@ -2327,6 +2349,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def generate_elevation_change_button(self) -> QtWidgets.QPushButton:
         return self._generate_elevation_change_button
+
+    @property
+    def raise_lower_elevations_button(self) -> QtWidgets.QPushButton:
+        return self._raise_lower_elevations_button
+
+    @property
+    def flatten_elevations_button(self) -> QtWidgets.QPushButton:
+        return self._flatten_elevations_button
 
     @property
     def altitude_slider(self) -> QtWidgets.QSlider:
