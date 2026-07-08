@@ -248,19 +248,6 @@ def paint_preview(
                 mrk_armco_height_500ths=sg_preview_state.mrk_armco_height_500ths,
                 mrk_length_multiplier=sg_preview_state.mrk_length_multiplier,
             )
-        if sg_preview_state and sg_preview_state.show_tsd_lines:
-            _draw_tsd_lines(
-                painter,
-                sg_preview_state.tsd_lines,
-                sg_preview_state.tsd_palette,
-                base_state.sections,
-                transform,
-                widget_height,
-                selected_section_only=sg_preview_state.show_tsd_selected_section_only,
-                selected_section_index=sg_preview_state.selected_section_index,
-                section_geometry_version=sg_preview_state.section_geometry_version,
-                tsd_lines_version=sg_preview_state.tsd_lines_version,
-            )
         if base_state.land_object_points:
             _draw_land_object_polygons_overlay(
                 painter,
@@ -340,6 +327,19 @@ def paint_preview(
             transform,
             widget_height,
         )
+        if sg_preview_state and sg_preview_state.show_tsd_lines:
+            _draw_tsd_lines(
+                painter,
+                sg_preview_state.tsd_lines,
+                sg_preview_state.tsd_palette,
+                base_state.sections,
+                transform,
+                widget_height,
+                selected_section_only=sg_preview_state.show_tsd_selected_section_only,
+                selected_section_index=sg_preview_state.selected_section_index,
+                section_geometry_version=sg_preview_state.section_geometry_version,
+                tsd_lines_version=sg_preview_state.tsd_lines_version,
+            )
         painter.restore()
 
         if base_state.split_section_mode and base_state.split_hover_point is not None:
