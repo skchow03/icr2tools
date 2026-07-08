@@ -38,7 +38,9 @@ class SectionEditingCoordinator:
 
         if self._host._section_table_window is None:
             self._host._section_table_window = SectionTableWindow(self._host._window)
-            self._host._section_table_window.on_sections_edited(self.apply_section_table_edits)
+            self._host._section_table_window.on_sections_edited(
+                self.apply_section_table_edits
+            )
             self._host._section_table_window.on_section_value_edited(
                 self.apply_section_value_edit
             )
@@ -59,7 +61,9 @@ class SectionEditingCoordinator:
         infer_section_connectivity(sections)
         self._host._window.preview.set_sections(sections)
         self.update_heading_table()
-        print(f"[profiling] Section structural edit duration: {(perf_counter() - started) * 1000:.2f} ms")
+        print(
+            f"[profiling] Section structural edit duration: {(perf_counter() - started) * 1000:.2f} ms"
+        )
 
     def apply_section_value_edit(
         self,
@@ -84,9 +88,13 @@ class SectionEditingCoordinator:
             updated_sections,
             changed_indices=changed_indices,
         )
-        print(f"[profiling] Geometry recompute duration: {(perf_counter() - geometry_started) * 1000:.2f} ms")
+        print(
+            f"[profiling] Geometry recompute duration: {(perf_counter() - geometry_started) * 1000:.2f} ms"
+        )
         self.update_heading_table()
-        print(f"[profiling] Table cell edit duration: {(perf_counter() - started) * 1000:.2f} ms")
+        print(
+            f"[profiling] Table cell edit duration: {(perf_counter() - started) * 1000:.2f} ms"
+        )
 
     def show_heading_table(self) -> None:
         headings = self._host._window.preview.get_section_headings()
@@ -122,15 +130,22 @@ class SectionEditingCoordinator:
 
         if self._host._xsect_table_window is None:
             self._host._xsect_table_window = XsectTableWindow(self._host._window)
-            self._host._xsect_table_window.on_xsects_edited(self.apply_xsect_table_edits)
+            self._host._xsect_table_window.on_xsects_edited(
+                self.apply_xsect_table_edits
+            )
 
         self._host._xsect_table_window.set_display_unit(
             unit_label=self._host._window.fsect_display_unit_label(),
             decimals=self._host._window.fsect_display_decimals(),
             to_display_units=self._host._window.fsect_dlat_to_display_units,
             from_display_units=self._host._window.fsect_dlat_from_display_units,
+            altitude_unit_label=self._host._window.xsect_altitude_unit_label(),
+            altitude_decimals=self._host._window.xsect_altitude_display_decimals(),
+            altitude_to_display_units=self._host._window.xsect_altitude_to_display_units,
+            altitude_from_display_units=self._host._window.xsect_altitude_from_display_units,
         )
-        self._host._xsect_table_window.set_xsects(metadata)
+        altitudes, grades = self._current_section_xsect_values()
+        self._host._xsect_table_window.set_xsects(metadata, altitudes, grades)
         self._host._xsect_table_window.show()
         self._host._xsect_table_window.raise_()
         self._host._xsect_table_window.activateWindow()
@@ -144,8 +159,24 @@ class SectionEditingCoordinator:
             decimals=self._host._window.fsect_display_decimals(),
             to_display_units=self._host._window.fsect_dlat_to_display_units,
             from_display_units=self._host._window.fsect_dlat_from_display_units,
+            altitude_unit_label=self._host._window.xsect_altitude_unit_label(),
+            altitude_decimals=self._host._window.xsect_altitude_display_decimals(),
+            altitude_to_display_units=self._host._window.xsect_altitude_to_display_units,
+            altitude_from_display_units=self._host._window.xsect_altitude_from_display_units,
         )
-        self._host._xsect_table_window.set_xsects(metadata)
+        altitudes, grades = self._current_section_xsect_values()
+        self._host._xsect_table_window.set_xsects(metadata, altitudes, grades)
+
+    def _current_section_xsect_values(
+        self,
+    ) -> tuple[list[int | None] | None, list[int | None] | None]:
+        selection = self._host._active_selection
+        if selection is None:
+            return None, None
+        return (
+            self._host._window.preview.get_section_xsect_altitudes(selection.index),
+            self._host._window.preview.get_section_xsect_grades(selection.index),
+        )
 
     def apply_xsect_table_edits(self, entries: list[XsectEntry]) -> None:
         if not entries:
@@ -154,7 +185,10 @@ class SectionEditingCoordinator:
         if len(sorted_entries) < 2:
             return
         payload = [
-            (entry.key if entry.key is not None and entry.key >= 0 else None, entry.dlat)
+            (
+                entry.key if entry.key is not None and entry.key >= 0 else None,
+                entry.dlat,
+            )
             for entry in sorted_entries
         ]
         old_selected = self._host._current_xsect_index()
@@ -166,6 +200,18 @@ class SectionEditingCoordinator:
             )
             return
 
+        selection = self._host._active_selection
+        if selection is not None:
+            for row, entry in enumerate(sorted_entries):
+                if entry.altitude is not None:
+                    self._host._window.preview.set_section_xsect_altitude(
+                        selection.index, row, entry.altitude, validate=False
+                    )
+                if entry.grade is not None:
+                    self._host._window.preview.set_section_xsect_grade(
+                        selection.index, row, entry.grade, validate=False
+                    )
+
         new_selected = None
         if old_selected is not None:
             for idx, (key, _) in enumerate(payload):
@@ -175,11 +221,14 @@ class SectionEditingCoordinator:
 
         self._host._populate_xsect_choices(preferred_index=new_selected)
         self._host._refresh_elevation_profile()
+        self._host._sync_after_xsect_value_change()
 
     def connect_signals(self) -> None:
         host = self._host
         window = host._window
-        window.xsect_dlat_line_checkbox.toggled.connect(window.preview.set_show_xsect_dlat_line)
+        window.xsect_dlat_line_checkbox.toggled.connect(
+            window.preview.set_show_xsect_dlat_line
+        )
         window.copy_fsects_prev_button.clicked.connect(self.copy_fsects_to_previous)
         host._copy_fsects_prev_action.triggered.connect(self.copy_fsects_to_previous)
         window.copy_fsects_next_button.clicked.connect(self.copy_fsects_to_next)
@@ -193,15 +242,29 @@ class SectionEditingCoordinator:
         host._move_fsect_up_action.triggered.connect(host._move_selected_fsect_up)
         window.move_fsect_down_button.clicked.connect(host._move_selected_fsect_down)
         host._move_fsect_down_action.triggered.connect(host._move_selected_fsect_down)
-        window.swap_fsect_types_button.clicked.connect(self.swap_fsect_type_across_sections)
-        host._swap_fsect_types_action.triggered.connect(self.swap_fsect_type_across_sections)
+        window.swap_fsect_types_button.clicked.connect(
+            self.swap_fsect_type_across_sections
+        )
+        host._swap_fsect_types_action.triggered.connect(
+            self.swap_fsect_type_across_sections
+        )
         window.edit_xsect_list_button.clicked.connect(self.show_xsect_table)
         window.xsect_elevation_widget.xsectClicked.connect(host._on_xsect_node_clicked)
-        window.xsect_elevation_table.itemSelectionChanged.connect(host._on_xsect_table_selection_changed)
-        window.xsect_elevation_table.cellChanged.connect(host._on_xsect_table_cell_changed)
-        window.fsectDiagramDlatChangeRequested.connect(host._on_fsect_diagram_dlat_change_requested)
-        window.fsectDiagramDragRefreshRequested.connect(window.preview.refresh_fsections_preview_lightweight)
-        window.fsectDiagramDragCommitRequested.connect(host._on_fsect_diagram_drag_commit_requested)
+        window.xsect_elevation_table.itemSelectionChanged.connect(
+            host._on_xsect_table_selection_changed
+        )
+        window.xsect_elevation_table.cellChanged.connect(
+            host._on_xsect_table_cell_changed
+        )
+        window.fsectDiagramDlatChangeRequested.connect(
+            host._on_fsect_diagram_dlat_change_requested
+        )
+        window.fsectDiagramDragRefreshRequested.connect(
+            window.preview.refresh_fsections_preview_lightweight
+        )
+        window.fsectDiagramDragCommitRequested.connect(
+            host._on_fsect_diagram_drag_commit_requested
+        )
 
     def copy_fsects_to_previous(self) -> None:
         self._sections_controller.copy_fsects_to_previous()

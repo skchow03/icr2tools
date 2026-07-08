@@ -219,18 +219,22 @@ class ElevationPanelController:
             else "–"
         )
         grade_text = str(grade) if grade is not None else "–"
+        grade_slope_text = _slope_text(
+            (grade / 8192.0 * 100.0) if grade is not None else None
+        )
         self._host._window.update_elevation_summary(
-            " | ".join(
+            "".join(
                 (
-                    f"Xsect: {xsect_index} (DLAT {dlat_text})",
-                    f"Section node: {selection.index}",
-                    f"Elevation: {altitude_text}",
-                    f"Grade: {grade_text} ({_slope_text((grade / 8192.0 * 100.0) if grade is not None else None)})",
-                    f"Banking to next xsect: {next_banking}",
-                    f"Banking to previous xsect: {previous_banking}",
-                    f"Track min/max elevation: {min_elevation} / {max_elevation}",
-                    f"Max slope up/down: {_slope_text(max_up)} / {_slope_text(max_down)}",
-                    f"Avg slope up/down: {_slope_text(avg_up)} / {_slope_text(avg_down)}",
+                    '<table cellspacing="4" cellpadding="2">',
+                    f"<tr><td><b>Xsect</b></td><td>{xsect_index} (DLAT {dlat_text})</td></tr>",
+                    f"<tr><td><b>Section node</b></td><td>{selection.index}</td></tr>",
+                    f"<tr><td><b>Elevation</b></td><td>{altitude_text}</td></tr>",
+                    f"<tr><td><b>Grade</b></td><td>{grade_text} ({grade_slope_text})</td></tr>",
+                    f"<tr><td><b>Banking</b></td><td>next {next_banking} / previous {previous_banking}</td></tr>",
+                    f"<tr><td><b>Track elevation range</b></td><td>{min_elevation} / {max_elevation}</td></tr>",
+                    f"<tr><td><b>Max slope up/down</b></td><td>{_slope_text(max_up)} / {_slope_text(max_down)}</td></tr>",
+                    f"<tr><td><b>Avg slope up/down</b></td><td>{_slope_text(avg_up)} / {_slope_text(avg_down)}</td></tr>",
+                    "</table>",
                 )
             )
         )
