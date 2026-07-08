@@ -71,24 +71,36 @@ def test_measurement_units_are_global(qapp):
         window.close()
 
 
-def test_mouse_usage_bar_sits_above_preview_and_explains_controls(qapp):
+def test_viewport_toolbar_labels_and_mouse_hint(qapp):
     window = SGViewerWindow()
     try:
         preview_layout = window._preview.parentWidget().layout()
 
-        assert preview_layout.indexOf(window._mouse_usage_bar) < preview_layout.indexOf(
-            window.preview
+        assert preview_layout.indexOf(
+            window._quick_display_toolbar
+        ) < preview_layout.indexOf(window.preview)
+        assert (
+            window._quick_display_toolbar.findChildren(
+                QtWidgets.QLabel, options=QtCore.Qt.FindChildrenRecursively
+            )[0].text()
+            == "Units:"
         )
-        usage_text = window._mouse_usage_label.text()
-        assert "Left click" in usage_text
-        assert "Left drag" in usage_text
-        assert "Right click node" in usage_text
-        assert "Mouse wheel" in usage_text
+        assert window.xsect_dlat_line_checkbox.text() == "X-sect DLAT"
+        assert window.sg_fsects_checkbox.text() == "F-sections"
+        assert window.land_objects_overlay_checkbox.text() == "Land objects"
+        assert window.trackside_objects_overlay_checkbox.text() == "TSOs"
+        assert window.background_image_checkbox.text() == "BG image"
+
+        window.update_mouse_usage_text()
+        assert (
+            window.preview.status_message
+            == "Mouse: left click selects · left drag pans · wheel zooms"
+        )
     finally:
         window.close()
 
 
-def test_mouse_usage_bar_updates_for_sidebar_tabs(qapp):
+def test_mouse_status_updates_for_sidebar_tabs(qapp):
     window = SGViewerWindow()
     try:
         tabs = window.right_sidebar_tabs
@@ -105,31 +117,58 @@ def test_mouse_usage_bar_updates_for_sidebar_tabs(qapp):
 
         for tab_name, expected_text in expectations.items():
             index = next(
-                i for i in range(tabs.count()) if tabs.tabText(i).rstrip("*") == tab_name
+                i
+                for i in range(tabs.count())
+                if tabs.tabText(i).rstrip("*") == tab_name
             )
             tabs.setCurrentIndex(index)
             window.update_mouse_usage_text()
-            assert expected_text in window._mouse_usage_label.text()
+            assert expected_text in window.preview.status_message
     finally:
         window.close()
 
 
-def test_mouse_usage_bar_mode_text_overrides_sidebar_tab(qapp):
+def test_mouse_status_mode_text_overrides_sidebar_tab(qapp):
     window = SGViewerWindow()
     try:
         window.split_section_button.setChecked(True)
         window.update_mouse_usage_text()
-        assert "split section" in window._mouse_usage_label.text()
+        assert "split section" in window.preview.status_message
 
         window.split_section_button.setChecked(False)
         window.tso_box_select_button.setChecked(True)
         window.update_mouse_usage_text()
-        assert "box select trackside objects" in window._mouse_usage_label.text()
+        assert "box select trackside objects" in window.preview.status_message
 
         window.tso_box_select_button.setChecked(False)
         window._ruler_mode_active = True
         window.update_mouse_usage_text()
-        assert "set ruler start/end points" in window._mouse_usage_label.text()
+        assert "set ruler start/end points" in window.preview.status_message
+    finally:
+        window.close()
+
+
+def test_viewport_intensity_controls_and_presets(qapp):
+    window = SGViewerWindow()
+    try:
+        window.update_visual_intensity_controls()
+        assert not window.background_brightness_slider.isEnabled()
+        assert not window.track_opacity_slider.isEnabled()
+
+        window._view_preset_combo.setCurrentText("Construction")
+        assert window.sg_fsects_checkbox.isChecked()
+        assert window.xsect_dlat_line_checkbox.isChecked()
+
+        window._view_preset_combo.setCurrentText("Objects")
+        assert window.land_objects_overlay_checkbox.isChecked()
+        assert window.trackside_objects_overlay_checkbox.isChecked()
+
+        window._view_preset_combo.setCurrentText("Geometry")
+        assert not window.sg_fsects_checkbox.isChecked()
+        assert not window.xsect_dlat_line_checkbox.isChecked()
+        assert not window.land_objects_overlay_checkbox.isChecked()
+        assert not window.trackside_objects_overlay_checkbox.isChecked()
+        assert not window.background_image_checkbox.isChecked()
     finally:
         window.close()
 
@@ -140,8 +179,12 @@ def test_fsect_delta_columns_follow_and_edit_next_fsect(qapp):
         window._selected_section_index = 0
         window.preview._fsects_by_section = [
             [
-                PreviewFSection(start_dlat=500.0, end_dlat=1500.0, surface_type=0, type2=0),
-                PreviewFSection(start_dlat=750.0, end_dlat=1800.0, surface_type=0, type2=0),
+                PreviewFSection(
+                    start_dlat=500.0, end_dlat=1500.0, surface_type=0, type2=0
+                ),
+                PreviewFSection(
+                    start_dlat=750.0, end_dlat=1800.0, surface_type=0, type2=0
+                ),
             ]
         ]
 
@@ -186,7 +229,9 @@ def test_selection_and_track_length_show_secondary_units(qapp):
             window._section_length_label.text()
             == "Section Length: 7200.0 ft (1.364 miles)"
         )
-        assert window._track_stats_label.text() == "Track Length: 7200.0 ft (1.364 miles)"
+        assert (
+            window._track_stats_label.text() == "Track Length: 7200.0 ft (1.364 miles)"
+        )
 
         window.measurement_units_combo.setCurrentIndex(1)
         window.update_selection_sidebar(selection)
@@ -209,11 +254,15 @@ def test_elevation_labels_and_help_about(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
         assert window._right_sidebar_tabs.tabText(0) == "Elevation/Grade"
-        assert window.xsect_elevation_table.horizontalHeaderItem(1).text().startswith(
-            "Elevation ("
+        assert (
+            window.xsect_elevation_table.horizontalHeaderItem(1)
+            .text()
+            .startswith("Elevation (")
         )
 
-        menu_titles = [action.text().replace("&", "") for action in window.menuBar().actions()]
+        menu_titles = [
+            action.text().replace("&", "") for action in window.menuBar().actions()
+        ]
         assert "Help" in menu_titles
 
         about_calls: list[tuple[str, str]] = []
@@ -224,10 +273,14 @@ def test_elevation_labels_and_help_about(qapp, monkeypatch):
         monkeypatch.setattr(QtWidgets.QMessageBox, "about", _fake_about)
 
         help_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Help"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Help"
         )
         about_action = next(
-            action for action in help_menu.actions() if action.text() == "About SG Viewer"
+            action
+            for action in help_menu.actions()
+            if action.text() == "About SG Viewer"
         )
         about_action.trigger()
 
@@ -267,7 +320,9 @@ def test_view_options_expose_color_controls(qapp):
         xsect_edit.setText("#00AA11")
         xsect_edit.editingFinished.emit()
 
-        assert window.preview.preview_color("xsect_dlat_line").name().upper() == "#00AA11"
+        assert (
+            window.preview.preview_color("xsect_dlat_line").name().upper() == "#00AA11"
+        )
     finally:
         window.close()
 
@@ -284,7 +339,9 @@ def test_crosshair_view_menu_toggle_updates_preview(qapp):
             if menu.title() == "View"
         )
         crosshair_action = next(
-            action for action in view_menu.actions() if action.text() == "Show Crosshair"
+            action
+            for action in view_menu.actions()
+            if action.text() == "Show Crosshair"
         )
 
         crosshair_action.trigger()
@@ -309,13 +366,19 @@ def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
             def __init__(self, args):
                 popen_calls.append(args)
 
-        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+        monkeypatch.setattr(
+            "sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen
+        )
 
         tools_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Tools"
         )
         calibrator_action = next(
-            action for action in tools_menu.actions() if action.text() == "Open Background Calibrator"
+            action
+            for action in tools_menu.actions()
+            if action.text() == "Open Background Calibrator"
         )
 
         calibrator_action.trigger()
@@ -337,13 +400,19 @@ def test_tools_menu_can_launch_tso_generator(qapp, monkeypatch):
             def __init__(self, args):
                 popen_calls.append(args)
 
-        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+        monkeypatch.setattr(
+            "sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen
+        )
 
         tools_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Tools"
         )
         tso_generator_action = next(
-            action for action in tools_menu.actions() if action.text() == "Open TSO Generator"
+            action
+            for action in tools_menu.actions()
+            if action.text() == "Open TSO Generator"
         )
 
         tso_generator_action.trigger()
@@ -364,14 +433,23 @@ def test_tools_menu_can_launch_tso_generator_from_frozen_build(qapp, monkeypatch
             def __init__(self, args):
                 popen_calls.append(args)
 
-        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
-        monkeypatch.setattr("sg_viewer.ui.viewer_controller.sys", SimpleNamespace(executable="SGCreate.exe", frozen=True))
+        monkeypatch.setattr(
+            "sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen
+        )
+        monkeypatch.setattr(
+            "sg_viewer.ui.viewer_controller.sys",
+            SimpleNamespace(executable="SGCreate.exe", frozen=True),
+        )
 
         tools_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Tools"
         )
         tso_generator_action = next(
-            action for action in tools_menu.actions() if action.text() == "Open TSO Generator"
+            action
+            for action in tools_menu.actions()
+            if action.text() == "Open TSO Generator"
         )
 
         tso_generator_action.trigger()
@@ -400,6 +478,7 @@ def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
         assert window.preview.show_mrk_notches is False
     finally:
         window.close()
+
 
 def test_mrk_tab_buttons_use_entries_labels(qapp):
     window = SGViewerWindow()
@@ -430,12 +509,17 @@ def test_pitwall_controls_are_grouped_in_wall_heights_box(qapp):
         buttons_layout = layout.itemAt(2).layout()
         assert buttons_layout is not None
         assert buttons_layout.itemAt(0).widget() is window.generate_pitwall_button
-        assert buttons_layout.itemAt(1).widget() is window.manual_wall_height_overrides_button
+        assert (
+            buttons_layout.itemAt(1).widget()
+            is window.manual_wall_height_overrides_button
+        )
     finally:
         window.close()
 
 
-def test_generate_pitwall_uses_full_section_range_for_all_boundaries(qapp, tmp_path, monkeypatch):
+def test_generate_pitwall_uses_full_section_range_for_all_boundaries(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         output_path = tmp_path / "pitwall.txt"
@@ -448,23 +532,33 @@ def test_generate_pitwall_uses_full_section_range_for_all_boundaries(qapp, tmp_p
 
         monkeypatch.setattr(window, "pitwall_wall_height_500ths", lambda: 20)
         monkeypatch.setattr(window, "pitwall_armco_height_500ths", lambda: 10)
-        monkeypatch.setattr(window, "adjusted_section_range_500ths", lambda _index: (100, 999))
+        monkeypatch.setattr(
+            window, "adjusted_section_range_500ths", lambda _index: (100, 999)
+        )
 
-        wall_fsect = PreviewFSection(start_dlat=0.0, end_dlat=0.0, surface_type=7, type2=0)
-        armco_fsect = PreviewFSection(start_dlat=1.0, end_dlat=1.0, surface_type=8, type2=0)
+        wall_fsect = PreviewFSection(
+            start_dlat=0.0, end_dlat=0.0, surface_type=7, type2=0
+        )
+        armco_fsect = PreviewFSection(
+            start_dlat=1.0, end_dlat=1.0, surface_type=8, type2=0
+        )
 
-        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([SimpleNamespace()], None))
-        monkeypatch.setattr(window.preview, "get_section_fsects", lambda _index: [wall_fsect, armco_fsect])
+        monkeypatch.setattr(
+            window.preview, "get_section_set", lambda: ([SimpleNamespace()], None)
+        )
+        monkeypatch.setattr(
+            window.preview,
+            "get_section_fsects",
+            lambda _index: [wall_fsect, armco_fsect],
+        )
 
         window.controller._generate_pitwall_txt()
 
         assert output_path.read_text(encoding="utf-8") == (
-            "BOUNDARY 0: 100 999 HEIGHT 20\n"
-            "BOUNDARY 1: 100 999 HEIGHT 10\n"
+            "BOUNDARY 0: 100 999 HEIGHT 20\n" "BOUNDARY 1: 100 999 HEIGHT 10\n"
         )
     finally:
         window.close()
-
 
 
 def test_tsd_tab_exists(qapp):
@@ -538,7 +632,6 @@ def test_save_tsd_file_writes_to_selected_loaded_path(qapp, tmp_path, monkeypatc
         window.close()
 
 
-
 def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
@@ -598,9 +691,9 @@ def test_load_tsd_file_persists_track_tsd_state(qapp, tmp_path, monkeypatch):
         window.close()
 
 
-
-
-def test_load_tsd_file_refreshes_preview_once_on_model_reset(qapp, tmp_path, monkeypatch):
+def test_load_tsd_file_refreshes_preview_once_on_model_reset(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         input_path = tmp_path / "detail.tsd"
@@ -630,7 +723,9 @@ def test_load_tsd_file_refreshes_preview_once_on_model_reset(qapp, tmp_path, mon
         window.close()
 
 
-def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, monkeypatch):
+def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         input_path = tmp_path / "detail.tsd"
@@ -651,7 +746,9 @@ def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, m
             calls["count"] += 1
             return (section_index * 1000, (section_index + 1) * 1000)
 
-        monkeypatch.setattr(window, "adjusted_section_range_500ths", _fake_adjusted_range)
+        monkeypatch.setattr(
+            window, "adjusted_section_range_500ths", _fake_adjusted_range
+        )
         monkeypatch.setattr(
             window.preview,
             "get_section_set",
@@ -669,8 +766,6 @@ def test_load_tsd_file_builds_adjusted_ranges_once_per_refresh(qapp, tmp_path, m
         assert calls["count"] == 2
     finally:
         window.close()
-
-
 
 
 def test_load_multiple_tsd_files_allows_show_all_in_combo(qapp, tmp_path, monkeypatch):
@@ -705,8 +800,9 @@ def test_load_multiple_tsd_files_allows_show_all_in_combo(qapp, tmp_path, monkey
         window.close()
 
 
-
-def test_show_all_tsds_selection_populates_table_with_all_loaded_rows(qapp, tmp_path, monkeypatch):
+def test_show_all_tsds_selection_populates_table_with_all_loaded_rows(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         first_path = tmp_path / "first.tsd"
@@ -741,7 +837,6 @@ def test_show_all_tsds_selection_populates_table_with_all_loaded_rows(qapp, tmp_
         window.close()
 
 
-
 def test_adjusted_section_range_uses_cached_ranges(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
@@ -751,7 +846,9 @@ def test_adjusted_section_range_uses_cached_ranges(qapp, monkeypatch):
             calls["count"] += 1
             return ((0, 100, 100), (100, 250, 150))
 
-        monkeypatch.setattr(window, "_rebuild_adjusted_section_ranges_cache", _fake_rebuild)
+        monkeypatch.setattr(
+            window, "_rebuild_adjusted_section_ranges_cache", _fake_rebuild
+        )
 
         assert window.adjusted_section_range_500ths(0) == (0, 100)
         assert window.adjusted_section_range_500ths(1) == (100, 250)
@@ -762,8 +859,6 @@ def test_adjusted_section_range_uses_cached_ranges(qapp, monkeypatch):
         assert calls["count"] == 2
     finally:
         window.close()
-
-
 
 
 def test_tsd_refresh_uses_window_adjusted_range_cache(qapp, monkeypatch):
@@ -803,7 +898,9 @@ def test_tsd_refresh_uses_window_adjusted_range_cache(qapp, monkeypatch):
             calls["count"] += 1
             return ((0, 100, 100), (100, 200, 100))
 
-        monkeypatch.setattr(window, "_rebuild_adjusted_section_ranges_cache", _fake_rebuild)
+        monkeypatch.setattr(
+            window, "_rebuild_adjusted_section_ranges_cache", _fake_rebuild
+        )
 
         window.controller._refresh_tsd_preview_lines()
         window.controller._refresh_tsd_preview_lines()
@@ -811,6 +908,7 @@ def test_tsd_refresh_uses_window_adjusted_range_cache(qapp, monkeypatch):
         assert calls["count"] == 1
     finally:
         window.close()
+
 
 def test_tsd_single_row_edit_patches_cached_preview_line(qapp, monkeypatch):
     window = SGViewerWindow()
@@ -870,7 +968,9 @@ def test_tsd_single_row_edit_patches_cached_preview_line(qapp, monkeypatch):
                 command=line.command,
             )
 
-        monkeypatch.setattr(window.controller, "_convert_tsd_line_for_preview", _fake_convert)
+        monkeypatch.setattr(
+            window.controller, "_convert_tsd_line_for_preview", _fake_convert
+        )
         monkeypatch.setattr(window.preview, "get_section_set", lambda: ([], None))
 
         calls = {"count": 0}
@@ -891,6 +991,7 @@ def test_tsd_single_row_edit_patches_cached_preview_line(qapp, monkeypatch):
         assert window.controller._last_tsd_preview_lines[1].width_500ths == 3001
     finally:
         window.close()
+
 
 def test_selecting_tsd_row_centers_viewport_on_line_midpoint(qapp, monkeypatch):
     window = SGViewerWindow()
@@ -916,10 +1017,14 @@ def test_selecting_tsd_row_centers_viewport_on_line_midpoint(qapp, monkeypatch):
             start_dlong=0.0,
             start_heading=(1.0, 0.0),
         )
-        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+        monkeypatch.setattr(
+            window.preview, "get_section_set", lambda: ([section], None)
+        )
 
         centered_points: list[tuple[float, float]] = []
-        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+        monkeypatch.setattr(
+            window.preview, "center_view_on_point", centered_points.append
+        )
 
         window.tsd_lines_table.selectRow(0)
 
@@ -952,10 +1057,14 @@ def test_tsd_selection_does_not_center_when_line_has_zero_span(qapp, monkeypatch
             start_dlong=0.0,
             start_heading=(1.0, 0.0),
         )
-        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+        monkeypatch.setattr(
+            window.preview, "get_section_set", lambda: ([section], None)
+        )
 
         centered_points: list[tuple[float, float]] = []
-        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+        monkeypatch.setattr(
+            window.preview, "center_view_on_point", centered_points.append
+        )
 
         window.tsd_lines_table.selectRow(0)
 
@@ -981,7 +1090,6 @@ def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
         window.close()
 
 
-
 def test_tsd_draw_all_sections_checkbox_controls_selected_only_mode(qapp):
     window = SGViewerWindow()
     try:
@@ -994,6 +1102,7 @@ def test_tsd_draw_all_sections_checkbox_controls_selected_only_mode(qapp):
         assert window.preview.show_tsd_selected_section_only is False
     finally:
         window.close()
+
 
 def test_mrk_table_selection_updates_selected_wall_preview(qapp):
     window = SGViewerWindow()
@@ -1024,7 +1133,9 @@ def test_mrk_texture_pattern_checkbox_switches_delegate_to_text_mode(qapp):
     window = SGViewerWindow()
     try:
         window.mrk_texture_pattern_show_colors_checkbox.setChecked(False)
-        assert window.controller._mrk_texture_pattern_delegate._show_color_boxes is False
+        assert (
+            window.controller._mrk_texture_pattern_delegate._show_color_boxes is False
+        )
 
         window.mrk_texture_pattern_show_colors_checkbox.setChecked(True)
         assert window.controller._mrk_texture_pattern_delegate._show_color_boxes is True
@@ -1058,15 +1169,15 @@ def test_mrk_add_entry_starts_with_blank_texture_pattern(qapp):
         window.close()
 
 
-
-
-
 def test_mrk_add_entry_autodetects_right_side_from_boundary_dlat(qapp):
     window = SGViewerWindow()
     try:
         from types import SimpleNamespace
 
-        boundary = SimpleNamespace(points=[(0.0, 0.0), (100.0, 0.0)], attrs={"dlat_start": -20.0, "dlat_end": -20.0})
+        boundary = SimpleNamespace(
+            points=[(0.0, 0.0), (100.0, 0.0)],
+            attrs={"dlat_start": -20.0, "dlat_end": -20.0},
+        )
         fsect = SimpleNamespace(boundaries=[boundary])
         window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[fsect])
 
@@ -1075,6 +1186,7 @@ def test_mrk_add_entry_autodetects_right_side_from_boundary_dlat(qapp):
         assert window.controller._mrk_side_for_row(0) == "Right"
     finally:
         window.close()
+
 
 def test_mrk_highlights_repeat_texture_pattern_when_shorter_than_wall_count(qapp):
     window = SGViewerWindow()
@@ -1136,8 +1248,6 @@ def test_mrk_textures_button_saves_texture_definitions(qapp, monkeypatch):
         window.close()
 
 
-
-
 def test_mrk_patterns_use_texture_names_not_mip_names(qapp):
     window = SGViewerWindow()
     try:
@@ -1148,7 +1258,10 @@ def test_mrk_patterns_use_texture_names_not_mip_names(qapp):
             MrkTextureDefinition("brick_blue", "walls01", 8, 8, 56, 56, "#0000FF"),
         )
 
-        assert window.controller._default_texture_pattern_for_wall_count(3) == "brick_red,brick_blue,brick_red"
+        assert (
+            window.controller._default_texture_pattern_for_wall_count(3)
+            == "brick_red,brick_blue,brick_red"
+        )
     finally:
         window.close()
 
@@ -1210,7 +1323,9 @@ def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         output_path = tmp_path / "generated.mrk"
-        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[object() for _ in range(20)])
+        window.preview._runtime._sg_preview_model = SimpleNamespace(
+            fsects=[object() for _ in range(20)]
+        )
         window.controller._mrk_texture_definitions = (
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
             MrkTextureDefinition("brick_blue", "walls02", 4, 8, 60, 72, "#0000FF"),
@@ -1257,13 +1372,18 @@ def test_generate_mrk_file_from_current_entries(qapp, tmp_path, monkeypatch):
     finally:
         window.close()
 
-def test_generate_mrk_file_allows_wall_count_to_continue_into_next_section(qapp, tmp_path, monkeypatch):
+
+def test_generate_mrk_file_allows_wall_count_to_continue_into_next_section(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         output_path = tmp_path / "carryover.mrk"
-        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[object(), object(), object()])
+        window.preview._runtime._sg_preview_model = SimpleNamespace(
+            fsects=[object(), object(), object()]
+        )
         window.controller._mrk_texture_definitions = (
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
         )
@@ -1285,7 +1405,9 @@ def test_generate_mrk_file_allows_wall_count_to_continue_into_next_section(qapp,
                 return [(0.0, 20.0), (20.0, 40.0)]
             return []
 
-        monkeypatch.setattr(window.controller, "_wall_ranges_for_section_boundary", _ranges)
+        monkeypatch.setattr(
+            window.controller, "_wall_ranges_for_section_boundary", _ranges
+        )
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
             "getSaveFileName",
@@ -1309,12 +1431,16 @@ def test_generate_mrk_file_allows_wall_count_to_continue_into_next_section(qapp,
         window.close()
 
 
-def test_mrk_highlights_continue_into_next_section_when_wall_count_exceeds_section(qapp):
+def test_mrk_highlights_continue_into_next_section_when_wall_count_exceeds_section(
+    qapp,
+):
     window = SGViewerWindow()
     try:
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
-        window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[object(), object(), object()])
+        window.preview._runtime._sg_preview_model = SimpleNamespace(
+            fsects=[object(), object(), object()]
+        )
         window.controller._mrk_texture_definitions = (
             MrkTextureDefinition("brick_red", "walls01", 0, 0, 63, 63, "#FF0000"),
             MrkTextureDefinition("brick_blue", "walls02", 0, 0, 63, 63, "#0000FF"),
@@ -1336,7 +1462,9 @@ def test_mrk_highlights_continue_into_next_section_when_wall_count_exceeds_secti
                 return [(0.0, 12.0), (12.0, 24.0)]
             return []
 
-        monkeypatch.setattr(window.controller, "_wall_ranges_for_section_boundary", _ranges)
+        monkeypatch.setattr(
+            window.controller, "_wall_ranges_for_section_boundary", _ranges
+        )
 
         window.controller._update_mrk_highlights_from_table()
 
@@ -1390,7 +1518,10 @@ def test_mrk_divisions_follow_polyline_arc_length():
     radius = 24000.0
     total_angle = math.pi / 2
     points = [
-        (radius * math.cos(total_angle * step / 32), radius * math.sin(total_angle * step / 32))
+        (
+            radius * math.cos(total_angle * step / 32),
+            radius * math.sin(total_angle * step / 32),
+        )
         for step in range(33)
     ]
 
@@ -1404,13 +1535,17 @@ def test_mrk_divisions_follow_polyline_arc_length():
         assert divisions[0] == pytest.approx(spacing, rel=0.03)
 
 
-def test_generate_mrk_file_uses_boundary_type_for_wall_segment_length(qapp, tmp_path, monkeypatch):
+def test_generate_mrk_file_uses_boundary_type_for_wall_segment_length(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
 
         output_path = tmp_path / "boundary_type_length.mrk"
-        boundary = SimpleNamespace(points=((0.0, 0.0), (240.0, 0.0)), attrs={"type1": 8})
+        boundary = SimpleNamespace(
+            points=((0.0, 0.0), (240.0, 0.0)), attrs={"type1": 8}
+        )
         fsect = SimpleNamespace(surface_type=7, boundaries=[boundary])
         window.preview._runtime._sg_preview_model = SimpleNamespace(fsects=[fsect])
         window.controller._mrk_texture_definitions = (
@@ -1445,7 +1580,9 @@ def test_generate_mrk_file_uses_boundary_type_for_wall_segment_length(qapp, tmp_
         window.close()
 
 
-def test_generate_mrk_file_uses_wall_height_for_wall_segment_length(qapp, tmp_path, monkeypatch):
+def test_generate_mrk_file_uses_wall_height_for_wall_segment_length(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         from sg_viewer.ui.mrk_textures_dialog import MrkTextureDefinition
@@ -1585,8 +1722,6 @@ def test_paint_preview_passes_mrk_highlight_walls_to_renderer(monkeypatch):
     assert captured["highlighted_mrk_walls"] == ((1, 2, 3, 1, "#ff00ff"),)
 
 
-
-
 def test_paint_preview_draws_tsd_before_sg_fsects(monkeypatch):
     from sg_viewer.services import preview_painter
 
@@ -1656,7 +1791,6 @@ def test_paint_preview_draws_tsd_before_sg_fsects(monkeypatch):
     assert call_order == ["tsd", "sg"]
 
 
-
 def test_paint_preview_passes_selected_trackside_object_indices(monkeypatch):
     from sg_viewer.services import preview_painter
 
@@ -1665,7 +1799,9 @@ def test_paint_preview_passes_selected_trackside_object_indices(monkeypatch):
     def _fake_draw_trackside_objects(*args, **kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(preview_painter, "_draw_trackside_objects", _fake_draw_trackside_objects)
+    monkeypatch.setattr(
+        preview_painter, "_draw_trackside_objects", _fake_draw_trackside_objects
+    )
 
     image = QtGui.QImage(8, 8, QtGui.QImage.Format_ARGB32)
     painter = QtGui.QPainter(image)
@@ -1711,7 +1847,16 @@ def test_paint_preview_passes_selected_trackside_object_indices(monkeypatch):
                 transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
                 view_state=SimpleNamespace(show_surfaces=False, show_boundaries=False),
                 enabled=True,
-                trackside_objects=(SimpleNamespace(x=0, y=0, yaw=0, bbox_length=0, bbox_width=0, rotation_point="center"),),
+                trackside_objects=(
+                    SimpleNamespace(
+                        x=0,
+                        y=0,
+                        yaw=0,
+                        bbox_length=0,
+                        bbox_width=0,
+                        rotation_point="center",
+                    ),
+                ),
                 selected_trackside_object_indices=(0,),
             ),
             transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
@@ -1731,7 +1876,9 @@ def test_paint_preview_passes_trackside_object_colors(monkeypatch):
     def _fake_draw_trackside_objects(*args, **kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(preview_painter, "_draw_trackside_objects", _fake_draw_trackside_objects)
+    monkeypatch.setattr(
+        preview_painter, "_draw_trackside_objects", _fake_draw_trackside_objects
+    )
 
     image = QtGui.QImage(8, 8, QtGui.QImage.Format_ARGB32)
     painter = QtGui.QPainter(image)
@@ -1777,7 +1924,16 @@ def test_paint_preview_passes_trackside_object_colors(monkeypatch):
                 transform=SimpleNamespace(world_to_view=lambda x, y, h: (x, y)),
                 view_state=SimpleNamespace(show_surfaces=False, show_boundaries=False),
                 enabled=True,
-                trackside_objects=(SimpleNamespace(x=0, y=0, yaw=0, bbox_length=0, bbox_width=0, rotation_point="center"),),
+                trackside_objects=(
+                    SimpleNamespace(
+                        x=0,
+                        y=0,
+                        yaw=0,
+                        bbox_length=0,
+                        bbox_width=0,
+                        rotation_point="center",
+                    ),
+                ),
                 selected_trackside_object_indices=(0,),
                 tso_box_default_color=QtGui.QColor("#010203"),
                 tso_box_selected_color=QtGui.QColor("#112233"),
@@ -1805,7 +1961,10 @@ def test_preview_runtime_exposes_selected_trackside_object_indices(qapp):
     finally:
         window.close()
 
-def test_background_calibrator_receives_loaded_background_image_path(qapp, monkeypatch, tmp_path):
+
+def test_background_calibrator_receives_loaded_background_image_path(
+    qapp, monkeypatch, tmp_path
+):
     window = SGViewerWindow()
     try:
         popen_calls: list[list[str]] = []
@@ -1814,7 +1973,9 @@ def test_background_calibrator_receives_loaded_background_image_path(qapp, monke
             def __init__(self, args):
                 popen_calls.append(args)
 
-        monkeypatch.setattr("sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen)
+        monkeypatch.setattr(
+            "sg_viewer.ui.viewer_controller.subprocess.Popen", _DummyPopen
+        )
 
         image_path = tmp_path / "background.png"
         image_path.write_bytes(
@@ -1829,10 +1990,14 @@ def test_background_calibrator_receives_loaded_background_image_path(qapp, monke
         window.preview.load_background_image(image_path)
 
         tools_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Tools"
         )
         calibrator_action = next(
-            action for action in tools_menu.actions() if action.text() == "Open Background Calibrator"
+            action
+            for action in tools_menu.actions()
+            if action.text() == "Open Background Calibrator"
         )
 
         calibrator_action.trigger()
@@ -1896,7 +2061,9 @@ def test_calibrator_receiver_loads_background_from_payload(qapp, monkeypatch, tm
         monkeypatch.setattr(window.preview, "load_background_image", _load_background)
         monkeypatch.setattr(window.preview, "set_background_settings", _set_settings)
         monkeypatch.setattr(window.preview, "has_background_image", lambda: True)
-        monkeypatch.setattr(window.controller, "_persist_background_state", lambda: None)
+        monkeypatch.setattr(
+            window.controller, "_persist_background_state", lambda: None
+        )
         monkeypatch.setattr(window, "show_status_message", lambda _msg: None)
         window.controller._calibrator_server = _FakeServer(
             _FakeSocket(json.dumps(payload).encode("utf-8"))
@@ -1914,7 +2081,9 @@ def test_file_menu_exposes_save_action(qapp):
     window = SGViewerWindow()
     try:
         file_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "&File"
         )
         save_action = next(
             action for action in file_menu.actions() if action.text() == "Save"
@@ -1929,7 +2098,9 @@ def test_file_menu_exposes_project_actions(qapp):
     window = SGViewerWindow()
     try:
         file_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "&File"
         )
         labels = [action.text() for action in file_menu.actions()]
         assert "Open Project…" in labels
@@ -1939,7 +2110,9 @@ def test_file_menu_exposes_project_actions(qapp):
         window.close()
 
 
-def test_save_project_as_action_saves_sgc_with_sg_reference(qapp, monkeypatch, tmp_path):
+def test_save_project_as_action_saves_sgc_with_sg_reference(
+    qapp, monkeypatch, tmp_path
+):
     window = SGViewerWindow()
     try:
         controller = window.controller
@@ -1950,11 +2123,16 @@ def test_save_project_as_action_saves_sgc_with_sg_reference(qapp, monkeypatch, t
         saved_paths = []
         project_path = tmp_path / "project.sgc"
 
-        monkeypatch.setattr(window.preview, "save_sg", lambda path: saved_paths.append(path))
+        monkeypatch.setattr(
+            window.preview, "save_sg", lambda path: saved_paths.append(path)
+        )
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
             "getSaveFileName",
-            lambda *args, **kwargs: (str(project_path), "SG Project files (*.sgc *.SGC)"),
+            lambda *args, **kwargs: (
+                str(project_path),
+                "SG Project files (*.sgc *.SGC)",
+            ),
         )
 
         controller._save_action.trigger()
@@ -1983,7 +2161,10 @@ def test_open_project_loads_sg_from_sgc(qapp, monkeypatch, tmp_path):
         monkeypatch.setattr(
             QtWidgets.QFileDialog,
             "getOpenFileName",
-            lambda *args, **kwargs: (str(project_path), "SG Project files (*.sgc *.SGC)"),
+            lambda *args, **kwargs: (
+                str(project_path),
+                "SG Project files (*.sgc *.SGC)",
+            ),
         )
 
         window.controller._open_project_action.trigger()
@@ -2016,18 +2197,30 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
 
         def fake_load_sg(path, **kwargs):
             progress = kwargs["progress"]
-            progress.update(kwargs["progress_offset"] + 2, "Applying loaded track state…")
-            progress.update(kwargs["progress_offset"] + 5, "Restoring MRK wall heights…")
-            progress.update(kwargs["progress_offset"] + 6, "Restoring manual wall height overrides…")
-            progress.update(kwargs["progress_offset"] + 7, "Restoring MRK objects and metadata…")
-            progress.update(kwargs["progress_offset"] + 8, "Restoring TSD files and project data…")
+            progress.update(
+                kwargs["progress_offset"] + 2, "Applying loaded track state…"
+            )
+            progress.update(
+                kwargs["progress_offset"] + 5, "Restoring MRK wall heights…"
+            )
+            progress.update(
+                kwargs["progress_offset"] + 6, "Restoring manual wall height overrides…"
+            )
+            progress.update(
+                kwargs["progress_offset"] + 7, "Restoring MRK objects and metadata…"
+            )
+            progress.update(
+                kwargs["progress_offset"] + 8, "Restoring TSD files and project data…"
+            )
             progress.update(kwargs["progress_offset"] + 9, "Project loaded.")
 
         monkeypatch.setattr(
             "sg_viewer.ui.controllers.features.document_controller.ProjectLoadProgress",
             FakeProgress,
         )
-        monkeypatch.setattr(window.controller._document_controller, "_load_sg", fake_load_sg)
+        monkeypatch.setattr(
+            window.controller._document_controller, "_load_sg", fake_load_sg
+        )
 
         window.controller._document_controller.open_project_path(project_path)
 
@@ -2128,7 +2321,9 @@ def test_adjusted_dlong_labels_auto_update_without_toggle(qapp):
         section.length = 1000
         section.alt = [0, 100]
         section.grade = [0, 0]
-        sgfile = SGFile([0, 0, 0, 0, 1, num_xsects], 1, num_xsects, [-100, 100], [section])
+        sgfile = SGFile(
+            [0, 0, 0, 0, 1, num_xsects], 1, num_xsects, [-100, 100], [section]
+        )
         window.preview._sgfile = sgfile
 
         selection = SectionSelection(
@@ -2142,8 +2337,14 @@ def test_adjusted_dlong_labels_auto_update_without_toggle(qapp):
         )
 
         window.update_selection_sidebar(selection)
-        assert window._adjusted_section_start_dlong_label.text() == "Adjusted Starting DLONG: 0.0 ft"
-        assert window._adjusted_section_end_dlong_label.text() == "Adjusted Ending DLONG: 1001.2 ft"
+        assert (
+            window._adjusted_section_start_dlong_label.text()
+            == "Adjusted Starting DLONG: 0.0 ft"
+        )
+        assert (
+            window._adjusted_section_end_dlong_label.text()
+            == "Adjusted Ending DLONG: 1001.2 ft"
+        )
         assert (
             window._adjusted_section_length_label.text()
             == "Adjusted Section Length: 1001.2 ft (0.190 miles)"
@@ -2156,9 +2357,13 @@ def test_file_menu_exposes_export_csv_action_in_export_submenu(qapp):
     window = SGViewerWindow()
     try:
         file_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "&File"
         )
-        export_menu_action = next(action for action in file_menu.actions() if action.text() == "Export")
+        export_menu_action = next(
+            action for action in file_menu.actions() if action.text() == "Export"
+        )
         export_menu = export_menu_action.menu()
         labels = [action.text() for action in export_menu.actions()]
 
@@ -2196,10 +2401,14 @@ def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
     window = SGViewerWindow()
     try:
         file_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "&File"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "&File"
         )
         tools_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Tools"
         )
 
         file_labels = [action.text() for action in file_menu.actions()]
@@ -2208,7 +2417,9 @@ def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
         assert "Export" in file_labels
         assert "Export to TRK…" not in file_labels
 
-        export_action = next(action for action in file_menu.actions() if action.text() == "Export")
+        export_action = next(
+            action for action in file_menu.actions() if action.text() == "Export"
+        )
         export_menu = export_action.menu()
         assert export_menu is not None
         export_labels = [action.text() for action in export_menu.actions()]
@@ -2219,13 +2430,13 @@ def test_export_sg_to_trk_is_in_file_menu_not_tools_menu(qapp):
         window.close()
 
 
-
-
 def test_tools_menu_exposes_unique_tso_list_action(qapp):
     window = SGViewerWindow()
     try:
         tools_menu = next(
-            menu for menu in window.menuBar().findChildren(QtWidgets.QMenu) if menu.title() == "Tools"
+            menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+            if menu.title() == "Tools"
         )
 
         action = next(
@@ -2342,7 +2553,10 @@ def test_tsd_objects_controls_exist(qapp):
     try:
         assert window.tsd_add_object_button.text() == "Add TSD Object"
         assert window.tsd_duplicate_object_button.text() == "Duplicate TSD Object"
-        assert window.tsd_remove_selected_object_button.text() == "Remove Selected TSD Object"
+        assert (
+            window.tsd_remove_selected_object_button.text()
+            == "Remove Selected TSD Object"
+        )
         assert window.tsd_move_object_up_button.text() == "Move Up"
         assert window.tsd_move_object_down_button.text() == "Move Down"
         assert window.tsd_export_objects_button.text() == "Export object .TSD files"
@@ -2359,16 +2573,18 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
         sg_path = tmp_path / "track.sg"
         sg_path.write_bytes(b"")
         window.controller._current_path = sg_path
-        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
-            name="Zebra Crossing 1",
-            start_dlong=0,
-            right_dlat=20000,
-            left_dlat=-20000,
-            stripe_width_500ths=4000,
-            stripe_length_500ths=28000,
-            stripe_spacing_500ths=3000,
-            color_index=36,
-            command="Detail",
+        window.controller._open_tsd_object_dialog = (
+            lambda existing=None: TsdZebraCrossingObject(
+                name="Zebra Crossing 1",
+                start_dlong=0,
+                right_dlat=20000,
+                left_dlat=-20000,
+                stripe_width_500ths=4000,
+                stripe_length_500ths=28000,
+                stripe_spacing_500ths=3000,
+                color_index=36,
+                command="Detail",
+            )
         )
 
         window.controller._on_tsd_add_object_requested()
@@ -2433,16 +2649,18 @@ def test_export_tsd_objects_writes_single_combined_file(qapp, tmp_path, monkeypa
 def test_remove_selected_tsd_object_removes_selected_rows(qapp):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
-            name="Zebra Crossing 1",
-            start_dlong=0,
-            right_dlat=20000,
-            left_dlat=-20000,
-            stripe_width_500ths=4000,
-            stripe_length_500ths=28000,
-            stripe_spacing_500ths=3000,
-            color_index=36,
-            command="Detail",
+        window.controller._open_tsd_object_dialog = (
+            lambda existing=None: TsdZebraCrossingObject(
+                name="Zebra Crossing 1",
+                start_dlong=0,
+                right_dlat=20000,
+                left_dlat=-20000,
+                stripe_width_500ths=4000,
+                stripe_length_500ths=28000,
+                stripe_spacing_500ths=3000,
+                color_index=36,
+                command="Detail",
+            )
         )
         window.controller._on_tsd_add_object_requested()
         window.controller._on_tsd_add_object_requested()
@@ -2457,19 +2675,23 @@ def test_remove_selected_tsd_object_removes_selected_rows(qapp):
         window.close()
 
 
-def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(qapp, monkeypatch):
+def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(
+    qapp, monkeypatch
+):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
-            name="Crossing",
-            start_dlong=100,
-            right_dlat=0,
-            left_dlat=0,
-            stripe_width_500ths=1000,
-            stripe_length_500ths=40,
-            stripe_spacing_500ths=1000,
-            color_index=36,
-            command="Detail",
+        window.controller._open_tsd_object_dialog = (
+            lambda existing=None: TsdZebraCrossingObject(
+                name="Crossing",
+                start_dlong=100,
+                right_dlat=0,
+                left_dlat=0,
+                stripe_width_500ths=1000,
+                stripe_length_500ths=40,
+                stripe_spacing_500ths=1000,
+                color_index=36,
+                command="Detail",
+            )
         )
         window.controller._on_tsd_add_object_requested()
 
@@ -2484,10 +2706,14 @@ def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(qapp, m
             start_dlong=0.0,
             start_heading=(1.0, 0.0),
         )
-        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+        monkeypatch.setattr(
+            window.preview, "get_section_set", lambda: ([section], None)
+        )
 
         centered_points: list[tuple[float, float]] = []
-        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+        monkeypatch.setattr(
+            window.preview, "center_view_on_point", centered_points.append
+        )
 
         window.tsd_objects_table.selectRow(0)
 
@@ -2499,16 +2725,18 @@ def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(qapp, m
 def test_tsd_objects_table_selection_on_nonzero_column_centers_view(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = lambda existing=None: TsdZebraCrossingObject(
-            name="Crossing",
-            start_dlong=50,
-            right_dlat=0,
-            left_dlat=0,
-            stripe_width_500ths=1000,
-            stripe_length_500ths=40,
-            stripe_spacing_500ths=1000,
-            color_index=36,
-            command="Detail",
+        window.controller._open_tsd_object_dialog = (
+            lambda existing=None: TsdZebraCrossingObject(
+                name="Crossing",
+                start_dlong=50,
+                right_dlat=0,
+                left_dlat=0,
+                stripe_width_500ths=1000,
+                stripe_length_500ths=40,
+                stripe_spacing_500ths=1000,
+                color_index=36,
+                command="Detail",
+            )
         )
         window.controller._on_tsd_add_object_requested()
         section = SimpleNamespace(
@@ -2519,10 +2747,14 @@ def test_tsd_objects_table_selection_on_nonzero_column_centers_view(qapp, monkey
             start_dlong=0.0,
             start_heading=(1.0, 0.0),
         )
-        monkeypatch.setattr(window.preview, "get_section_set", lambda: ([section], None))
+        monkeypatch.setattr(
+            window.preview, "get_section_set", lambda: ([section], None)
+        )
 
         centered_points: list[tuple[float, float]] = []
-        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+        monkeypatch.setattr(
+            window.preview, "center_view_on_point", centered_points.append
+        )
 
         window.tsd_objects_table.setCurrentCell(0, 1)
 
@@ -2666,8 +2898,6 @@ def test_mrk_length_multiplier_persists_in_sgc_state(qapp, tmp_path):
         window.close()
 
 
-
-
 def test_set_trackside_objects_tolerates_missing_selected_index_attr(qapp):
     window = SGViewerWindow()
     try:
@@ -2700,7 +2930,9 @@ def test_add_tso_mode_places_object_on_map_click(qapp, monkeypatch):
         assert window.tso_add_button.isChecked() is False
 
         centered_points: list[tuple[float, float]] = []
-        monkeypatch.setattr(window.preview, "center_view_on_point", centered_points.append)
+        monkeypatch.setattr(
+            window.preview, "center_view_on_point", centered_points.append
+        )
 
         window.tso_table.selectRow(0)
         window.controller._on_tso_selection_changed()
@@ -2714,19 +2946,21 @@ def test_add_tso_mode_places_object_on_map_click(qapp, monkeypatch):
 def test_add_tso_defaults_filename_to_previous_tso(qapp):
     window = SGViewerWindow()
     try:
-        window.controller._trackside_objects.append(TracksideObject(
-            filename="grandstand.3do",
-            x=0,
-            y=0,
-            z=0,
-            yaw=0,
-            pitch=0,
-            tilt=0,
-            description="",
-            bbox_length=0,
-            bbox_width=0,
-            rotation_point="center",
-        ))
+        window.controller._trackside_objects.append(
+            TracksideObject(
+                filename="grandstand.3do",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+            )
+        )
 
         window.tso_add_button.setChecked(True)
         window.controller._on_tso_add_requested()
@@ -2827,7 +3061,9 @@ def test_add_tso_uses_closest_boundary_elevation_for_new_object(qapp, monkeypatc
         window.close()
 
 
-def test_tso_stamp_uses_closest_boundary_elevation_for_each_new_object(qapp, monkeypatch):
+def test_tso_stamp_uses_closest_boundary_elevation_for_each_new_object(
+    qapp, monkeypatch
+):
     window = SGViewerWindow()
     try:
         monkeypatch.setattr(
@@ -2912,7 +3148,9 @@ def test_tso_attributes_apply_bbox_rotation_to_matching_filename_only(qapp):
             bbox_width=888,
             rotation_point="bottom_right",
         )
-        window.controller._on_tso_attributes_apply_bbox_rotation_to_matching_filename(0, apply_from_dialog)
+        window.controller._on_tso_attributes_apply_bbox_rotation_to_matching_filename(
+            0, apply_from_dialog
+        )
 
         assert window.controller._trackside_objects[0].bbox_length == 777
         assert window.controller._trackside_objects[0].bbox_width == 888
@@ -2961,7 +3199,9 @@ def test_modify_tso_elevations_raise_lower_uses_current_units(qapp):
         assert apply_button is not None
         apply_button.click()
 
-        assert window.controller._trackside_objects[0].z == units_to_500ths(1.0, "meter")
+        assert window.controller._trackside_objects[0].z == units_to_500ths(
+            1.0, "meter"
+        )
     finally:
         window.close()
 
@@ -2984,7 +3224,9 @@ def test_editing_tso_relative_boundary_updates_absolute_z_cell(qapp, monkeypatch
                 rotation_point="center",
             )
         ]
-        monkeypatch.setattr(window.controller, "_closest_boundary_elevation_for_tso", lambda _obj: 80)
+        monkeypatch.setattr(
+            window.controller, "_closest_boundary_elevation_for_tso", lambda _obj: 80
+        )
         window.controller._refresh_tso_table()
 
         relative_item = window.tso_table.item(0, 5)
@@ -3250,8 +3492,6 @@ def test_preview_tso_drag_updates_table_live_and_persists_on_drag_end(qapp, tmp_
         window.close()
 
 
-
-
 def test_preview_tso_drag_hit_test_uses_widget_height_for_y_transform(qapp):
     widget = PreviewWidgetQt()
     try:
@@ -3260,27 +3500,31 @@ def test_preview_tso_drag_hit_test_uses_widget_height_for_y_transform(qapp):
         qapp.processEvents()
 
         widget.set_show_trackside_objects(True)
-        widget.set_trackside_objects((
-            TracksideObject(
-                filename="cone",
-                x=100,
-                y=200,
-                z=0,
-                yaw=0,
-                pitch=0,
-                tilt=0,
-                description="",
-                bbox_length=200,
-                bbox_width=200,
-                rotation_point="center",
-            ),
-        ))
+        widget.set_trackside_objects(
+            (
+                TracksideObject(
+                    filename="cone",
+                    x=100,
+                    y=200,
+                    z=0,
+                    yaw=0,
+                    pitch=0,
+                    tilt=0,
+                    description="",
+                    bbox_length=200,
+                    bbox_width=200,
+                    rotation_point="center",
+                ),
+            )
+        )
         widget.set_trackside_move_enabled_indices((0,))
         widget.set_selected_trackside_object_indices((0,))
 
         widget_height = widget.height()
 
-        def screen_point_for_world(scale: float, offsets: tuple[float, float], x: float, y: float) -> QtCore.QPointF:
+        def screen_point_for_world(
+            scale: float, offsets: tuple[float, float], x: float, y: float
+        ) -> QtCore.QPointF:
             return QtCore.QPointF(
                 offsets[0] + x * scale,
                 widget_height - (offsets[1] + y * scale),
@@ -3290,7 +3534,10 @@ def test_preview_tso_drag_hit_test_uses_widget_height_for_y_transform(qapp):
         try:
             for scale in (0.5, 4.0):
                 offsets = (320.0, 240.0)
-                widget._runtime.current_transform = lambda _size, s=scale, o=offsets: (s, o)
+                widget._runtime.current_transform = lambda _size, s=scale, o=offsets: (
+                    s,
+                    o,
+                )
                 hit = widget._runtime._trackside_drag_hit_test(
                     screen_point_for_world(scale, offsets, 100.0, 200.0)
                 )
@@ -3299,6 +3546,8 @@ def test_preview_tso_drag_hit_test_uses_widget_height_for_y_transform(qapp):
             widget._runtime.current_transform = original_current_transform
     finally:
         widget.close()
+
+
 def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
     widget = PreviewWidgetQt()
     try:
@@ -3308,23 +3557,27 @@ def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
 
         dragged = []
         widget.set_show_trackside_objects(True)
-        widget.set_trackside_objects((
-            TracksideObject(
-                filename="cone",
-                x=0,
-                y=0,
-                z=0,
-                yaw=0,
-                pitch=0,
-                tilt=0,
-                description="",
-                bbox_length=0,
-                bbox_width=0,
-                rotation_point="center",
-            ),
-        ))
+        widget.set_trackside_objects(
+            (
+                TracksideObject(
+                    filename="cone",
+                    x=0,
+                    y=0,
+                    z=0,
+                    yaw=0,
+                    pitch=0,
+                    tilt=0,
+                    description="",
+                    bbox_length=0,
+                    bbox_width=0,
+                    rotation_point="center",
+                ),
+            )
+        )
         widget.set_trackside_move_enabled_indices((0,))
-        widget.set_trackside_object_drag_callback(lambda index, dx, dy: dragged.append((index, dx, dy)))
+        widget.set_trackside_object_drag_callback(
+            lambda index, dx, dy: dragged.append((index, dx, dy))
+        )
 
         transform = widget.current_transform((widget.width(), widget.height()))
         assert transform is not None
@@ -3337,13 +3590,22 @@ def test_preview_tso_drag_accumulates_fractional_zoomed_in_motion(qapp):
         def screen_point_for_world(x: float, y: float) -> QtCore.QPointF:
             return QtCore.QPointF(offsets[0] + x * scale, offsets[1] - y * scale)
 
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.0)) is False
+        assert (
+            widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.0))
+            is False
+        )
         assert dragged == []
 
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.99, 0.0)) is False
+        assert (
+            widget._runtime._drag_trackside_object_to(screen_point_for_world(0.99, 0.0))
+            is False
+        )
         assert dragged == []
 
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(1.0, 0.0)) is True
+        assert (
+            widget._runtime._drag_trackside_object_to(screen_point_for_world(1.0, 0.0))
+            is True
+        )
         assert dragged == [(0, 1, 0)]
     finally:
         widget.close()
@@ -3358,23 +3620,27 @@ def test_preview_tso_drag_accumulates_negative_fractional_motion(qapp):
 
         dragged = []
         widget.set_show_trackside_objects(True)
-        widget.set_trackside_objects((
-            TracksideObject(
-                filename="cone",
-                x=0,
-                y=0,
-                z=0,
-                yaw=0,
-                pitch=0,
-                tilt=0,
-                description="",
-                bbox_length=0,
-                bbox_width=0,
-                rotation_point="center",
-            ),
-        ))
+        widget.set_trackside_objects(
+            (
+                TracksideObject(
+                    filename="cone",
+                    x=0,
+                    y=0,
+                    z=0,
+                    yaw=0,
+                    pitch=0,
+                    tilt=0,
+                    description="",
+                    bbox_length=0,
+                    bbox_width=0,
+                    rotation_point="center",
+                ),
+            )
+        )
         widget.set_trackside_move_enabled_indices((0,))
-        widget.set_trackside_object_drag_callback(lambda index, dx, dy: dragged.append((index, dx, dy)))
+        widget.set_trackside_object_drag_callback(
+            lambda index, dx, dy: dragged.append((index, dx, dy))
+        )
 
         transform = widget.current_transform((widget.width(), widget.height()))
         assert transform is not None
@@ -3387,13 +3653,28 @@ def test_preview_tso_drag_accumulates_negative_fractional_motion(qapp):
         def screen_point_for_world(x: float, y: float) -> QtCore.QPointF:
             return QtCore.QPointF(offsets[0] + x * scale, offsets[1] - y * scale)
 
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(-0.4, 0.0)) is False
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(-0.99, 0.0)) is False
+        assert (
+            widget._runtime._drag_trackside_object_to(screen_point_for_world(-0.4, 0.0))
+            is False
+        )
+        assert (
+            widget._runtime._drag_trackside_object_to(
+                screen_point_for_world(-0.99, 0.0)
+            )
+            is False
+        )
         assert dragged == []
 
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(-1.01, 0.0)) is True
+        assert (
+            widget._runtime._drag_trackside_object_to(
+                screen_point_for_world(-1.01, 0.0)
+            )
+            is True
+        )
         assert dragged == [(0, -1, 0)]
-        assert widget._runtime._active_trackside_drag_remainder == pytest.approx((-0.01, 0.0))
+        assert widget._runtime._active_trackside_drag_remainder == pytest.approx(
+            (-0.01, 0.0)
+        )
     finally:
         widget.close()
 
@@ -3406,21 +3687,23 @@ def test_preview_tso_drag_consumes_zero_delta_mouse_move(qapp):
         qapp.processEvents()
 
         widget.set_show_trackside_objects(True)
-        widget.set_trackside_objects((
-            TracksideObject(
-                filename="cone",
-                x=0,
-                y=0,
-                z=0,
-                yaw=0,
-                pitch=0,
-                tilt=0,
-                description="",
-                bbox_length=0,
-                bbox_width=0,
-                rotation_point="center",
-            ),
-        ))
+        widget.set_trackside_objects(
+            (
+                TracksideObject(
+                    filename="cone",
+                    x=0,
+                    y=0,
+                    z=0,
+                    yaw=0,
+                    pitch=0,
+                    tilt=0,
+                    description="",
+                    bbox_length=0,
+                    bbox_width=0,
+                    rotation_point="center",
+                ),
+            )
+        )
         widget.set_trackside_move_enabled_indices((0,))
 
         widget._runtime._active_trackside_drag_index = 0
@@ -3514,7 +3797,9 @@ def test_tso_z_rel_boundary_cell_click_does_not_open_attributes_dialog(qapp):
         window.controller._refresh_tso_table()
 
         called_rows: list[int] = []
-        window.controller._open_tso_attributes_dialog = lambda row: called_rows.append(row)
+        window.controller._open_tso_attributes_dialog = lambda row: called_rows.append(
+            row
+        )
 
         window.controller._on_tso_table_cell_clicked(0, 5)
         assert called_rows == []
@@ -3525,7 +3810,9 @@ def test_tso_z_rel_boundary_cell_click_does_not_open_attributes_dialog(qapp):
         window.close()
 
 
-def test_preview_tso_drag_release_after_only_subunit_motion_preserves_integer_storage(qapp, tmp_path):
+def test_preview_tso_drag_release_after_only_subunit_motion_preserves_integer_storage(
+    qapp, tmp_path
+):
     window = SGViewerWindow()
     try:
         sg_path = tmp_path / "track.sg"
@@ -3552,7 +3839,10 @@ def test_preview_tso_drag_release_after_only_subunit_motion_preserves_integer_st
         def screen_point_for_world(x: float, y: float) -> QtCore.QPointF:
             return QtCore.QPointF(offsets[0] + x * scale, offsets[1] - y * scale)
 
-        assert widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.4)) is False
+        assert (
+            widget._runtime._drag_trackside_object_to(screen_point_for_world(0.4, 0.4))
+            is False
+        )
 
         release_pos = screen_point_for_world(0.4, 0.4)
         release_event = QtGui.QMouseEvent(
@@ -3577,7 +3867,9 @@ def test_preview_tso_drag_release_after_only_subunit_motion_preserves_integer_st
         window.close()
 
 
-def test_view_menu_track_section_dlongs_dialog_shows_parsed_rows(qapp, tmp_path, monkeypatch):
+def test_view_menu_track_section_dlongs_dialog_shows_parsed_rows(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         project_path = tmp_path / "sample.sg"
@@ -3599,7 +3891,9 @@ def test_view_menu_track_section_dlongs_dialog_shows_parsed_rows(qapp, tmp_path,
             if menu.title() == "View"
         )
         section_dlongs_action = next(
-            action for action in view_menu.actions() if action.text() == "Track Section DLONGs…"
+            action
+            for action in view_menu.actions()
+            if action.text() == "Track Section DLONGs…"
         )
 
         section_dlongs_action.trigger()
@@ -3609,8 +3903,7 @@ def test_view_menu_track_section_dlongs_dialog_shows_parsed_rows(qapp, tmp_path,
         text_edit = dialog.findChild(QtWidgets.QPlainTextEdit, "sectionDlongsText")
         assert text_edit is not None
         assert text_edit.toPlainText() == (
-            "sec0_l0: 0, 10, 20, 30\n"
-            "sec2_l1: 100, 200, 300, 400"
+            "sec0_l0: 0, 10, 20, 30\n" "sec2_l1: 100, 200, 300, 400"
         )
     finally:
         window.close()
@@ -3683,15 +3976,24 @@ def test_three_d_tools_fix_shows_progress_indicator(qapp, tmp_path, monkeypatch)
             lambda *args, **kwargs: ("Fix see-through elevation (in place)", True),
         )
         monkeypatch.setattr(QtWidgets, "QProgressDialog", _FakeProgressDialog)
-        monkeypatch.setattr(QtWidgets.QApplication, "processEvents", lambda: events.append("events"))
-        monkeypatch.setattr(viewer_controller_module, "process_file", _fake_process_file)
-        monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            QtWidgets.QApplication, "processEvents", lambda: events.append("events")
+        )
+        monkeypatch.setattr(
+            viewer_controller_module, "process_file", _fake_process_file
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox, "information", lambda *args, **kwargs: None
+        )
 
         window.controller._open_three_d_tools_dialog()
 
         assert events == ["created", "shown", "events", "closed"]
         assert progress_values == [0, 25, 100]
-        assert progress_messages == ["Fixing section 1/4", "See-through elevation fix complete."]
+        assert progress_messages == [
+            "Fixing section 1/4",
+            "See-through elevation fix complete.",
+        ]
     finally:
         window.close()
 
@@ -3704,7 +4006,9 @@ def test_pitwall_manual_height_overrides_split_generated_ranges(qapp):
     try:
         controller = SGViewerController(window)
         controller._manual_wall_height_overrides = [
-            ManualWallHeightOverride(boundary=0, start_dlong=25, end_dlong=75, height=99)
+            ManualWallHeightOverride(
+                boundary=0, start_dlong=25, end_dlong=75, height=99
+            )
         ]
 
         assert controller._pitwall_lines_with_manual_overrides([(0, 0, 100, 20)]) == [
