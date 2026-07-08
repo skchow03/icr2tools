@@ -1405,7 +1405,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for title, labels, store in (
             ("Geometry", ("Type", "Start DLONG", "End DLONG", "Length", "Radius", "Start point", "End point", "Start heading", "End heading", "Curve center", "Curve arc/sweep", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_geometry_labels),
             ("Connections", ("Previous", "Next", "Previous length", "Next length", "Previous status", "Next status", "Gap to previous", "Gap to next", "Heading mismatch previous", "Heading mismatch next"), self._section_connection_labels),
-            ("Boundaries / Walls", ("B0", "B1", "Summary"), self._section_boundary_labels),
+            ("Boundaries / Walls", ("Summary", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"), self._section_boundary_labels),
             ("Subsections / .3D", ("Count", "Starts", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_subsection_labels),
             ("Track Context", ("Track length", "Miles", "Section position", "Lap percentage"), self._section_context_labels),
             ("View", ("Zoom", "Units"), self._section_view_labels),
@@ -2586,18 +2586,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._set_section_value(conn, "Next length", self.format_length_with_secondary(selection.next_length) if selection.next_length is not None else "–")
         self._set_section_value(conn, "Previous status", "Connected" if prev_ok else "Unknown")
         self._set_section_value(conn, "Next status", "Connected" if next_ok else "Unknown")
-        self._set_section_value(conn, "Gap to previous", "Unknown")
-        self._set_section_value(conn, "Gap to next", "Unknown")
-        self._set_section_value(conn, "Heading mismatch previous", "Unknown")
-        self._set_section_value(conn, "Heading mismatch next", "Unknown")
+        previous_gap, previous_heading_mismatch = self._section_connection_metrics(
+            sections, selection, at_start=True
+        )
+        next_gap, next_heading_mismatch = self._section_connection_metrics(
+            sections, selection, at_start=False
+        )
+        self._set_section_value(conn, "Gap to previous", previous_gap)
+        self._set_section_value(conn, "Gap to next", next_gap)
+        self._set_section_value(conn, "Heading mismatch previous", previous_heading_mismatch)
+        self._set_section_value(conn, "Heading mismatch next", next_heading_mismatch)
 
         self._set_section_value(self._section_boundary_labels, "Summary", f"{len(boundary_number_by_row)} boundary rows" if boundary_number_by_row else "No boundary rows")
-        for name in ("B0", "B1"):
-            self._set_section_value(self._section_boundary_labels, name, "–")
+        for name in self._section_boundary_labels:
+            if name.startswith("B"):
+                self._set_section_value(self._section_boundary_labels, name, "–")
         for row_index, boundary_number in sorted(boundary_number_by_row.items(), key=lambda item: int(item[1])):
             if f"B{boundary_number}" in self._section_boundary_labels:
                 fsect = fsects[row_index]
-                self._set_section_value(self._section_boundary_labels, f"B{boundary_number}", f"{self._format_fsect_dlat(fsect.start_dlat)} → {self._format_fsect_dlat(fsect.end_dlat)} {self._fsect_dlat_units_label()}")
+                self._set_section_value(self._section_boundary_labels, f"B{boundary_number}", f"DLAT start {self._format_fsect_dlat(fsect.start_dlat)}, end {self._format_fsect_dlat(fsect.end_dlat)} {self._fsect_dlat_units_label()}")
 
         sub = self._section_subsection_labels
         self._set_section_value(sub, "Count", str(len(starts)))
@@ -2919,6 +2926,35 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Zoom",
             self._zoom_factor_label.text().removeprefix("Zoom Factor: "),
         )
+
+    def _section_connection_metrics(
+        self, sections: list, selection: SectionSelection, *, at_start: bool
+    ) -> tuple[str, str]:
+        neighbor_id = selection.previous_id if at_start else selection.next_id
+        if neighbor_id == -1 or neighbor_id < 0 or neighbor_id >= len(sections):
+            return "Not connected", "Not connected"
+
+        neighbor = sections[neighbor_id]
+        current_point = selection.start_point if at_start else selection.end_point
+        neighbor_point = neighbor.end if at_start else neighbor.start
+        if current_point is None or neighbor_point is None:
+            gap_text = "Point unavailable"
+        else:
+            gap = math.hypot(
+                float(current_point[0]) - float(neighbor_point[0]),
+                float(current_point[1]) - float(neighbor_point[1]),
+            )
+            gap_text = self.format_length_with_secondary(gap)
+
+        current_heading = selection.start_heading if at_start else selection.end_heading
+        neighbor_heading = neighbor.end_heading if at_start else neighbor.start_heading
+        delta = (
+            self._heading_delta_degrees(neighbor_heading, current_heading)
+            if current_heading is not None and neighbor_heading is not None
+            else None
+        )
+        heading_text = f"{delta:.2f}°" if delta is not None else "Heading unavailable"
+        return gap_text, heading_text
 
     def _section_tangency_status(
         self, sections: list, selection: SectionSelection, *, at_start: bool
