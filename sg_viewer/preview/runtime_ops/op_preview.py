@@ -301,6 +301,10 @@ class _RuntimeCoreMixin(
         return self._show_background_image
 
     @property
+    def show_centerline_elevation_gradient(self) -> bool:
+        return bool(self._show_centerline_elevation_gradient)
+
+    @property
     def track_opacity(self) -> float:
         return self._track_opacity
 
@@ -435,6 +439,10 @@ class _RuntimeCoreMixin(
 
     def set_show_sg_fsects(self, visible: bool) -> None:
         self._show_sg_fsects = visible
+        self._context.request_repaint()
+
+    def set_show_centerline_elevation_gradient(self, visible: bool) -> None:
+        self._show_centerline_elevation_gradient = bool(visible)
         self._context.request_repaint()
 
     def set_show_mrk_notches(self, visible: bool) -> None:

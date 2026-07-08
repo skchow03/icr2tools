@@ -535,6 +535,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._track_opacity_spin.setToolTip("Adjust track opacity from 0% to 100%.")
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("F-sections")
         self._sg_fsects_checkbox.setChecked(False)
+        self._centerline_elevation_gradient_checkbox = QtWidgets.QCheckBox("Elevation gradient")
+        self._centerline_elevation_gradient_checkbox.setChecked(True)
         self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
             "Live drag preview"
         )
@@ -673,6 +675,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Show cross-section lateral offset reference line."
         )
         self._sg_fsects_checkbox.setToolTip("Show generated/preview f-section spans.")
+        self._centerline_elevation_gradient_checkbox.setToolTip(
+            "Color the centerline by elevation. Disable this for faster viewport rendering."
+        )
         self._background_image_checkbox.setToolTip("Show calibrated background image.")
         self._quick_display_toolbar = self._build_viewport_toolbar()
         self.update_visual_intensity_controls()
@@ -1464,6 +1469,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._sg_fsects_checkbox
 
     @property
+    def centerline_elevation_gradient_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._centerline_elevation_gradient_checkbox
+
+    @property
     def live_fsect_drag_preview_checkbox(self) -> QtWidgets.QCheckBox:
         return self._live_fsect_drag_preview_checkbox
 
@@ -1865,6 +1874,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(QtWidgets.QLabel("Overlays:"))
         layout.addWidget(self._xsect_dlat_line_checkbox)
         layout.addWidget(self._sg_fsects_checkbox)
+        layout.addWidget(self._centerline_elevation_gradient_checkbox)
         layout.addWidget(self._land_objects_overlay_checkbox)
         layout.addWidget(self._trackside_objects_overlay_checkbox)
         layout.addWidget(self._background_image_checkbox)
@@ -1893,18 +1903,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if preset == "Geometry":
             self._sg_fsects_checkbox.setChecked(False)
             self._xsect_dlat_line_checkbox.setChecked(False)
+            self._centerline_elevation_gradient_checkbox.setChecked(False)
             self._land_objects_overlay_checkbox.setChecked(False)
             self._trackside_objects_overlay_checkbox.setChecked(False)
             self._background_image_checkbox.setChecked(False)
         elif preset == "Construction":
             self._sg_fsects_checkbox.setChecked(True)
             self._xsect_dlat_line_checkbox.setChecked(True)
+            self._centerline_elevation_gradient_checkbox.setChecked(True)
         elif preset == "Objects":
             self._land_objects_overlay_checkbox.setChecked(True)
             self._trackside_objects_overlay_checkbox.setChecked(True)
         elif preset == "Debug":
             self._sg_fsects_checkbox.setChecked(True)
             self._xsect_dlat_line_checkbox.setChecked(True)
+            self._centerline_elevation_gradient_checkbox.setChecked(True)
             self._land_objects_overlay_checkbox.setChecked(True)
             self._trackside_objects_overlay_checkbox.setChecked(True)
             if self._preview.has_background_image():

@@ -97,6 +97,9 @@ class SectionsController:
         window.move_section_button.toggled.connect(host._move_section_mode_action.setChecked)
         window.delete_section_button.toggled.connect(host._delete_section_mode_action.setChecked)
         window.sg_fsects_checkbox.toggled.connect(preview.set_show_sg_fsects)
+        window.centerline_elevation_gradient_checkbox.toggled.connect(
+            preview.set_show_centerline_elevation_gradient
+        )
         window.land_objects_overlay_checkbox.toggled.connect(preview.set_show_land_objects)
         window.trackside_objects_overlay_checkbox.toggled.connect(host._on_trackside_objects_overlay_toggled)
         window.right_sidebar_tabs.currentChanged.connect(host._on_right_sidebar_tab_changed)

@@ -158,7 +158,11 @@ class PreviewPresenter:
                 radii_selected_color=self._colors.radii_selected,
                 xsect_dlat_line_color=self._colors.xsect_dlat_line,
                 integrity_boundary_violation_points=self._runtime.integrity_boundary_violation_points,
-                centerline_elevation_segments=self._centerline_elevation_segments(),
+                centerline_elevation_segments=(
+                    self._centerline_elevation_segments()
+                    if self._runtime.show_centerline_elevation_gradient
+                    else ()
+                ),
                 show_centerline_and_nodes=show_centerline_and_nodes,
             ),
             preview_painter.CreationOverlayState(
@@ -232,7 +236,9 @@ def _build_centerline_elevation_segments(runtime) -> tuple[tuple[tuple[float, fl
     sections = list(runtime.section_manager.sections)
     selected_index = runtime.selection_manager.selected_section_index
     samples: list[tuple[tuple[float, float], float, int]] = []
-    step = 500.0 * 12.0
+    # Keep the gradient lightweight: one color segment every 20 feet is enough
+    # to show elevation trends without flooding the viewport with draw calls.
+    step = 500.0 * 20.0
     for section in sections:
         if len(section.polyline) < 2 or section.length <= 0:
             continue

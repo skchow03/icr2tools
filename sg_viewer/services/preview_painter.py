@@ -1120,12 +1120,26 @@ def _draw_centerlines(
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
     if elevation_segments:
+        viewport_bbox = _world_bbox_for_painter_rect(painter.viewport(), transform, widget_height)
+        margin = max(1.0, (BASE_WIDTH + 1.5) / max(abs(transform[0]), 1e-12))
+        previous_pen_key: tuple[int, int, int, int, bool] | None = None
         for start, end, color, selected in elevation_segments:
-            pen = QtGui.QPen(color)
-            pen.setWidthF(BASE_WIDTH + (1.5 if selected else 0.0))
-            pen.setCapStyle(QtCore.Qt.RoundCap)
-            pen.setJoinStyle(QtCore.Qt.RoundJoin)
-            painter.setPen(pen)
+            segment_bbox = (
+                min(float(start[0]), float(end[0])),
+                min(float(start[1]), float(end[1])),
+                max(float(start[0]), float(end[0])),
+                max(float(start[1]), float(end[1])),
+            )
+            if not _bbox_intersects(segment_bbox, viewport_bbox, margin=margin):
+                continue
+            pen_key = (color.red(), color.green(), color.blue(), color.alpha(), selected)
+            if pen_key != previous_pen_key:
+                pen = QtGui.QPen(color)
+                pen.setWidthF(BASE_WIDTH + (1.5 if selected else 0.0))
+                pen.setCapStyle(QtCore.Qt.RoundCap)
+                pen.setJoinStyle(QtCore.Qt.RoundJoin)
+                painter.setPen(pen)
+                previous_pen_key = pen_key
             painter.drawLine(
                 QtCore.QLineF(
                     sg_rendering.map_point(start[0], start[1], transform, widget_height),
