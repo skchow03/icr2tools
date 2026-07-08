@@ -105,10 +105,10 @@ def test_mouse_status_updates_for_sidebar_tabs(qapp):
     try:
         tabs = window.right_sidebar_tabs
         expectations = {
-            "Elevation/Grade": "select section/xsect marker",
-            "Fsects": "Select/edit fsect rows in the fsect table or diagram",
+            "Elevation": "select section/xsect marker",
+            "Features": "Select/edit fsect rows in the fsect table or diagram",
             "Walls": "select wall/section",
-            "TSD": "selecting a row centers the viewport on it",
+            "Track Surface Markings": "selecting a row centers the viewport on it",
             "Objects": "select TSO or place TSO",
             "TSO Visibility": "select/highlight visible TSO",
             "Draw land objects": "add land point",
@@ -120,8 +120,23 @@ def test_mouse_status_updates_for_sidebar_tabs(qapp):
                 i
                 for i in range(tabs.count())
                 if tabs.tabText(i).rstrip("*") == tab_name
+                or (
+                    isinstance(tabs.widget(i), QtWidgets.QTabWidget)
+                    and any(
+                        tabs.widget(i).tabText(j).rstrip("*") == tab_name
+                        for j in range(tabs.widget(i).count())
+                    )
+                )
             )
             tabs.setCurrentIndex(index)
+            child_tabs = tabs.widget(index)
+            if isinstance(child_tabs, QtWidgets.QTabWidget):
+                child_index = next(
+                    j
+                    for j in range(child_tabs.count())
+                    if child_tabs.tabText(j).rstrip("*") == tab_name
+                )
+                child_tabs.setCurrentIndex(child_index)
             window.update_mouse_usage_text()
             assert expected_text in window.preview.status_message
     finally:
@@ -253,7 +268,7 @@ def test_selection_and_track_length_show_secondary_units(qapp):
 def test_elevation_labels_and_help_about(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
-        assert window._right_sidebar_tabs.tabText(0) == "Elevation/Grade"
+        assert window._right_sidebar_tabs.tabText(1) == "Elevation"
         assert (
             window.xsect_elevation_table.horizontalHeaderItem(1)
             .text()
@@ -567,7 +582,7 @@ def test_tsd_tab_exists(qapp):
         tsd_index = next(
             index
             for index in range(window.right_sidebar_tabs.count())
-            if window.right_sidebar_tabs.tabText(index) == "TSD"
+            if window.right_sidebar_tabs.tabText(index) == "Surface"
         )
         assert tsd_index >= 0
         assert window.tsd_save_file_button.text() == "Save .TSD"
@@ -1079,9 +1094,11 @@ def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
         tsd_index = next(
             index
             for index in range(window.right_sidebar_tabs.count())
-            if window.right_sidebar_tabs.tabText(index) == "TSD"
+            if window.right_sidebar_tabs.tabText(index) == "Surface"
         )
         window.right_sidebar_tabs.setCurrentIndex(tsd_index)
+        surface_tabs = window._sidebar_feature_tabs["Track Surface Markings"]
+        surface_tabs.setCurrentIndex(surface_tabs.indexOf(window._tsd_sidebar))
         assert window.preview.show_tsd_lines is True
 
         window.right_sidebar_tabs.setCurrentIndex(0)
