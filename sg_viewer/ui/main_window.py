@@ -64,6 +64,26 @@ from sg_viewer.ui.presentation.window_panels import (
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 
 
+class GeometryTabButton(QtWidgets.QPushButton):
+    """Push button whose requested enabled state is gated by the Geometry tab."""
+
+    def __init__(self, text: str = "", parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._requested_enabled = True
+        self._geometry_tab_active = False
+
+    def setEnabled(self, enabled: bool) -> None:  # noqa: N802 - Qt API override
+        self._requested_enabled = enabled
+        super().setEnabled(enabled and self._geometry_tab_active)
+
+    def set_geometry_tab_active(self, active: bool) -> None:
+        self._geometry_tab_active = active
+        super().setEnabled(self._requested_enabled and active)
+
+    def requested_enabled(self) -> bool:
+        return self._requested_enabled
+
+
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
 
@@ -129,6 +149,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
+        self._right_sidebar_tabs.currentChanged.connect(self._on_workflow_tab_changed)
         self._sidebar_feature_tabs: dict[str, QtWidgets.QTabWidget] = {}
         self._sidebar_feature_tab_widgets: dict[str, QtWidgets.QWidget] = {}
         self._dirty_sidebar_features: set[str] = set()
@@ -335,25 +356,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Next Section",
             shortcut_labels["next_section"],
         )
-        self._new_straight_button = QtWidgets.QPushButton("New Straight")
+        self._new_straight_button = GeometryTabButton("New Straight")
         self._new_straight_button.setCheckable(True)
         self._new_straight_button.setEnabled(False)
         _set_button_shortcut(
             self._new_straight_button, "New Straight", shortcut_labels["new_straight"]
         )
-        self._new_curve_button = QtWidgets.QPushButton("New Curve")
+        self._new_curve_button = GeometryTabButton("New Curve")
         self._new_curve_button.setCheckable(True)
         self._new_curve_button.setEnabled(False)
         _set_button_shortcut(
             self._new_curve_button, "New Curve", shortcut_labels["new_curve"]
         )
-        self._split_section_button = QtWidgets.QPushButton("Split")
+        self._split_section_button = GeometryTabButton("Split")
         self._split_section_button.setCheckable(True)
         self._split_section_button.setEnabled(False)
         _set_button_shortcut(
             self._split_section_button, "Split", shortcut_labels["split_section"]
         )
-        self._move_section_button = QtWidgets.QPushButton("Move Section")
+        self._move_section_button = GeometryTabButton("Move Section")
         self._move_section_button.setCheckable(True)
         self._move_section_button.setChecked(False)
         self._move_section_button.setEnabled(False)
@@ -362,7 +383,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Move Section",
             shortcut_labels["move_section"],
         )
-        self._delete_section_button = QtWidgets.QPushButton("Delete Section")
+        self._delete_section_button = GeometryTabButton("Delete Section")
         self._delete_section_button.setCheckable(True)
         self._delete_section_button.setEnabled(False)
         _set_button_shortcut(
@@ -370,7 +391,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Delete Section",
             shortcut_labels["delete_section"],
         )
-        self._set_start_finish_button = QtWidgets.QPushButton("Set Start/Finish")
+        self._set_start_finish_button = GeometryTabButton("Set Start/Finish")
         self._set_start_finish_button.setEnabled(False)
         _set_button_shortcut(
             self._set_start_finish_button,
@@ -694,15 +715,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         toolbar_panel = create_toolbar_navigation_panel(
             self._prev_button,
             self._next_button,
-            self._new_straight_button,
-            self._new_curve_button,
-            self._split_section_button,
-            self._move_section_button,
-            self._delete_section_button,
-            self._set_start_finish_button,
             self._query_track_button,
             self._ruler_button,
         )
+        geometry_toolbar = self._create_geometry_toolbar()
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
         altitude_layout = QtWidgets.QHBoxLayout()
@@ -1138,6 +1154,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             elevation_widget=elevation_panel.widget,
             fsect_widget=fsect_panel.widget,
         )
+        self._update_geometry_tab_button_state()
         # Keep the right sidebar width fixed so window resizing only grows/shrinks
         # the track-diagram side of the window.
         sidebar_width = max(320, self._right_sidebar_tabs.sizeHint().width())
@@ -1150,11 +1167,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         container = QtWidgets.QWidget()
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.addWidget(geometry_toolbar)
         splitter.addWidget(preview_column)
         splitter.addWidget(self._right_sidebar_tabs)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setCollapsible(1, False)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(2, False)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(splitter)
         container.setLayout(layout)
@@ -1454,6 +1474,54 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return "–"
         return f"({heading[0]:.4f}, {heading[1]:.4f})"
 
+    def _create_geometry_toolbar(self) -> QtWidgets.QWidget:
+        toolbar = QtWidgets.QFrame()
+        toolbar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        toolbar.setSizePolicy(
+            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding
+        )
+        layout = QtWidgets.QVBoxLayout(toolbar)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        title = QtWidgets.QLabel("Geometry")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setStyleSheet("font-weight: bold;")
+        layout.addWidget(title)
+        for button in self._geometry_tab_buttons():
+            button.setSizePolicy(
+                QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
+            )
+            layout.addWidget(button)
+        layout.addStretch(1)
+        return toolbar
+
+    def _geometry_tab_buttons(self) -> tuple[GeometryTabButton, ...]:
+        return (
+            self._new_straight_button,
+            self._new_curve_button,
+            self._split_section_button,
+            self._move_section_button,
+            self._delete_section_button,
+            self._set_start_finish_button,
+        )
+
+    def _on_workflow_tab_changed(self, _index: int) -> None:
+        self._update_geometry_tab_button_state()
+        self.update_mouse_usage_text()
+
+    def _update_geometry_tab_button_state(self) -> None:
+        current_index = self._right_sidebar_tabs.currentIndex()
+        geometry_active = (
+            current_index >= 0
+            and self._right_sidebar_tabs.tabText(current_index).rstrip("*") == "Geometry"
+        )
+        for button in self._geometry_tab_buttons():
+            button.set_geometry_tab_active(geometry_active)
+        if self.controller is not None and hasattr(
+            self.controller, "_sync_section_editing_menu_actions"
+        ):
+            self.controller._sync_section_editing_menu_actions()
+
     def _build_grouped_sidebar_tabs(
         self,
         *,
@@ -1467,7 +1535,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._right_sidebar_tabs.addTab(tab_widget, label)
             return tab_widget
 
-        section_tabs = add_workflow_tab("Section")
+        section_tabs = add_workflow_tab("Geometry")
         section_tabs.addTab(section_widget, "Current section")
 
         for workflow_label, panels in (
