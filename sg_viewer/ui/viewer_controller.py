@@ -963,6 +963,8 @@ class SGViewerController:
         self._window.update_mouse_usage_text()
         if tab_name != self._ELEVATION_TAB_BASE_LABEL:
             self._elevation_panel_controller.cancel_live_edits()
+        elif not self._window.centerline_elevation_gradient_checkbox.isChecked():
+            self._window.centerline_elevation_gradient_checkbox.setChecked(True)
         if tab_name in {"Fsects", "Walls"} and not self._window.sg_fsects_checkbox.isChecked():
             self._window.sg_fsects_checkbox.setChecked(True)
         is_mrk_tab = tab_name == "Walls"

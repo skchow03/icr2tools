@@ -225,10 +225,6 @@ def _viridis_color(value: float) -> QtGui.QColor:
     return QtGui.QColor(*stops[-1][1])
 
 
-def _brightened(color: QtGui.QColor) -> QtGui.QColor:
-    return color.lighter(145)
-
-
 def _build_centerline_elevation_segments(runtime) -> tuple[tuple[tuple[float, float], tuple[float, float], QtGui.QColor, bool], ...]:
     sgfile = runtime.sgfile
     if sgfile is None:
@@ -266,7 +262,7 @@ def _build_centerline_elevation_segments(runtime) -> tuple[tuple[tuple[float, fl
         value = 0.5 if span <= 0.0 else (((alt0 + alt1) / 2.0) - low) / span
         color = _viridis_color(value)
         selected = selected_index in (section_id, next_section_id)
-        segments.append((start, end, _brightened(color) if selected else color, selected))
+        segments.append((start, end, color, selected))
     return tuple(segments)
 
 

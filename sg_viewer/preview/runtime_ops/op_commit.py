@@ -230,8 +230,10 @@ class _RuntimeCoreCommitMixin:
             )
         except (ValueError, IndexError):
             return False
+        self._elevation_color_version += 1
         self._mark_xsect_bounds_dirty(xsect_index)
         self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
+        self._context.request_repaint()
         return True
 
     def set_section_xsect_grade(
@@ -248,8 +250,10 @@ class _RuntimeCoreCommitMixin:
             )
         except (ValueError, IndexError):
             return False
+        self._elevation_color_version += 1
         self._mark_xsect_bounds_dirty(xsect_index)
         self._mark_elevation_profile_sections_dirty(section_id, xsect_index)
+        self._context.request_repaint()
         return True
 
     def copy_xsect_data_to_all(self, xsect_index: int) -> bool:

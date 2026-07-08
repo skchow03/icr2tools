@@ -88,7 +88,7 @@ def test_viewport_toolbar_labels_and_mouse_hint(qapp):
         assert window.xsect_dlat_line_checkbox.text() == "X-sect DLAT"
         assert window.sg_fsects_checkbox.text() == "F-sections"
         assert window.centerline_elevation_gradient_checkbox.text() == "Elevation gradient"
-        assert window.centerline_elevation_gradient_checkbox.isChecked() is True
+        assert window.centerline_elevation_gradient_checkbox.isChecked() is False
         assert window.land_objects_overlay_checkbox.text() == "Land objects"
         assert window.trackside_objects_overlay_checkbox.text() == "TSOs"
         assert window.background_image_checkbox.text() == "BG image"
