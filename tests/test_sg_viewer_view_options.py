@@ -152,8 +152,8 @@ def test_viewport_intensity_controls_and_presets(qapp):
     window = SGViewerWindow()
     try:
         window.update_visual_intensity_controls()
-        assert not window.background_brightness_slider.isEnabled()
-        assert not window.track_opacity_slider.isEnabled()
+        assert not window.background_brightness_spin.isEnabled()
+        assert not window.track_opacity_spin.isEnabled()
 
         window._view_preset_combo.setCurrentText("Construction")
         assert window.sg_fsects_checkbox.isChecked()

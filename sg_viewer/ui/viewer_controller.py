@@ -187,9 +187,9 @@ class SGViewerController:
         self._create_actions()
         self._create_menus()
         self._connect_signals()
-        self._on_track_opacity_changed(self._window.track_opacity_slider.value())
+        self._on_track_opacity_changed(self._window.track_opacity_spin.value())
         self._on_background_brightness_changed(
-            self._window.background_brightness_slider.value()
+            self._window.background_brightness_spin.value()
         )
         self._on_mrk_wall_height_changed(self._window.pitwall_wall_height_spin.value())
         self._on_mrk_armco_height_changed(self._window.pitwall_armco_height_spin.value())
@@ -1072,12 +1072,14 @@ class SGViewerController:
 
     def _on_track_opacity_changed(self, value: int) -> None:
         clamped_value = max(0, min(100, int(value)))
-        self._window.track_opacity_value_label.setText(str(clamped_value))
+        if self._window.track_opacity_spin.value() != clamped_value:
+            self._window.track_opacity_spin.setValue(clamped_value)
         self._window.preview.set_track_opacity(clamped_value / 100.0)
 
     def _on_background_brightness_changed(self, value: int) -> None:
         clamped_value = max(-100, min(100, int(value)))
-        self._window.background_brightness_value_label.setText(str(clamped_value))
+        if self._window.background_brightness_spin.value() != clamped_value:
+            self._window.background_brightness_spin.setValue(clamped_value)
         self._window.preview.set_background_brightness(clamped_value)
 
     def _on_fsect_diagram_dlat_change_requested(

@@ -518,26 +518,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._trackside_objects_overlay_checkbox.setToolTip(
             "Show trackside object instances."
         )
-        self._background_brightness_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._background_brightness_slider.setRange(-100, 100)
-        self._background_brightness_slider.setValue(0)
-        self._background_brightness_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self._background_brightness_slider.setTickInterval(20)
-        self._background_brightness_value_label = QtWidgets.QLabel("0")
-        self._background_brightness_value_label.setMinimumWidth(36)
-        self._background_brightness_value_label.setAlignment(
-            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        self._background_brightness_spin = QtWidgets.QSpinBox()
+        self._background_brightness_spin.setRange(-100, 100)
+        self._background_brightness_spin.setValue(0)
+        self._background_brightness_spin.setSingleStep(1)
+        self._background_brightness_spin.setMinimumWidth(72)
+        self._background_brightness_spin.setToolTip(
+            "Adjust background image brightness from -100 to 100."
         )
-        self._track_opacity_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self._track_opacity_slider.setRange(0, 100)
-        self._track_opacity_slider.setValue(100)
-        self._track_opacity_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self._track_opacity_slider.setTickInterval(10)
-        self._track_opacity_value_label = QtWidgets.QLabel("100")
-        self._track_opacity_value_label.setMinimumWidth(32)
-        self._track_opacity_value_label.setAlignment(
-            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
-        )
+        self._track_opacity_spin = QtWidgets.QSpinBox()
+        self._track_opacity_spin.setRange(0, 100)
+        self._track_opacity_spin.setValue(100)
+        self._track_opacity_spin.setSingleStep(1)
+        self._track_opacity_spin.setSuffix("%")
+        self._track_opacity_spin.setMinimumWidth(72)
+        self._track_opacity_spin.setToolTip("Adjust track opacity from 0% to 100%.")
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("F-sections")
         self._sg_fsects_checkbox.setChecked(False)
         self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
@@ -1439,20 +1434,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._trackside_objects_overlay_checkbox
 
     @property
-    def background_brightness_slider(self) -> QtWidgets.QSlider:
-        return self._background_brightness_slider
+    def background_brightness_spin(self) -> QtWidgets.QSpinBox:
+        return self._background_brightness_spin
 
     @property
-    def background_brightness_value_label(self) -> QtWidgets.QLabel:
-        return self._background_brightness_value_label
-
-    @property
-    def track_opacity_slider(self) -> QtWidgets.QSlider:
-        return self._track_opacity_slider
-
-    @property
-    def track_opacity_value_label(self) -> QtWidgets.QLabel:
-        return self._track_opacity_value_label
+    def track_opacity_spin(self) -> QtWidgets.QSpinBox:
+        return self._track_opacity_spin
 
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
@@ -1830,16 +1817,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self._trackside_objects_overlay_checkbox)
         layout.addWidget(self._background_image_checkbox)
         layout.addSpacing(8)
-        layout.addWidget(QtWidgets.QLabel("View:"))
-        layout.addWidget(self._view_preset_combo)
         layout.addStretch(1)
-        layout.addWidget(QtWidgets.QLabel("BG:"))
-        layout.addWidget(self._background_brightness_slider)
-        layout.addWidget(self._background_brightness_value_label)
+        layout.addWidget(QtWidgets.QLabel("Background brightness:"))
+        layout.addWidget(self._background_brightness_spin)
         layout.addSpacing(8)
-        layout.addWidget(QtWidgets.QLabel("Track:"))
-        layout.addWidget(self._track_opacity_slider)
-        layout.addWidget(self._track_opacity_value_label)
+        layout.addWidget(QtWidgets.QLabel("Track opacity:"))
+        layout.addWidget(self._track_opacity_spin)
         toolbar.setLayout(layout)
         return toolbar
 
@@ -1849,12 +1832,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             has_background and self._background_image_checkbox.isChecked()
         )
         for widget in (
-            self._background_brightness_slider,
-            self._background_brightness_value_label,
+            self._background_brightness_spin,
         ):
             widget.setEnabled(background_active)
         has_track = bool(self._preview.section_manager.sections)
-        for widget in (self._track_opacity_slider, self._track_opacity_value_label):
+        for widget in (self._track_opacity_spin,):
             widget.setEnabled(has_track)
 
     def _on_view_preset_changed(self, preset: str) -> None:

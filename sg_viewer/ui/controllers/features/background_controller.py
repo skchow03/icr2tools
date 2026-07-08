@@ -38,10 +38,10 @@ class BackgroundController:
         window.background_image_checkbox.toggled.connect(
             host._show_background_image_action.setChecked
         )
-        window.background_brightness_slider.valueChanged.connect(
+        window.background_brightness_spin.valueChanged.connect(
             host._on_background_brightness_changed
         )
-        window.track_opacity_slider.valueChanged.connect(host._on_track_opacity_changed)
+        window.track_opacity_spin.valueChanged.connect(host._on_track_opacity_changed)
 
     def open_background_file_dialog(self) -> None:
         options = QtWidgets.QFileDialog.Options()
