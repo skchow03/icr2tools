@@ -117,7 +117,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             painter.end()
             return
 
-        margins = QtCore.QMargins(48, 20, 16, 32)
+        margins = QtCore.QMargins(60, 20, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             painter.end()
@@ -146,7 +146,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         self._draw_section_highlight(painter, plot_rect, x_start, x_end)
         self._draw_series(painter, plot_rect, x_start, x_end, min_alt, max_alt)
         self._draw_section_markers(painter, plot_rect, x_start, x_end, min_alt, max_alt)
-        self._draw_axes_labels(painter, plot_rect, min_alt, max_alt)
+        self._draw_axes_labels(painter, plot_rect, min_alt, max_alt, x_start, x_end)
         self._draw_legend(painter, plot_rect)
         painter.restore()
         painter.end()
@@ -314,7 +314,13 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         return QtCore.QPointF(x, y), section_index
 
     def _draw_axes_labels(
-        self, painter: QtGui.QPainter, rect: QtCore.QRect, min_alt: float, max_alt: float
+        self,
+        painter: QtGui.QPainter,
+        rect: QtCore.QRect,
+        min_alt: float,
+        max_alt: float,
+        x_start: float,
+        x_end: float,
     ) -> None:
         painter.save()
         painter.setPen(QtGui.QPen(QtGui.QColor("#888")))
@@ -322,26 +328,23 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         font.setPointSize(max(font.pointSize() - 1, 7))
         painter.setFont(font)
 
-        painter.drawText(
-            rect.adjusted(0, 0, 0, 18),
-            QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
-            "DLONG",
-        )
-        min_display = units_from_500ths(min_alt, self._data.unit)
-        max_display = units_from_500ths(max_alt, self._data.unit)
         decimals = max(self._data.decimals, 0)
-        if decimals == 0:
-            min_text = f"{int(round(min_display))}"
-            max_text = f"{int(round(max_display))}"
-        else:
-            min_text = f"{min_display:.{decimals}f}"
-            max_text = f"{max_display:.{decimals}f}"
         unit_label = self._data.unit_label
-        unit_suffix = f" {unit_label}" if unit_label else ""
+        x_start_text = self._format_axis_value(
+            units_from_500ths(x_start, self._data.unit), decimals
+        )
+        x_end_text = self._format_axis_value(
+            units_from_500ths(x_end, self._data.unit), decimals
+        )
+        painter.drawText(
+            rect.adjusted(0, 0, 0, 28),
+            QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
+            f"DLONG in {unit_label} ({x_start_text}–{x_end_text})",
+        )
         painter.drawText(
             rect.adjusted(0, -18, 0, 0),
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-            f"Alt: {min_text}–{max_text}{unit_suffix}",
+            f"Elevation in {unit_label}",
         )
         painter.restore()
 
@@ -469,7 +472,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
         if delta == 0:
             return
 
-        margins = QtCore.QMargins(48, 20, 16, 32)
+        margins = QtCore.QMargins(60, 20, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return
@@ -565,7 +568,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
             self._is_panning = True
             self.setCursor(QtCore.Qt.ClosedHandCursor)
 
-        margins = QtCore.QMargins(48, 20, 16, 32)
+        margins = QtCore.QMargins(60, 20, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0:
             return
@@ -619,7 +622,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     def _hit_selected_marker(self, pos: QtCore.QPoint) -> int | None:
         if self._data is None or not self._data.dlongs:
             return None
-        margins = QtCore.QMargins(48, 20, 16, 32)
+        margins = QtCore.QMargins(60, 20, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return None
@@ -649,7 +652,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     def _update_dragged_altitude(self, pos: QtCore.QPoint) -> None:
         if self._data is None or not self._data.dlongs or self._dragged_section is None:
             return
-        margins = QtCore.QMargins(48, 20, 16, 32)
+        margins = QtCore.QMargins(60, 20, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return
@@ -671,7 +674,7 @@ class ElevationProfileWidget(QtWidgets.QWidget):
     def _handle_click(self, pos: QtCore.QPoint) -> None:
         if self._data is None or not self._data.dlongs:
             return
-        margins = QtCore.QMargins(48, 20, 16, 32)
+        margins = QtCore.QMargins(60, 20, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0 or not plot_rect.contains(pos):
             return
