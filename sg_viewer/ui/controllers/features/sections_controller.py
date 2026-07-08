@@ -195,10 +195,11 @@ class SectionsController:
         self._host._generate_pitwall_action.setEnabled(has_sections)
         self._host._window.generate_pitwall_button.setEnabled(has_sections)
         self._host._window.manual_wall_height_overrides_button.setEnabled(has_sections)
+        elevation_active = self._host._window.is_elevation_workflow_active()
         self._host._raise_lower_elevations_action.setEnabled(has_sections)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(has_sections)
-        self._host._window.raise_lower_elevations_button.setEnabled(has_sections)
-        self._host._window.flatten_elevations_button.setEnabled(has_sections)
+        self._host._window.raise_lower_elevations_button.setEnabled(has_sections and elevation_active)
+        self._host._window.flatten_elevations_button.setEnabled(has_sections and elevation_active)
         self._host._generate_elevation_change_action.setEnabled(has_sections)
         self._host._save_action.setEnabled(True)
         if self._host._is_untitled:

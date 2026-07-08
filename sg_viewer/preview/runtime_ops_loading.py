@@ -56,6 +56,7 @@ class _RuntimeLoadingMixin:
         self._refresh_from_document(mark_unsaved=not self._suppress_document_dirty)
 
     def _on_elevation_changed(self, section_id: int) -> None:
+        self._elevation_color_version += 1
         sg_data = self._document.sg_data
         if sg_data is None:
             return
@@ -69,6 +70,7 @@ class _RuntimeLoadingMixin:
         self._context.request_repaint()
 
     def _on_elevations_bulk_changed(self) -> None:
+        self._elevation_color_version += 1
         sg_data = self._document.sg_data
         if sg_data is None:
             return

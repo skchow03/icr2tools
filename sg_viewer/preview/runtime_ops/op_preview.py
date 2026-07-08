@@ -285,6 +285,10 @@ class _RuntimeCoreMixin(
         return int(self._sg_version)
 
     @property
+    def elevation_color_version(self) -> int:
+        return int(self._elevation_color_version)
+
+    @property
     def tsd_lines_version(self) -> int:
         return int(self._tsd_lines_version)
 

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import math
+
 from PyQt5 import QtGui
+
+from icr2_core.sg_elevation import sg_altitude_at
 
 from sg_viewer.preview.context import PreviewContext
 from sg_viewer.preview.runtime import PreviewRuntime
@@ -18,6 +22,10 @@ class PreviewPresenter:
         self._runtime = runtime
         self._colors = preview_painter.default_preview_colors()
         self._colors.background = QtGui.QColor(background_color)
+        self._centerline_elevation_cache_key: tuple[object, ...] | None = None
+        self._centerline_elevation_cache: tuple[
+            tuple[tuple[float, float], tuple[float, float], QtGui.QColor, bool], ...
+        ] = ()
 
     def set_preview_color(self, key: str, color: QtGui.QColor) -> None:
         if not hasattr(self._colors, key):
@@ -150,6 +158,7 @@ class PreviewPresenter:
                 radii_selected_color=self._colors.radii_selected,
                 xsect_dlat_line_color=self._colors.xsect_dlat_line,
                 integrity_boundary_violation_points=self._runtime.integrity_boundary_violation_points,
+                centerline_elevation_segments=self._centerline_elevation_segments(),
                 show_centerline_and_nodes=show_centerline_and_nodes,
             ),
             preview_painter.CreationOverlayState(
@@ -175,3 +184,97 @@ class PreviewPresenter:
             painter.setPen(pen)
             painter.setBrush(QtGui.QColor(80, 170, 255, 60))
             painter.drawRect(box_rect)
+
+
+def _point_at_polyline_distance(polyline, distance: float):
+    if not polyline:
+        return 0.0, 0.0
+    if distance <= 0.0 or len(polyline) == 1:
+        return polyline[0]
+    remaining = distance
+    for start, end in zip(polyline, polyline[1:]):
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = math.hypot(dx, dy)
+        if length <= 0.0:
+            continue
+        if remaining <= length:
+            ratio = remaining / length
+            return start[0] + dx * ratio, start[1] + dy * ratio
+        remaining -= length
+    return polyline[-1]
+
+
+def _viridis_color(value: float) -> QtGui.QColor:
+    stops = (
+        (0.0, (68, 1, 84)),
+        (0.25, (59, 82, 139)),
+        (0.5, (33, 145, 140)),
+        (0.75, (94, 201, 98)),
+        (1.0, (253, 231, 37)),
+    )
+    value = max(0.0, min(1.0, value))
+    for (left_pos, left_rgb), (right_pos, right_rgb) in zip(stops, stops[1:]):
+        if value <= right_pos:
+            ratio = (value - left_pos) / (right_pos - left_pos) if right_pos > left_pos else 0.0
+            return QtGui.QColor(*[int(round(left_rgb[i] + (right_rgb[i] - left_rgb[i]) * ratio)) for i in range(3)])
+    return QtGui.QColor(*stops[-1][1])
+
+
+def _brightened(color: QtGui.QColor) -> QtGui.QColor:
+    return color.lighter(145)
+
+
+def _build_centerline_elevation_segments(runtime) -> tuple[tuple[tuple[float, float], tuple[float, float], QtGui.QColor, bool], ...]:
+    sgfile = runtime.sgfile
+    if sgfile is None:
+        return ()
+    sections = list(runtime.section_manager.sections)
+    selected_index = runtime.selection_manager.selected_section_index
+    samples: list[tuple[tuple[float, float], float, int]] = []
+    step = 500.0 * 12.0
+    for section in sections:
+        if len(section.polyline) < 2 or section.length <= 0:
+            continue
+        source_id = getattr(section, "source_section_id", section.section_id)
+        if source_id is None or source_id < 0:
+            source_id = section.section_id
+        intervals = max(1, int(math.ceil(float(section.length) / step)))
+        for index in range(intervals + 1):
+            distance = min(float(section.length), index * float(section.length) / intervals)
+            subsect = 0.0 if section.length <= 0 else distance / float(section.length)
+            samples.append((
+                _point_at_polyline_distance(section.polyline, distance),
+                float(sg_altitude_at(sgfile, int(source_id), subsect, 0.5)),
+                int(section.section_id),
+            ))
+    if len(samples) < 2:
+        return ()
+    low = min(sample[1] for sample in samples)
+    high = max(sample[1] for sample in samples)
+    span = high - low
+    segments = []
+    for (start, alt0, section_id), (end, alt1, next_section_id) in zip(samples, samples[1:]):
+        if start == end:
+            continue
+        value = 0.5 if span <= 0.0 else (((alt0 + alt1) / 2.0) - low) / span
+        color = _viridis_color(value)
+        selected = selected_index in (section_id, next_section_id)
+        segments.append((start, end, _brightened(color) if selected else color, selected))
+    return tuple(segments)
+
+
+def _centerline_elevation_segments(self: PreviewPresenter):
+    key = (
+        id(self._runtime.sgfile),
+        self._runtime.section_geometry_version,
+        getattr(self._runtime, "elevation_color_version", 0),
+        self._runtime.selection_manager.selected_section_index,
+    )
+    if key != self._centerline_elevation_cache_key:
+        self._centerline_elevation_cache_key = key
+        self._centerline_elevation_cache = _build_centerline_elevation_segments(self._runtime)
+    return self._centerline_elevation_cache
+
+
+PreviewPresenter._centerline_elevation_segments = _centerline_elevation_segments

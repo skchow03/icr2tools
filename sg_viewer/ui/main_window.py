@@ -1754,7 +1754,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_workflow_tab_changed(self, _index: int) -> None:
         self._update_geometry_tab_button_state()
+        controller = getattr(self, "controller", None)
+        if controller is not None:
+            if hasattr(controller, "_update_elevation_toolbar_buttons"):
+                controller._update_elevation_toolbar_buttons()
+            if hasattr(controller, "_update_copy_xsect_button"):
+                controller._update_copy_xsect_button()
+            if hasattr(controller, "_update_fsect_edit_buttons"):
+                controller._update_fsect_edit_buttons()
         self.update_mouse_usage_text()
+
+    def is_elevation_workflow_active(self) -> bool:
+        current_index = self._right_sidebar_tabs.currentIndex()
+        return (
+            current_index >= 0
+            and self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+            == "Elevation"
+        )
 
     def _update_geometry_tab_button_state(self) -> None:
         current_index = self._right_sidebar_tabs.currentIndex()
