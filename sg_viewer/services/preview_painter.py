@@ -1133,19 +1133,26 @@ def _draw_centerlines(
             if not _bbox_intersects(segment_bbox, viewport_bbox, margin=margin):
                 continue
             pen_key = (color.red(), color.green(), color.blue(), color.alpha(), selected)
+            line = QtCore.QLineF(
+                sg_rendering.map_point(start[0], start[1], transform, widget_height),
+                sg_rendering.map_point(end[0], end[1], transform, widget_height),
+            )
+            if selected:
+                border_pen = QtGui.QPen(QtGui.QColor("white"))
+                border_pen.setWidthF(BASE_WIDTH + 4.0)
+                border_pen.setCapStyle(QtCore.Qt.RoundCap)
+                border_pen.setJoinStyle(QtCore.Qt.RoundJoin)
+                painter.setPen(border_pen)
+                painter.drawLine(line)
+                previous_pen_key = None
             if pen_key != previous_pen_key:
                 pen = QtGui.QPen(color)
-                pen.setWidthF(BASE_WIDTH + (1.5 if selected else 0.0))
+                pen.setWidthF(BASE_WIDTH)
                 pen.setCapStyle(QtCore.Qt.RoundCap)
                 pen.setJoinStyle(QtCore.Qt.RoundJoin)
                 painter.setPen(pen)
                 previous_pen_key = pen_key
-            painter.drawLine(
-                QtCore.QLineF(
-                    sg_rendering.map_point(start[0], start[1], transform, widget_height),
-                    sg_rendering.map_point(end[0], end[1], transform, widget_height),
-                )
-            )
+            painter.drawLine(line)
         painter.restore()
         return
 

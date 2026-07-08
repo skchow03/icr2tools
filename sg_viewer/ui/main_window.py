@@ -536,7 +536,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("F-sections")
         self._sg_fsects_checkbox.setChecked(False)
         self._centerline_elevation_gradient_checkbox = QtWidgets.QCheckBox("Elevation gradient")
-        self._centerline_elevation_gradient_checkbox.setChecked(True)
+        self._centerline_elevation_gradient_checkbox.setChecked(False)
         self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
             "Live drag preview"
         )
