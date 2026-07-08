@@ -15,7 +15,10 @@ try:
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
     from sg_viewer.services.trackside_objects import TracksideObject
-    from sg_viewer.services.tsd_objects import TsdZebraCrossingObject
+    from sg_viewer.services.tsd_objects import (
+        TsdZebraCrossingObject,
+        tsd_object_to_payload,
+    )
     from icr2_core.trk.sg_classes import SGFile
     from sg_viewer.ui.altitude_units import units_to_500ths
 except ImportError:  # pragma: no cover
@@ -703,6 +706,88 @@ def test_load_tsd_file_persists_track_tsd_state(qapp, tmp_path, monkeypatch):
         assert payload["sg_file"] == "track.sg"
         assert payload["tsd"]["files"] == ["detail.tsd"]
         assert payload["tsd"]["active_index"] == 0
+    finally:
+        window.close()
+
+
+def test_load_tsd_state_restores_preview_overlay_for_active_file_index(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        first_tsd_path = tmp_path / "first.tsd"
+        second_tsd_path = tmp_path / "second.tsd"
+        first_tsd_path.write_text(
+            "Detail: 36 4000 0 -126000 919091 -126000\n",
+            encoding="utf-8",
+        )
+        second_tsd_path.write_text(
+            "Detail_Dash: 37 3000 10 -126000 20 -126000\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "track.sgc").write_text(
+            json.dumps(
+                {
+                    "sg_file": "track.sg",
+                    "tsd": {
+                        "files": ["first.tsd", "second.tsd"],
+                        "active_index": 1,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        window.controller._current_path = sg_path
+        window.preview.set_show_tsd_lines(False)
+
+        window.controller._load_tsd_state_for_current_track()
+
+        assert window.controller._active_tsd_file_index == 1
+        assert window.preview.show_tsd_lines is True
+        assert len(window.preview.tsd_lines) == 1
+        assert window.preview.tsd_lines[0].color_index == 37
+    finally:
+        window.close()
+
+
+def test_load_tsd_state_restores_object_preview_without_loaded_files(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "track.sg"
+        sg_path.write_bytes(b"")
+        obj = TsdZebraCrossingObject(
+            name="Zebra Crossing 1",
+            start_dlong=0,
+            right_dlat=-20000,
+            left_dlat=20000,
+            stripe_width_500ths=4000,
+            stripe_length_500ths=28000,
+            stripe_spacing_500ths=3000,
+            color_index=36,
+            command="Detail",
+        )
+        (tmp_path / "track.sgc").write_text(
+            json.dumps(
+                {
+                    "sg_file": "track.sg",
+                    "tsd": {
+                        "files": [],
+                        "active_index": None,
+                        "objects": [tsd_object_to_payload(obj)],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        window.controller._current_path = sg_path
+        window.preview.set_tsd_lines(())
+        window.preview.set_show_tsd_lines(False)
+
+        window.controller._load_tsd_state_for_current_track()
+
+        assert window.tsd_objects_table.rowCount() == 1
+        assert window.preview.tsd_lines
+        assert window.preview.show_tsd_lines is True
     finally:
         window.close()
 
