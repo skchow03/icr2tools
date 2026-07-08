@@ -9,6 +9,7 @@ import sys
 from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
+from typing import Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -810,7 +811,7 @@ class SGViewerController:
             return
         self._tso_persist_timer.start()
 
-    def _load_tsd_state_for_current_track(self) -> None:
+    def _load_tsd_state_for_current_track(self, progress_callback: Callable[[int, str], None] | None = None) -> None:
         self._clear_loaded_tsd_files()
         self._window.load_land_objects([])
         self._generated_skid_mark_lines = ()
@@ -820,6 +821,8 @@ class SGViewerController:
         self._track3d_tools_controller._track3d_colors = dict(DEFAULT_TRACK3D_COLORS)
         self._window.set_selected_track3d_path_text("none")
         self._window.set_selected_colors_path_text("defaults")
+        if progress_callback is not None:
+            progress_callback(0, "Resetting TSD and object project state…")
         self._sync_tso_visibility_section_dlongs()
         if self._current_path is None:
             self.set_land_objects_dirty(False)
@@ -830,6 +833,8 @@ class SGViewerController:
         previous_state = checkbox.blockSignals(True)
         checkbox.setChecked(self._auto_update_tso_relative_z)
         checkbox.blockSignals(previous_state)
+        if progress_callback is not None:
+            progress_callback(1, "Restoring Track3D file and color settings…")
         persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(self._current_path)
         if isinstance(persisted_track3d_colors, dict):
             merged_colors = dict(DEFAULT_TRACK3D_COLORS)
@@ -846,6 +851,8 @@ class SGViewerController:
             if auto_track3d_path is not None:
                 self._track3d_tools_controller._set_selected_track3d_path(auto_track3d_path, persist=False)
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
+        if progress_callback is not None:
+            progress_callback(2, "Restoring TSD object definitions and skid marks…")
         self._tsd_objects = []
         self._trackside_objects = []
         for raw_object in self._sg_settings_store.get_tsd_objects(self._current_path):
@@ -868,6 +875,8 @@ class SGViewerController:
         if self._tsd_objects:
             self._enable_tsd_preview_overlay()
             self._refresh_tsd_preview_lines()
+        if progress_callback is not None:
+            progress_callback(3, "Restoring trackside object definitions…")
         self._trackside_objects = []
         for raw_object in self._sg_settings_store.get_trackside_objects(self._current_path):
             try:
@@ -875,6 +884,8 @@ class SGViewerController:
             except ValueError:
                 continue
         self._refresh_tso_table()
+        if progress_callback is not None:
+            progress_callback(4, "Restoring TSO visibility lists and land objects…")
         self._window.tso_visibility_sidebar.load_object_lists_from_payload(
             self._sg_settings_store.get_tso_visibility_object_lists(self._current_path)
         )
@@ -882,7 +893,10 @@ class SGViewerController:
             self._sg_settings_store.get_tso_visibility_detail_lists(self._current_path)
         )
         self._window.load_land_objects(self._sg_settings_store.get_land_objects(self._current_path))
-        for path in files:
+        total_files = len(files)
+        for index, path in enumerate(files, start=1):
+            if progress_callback is not None:
+                progress_callback(5, f"Loading TSD file {index} of {total_files}: {path.name}…")
             if not path.exists():
                 continue
             try:
@@ -891,6 +905,8 @@ class SGViewerController:
                 logger.warning("Unable to restore TSD file %s", path, exc_info=True)
                 continue
             self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=False, source_path=path.resolve())
+        if progress_callback is not None:
+            progress_callback(6, "Activating restored TSD selection and overlays…")
         if self._loaded_tsd_files:
             self._enable_tsd_preview_overlay()
             target_index = active_index if isinstance(active_index, int) and 0 <= active_index < len(self._loaded_tsd_files) else None
