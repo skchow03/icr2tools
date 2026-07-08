@@ -307,21 +307,16 @@ class XsectElevationWidget(QtWidgets.QWidget):
         font.setPointSize(max(font.pointSize() - 1, 7))
         painter.setFont(font)
 
-        min_display = units_from_500ths(min_alt, self._data.unit)
-        max_display = units_from_500ths(max_alt, self._data.unit)
-        decimals = max(self._data.decimals, 0)
-        if decimals == 0:
-            min_text = f"{int(round(min_display))}"
-            max_text = f"{int(round(max_display))}"
-        else:
-            min_text = f"{min_display:.{decimals}f}"
-            max_text = f"{max_display:.{decimals}f}"
         unit_label = self._data.unit_label
-        unit_suffix = f" {unit_label}" if unit_label else ""
         painter.drawText(
             rect.adjusted(0, -18, 0, 0),
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
-            f"Alt: {min_text}–{max_text}{unit_suffix}",
+            f"Elevation in {unit_label}",
+        )
+        painter.drawText(
+            rect.adjusted(0, 0, 0, 28),
+            QtCore.Qt.AlignHCenter | QtCore.Qt.AlignBottom,
+            f"DLAT in {unit_label}",
         )
         bank_angles = self._banking_angles_degrees()
         if bank_angles is not None:
@@ -382,7 +377,7 @@ class XsectElevationWidget(QtWidgets.QWidget):
         if not altitudes or not valid:
             return None
 
-        margins = QtCore.QMargins(48, 18, 16, 28)
+        margins = QtCore.QMargins(60, 18, 16, 42)
         plot_rect = self.rect().marginsRemoved(margins)
         if plot_rect.width() <= 0 or plot_rect.height() <= 0:
             return None

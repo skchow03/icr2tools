@@ -770,7 +770,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_max_spin.setKeyboardTracking(False)
         self._altitude_min_spin.setSuffix(" ft")
         self._altitude_max_spin.setSuffix(" ft")
-        self._altitude_set_range_button = QtWidgets.QPushButton("Set Range")
+        self._altitude_set_range_button = QtWidgets.QPushButton(
+            "Set elevation slider range..."
+        )
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._grade_slider.setRange(-1000, 1000)
         self._grade_slider.setSingleStep(1)
@@ -783,7 +785,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_value_label.setAlignment(
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
-        self._grade_set_range_button = QtWidgets.QPushButton("Set Range")
+        self._grade_set_range_button = QtWidgets.QPushButton(
+            "Set grade slider range..."
+        )
 
         toolbar_panel = create_toolbar_navigation_panel(
             self._prev_button,
