@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.sg_elevation import sg_xsect_altitude_grade_at
 from track_viewer.geometry import project_point_to_centerline
@@ -1169,6 +1170,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.pointerClicked.connect(self._on_preview_pointer_clicked)
         self._preview.pointerReleased.connect(self._on_preview_pointer_released)
         self._preview.pointerDragMoved.connect(self._on_preview_pointer_drag_moved)
+        self._preview.scaleChanged.connect(self._on_preview_scale_changed)
         self._query_track_button.toggled.connect(self._on_query_track_toggled)
         self._ruler_button.clicked.connect(self._on_ruler_button_clicked)
         self._query_track_freeze_shortcut = QtWidgets.QShortcut(
@@ -1363,14 +1365,28 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             layout.addWidget(box)
             return form
 
-        health = group("Section Health")
-        for key, label in (
+        def two_column_group(title: str) -> QtWidgets.QGridLayout:
+            box = QtWidgets.QGroupBox(title)
+            grid = QtWidgets.QGridLayout(box)
+            grid.setContentsMargins(8, 8, 8, 8)
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(4)
+            layout.addWidget(box)
+            return grid
+
+        health = two_column_group("Section Health")
+        health_items = (
             ("selected", "Selected section"), ("length", "Length"),
             ("previous", "Previous connection"), ("next", "Next connection"),
             ("start_tangency", "Start tangency"), ("end_tangency", "End tangency"),
             ("radius", "Curve radius"), ("boundaries", "Boundaries"),
             ("fsects", "Fsects"), ("dlong", "DLONG range"), ("adjusted", "Adjusted DLONGs"),
-        ):
+        )
+        for index, (key, label) in enumerate(health_items):
+            grid_row = index // 2
+            grid_column = (index % 2) * 2
+            name = QtWidgets.QLabel(label)
+            name.setStyleSheet("font-weight: bold;")
             status = QtWidgets.QLabel("Unknown")
             detail = QtWidgets.QLabel("–")
             detail.setWordWrap(True)
@@ -1379,9 +1395,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.addWidget(status)
             row_layout.addWidget(detail, stretch=1)
-            health.addRow(label, row)
+            health.addWidget(name, grid_row, grid_column)
+            health.addWidget(row, grid_row, grid_column + 1)
             self._section_health_labels[key] = (status, detail)
-        health.addRow("", self._run_full_integrity_check_button)
+        health.addWidget(self._run_full_integrity_check_button, (len(health_items) + 1) // 2, 0, 1, 4)
+        health.setColumnStretch(1, 1)
+        health.setColumnStretch(3, 1)
 
         for title, labels, store in (
             ("Geometry", ("Type", "Start DLONG", "End DLONG", "Length", "Radius", "Start point", "End point", "Start heading", "End heading", "Curve center", "Curve arc/sweep", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_geometry_labels),
@@ -1392,19 +1411,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ("View", ("Zoom", "Units"), self._section_view_labels),
             ("Advanced / Raw SG Values", ("Raw section id", "Raw previous id", "Raw next id", "SG radius", "SG angles", "Subindex starts"), self._section_advanced_labels),
         ):
-            form = group(title)
-            for label in labels:
+            grid = two_column_group(title)
+            for index, label in enumerate(labels):
+                row = index // 2
+                column = (index % 2) * 2
+                name = QtWidgets.QLabel(label)
+                name.setStyleSheet("font-weight: bold;")
                 value = QtWidgets.QLabel("–")
                 value.setWordWrap(True)
-                form.addRow(label, value)
+                grid.addWidget(name, row, column)
+                grid.addWidget(value, row, column + 1)
                 store[label] = value
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(3, 1)
 
-        actions = QtWidgets.QGroupBox("Section Actions")
-        action_layout = QtWidgets.QGridLayout(actions)
-        action_layout.addWidget(self._section_split_action_button, 0, 0)
-        action_layout.addWidget(self._section_delete_action_button, 0, 1)
-        action_layout.addWidget(self._section_set_start_finish_action_button, 1, 0, 1, 2)
-        layout.addWidget(actions)
+        self._section_split_action_button.hide()
+        self._section_delete_action_button.hide()
+        self._section_set_start_finish_action_button.hide()
         layout.addStretch(1)
         scroll.setWidget(content)
         return scroll
@@ -2526,8 +2549,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._set_section_health("length", "OK" if selection.length > 0 else "Error", self.format_length_with_secondary(selection.length))
         self._set_section_health("previous", "OK" if prev_ok else "Warning", "Not connected" if selection.previous_id == -1 else f"Section {selection.previous_id}")
         self._set_section_health("next", "OK" if next_ok else "Warning", "Not connected" if selection.next_id == -1 else f"Section {selection.next_id}")
-        self._set_section_health("start_tangency", "Unknown", "Heading comparison unavailable")
-        self._set_section_health("end_tangency", "Unknown", "Heading comparison unavailable")
+        start_status, start_detail = self._section_tangency_status(sections, selection, at_start=True)
+        end_status, end_detail = self._section_tangency_status(sections, selection, at_start=False)
+        self._set_section_health("start_tangency", start_status, start_detail)
+        self._set_section_health("end_tangency", end_status, end_detail)
         if str(selection.type_name).lower() == "curve" and radius_value is not None:
             self._set_section_health("radius", "Warning" if abs(float(radius_value)) < 1.0 else "OK", self.format_length(radius_value))
         else:
@@ -2583,7 +2608,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         ctx = self._section_context_labels
         self._set_section_value(ctx, "Track length", self.format_length(track_length) if track_length else "–")
-        self._set_section_value(ctx, "Miles", f"{float(track_length) / 5280.0:.3f} mi" if track_length else "–")
+        self._set_section_value(ctx, "Miles", f"{units_from_500ths(float(track_length), 'feet') / 5280.0:.3f} mi" if track_length else "–")
         self._set_section_value(ctx, "Section position", f"{selection.index + 1} of {total}" if total else "–")
         self._set_section_value(ctx, "Lap percentage", f"{selection.start_dlong / track_length * 100:.1f}%–{selection.end_dlong / track_length * 100:.1f}%" if track_length else "–")
         self._set_section_value(self._section_view_labels, "Zoom", self._zoom_factor_label.text().removeprefix("Zoom Factor: "))
@@ -2885,6 +2910,45 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 f"B{boundary_number}: Start {self._format_fsect_dlat(fsect.start_dlat)}, End {self._format_fsect_dlat(fsect.end_dlat)}"
             )
         self._section_boundary_dlats_label.setText("\n".join(lines))
+
+    def _on_preview_scale_changed(self, scale: float) -> None:
+        _ = scale
+        self._refresh_query_track_info_label()
+        self._set_section_value(
+            self._section_view_labels,
+            "Zoom",
+            self._zoom_factor_label.text().removeprefix("Zoom Factor: "),
+        )
+
+    def _section_tangency_status(
+        self, sections: list, selection: SectionSelection, *, at_start: bool
+    ) -> tuple[str, str]:
+        neighbor_id = selection.previous_id if at_start else selection.next_id
+        if neighbor_id == -1 or neighbor_id < 0 or neighbor_id >= len(sections):
+            return "Warning", "Not connected"
+        current_heading = selection.start_heading if at_start else selection.end_heading
+        neighbor = sections[neighbor_id]
+        neighbor_heading = neighbor.end_heading if at_start else neighbor.start_heading
+        if current_heading is None or neighbor_heading is None:
+            return "Unknown", "Heading unavailable"
+        delta = self._heading_delta_degrees(neighbor_heading, current_heading)
+        if delta is None:
+            return "Unknown", "Heading unavailable"
+        status = "OK" if delta <= 1.0 else ("Warning" if delta <= 5.0 else "Error")
+        return status, f"{delta:.2f}° mismatch vs section {neighbor_id}"
+
+    @staticmethod
+    def _heading_delta_degrees(
+        heading_a: tuple[float, float], heading_b: tuple[float, float]
+    ) -> float | None:
+        ax, ay = float(heading_a[0]), float(heading_a[1])
+        bx, by = float(heading_b[0]), float(heading_b[1])
+        if (ax == 0.0 and ay == 0.0) or (bx == 0.0 and by == 0.0):
+            return None
+        angle_a = math.degrees(math.atan2(ay, ax))
+        angle_b = math.degrees(math.atan2(by, bx))
+        delta = (angle_b - angle_a + 180.0) % 360.0 - 180.0
+        return abs(delta)
 
     def _on_query_track_toggled(self, checked: bool) -> None:
         self._query_track_mode_active = bool(checked)
