@@ -34,12 +34,14 @@ def test_switching_away_from_elevation_tab_cancels_live_edits(qapp, monkeypatch)
             _cancel_live_edits,
         )
 
-        walls_tab_index = next(
+        surface_tab_index = next(
             index
             for index in range(window.right_sidebar_tabs.count())
-            if window.right_sidebar_tabs.tabText(index) == "Walls"
+            if window.right_sidebar_tabs.tabText(index) == "Surface"
         )
-        window.right_sidebar_tabs.setCurrentIndex(walls_tab_index)
+        window.right_sidebar_tabs.setCurrentIndex(surface_tab_index)
+        surface_tabs = window._sidebar_feature_tabs["Walls"]
+        surface_tabs.setCurrentIndex(surface_tabs.indexOf(window._mrk_sidebar))
 
         assert calls["count"] == 1
     finally:
@@ -243,4 +245,28 @@ def test_xsect_table_selection_ignores_programmatic_table_refresh(qapp, monkeypa
         assert called["value"] is False
     finally:
         window._updating_xsect_table = False
+        window.close()
+
+
+def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
+    window = SGViewerWindow()
+    try:
+        assert [
+            window.right_sidebar_tabs.tabText(index)
+            for index in range(window.right_sidebar_tabs.count())
+        ] == ["Section", "Elevation", "Surface", "Objects", "Files"]
+
+        assert [
+            window._sidebar_feature_tabs["Fsects"].tabText(index)
+            for index in range(window._sidebar_feature_tabs["Fsects"].count())
+        ] == ["Fsects", "Walls"]
+        assert [
+            window._sidebar_feature_tabs["Objects"].tabText(index)
+            for index in range(window._sidebar_feature_tabs["Objects"].count())
+        ] == ["Objects", "TSO Visibility", "Draw land objects"]
+        assert [
+            window._sidebar_feature_tabs["TSD"].tabText(index)
+            for index in range(window._sidebar_feature_tabs["TSD"].count())
+        ] == ["TSD", ".3D file"]
+    finally:
         window.close()

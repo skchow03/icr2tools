@@ -100,6 +100,8 @@ class SectionsController:
         window.land_objects_overlay_checkbox.toggled.connect(preview.set_show_land_objects)
         window.trackside_objects_overlay_checkbox.toggled.connect(host._on_trackside_objects_overlay_toggled)
         window.right_sidebar_tabs.currentChanged.connect(host._on_right_sidebar_tab_changed)
+        for feature_tabs in set(getattr(window, "_sidebar_feature_tabs", {}).values()):
+            feature_tabs.currentChanged.connect(host._on_right_sidebar_tab_changed)
         for key, (hex_edit, color_swatch) in window.preview_color_controls.items():
             hex_edit.editingFinished.connect(
                 lambda color_key=key, widget=hex_edit: host._on_preview_color_text_changed(color_key, widget)
