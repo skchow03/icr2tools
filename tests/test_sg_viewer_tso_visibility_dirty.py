@@ -92,3 +92,32 @@ def test_save_project_clears_tso_visibility_dirty_flag(qapp, monkeypatch: pytest
         assert objects_tabs.tabText(tso_visibility_index) == "TSO Visibility"
     finally:
         window.close()
+
+
+def test_elevation_dirty_invalidates_centerline_elevation_gradient() -> None:
+    class Preview:
+        has_unsaved_changes = False
+
+        def __init__(self) -> None:
+            self.invalidations = 0
+
+        def invalidate_centerline_elevation_gradient(self) -> None:
+            self.invalidations += 1
+
+    class Window:
+        def __init__(self) -> None:
+            self.preview = Preview()
+            self.dirty_tabs: list[tuple[str, bool]] = []
+
+        def set_sidebar_tab_dirty(self, label: str, dirty: bool) -> None:
+            self.dirty_tabs.append((label, dirty))
+
+    controller = SGViewerController.__new__(SGViewerController)
+    controller._window = Window()
+    controller._elevation_grade_is_dirty = False
+
+    controller._mark_elevation_grade_dirty(True)
+
+    assert controller._elevation_grade_is_dirty is True
+    assert controller._window.dirty_tabs == [("Elevation/Grade", True)]
+    assert controller._window.preview.invalidations == 1

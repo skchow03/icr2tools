@@ -1120,10 +1120,35 @@ def _draw_centerlines(
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
     if elevation_segments:
+        selected_points = {tuple(point) for point in selected_section_points}
+        for section in sections:
+            polyline = section.polyline
+            if len(polyline) < 2:
+                continue
+
+            mapped = [
+                sg_rendering.map_point(point[0], point[1], transform, widget_height)
+                for point in polyline
+            ]
+            is_selected = bool(selected_points) and all(tuple(point) in selected_points for point in polyline)
+            line_color = (
+                centerline_selected_color
+                if is_selected
+                else centerline_long_curve_color
+                if _is_long_curve_section(section)
+                else centerline_unselected_color
+            )
+            pen = QtGui.QPen(line_color)
+            pen.setWidthF(BASE_WIDTH + (4.0 if is_selected else 2.0))
+            pen.setCapStyle(QtCore.Qt.RoundCap)
+            pen.setJoinStyle(QtCore.Qt.RoundJoin)
+            painter.setPen(pen)
+            painter.drawPolyline(QtGui.QPolygonF(mapped))
+
         viewport_bbox = _world_bbox_for_painter_rect(painter.viewport(), transform, widget_height)
         margin = max(1.0, (BASE_WIDTH + 1.5) / max(abs(transform[0]), 1e-12))
-        previous_pen_key: tuple[int, int, int, int, bool] | None = None
-        for start, end, color, selected in elevation_segments:
+        previous_pen_key: tuple[int, int, int, int] | None = None
+        for start, end, color, _selected in elevation_segments:
             segment_bbox = (
                 min(float(start[0]), float(end[0])),
                 min(float(start[1]), float(end[1])),
@@ -1132,27 +1157,20 @@ def _draw_centerlines(
             )
             if not _bbox_intersects(segment_bbox, viewport_bbox, margin=margin):
                 continue
-            pen_key = (color.red(), color.green(), color.blue(), color.alpha(), selected)
-            line = QtCore.QLineF(
-                sg_rendering.map_point(start[0], start[1], transform, widget_height),
-                sg_rendering.map_point(end[0], end[1], transform, widget_height),
-            )
-            if selected:
-                border_pen = QtGui.QPen(QtGui.QColor("white"))
-                border_pen.setWidthF(BASE_WIDTH + 4.0)
-                border_pen.setCapStyle(QtCore.Qt.RoundCap)
-                border_pen.setJoinStyle(QtCore.Qt.RoundJoin)
-                painter.setPen(border_pen)
-                painter.drawLine(line)
-                previous_pen_key = None
+            pen_key = (color.red(), color.green(), color.blue(), color.alpha())
             if pen_key != previous_pen_key:
                 pen = QtGui.QPen(color)
-                pen.setWidthF(BASE_WIDTH)
+                pen.setWidthF(max(1.0, BASE_WIDTH - 1.0))
                 pen.setCapStyle(QtCore.Qt.RoundCap)
                 pen.setJoinStyle(QtCore.Qt.RoundJoin)
                 painter.setPen(pen)
                 previous_pen_key = pen_key
-            painter.drawLine(line)
+            painter.drawLine(
+                QtCore.QLineF(
+                    sg_rendering.map_point(start[0], start[1], transform, widget_height),
+                    sg_rendering.map_point(end[0], end[1], transform, widget_height),
+                )
+            )
         painter.restore()
         return
 
