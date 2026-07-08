@@ -1739,7 +1739,7 @@ def test_paint_preview_passes_mrk_highlight_walls_to_renderer(monkeypatch):
     assert captured["highlighted_mrk_walls"] == ((1, 2, 3, 1, "#ff00ff"),)
 
 
-def test_paint_preview_draws_tsd_before_sg_fsects(monkeypatch):
+def test_paint_preview_draws_tsd_after_sg_fsects(monkeypatch):
     from sg_viewer.services import preview_painter
 
     call_order: list[str] = []
@@ -1805,7 +1805,7 @@ def test_paint_preview_draws_tsd_before_sg_fsects(monkeypatch):
     finally:
         painter.end()
 
-    assert call_order == ["tsd", "sg"]
+    assert call_order == ["sg", "tsd"]
 
 
 def test_paint_preview_passes_selected_trackside_object_indices(monkeypatch):
