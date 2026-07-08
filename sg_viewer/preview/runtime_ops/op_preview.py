@@ -288,6 +288,10 @@ class _RuntimeCoreMixin(
     def elevation_color_version(self) -> int:
         return int(self._elevation_color_version)
 
+    def invalidate_centerline_elevation_gradient(self) -> None:
+        self._elevation_color_version += 1
+        self._context.request_repaint()
+
     @property
     def tsd_lines_version(self) -> int:
         return int(self._tsd_lines_version)

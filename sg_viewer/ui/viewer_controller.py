@@ -721,6 +721,8 @@ class SGViewerController:
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None:
         self._elevation_grade_is_dirty = dirty
         self._window.set_sidebar_tab_dirty("Elevation/Grade", dirty)
+        if dirty:
+            self._window.preview.invalidate_centerline_elevation_gradient()
 
     def _mark_fsects_dirty(self, dirty: bool) -> None:
         self._fsects_is_dirty = dirty
