@@ -865,6 +865,9 @@ class SGViewerController:
                 except ValueError:
                     self._skid_marks_colors = DEFAULT_SKID_COLORS
         self._refresh_tsd_objects_table()
+        if self._tsd_objects:
+            self._enable_tsd_preview_overlay()
+            self._refresh_tsd_preview_lines()
         self._trackside_objects = []
         for raw_object in self._sg_settings_store.get_trackside_objects(self._current_path):
             try:
@@ -889,6 +892,7 @@ class SGViewerController:
                 continue
             self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=False, source_path=path.resolve())
         if self._loaded_tsd_files:
+            self._enable_tsd_preview_overlay()
             target_index = active_index if isinstance(active_index, int) and 0 <= active_index < len(self._loaded_tsd_files) else None
             if target_index is None:
                 self._window.tsd_files_combo.setCurrentIndex(0)
