@@ -567,7 +567,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_elevation_widget = XsectElevationWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
-        self._edit_xsect_list_button = QtWidgets.QPushButton("Edit X-Section List...")
+        self._edit_xsect_list_button = QtWidgets.QPushButton("Edit Xsect data...")
         self._edit_xsect_list_button.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section data to...")
         self._copy_xsect_button.setEnabled(False)

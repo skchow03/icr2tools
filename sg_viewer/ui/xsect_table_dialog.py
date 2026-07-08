@@ -10,6 +10,8 @@ from PyQt5 import QtCore, QtWidgets
 class XsectEntry:
     key: int | None
     dlat: float
+    altitude: int | None = None
+    grade: int | None = None
 
 
 def _parse_float(value: str) -> float | None:
@@ -23,14 +25,14 @@ def _parse_float(value: str) -> float | None:
 
 
 class XsectTableWindow(QtWidgets.QDialog):
-    """Displays an editable table of X-section DLAT values."""
+    """Displays editable X-section DLAT, elevation, and grade values."""
 
     xsectsEdited = QtCore.pyqtSignal(list)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("X-Section Table")
-        self.resize(420, 360)
+        self.setWindowTitle("X-Section Data")
+        self.resize(640, 420)
 
         self._entries: list[XsectEntry] = []
         self._is_updating = False
@@ -38,8 +40,16 @@ class XsectTableWindow(QtWidgets.QDialog):
         self._next_new_key = -1
         self._unit_label = "500ths"
         self._decimals = 0
+        self._altitude_unit_label = "500ths"
+        self._altitude_decimals = 0
         self._to_display_units: Callable[[float], float] = lambda value: float(value)
         self._from_display_units: Callable[[float], float] = lambda value: float(value)
+        self._altitude_to_display_units: Callable[[float], float] = lambda value: float(
+            value
+        )
+        self._altitude_from_display_units: Callable[[float], float] = (
+            lambda value: float(value)
+        )
 
         self._apply_timer = QtCore.QTimer(self)
         self._apply_timer.setInterval(250)
@@ -48,9 +58,11 @@ class XsectTableWindow(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout()
         self._table = QtWidgets.QTableWidget()
-        self._table.setColumnCount(2)
+        self._table.setColumnCount(4)
         self._table.setRowCount(10)
-        self._table.setHorizontalHeaderLabels(["Xsect", "DLAT (500ths)"])
+        self._table.setHorizontalHeaderLabels(
+            ["Xsect", "DLAT (500ths)", "Elevation (500ths)", "Grade"]
+        )
         self._table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
         self._table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._table.setAlternatingRowColors(True)
@@ -70,17 +82,52 @@ class XsectTableWindow(QtWidgets.QDialog):
         decimals: int,
         to_display_units: Callable[[float], float],
         from_display_units: Callable[[float], float],
+        altitude_unit_label: str | None = None,
+        altitude_decimals: int | None = None,
+        altitude_to_display_units: Callable[[float], float] | None = None,
+        altitude_from_display_units: Callable[[float], float] | None = None,
     ) -> None:
         self._unit_label = unit_label
         self._decimals = max(0, int(decimals))
         self._to_display_units = to_display_units
         self._from_display_units = from_display_units
-        self._table.setHorizontalHeaderLabels(["Xsect", f"DLAT ({self._unit_label})"])
+        if altitude_unit_label is not None:
+            self._altitude_unit_label = altitude_unit_label
+        if altitude_decimals is not None:
+            self._altitude_decimals = max(0, int(altitude_decimals))
+        if altitude_to_display_units is not None:
+            self._altitude_to_display_units = altitude_to_display_units
+        if altitude_from_display_units is not None:
+            self._altitude_from_display_units = altitude_from_display_units
+        self._table.setHorizontalHeaderLabels(
+            [
+                "Xsect",
+                f"DLAT ({self._unit_label})",
+                f"Elevation ({self._altitude_unit_label})",
+                "Grade",
+            ]
+        )
 
-    def set_xsects(self, metadata: list[tuple[int, float]]) -> None:
-        self._entries = [
-            XsectEntry(key=idx, dlat=float(dlat)) for idx, dlat in metadata
-        ]
+    def set_xsects(
+        self,
+        metadata: list[tuple[int, float]],
+        altitudes: list[int | None] | None = None,
+        grades: list[int | None] | None = None,
+    ) -> None:
+        altitudes = altitudes or []
+        grades = grades or []
+        self._entries = []
+        for row, (idx, dlat) in enumerate(metadata):
+            altitude = altitudes[row] if row < len(altitudes) else None
+            grade = grades[row] if row < len(grades) else None
+            self._entries.append(
+                XsectEntry(
+                    key=idx,
+                    dlat=float(dlat),
+                    altitude=altitude,
+                    grade=grade,
+                )
+            )
         self._entries.sort(key=lambda entry: entry.dlat)
         self._next_new_key = -1
         self._is_updating = True
@@ -97,7 +144,7 @@ class XsectTableWindow(QtWidgets.QDialog):
     def _handle_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._is_updating:
             return
-        if item.column() != 1:
+        if item.column() not in (1, 2, 3):
             return
         self._pending_edit = True
         self._apply_timer.start()
@@ -150,7 +197,23 @@ class XsectTableWindow(QtWidgets.QDialog):
             if key is None:
                 key = self._next_new_key
                 self._next_new_key -= 1
-            entries.append(XsectEntry(key=key, dlat=dlat))
+            altitude = None
+            altitude_item = self._table.item(row, 2)
+            if altitude_item is not None:
+                altitude_display = _parse_float(altitude_item.text())
+                if altitude_display is not None:
+                    altitude = int(
+                        round(self._altitude_from_display_units(altitude_display))
+                    )
+            grade = None
+            grade_item = self._table.item(row, 3)
+            if grade_item is not None:
+                grade_value = _parse_float(grade_item.text())
+                if grade_value is not None:
+                    grade = int(round(grade_value))
+            entries.append(
+                XsectEntry(key=key, dlat=dlat, altitude=altitude, grade=grade)
+            )
         entries.sort(key=lambda entry: entry.dlat)
         return entries[:10]
 
@@ -169,14 +232,33 @@ class XsectTableWindow(QtWidgets.QDialog):
                 dlat_item.setTextAlignment(
                     QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
                 )
+                altitude_text = (
+                    self._format_altitude(entry.altitude)
+                    if entry.altitude is not None
+                    else ""
+                )
+                altitude_item = QtWidgets.QTableWidgetItem(altitude_text)
+                altitude_item.setTextAlignment(
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+                )
+                grade_item = QtWidgets.QTableWidgetItem(
+                    "" if entry.grade is None else str(entry.grade)
+                )
+                grade_item.setTextAlignment(
+                    QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+                )
             else:
                 xsect_item = QtWidgets.QTableWidgetItem("–")
                 xsect_item.setFlags(
                     QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                 )
                 dlat_item = QtWidgets.QTableWidgetItem("")
+                altitude_item = QtWidgets.QTableWidgetItem("")
+                grade_item = QtWidgets.QTableWidgetItem("")
             self._table.setItem(row, 0, xsect_item)
             self._table.setItem(row, 1, dlat_item)
+            self._table.setItem(row, 2, altitude_item)
+            self._table.setItem(row, 3, grade_item)
         self._table.blockSignals(False)
 
     def _format_dlat(self, value: float) -> str:
@@ -184,3 +266,9 @@ class XsectTableWindow(QtWidgets.QDialog):
         if self._decimals == 0:
             return f"{int(round(display_value))}"
         return f"{display_value:.{self._decimals}f}".rstrip("0").rstrip(".")
+
+    def _format_altitude(self, value: int) -> str:
+        display_value = self._altitude_to_display_units(value)
+        if self._altitude_decimals == 0:
+            return f"{int(round(display_value))}"
+        return f"{display_value:.{self._altitude_decimals}f}".rstrip("0").rstrip(".")
