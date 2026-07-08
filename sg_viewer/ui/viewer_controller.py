@@ -952,7 +952,7 @@ class SGViewerController:
 
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
-        tab_name = self._window.right_sidebar_tabs.tabText(index).rstrip("*")
+        tab_name = self._window.active_sidebar_tab_name()
         self._window.update_mouse_usage_text()
         if tab_name != self._ELEVATION_TAB_BASE_LABEL:
             self._elevation_panel_controller.cancel_live_edits()
@@ -983,11 +983,7 @@ class SGViewerController:
 
     def _on_trackside_objects_overlay_toggled(self, checked: bool) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()
-        tab_name = (
-            self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
-            if current_index >= 0
-            else ""
-        )
+        tab_name = self._window.active_sidebar_tab_name() if current_index >= 0 else ""
         self._window.preview.set_show_trackside_objects(
             bool(checked) or tab_name in {"Objects", "TSO Visibility"}
         )
@@ -997,11 +993,7 @@ class SGViewerController:
 
     def _apply_tsd_centerline_visibility_mode(self) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()
-        tab_name = (
-            self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
-            if current_index >= 0
-            else ""
-        )
+        tab_name = self._window.active_sidebar_tab_name() if current_index >= 0 else ""
         hide_centerline_nodes = (
             tab_name == "TSD"
             and self._window.tsd_hide_centerline_nodes_checkbox.isChecked()
@@ -1015,14 +1007,14 @@ class SGViewerController:
         current_index = self._window.right_sidebar_tabs.currentIndex()
         if current_index < 0:
             return False
-        tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+        tab_name = self._window.active_sidebar_tab_name()
         return tab_name == "TSO Visibility"
 
     def _is_objects_tab_active(self) -> bool:
         current_index = self._window.right_sidebar_tabs.currentIndex()
         if current_index < 0:
             return False
-        tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+        tab_name = self._window.active_sidebar_tab_name()
         return tab_name == "Objects"
 
     def _mark_tso_visibility_sidebar_dirty(self) -> None:
@@ -1711,7 +1703,7 @@ class SGViewerController:
         current_index = self._window.right_sidebar_tabs.currentIndex()
         if current_index < 0:
             return False
-        tab_name = self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+        tab_name = self._window.active_sidebar_tab_name()
         return tab_name == self._ELEVATION_TAB_BASE_LABEL
 
     def _refresh_xsect_elevation_panel(self) -> None:

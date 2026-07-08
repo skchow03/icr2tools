@@ -51,18 +51,23 @@ def test_tso_visibility_sidebar_marks_tab_dirty_and_save_clears_it(qapp) -> None
     try:
         tab = window.tso_visibility_sidebar
         tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 2])])
-        assert window.right_sidebar_tabs.tabText(4) == "TSO Visibility"
+        assert window.right_sidebar_tabs.tabText(3) == "Objects"
+        objects_tabs = window._sidebar_feature_tabs["TSO Visibility"]
+        tso_visibility_index = objects_tabs.indexOf(window.tso_visibility_sidebar)
+        assert objects_tabs.tabText(tso_visibility_index) == "TSO Visibility"
 
         tab.section_list.setCurrentRow(0)
         tab.available_tso_ids = [1, 2, 3]
         tab.object_lists[0].tso_ids.append(3)
         tab.objectListsChanged.emit()
 
-        assert window.right_sidebar_tabs.tabText(4) == "TSO Visibility*"
+        assert window.right_sidebar_tabs.tabText(3) == "Objects*"
+        assert objects_tabs.tabText(tso_visibility_index) == "TSO Visibility*"
 
         tab.objectListsSaved.emit()
 
-        assert window.right_sidebar_tabs.tabText(4) == "TSO Visibility"
+        assert window.right_sidebar_tabs.tabText(3) == "Objects"
+        assert objects_tabs.tabText(tso_visibility_index) == "TSO Visibility"
     finally:
         window.close()
 
@@ -73,13 +78,17 @@ def test_save_project_clears_tso_visibility_dirty_flag(qapp, monkeypatch: pytest
     try:
         controller = window.controller
         controller._set_tso_visibility_dirty(True)
-        assert window.right_sidebar_tabs.tabText(5) == "TSO Visibility*"
+        objects_tabs = window._sidebar_feature_tabs["TSO Visibility"]
+        tso_visibility_index = objects_tabs.indexOf(window.tso_visibility_sidebar)
+        assert window.right_sidebar_tabs.tabText(3) == "Objects*"
+        assert objects_tabs.tabText(tso_visibility_index) == "TSO Visibility*"
 
         monkeypatch.setattr(window.preview, "save_sg", lambda _path: None)
 
         controller._document_controller.save_to_path(tmp_path / "saved.sg")
 
         assert controller._tso_visibility_is_dirty is False
-        assert window.right_sidebar_tabs.tabText(5) == "TSO Visibility"
+        assert window.right_sidebar_tabs.tabText(3) == "Objects"
+        assert objects_tabs.tabText(tso_visibility_index) == "TSO Visibility"
     finally:
         window.close()

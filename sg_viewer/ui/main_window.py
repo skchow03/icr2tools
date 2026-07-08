@@ -129,6 +129,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
+        self._sidebar_feature_tabs: dict[str, QtWidgets.QTabWidget] = {}
+        self._sidebar_feature_tab_widgets: dict[str, QtWidgets.QWidget] = {}
+        self._dirty_sidebar_features: set[str] = set()
+        self._feature_to_workflow_tab: dict[str, str] = {
+            "Elevation/Grade": "Elevation",
+            "Fsects": "Surface",
+            "Walls": "Surface",
+            "TSD": "Files",
+            "Objects": "Objects",
+            "TSO Visibility": "Objects",
+            "Draw land objects": "Objects",
+            ".3D file": "Files",
+        }
         self._sidebar_tab_base_labels: dict[str, str] = {
             "Elevation/Grade": "Elevation/Grade",
             "Fsects": "Fsects",
@@ -137,6 +150,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Objects": "Objects",
             "TSO Visibility": "TSO Visibility",
             "Draw land objects": "Draw land objects",
+            ".3D file": ".3D file",
         }
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
@@ -1092,23 +1106,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         three_d_layout.addStretch(1)
         self._three_d_file_sidebar.setLayout(three_d_layout)
 
-        self._right_sidebar_tabs.addTab(elevation_panel.widget, "Elevation/Grade")
-        self._right_sidebar_tabs.addTab(fsect_panel.widget, "Fsects")
-        self._right_sidebar_tabs.addTab(self._mrk_sidebar, "Walls")
-        self._right_sidebar_tabs.addTab(self._tsd_sidebar, "TSD")
-        self._right_sidebar_tabs.addTab(self._tso_sidebar, "Objects")
-        self._right_sidebar_tabs.addTab(self._tso_visibility_sidebar, "TSO Visibility")
-        self._right_sidebar_tabs.addTab(self._land_objects_sidebar, "Draw land objects")
-        self._right_sidebar_tabs.addTab(self._three_d_file_sidebar, ".3D file")
-        # Keep the right sidebar width fixed so window resizing only grows/shrinks
-        # the track-diagram side of the window.
-        sidebar_width = max(320, self._right_sidebar_tabs.sizeHint().width())
-        self._right_sidebar_tabs.setFixedWidth(sidebar_width)
-        self._right_sidebar_tabs.setSizePolicy(
-            QtWidgets.QSizePolicy.Fixed,
-            QtWidgets.QSizePolicy.Expanding,
-        )
-
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addWidget(toolbar_panel.widget)
@@ -1135,7 +1132,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._zoom_factor_label,
         )
         self._stats_sidebar_panel = stats_panel.widget
-        preview_column_layout.addWidget(stats_panel.widget)
+        self._build_grouped_sidebar_tabs(
+            section_widget=stats_panel.widget,
+            elevation_widget=elevation_panel.widget,
+            fsect_widget=fsect_panel.widget,
+        )
+        # Keep the right sidebar width fixed so window resizing only grows/shrinks
+        # the track-diagram side of the window.
+        sidebar_width = max(320, self._right_sidebar_tabs.sizeHint().width())
+        self._right_sidebar_tabs.setFixedWidth(sidebar_width)
+        self._right_sidebar_tabs.setSizePolicy(
+            QtWidgets.QSizePolicy.Fixed,
+            QtWidgets.QSizePolicy.Expanding,
+        )
         preview_column.setLayout(preview_column_layout)
 
         container = QtWidgets.QWidget()
@@ -1323,7 +1332,48 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         current_index = self._right_sidebar_tabs.currentIndex()
         if current_index < 0:
             return ""
+        active_widget = self._right_sidebar_tabs.widget(current_index)
+        if isinstance(active_widget, QtWidgets.QTabWidget):
+            child_index = active_widget.currentIndex()
+            if child_index >= 0:
+                return active_widget.tabText(child_index).rstrip("*")
         return self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+
+    def _build_grouped_sidebar_tabs(
+        self,
+        *,
+        section_widget: QtWidgets.QWidget,
+        elevation_widget: QtWidgets.QWidget,
+        fsect_widget: QtWidgets.QWidget,
+    ) -> None:
+        def add_workflow_tab(label: str) -> QtWidgets.QTabWidget:
+            tab_widget = QtWidgets.QTabWidget()
+            tab_widget.currentChanged.connect(lambda _index: self.update_mouse_usage_text())
+            self._right_sidebar_tabs.addTab(tab_widget, label)
+            return tab_widget
+
+        section_tabs = add_workflow_tab("Section")
+        section_tabs.addTab(section_widget, "Current section")
+
+        for workflow_label, panels in (
+            ("Elevation", ((elevation_widget, "Elevation/Grade"),)),
+            ("Surface", ((fsect_widget, "Fsects"), (self._mrk_sidebar, "Walls"))),
+            (
+                "Objects",
+                (
+                    (self._tso_sidebar, "Objects"),
+                    (self._tso_visibility_sidebar, "TSO Visibility"),
+                    (self._land_objects_sidebar, "Draw land objects"),
+                ),
+            ),
+            ("Files", ((self._tsd_sidebar, "TSD"), (self._three_d_file_sidebar, ".3D file"))),
+        ):
+            tab_widget = add_workflow_tab(workflow_label)
+            for panel_widget, feature_label in panels:
+                tab_widget.addTab(panel_widget, feature_label)
+                self._sidebar_feature_tabs[feature_label] = tab_widget
+                self._sidebar_feature_tab_widgets[feature_label] = panel_widget
+
 
     def update_mouse_usage_text(self) -> None:
         """Refresh the viewport mouse help for the active tab/mode."""
@@ -2762,11 +2812,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _draw_land_objects_tab_active(self) -> bool:
-        active_index = self._right_sidebar_tabs.currentIndex()
-        if active_index < 0:
-            return False
-        active_widget = self._right_sidebar_tabs.widget(active_index)
-        return active_widget is self._land_objects_sidebar
+        return self.active_sidebar_tab_name() == "Draw land objects"
 
     def _append_land_point_from_track(self, track_point: tuple[float, float]) -> None:
         boundary_sample = self._nearest_boundary_sample(track_point)
@@ -4046,8 +4092,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if base_label is None:
             return
         display_label = f"{base_label}*" if dirty else base_label
+        feature_tabs = self._sidebar_feature_tabs.get(base_label)
+        if feature_tabs is not None:
+            for index in range(feature_tabs.count()):
+                tab_text = feature_tabs.tabText(index)
+                if tab_text == base_label or tab_text == f"{base_label}*":
+                    feature_tabs.setTabText(index, display_label)
+                    break
+            if dirty:
+                self._dirty_sidebar_features.add(base_label)
+            else:
+                self._dirty_sidebar_features.discard(base_label)
+            workflow_label = self._feature_to_workflow_tab.get(base_label)
+            if workflow_label is not None:
+                workflow_dirty = any(
+                    self._feature_to_workflow_tab.get(feature) == workflow_label
+                    for feature in self._dirty_sidebar_features
+                )
+                self._set_workflow_tab_dirty(workflow_label, workflow_dirty)
+            return
+        self._set_workflow_tab_dirty(base_label, dirty)
+
+    def _set_workflow_tab_dirty(self, workflow_label: str, dirty: bool) -> None:
+        display_label = f"{workflow_label}*" if dirty else workflow_label
         for index in range(self._right_sidebar_tabs.count()):
             tab_text = self._right_sidebar_tabs.tabText(index)
-            if tab_text == base_label or tab_text == f"{base_label}*":
+            if tab_text == workflow_label or tab_text == f"{workflow_label}*":
                 self._right_sidebar_tabs.setTabText(index, display_label)
                 return
