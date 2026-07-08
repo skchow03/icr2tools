@@ -455,6 +455,12 @@ class SGViewerController:
             help=HelpActions(self._window, self._show_about_dialog),
         )
         self._window.run_full_integrity_check_button.clicked.connect(self._run_sg_integrity_checks)
+        self._window.raise_lower_elevations_button.clicked.connect(
+            self._open_raise_lower_elevations_dialog
+        )
+        self._window.flatten_elevations_button.clicked.connect(
+            self._open_flatten_all_elevations_and_grade_dialog
+        )
         self._publish_action_group_attributes()
 
     def _publish_action_group_attributes(self) -> None:

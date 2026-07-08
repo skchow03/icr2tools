@@ -476,6 +476,8 @@ class DocumentController:
         self._host._reverse_track_action.setEnabled(False)
         self._host._raise_lower_elevations_action.setEnabled(False)
         self._host._flatten_all_elevations_and_grade_action.setEnabled(False)
+        self._host._window.raise_lower_elevations_button.setEnabled(False)
+        self._host._window.flatten_elevations_button.setEnabled(False)
         self._host._generate_elevation_change_action.setEnabled(False)
         self._host._update_xsect_table()
         self._host._populate_xsect_choices()
