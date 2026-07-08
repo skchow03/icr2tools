@@ -828,7 +828,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         elevation_panel = create_elevation_panel(
             elevation_layout=elevation_layout,
             xsect_table=self._xsect_elevation_table,
-            edit_xsect_list_button=self._edit_xsect_list_button,
             xsect_combo=self._xsect_combo,
             profile_widget=self._profile_widget,
             altitude_control=altitude_container,
@@ -1746,6 +1745,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _elevation_toolbar_buttons(self) -> tuple[QtWidgets.QPushButton, ...]:
         return (
+            self._edit_xsect_list_button,
             self._copy_xsect_button,
             self._generate_elevation_change_button,
             self._flatten_elevations_button,
