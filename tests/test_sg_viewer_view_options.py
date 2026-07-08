@@ -673,6 +673,7 @@ def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
         assert table.item(1, 1).text() == "37"
         assert len(window.preview.tsd_lines) == 2
         assert window.preview.tsd_lines[1].width_500ths == 3000
+        assert window.preview.show_tsd_lines is True
     finally:
         window.close()
 
@@ -841,6 +842,7 @@ def test_show_all_tsds_selection_populates_table_with_all_loaded_rows(
         window.controller._on_tsd_load_file_requested()
         window.controller._on_tsd_load_file_requested()
 
+        window.preview.set_show_tsd_lines(False)
         window.tsd_files_combo.setCurrentIndex(0)
 
         table = window.tsd_lines_table
@@ -848,6 +850,7 @@ def test_show_all_tsds_selection_populates_table_with_all_loaded_rows(
         assert table.item(0, 0).text() == "Detail"
         assert table.item(1, 0).text() == "Detail_Dash"
         assert len(window.preview.tsd_lines) == 2
+        assert window.preview.show_tsd_lines is True
     finally:
         window.close()
 
@@ -921,6 +924,37 @@ def test_tsd_refresh_uses_window_adjusted_range_cache(qapp, monkeypatch):
         window.controller._refresh_tsd_preview_lines()
 
         assert calls["count"] == 1
+    finally:
+        window.close()
+
+
+def test_tsd_line_edit_does_not_reenable_manually_hidden_preview(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        from sg_viewer.services.tsd_io import TrackSurfaceDetailLine
+
+        line = TrackSurfaceDetailLine(
+            color_index=36,
+            width_500ths=4000,
+            start_dlong=0,
+            start_dlat=0,
+            end_dlong=100,
+            end_dlat=0,
+            command="Detail",
+        )
+        window.controller._tsd_lines_model.replace_lines((line,))
+        window.controller._last_tsd_preview_lines = [line]
+        window.controller._last_tsd_adjusted_to_sg_ranges = (
+            [(0.0, 100.0, 0.0, 100.0)],
+            [0.0, 100.0],
+        )
+        window.preview.set_show_tsd_lines(False)
+
+        index = window.controller._tsd_lines_model.index(0, 2)
+        window.controller._tsd_lines_model.setData(index, "5000")
+
+        assert window.preview.tsd_lines[0].width_500ths == 5000
+        assert window.preview.show_tsd_lines is False
     finally:
         window.close()
 
@@ -1088,7 +1122,7 @@ def test_tsd_selection_does_not_center_when_line_has_zero_span(qapp, monkeypatch
         window.close()
 
 
-def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
+def test_tsd_overlay_is_not_forced_off_when_switching_tabs(qapp):
     window = SGViewerWindow()
     try:
         tsd_index = next(
@@ -1102,7 +1136,7 @@ def test_tsd_overlay_only_shows_on_tsd_tab(qapp):
         assert window.preview.show_tsd_lines is True
 
         window.right_sidebar_tabs.setCurrentIndex(0)
-        assert window.preview.show_tsd_lines is False
+        assert window.preview.show_tsd_lines is True
     finally:
         window.close()
 
@@ -2608,6 +2642,11 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
 
         assert window.tsd_objects_table.rowCount() == 1
         assert len(window.preview.tsd_lines) == 6
+        assert all(
+            line.__class__.__name__ == "TrackSurfaceDetailLine"
+            for line in window.preview.tsd_lines
+        )
+        assert window.preview.show_tsd_lines is True
         payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
         assert payload["tsd"]["objects"][0]["type"] == "zebra_crossing"
         assert payload["tsd"]["objects"][0]["stripe_count"] >= 1

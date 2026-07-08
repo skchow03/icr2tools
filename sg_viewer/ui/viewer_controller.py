@@ -972,7 +972,8 @@ class SGViewerController:
         if self._tso_box_select_mode_active and not is_objects_tab:
             self._set_tso_box_select_mode_active(False)
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
-        self._window.preview.set_show_tsd_lines(is_tsd_tab or is_objects_tab or is_tso_visibility_tab)
+        if is_tsd_tab or is_objects_tab or is_tso_visibility_tab:
+            self._window.preview.set_show_tsd_lines(True)
         self._window.preview.set_show_trackside_objects(
             is_objects_tab
             or is_tso_visibility_tab
