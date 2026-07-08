@@ -25,8 +25,12 @@ class ElevationPanelHost(Protocol):
     def _current_xsect_index(self) -> int | None: ...
     def _current_samples_per_section(self) -> int: ...
     def _update_copy_xsect_button(self) -> None: ...
-    def _apply_altitude_edit(self, live: bool = False, slider_value: int | None = None) -> None: ...
-    def _apply_grade_edit(self, live: bool = False, grade_value: int | None = None) -> None: ...
+    def _apply_altitude_edit(
+        self, live: bool = False, slider_value: int | None = None
+    ) -> None: ...
+    def _apply_grade_edit(
+        self, live: bool = False, grade_value: int | None = None
+    ) -> None: ...
     def _refresh_elevation_inputs(self) -> None: ...
     def _sync_after_xsect_value_change(self) -> None: ...
     def _sync_after_xsect_value_change_lightweight(self) -> None: ...
@@ -42,7 +46,9 @@ class ElevationPanelController:
         self._live_slider_signals_suspended = False
         self._altitude_live_timer = QtCore.QTimer(self._host._window)
         self._altitude_live_timer.setSingleShot(True)
-        self._altitude_live_timer.timeout.connect(self._apply_pending_altitude_live_edit)
+        self._altitude_live_timer.timeout.connect(
+            self._apply_pending_altitude_live_edit
+        )
         self._grade_live_timer = QtCore.QTimer(self._host._window)
         self._grade_live_timer.setSingleShot(True)
         self._grade_live_timer.timeout.connect(self._apply_pending_grade_live_edit)
@@ -51,16 +57,29 @@ class ElevationPanelController:
         metadata = self._host._window.preview.get_xsect_metadata()
         combo = self._host._window.xsect_combo
         unit = str(self._host._window.measurement_units_combo.currentData())
-        unit_label = {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}.get(unit, "500ths")
+        unit_label = {"feet": "ft", "meter": "m", "inch": "in", "500ths": "500ths"}.get(
+            unit, "500ths"
+        )
         decimals = {"feet": 1, "meter": 3, "inch": 1, "500ths": 0}.get(unit, 0)
-        combo.blockSignals(True); combo.clear()
+        combo.blockSignals(True)
+        combo.clear()
         for idx, dlat in metadata:
             display_dlat = units_from_500ths(dlat, unit)
-            formatted_dlat = f"{int(round(display_dlat))}" if decimals == 0 else f"{display_dlat:.{decimals}f}".rstrip("0").rstrip(".")
+            formatted_dlat = (
+                f"{int(round(display_dlat))}"
+                if decimals == 0
+                else f"{display_dlat:.{decimals}f}".rstrip("0").rstrip(".")
+            )
             combo.addItem(f"{idx} (DLAT {formatted_dlat} {unit_label})", idx)
         combo.setEnabled(bool(metadata))
         if metadata:
-            target_index = max(0, min(preferred_index if preferred_index is not None else 0, len(metadata)-1))
+            target_index = max(
+                0,
+                min(
+                    preferred_index if preferred_index is not None else 0,
+                    len(metadata) - 1,
+                ),
+            )
             combo.setCurrentIndex(target_index)
         combo.blockSignals(False)
         self._host._update_copy_xsect_button()
@@ -79,19 +98,17 @@ class ElevationPanelController:
             current_index = combo.currentIndex()
         self._host._window.preview.set_selected_xsect_index(int(current_index))
         samples_per_section = self._host._current_samples_per_section()
-        profile = self._host._window.preview.build_elevation_profile(int(current_index), samples_per_section=samples_per_section)
+        profile = self._host._window.preview.build_elevation_profile(
+            int(current_index), samples_per_section=samples_per_section
+        )
         if profile is not None:
             profile.unit = self._host._window.xsect_altitude_unit()
             profile.unit_label = self._host._window.xsect_altitude_unit_label()
             profile.decimals = self._host._window.xsect_altitude_display_decimals()
             if self._host._elevation_controller.should_lock_bounds():
-                global_bounds = (
-                    self._host._elevation_controller.current_profile.y_range
-                )
+                global_bounds = self._host._elevation_controller.current_profile.y_range
             elif self._host._elevation_controller.manual_profile_y_range is not None:
-                global_bounds = (
-                    self._host._elevation_controller.manual_profile_y_range
-                )
+                global_bounds = self._host._elevation_controller.manual_profile_y_range
             else:
                 global_bounds = self._host._window.preview.get_elevation_profile_bounds(
                     samples_per_section=samples_per_section
@@ -118,6 +135,105 @@ class ElevationPanelController:
         self._host._window.update_elevation_inputs(altitude, grade, has_selection)
         self._host._window.set_altitude_inputs_enabled(has_selection)
         self._host._window.set_grade_inputs_enabled(has_selection)
+        self._refresh_elevation_summary(altitude, grade, has_selection)
+
+    def _refresh_elevation_summary(
+        self, altitude: int | None, grade: int | None, has_selection: bool
+    ) -> None:
+        selection = self._host._active_selection
+        xsect_index = self._host._current_xsect_index()
+        if not has_selection or selection is None or xsect_index is None:
+            self._host._window.update_elevation_summary(
+                "Select a section and xsect to inspect elevation data."
+            )
+            return
+
+        sg_data = self._host._window.preview.document.sg_data
+        if (
+            sg_data is None
+            or selection.index < 0
+            or selection.index >= len(sg_data.sects)
+        ):
+            self._host._window.update_elevation_summary(
+                "Selected elevation data is unavailable."
+            )
+            return
+
+        section = sg_data.sects[selection.index]
+        xsect_count = int(getattr(sg_data, "num_xsects", 0) or 0)
+        dlat_text = "–"
+        metadata = self._host._window.preview.get_xsect_metadata()
+        if 0 <= xsect_index < len(metadata):
+            dlat_text = self._host._window.format_length(metadata[xsect_index][1])
+
+        next_banking = "–"
+        previous_banking = "–"
+        if altitude is not None and getattr(section, "alt", None):
+            if xsect_index + 1 < min(len(section.alt), xsect_count):
+                next_banking = self._host._window._format_xsect_altitude(
+                    int(section.alt[xsect_index + 1]) - int(altitude)
+                )
+            if xsect_index - 1 >= 0 and xsect_index - 1 < len(section.alt):
+                previous_banking = self._host._window._format_xsect_altitude(
+                    int(altitude) - int(section.alt[xsect_index - 1])
+                )
+
+        all_altitudes: list[int] = []
+        all_grades: list[int] = []
+        for candidate in sg_data.sects:
+            all_altitudes.extend(
+                int(value) for value in getattr(candidate, "alt", [])[:xsect_count]
+            )
+            all_grades.extend(
+                int(value) for value in getattr(candidate, "grade", [])[:xsect_count]
+            )
+
+        min_elevation = (
+            self._host._window._format_xsect_altitude(min(all_altitudes))
+            if all_altitudes
+            else "–"
+        )
+        max_elevation = (
+            self._host._window._format_xsect_altitude(max(all_altitudes))
+            if all_altitudes
+            else "–"
+        )
+        positive_slopes = [value / 8192.0 * 100.0 for value in all_grades if value > 0]
+        negative_slopes = [value / 8192.0 * 100.0 for value in all_grades if value < 0]
+
+        def _slope_text(value: float | None) -> str:
+            return "–" if value is None else f"{value:+.2f}%"
+
+        max_up = max(positive_slopes) if positive_slopes else None
+        max_down = min(negative_slopes) if negative_slopes else None
+        avg_up = (
+            sum(positive_slopes) / len(positive_slopes) if positive_slopes else None
+        )
+        avg_down = (
+            sum(negative_slopes) / len(negative_slopes) if negative_slopes else None
+        )
+
+        altitude_text = (
+            self._host._window._format_xsect_altitude(altitude)
+            if altitude is not None
+            else "–"
+        )
+        grade_text = str(grade) if grade is not None else "–"
+        self._host._window.update_elevation_summary(
+            " | ".join(
+                (
+                    f"Xsect: {xsect_index} (DLAT {dlat_text})",
+                    f"Section node: {selection.index}",
+                    f"Elevation: {altitude_text}",
+                    f"Grade: {grade_text} ({_slope_text((grade / 8192.0 * 100.0) if grade is not None else None)})",
+                    f"Banking to next xsect: {next_banking}",
+                    f"Banking to previous xsect: {previous_banking}",
+                    f"Track min/max elevation: {min_elevation} / {max_elevation}",
+                    f"Max slope up/down: {_slope_text(max_up)} / {_slope_text(max_down)}",
+                    f"Avg slope up/down: {_slope_text(avg_up)} / {_slope_text(avg_down)}",
+                )
+            )
+        )
 
     def on_altitude_slider_changed(self, value: int) -> None:
         self._host._window.update_altitude_display(value)
@@ -171,7 +287,10 @@ class ElevationPanelController:
         value = self._pending_altitude_value
         self._pending_altitude_value = None
         self._host._apply_altitude_edit(live=True, slider_value=value)
-        if self._pending_altitude_value is not None and not self._altitude_live_timer.isActive():
+        if (
+            self._pending_altitude_value is not None
+            and not self._altitude_live_timer.isActive()
+        ):
             self._altitude_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def _apply_pending_grade_live_edit(self) -> None:
@@ -180,7 +299,10 @@ class ElevationPanelController:
         value = self._pending_grade_value
         self._pending_grade_value = None
         self._host._apply_grade_edit(live=True, grade_value=value)
-        if self._pending_grade_value is not None and not self._grade_live_timer.isActive():
+        if (
+            self._pending_grade_value is not None
+            and not self._grade_live_timer.isActive()
+        ):
             self._grade_live_timer.start(self._LIVE_EDIT_THROTTLE_MS)
 
     def _flush_pending_altitude_live_edit(self, *, clear_pending: bool = True) -> None:
@@ -302,22 +424,45 @@ class ElevationPanelController:
             if refresh_table:
                 self.refresh_xsect_elevation_table()
             return
-        altitudes = self._host._window.preview.get_section_xsect_altitudes(selection.index)
+        altitudes = self._host._window.preview.get_section_xsect_altitudes(
+            selection.index
+        )
         metadata = self._host._window.preview.get_xsect_metadata()
         xsect_dlats = [dlat for _, dlat in metadata] if metadata else None
-        y_range = elevation_profile_alt_bounds(self._host._elevation_controller.current_profile) if self._host._elevation_controller.current_profile is not None else None
-        self._host._window.xsect_elevation_widget.set_xsect_data(XsectElevationData(section_index=selection.index, altitudes=[float(v) if v is not None else None for v in altitudes], xsect_dlats=xsect_dlats, selected_xsect_index=self._host._current_xsect_index(), y_range=y_range, unit=self._host._window.xsect_altitude_unit(), unit_label=self._host._window.xsect_altitude_unit_label(), decimals=self._host._window.xsect_altitude_display_decimals()))
+        y_range = (
+            elevation_profile_alt_bounds(
+                self._host._elevation_controller.current_profile
+            )
+            if self._host._elevation_controller.current_profile is not None
+            else None
+        )
+        self._host._window.xsect_elevation_widget.set_xsect_data(
+            XsectElevationData(
+                section_index=selection.index,
+                altitudes=[float(v) if v is not None else None for v in altitudes],
+                xsect_dlats=xsect_dlats,
+                selected_xsect_index=self._host._current_xsect_index(),
+                y_range=y_range,
+                unit=self._host._window.xsect_altitude_unit(),
+                unit_label=self._host._window.xsect_altitude_unit_label(),
+                decimals=self._host._window.xsect_altitude_display_decimals(),
+            )
+        )
         if refresh_table:
             self.refresh_xsect_elevation_table()
 
     def refresh_xsect_elevation_table(self) -> None:
         selection = self._host._active_selection
         if selection is None:
-            self._host._window.update_xsect_elevation_table([], [], [], None, enabled=False)
+            self._host._window.update_xsect_elevation_table(
+                [], [], [], None, enabled=False
+            )
             return
         metadata = self._host._window.preview.get_xsect_metadata()
         xsect_dlats = [dlat for _, dlat in metadata]
-        altitudes = self._host._window.preview.get_section_xsect_altitudes(selection.index)
+        altitudes = self._host._window.preview.get_section_xsect_altitudes(
+            selection.index
+        )
         grades = self._host._window.preview.get_section_xsect_grades(selection.index)
         self._host._window.update_xsect_elevation_table(
             xsect_dlats,
@@ -341,7 +486,8 @@ class ElevationPanelController:
             return
         text = item.text().strip()
         if not text:
-            self.refresh_xsect_elevation_table(); return
+            self.refresh_xsect_elevation_table()
+            return
         if column_index == 1:
             metadata = self._host._window.preview.get_xsect_metadata()
             if row_index < 0 or row_index >= len(metadata):
@@ -362,15 +508,27 @@ class ElevationPanelController:
             else:
                 self.refresh_xsect_elevation_table()
         elif column_index == 2:
-            try: display_value = float(text)
-            except ValueError: self.refresh_xsect_elevation_table(); return
-            altitude = self._host._window.xsect_altitude_from_display_units(display_value)
-            if self._host._window.preview.set_section_xsect_altitude(selection.index, row_index, altitude, validate=False):
+            try:
+                display_value = float(text)
+            except ValueError:
+                self.refresh_xsect_elevation_table()
+                return
+            altitude = self._host._window.xsect_altitude_from_display_units(
+                display_value
+            )
+            if self._host._window.preview.set_section_xsect_altitude(
+                selection.index, row_index, altitude, validate=False
+            ):
                 self._host._sync_after_xsect_value_change()
         else:
-            try: grade = int(text)
-            except ValueError: self.refresh_xsect_elevation_table(); return
-            if self._host._window.preview.set_section_xsect_grade(selection.index, row_index, grade, validate=False):
+            try:
+                grade = int(text)
+            except ValueError:
+                self.refresh_xsect_elevation_table()
+                return
+            if self._host._window.preview.set_section_xsect_grade(
+                selection.index, row_index, grade, validate=False
+            ):
                 self._host._sync_after_xsect_value_change()
         if row_index == self._host._current_xsect_index():
             self._host._refresh_elevation_inputs()
