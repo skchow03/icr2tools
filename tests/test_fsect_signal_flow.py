@@ -44,7 +44,7 @@ def test_query_track_refresh_updates_overlay_message() -> None:
     window._refresh_query_track_info_label()
 
     overlay = window._preview.query_track_overlay_message
-    assert "Query Track:" in overlay
+    assert "Inspect Track:" in overlay
     assert "Section #: 3" in overlay
     assert "Boundary DLATs: B1:" in overlay
     assert "[Space: Freeze]" in overlay

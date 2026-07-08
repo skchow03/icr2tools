@@ -199,6 +199,11 @@ class _RuntimeCoreBaseMixin:
     def set_section_drag_enabled(self, enabled: bool) -> None:
         self._interaction.set_section_drag_enabled(enabled)
 
+    def set_centerline_editing_enabled(self, enabled: bool) -> None:
+        self._centerline_editing_enabled = bool(enabled)
+        if not self._centerline_editing_enabled:
+            self._interaction.reset()
+
     def set_track_interaction_enabled(self, enabled: bool) -> None:
         normalized = bool(enabled)
         if normalized == self._track_interaction_enabled:

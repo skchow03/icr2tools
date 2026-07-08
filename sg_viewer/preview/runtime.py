@@ -539,6 +539,8 @@ class PreviewRuntime(PreviewRuntimeOps):
 
     def set_centerline_editing_enabled(self, enabled: bool) -> None:
         self._centerline_editing_enabled = bool(enabled)
+        if not self._centerline_editing_enabled:
+            self._interaction.reset()
 
     def on_leave(self, event: QtCore.QEvent) -> None:  # noqa: D401
         _ = event
