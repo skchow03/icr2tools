@@ -399,7 +399,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Set Start/Finish",
             shortcut_labels["set_start_finish"],
         )
-        self._query_track_button = QtWidgets.QPushButton("Query track")
+        self._query_track_button = QtWidgets.QPushButton("Inspect Track")
         self._query_track_button.setCheckable(True)
         self._query_track_button.setEnabled(False)
         self._ruler_button = QtWidgets.QPushButton("Ruler")
@@ -1517,11 +1517,33 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         for button in self._geometry_tab_buttons():
             button.set_geometry_tab_active(geometry_active)
+        self._preview.set_centerline_editing_enabled(geometry_active)
+        self._preview.set_section_drag_enabled(
+            geometry_active and self._move_section_button.isChecked()
+        )
+        if not geometry_active:
+            self._cancel_geometry_edit_modes()
         controller = getattr(self, "controller", None)
         if controller is not None and hasattr(
             controller, "_sync_section_editing_menu_actions"
         ):
             controller._sync_section_editing_menu_actions()
+
+    def _cancel_geometry_edit_modes(self) -> None:
+        self._preview.cancel_creation()
+        self._preview.cancel_split_section()
+        for button in (
+            self._new_straight_button,
+            self._new_curve_button,
+            self._split_section_button,
+            self._move_section_button,
+            self._delete_section_button,
+        ):
+            if button.isCheckable() and button.isChecked():
+                button.blockSignals(True)
+                button.setChecked(False)
+                button.blockSignals(False)
+        self._preview.set_section_drag_enabled(False)
 
     def _build_grouped_sidebar_tabs(
         self,
@@ -3062,7 +3084,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
         else:
-            self.show_status_message("Query Track active. Press Space to freeze/unfreeze overlay details.")
+            self.show_status_message("Inspect Track active. Press Space to freeze/unfreeze overlay details.")
         self._refresh_query_track_info_label()
 
     def _toggle_query_track_info_freeze(self) -> None:
@@ -3070,9 +3092,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         self._query_track_info_frozen = not self._query_track_info_frozen
         if self._query_track_info_frozen:
-            self.show_status_message("Query Track overlay frozen. Press Space again to resume live updates.")
+            self.show_status_message("Inspect Track overlay frozen. Press Space again to resume live updates.")
         else:
-            self.show_status_message("Query Track overlay live updates resumed.")
+            self.show_status_message("Inspect Track overlay live updates resumed.")
         self._refresh_query_track_info_label()
 
     def _on_preview_pointer_left(self) -> None:
@@ -4050,7 +4072,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             freeze_suffix = "\n[Space: Freeze]"
         if self._query_track_result is None:
             self._preview.set_query_track_overlay_message(
-                "Query Track:\nHover over centerline" + freeze_suffix
+                "Inspect Track:\nHover over centerline" + freeze_suffix
             )
             return
         result = self._query_track_result
@@ -4094,7 +4116,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         boundaries_dlat_text = ", ".join(formatted_boundary_dlats) or "none"
         boundaries_elevation_text = ", ".join(formatted_boundary_elevations) or "none"
         return (
-            "Query Track:\n"
+            "Inspect Track:\n"
             f"Section #: {result.get('section_index', '–')}\n"
             f"Adjusted DLONG: {adjusted_text}\n"
             f"Elevation at DLAT=0: {elevation_text}\n"

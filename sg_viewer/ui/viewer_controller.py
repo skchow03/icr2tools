@@ -1002,7 +1002,13 @@ class SGViewerController:
         if tab_name == "Draw land objects":
             hide_centerline_nodes = True
         self._window.preview.set_show_centerline_and_nodes(not hide_centerline_nodes)
-        self._window.preview.set_centerline_editing_enabled(not hide_centerline_nodes)
+        geometry_active = (
+            current_index >= 0
+            and self._window.right_sidebar_tabs.tabText(current_index).rstrip("*") == "Geometry"
+        )
+        self._window.preview.set_centerline_editing_enabled(
+            geometry_active and not hide_centerline_nodes
+        )
 
     def _is_tso_visibility_tab_active(self) -> bool:
         current_index = self._window.right_sidebar_tabs.currentIndex()
