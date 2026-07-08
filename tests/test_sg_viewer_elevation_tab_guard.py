@@ -254,19 +254,19 @@ def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
         assert [
             window.right_sidebar_tabs.tabText(index)
             for index in range(window.right_sidebar_tabs.count())
-        ] == ["Section", "Elevation", "Surface", "Objects", "Files"]
+        ] == ["Geometry", "Elevation", "Surface", "Objects", "Files"]
 
         assert [
-            window._sidebar_feature_tabs["Fsects"].tabText(index)
-            for index in range(window._sidebar_feature_tabs["Fsects"].count())
-        ] == ["Fsects", "Walls"]
+            window._sidebar_feature_tabs["Features"].tabText(index)
+            for index in range(window._sidebar_feature_tabs["Features"].count())
+        ] == ["Features", "Walls", "Track Surface Markings"]
         assert [
             window._sidebar_feature_tabs["Objects"].tabText(index)
             for index in range(window._sidebar_feature_tabs["Objects"].count())
         ] == ["Objects", "TSO Visibility", "Draw land objects"]
         assert [
-            window._sidebar_feature_tabs["TSD"].tabText(index)
-            for index in range(window._sidebar_feature_tabs["TSD"].count())
-        ] == ["TSD", ".3D file"]
+            window._sidebar_feature_tabs["Track Surface Markings"].tabText(index)
+            for index in range(window._sidebar_feature_tabs["Track Surface Markings"].count())
+        ] == ["Features", "Walls", "Track Surface Markings"]
     finally:
         window.close()

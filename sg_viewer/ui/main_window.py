@@ -159,24 +159,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sidebar_feature_tab_widgets: dict[str, QtWidgets.QWidget] = {}
         self._dirty_sidebar_features: set[str] = set()
         self._feature_to_workflow_tab: dict[str, str] = {
+            "Geometry": "Geometry",
+            "Elevation": "Elevation",
             "Elevation/Grade": "Elevation",
+            "Features": "Surface",
             "Fsects": "Surface",
             "Walls": "Surface",
-            "TSD": "Files",
+            "Track Surface Markings": "Surface",
+            "TSD": "Surface",
             "Objects": "Objects",
             "TSO Visibility": "Objects",
             "Draw land objects": "Objects",
             ".3D file": "Files",
         }
         self._sidebar_tab_base_labels: dict[str, str] = {
-            "Elevation/Grade": "Elevation/Grade",
-            "Fsects": "Fsects",
+            "Elevation": "Elevation",
+            "Elevation/Grade": "Elevation",
+            "Features": "Features",
+            "Fsects": "Features",
             "Walls": "Walls",
-            "TSD": "TSD",
+            "Track Surface Markings": "Track Surface Markings",
+            "TSD": "Track Surface Markings",
             "Objects": "Objects",
             "TSO Visibility": "TSO Visibility",
             "Draw land objects": "Draw land objects",
             ".3D file": ".3D file",
+            "Geometry": "Geometry",
         }
         self._view_options_dialog: QtWidgets.QDialog | None = None
         self._mrk_add_entry_button = QtWidgets.QPushButton("Add MRK Entry")
@@ -1808,12 +1816,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._right_sidebar_tabs.addTab(tab_widget, label)
             return tab_widget
 
-        section_tabs = add_workflow_tab("Geometry")
-        section_tabs.addTab(section_widget, "Current section")
+        self._right_sidebar_tabs.addTab(section_widget, "Geometry")
+        self._sidebar_feature_tab_widgets["Geometry"] = section_widget
+
+        self._right_sidebar_tabs.addTab(elevation_widget, "Elevation")
+        self._sidebar_feature_tab_widgets["Elevation"] = elevation_widget
 
         for workflow_label, panels in (
-            ("Elevation", ((elevation_widget, "Elevation/Grade"),)),
-            ("Surface", ((fsect_widget, "Fsects"), (self._mrk_sidebar, "Walls"))),
+            (
+                "Surface",
+                (
+                    (fsect_widget, "Features"),
+                    (self._mrk_sidebar, "Walls"),
+                    (self._tsd_sidebar, "Track Surface Markings"),
+                ),
+            ),
             (
                 "Objects",
                 (
@@ -1822,16 +1839,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     (self._land_objects_sidebar, "Draw land objects"),
                 ),
             ),
-            (
-                "Files",
-                ((self._tsd_sidebar, "TSD"), (self._three_d_file_sidebar, ".3D file")),
-            ),
+            ("Files", ((self._three_d_file_sidebar, ".3D file"),)),
         ):
             tab_widget = add_workflow_tab(workflow_label)
             for panel_widget, feature_label in panels:
                 tab_widget.addTab(panel_widget, feature_label)
                 self._sidebar_feature_tabs[feature_label] = tab_widget
                 self._sidebar_feature_tab_widgets[feature_label] = panel_widget
+                if feature_label == "Features":
+                    self._sidebar_feature_tabs["Fsects"] = tab_widget
+                    self._sidebar_feature_tab_widgets["Fsects"] = panel_widget
+                elif feature_label == "Track Surface Markings":
+                    self._sidebar_feature_tabs["TSD"] = tab_widget
+                    self._sidebar_feature_tab_widgets["TSD"] = panel_widget
 
     def _build_viewport_toolbar(self) -> QtWidgets.QFrame:
         """Build the compact viewport display/options toolbar above the preview."""
@@ -1930,14 +1950,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             tab_name = self.active_sidebar_tab_name()
             usage_by_tab = {
-                "Elevation/Grade": (
+                "Elevation": (
                     "Left click: select section/xsect marker • "
                     "Left drag node directly, or drag section only when Move is active; "
                     "drag empty space to pan • "
                     "Right click node: disconnect • "
                     "Mouse wheel: zoom at cursor"
                 ),
-                "Fsects": (
+                "Features": (
                     "Left click viewport: select section • "
                     "Select/edit fsect rows in the fsect table or diagram • "
                     "Left drag node directly, or drag section only when Move is active; "
@@ -1951,7 +1971,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     "Right click node: disconnect • "
                     "Mouse wheel: zoom at cursor"
                 ),
-                "TSD": (
+                "Track Surface Markings": (
                     "Select TSD rows in the TSD table; selecting a row centers the viewport on it • "
                     "Left drag: pan view • "
                     "Mouse wheel: zoom at cursor"
@@ -5316,7 +5336,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
                 self._set_workflow_tab_dirty(workflow_label, workflow_dirty)
             return
-        self._set_workflow_tab_dirty(base_label, dirty)
+        workflow_label = self._feature_to_workflow_tab.get(base_label, base_label)
+        self._set_workflow_tab_dirty(workflow_label, dirty)
 
     def _set_workflow_tab_dirty(self, workflow_label: str, dirty: bool) -> None:
         display_label = f"{workflow_label}*" if dirty else workflow_label
