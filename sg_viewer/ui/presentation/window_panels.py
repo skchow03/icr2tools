@@ -90,11 +90,15 @@ def create_elevation_panel(
     copy_xsect_button: QtWidgets.QPushButton,
     generate_elevation_change_button: QtWidgets.QPushButton,
     profile_widget: QtWidgets.QWidget,
+    altitude_control: QtWidgets.QWidget,
+    altitude_set_range_button: QtWidgets.QPushButton,
+    grade_control: QtWidgets.QWidget,
     xsect_elevation_widget: QtWidgets.QWidget,
 ) -> ElevationPanel:
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
-    layout.addLayout(elevation_layout)
+    if elevation_layout.rowCount() > 0:
+        layout.addLayout(elevation_layout)
     layout.addWidget(QtWidgets.QLabel("X-Section Elevations"))
     layout.addWidget(xsect_table)
     layout.addWidget(edit_xsect_list_button)
@@ -103,8 +107,14 @@ def create_elevation_panel(
     controls.addWidget(xsect_combo)
     controls.addWidget(copy_xsect_button)
     controls.addWidget(generate_elevation_change_button)
+    controls.addWidget(altitude_set_range_button)
     layout.addLayout(controls)
-    layout.addWidget(profile_widget, stretch=2)
+
+    profile_row = QtWidgets.QHBoxLayout()
+    profile_row.addWidget(profile_widget, stretch=1)
+    profile_row.addWidget(altitude_control)
+    layout.addLayout(profile_row, stretch=2)
+    layout.addWidget(grade_control)
     layout.addWidget(QtWidgets.QLabel("Lateral Section Elevation Profile"))
     layout.addWidget(xsect_elevation_widget, stretch=1)
     layout.addStretch()

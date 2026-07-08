@@ -5,7 +5,12 @@ from typing import Protocol
 
 from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.ui.altitude_units import feet_to_slider_units, units_from_500ths
+from sg_viewer.ui.altitude_units import (
+    feet_from_500ths,
+    feet_to_slider_units,
+    units_from_500ths,
+    units_to_500ths,
+)
 from sg_viewer.ui.elevation_profile import elevation_profile_alt_bounds
 from sg_viewer.ui.xsect_elevation import XsectElevationData
 
@@ -80,9 +85,17 @@ class ElevationPanelController:
             profile.unit_label = self._host._window.xsect_altitude_unit_label()
             profile.decimals = self._host._window.xsect_altitude_display_decimals()
             if self._host._elevation_controller.should_lock_bounds():
-                global_bounds = self._host._elevation_controller.current_profile.y_range
+                global_bounds = (
+                    self._host._elevation_controller.current_profile.y_range
+                )
+            elif self._host._elevation_controller.manual_profile_y_range is not None:
+                global_bounds = (
+                    self._host._elevation_controller.manual_profile_y_range
+                )
             else:
-                global_bounds = self._host._window.preview.get_elevation_profile_bounds(samples_per_section=samples_per_section)
+                global_bounds = self._host._window.preview.get_elevation_profile_bounds(
+                    samples_per_section=samples_per_section
+                )
             if global_bounds is not None:
                 profile.y_range = global_bounds
         self._host._window.profile_widget.set_profile_data(profile)
@@ -207,6 +220,7 @@ class ElevationPanelController:
     def on_altitude_range_changed(self, changed: str | None = None) -> None:
         min_value = self._host._window.altitude_min_spin.value()
         max_value = self._host._window.altitude_max_spin.value()
+        altitude_unit = self._host._window.xsect_altitude_unit()
         if min_value >= max_value:
             if changed == "max":
                 min_value = max_value - 0.1
@@ -218,9 +232,15 @@ class ElevationPanelController:
                 self._host._window.altitude_max_spin.blockSignals(True)
                 self._host._window.altitude_max_spin.setValue(max_value)
                 self._host._window.altitude_max_spin.blockSignals(False)
-        slider_min = feet_to_slider_units(min_value)
-        slider_max = feet_to_slider_units(max_value)
+        min_500ths = units_to_500ths(min_value, altitude_unit)
+        max_500ths = units_to_500ths(max_value, altitude_unit)
+        slider_min = feet_to_slider_units(feet_from_500ths(min_500ths))
+        slider_max = feet_to_slider_units(feet_from_500ths(max_500ths))
         self._host._window.set_altitude_slider_bounds(slider_min, slider_max)
+        manual_range = (float(min_500ths), float(max_500ths))
+        self._host._elevation_controller.manual_profile_y_range = manual_range
+        if self._host._elevation_controller.current_profile is not None:
+            self._host._elevation_controller.current_profile.y_range = manual_range
         self.refresh_elevation_profile()
 
     def open_altitude_range_dialog(self) -> None:

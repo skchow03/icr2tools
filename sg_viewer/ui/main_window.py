@@ -739,7 +739,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Preferred
         )
         self._xsect_elevation_table.setMinimumHeight(140)
-        self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Vertical)
         min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
         max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
         self._altitude_slider.setRange(
@@ -748,7 +748,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._altitude_slider.setSingleStep(1)
         self._altitude_slider.setPageStep(10)
-        self._altitude_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._altitude_slider.setTickPosition(QtWidgets.QSlider.TicksRight)
         self._altitude_slider.setTickInterval(10)
         self._altitude_slider.setEnabled(False)
         self._altitude_value_label = QtWidgets.QLabel("0.0")
@@ -770,7 +770,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._altitude_max_spin.setKeyboardTracking(False)
         self._altitude_min_spin.setSuffix(" ft")
         self._altitude_max_spin.setSuffix(" ft")
-        self._altitude_set_range_button = QtWidgets.QPushButton("Set Range...")
+        self._altitude_set_range_button = QtWidgets.QPushButton("Set Range")
         self._grade_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._grade_slider.setRange(-1000, 1000)
         self._grade_slider.setSingleStep(1)
@@ -783,7 +783,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_value_label.setAlignment(
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
-        self._grade_set_range_button = QtWidgets.QPushButton("Set Range...")
+        self._grade_set_range_button = QtWidgets.QPushButton("Set Range")
 
         toolbar_panel = create_toolbar_navigation_panel(
             self._prev_button,
@@ -794,21 +794,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         geometry_toolbar = self._create_geometry_toolbar()
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
-        altitude_layout = QtWidgets.QHBoxLayout()
+        altitude_layout = QtWidgets.QVBoxLayout()
         altitude_layout.setContentsMargins(0, 0, 0, 0)
+        altitude_layout.addWidget(QtWidgets.QLabel("Elevation (xsect)"))
         altitude_layout.addWidget(self._altitude_slider, stretch=1)
         altitude_layout.addWidget(self._altitude_value_label)
-        altitude_layout.addWidget(self._altitude_set_range_button)
         altitude_container.setLayout(altitude_layout)
-        elevation_layout.addRow("Elevation (xsect):", altitude_container)
         grade_container = QtWidgets.QWidget()
         grade_layout = QtWidgets.QHBoxLayout()
         grade_layout.setContentsMargins(0, 0, 0, 0)
+        grade_layout.addWidget(QtWidgets.QLabel("Grade (xsect):"))
         grade_layout.addWidget(self._grade_slider, stretch=1)
         grade_layout.addWidget(self._grade_value_label)
         grade_layout.addWidget(self._grade_set_range_button)
         grade_container.setLayout(grade_layout)
-        elevation_layout.addRow("Grade (xsect):", grade_container)
         elevation_panel = create_elevation_panel(
             elevation_layout=elevation_layout,
             xsect_table=self._xsect_elevation_table,
@@ -817,6 +816,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             copy_xsect_button=self._copy_xsect_button,
             generate_elevation_change_button=self._generate_elevation_change_button,
             profile_widget=self._profile_widget,
+            altitude_control=altitude_container,
+            altitude_set_range_button=self._altitude_set_range_button,
+            grade_control=grade_container,
             xsect_elevation_widget=self._xsect_elevation_widget,
         )
 
@@ -2459,7 +2461,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def show_altitude_range_dialog(self) -> bool:
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Altitude Range")
+        dialog.setWindowTitle("Elevation Profile Range")
         layout = QtWidgets.QFormLayout(dialog)
 
         unit_label = self._measurement_unit_label(self._current_measurement_unit())

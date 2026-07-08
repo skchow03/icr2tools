@@ -10,11 +10,13 @@ class ElevationController:
         self.current_profile: ElevationProfileData | None = None
         self.profile_dragging = False
         self.profile_editing = False
+        self.manual_profile_y_range: tuple[float, float] | None = None
 
     def reset(self) -> None:
         self.current_profile = None
         self.profile_dragging = False
         self.profile_editing = False
+        self.manual_profile_y_range = None
 
     def begin_drag(self) -> None:
         self.profile_dragging = True
