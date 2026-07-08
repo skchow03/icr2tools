@@ -96,6 +96,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("SG CREATE")
         self.resize(960, 720)
+        self.controller = None
         self._selected_section_index: int | None = None
         self._section_subindex_metadata: dict[int, tuple[int, ...]] = {}
         self._updating_fsect_table = False
@@ -1180,7 +1181,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self.controller = None
         if wire_features:
             from sg_viewer.ui.app_bootstrap import wire_window_features
 
@@ -1517,10 +1517,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         for button in self._geometry_tab_buttons():
             button.set_geometry_tab_active(geometry_active)
-        if self.controller is not None and hasattr(
-            self.controller, "_sync_section_editing_menu_actions"
+        controller = getattr(self, "controller", None)
+        if controller is not None and hasattr(
+            controller, "_sync_section_editing_menu_actions"
         ):
-            self.controller._sync_section_editing_menu_actions()
+            controller._sync_section_editing_menu_actions()
 
     def _build_grouped_sidebar_tabs(
         self,
