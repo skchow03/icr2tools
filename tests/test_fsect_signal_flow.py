@@ -126,3 +126,11 @@ def test_clear_ruler_button_resets_overlay_and_button_text() -> None:
     assert window._preview.ruler_start_point is None
     assert window._preview.ruler_end_point is None
     assert window._preview.ruler_label == ""
+
+
+def test_geometry_tab_button_update_tolerates_missing_controller_attribute() -> None:
+    _app()
+    window = SGViewerWindow(wire_features=False)
+    delattr(window, "controller")
+
+    window._update_geometry_tab_button_state()
