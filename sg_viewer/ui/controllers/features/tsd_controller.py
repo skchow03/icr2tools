@@ -186,6 +186,7 @@ class TsdController:
             return
 
         self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=True, source_path=path.resolve())
+        self._enable_tsd_preview_overlay()
         self._persist_tsd_state_for_current_track()
         self._set_tsd_dirty(False)
         self._log_tsd_perf("TSD load duration", started)
@@ -344,6 +345,8 @@ class TsdController:
             self._sync_active_tsd_file_from_model()
             self._active_tsd_file_index = None
             self._populate_tsd_table(TrackSurfaceDetailFile(lines=self._all_loaded_tsd_lines()))
+            if self._loaded_tsd_files:
+                self._enable_tsd_preview_overlay()
             self._persist_tsd_state_for_current_track()
             self._update_tsd_remove_file_button_enabled()
             return
@@ -368,6 +371,9 @@ class TsdController:
 
     def _update_tsd_remove_file_button_enabled(self) -> None:
         self._window.tsd_remove_file_button.setEnabled(bool(self._loaded_tsd_files))
+
+    def _enable_tsd_preview_overlay(self) -> None:
+        self._window.preview.set_show_tsd_lines(True)
 
     def _all_loaded_tsd_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         lines: list[TrackSurfaceDetailLine] = []
@@ -901,6 +907,7 @@ class TsdController:
             return
         self._tsd_objects.append(new_object)
         self._refresh_tsd_objects_table()
+        self._enable_tsd_preview_overlay()
         self._refresh_tsd_preview_lines()
         self._set_tsd_dirty(True)
         self._persist_tsd_state_for_current_track()
@@ -998,6 +1005,7 @@ class TsdController:
             return
         duplicated_object = replace(self._tsd_objects[source_row])
         self._tsd_objects.insert(source_row + 1, duplicated_object)
+        self._enable_tsd_preview_overlay()
         self._refresh_tsd_objects_table()
         self._window.tsd_objects_table.selectRow(source_row + 1)
         self._center_viewport_on_tsd_object(source_row + 1)
