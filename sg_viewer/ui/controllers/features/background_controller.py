@@ -26,10 +26,21 @@ class BackgroundController:
     def connect_signals(self) -> None:
         host = self._host
         window = host._window
-        window.background_image_checkbox.toggled.connect(window.preview.set_show_background_image)
-        host._show_background_image_action.toggled.connect(window.background_image_checkbox.setChecked)
-        window.background_image_checkbox.toggled.connect(host._show_background_image_action.setChecked)
-        window.background_brightness_slider.valueChanged.connect(host._on_background_brightness_changed)
+        window.background_image_checkbox.toggled.connect(
+            window.preview.set_show_background_image
+        )
+        window.background_image_checkbox.toggled.connect(
+            lambda _checked: window.update_visual_intensity_controls()
+        )
+        host._show_background_image_action.toggled.connect(
+            window.background_image_checkbox.setChecked
+        )
+        window.background_image_checkbox.toggled.connect(
+            host._show_background_image_action.setChecked
+        )
+        window.background_brightness_slider.valueChanged.connect(
+            host._on_background_brightness_changed
+        )
         window.track_opacity_slider.valueChanged.connect(host._on_track_opacity_changed)
 
     def open_background_file_dialog(self) -> None:
@@ -46,32 +57,51 @@ class BackgroundController:
         try:
             self._host._window.preview.load_background_image(Path(file_path))
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self._host._window, "Failed to load background", str(exc))
+            QtWidgets.QMessageBox.critical(
+                self._host._window, "Failed to load background", str(exc)
+            )
             self._logger.exception("Failed to load background image")
             return
         self._host._background_settings_action.setEnabled(True)
+        self._host._window.update_visual_intensity_controls()
         self._host._window.show_status_message(f"Loaded background image {file_path}")
         self.persist_background_state()
 
     def show_background_settings_dialog(self) -> None:
         if not self._host._window.preview.has_background_image():
-            QtWidgets.QMessageBox.information(self._host._window, "No Background", "Load a background image before adjusting its settings.")
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "No Background",
+                "Load a background image before adjusting its settings.",
+            )
             return
-        scale, (origin_u, origin_v) = self._host._window.preview.get_background_settings()
+        scale, (origin_u, origin_v) = (
+            self._host._window.preview.get_background_settings()
+        )
         dialog = BackgroundImageDialog(self._host._window, scale, origin_u, origin_v)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             new_scale, new_u, new_v = dialog.get_values()
             if new_scale <= 0:
-                QtWidgets.QMessageBox.warning(self._host._window, "Invalid Scale", "500ths per pixel must be greater than zero.")
+                QtWidgets.QMessageBox.warning(
+                    self._host._window,
+                    "Invalid Scale",
+                    "500ths per pixel must be greater than zero.",
+                )
                 return
-            self._host._window.preview.set_background_settings(new_scale, (new_u, new_v))
+            self._host._window.preview.set_background_settings(
+                new_scale, (new_u, new_v)
+            )
             self._host._window.show_status_message("Updated background image settings")
             self.persist_background_state()
 
     def launch_background_calibrator(self) -> None:
         background_image_path = self._host._window.preview.get_background_image_path()
         self._host._calibrator_window = Calibrator(
-            initial_image_path=(str(background_image_path) if background_image_path is not None else None),
+            initial_image_path=(
+                str(background_image_path)
+                if background_image_path is not None
+                else None
+            ),
             send_callback=self.apply_calibrator_values,
             parent=self._host._window,
         )
@@ -85,30 +115,48 @@ class BackgroundController:
             origin_u = float(upper_left[0])
             origin_v = float(upper_left[1])
             image_path_value = data.get("image_path")
-            image_path = Path(image_path_value) if isinstance(image_path_value, str) and image_path_value else None
+            image_path = (
+                Path(image_path_value)
+                if isinstance(image_path_value, str) and image_path_value
+                else None
+            )
         except (ValueError, TypeError, KeyError, IndexError):
             self._logger.warning("Invalid background calibration payload: %s", data)
-            self._host._window.show_status_message("Ignored invalid calibration values from calibrator")
+            self._host._window.show_status_message(
+                "Ignored invalid calibration values from calibrator"
+            )
             return
 
         if scale <= 0:
-            self._host._window.show_status_message("Ignored calibration values with non-positive scale")
+            self._host._window.show_status_message(
+                "Ignored calibration values with non-positive scale"
+            )
             return
 
         if image_path is not None:
             try:
                 self._host._window.preview.load_background_image(image_path)
             except Exception:
-                self._logger.warning("Failed to load calibrator background image %s", image_path, exc_info=True)
+                self._logger.warning(
+                    "Failed to load calibrator background image %s",
+                    image_path,
+                    exc_info=True,
+                )
 
         self._host._window.preview.set_background_settings(scale, (origin_u, origin_v))
-        self._host._background_settings_action.setEnabled(self._host._window.preview.has_background_image())
+        self._host._background_settings_action.setEnabled(
+            self._host._window.preview.has_background_image()
+        )
+        self._host._window.update_visual_intensity_controls()
         self.persist_background_state()
-        self._host._window.show_status_message("Applied calibration values from background calibrator")
+        self._host._window.show_status_message(
+            "Applied calibration values from background calibrator"
+        )
 
     def clear_background_state(self) -> None:
         self._host._window.preview.clear_background_image()
         self._host._background_settings_action.setEnabled(False)
+        self._host._window.update_visual_intensity_controls()
 
     def apply_saved_background(self, sg_path: Path | None = None) -> None:
         path = sg_path or self._host._current_path
@@ -124,12 +172,17 @@ class BackgroundController:
         try:
             self._host._window.preview.load_background_image(image_path)
             self._host._window.preview.set_background_settings(scale, origin)
+            self._host._window.update_visual_intensity_controls()
         except Exception as exc:
             self._logger.exception("Failed to restore background image", exc_info=exc)
-            self._host._window.show_status_message(f"Could not restore background image {image_path}")
+            self._host._window.show_status_message(
+                f"Could not restore background image {image_path}"
+            )
             return
         self._host._background_settings_action.setEnabled(True)
-        self._host._window.show_status_message(f"Restored background image {image_path} for {path.name}")
+        self._host._window.show_status_message(
+            f"Restored background image {image_path} for {path.name}"
+        )
 
     def persist_background_state(self) -> None:
         if self._host._current_path is None:
@@ -138,4 +191,6 @@ class BackgroundController:
         if background_path is None:
             return
         scale, origin = self._host._window.preview.get_background_settings()
-        self._host._sg_settings_store.set_background(self._host._current_path, background_path, scale, origin)
+        self._host._sg_settings_store.set_background(
+            self._host._current_path, background_path, scale, origin
+        )

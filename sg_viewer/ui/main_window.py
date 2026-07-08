@@ -87,7 +87,9 @@ class GeometryTabButton(QtWidgets.QPushButton):
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
 
-    fsectDiagramDlatChangeRequested = QtCore.pyqtSignal(int, int, str, float, bool, bool)
+    fsectDiagramDlatChangeRequested = QtCore.pyqtSignal(
+        int, int, str, float, bool, bool
+    )
     fsectDiagramDragRefreshRequested = QtCore.pyqtSignal()
     fsectDiagramDragCommitRequested = QtCore.pyqtSignal(int, int, str, float)
     generateElevationChangeApplied = QtCore.pyqtSignal()
@@ -117,7 +119,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_table_commit_needs_normalization = False
         # Cache of adjusted section ranges indexed by section. Rebuilt when SG geometry or
         # elevation/grade data changes, because those values feed intent-length conversion.
-        self._adjusted_section_ranges_cache: tuple[tuple[int, int, int], ...] | None = None
+        self._adjusted_section_ranges_cache: tuple[tuple[int, int, int], ...] | None = (
+            None
+        )
         self._query_track_mode_active = False
         self._query_track_info_frozen = False
         self._query_track_result: dict[str, object] | None = None
@@ -189,7 +193,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_load_button = QtWidgets.QPushButton("Import MRK entries")
         self._generate_pitwall_button = QtWidgets.QPushButton("Generate pitwall.txt")
         self._generate_pitwall_button.setEnabled(False)
-        self._manual_wall_height_overrides_button = QtWidgets.QPushButton("Manual Wall Height overrides")
+        self._manual_wall_height_overrides_button = QtWidgets.QPushButton(
+            "Manual Wall Height overrides"
+        )
         self._manual_wall_height_overrides_button.setEnabled(False)
         self._pitwall_wall_height_spin = QtWidgets.QDoubleSpinBox()
         self._pitwall_armco_height_spin = QtWidgets.QDoubleSpinBox()
@@ -201,30 +207,44 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_save_file_button = QtWidgets.QPushButton("Save .TSD")
         self._tsd_generate_file_button = QtWidgets.QPushButton("Save As .TSD")
         self._tsd_load_file_button = QtWidgets.QPushButton("Load .TSD file")
-        self._tsd_remove_file_button = QtWidgets.QPushButton("Remove .TSD file from project")
+        self._tsd_remove_file_button = QtWidgets.QPushButton(
+            "Remove .TSD file from project"
+        )
         self._tsd_remove_file_button.setEnabled(False)
         self._tsd_hide_centerline_nodes_checkbox = QtWidgets.QCheckBox(
             "Hide centerline + nodes (lock editing)"
         )
         self._tsd_hide_centerline_nodes_checkbox.setChecked(False)
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
-        self._tsd_duplicate_object_button = QtWidgets.QPushButton("Duplicate TSD Object")
+        self._tsd_duplicate_object_button = QtWidgets.QPushButton(
+            "Duplicate TSD Object"
+        )
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
         self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
-        self._tsd_remove_selected_object_button = QtWidgets.QPushButton("Remove Selected TSD Object")
-        self._tsd_export_objects_button = QtWidgets.QPushButton("Export object .TSD files")
+        self._tsd_remove_selected_object_button = QtWidgets.QPushButton(
+            "Remove Selected TSD Object"
+        )
+        self._tsd_export_objects_button = QtWidgets.QPushButton(
+            "Export object .TSD files"
+        )
         self._tsd_skid_marks_button = QtWidgets.QPushButton("Skid Marks...")
         self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
-        self._tsd_objects_table.setHorizontalHeaderLabels([
-            "Name",
-            "Type",
-            "Starting DLONG",
-            "Ending DLONG",
-            "Attributes",
-        ])
+        self._tsd_objects_table.setHorizontalHeaderLabels(
+            [
+                "Name",
+                "Type",
+                "Starting DLONG",
+                "Ending DLONG",
+                "Attributes",
+            ]
+        )
         self._tsd_objects_table.horizontalHeader().setStretchLastSection(True)
-        self._tsd_objects_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._tsd_objects_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._tsd_objects_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._tsd_objects_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
         self._tso_add_button = QtWidgets.QPushButton("Add TSO")
         self._tso_add_button.setCheckable(True)
         self._tso_stamp_button = QtWidgets.QPushButton("Stamp")
@@ -234,14 +254,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_delete_button = QtWidgets.QPushButton("Delete TSO")
         self._tso_move_up_button = QtWidgets.QPushButton("Move Up")
         self._tso_move_down_button = QtWidgets.QPushButton("Move Down")
-        self._tso_import_from_3d_button = QtWidgets.QPushButton("Import TSOs from .3D file")
+        self._tso_import_from_3d_button = QtWidgets.QPushButton(
+            "Import TSOs from .3D file"
+        )
         self._tso_delete_all_button = QtWidgets.QPushButton("Delete All TSOs")
-        self._tso_modify_elevations_button = QtWidgets.QPushButton("Modify elevations...")
-        self._tso_refresh_relative_boundary_button = QtWidgets.QPushButton("Refresh Z rel. boundary")
-        self._tso_auto_update_relative_z_checkbox = QtWidgets.QCheckBox("Auto-update Z rel. boundary")
+        self._tso_modify_elevations_button = QtWidgets.QPushButton(
+            "Modify elevations..."
+        )
+        self._tso_refresh_relative_boundary_button = QtWidgets.QPushButton(
+            "Refresh Z rel. boundary"
+        )
+        self._tso_auto_update_relative_z_checkbox = QtWidgets.QCheckBox(
+            "Auto-update Z rel. boundary"
+        )
         self._tso_auto_update_relative_z_checkbox.setChecked(False)
-        self._tso_generate_file_button = QtWidgets.QPushButton("Generate objects.txt file")
-        self._tso_write_to_3d_file_button = QtWidgets.QPushButton("Write to .3D file (in place)")
+        self._tso_generate_file_button = QtWidgets.QPushButton(
+            "Generate objects.txt file"
+        )
+        self._tso_write_to_3d_file_button = QtWidgets.QPushButton(
+            "Write to .3D file (in place)"
+        )
         self._land_objects_table = QtWidgets.QTableWidget(0, 2)
         self._land_object_name_edit = QtWidgets.QLineEdit()
         self._land_object_name_edit.setPlaceholderText("Object name")
@@ -251,22 +283,36 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_saved_objects: list[dict[str, object]] = []
         self._land_objects_table.setHorizontalHeaderLabels(["Name", "Notes"])
         self._land_objects_table.horizontalHeader().setStretchLastSection(True)
-        self._land_objects_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._land_objects_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_objects_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._land_objects_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
         self._land_points_table = QtWidgets.QTableWidget(0, 5)
         self._land_points_table.setHorizontalHeaderLabels(["#", "X", "Y", "Z", ""])
         self._land_points_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._land_points_table.horizontalHeader().setStretchLastSection(False)
-        self._land_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._land_points_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_points_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._land_points_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
         self._land_points_table.verticalHeader().setVisible(False)
         self._land_polygons_table = QtWidgets.QTableWidget(0, 4)
-        self._land_polygons_table.setHorizontalHeaderLabels(["Polygon points", "Color", "Mode", "Height"])
+        self._land_polygons_table.setHorizontalHeaderLabels(
+            ["Polygon points", "Color", "Mode", "Height"]
+        )
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
-        self._land_polygons_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._land_polygons_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._land_polygons_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._land_polygons_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
         self._land_polygons_table.setToolTip(
             "Double-click a Color cell to choose a SUNNY.PCX palette color."
         )
@@ -281,38 +327,75 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygon_fill_checkbox = QtWidgets.QCheckBox("Fill polygons")
         self._land_polygon_fill_checkbox.setChecked(True)
         self._dragging_land_point_row: int | None = None
-        self._three_d_file_selected_path_label = QtWidgets.QLabel("Selected .3D file: none")
+        self._three_d_file_selected_path_label = QtWidgets.QLabel(
+            "Selected .3D file: none"
+        )
         self._three_d_file_selected_path_label.setWordWrap(True)
-        self._three_d_file_select_button = QtWidgets.QPushButton("Select track .3D file...")
-        self._three_d_file_catalog_inspector_button = QtWidgets.QPushButton("Open catalog inspector (read-only)")
-        self._three_d_show_section_entries_button = QtWidgets.QPushButton("Show .3D entries for selected SG section")
-        self._three_d_show_section_object_lists_button = QtWidgets.QPushButton("Show ObjectLists referenced by selected section")
-        self._three_d_show_section_tsos_button = QtWidgets.QPushButton("Show TSOs used by selected section")
-        self._three_d_preview_object_list_changes_button = QtWidgets.QPushButton("Preview ObjectList changes for selected section")
-        self._three_d_apply_object_list_changes_button = QtWidgets.QPushButton("Apply ObjectList changes for selected section")
-        self._three_d_apply_tso_definitions_button = QtWidgets.QPushButton("Apply selected TSO definitions")
-        self._three_d_apply_face_materials_button = QtWidgets.QPushButton("Replace materials in selected FACE spans")
-        self._three_d_file_inspect_button = QtWidgets.QPushButton("Inspect see-through candidates")
-        self._three_d_file_fix_copy_button = QtWidgets.QPushButton("Fix see-through (save as copy)")
-        self._three_d_file_fix_in_place_button = QtWidgets.QPushButton("Fix see-through (in place)")
-        self._three_d_file_colors_path_label = QtWidgets.QLabel("Color mappings: defaults")
+        self._three_d_file_select_button = QtWidgets.QPushButton(
+            "Select track .3D file..."
+        )
+        self._three_d_file_catalog_inspector_button = QtWidgets.QPushButton(
+            "Open catalog inspector (read-only)"
+        )
+        self._three_d_show_section_entries_button = QtWidgets.QPushButton(
+            "Show .3D entries for selected SG section"
+        )
+        self._three_d_show_section_object_lists_button = QtWidgets.QPushButton(
+            "Show ObjectLists referenced by selected section"
+        )
+        self._three_d_show_section_tsos_button = QtWidgets.QPushButton(
+            "Show TSOs used by selected section"
+        )
+        self._three_d_preview_object_list_changes_button = QtWidgets.QPushButton(
+            "Preview ObjectList changes for selected section"
+        )
+        self._three_d_apply_object_list_changes_button = QtWidgets.QPushButton(
+            "Apply ObjectList changes for selected section"
+        )
+        self._three_d_apply_tso_definitions_button = QtWidgets.QPushButton(
+            "Apply selected TSO definitions"
+        )
+        self._three_d_apply_face_materials_button = QtWidgets.QPushButton(
+            "Replace materials in selected FACE spans"
+        )
+        self._three_d_file_inspect_button = QtWidgets.QPushButton(
+            "Inspect see-through candidates"
+        )
+        self._three_d_file_fix_copy_button = QtWidgets.QPushButton(
+            "Fix see-through (save as copy)"
+        )
+        self._three_d_file_fix_in_place_button = QtWidgets.QPushButton(
+            "Fix see-through (in place)"
+        )
+        self._three_d_file_colors_path_label = QtWidgets.QLabel(
+            "Color mappings: defaults"
+        )
         self._three_d_file_colors_path_label.setWordWrap(True)
-        self._three_d_file_select_colors_button = QtWidgets.QPushButton("Edit color mappings...")
-        self._three_d_file_apply_colors_button = QtWidgets.QPushButton("Apply color replacements")
+        self._three_d_file_select_colors_button = QtWidgets.QPushButton(
+            "Edit color mappings..."
+        )
+        self._three_d_file_apply_colors_button = QtWidgets.QPushButton(
+            "Apply color replacements"
+        )
         self._tso_table = QtWidgets.QTableWidget(0, 7)
-        self._tso_table.setHorizontalHeaderLabels([
-            "Name",
-            "Filename",
-            "X (500ths)",
-            "Y (500ths)",
-            "Z (500ths)",
-            "Z rel. boundary (500ths)",
-            "Attributes",
-        ])
+        self._tso_table.setHorizontalHeaderLabels(
+            [
+                "Name",
+                "Filename",
+                "X (500ths)",
+                "Y (500ths)",
+                "Z (500ths)",
+                "Z rel. boundary (500ths)",
+                "Attributes",
+            ]
+        )
         self._tso_table.horizontalHeader().setStretchLastSection(True)
         self._tso_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._tso_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self._tso_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
+        self._tso_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
         self._tsd_files_combo = QtWidgets.QComboBox()
         self._tsd_files_combo.setEnabled(False)
         self._tsd_files_combo.setToolTip("Select a loaded TSD file to edit.")
@@ -321,30 +404,43 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._tsd_lines_table.horizontalHeader().setStretchLastSection(False)
-        self._tsd_lines_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._tsd_lines_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._tsd_lines_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._tsd_lines_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
         self._tsd_lines_table.setEditTriggers(
             QtWidgets.QAbstractItemView.DoubleClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
         )
         self._mrk_entries_table = QtWidgets.QTableWidget(0, 7)
-        self._mrk_entries_table.setHorizontalHeaderLabels([
-            "Track Section",
-            "Boundary",
-            "Starting Wall",
-            "Wall Count",
-            "Side",
-            "Texture Pattern",
-            "Description",
-        ])
+        self._mrk_entries_table.setHorizontalHeaderLabels(
+            [
+                "Track Section",
+                "Boundary",
+                "Starting Wall",
+                "Wall Count",
+                "Side",
+                "Texture Pattern",
+                "Description",
+            ]
+        )
         self._mrk_entries_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._mrk_entries_table.horizontalHeader().setStretchLastSection(True)
-        self._mrk_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self._mrk_entries_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self._mrk_entries_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
-        #self._new_track_button = QtWidgets.QPushButton("New Track")
+        self._mrk_entries_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        self._mrk_entries_table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        self._mrk_entries_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
+        # self._new_track_button = QtWidgets.QPushButton("New Track")
         self._prev_button = QtWidgets.QPushButton("Previous Section")
         self._next_button = QtWidgets.QPushButton("Next Section")
         _set_button_shortcut(
@@ -410,20 +506,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._axes_button.setChecked(False)
         self._crosshair_button = QtWidgets.QCheckBox("Show Crosshair")
         self._crosshair_button.setChecked(False)
-        self._background_image_checkbox = QtWidgets.QCheckBox("Show Background Image")
+        self._background_image_checkbox = QtWidgets.QCheckBox("BG image")
         self._background_image_checkbox.setChecked(True)
-        self._land_objects_overlay_checkbox = QtWidgets.QCheckBox("Land Objects")
+        self._land_objects_overlay_checkbox = QtWidgets.QCheckBox("Land objects")
         self._land_objects_overlay_checkbox.setChecked(True)
-        self._land_objects_overlay_checkbox.setToolTip("Show or hide drawn land-object overlays in the viewport.")
+        self._land_objects_overlay_checkbox.setToolTip(
+            "Show placed trackside land objects."
+        )
         self._trackside_objects_overlay_checkbox = QtWidgets.QCheckBox("TSOs")
         self._trackside_objects_overlay_checkbox.setChecked(False)
-        self._trackside_objects_overlay_checkbox.setToolTip("Show or hide trackside-object bounding boxes in the viewport.")
+        self._trackside_objects_overlay_checkbox.setToolTip(
+            "Show trackside object instances."
+        )
         self._background_brightness_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._background_brightness_slider.setRange(-100, 100)
         self._background_brightness_slider.setValue(0)
-        self._background_brightness_slider.setTickPosition(
-            QtWidgets.QSlider.TicksBelow
-        )
+        self._background_brightness_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self._background_brightness_slider.setTickInterval(20)
         self._background_brightness_value_label = QtWidgets.QLabel("0")
         self._background_brightness_value_label.setMinimumWidth(36)
@@ -440,7 +538,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._track_opacity_value_label.setAlignment(
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
-        self._sg_fsects_checkbox = QtWidgets.QCheckBox("Show SG Fsects (preview)")
+        self._sg_fsects_checkbox = QtWidgets.QCheckBox("F-sections")
         self._sg_fsects_checkbox.setChecked(False)
         self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
             "Live drag preview"
@@ -449,13 +547,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._live_fsect_drag_preview_checkbox.setToolTip(
             "When enabled, dragging Fsect endpoints updates the track diagram in real time."
         )
-        self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox(
-            "Show X-Section DLAT Line"
-        )
+        self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox("X-sect DLAT")
         self._xsect_dlat_line_checkbox.setChecked(False)
-        self._copy_fsects_prev_button = QtWidgets.QPushButton(
-            "Copy Fsects to Previous"
-        )
+        self._copy_fsects_prev_button = QtWidgets.QPushButton("Copy Fsects to Previous")
         self._copy_fsects_prev_button.setEnabled(False)
         self._copy_fsects_next_button = QtWidgets.QPushButton("Copy Fsects to Next")
         self._copy_fsects_next_button.setEnabled(False)
@@ -467,7 +561,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._move_fsect_up_button.setEnabled(False)
         self._move_fsect_down_button = QtWidgets.QPushButton("Move Fsect Down")
         self._move_fsect_down_button.setEnabled(False)
-        self._swap_fsect_types_button = QtWidgets.QPushButton("Swap Type Across All Sections…")
+        self._swap_fsect_types_button = QtWidgets.QPushButton(
+            "Swap Type Across All Sections…"
+        )
         self._swap_fsect_types_button.setEnabled(False)
         self._section_table_action: QtWidgets.QAction | None = None
         self._heading_table_action: QtWidgets.QAction | None = None
@@ -480,15 +576,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._edit_xsect_list_button.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy X-Section data to...")
         self._copy_xsect_button.setEnabled(False)
-        self._generate_elevation_change_button = QtWidgets.QPushButton("Generate elevation change...")
+        self._generate_elevation_change_button = QtWidgets.QPushButton(
+            "Generate elevation change..."
+        )
         self._generate_elevation_change_button.setEnabled(False)
         self._generate_elevation_change_dialog: QtWidgets.QDialog | None = None
         self._track_stats_label = QtWidgets.QLabel("Track Length: –")
         self._section_summary_title_label = QtWidgets.QLabel("No section selected")
-        self._section_summary_title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
-        self._section_summary_detail_label = QtWidgets.QLabel("Select a section to inspect geometry, connections, and metadata.")
+        self._section_summary_title_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px;"
+        )
+        self._section_summary_detail_label = QtWidgets.QLabel(
+            "Select a section to inspect geometry, connections, and metadata."
+        )
         self._section_summary_detail_label.setWordWrap(True)
-        self._section_health_labels: dict[str, tuple[QtWidgets.QLabel, QtWidgets.QLabel]] = {}
+        self._section_health_labels: dict[
+            str, tuple[QtWidgets.QLabel, QtWidgets.QLabel]
+        ] = {}
         self._section_geometry_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_connection_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_boundary_labels: dict[str, QtWidgets.QLabel] = {}
@@ -496,21 +600,35 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_context_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_view_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_advanced_labels: dict[str, QtWidgets.QLabel] = {}
-        self._run_full_integrity_check_button = QtWidgets.QPushButton("Run Full Integrity Check…")
+        self._run_full_integrity_check_button = QtWidgets.QPushButton(
+            "Run Full Integrity Check…"
+        )
         self._section_split_action_button = QtWidgets.QPushButton("Split")
         self._section_delete_action_button = QtWidgets.QPushButton("Delete Section")
-        self._section_set_start_finish_action_button = QtWidgets.QPushButton("Set Start/Finish")
-        self._section_split_action_button.clicked.connect(self._split_section_button.click)
-        self._section_delete_action_button.clicked.connect(self._delete_section_button.click)
-        self._section_set_start_finish_action_button.clicked.connect(self._set_start_finish_button.click)
+        self._section_set_start_finish_action_button = QtWidgets.QPushButton(
+            "Set Start/Finish"
+        )
+        self._section_split_action_button.clicked.connect(
+            self._split_section_button.click
+        )
+        self._section_delete_action_button.clicked.connect(
+            self._delete_section_button.click
+        )
+        self._section_set_start_finish_action_button.clicked.connect(
+            self._set_start_finish_button.click
+        )
         self._section_index_label = QtWidgets.QLabel("Current Section: –")
         self._section_start_dlong_label = QtWidgets.QLabel("Starting DLONG: –")
         self._section_end_dlong_label = QtWidgets.QLabel("Ending DLONG: –")
         self._previous_label = QtWidgets.QLabel("Previous Section: –")
         self._next_label = QtWidgets.QLabel("Next Section: –")
         self._section_length_label = QtWidgets.QLabel("Section Length: –")
-        self._section_subindex_count_label = QtWidgets.QLabel("Section SubIndexes (.3d): –")
-        self._section_subindex_starts_label = QtWidgets.QLabel("SubIndex Start DLONGs (.3d): –")
+        self._section_subindex_count_label = QtWidgets.QLabel(
+            "Section SubIndexes (.3d): –"
+        )
+        self._section_subindex_starts_label = QtWidgets.QLabel(
+            "SubIndex Start DLONGs (.3d): –"
+        )
         self._previous_section_length_label = QtWidgets.QLabel(
             "Previous Section Length: –"
         )
@@ -540,53 +658,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._measurement_units_combo.currentIndexChanged.connect(
             self._on_measurement_units_changed
         )
-        self._quick_display_toolbar = QtWidgets.QFrame()
-        self._quick_display_toolbar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self._quick_display_toolbar.setFrameShadow(QtWidgets.QFrame.Raised)
-        quick_display_layout = QtWidgets.QHBoxLayout()
-        quick_display_layout.setContentsMargins(8, 4, 8, 4)
-        quick_display_layout.setSpacing(12)
-        quick_display_layout.addWidget(QtWidgets.QLabel("Display:"))
-        quick_display_layout.addWidget(QtWidgets.QLabel("UoM"))
-        quick_display_layout.addWidget(self._measurement_units_combo)
-        quick_display_layout.addSpacing(4)
-        quick_display_layout.addWidget(self._xsect_dlat_line_checkbox)
-        quick_display_layout.addWidget(self._sg_fsects_checkbox)
-        quick_display_layout.addWidget(self._land_objects_overlay_checkbox)
-        quick_display_layout.addWidget(self._trackside_objects_overlay_checkbox)
-        quick_display_layout.addSpacing(4)
-        quick_display_layout.addWidget(QtWidgets.QLabel("BG Brightness:"))
-        quick_display_layout.addWidget(self._background_brightness_slider, stretch=1)
-        quick_display_layout.addWidget(self._background_brightness_value_label)
-        quick_display_layout.addSpacing(4)
-        quick_display_layout.addWidget(QtWidgets.QLabel("Track Opacity:"))
-        quick_display_layout.addWidget(self._track_opacity_slider, stretch=1)
-        quick_display_layout.addWidget(self._track_opacity_value_label)
-        quick_display_layout.addStretch()
-        self._quick_display_toolbar.setLayout(quick_display_layout)
-
-        self._mouse_usage_bar = QtWidgets.QFrame()
-        self._mouse_usage_bar.setObjectName("mouseUsageBar")
-        self._mouse_usage_bar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self._mouse_usage_bar.setFrameShadow(QtWidgets.QFrame.Plain)
-        self._mouse_usage_bar.setStyleSheet(
-            "#mouseUsageBar {"
-            " background-color: #f6f2d8;"
-            " border: 1px solid #c9bd75;"
-            " border-radius: 3px;"
-            "}"
+        self._view_preset_combo = QtWidgets.QComboBox()
+        for preset in ("Geometry", "Construction", "Objects", "Debug"):
+            self._view_preset_combo.addItem(preset)
+        self._xsect_dlat_line_checkbox.setToolTip(
+            "Show cross-section lateral offset reference line."
         )
-        mouse_usage_layout = QtWidgets.QHBoxLayout()
-        mouse_usage_layout.setContentsMargins(8, 4, 8, 4)
-        mouse_usage_layout.setSpacing(8)
-        mouse_usage_title = QtWidgets.QLabel("Mouse:")
-        mouse_usage_title.setStyleSheet("font-weight: bold;")
-        self._mouse_usage_label = QtWidgets.QLabel()
-        self._mouse_usage_label.setWordWrap(True)
-        self._mouse_usage_label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
-        mouse_usage_layout.addWidget(mouse_usage_title)
-        mouse_usage_layout.addWidget(self._mouse_usage_label, stretch=1)
-        self._mouse_usage_bar.setLayout(mouse_usage_layout)
+        self._sg_fsects_checkbox.setToolTip("Show generated/preview f-section spans.")
+        self._background_image_checkbox.setToolTip("Show calibrated background image.")
+        self._quick_display_toolbar = self._build_viewport_toolbar()
+        self.update_visual_intensity_controls()
         self.update_mouse_usage_text()
         self._preview_color_controls: dict[
             str, tuple[QtWidgets.QLineEdit, QtWidgets.QPushButton]
@@ -622,9 +703,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             | QtWidgets.QAbstractItemView.SelectedClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
         )
-        self._fsect_table.setSelectionMode(
-            QtWidgets.QAbstractItemView.SingleSelection
-        )
+        self._fsect_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self._fsect_table.verticalHeader().setVisible(False)
         self._fsect_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
@@ -683,17 +762,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
         self._altitude_min_spin = QtWidgets.QDoubleSpinBox()
-        self._altitude_min_spin.setRange(
-            min_altitude_feet, max_altitude_feet - 0.1
-        )
+        self._altitude_min_spin.setRange(min_altitude_feet, max_altitude_feet - 0.1)
         self._altitude_min_spin.setDecimals(1)
         self._altitude_min_spin.setSingleStep(0.1)
         self._altitude_min_spin.setValue(DEFAULT_ALTITUDE_MIN_FEET)
         self._altitude_min_spin.setKeyboardTracking(False)
         self._altitude_max_spin = QtWidgets.QDoubleSpinBox()
-        self._altitude_max_spin.setRange(
-            min_altitude_feet + 0.1, max_altitude_feet
-        )
+        self._altitude_max_spin.setRange(min_altitude_feet + 0.1, max_altitude_feet)
         self._altitude_max_spin.setDecimals(1)
         self._altitude_max_spin.setSingleStep(0.1)
         self._altitude_max_spin.setValue(DEFAULT_ALTITUDE_MAX_FEET)
@@ -710,7 +785,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._grade_slider.setEnabled(False)
         self._grade_value_label = QtWidgets.QLabel("0")
         self._grade_value_label.setMinimumWidth(40)
-        self._grade_value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self._grade_value_label.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
         self._grade_set_range_button = QtWidgets.QPushButton("Set Range...")
 
         toolbar_panel = create_toolbar_navigation_panel(
@@ -848,14 +925,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             _build_color_group(
                 "Trackside Object Colors",
                 [
-                    ("TSO Boxes (Default)", "tso_box_default", "Standard TSO bounding box color."),
-                    ("TSO Boxes (Selected)", "tso_box_selected", "Used for selected TSO bounding boxes."),
+                    (
+                        "TSO Boxes (Default)",
+                        "tso_box_default",
+                        "Standard TSO bounding box color.",
+                    ),
+                    (
+                        "TSO Boxes (Selected)",
+                        "tso_box_selected",
+                        "Used for selected TSO bounding boxes.",
+                    ),
                     (
                         "TSO Boxes (TSO Visibility Highlight)",
                         "tso_box_highlighted",
                         "Used when a TSO is highlighted from the TSO Visibility tab.",
                     ),
-                    ("TSO Pivot Dot", "tso_pivot", "Used for the pivot point marker on selected TSOs."),
+                    (
+                        "TSO Pivot Dot",
+                        "tso_pivot",
+                        "Used for the pivot point marker on selected TSOs.",
+                    ),
                 ],
             )
         )
@@ -933,8 +1022,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_sidebar.setLayout(mrk_layout)
 
         self._sync_pitwall_height_spin_units(previous_unit="500ths")
-        self._pitwall_wall_height_spin.setValue(self._fsect_dlat_to_display_units(21000.0))
-        self._pitwall_armco_height_spin.setValue(self._fsect_dlat_to_display_units(18000.0))
+        self._pitwall_wall_height_spin.setValue(
+            self._fsect_dlat_to_display_units(21000.0)
+        )
+        self._pitwall_armco_height_spin.setValue(
+            self._fsect_dlat_to_display_units(18000.0)
+        )
         self._pitwall_length_multiplier_spin.setDecimals(2)
         self._pitwall_length_multiplier_spin.setRange(0.1, 1000.0)
         self._pitwall_length_multiplier_spin.setSingleStep(0.1)
@@ -964,7 +1057,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_layout.addWidget(tsd_lines_group)
         tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
         tsd_objects_layout = QtWidgets.QVBoxLayout()
-        tsd_objects_layout.addWidget(QtWidgets.QLabel("Create higher-level patterns that generate multiple TSD lines."))
+        tsd_objects_layout.addWidget(
+            QtWidgets.QLabel(
+                "Create higher-level patterns that generate multiple TSD lines."
+            )
+        )
         tsd_object_buttons = QtWidgets.QGridLayout()
         tsd_object_buttons.addWidget(self._tsd_add_object_button, 0, 0)
         tsd_object_buttons.addWidget(self._tsd_duplicate_object_button, 0, 1)
@@ -980,20 +1077,40 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._tsd_add_line_button.setToolTip("Add a new TSD line row.")
         self._tsd_delete_line_button.setToolTip("Delete the selected TSD line row.")
-        self._tsd_move_line_up_button.setToolTip("Move the selected TSD line up one row.")
-        self._tsd_move_line_down_button.setToolTip("Move the selected TSD line down one row.")
-        self._tsd_save_file_button.setToolTip("Save current TSD lines to the selected loaded .TSD file.")
-        self._tsd_generate_file_button.setToolTip("Choose a file path and save current TSD lines as a .TSD file.")
-        self._tsd_load_file_button.setToolTip("Load a .TSD file and add it to the loaded list.")
+        self._tsd_move_line_up_button.setToolTip(
+            "Move the selected TSD line up one row."
+        )
+        self._tsd_move_line_down_button.setToolTip(
+            "Move the selected TSD line down one row."
+        )
+        self._tsd_save_file_button.setToolTip(
+            "Save current TSD lines to the selected loaded .TSD file."
+        )
+        self._tsd_generate_file_button.setToolTip(
+            "Choose a file path and save current TSD lines as a .TSD file."
+        )
+        self._tsd_load_file_button.setToolTip(
+            "Load a .TSD file and add it to the loaded list."
+        )
         self._tsd_remove_file_button.setToolTip(
             "Remove selected .TSD file(s) from this project without deleting files from disk."
         )
         self._tsd_add_object_button.setToolTip("Create a new TSD object pattern.")
-        self._tsd_duplicate_object_button.setToolTip("Duplicate the selected TSD object below it.")
-        self._tsd_remove_selected_object_button.setToolTip("Remove the selected TSD object.")
-        self._tsd_move_object_up_button.setToolTip("Move the selected TSD object up one row.")
-        self._tsd_move_object_down_button.setToolTip("Move the selected TSD object down one row.")
-        self._tsd_export_objects_button.setToolTip("Export all TSD objects as .TSD files.")
+        self._tsd_duplicate_object_button.setToolTip(
+            "Duplicate the selected TSD object below it."
+        )
+        self._tsd_remove_selected_object_button.setToolTip(
+            "Remove the selected TSD object."
+        )
+        self._tsd_move_object_up_button.setToolTip(
+            "Move the selected TSD object up one row."
+        )
+        self._tsd_move_object_down_button.setToolTip(
+            "Move the selected TSD object down one row."
+        )
+        self._tsd_export_objects_button.setToolTip(
+            "Export all TSD objects as .TSD files."
+        )
         self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
         self._tsd_hide_centerline_nodes_checkbox.setToolTip(
             "Hide centerline and endpoint nodes in the track diagram while editing TSDs, "
@@ -1031,7 +1148,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_import_from_3d_button.setToolTip(
             "Import TSOs from an existing .3D file and replace all current TSOs."
         )
-        self._tso_delete_all_button.setToolTip("Delete every TSO from the current project.")
+        self._tso_delete_all_button.setToolTip(
+            "Delete every TSO from the current project."
+        )
         self._tso_visibility_sidebar = TSOVisibilityTab()
         self._land_objects_sidebar = QtWidgets.QWidget()
         land_layout = QtWidgets.QVBoxLayout()
@@ -1063,29 +1182,55 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Add a polygon row. Enter point numbers separated by commas (example: 0, 1, 2, 3)."
         )
         self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
-        self._land_move_polygon_up_button.setToolTip("Move the selected polygon row up one position.")
-        self._land_move_polygon_down_button.setToolTip("Move the selected polygon row down one position.")
+        self._land_move_polygon_up_button.setToolTip(
+            "Move the selected polygon row up one position."
+        )
+        self._land_move_polygon_down_button.setToolTip(
+            "Move the selected polygon row down one position."
+        )
         self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
-        self._land_delete_polygon_button.clicked.connect(self._delete_selected_land_polygon_row)
-        self._land_move_polygon_up_button.clicked.connect(lambda: self._move_selected_land_polygon_row(-1))
-        self._land_move_polygon_down_button.clicked.connect(lambda: self._move_selected_land_polygon_row(1))
+        self._land_delete_polygon_button.clicked.connect(
+            self._delete_selected_land_polygon_row
+        )
+        self._land_move_polygon_up_button.clicked.connect(
+            lambda: self._move_selected_land_polygon_row(-1)
+        )
+        self._land_move_polygon_down_button.clicked.connect(
+            lambda: self._move_selected_land_polygon_row(1)
+        )
         self._land_add_point_button.toggled.connect(
             lambda checked: self._on_land_point_mode_toggled("add", checked)
         )
         self._land_edit_point_button.toggled.connect(
             lambda checked: self._on_land_point_mode_toggled("edit", checked)
         )
-        self._land_points_table.itemChanged.connect(self._on_land_points_table_item_changed)
+        self._land_points_table.itemChanged.connect(
+            self._on_land_points_table_item_changed
+        )
         self._land_save_object_button.clicked.connect(self._save_current_land_object)
         self._land_add_object_button.clicked.connect(self._add_land_object)
-        self._land_export_object_button.clicked.connect(self._export_selected_land_object_to_3d)
-        self._land_objects_table.itemSelectionChanged.connect(self._load_selected_land_object)
-        self._land_objects_table.itemChanged.connect(self._on_land_objects_table_item_changed)
-        self._land_object_name_edit.textChanged.connect(self._persist_selected_land_object)
+        self._land_export_object_button.clicked.connect(
+            self._export_selected_land_object_to_3d
+        )
+        self._land_objects_table.itemSelectionChanged.connect(
+            self._load_selected_land_object
+        )
+        self._land_objects_table.itemChanged.connect(
+            self._on_land_objects_table_item_changed
+        )
+        self._land_object_name_edit.textChanged.connect(
+            self._persist_selected_land_object
+        )
         self._update_land_object_edit_controls()
-        self._land_polygons_table.itemChanged.connect(self._on_land_polygons_table_item_changed)
-        self._land_polygons_table.itemDoubleClicked.connect(self._on_land_polygons_table_item_double_clicked)
-        self._land_polygon_fill_checkbox.toggled.connect(lambda _checked: self._sync_land_polygons_overlay())
+        self._land_polygons_table.itemChanged.connect(
+            self._on_land_polygons_table_item_changed
+        )
+        self._land_polygons_table.itemDoubleClicked.connect(
+            self._on_land_polygons_table_item_double_clicked
+        )
+        self._land_polygon_fill_checkbox.toggled.connect(
+            lambda _checked: self._sync_land_polygons_overlay()
+        )
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
         three_d_intro = QtWidgets.QLabel(
@@ -1146,7 +1291,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addWidget(toolbar_panel.widget)
         preview_column_layout.addWidget(self._quick_display_toolbar)
-        preview_column_layout.addWidget(self._mouse_usage_bar)
         preview_column_layout.addWidget(self._preview, stretch=5)
         stats_panel = self._create_section_inspector_panel()
         self._stats_sidebar_panel = stats_panel
@@ -1191,17 +1335,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.pointerReleased.connect(self._on_preview_pointer_released)
         self._preview.pointerDragMoved.connect(self._on_preview_pointer_drag_moved)
         self._preview.scaleChanged.connect(self._on_preview_scale_changed)
+        self._preview.sectionsChanged.connect(
+            lambda: self.update_visual_intensity_controls()
+        )
         self._query_track_button.toggled.connect(self._on_query_track_toggled)
         self._ruler_button.clicked.connect(self._on_ruler_button_clicked)
+        self._view_preset_combo.currentTextChanged.connect(self._on_view_preset_changed)
+        self._background_image_checkbox.toggled.connect(
+            lambda _checked: self.update_visual_intensity_controls()
+        )
         self._query_track_freeze_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence(QtCore.Qt.Key_Space),
             self,
         )
-        self._query_track_freeze_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
+        self._query_track_freeze_shortcut.setContext(
+            QtCore.Qt.WidgetWithChildrenShortcut
+        )
         self._query_track_freeze_shortcut.activated.connect(
             self._toggle_query_track_info_freeze
         )
-
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.controller is not None and hasattr(self.controller, "confirm_close"):
@@ -1365,7 +1517,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 return active_widget.tabText(child_index).rstrip("*")
         return self._right_sidebar_tabs.tabText(current_index).rstrip("*")
 
-
     def _create_section_inspector_panel(self) -> QtWidgets.QWidget:
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1396,11 +1547,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         health = two_column_group("Section Health")
         health_items = (
-            ("selected", "Selected section"), ("length", "Length"),
-            ("previous", "Previous connection"), ("next", "Next connection"),
-            ("start_tangency", "Start tangency"), ("end_tangency", "End tangency"),
-            ("radius", "Curve radius"), ("boundaries", "Boundaries"),
-            ("fsects", "Fsects"), ("dlong", "DLONG range"), ("adjusted", "Adjusted DLONGs"),
+            ("selected", "Selected section"),
+            ("length", "Length"),
+            ("previous", "Previous connection"),
+            ("next", "Next connection"),
+            ("start_tangency", "Start tangency"),
+            ("end_tangency", "End tangency"),
+            ("radius", "Curve radius"),
+            ("boundaries", "Boundaries"),
+            ("fsects", "Fsects"),
+            ("dlong", "DLONG range"),
+            ("adjusted", "Adjusted DLONGs"),
         )
         for index, (key, label) in enumerate(health_items):
             grid_row = index // 2
@@ -1418,18 +1575,83 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             health.addWidget(name, grid_row, grid_column)
             health.addWidget(row, grid_row, grid_column + 1)
             self._section_health_labels[key] = (status, detail)
-        health.addWidget(self._run_full_integrity_check_button, (len(health_items) + 1) // 2, 0, 1, 4)
+        health.addWidget(
+            self._run_full_integrity_check_button, (len(health_items) + 1) // 2, 0, 1, 4
+        )
         health.setColumnStretch(1, 1)
         health.setColumnStretch(3, 1)
 
         for title, labels, store in (
-            ("Geometry", ("Type", "Start DLONG", "End DLONG", "Length", "Radius", "Start point", "End point", "Start heading", "End heading", "Curve center", "Curve arc/sweep", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_geometry_labels),
-            ("Connections", ("Previous", "Next", "Previous length", "Next length", "Previous status", "Next status", "Gap to previous", "Gap to next", "Heading mismatch previous", "Heading mismatch next"), self._section_connection_labels),
-            ("Boundaries / Walls", ("Summary", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"), self._section_boundary_labels),
-            ("Subsections / .3D", ("Count", "Starts", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_subsection_labels),
-            ("Track Context", ("Track length", "Miles", "Section position", "Lap percentage"), self._section_context_labels),
+            (
+                "Geometry",
+                (
+                    "Type",
+                    "Start DLONG",
+                    "End DLONG",
+                    "Length",
+                    "Radius",
+                    "Start point",
+                    "End point",
+                    "Start heading",
+                    "End heading",
+                    "Curve center",
+                    "Curve arc/sweep",
+                    "Adjusted start",
+                    "Adjusted end",
+                    "Adjusted length",
+                ),
+                self._section_geometry_labels,
+            ),
+            (
+                "Connections",
+                (
+                    "Previous",
+                    "Next",
+                    "Previous length",
+                    "Next length",
+                    "Previous status",
+                    "Next status",
+                    "Gap to previous",
+                    "Gap to next",
+                    "Heading mismatch previous",
+                    "Heading mismatch next",
+                ),
+                self._section_connection_labels,
+            ),
+            (
+                "Boundaries / Walls",
+                ("Summary", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"),
+                self._section_boundary_labels,
+            ),
+            (
+                "Subsections / .3D",
+                (
+                    "Count",
+                    "Starts",
+                    "Adjusted start",
+                    "Adjusted end",
+                    "Adjusted length",
+                ),
+                self._section_subsection_labels,
+            ),
+            (
+                "Track Context",
+                ("Track length", "Miles", "Section position", "Lap percentage"),
+                self._section_context_labels,
+            ),
             ("View", ("Zoom", "Units"), self._section_view_labels),
-            ("Advanced / Raw SG Values", ("Raw section id", "Raw previous id", "Raw next id", "SG radius", "SG angles", "Subindex starts"), self._section_advanced_labels),
+            (
+                "Advanced / Raw SG Values",
+                (
+                    "Raw section id",
+                    "Raw previous id",
+                    "Raw next id",
+                    "SG radius",
+                    "SG angles",
+                    "Subindex starts",
+                ),
+                self._section_advanced_labels,
+            ),
         ):
             grid = two_column_group(title)
             for index, label in enumerate(labels):
@@ -1452,7 +1674,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         scroll.setWidget(content)
         return scroll
 
-    def _set_section_value(self, store: dict[str, QtWidgets.QLabel], key: str, value: str) -> None:
+    def _set_section_value(
+        self, store: dict[str, QtWidgets.QLabel], key: str, value: str
+    ) -> None:
         if key in store:
             store[key].setText(value)
 
@@ -1513,7 +1737,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         current_index = self._right_sidebar_tabs.currentIndex()
         geometry_active = (
             current_index >= 0
-            and self._right_sidebar_tabs.tabText(current_index).rstrip("*") == "Geometry"
+            and self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+            == "Geometry"
         )
         for button in self._geometry_tab_buttons():
             button.set_geometry_tab_active(geometry_active)
@@ -1554,7 +1779,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         def add_workflow_tab(label: str) -> QtWidgets.QTabWidget:
             tab_widget = QtWidgets.QTabWidget()
-            tab_widget.currentChanged.connect(lambda _index: self.update_mouse_usage_text())
+            tab_widget.currentChanged.connect(
+                lambda _index: self.update_mouse_usage_text()
+            )
             self._right_sidebar_tabs.addTab(tab_widget, label)
             return tab_widget
 
@@ -1572,7 +1799,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     (self._land_objects_sidebar, "Draw land objects"),
                 ),
             ),
-            ("Files", ((self._tsd_sidebar, "TSD"), (self._three_d_file_sidebar, ".3D file"))),
+            (
+                "Files",
+                ((self._tsd_sidebar, "TSD"), (self._three_d_file_sidebar, ".3D file")),
+            ),
         ):
             tab_widget = add_workflow_tab(workflow_label)
             for panel_widget, feature_label in panels:
@@ -1580,6 +1810,74 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 self._sidebar_feature_tabs[feature_label] = tab_widget
                 self._sidebar_feature_tab_widgets[feature_label] = panel_widget
 
+    def _build_viewport_toolbar(self) -> QtWidgets.QFrame:
+        """Build the compact viewport display/options toolbar above the preview."""
+        toolbar = QtWidgets.QFrame()
+        toolbar.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        toolbar.setFrameShadow(QtWidgets.QFrame.Raised)
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+        layout.addWidget(QtWidgets.QLabel("Units:"))
+        layout.addWidget(self._measurement_units_combo)
+        layout.addSpacing(8)
+        layout.addWidget(self._ruler_button)
+        layout.addSpacing(14)
+        layout.addWidget(QtWidgets.QLabel("Overlays:"))
+        layout.addWidget(self._xsect_dlat_line_checkbox)
+        layout.addWidget(self._sg_fsects_checkbox)
+        layout.addWidget(self._land_objects_overlay_checkbox)
+        layout.addWidget(self._trackside_objects_overlay_checkbox)
+        layout.addWidget(self._background_image_checkbox)
+        layout.addSpacing(8)
+        layout.addWidget(QtWidgets.QLabel("View:"))
+        layout.addWidget(self._view_preset_combo)
+        layout.addStretch(1)
+        layout.addWidget(QtWidgets.QLabel("BG:"))
+        layout.addWidget(self._background_brightness_slider)
+        layout.addWidget(self._background_brightness_value_label)
+        layout.addSpacing(8)
+        layout.addWidget(QtWidgets.QLabel("Track:"))
+        layout.addWidget(self._track_opacity_slider)
+        layout.addWidget(self._track_opacity_value_label)
+        toolbar.setLayout(layout)
+        return toolbar
+
+    def update_visual_intensity_controls(self) -> None:
+        has_background = bool(self._preview.has_background_image())
+        background_active = (
+            has_background and self._background_image_checkbox.isChecked()
+        )
+        for widget in (
+            self._background_brightness_slider,
+            self._background_brightness_value_label,
+        ):
+            widget.setEnabled(background_active)
+        has_track = bool(self._preview.section_manager.sections)
+        for widget in (self._track_opacity_slider, self._track_opacity_value_label):
+            widget.setEnabled(has_track)
+
+    def _on_view_preset_changed(self, preset: str) -> None:
+        if preset == "Geometry":
+            self._sg_fsects_checkbox.setChecked(False)
+            self._xsect_dlat_line_checkbox.setChecked(False)
+            self._land_objects_overlay_checkbox.setChecked(False)
+            self._trackside_objects_overlay_checkbox.setChecked(False)
+            self._background_image_checkbox.setChecked(False)
+        elif preset == "Construction":
+            self._sg_fsects_checkbox.setChecked(True)
+            self._xsect_dlat_line_checkbox.setChecked(True)
+        elif preset == "Objects":
+            self._land_objects_overlay_checkbox.setChecked(True)
+            self._trackside_objects_overlay_checkbox.setChecked(True)
+        elif preset == "Debug":
+            self._sg_fsects_checkbox.setChecked(True)
+            self._xsect_dlat_line_checkbox.setChecked(True)
+            self._land_objects_overlay_checkbox.setChecked(True)
+            self._trackside_objects_overlay_checkbox.setChecked(True)
+            if self._preview.has_background_image():
+                self._background_image_checkbox.setChecked(True)
+        self.update_visual_intensity_controls()
 
     def update_mouse_usage_text(self) -> None:
         """Refresh the viewport mouse help for the active tab/mode."""
@@ -1590,14 +1888,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Mouse wheel: zoom at cursor"
             )
         elif self._delete_section_button.isChecked():
-            usage_text = "Left click section: delete section • Mouse wheel: zoom at cursor"
+            usage_text = (
+                "Left click section: delete section • Mouse wheel: zoom at cursor"
+            )
         elif self._split_section_button.isChecked():
             usage_text = (
                 "Mouse move: choose split location • "
                 "Left click highlighted section: split section • "
                 "Mouse wheel: zoom at cursor"
             )
-        elif self._new_straight_button.isChecked() or self._new_curve_button.isChecked():
+        elif (
+            self._new_straight_button.isChecked() or self._new_curve_button.isChecked()
+        ):
             usage_text = (
                 "Left click: place/connect new section endpoints • "
                 "Mouse move: preview new section • "
@@ -1665,7 +1967,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 tab_name,
                 "Left click: select • Left drag: pan view • Mouse wheel: zoom at cursor",
             )
-        self._mouse_usage_label.setText(usage_text)
+        default_hint = "Mouse: left click selects · left drag pans · wheel zooms"
+        self._preview.set_status_text(
+            default_hint
+            if usage_text
+            == "Left click: select • Left drag: pan view • Mouse wheel: zoom at cursor"
+            else usage_text
+        )
 
     def show_view_options_dialog(self) -> None:
         if self._view_options_dialog is None:
@@ -1845,7 +2153,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def tso_stamp_button(self) -> QtWidgets.QPushButton:
         return self._tso_stamp_button
 
-
     @property
     def selected_section_index(self) -> int | None:
         return self._selected_section_index
@@ -1905,7 +2212,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_file_catalog_inspector_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_catalog_inspector_button
-
 
     @property
     def three_d_show_section_entries_button(self) -> QtWidgets.QPushButton:
@@ -2126,7 +2432,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return format_length(value, unit=self._current_measurement_unit())
 
     def format_length_with_secondary(self, value: float | int | None) -> str:
-        return format_length_with_secondary(value, unit=self._current_measurement_unit())
+        return format_length_with_secondary(
+            value, unit=self._current_measurement_unit()
+        )
 
     def update_elevation_inputs(
         self, altitude: int | None, grade: int | None, enabled: bool
@@ -2255,7 +2563,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         maximum = max_spin.value()
         if minimum >= maximum:
             QtWidgets.QMessageBox.warning(
-                self, "Invalid Range", "Maximum grade must be greater than minimum grade."
+                self,
+                "Invalid Range",
+                "Maximum grade must be greater than minimum grade.",
             )
             return
 
@@ -2290,7 +2600,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 if decimals == 0
                 else f"{display_dlat:.{decimals}f}".rstrip("0").rstrip(".")
             )
-            item = QtWidgets.QListWidgetItem(f"X-section {idx} (DLAT {dlat_text} {unit_label})")
+            item = QtWidgets.QListWidgetItem(
+                f"X-section {idx} (DLAT {dlat_text} {unit_label})"
+            )
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
             item.setCheckState(QtCore.Qt.Unchecked)
             if idx == source_xsect_index:
@@ -2343,7 +2655,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Raise/Lower Elevations",
                 "Unable to update elevations.",
             )
-
 
     def show_generate_elevation_change_dialog(self, *, xsect_index: int) -> None:
         sections, _ = self._preview.get_section_set()
@@ -2411,6 +2722,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         buttons.rejected.connect(dialog.close)
         layout.addRow(buttons)
+
         def _apply_elevation_change() -> None:
             start_section = start_section_spin.value()
             end_section = end_section_spin.value()
@@ -2489,7 +2801,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         return False
 
-
     def _current_measurement_unit(self) -> str:
         return str(self._measurement_units_combo.currentData())
 
@@ -2518,10 +2829,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return fsect_dlat_units_label(unit=self._current_measurement_unit())
 
     def xsect_altitude_to_display_units(self, value: int) -> float:
-        return xsect_altitude_to_display_units(value, unit=self._current_measurement_unit())
+        return xsect_altitude_to_display_units(
+            value, unit=self._current_measurement_unit()
+        )
 
     def xsect_altitude_from_display_units(self, value: float) -> int:
-        return xsect_altitude_from_display_units(value, unit=self._current_measurement_unit())
+        return xsect_altitude_from_display_units(
+            value, unit=self._current_measurement_unit()
+        )
 
     def _format_xsect_altitude(self, value: int) -> str:
         return format_xsect_altitude(value, unit=self._current_measurement_unit())
@@ -2547,14 +2862,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if selection is None:
             self._selected_section_index = None
             self._section_summary_title_label.setText("No section selected")
-            self._section_summary_detail_label.setText("Select a section to inspect geometry, connections, and metadata.")
+            self._section_summary_detail_label.setText(
+                "Select a section to inspect geometry, connections, and metadata."
+            )
             for key in self._section_health_labels:
                 self._set_section_health(key, "Unknown", "–")
-            for store in (self._section_geometry_labels, self._section_connection_labels, self._section_boundary_labels, self._section_subsection_labels, self._section_context_labels, self._section_view_labels, self._section_advanced_labels):
+            for store in (
+                self._section_geometry_labels,
+                self._section_connection_labels,
+                self._section_boundary_labels,
+                self._section_subsection_labels,
+                self._section_context_labels,
+                self._section_view_labels,
+                self._section_advanced_labels,
+            ):
                 for label in store.values():
                     label.setText("–")
-            self._set_section_value(self._section_view_labels, "Units", self._measurement_unit_label(self._current_measurement_unit()))
-            self._set_section_value(self._section_view_labels, "Zoom", self._zoom_factor_label.text().removeprefix("Zoom Factor: "))
+            self._set_section_value(
+                self._section_view_labels,
+                "Units",
+                self._measurement_unit_label(self._current_measurement_unit()),
+            )
+            self._set_section_value(
+                self._section_view_labels,
+                "Zoom",
+                self._zoom_factor_label.text().removeprefix("Zoom Factor: "),
+            )
             self._section_split_action_button.setEnabled(False)
             self._section_delete_action_button.setEnabled(False)
             self._section_set_start_finish_action_button.setEnabled(False)
@@ -2575,7 +2908,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
 
         self._selected_section_index = selection.index
-        radius_value = selection.sg_radius if selection.sg_radius is not None else selection.radius
+        radius_value = (
+            selection.sg_radius if selection.sg_radius is not None else selection.radius
+        )
         type_name = selection.type_name.title() if selection.type_name else "Unknown"
         summary_parts = [
             f"{type_name}",
@@ -2589,9 +2924,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             summary_parts.append(f"{len(starts)} subsections")
         self._section_summary_title_label.setText(f"Section {selection.index}")
         self._section_summary_detail_label.setText(" · ".join(summary_parts))
-        self._section_split_action_button.setEnabled(self._split_section_button.isEnabled())
-        self._section_delete_action_button.setEnabled(self._delete_section_button.isEnabled())
-        self._section_set_start_finish_action_button.setEnabled(self._set_start_finish_button.isEnabled())
+        self._section_split_action_button.setEnabled(
+            self._split_section_button.isEnabled()
+        )
+        self._section_delete_action_button.setEnabled(
+            self._delete_section_button.isEnabled()
+        )
+        self._section_set_start_finish_action_button.setEnabled(
+            self._set_start_finish_button.isEnabled()
+        )
         self._section_index_label.setText(f"Current Section: {selection.index}")
         self._section_start_dlong_label.setText(
             f"Starting DLONG: {self.format_length(selection.start_dlong)}"
@@ -2615,7 +2956,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if radius_value is None:
             radius_value = selection.radius
         self._radius_label.setText(f"Radius: {self.format_length(radius_value)}")
-        self._previous_label.setText(self._format_section_link("Previous", selection.previous_id))
+        self._previous_label.setText(
+            self._format_section_link("Previous", selection.previous_id)
+        )
         self._next_label.setText(self._format_section_link("Next", selection.next_id))
 
         selected_range = self._preview.get_section_range(selection.index)
@@ -2624,59 +2967,187 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_boundary_dlat_labels(selection.index)
         self._update_section_inspector_details(selection)
 
-
-
-
     def _update_section_inspector_details(self, selection: SectionSelection) -> None:
         sections, track_length = self._preview.get_section_set()
         total = len(sections)
         adjusted = self._adjusted_section_dlongs(selection.index)
         starts = self._section_subindex_metadata.get(int(selection.index), tuple())
-        radius_value = selection.sg_radius if selection.sg_radius is not None else selection.radius
+        radius_value = (
+            selection.sg_radius if selection.sg_radius is not None else selection.radius
+        )
         prev_ok = selection.previous_id != -1 and selection.previous_length is not None
         next_ok = selection.next_id != -1 and selection.next_length is not None
 
         self._set_section_health("selected", "OK", f"Section {selection.index}")
-        self._set_section_health("length", "OK" if selection.length > 0 else "Error", self.format_length_with_secondary(selection.length))
-        self._set_section_health("previous", "OK" if prev_ok else "Warning", "Not connected" if selection.previous_id == -1 else f"Section {selection.previous_id}")
-        self._set_section_health("next", "OK" if next_ok else "Warning", "Not connected" if selection.next_id == -1 else f"Section {selection.next_id}")
-        start_status, start_detail = self._section_tangency_status(sections, selection, at_start=True)
-        end_status, end_detail = self._section_tangency_status(sections, selection, at_start=False)
+        self._set_section_health(
+            "length",
+            "OK" if selection.length > 0 else "Error",
+            self.format_length_with_secondary(selection.length),
+        )
+        self._set_section_health(
+            "previous",
+            "OK" if prev_ok else "Warning",
+            (
+                "Not connected"
+                if selection.previous_id == -1
+                else f"Section {selection.previous_id}"
+            ),
+        )
+        self._set_section_health(
+            "next",
+            "OK" if next_ok else "Warning",
+            (
+                "Not connected"
+                if selection.next_id == -1
+                else f"Section {selection.next_id}"
+            ),
+        )
+        start_status, start_detail = self._section_tangency_status(
+            sections, selection, at_start=True
+        )
+        end_status, end_detail = self._section_tangency_status(
+            sections, selection, at_start=False
+        )
         self._set_section_health("start_tangency", start_status, start_detail)
         self._set_section_health("end_tangency", end_status, end_detail)
         if str(selection.type_name).lower() == "curve" and radius_value is not None:
-            self._set_section_health("radius", "Warning" if abs(float(radius_value)) < 1.0 else "OK", self.format_length(radius_value))
+            self._set_section_health(
+                "radius",
+                "Warning" if abs(float(radius_value)) < 1.0 else "OK",
+                self.format_length(radius_value),
+            )
         else:
             self._set_section_health("radius", "OK", "Not a curve")
         fsects = self._preview.get_section_fsects(selection.index)
         boundary_number_by_row = boundary_numbers_for_fsects(fsects)
-        self._set_section_health("boundaries", "OK" if boundary_number_by_row else "Unknown", "B0/B1 present" if len(boundary_number_by_row) >= 2 else ("Some boundary data present" if boundary_number_by_row else "No boundary data"))
-        self._set_section_health("fsects", "OK" if fsects else "Unknown", f"{len(fsects)} rows" if fsects else "No fsect rows")
-        self._set_section_health("dlong", "OK" if selection.end_dlong >= selection.start_dlong else "Error", f"{self.format_length(selection.start_dlong)}–{self.format_length(selection.end_dlong)}")
-        self._set_section_health("adjusted", "OK" if adjusted is not None else "Unknown", "Available" if adjusted is not None else "Unavailable")
+        self._set_section_health(
+            "boundaries",
+            "OK" if boundary_number_by_row else "Unknown",
+            (
+                "B0/B1 present"
+                if len(boundary_number_by_row) >= 2
+                else (
+                    "Some boundary data present"
+                    if boundary_number_by_row
+                    else "No boundary data"
+                )
+            ),
+        )
+        self._set_section_health(
+            "fsects",
+            "OK" if fsects else "Unknown",
+            f"{len(fsects)} rows" if fsects else "No fsect rows",
+        )
+        self._set_section_health(
+            "dlong",
+            "OK" if selection.end_dlong >= selection.start_dlong else "Error",
+            f"{self.format_length(selection.start_dlong)}–{self.format_length(selection.end_dlong)}",
+        )
+        self._set_section_health(
+            "adjusted",
+            "OK" if adjusted is not None else "Unknown",
+            "Available" if adjusted is not None else "Unavailable",
+        )
 
         geom = self._section_geometry_labels
         self._set_section_value(geom, "Type", selection.type_name.title())
-        self._set_section_value(geom, "Start DLONG", self.format_length(selection.start_dlong))
-        self._set_section_value(geom, "End DLONG", self.format_length(selection.end_dlong))
-        self._set_section_value(geom, "Length", self.format_length_with_secondary(selection.length))
-        self._set_section_value(geom, "Radius", self.format_length(radius_value) if radius_value is not None and str(selection.type_name).lower() == "curve" else "–")
-        self._set_section_value(geom, "Start point", self._format_point(selection.start_point))
-        self._set_section_value(geom, "End point", self._format_point(selection.end_point))
-        self._set_section_value(geom, "Start heading", self._format_heading(selection.start_heading or selection.sg_start_heading))
-        self._set_section_value(geom, "End heading", self._format_heading(selection.end_heading or selection.sg_end_heading))
-        self._set_section_value(geom, "Curve center", self._format_point(selection.center))
-        self._set_section_value(geom, "Curve arc/sweep", f"{selection.sg_sang1}/{selection.sg_sang2} → {selection.sg_eang1}/{selection.sg_eang2}" if selection.sg_sang1 is not None else "–")
+        self._set_section_value(
+            geom, "Start DLONG", self.format_length(selection.start_dlong)
+        )
+        self._set_section_value(
+            geom, "End DLONG", self.format_length(selection.end_dlong)
+        )
+        self._set_section_value(
+            geom, "Length", self.format_length_with_secondary(selection.length)
+        )
+        self._set_section_value(
+            geom,
+            "Radius",
+            (
+                self.format_length(radius_value)
+                if radius_value is not None
+                and str(selection.type_name).lower() == "curve"
+                else "–"
+            ),
+        )
+        self._set_section_value(
+            geom, "Start point", self._format_point(selection.start_point)
+        )
+        self._set_section_value(
+            geom, "End point", self._format_point(selection.end_point)
+        )
+        self._set_section_value(
+            geom,
+            "Start heading",
+            self._format_heading(selection.start_heading or selection.sg_start_heading),
+        )
+        self._set_section_value(
+            geom,
+            "End heading",
+            self._format_heading(selection.end_heading or selection.sg_end_heading),
+        )
+        self._set_section_value(
+            geom, "Curve center", self._format_point(selection.center)
+        )
+        self._set_section_value(
+            geom,
+            "Curve arc/sweep",
+            (
+                f"{selection.sg_sang1}/{selection.sg_sang2} → {selection.sg_eang1}/{selection.sg_eang2}"
+                if selection.sg_sang1 is not None
+                else "–"
+            ),
+        )
         if adjusted is not None:
             start, end, length = adjusted
-            self._set_section_value(geom, "Adjusted start", self.format_length(start)); self._set_section_value(geom, "Adjusted end", self.format_length(end)); self._set_section_value(geom, "Adjusted length", self.format_length_with_secondary(length))
+            self._set_section_value(geom, "Adjusted start", self.format_length(start))
+            self._set_section_value(geom, "Adjusted end", self.format_length(end))
+            self._set_section_value(
+                geom, "Adjusted length", self.format_length_with_secondary(length)
+            )
         conn = self._section_connection_labels
-        self._set_section_value(conn, "Previous", "Not connected" if selection.previous_id == -1 else f"Section {selection.previous_id}")
-        self._set_section_value(conn, "Next", "Not connected" if selection.next_id == -1 else f"Section {selection.next_id}")
-        self._set_section_value(conn, "Previous length", self.format_length_with_secondary(selection.previous_length) if selection.previous_length is not None else "–")
-        self._set_section_value(conn, "Next length", self.format_length_with_secondary(selection.next_length) if selection.next_length is not None else "–")
-        self._set_section_value(conn, "Previous status", "Connected" if prev_ok else "Unknown")
-        self._set_section_value(conn, "Next status", "Connected" if next_ok else "Unknown")
+        self._set_section_value(
+            conn,
+            "Previous",
+            (
+                "Not connected"
+                if selection.previous_id == -1
+                else f"Section {selection.previous_id}"
+            ),
+        )
+        self._set_section_value(
+            conn,
+            "Next",
+            (
+                "Not connected"
+                if selection.next_id == -1
+                else f"Section {selection.next_id}"
+            ),
+        )
+        self._set_section_value(
+            conn,
+            "Previous length",
+            (
+                self.format_length_with_secondary(selection.previous_length)
+                if selection.previous_length is not None
+                else "–"
+            ),
+        )
+        self._set_section_value(
+            conn,
+            "Next length",
+            (
+                self.format_length_with_secondary(selection.next_length)
+                if selection.next_length is not None
+                else "–"
+            ),
+        )
+        self._set_section_value(
+            conn, "Previous status", "Connected" if prev_ok else "Unknown"
+        )
+        self._set_section_value(
+            conn, "Next status", "Connected" if next_ok else "Unknown"
+        )
         previous_gap, previous_heading_mismatch = self._section_connection_metrics(
             sections, selection, at_start=True
         )
@@ -2685,36 +3156,107 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._set_section_value(conn, "Gap to previous", previous_gap)
         self._set_section_value(conn, "Gap to next", next_gap)
-        self._set_section_value(conn, "Heading mismatch previous", previous_heading_mismatch)
+        self._set_section_value(
+            conn, "Heading mismatch previous", previous_heading_mismatch
+        )
         self._set_section_value(conn, "Heading mismatch next", next_heading_mismatch)
 
-        self._set_section_value(self._section_boundary_labels, "Summary", f"{len(boundary_number_by_row)} boundary rows" if boundary_number_by_row else "No boundary rows")
+        self._set_section_value(
+            self._section_boundary_labels,
+            "Summary",
+            (
+                f"{len(boundary_number_by_row)} boundary rows"
+                if boundary_number_by_row
+                else "No boundary rows"
+            ),
+        )
         for name in self._section_boundary_labels:
             if name.startswith("B"):
                 self._set_section_value(self._section_boundary_labels, name, "–")
-        for row_index, boundary_number in sorted(boundary_number_by_row.items(), key=lambda item: int(item[1])):
+        for row_index, boundary_number in sorted(
+            boundary_number_by_row.items(), key=lambda item: int(item[1])
+        ):
             if f"B{boundary_number}" in self._section_boundary_labels:
                 fsect = fsects[row_index]
-                self._set_section_value(self._section_boundary_labels, f"B{boundary_number}", f"DLAT start {self._format_fsect_dlat(fsect.start_dlat)}, end {self._format_fsect_dlat(fsect.end_dlat)} {self._fsect_dlat_units_label()}")
+                self._set_section_value(
+                    self._section_boundary_labels,
+                    f"B{boundary_number}",
+                    f"DLAT start {self._format_fsect_dlat(fsect.start_dlat)}, end {self._format_fsect_dlat(fsect.end_dlat)} {self._fsect_dlat_units_label()}",
+                )
 
         sub = self._section_subsection_labels
         self._set_section_value(sub, "Count", str(len(starts)))
-        self._set_section_value(sub, "Starts", ", ".join(self.format_length(v) for v in starts) if starts else "–")
+        self._set_section_value(
+            sub,
+            "Starts",
+            ", ".join(self.format_length(v) for v in starts) if starts else "–",
+        )
         if adjusted is not None:
             start, end, length = adjusted
-            self._set_section_value(sub, "Adjusted start", self.format_length(start)); self._set_section_value(sub, "Adjusted end", self.format_length(end)); self._set_section_value(sub, "Adjusted length", self.format_length_with_secondary(length))
+            self._set_section_value(sub, "Adjusted start", self.format_length(start))
+            self._set_section_value(sub, "Adjusted end", self.format_length(end))
+            self._set_section_value(
+                sub, "Adjusted length", self.format_length_with_secondary(length)
+            )
 
         ctx = self._section_context_labels
-        self._set_section_value(ctx, "Track length", self.format_length(track_length) if track_length else "–")
-        self._set_section_value(ctx, "Miles", f"{units_from_500ths(float(track_length), 'feet') / 5280.0:.3f} mi" if track_length else "–")
-        self._set_section_value(ctx, "Section position", f"{selection.index + 1} of {total}" if total else "–")
-        self._set_section_value(ctx, "Lap percentage", f"{selection.start_dlong / track_length * 100:.1f}%–{selection.end_dlong / track_length * 100:.1f}%" if track_length else "–")
-        self._set_section_value(self._section_view_labels, "Zoom", self._zoom_factor_label.text().removeprefix("Zoom Factor: "))
-        self._set_section_value(self._section_view_labels, "Units", self._measurement_unit_label(self._current_measurement_unit()))
+        self._set_section_value(
+            ctx,
+            "Track length",
+            self.format_length(track_length) if track_length else "–",
+        )
+        self._set_section_value(
+            ctx,
+            "Miles",
+            (
+                f"{units_from_500ths(float(track_length), 'feet') / 5280.0:.3f} mi"
+                if track_length
+                else "–"
+            ),
+        )
+        self._set_section_value(
+            ctx,
+            "Section position",
+            f"{selection.index + 1} of {total}" if total else "–",
+        )
+        self._set_section_value(
+            ctx,
+            "Lap percentage",
+            (
+                f"{selection.start_dlong / track_length * 100:.1f}%–{selection.end_dlong / track_length * 100:.1f}%"
+                if track_length
+                else "–"
+            ),
+        )
+        self._set_section_value(
+            self._section_view_labels,
+            "Zoom",
+            self._zoom_factor_label.text().removeprefix("Zoom Factor: "),
+        )
+        self._set_section_value(
+            self._section_view_labels,
+            "Units",
+            self._measurement_unit_label(self._current_measurement_unit()),
+        )
         adv = self._section_advanced_labels
-        self._set_section_value(adv, "Raw section id", str(selection.index)); self._set_section_value(adv, "Raw previous id", str(selection.previous_id)); self._set_section_value(adv, "Raw next id", str(selection.next_id)); self._set_section_value(adv, "SG radius", str(selection.sg_radius) if selection.sg_radius is not None else "–"); self._set_section_value(adv, "SG angles", f"{selection.sg_sang1}/{selection.sg_sang2}/{selection.sg_eang1}/{selection.sg_eang2}"); self._set_section_value(adv, "Subindex starts", repr(starts))
+        self._set_section_value(adv, "Raw section id", str(selection.index))
+        self._set_section_value(adv, "Raw previous id", str(selection.previous_id))
+        self._set_section_value(adv, "Raw next id", str(selection.next_id))
+        self._set_section_value(
+            adv,
+            "SG radius",
+            str(selection.sg_radius) if selection.sg_radius is not None else "–",
+        )
+        self._set_section_value(
+            adv,
+            "SG angles",
+            f"{selection.sg_sang1}/{selection.sg_sang2}/{selection.sg_eang1}/{selection.sg_eang2}",
+        )
+        self._set_section_value(adv, "Subindex starts", repr(starts))
 
-    def set_section_subindex_metadata(self, metadata: dict[int, tuple[int, ...]]) -> None:
+    def set_section_subindex_metadata(
+        self, metadata: dict[int, tuple[int, ...]]
+    ) -> None:
         self._section_subindex_metadata = dict(metadata)
         if self._selected_section_index is not None:
             self._update_section_subindex_labels(self._selected_section_index)
@@ -2722,7 +3264,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _update_section_subindex_labels(self, section_index: int | None) -> None:
         if section_index is None:
             self._section_subindex_count_label.setText("Section SubIndexes (.3d): –")
-            self._section_subindex_starts_label.setText("SubIndex Start DLONGs (.3d): –")
+            self._section_subindex_starts_label.setText(
+                "SubIndex Start DLONGs (.3d): –"
+            )
             return
 
         starts = self._section_subindex_metadata.get(int(section_index), tuple())
@@ -2758,11 +3302,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         adjusted = self._adjusted_section_dlongs(selection.index)
         self._set_adjusted_dlong_labels(adjusted)
 
-    def _set_adjusted_dlong_labels(
-        self, adjusted: tuple[int, int, int] | None
-    ) -> None:
+    def _set_adjusted_dlong_labels(self, adjusted: tuple[int, int, int] | None) -> None:
         if adjusted is None:
-            self._adjusted_section_start_dlong_label.setText("Adjusted Starting DLONG: –")
+            self._adjusted_section_start_dlong_label.setText(
+                "Adjusted Starting DLONG: –"
+            )
             self._adjusted_section_end_dlong_label.setText("Adjusted Ending DLONG: –")
             self._adjusted_section_length_label.setText("Adjusted Section Length: –")
             return
@@ -2777,7 +3321,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             f"Adjusted Section Length: {self.format_length_with_secondary(length)}"
         )
 
-    def _adjusted_section_dlongs(self, section_index: int) -> tuple[int, int, int] | None:
+    def _adjusted_section_dlongs(
+        self, section_index: int
+    ) -> tuple[int, int, int] | None:
         cache = self._adjusted_section_ranges_cache
         if cache is None:
             cache = self._rebuild_adjusted_section_ranges_cache()
@@ -2788,7 +3334,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def invalidate_adjusted_section_range_cache(self) -> None:
         self._adjusted_section_ranges_cache = None
 
-    def _rebuild_adjusted_section_ranges_cache(self) -> tuple[tuple[int, int, int], ...] | None:
+    def _rebuild_adjusted_section_ranges_cache(
+        self,
+    ) -> tuple[tuple[int, int, int], ...] | None:
         sgfile = self._preview.sgfile
         if sgfile is None:
             return None
@@ -2848,7 +3396,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             adjusted_lengths.append(
                 round(
                     self._runtime_api.approx_curve_length_intent(
-                        grade1, grade2, grade3, centerline_altitudes[index], section_length
+                        grade1,
+                        grade2,
+                        grade3,
+                        centerline_altitudes[index],
+                        section_length,
                     )
                 )
             )
@@ -2862,7 +3414,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._adjusted_section_ranges_cache = tuple(adjusted_ranges)
         return self._adjusted_section_ranges_cache
 
-    def adjusted_section_range_500ths(self, section_index: int) -> tuple[int, int] | None:
+    def adjusted_section_range_500ths(
+        self, section_index: int
+    ) -> tuple[int, int] | None:
         adjusted = self._adjusted_section_dlongs(section_index)
         if adjusted is None:
             return None
@@ -2886,7 +3440,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         right_candidates = [idx for idx, value in enumerate(xsect_dlats) if value <= 0]
         left_candidates = [idx for idx, value in enumerate(xsect_dlats) if value >= 0]
         if not right_candidates or not left_candidates:
-            closest = min(range(len(xsect_dlats)), key=lambda idx: abs(xsect_dlats[idx]))
+            closest = min(
+                range(len(xsect_dlats)), key=lambda idx: abs(xsect_dlats[idx])
+            )
             return closest, closest, 0.0
 
         right_idx = max(right_candidates, key=lambda idx: xsect_dlats[idx])
@@ -2923,10 +3479,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     | QtCore.Qt.ItemIsSelectable
                 )
             start_delta_item = QtWidgets.QTableWidgetItem(
-                format_fsect_delta(fsects, row_index, "start", unit=self._current_measurement_unit())
+                format_fsect_delta(
+                    fsects, row_index, "start", unit=self._current_measurement_unit()
+                )
             )
             end_delta_item = QtWidgets.QTableWidgetItem(
-                format_fsect_delta(fsects, row_index, "end", unit=self._current_measurement_unit())
+                format_fsect_delta(
+                    fsects, row_index, "end", unit=self._current_measurement_unit()
+                )
             )
             if row_index < len(fsects) - 1:
                 for delta_item in (start_delta_item, end_delta_item):
@@ -2944,10 +3504,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             boundary_item = QtWidgets.QTableWidgetItem(
                 boundary_number_by_row.get(row_index, "")
             )
-            boundary_item.setFlags(
-                boundary_item.flags()
-                & ~QtCore.Qt.ItemIsEditable
-            )
+            boundary_item.setFlags(boundary_item.flags() & ~QtCore.Qt.ItemIsEditable)
             self._fsect_table.setItem(row_index, 1, boundary_item)
             self._fsect_table.setItem(row_index, 2, start_item)
             self._fsect_table.setItem(row_index, 3, end_item)
@@ -2956,9 +3513,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             combo = QtWidgets.QComboBox()
             for label, surface_type, type2 in fsect_type_options():
                 combo.addItem(label, (surface_type, type2))
-            combo.setCurrentIndex(
-                fsect_type_index(fsect.surface_type, fsect.type2)
-            )
+            combo.setCurrentIndex(fsect_type_index(fsect.surface_type, fsect.type2))
             combo.currentIndexChanged.connect(
                 lambda _idx, row=row_index, widget=combo: self._on_fsect_type_changed(
                     row, widget
@@ -3084,7 +3639,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
         else:
-            self.show_status_message("Inspect Track active. Press Space to freeze/unfreeze overlay details.")
+            self.show_status_message(
+                "Inspect Track active. Press Space to freeze/unfreeze overlay details."
+            )
         self._refresh_query_track_info_label()
 
     def _toggle_query_track_info_freeze(self) -> None:
@@ -3092,7 +3649,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         self._query_track_info_frozen = not self._query_track_info_frozen
         if self._query_track_info_frozen:
-            self.show_status_message("Inspect Track overlay frozen. Press Space again to resume live updates.")
+            self.show_status_message(
+                "Inspect Track overlay frozen. Press Space again to resume live updates."
+            )
         else:
             self.show_status_message("Inspect Track overlay live updates resumed.")
         self._refresh_query_track_info_label()
@@ -3104,11 +3663,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
             self._refresh_query_track_info_label()
-        if self._ruler_mode_active and self._ruler_start_point is not None and not self._ruler_frozen:
+        if (
+            self._ruler_mode_active
+            and self._ruler_start_point is not None
+            and not self._ruler_frozen
+        ):
             self._update_ruler_overlay(self._ruler_start_point, self._ruler_start_point)
 
     def _on_preview_pointer_moved(self, point: QtCore.QPointF) -> None:
-        if self._ruler_mode_active and self._ruler_start_point is not None and not self._ruler_frozen:
+        if (
+            self._ruler_mode_active
+            and self._ruler_start_point is not None
+            and not self._ruler_frozen
+        ):
             track_point = self._track_point_from_preview_position(point)
             if track_point is not None:
                 self._update_ruler_overlay(self._ruler_start_point, track_point)
@@ -3122,7 +3689,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         centerline_index = self._preview.section_manager.centerline_index
         sampled_dlongs = self._preview.section_manager.sampled_dlongs
         sections = self._preview.section_manager.sections
-        track_length = float(sum(max(0.0, float(section.length)) for section in sections))
+        track_length = float(
+            sum(max(0.0, float(section.length)) for section in sections)
+        )
         if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
@@ -3143,7 +3712,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if transform is None:
             return
         zoom_scale = max(float(transform[0]), 0.0)
-        pixel_distance = (distance_sq ** 0.5) * zoom_scale
+        pixel_distance = (distance_sq**0.5) * zoom_scale
         if pixel_distance > 16.0:
             self._query_track_result = None
             self._preview.set_query_track_hover_point(None)
@@ -3167,7 +3736,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             boundary_number_by_row.items(), key=lambda item: int(item[1])
         ):
             fsect = fsects[row_index]
-            dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            dlat = (
+                float(fsect.start_dlat)
+                + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            )
             elevation = self._sample_elevation_at_dlat(section_index, progress, dlat)
             boundary_dlats.append((f"B{boundary_number}", dlat, elevation))
 
@@ -3177,7 +3749,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             adjusted_start, _adjusted_end, adjusted_length = adjusted_range
             adjusted_dlong = float(adjusted_start) + float(adjusted_length) * progress
 
-        centerline_elevation = self._sample_centerline_elevation(section_index, progress)
+        centerline_elevation = self._sample_centerline_elevation(
+            section_index, progress
+        )
 
         self._query_track_result = {
             "section_index": section_index,
@@ -3212,11 +3786,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         row = self._land_points_table.rowCount()
         self._land_points_table.insertRow(row)
         self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row)))
-        self._land_points_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}"))
-        self._land_points_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}"))
-        self._land_points_table.setItem(row, 3, QtWidgets.QTableWidgetItem("" if z_value is None else f"{float(z_value):.1f}"))
+        self._land_points_table.setItem(
+            row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}")
+        )
+        self._land_points_table.setItem(
+            row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}")
+        )
+        self._land_points_table.setItem(
+            row,
+            3,
+            QtWidgets.QTableWidgetItem(
+                "" if z_value is None else f"{float(z_value):.1f}"
+            ),
+        )
         delete_button = QtWidgets.QPushButton("Delete")
-        delete_button.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
+        delete_button.clicked.connect(
+            lambda _checked=False, r=row: self._delete_land_point_row(r)
+        )
         self._land_points_table.setCellWidget(row, 4, delete_button)
         self._sync_land_points_overlay()
         self._persist_selected_land_object()
@@ -3231,14 +3817,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _renumber_land_points_rows(self) -> None:
         for row in range(self._land_points_table.rowCount()):
-            self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row)))
+            self._land_points_table.setItem(
+                row, 0, QtWidgets.QTableWidgetItem(str(row))
+            )
             widget = self._land_points_table.cellWidget(row, 4)
             if isinstance(widget, QtWidgets.QPushButton):
                 try:
                     widget.clicked.disconnect()
                 except TypeError:
                     pass
-                widget.clicked.connect(lambda _checked=False, r=row: self._delete_land_point_row(r))
+                widget.clicked.connect(
+                    lambda _checked=False, r=row: self._delete_land_point_row(r)
+                )
 
     def _sync_land_points_overlay(self) -> None:
         overlay_points: list[tuple[float, float]] = []
@@ -3304,9 +3894,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             color = QtGui.QColor(self._sunny_palette_colors[index])
             item.setBackground(QtGui.QBrush(color))
             luminance = (
-                (0.299 * color.red())
-                + (0.587 * color.green())
-                + (0.114 * color.blue())
+                (0.299 * color.red()) + (0.587 * color.green()) + (0.114 * color.blue())
             )
             text_color = (
                 QtGui.QColor("black") if luminance >= 140 else QtGui.QColor("white")
@@ -3343,9 +3931,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         item = self._land_polygons_table.item(row, 1)
         current_index = (
-            self._parse_land_polygon_color_index(item.text())
-            if item is not None
-            else 0
+            self._parse_land_polygon_color_index(item.text()) if item is not None else 0
         )
         dialog = PaletteColorDialog(
             self._sunny_palette_colors,
@@ -3353,7 +3939,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             selection_mode=True,
             initial_index=current_index,
         )
-        if dialog.exec_() != QtWidgets.QDialog.Accepted or dialog.selected_index is None:
+        if (
+            dialog.exec_() != QtWidgets.QDialog.Accepted
+            or dialog.selected_index is None
+        ):
             return
         if item is None:
             item = self._land_polygon_color_item(dialog.selected_index)
@@ -3377,9 +3966,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
             try:
                 indices = tuple(
-                    int(token.strip())
-                    for token in raw_text.split(",")
-                    if token.strip()
+                    int(token.strip()) for token in raw_text.split(",") if token.strip()
                 )
             except ValueError:
                 errors.append(f"row {row + 1}: invalid point list")
@@ -3391,13 +3978,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     f"row {row + 1}: {mode_text.lower()} polygon needs at least {min_points} points"
                 )
                 continue
-            invalid_index = next((index for index in indices if index < 0 or index >= point_count), None)
+            invalid_index = next(
+                (index for index in indices if index < 0 or index >= point_count), None
+            )
             if invalid_index is not None:
                 errors.append(f"row {row + 1}: point {invalid_index} does not exist")
                 continue
             color_item = self._land_polygons_table.item(row, 1)
             try:
-                color_index = int(color_item.text().strip()) if color_item is not None else 0
+                color_index = (
+                    int(color_item.text().strip()) if color_item is not None else 0
+                )
             except ValueError:
                 errors.append(f"row {row + 1}: invalid color index")
                 continue
@@ -3409,11 +4000,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 "Land polygon preview skipped invalid rows: " + "; ".join(errors[:3])
             )
 
-    def _on_land_points_table_item_changed(self, _item: QtWidgets.QTableWidgetItem) -> None:
+    def _on_land_points_table_item_changed(
+        self, _item: QtWidgets.QTableWidgetItem
+    ) -> None:
         self._sync_land_points_overlay()
         self._persist_selected_land_object()
 
-    def _on_land_polygons_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+    def _on_land_polygons_table_item_changed(
+        self, item: QtWidgets.QTableWidgetItem
+    ) -> None:
         if item.column() == 1 and not self._updating_land_polygon_color_cells:
             self._updating_land_polygon_color_cells = True
             signals_blocked = self._land_polygons_table.blockSignals(True)
@@ -3425,7 +4020,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_land_polygons_overlay()
         self._persist_selected_land_object()
 
-    def _on_land_objects_table_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+    def _on_land_objects_table_item_changed(
+        self, item: QtWidgets.QTableWidgetItem
+    ) -> None:
         if item.column() != 0:
             return
         row = item.row()
@@ -3461,10 +4058,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _move_selected_land_polygon_row(self, offset: int) -> None:
         row = self._land_polygons_table.currentRow()
         target_row = row + offset
-        if row < 0 or target_row < 0 or target_row >= self._land_polygons_table.rowCount():
+        if (
+            row < 0
+            or target_row < 0
+            or target_row >= self._land_polygons_table.rowCount()
+        ):
             return
         current_values = [self._land_polygon_cell_text(row, col) for col in range(4)]
-        target_values = [self._land_polygon_cell_text(target_row, col) for col in range(4)]
+        target_values = [
+            self._land_polygon_cell_text(target_row, col) for col in range(4)
+        ]
         self._land_polygons_table.blockSignals(True)
         for col in range(4):
             if col == 2:
@@ -3496,22 +4099,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             x_item = self._land_points_table.item(row, 1)
             y_item = self._land_points_table.item(row, 2)
             z_item = self._land_points_table.item(row, 3)
-            points.append((
-                "" if x_item is None else x_item.text(),
-                "" if y_item is None else y_item.text(),
-                "" if z_item is None else z_item.text(),
-            ))
+            points.append(
+                (
+                    "" if x_item is None else x_item.text(),
+                    "" if y_item is None else y_item.text(),
+                    "" if z_item is None else z_item.text(),
+                )
+            )
         polygons: list[tuple[str, str, str, str]] = []
         for row in range(self._land_polygons_table.rowCount()):
             points_item = self._land_polygons_table.item(row, 0)
             color_item = self._land_polygons_table.item(row, 1)
             height_item = self._land_polygons_table.item(row, 3)
-            polygons.append((
-                "" if points_item is None else points_item.text(),
-                "0" if color_item is None else color_item.text(),
-                self._land_polygon_mode_text(row),
-                "0" if height_item is None else height_item.text(),
-            ))
+            polygons.append(
+                (
+                    "" if points_item is None else points_item.text(),
+                    "0" if color_item is None else color_item.text(),
+                    self._land_polygon_mode_text(row),
+                    "0" if height_item is None else height_item.text(),
+                )
+            )
         return {"name": name, "points": points, "polygons": polygons}
 
     def _persist_selected_land_object(self) -> None:
@@ -3520,13 +4127,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         payload = self._collect_current_land_object_payload()
         self._land_saved_objects[row] = payload
-        self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(payload["name"])))
+        self._land_objects_table.setItem(
+            row, 0, QtWidgets.QTableWidgetItem(str(payload["name"]))
+        )
         points = payload["points"] if isinstance(payload.get("points"), list) else []
-        polygons = payload["polygons"] if isinstance(payload.get("polygons"), list) else []
+        polygons = (
+            payload["polygons"] if isinstance(payload.get("polygons"), list) else []
+        )
         self._land_objects_table.setItem(
             row,
             1,
-            QtWidgets.QTableWidgetItem(f"{len(points)} points, {len(polygons)} polygons"),
+            QtWidgets.QTableWidgetItem(
+                f"{len(points)} points, {len(polygons)} polygons"
+            ),
         )
         self._mark_land_objects_dirty()
 
@@ -3572,7 +4185,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         row = self._land_objects_table.rowCount()
         self._land_objects_table.insertRow(row)
         self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(name))
-        self._land_objects_table.setItem(row, 1, QtWidgets.QTableWidgetItem("0 points, 0 polygons"))
+        self._land_objects_table.setItem(
+            row, 1, QtWidgets.QTableWidgetItem("0 points, 0 polygons")
+        )
         self._land_objects_table.selectRow(row)
         self._load_selected_land_object()
         self._mark_land_objects_dirty()
@@ -3595,12 +4210,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setRowCount(0)
         for point_row, (x_text, y_text, z_text) in enumerate(points):
             self._land_points_table.insertRow(point_row)
-            self._land_points_table.setItem(point_row, 0, QtWidgets.QTableWidgetItem(str(point_row)))
-            self._land_points_table.setItem(point_row, 1, QtWidgets.QTableWidgetItem(str(x_text)))
-            self._land_points_table.setItem(point_row, 2, QtWidgets.QTableWidgetItem(str(y_text)))
-            self._land_points_table.setItem(point_row, 3, QtWidgets.QTableWidgetItem(str(z_text)))
+            self._land_points_table.setItem(
+                point_row, 0, QtWidgets.QTableWidgetItem(str(point_row))
+            )
+            self._land_points_table.setItem(
+                point_row, 1, QtWidgets.QTableWidgetItem(str(x_text))
+            )
+            self._land_points_table.setItem(
+                point_row, 2, QtWidgets.QTableWidgetItem(str(y_text))
+            )
+            self._land_points_table.setItem(
+                point_row, 3, QtWidgets.QTableWidgetItem(str(z_text))
+            )
             delete_button = QtWidgets.QPushButton("Delete")
-            delete_button.clicked.connect(lambda _checked=False, r=point_row: self._delete_land_point_row(r))
+            delete_button.clicked.connect(
+                lambda _checked=False, r=point_row: self._delete_land_point_row(r)
+            )
             self._land_points_table.setCellWidget(point_row, 4, delete_button)
         self._land_polygons_table.setRowCount(0)
         for polygon_row, polygon_data in enumerate(polygons):
@@ -3609,10 +4234,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             mode_text = polygon_data[2] if len(polygon_data) > 2 else "Land"
             height_text = polygon_data[3] if len(polygon_data) > 3 else "0"
             self._land_polygons_table.insertRow(polygon_row)
-            self._land_polygons_table.setItem(polygon_row, 0, QtWidgets.QTableWidgetItem(str(point_list_text)))
-            self._land_polygons_table.setItem(polygon_row, 1, self._land_polygon_color_item(str(color_text)))
+            self._land_polygons_table.setItem(
+                polygon_row, 0, QtWidgets.QTableWidgetItem(str(point_list_text))
+            )
+            self._land_polygons_table.setItem(
+                polygon_row, 1, self._land_polygon_color_item(str(color_text))
+            )
             self._land_set_polygon_mode_widget(polygon_row, str(mode_text))
-            self._land_polygons_table.setItem(polygon_row, 3, QtWidgets.QTableWidgetItem(str(height_text)))
+            self._land_polygons_table.setItem(
+                polygon_row, 3, QtWidgets.QTableWidgetItem(str(height_text))
+            )
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
         self._refresh_land_polygon_color_cells()
@@ -3647,7 +4278,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         combo.setCurrentText("Wall" if mode_text.strip().lower() == "wall" else "Land")
         combo.currentTextChanged.connect(self._on_land_polygon_mode_changed)
         self._land_polygons_table.setCellWidget(row, 2, combo)
-        self._land_polygons_table.setItem(row, 2, QtWidgets.QTableWidgetItem(combo.currentText()))
+        self._land_polygons_table.setItem(
+            row, 2, QtWidgets.QTableWidgetItem(combo.currentText())
+        )
 
     def _on_land_polygon_mode_changed(self, mode_text: str) -> None:
         combo = self.sender()
@@ -3655,13 +4288,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         for row in range(self._land_polygons_table.rowCount()):
             if self._land_polygons_table.cellWidget(row, 2) is combo:
-                self._land_polygons_table.setItem(row, 2, QtWidgets.QTableWidgetItem(mode_text))
+                self._land_polygons_table.setItem(
+                    row, 2, QtWidgets.QTableWidgetItem(mode_text)
+                )
                 break
         self._sync_land_polygons_overlay()
         self._persist_selected_land_object()
 
     def _update_land_object_edit_controls(self) -> None:
-        has_selection = 0 <= self._land_objects_table.currentRow() < len(self._land_saved_objects)
+        has_selection = (
+            0 <= self._land_objects_table.currentRow() < len(self._land_saved_objects)
+        )
         for button in (
             self._land_add_point_button,
             self._land_edit_point_button,
@@ -3681,17 +4318,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_edit_point_button.blockSignals(False)
 
     def serialize_land_objects(self) -> list[dict[str, object]]:
-        return [dict(entry) for entry in self._land_saved_objects if isinstance(entry, dict)]
+        return [
+            dict(entry) for entry in self._land_saved_objects if isinstance(entry, dict)
+        ]
 
     def load_land_objects(self, objects: list[dict[str, object]]) -> None:
-        self._land_saved_objects = [dict(entry) for entry in objects if isinstance(entry, dict)]
+        self._land_saved_objects = [
+            dict(entry) for entry in objects if isinstance(entry, dict)
+        ]
         self._land_objects_table.setRowCount(0)
         for row, entry in enumerate(self._land_saved_objects):
             points = entry.get("points", [])
             polygons = entry.get("polygons", [])
             self._land_objects_table.insertRow(row)
-            self._land_objects_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(entry.get("name", ""))))
-            self._land_objects_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{len(points)} points, {len(polygons)} polygons"))
+            self._land_objects_table.setItem(
+                row, 0, QtWidgets.QTableWidgetItem(str(entry.get("name", "")))
+            )
+            self._land_objects_table.setItem(
+                row,
+                1,
+                QtWidgets.QTableWidgetItem(
+                    f"{len(points)} points, {len(polygons)} polygons"
+                ),
+            )
         if self._land_saved_objects:
             self._land_objects_table.selectRow(0)
             self._load_selected_land_object()
@@ -3703,7 +4352,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._update_land_object_edit_controls()
 
     def _mark_land_objects_dirty(self) -> None:
-        if self.controller is not None and hasattr(self.controller, "set_land_objects_dirty"):
+        if self.controller is not None and hasattr(
+            self.controller, "set_land_objects_dirty"
+        ):
             self.controller.set_land_objects_dirty(True)
 
     def _export_selected_land_object_to_3d(self) -> None:
@@ -3726,17 +4377,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         if not file_path:
             return
-        export_text = self._build_land_object_3d_text(name=name, points=points, polygons=polygons)
+        export_text = self._build_land_object_3d_text(
+            name=name, points=points, polygons=polygons
+        )
         try:
             Path(file_path).write_text(export_text, encoding="utf-8")
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self, "Export Object to .3D", f"Could not save file:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self, "Export Object to .3D", f"Could not save file:\n{exc}"
+            )
             return
         self.show_status_message(f"Exported '{name}' to {file_path}")
 
     def _parse_land_object_export_data(
         self, payload: dict[str, object]
-    ) -> tuple[list[tuple[float, float, float]], list[tuple[tuple[int, ...], int]], str | None]:
+    ) -> tuple[
+        list[tuple[float, float, float]], list[tuple[tuple[int, ...], int]], str | None
+    ]:
         raw_points = payload.get("points", [])
         raw_polygons = payload.get("polygons", [])
         if not isinstance(raw_points, list) or not raw_points:
@@ -3753,7 +4410,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 y = float(str(y_text).strip())
                 z = float(str(z_text).strip() or "0")
             except ValueError:
-                return [], [], f"Point row {point_index} must contain numeric X, Y, and Z values."
+                return (
+                    [],
+                    [],
+                    f"Point row {point_index} must contain numeric X, Y, and Z values.",
+                )
             points.append((x, y, z))
 
         polygons: list[tuple[tuple[int, ...], int]] = []
@@ -3772,16 +4433,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             mode_text = str(polygon_row[2]).strip() if len(polygon_row) > 2 else "Land"
             mode = mode_text.lower()
             if mode not in ("land", "wall"):
-                return [], [], f"Polygon row {polygon_index} has invalid mode '{mode_text}'."
+                return (
+                    [],
+                    [],
+                    f"Polygon row {polygon_index} has invalid mode '{mode_text}'.",
+                )
             min_points = 2 if mode == "wall" else 3
             if len(indices) < min_points:
-                return [], [], f"Polygon row {polygon_index} needs at least {min_points} points."
+                return (
+                    [],
+                    [],
+                    f"Polygon row {polygon_index} needs at least {min_points} points.",
+                )
             if any(index < 0 or index >= len(points) for index in indices):
-                return [], [], f"Polygon row {polygon_index} references a point outside the valid range."
+                return (
+                    [],
+                    [],
+                    f"Polygon row {polygon_index} references a point outside the valid range.",
+                )
             try:
                 color = int(str(color_text).strip() or "0")
             except ValueError:
-                return [], [], f"Polygon row {polygon_index} has an invalid color index."
+                return (
+                    [],
+                    [],
+                    f"Polygon row {polygon_index} has an invalid color index.",
+                )
             height_text = str(polygon_row[3]).strip() if len(polygon_row) > 3 else "0"
             try:
                 height = float(height_text or "0")
@@ -3797,10 +4474,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                         x, y, z = points[base_index]
                         points.append((x, y, z + height))
                         elevated_index_by_base[base_index] = len(points) - 1
-                polygons.append((tuple(elevated_index_by_base[index] for index in indices), color))
+                polygons.append(
+                    (tuple(elevated_index_by_base[index] for index in indices), color)
+                )
                 continue
             if height <= 0.0:
-                return [], [], f"Polygon row {polygon_index} wall height must be greater than 0."
+                return (
+                    [],
+                    [],
+                    f"Polygon row {polygon_index} wall height must be greater than 0.",
+                )
             elevated_index_by_base: dict[int, int] = {}
             for base_index in indices:
                 if base_index not in elevated_index_by_base:
@@ -3808,15 +4491,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     points.append((x, y, z + height))
                     elevated_index_by_base[base_index] = len(points) - 1
             for start, end in zip(indices, indices[1:]):
-                polygons.append((
-                    (start, end, elevated_index_by_base[end], elevated_index_by_base[start]),
-                    color,
-                ))
+                polygons.append(
+                    (
+                        (
+                            start,
+                            end,
+                            elevated_index_by_base[end],
+                            elevated_index_by_base[start],
+                        ),
+                        color,
+                    )
+                )
         return points, polygons, None
 
     @staticmethod
     def _build_land_object_3d_text(
-        *, name: str, points: list[tuple[float, float, float]], polygons: list[tuple[tuple[int, ...], int]]
+        *,
+        name: str,
+        points: list[tuple[float, float, float]],
+        polygons: list[tuple[tuple[int, ...], int]],
     ) -> str:
         lines: list[str] = [
             "3D VERSION 3.0;",
@@ -3839,22 +4532,36 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for poly_index, (indices, _color) in enumerate(polygons):
             v1, v2, v3 = (f"p{indices[0]}", f"p{indices[1]}", f"p{indices[2]}")
             node_name = f"o{poly_index}"
-            lines.append(f"{node_name}: BSPF ({v1}, {v2}, {v3}), nil, poly{poly_index}, {prev_node};")
+            lines.append(
+                f"{node_name}: BSPF ({v1}, {v2}, {v3}), nil, poly{poly_index}, {prev_node};"
+            )
             prev_node = node_name
         last_poly_index = len(polygons) - 1
         last_indices = polygons[last_poly_index][0]
-        rv1, rv2, rv3 = (f"p{last_indices[0]}", f"p{last_indices[1]}", f"p{last_indices[2]}")
-        lines.append(f"root: BSPF ({rv1}, {rv2}, {rv3}), nil, poly{last_poly_index}, {prev_node};")
+        rv1, rv2, rv3 = (
+            f"p{last_indices[0]}",
+            f"p{last_indices[1]}",
+            f"p{last_indices[2]}",
+        )
+        lines.append(
+            f"root: BSPF ({rv1}, {rv2}, {rv3}), nil, poly{last_poly_index}, {prev_node};"
+        )
         return "\n".join(lines)
 
-    def _nearest_boundary_sample(self, track_point: tuple[float, float]) -> tuple[int, float, float | None] | None:
+    def _nearest_boundary_sample(
+        self, track_point: tuple[float, float]
+    ) -> tuple[int, float, float | None] | None:
         centerline_index = self._preview.section_manager.centerline_index
         sampled_dlongs = self._preview.section_manager.sampled_dlongs
         sections = self._preview.section_manager.sections
-        track_length = float(sum(max(0.0, float(section.length)) for section in sections))
+        track_length = float(
+            sum(max(0.0, float(section.length)) for section in sections)
+        )
         if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
             return None
-        projected_point, projected_dlong, _distance_sq = project_point_to_centerline(track_point, centerline_index, sampled_dlongs, track_length)
+        projected_point, projected_dlong, _distance_sq = project_point_to_centerline(
+            track_point, centerline_index, sampled_dlongs, track_length
+        )
         if projected_point is None or projected_dlong is None:
             return None
         mapped = dlong_to_section_position(sections, projected_dlong, track_length)
@@ -3865,9 +4572,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         fsects = self._preview.get_section_fsects(section_index)
         boundary_number_by_row = boundary_numbers_for_fsects(fsects)
         nearest: tuple[int, float, float | None] | None = None
-        for row_index, boundary_number in sorted(boundary_number_by_row.items(), key=lambda item: int(item[1])):
+        for row_index, boundary_number in sorted(
+            boundary_number_by_row.items(), key=lambda item: int(item[1])
+        ):
             fsect = fsects[row_index]
-            dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            dlat = (
+                float(fsect.start_dlat)
+                + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+            )
             elevation = self._sample_elevation_at_dlat(section_index, progress, dlat)
             dist = abs(dlat)
             if nearest is None or dist < nearest[1]:
@@ -3885,7 +4597,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if self._land_edit_point_button.isChecked():
                 selected_row = self._land_points_table.currentRow()
                 if selected_row < 0:
-                    self.show_status_message("Select a point row first, then click to move it.")
+                    self.show_status_message(
+                        "Select a point row first, then click to move it."
+                    )
                     return
                 self._move_land_point_row(selected_row, track_point)
                 return
@@ -3896,7 +4610,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if self._ruler_start_point is None:
             self._ruler_start_point = track_point
             self._update_ruler_overlay(track_point, track_point)
-            self.show_status_message("Ruler start point set. Move mouse and click again to finish.")
+            self.show_status_message(
+                "Ruler start point set. Move mouse and click again to finish."
+            )
             return
         self._update_ruler_overlay(self._ruler_start_point, track_point)
         self._ruler_mode_active = False
@@ -3906,7 +4622,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.show_status_message("Ruler frozen. Click Clear Ruler to remove it.")
 
     def _on_preview_pointer_drag_moved(self, point: QtCore.QPointF) -> None:
-        if self._dragging_land_point_row is None or not self._draw_land_objects_tab_active():
+        if (
+            self._dragging_land_point_row is None
+            or not self._draw_land_objects_tab_active()
+        ):
             return
         track_point = self._track_point_from_preview_position(point)
         if track_point is None:
@@ -3917,14 +4636,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._dragging_land_point_row = None
 
     def _start_land_point_drag(self, point: QtCore.QPointF) -> None:
-        if self._land_add_point_button.isChecked() or self._land_edit_point_button.isChecked():
+        if (
+            self._land_add_point_button.isChecked()
+            or self._land_edit_point_button.isChecked()
+        ):
             return
         track_point = self._track_point_from_preview_position(point)
         if track_point is None:
             return
         self._dragging_land_point_row = self._nearest_land_point_row(track_point)
 
-    def _nearest_land_point_row(self, track_point: tuple[float, float], max_distance: float = 800.0) -> int | None:
+    def _nearest_land_point_row(
+        self, track_point: tuple[float, float], max_distance: float = 800.0
+    ) -> int | None:
         nearest_row: int | None = None
         nearest_distance_sq = max_distance * max_distance
         for row in range(self._land_points_table.rowCount()):
@@ -3947,8 +4671,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if row < 0 or row >= self._land_points_table.rowCount():
             return
         self._land_points_table.blockSignals(True)
-        self._land_points_table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}"))
-        self._land_points_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}"))
+        self._land_points_table.setItem(
+            row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}")
+        )
+        self._land_points_table.setItem(
+            row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}")
+        )
         self._land_points_table.blockSignals(False)
         self._sync_land_points_overlay()
 
@@ -3995,7 +4723,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         dx = float(end_point[0]) - float(start_point[0])
         dy = float(end_point[1]) - float(start_point[1])
         length = (dx * dx + dy * dy) ** 0.5
-        self._preview.set_ruler_overlay(start_point, end_point, self.format_length(length))
+        self._preview.set_ruler_overlay(
+            start_point, end_point, self.format_length(length)
+        )
 
     def _clear_ruler(self) -> None:
         self._ruler_mode_active = False
@@ -4013,7 +4743,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         self._ruler_button.setText("Ruler")
 
-    def _sample_centerline_elevation(self, section_index: int, progress: float) -> float | None:
+    def _sample_centerline_elevation(
+        self, section_index: int, progress: float
+    ) -> float | None:
         return self._sample_elevation_at_dlat(section_index, progress, 0.0)
 
     def _sample_elevation_at_dlat(
@@ -4051,14 +4783,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         subsect = max(0.0, min(1.0, float(progress)))
         try:
-            lower_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, lower_idx)
-            upper_altitude, _ = sg_xsect_altitude_grade_at(sgfile, section_index, subsect, upper_idx)
+            lower_altitude, _ = sg_xsect_altitude_grade_at(
+                sgfile, section_index, subsect, lower_idx
+            )
+            upper_altitude, _ = sg_xsect_altitude_grade_at(
+                sgfile, section_index, subsect, upper_idx
+            )
         except Exception:
             return None
         if lower_idx == upper_idx or upper_dlat == lower_dlat:
             return float(lower_altitude)
         dlat_ratio = (dlat_value - lower_dlat) / (upper_dlat - lower_dlat)
-        return float(lower_altitude) + (float(upper_altitude) - float(lower_altitude)) * float(dlat_ratio)
+        return float(lower_altitude) + (
+            float(upper_altitude) - float(lower_altitude)
+        ) * float(dlat_ratio)
 
     def _refresh_query_track_info_label(self) -> None:
         self._zoom_factor_label.setText(self._format_query_track_zoom_text())
@@ -4082,9 +4820,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _format_query_track_text(self, result: dict[str, object]) -> str:
         adjusted_dlong = result.get("adjusted_dlong")
         adjusted_text = (
-            "–"
-            if adjusted_dlong is None
-            else self.format_length(float(adjusted_dlong))
+            "–" if adjusted_dlong is None else self.format_length(float(adjusted_dlong))
         )
         elevation = result.get("centerline_elevation")
         elevation_text = (
@@ -4132,7 +4868,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         pixels_per_500ths = max(float(transform[0]), 0.0)
         if pixels_per_500ths <= 0.0:
             return "Zoom Factor: –"
-        units_per_pixel = units_from_500ths(1.0 / pixels_per_500ths, self._current_measurement_unit())
+        units_per_pixel = units_from_500ths(
+            1.0 / pixels_per_500ths, self._current_measurement_unit()
+        )
         unit_label = self._measurement_unit_label(self._current_measurement_unit())
         return (
             f"Zoom Factor: 1 px = {units_per_pixel:.4f} {unit_label} "
@@ -4157,7 +4895,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         try:
             new_value = float(text)
         except ValueError:
-            reset_fsect_dlat_cell(self._fsect_table, row_index, column_index, fsects[row_index], unit=self._current_measurement_unit())
+            reset_fsect_dlat_cell(
+                self._fsect_table,
+                row_index,
+                column_index,
+                fsects[row_index],
+                unit=self._current_measurement_unit(),
+            )
             return
         new_value = self._fsect_dlat_from_display_units(new_value)
         normalize_on_commit = False
@@ -4183,9 +4927,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             next_row_index = row_index + 1
             if next_row_index >= len(fsects):
-                reset_fsect_delta_cell(self._fsect_table, row_index, column_index, fsects, unit=self._current_measurement_unit())
+                reset_fsect_delta_cell(
+                    self._fsect_table,
+                    row_index,
+                    column_index,
+                    fsects,
+                    unit=self._current_measurement_unit(),
+                )
                 return
-            base_value = fsects[row_index].start_dlat if column_index == 4 else fsects[row_index].end_dlat
+            base_value = (
+                fsects[row_index].start_dlat
+                if column_index == 4
+                else fsects[row_index].end_dlat
+            )
             if column_index == 4:
                 self._preview.update_fsection_dlat(
                     section_index,
@@ -4214,7 +4968,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_fsect_table_commit_timer(self) -> None:
         self._preview.refresh_fsections_preview()
-        if self.controller is not None and hasattr(self.controller, "mark_fsects_dirty"):
+        if self.controller is not None and hasattr(
+            self.controller, "mark_fsects_dirty"
+        ):
             self.controller.mark_fsects_dirty(True)
         if self._fsect_table_commit_needs_normalization:
             self.update_selected_section_fsect_table()
@@ -4232,9 +4988,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if item is None:
             item = QtWidgets.QTableWidgetItem("")
             item.setFlags(
-                item.flags()
-                | QtCore.Qt.ItemIsEditable
-                | QtCore.Qt.ItemIsSelectable
+                item.flags() | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsSelectable
             )
             self._fsect_table.setItem(row_index, column_index, item)
         self._fsect_table.blockSignals(True)
@@ -4249,15 +5003,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for delta_row in (row_index - 1, row_index):
             if delta_row < 0 or delta_row >= self._fsect_table.rowCount():
                 continue
-            set_fsect_delta_cell_text(self._fsect_table, 
+            set_fsect_delta_cell_text(
+                self._fsect_table,
                 delta_row,
                 4,
-                format_fsect_delta(fsects, delta_row, "start", unit=self._current_measurement_unit()),
+                format_fsect_delta(
+                    fsects, delta_row, "start", unit=self._current_measurement_unit()
+                ),
             )
-            set_fsect_delta_cell_text(self._fsect_table, 
+            set_fsect_delta_cell_text(
+                self._fsect_table,
                 delta_row,
                 5,
-                format_fsect_delta(fsects, delta_row, "end", unit=self._current_measurement_unit()),
+                format_fsect_delta(
+                    fsects, delta_row, "end", unit=self._current_measurement_unit()
+                ),
             )
 
     def update_selected_section_fsect_table(self) -> None:
@@ -4277,8 +5037,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _sync_pitwall_height_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()
-        wall_height_500ths = units_to_500ths(self._pitwall_wall_height_spin.value(), previous_unit)
-        armco_height_500ths = units_to_500ths(self._pitwall_armco_height_spin.value(), previous_unit)
+        wall_height_500ths = units_to_500ths(
+            self._pitwall_wall_height_spin.value(), previous_unit
+        )
+        armco_height_500ths = units_to_500ths(
+            self._pitwall_armco_height_spin.value(), previous_unit
+        )
 
         decimals = self._measurement_unit_decimals(current_unit)
         step = self._measurement_unit_step(current_unit)
@@ -4293,8 +5057,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             spin.setSuffix(suffix)
             spin.blockSignals(False)
 
-        self._pitwall_wall_height_spin.setValue(units_from_500ths(wall_height_500ths, current_unit))
-        self._pitwall_armco_height_spin.setValue(units_from_500ths(armco_height_500ths, current_unit))
+        self._pitwall_wall_height_spin.setValue(
+            units_from_500ths(wall_height_500ths, current_unit)
+        )
+        self._pitwall_armco_height_spin.setValue(
+            units_from_500ths(armco_height_500ths, current_unit)
+        )
 
     def _update_fsect_table_headers(self) -> None:
         unit_label = self._fsect_dlat_units_label()
@@ -4314,10 +5082,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._measurement_unit_label(self._current_measurement_unit())
 
     def _fsect_dlat_to_display_units(self, value: float) -> float:
-        return xsect_altitude_to_display_units(value, unit=self._current_measurement_unit())
+        return xsect_altitude_to_display_units(
+            value, unit=self._current_measurement_unit()
+        )
 
     def _fsect_dlat_from_display_units(self, value: float) -> float:
-        return fsect_dlat_from_display_units(value, unit=self._current_measurement_unit())
+        return fsect_dlat_from_display_units(
+            value, unit=self._current_measurement_unit()
+        )
 
     def _format_fsect_dlat(self, value: float) -> str:
         return format_fsect_dlat(value, unit=self._current_measurement_unit())
@@ -4326,19 +5098,27 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return altitude_display_to_feet(value, unit=self._current_measurement_unit())
 
     def feet_to_altitude_display(self, value_feet: float) -> float:
-        return feet_to_altitude_display(value_feet, unit=self._current_measurement_unit())
+        return feet_to_altitude_display(
+            value_feet, unit=self._current_measurement_unit()
+        )
 
     def altitude_display_step(self) -> float:
         return self._measurement_unit_step(self._current_measurement_unit())
 
     def _format_altitude_for_units(self, altitude_500ths: int) -> str:
-        return format_altitude_for_units(altitude_500ths, unit=self._current_measurement_unit())
+        return format_altitude_for_units(
+            altitude_500ths, unit=self._current_measurement_unit()
+        )
 
     def _sync_altitude_range_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()
 
-        current_min_500ths = units_to_500ths(self._altitude_min_spin.value(), previous_unit)
-        current_max_500ths = units_to_500ths(self._altitude_max_spin.value(), previous_unit)
+        current_min_500ths = units_to_500ths(
+            self._altitude_min_spin.value(), previous_unit
+        )
+        current_max_500ths = units_to_500ths(
+            self._altitude_max_spin.value(), previous_unit
+        )
 
         current_min_display = units_from_500ths(current_min_500ths, current_unit)
         current_max_display = units_from_500ths(current_max_500ths, current_unit)
@@ -4358,8 +5138,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._altitude_min_spin.setRange(spin_min, spin_max - spin_step)
         self._altitude_max_spin.setRange(spin_min + spin_step, spin_max)
-        self._altitude_min_spin.setValue(min(max(current_min_display, spin_min), spin_max - spin_step))
-        self._altitude_max_spin.setValue(max(min(current_max_display, spin_max), spin_min + spin_step))
+        self._altitude_min_spin.setValue(
+            min(max(current_min_display, spin_min), spin_max - spin_step)
+        )
+        self._altitude_max_spin.setValue(
+            max(min(current_max_display, spin_max), spin_min + spin_step)
+        )
 
     def _on_fsect_type_changed(
         self, row_index: int, widget: QtWidgets.QComboBox
@@ -4379,7 +5163,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             surface_type=surface_type,
             type2=type2,
         )
-        if self.controller is not None and hasattr(self.controller, "mark_fsects_dirty"):
+        if self.controller is not None and hasattr(
+            self.controller, "mark_fsects_dirty"
+        ):
             self.controller.mark_fsects_dirty(True)
 
     def _on_fsect_diagram_dlat_changed(
