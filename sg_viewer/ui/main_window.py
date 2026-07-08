@@ -576,6 +576,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._generate_elevation_change_button.setEnabled(False)
         self._generate_elevation_change_dialog: QtWidgets.QDialog | None = None
+        self._elevation_summary_label = QtWidgets.QLabel(
+            "Select a section and xsect to inspect elevation data."
+        )
+        self._elevation_summary_label.setWordWrap(True)
+        self._elevation_summary_label.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse
+        )
         self._track_stats_label = QtWidgets.QLabel("Track Length: –")
         self._section_summary_title_label = QtWidgets.QLabel("No section selected")
         self._section_summary_title_label.setStyleSheet(
@@ -824,6 +831,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             altitude_set_range_button=self._altitude_set_range_button,
             grade_control=grade_container,
             xsect_elevation_widget=self._xsect_elevation_widget,
+            elevation_summary_label=self._elevation_summary_label,
         )
 
         fsect_panel = create_fsect_panel(
@@ -1837,9 +1845,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         background_active = (
             has_background and self._background_image_checkbox.isChecked()
         )
-        for widget in (
-            self._background_brightness_spin,
-        ):
+        for widget in (self._background_brightness_spin,):
             widget.setEnabled(background_active)
         has_track = bool(self._preview.section_manager.sections)
         for widget in (self._track_opacity_spin,):
@@ -2423,6 +2429,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return format_length_with_secondary(
             value, unit=self._current_measurement_unit()
         )
+
+    def update_elevation_summary(self, text: str) -> None:
+        self._elevation_summary_label.setText(text)
 
     def update_elevation_inputs(
         self, altitude: int | None, grade: int | None, enabled: bool

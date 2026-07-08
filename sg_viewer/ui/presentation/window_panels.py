@@ -29,7 +29,9 @@ class StatsSidebarPanel:
     layout: QtWidgets.QVBoxLayout
 
 
-def create_toolbar_navigation_panel(*buttons: QtWidgets.QWidget) -> ToolbarNavigationPanel:
+def create_toolbar_navigation_panel(
+    *buttons: QtWidgets.QWidget,
+) -> ToolbarNavigationPanel:
     layout = QtWidgets.QHBoxLayout()
     for button in buttons:
         layout.addWidget(button)
@@ -94,14 +96,17 @@ def create_elevation_panel(
     altitude_set_range_button: QtWidgets.QPushButton,
     grade_control: QtWidgets.QWidget,
     xsect_elevation_widget: QtWidgets.QWidget,
+    elevation_summary_label: QtWidgets.QLabel,
 ) -> ElevationPanel:
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
     if elevation_layout.rowCount() > 0:
         layout.addLayout(elevation_layout)
-    layout.addWidget(QtWidgets.QLabel("X-Section Elevations"))
-    layout.addWidget(xsect_table)
-    layout.addWidget(edit_xsect_list_button)
+    summary_group = QtWidgets.QGroupBox("Selected Xsect")
+    summary_layout = QtWidgets.QVBoxLayout()
+    summary_layout.addWidget(elevation_summary_label)
+    summary_group.setLayout(summary_layout)
+    layout.addWidget(summary_group)
     controls = QtWidgets.QHBoxLayout()
     controls.addWidget(QtWidgets.QLabel("Track Elevation Profile:"))
     controls.addWidget(xsect_combo)
@@ -117,6 +122,9 @@ def create_elevation_panel(
     layout.addWidget(grade_control)
     layout.addWidget(QtWidgets.QLabel("Lateral Section Elevation Profile"))
     layout.addWidget(xsect_elevation_widget, stretch=1)
+    layout.addWidget(QtWidgets.QLabel("Xsect data"))
+    layout.addWidget(xsect_table)
+    layout.addWidget(edit_xsect_list_button)
     layout.addStretch()
     widget.setLayout(layout)
     return ElevationPanel(widget=widget, layout=layout)
