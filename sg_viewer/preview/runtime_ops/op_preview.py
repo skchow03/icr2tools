@@ -292,6 +292,25 @@ class _RuntimeCoreMixin(
         self._elevation_color_version += 1
         self._context.request_repaint()
 
+    def refresh_after_elevation_change(
+        self, section_id: int | None = None, *, throttled: bool = False
+    ) -> None:
+        """Invalidate elevation-sensitive preview render data and repaint.
+
+        SGDocument remains the source of truth for altitude/grade values; this
+        only bumps disposable render/cache versions used by the viewport.
+        """
+        _ = section_id
+        self._elevation_color_version += 1
+        if throttled:
+            request_repaint_throttled = getattr(
+                self._context, "request_repaint_throttled", None
+            )
+            if callable(request_repaint_throttled):
+                request_repaint_throttled(min_interval_ms=33)
+                return
+        self._context.request_repaint()
+
     @property
     def tsd_lines_version(self) -> int:
         return int(self._tsd_lines_version)

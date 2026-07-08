@@ -1856,21 +1856,41 @@ class SGViewerController:
         self._window.tso_visibility_sidebar.set_current_track_section_count(len(sections))
         self._run_integrity_checks_action.setEnabled(bool(sections))
 
+    def _refresh_preview_after_elevation_change(self, *, throttled: bool = False) -> None:
+        """Invalidate elevation-sensitive viewport caches and request repaint."""
+        preview = self._window.preview
+        refresh_after_elevation_change = getattr(
+            preview, "refresh_after_elevation_change", None
+        )
+        if callable(refresh_after_elevation_change):
+            refresh_after_elevation_change(throttled=throttled)
+            return
+        invalidate_gradient = getattr(
+            preview, "invalidate_centerline_elevation_gradient", None
+        )
+        if callable(invalidate_gradient):
+            invalidate_gradient()
+            return
+        if throttled and hasattr(preview, "request_repaint_throttled"):
+            preview.request_repaint_throttled(min_interval_ms=33)
+        elif hasattr(preview, "request_repaint"):
+            preview.request_repaint()
+
     def _sync_after_xsect_value_change(self) -> None:
-        """Sync profile and x-section views after altitude/grade data changes."""
+        """Sync profile, x-section views, and viewport after altitude/grade changes."""
         self._window.invalidate_adjusted_section_range_cache()
         self._last_tsd_adjusted_to_sg_ranges = ([], [])
         self._refresh_elevation_profile()
         self._refresh_xsect_elevation_panel()
         self._refresh_xsect_elevation_table()
+        self._refresh_preview_after_elevation_change()
 
     def _sync_after_xsect_value_change_lightweight(self) -> None:
         """Keep live slider edits responsive while still updating elevation graphs live."""
         self._window.invalidate_adjusted_section_range_cache()
         self._last_tsd_adjusted_to_sg_ranges = ([], [])
         self._elevation_panel_controller.refresh_elevation_profile(refresh_table=False)
-        if hasattr(self._window.preview, "request_repaint"):
-            self._window.preview.request_repaint_throttled(min_interval_ms=33)
+        self._refresh_preview_after_elevation_change(throttled=True)
 
     def _sync_after_selection_change(self) -> None:
         """Sync selection-bound controls and panels after selected section changes."""
