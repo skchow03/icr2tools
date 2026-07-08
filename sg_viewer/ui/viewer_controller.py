@@ -454,6 +454,7 @@ class SGViewerController:
             ),
             help=HelpActions(self._window, self._show_about_dialog),
         )
+        self._window.run_full_integrity_check_button.clicked.connect(self._run_sg_integrity_checks)
         self._publish_action_group_attributes()
 
     def _publish_action_group_attributes(self) -> None:

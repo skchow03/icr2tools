@@ -58,7 +58,6 @@ from sg_viewer.ui.presentation.units_presenter import (
 from sg_viewer.ui.presentation.window_panels import (
     create_elevation_panel,
     create_fsect_panel,
-    create_stats_sidebar_panel,
     create_toolbar_navigation_panel,
 )
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
@@ -462,6 +461,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._generate_elevation_change_button.setEnabled(False)
         self._generate_elevation_change_dialog: QtWidgets.QDialog | None = None
         self._track_stats_label = QtWidgets.QLabel("Track Length: –")
+        self._section_summary_title_label = QtWidgets.QLabel("No section selected")
+        self._section_summary_title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self._section_summary_detail_label = QtWidgets.QLabel("Select a section to inspect geometry, connections, and metadata.")
+        self._section_summary_detail_label.setWordWrap(True)
+        self._section_health_labels: dict[str, tuple[QtWidgets.QLabel, QtWidgets.QLabel]] = {}
+        self._section_geometry_labels: dict[str, QtWidgets.QLabel] = {}
+        self._section_connection_labels: dict[str, QtWidgets.QLabel] = {}
+        self._section_boundary_labels: dict[str, QtWidgets.QLabel] = {}
+        self._section_subsection_labels: dict[str, QtWidgets.QLabel] = {}
+        self._section_context_labels: dict[str, QtWidgets.QLabel] = {}
+        self._section_view_labels: dict[str, QtWidgets.QLabel] = {}
+        self._section_advanced_labels: dict[str, QtWidgets.QLabel] = {}
+        self._run_full_integrity_check_button = QtWidgets.QPushButton("Run Full Integrity Check…")
+        self._section_split_action_button = QtWidgets.QPushButton("Split")
+        self._section_delete_action_button = QtWidgets.QPushButton("Delete Section")
+        self._section_set_start_finish_action_button = QtWidgets.QPushButton("Set Start/Finish")
+        self._section_split_action_button.clicked.connect(self._split_section_button.click)
+        self._section_delete_action_button.clicked.connect(self._delete_section_button.click)
+        self._section_set_start_finish_action_button.clicked.connect(self._set_start_finish_button.click)
         self._section_index_label = QtWidgets.QLabel("Current Section: –")
         self._section_start_dlong_label = QtWidgets.QLabel("Starting DLONG: –")
         self._section_end_dlong_label = QtWidgets.QLabel("Ending DLONG: –")
@@ -1112,28 +1130,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column_layout.addWidget(self._quick_display_toolbar)
         preview_column_layout.addWidget(self._mouse_usage_bar)
         preview_column_layout.addWidget(self._preview, stretch=5)
-        stats_panel = create_stats_sidebar_panel(
-            self._track_stats_label,
-            self._section_index_label,
-            self._section_start_dlong_label,
-            self._section_end_dlong_label,
-            self._previous_label,
-            self._next_label,
-            self._section_length_label,
-            self._section_subindex_count_label,
-            self._section_subindex_starts_label,
-            self._previous_section_length_label,
-            self._next_section_length_label,
-            self._adjusted_section_start_dlong_label,
-            self._adjusted_section_end_dlong_label,
-            self._adjusted_section_length_label,
-            self._radius_label,
-            self._section_boundary_dlats_label,
-            self._zoom_factor_label,
-        )
-        self._stats_sidebar_panel = stats_panel.widget
+        stats_panel = self._create_section_inspector_panel()
+        self._stats_sidebar_panel = stats_panel
         self._build_grouped_sidebar_tabs(
-            section_widget=stats_panel.widget,
+            section_widget=stats_panel,
             elevation_widget=elevation_panel.widget,
             fsect_widget=fsect_panel.widget,
         )
@@ -1231,6 +1231,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def query_track_button(self) -> QtWidgets.QPushButton:
         return self._query_track_button
+
+    @property
+    def run_full_integrity_check_button(self) -> QtWidgets.QPushButton:
+        return self._run_full_integrity_check_button
 
     @property
     def ruler_button(self) -> QtWidgets.QPushButton:
@@ -1338,6 +1342,94 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if child_index >= 0:
                 return active_widget.tabText(child_index).rstrip("*")
         return self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+
+
+    def _create_section_inspector_panel(self) -> QtWidgets.QWidget:
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+        layout.addWidget(self._section_summary_title_label)
+        layout.addWidget(self._section_summary_detail_label)
+
+        def group(title: str) -> QtWidgets.QFormLayout:
+            box = QtWidgets.QGroupBox(title)
+            form = QtWidgets.QFormLayout(box)
+            form.setContentsMargins(8, 8, 8, 8)
+            form.setSpacing(4)
+            form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            layout.addWidget(box)
+            return form
+
+        health = group("Section Health")
+        for key, label in (
+            ("selected", "Selected section"), ("length", "Length"),
+            ("previous", "Previous connection"), ("next", "Next connection"),
+            ("start_tangency", "Start tangency"), ("end_tangency", "End tangency"),
+            ("radius", "Curve radius"), ("boundaries", "Boundaries"),
+            ("fsects", "Fsects"), ("dlong", "DLONG range"), ("adjusted", "Adjusted DLONGs"),
+        ):
+            status = QtWidgets.QLabel("Unknown")
+            detail = QtWidgets.QLabel("–")
+            detail.setWordWrap(True)
+            row = QtWidgets.QWidget()
+            row_layout = QtWidgets.QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.addWidget(status)
+            row_layout.addWidget(detail, stretch=1)
+            health.addRow(label, row)
+            self._section_health_labels[key] = (status, detail)
+        health.addRow("", self._run_full_integrity_check_button)
+
+        for title, labels, store in (
+            ("Geometry", ("Type", "Start DLONG", "End DLONG", "Length", "Radius", "Start point", "End point", "Start heading", "End heading", "Curve center", "Curve arc/sweep", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_geometry_labels),
+            ("Connections", ("Previous", "Next", "Previous length", "Next length", "Previous status", "Next status", "Gap to previous", "Gap to next", "Heading mismatch previous", "Heading mismatch next"), self._section_connection_labels),
+            ("Boundaries / Walls", ("B0", "B1", "Summary"), self._section_boundary_labels),
+            ("Subsections / .3D", ("Count", "Starts", "Adjusted start", "Adjusted end", "Adjusted length"), self._section_subsection_labels),
+            ("Track Context", ("Track length", "Miles", "Section position", "Lap percentage"), self._section_context_labels),
+            ("View", ("Zoom", "Units"), self._section_view_labels),
+            ("Advanced / Raw SG Values", ("Raw section id", "Raw previous id", "Raw next id", "SG radius", "SG angles", "Subindex starts"), self._section_advanced_labels),
+        ):
+            form = group(title)
+            for label in labels:
+                value = QtWidgets.QLabel("–")
+                value.setWordWrap(True)
+                form.addRow(label, value)
+                store[label] = value
+
+        actions = QtWidgets.QGroupBox("Section Actions")
+        action_layout = QtWidgets.QGridLayout(actions)
+        action_layout.addWidget(self._section_split_action_button, 0, 0)
+        action_layout.addWidget(self._section_delete_action_button, 0, 1)
+        action_layout.addWidget(self._section_set_start_finish_action_button, 1, 0, 1, 2)
+        layout.addWidget(actions)
+        layout.addStretch(1)
+        scroll.setWidget(content)
+        return scroll
+
+    def _set_section_value(self, store: dict[str, QtWidgets.QLabel], key: str, value: str) -> None:
+        if key in store:
+            store[key].setText(value)
+
+    def _set_section_health(self, key: str, status: str, detail: str = "–") -> None:
+        labels = self._section_health_labels.get(key)
+        if labels is None:
+            return
+        status_label, detail_label = labels
+        status_label.setText(status)
+        detail_label.setText(detail)
+
+    def _format_point(self, point: tuple[float, float] | None) -> str:
+        if point is None:
+            return "–"
+        return f"X {self.format_length(point[0])}, Y {self.format_length(point[1])}"
+
+    def _format_heading(self, heading: tuple[float, float] | None) -> str:
+        if heading is None:
+            return "–"
+        return f"({heading[0]:.4f}, {heading[1]:.4f})"
 
     def _build_grouped_sidebar_tabs(
         self,
@@ -2340,6 +2432,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def update_selection_sidebar(self, selection: SectionSelection | None) -> None:
         if selection is None:
             self._selected_section_index = None
+            self._section_summary_title_label.setText("No section selected")
+            self._section_summary_detail_label.setText("Select a section to inspect geometry, connections, and metadata.")
+            for key in self._section_health_labels:
+                self._set_section_health(key, "Unknown", "–")
+            for store in (self._section_geometry_labels, self._section_connection_labels, self._section_boundary_labels, self._section_subsection_labels, self._section_context_labels, self._section_view_labels, self._section_advanced_labels):
+                for label in store.values():
+                    label.setText("–")
+            self._set_section_value(self._section_view_labels, "Units", self._measurement_unit_label(self._current_measurement_unit()))
+            self._set_section_value(self._section_view_labels, "Zoom", self._zoom_factor_label.text().removeprefix("Zoom Factor: "))
+            self._section_split_action_button.setEnabled(False)
+            self._section_delete_action_button.setEnabled(False)
+            self._section_set_start_finish_action_button.setEnabled(False)
             self._section_index_label.setText("Current Section: –")
             self._section_start_dlong_label.setText("Starting DLONG: –")
             self._section_end_dlong_label.setText("Ending DLONG: –")
@@ -2357,6 +2461,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
 
         self._selected_section_index = selection.index
+        radius_value = selection.sg_radius if selection.sg_radius is not None else selection.radius
+        type_name = selection.type_name.title() if selection.type_name else "Unknown"
+        summary_parts = [
+            f"{type_name}",
+            f"DLONG {self.format_length(selection.start_dlong)}–{self.format_length(selection.end_dlong)}",
+            f"Length {self.format_length_with_secondary(selection.length)}",
+        ]
+        if radius_value is not None and str(selection.type_name).lower() == "curve":
+            summary_parts.append(f"Radius {self.format_length(radius_value)}")
+        starts = self._section_subindex_metadata.get(int(selection.index), tuple())
+        if starts:
+            summary_parts.append(f"{len(starts)} subsections")
+        self._section_summary_title_label.setText(f"Section {selection.index}")
+        self._section_summary_detail_label.setText(" · ".join(summary_parts))
+        self._section_split_action_button.setEnabled(self._split_section_button.isEnabled())
+        self._section_delete_action_button.setEnabled(self._delete_section_button.isEnabled())
+        self._section_set_start_finish_action_button.setEnabled(self._set_start_finish_button.isEnabled())
         self._section_index_label.setText(f"Current Section: {selection.index}")
         self._section_start_dlong_label.setText(
             f"Starting DLONG: {self.format_length(selection.start_dlong)}"
@@ -2387,8 +2508,88 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._profile_widget.set_selected_range(selected_range)
         self._update_fsect_table(selection.index)
         self._update_boundary_dlat_labels(selection.index)
+        self._update_section_inspector_details(selection)
 
 
+
+
+    def _update_section_inspector_details(self, selection: SectionSelection) -> None:
+        sections, track_length = self._preview.get_section_set()
+        total = len(sections)
+        adjusted = self._adjusted_section_dlongs(selection.index)
+        starts = self._section_subindex_metadata.get(int(selection.index), tuple())
+        radius_value = selection.sg_radius if selection.sg_radius is not None else selection.radius
+        prev_ok = selection.previous_id != -1 and selection.previous_length is not None
+        next_ok = selection.next_id != -1 and selection.next_length is not None
+
+        self._set_section_health("selected", "OK", f"Section {selection.index}")
+        self._set_section_health("length", "OK" if selection.length > 0 else "Error", self.format_length_with_secondary(selection.length))
+        self._set_section_health("previous", "OK" if prev_ok else "Warning", "Not connected" if selection.previous_id == -1 else f"Section {selection.previous_id}")
+        self._set_section_health("next", "OK" if next_ok else "Warning", "Not connected" if selection.next_id == -1 else f"Section {selection.next_id}")
+        self._set_section_health("start_tangency", "Unknown", "Heading comparison unavailable")
+        self._set_section_health("end_tangency", "Unknown", "Heading comparison unavailable")
+        if str(selection.type_name).lower() == "curve" and radius_value is not None:
+            self._set_section_health("radius", "Warning" if abs(float(radius_value)) < 1.0 else "OK", self.format_length(radius_value))
+        else:
+            self._set_section_health("radius", "OK", "Not a curve")
+        fsects = self._preview.get_section_fsects(selection.index)
+        boundary_number_by_row = boundary_numbers_for_fsects(fsects)
+        self._set_section_health("boundaries", "OK" if boundary_number_by_row else "Unknown", "B0/B1 present" if len(boundary_number_by_row) >= 2 else ("Some boundary data present" if boundary_number_by_row else "No boundary data"))
+        self._set_section_health("fsects", "OK" if fsects else "Unknown", f"{len(fsects)} rows" if fsects else "No fsect rows")
+        self._set_section_health("dlong", "OK" if selection.end_dlong >= selection.start_dlong else "Error", f"{self.format_length(selection.start_dlong)}–{self.format_length(selection.end_dlong)}")
+        self._set_section_health("adjusted", "OK" if adjusted is not None else "Unknown", "Available" if adjusted is not None else "Unavailable")
+
+        geom = self._section_geometry_labels
+        self._set_section_value(geom, "Type", selection.type_name.title())
+        self._set_section_value(geom, "Start DLONG", self.format_length(selection.start_dlong))
+        self._set_section_value(geom, "End DLONG", self.format_length(selection.end_dlong))
+        self._set_section_value(geom, "Length", self.format_length_with_secondary(selection.length))
+        self._set_section_value(geom, "Radius", self.format_length(radius_value) if radius_value is not None and str(selection.type_name).lower() == "curve" else "–")
+        self._set_section_value(geom, "Start point", self._format_point(selection.start_point))
+        self._set_section_value(geom, "End point", self._format_point(selection.end_point))
+        self._set_section_value(geom, "Start heading", self._format_heading(selection.start_heading or selection.sg_start_heading))
+        self._set_section_value(geom, "End heading", self._format_heading(selection.end_heading or selection.sg_end_heading))
+        self._set_section_value(geom, "Curve center", self._format_point(selection.center))
+        self._set_section_value(geom, "Curve arc/sweep", f"{selection.sg_sang1}/{selection.sg_sang2} → {selection.sg_eang1}/{selection.sg_eang2}" if selection.sg_sang1 is not None else "–")
+        if adjusted is not None:
+            start, end, length = adjusted
+            self._set_section_value(geom, "Adjusted start", self.format_length(start)); self._set_section_value(geom, "Adjusted end", self.format_length(end)); self._set_section_value(geom, "Adjusted length", self.format_length_with_secondary(length))
+        conn = self._section_connection_labels
+        self._set_section_value(conn, "Previous", "Not connected" if selection.previous_id == -1 else f"Section {selection.previous_id}")
+        self._set_section_value(conn, "Next", "Not connected" if selection.next_id == -1 else f"Section {selection.next_id}")
+        self._set_section_value(conn, "Previous length", self.format_length_with_secondary(selection.previous_length) if selection.previous_length is not None else "–")
+        self._set_section_value(conn, "Next length", self.format_length_with_secondary(selection.next_length) if selection.next_length is not None else "–")
+        self._set_section_value(conn, "Previous status", "Connected" if prev_ok else "Unknown")
+        self._set_section_value(conn, "Next status", "Connected" if next_ok else "Unknown")
+        self._set_section_value(conn, "Gap to previous", "Unknown")
+        self._set_section_value(conn, "Gap to next", "Unknown")
+        self._set_section_value(conn, "Heading mismatch previous", "Unknown")
+        self._set_section_value(conn, "Heading mismatch next", "Unknown")
+
+        self._set_section_value(self._section_boundary_labels, "Summary", f"{len(boundary_number_by_row)} boundary rows" if boundary_number_by_row else "No boundary rows")
+        for name in ("B0", "B1"):
+            self._set_section_value(self._section_boundary_labels, name, "–")
+        for row_index, boundary_number in sorted(boundary_number_by_row.items(), key=lambda item: int(item[1])):
+            if f"B{boundary_number}" in self._section_boundary_labels:
+                fsect = fsects[row_index]
+                self._set_section_value(self._section_boundary_labels, f"B{boundary_number}", f"{self._format_fsect_dlat(fsect.start_dlat)} → {self._format_fsect_dlat(fsect.end_dlat)} {self._fsect_dlat_units_label()}")
+
+        sub = self._section_subsection_labels
+        self._set_section_value(sub, "Count", str(len(starts)))
+        self._set_section_value(sub, "Starts", ", ".join(self.format_length(v) for v in starts) if starts else "–")
+        if adjusted is not None:
+            start, end, length = adjusted
+            self._set_section_value(sub, "Adjusted start", self.format_length(start)); self._set_section_value(sub, "Adjusted end", self.format_length(end)); self._set_section_value(sub, "Adjusted length", self.format_length_with_secondary(length))
+
+        ctx = self._section_context_labels
+        self._set_section_value(ctx, "Track length", self.format_length(track_length) if track_length else "–")
+        self._set_section_value(ctx, "Miles", f"{float(track_length) / 5280.0:.3f} mi" if track_length else "–")
+        self._set_section_value(ctx, "Section position", f"{selection.index + 1} of {total}" if total else "–")
+        self._set_section_value(ctx, "Lap percentage", f"{selection.start_dlong / track_length * 100:.1f}%–{selection.end_dlong / track_length * 100:.1f}%" if track_length else "–")
+        self._set_section_value(self._section_view_labels, "Zoom", self._zoom_factor_label.text().removeprefix("Zoom Factor: "))
+        self._set_section_value(self._section_view_labels, "Units", self._measurement_unit_label(self._current_measurement_unit()))
+        adv = self._section_advanced_labels
+        self._set_section_value(adv, "Raw section id", str(selection.index)); self._set_section_value(adv, "Raw previous id", str(selection.previous_id)); self._set_section_value(adv, "Raw next id", str(selection.next_id)); self._set_section_value(adv, "SG radius", str(selection.sg_radius) if selection.sg_radius is not None else "–"); self._set_section_value(adv, "SG angles", f"{selection.sg_sang1}/{selection.sg_sang2}/{selection.sg_eang1}/{selection.sg_eang2}"); self._set_section_value(adv, "Subindex starts", repr(starts))
 
     def set_section_subindex_metadata(self, metadata: dict[int, tuple[int, ...]]) -> None:
         self._section_subindex_metadata = dict(metadata)
