@@ -1350,6 +1350,16 @@ class SGViewerController:
 
         self._reset_altitude_range_500ths(bounds[0], bounds[1])
 
+    def _reset_altitude_range(self, min_altitude: float, max_altitude: float) -> None:
+        """Reset the altitude range using raw SG altitude units.
+
+        Feature controllers call this host method during startup before a
+        track-derived range is available. Keep this compatibility wrapper so
+        those controllers do not need to know about the viewer controller's
+        unit-specific helper name.
+        """
+        self._reset_altitude_range_500ths(min_altitude, max_altitude)
+
     def _reset_altitude_range_500ths(self, min_altitude: float, max_altitude: float) -> None:
         min_spin = self._window.altitude_min_spin
         max_spin = self._window.altitude_max_spin
