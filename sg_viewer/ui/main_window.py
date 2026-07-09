@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 import math
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.sg_elevation import sg_xsect_altitude_grade_at
 from track_viewer.geometry import project_point_to_centerline
 
 from sg_viewer.model.sg_document import SGDocument
+from sg_viewer.sg_create_marquee_messages import random_marquee_message
 from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 from sg_viewer.preview.context import PreviewContext
@@ -129,6 +131,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._ruler_frozen = False
         self._sunny_palette_colors: list[QtGui.QColor] | None = None
         self._updating_land_polygon_color_cells = False
+        self._marquee_status_label = QtWidgets.QLabel()
+        self._marquee_status_label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+        self._marquee_status_label.setAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
+        )
+        self._marquee_status_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
+        )
+        self._marquee_status_label.setMinimumWidth(200)
+        self._marquee_status_text = ""
+        self._marquee_status_offset = 0
+        self._marquee_last_message = ""
+        self._marquee_status_timer = QtCore.QTimer(self)
+        self._marquee_status_timer.setInterval(120)
+        self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
 
         shortcut_labels = {
             "previous_section": "Ctrl+PgUp",
@@ -1354,6 +1371,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(splitter)
         container.setLayout(layout)
         self.setCentralWidget(container)
+        self._setup_marquee_status_bar()
 
         if wire_features:
             from sg_viewer.ui.app_bootstrap import wire_window_features
@@ -1384,6 +1402,33 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._query_track_freeze_shortcut.activated.connect(
             self._toggle_query_track_info_freeze
         )
+
+    def _setup_marquee_status_bar(self) -> None:
+        status_bar = self.statusBar()
+        status_bar.setSizeGripEnabled(False)
+        status_bar.addPermanentWidget(self._marquee_status_label, 1)
+        self._queue_next_marquee_status_message()
+        self._marquee_status_timer.start()
+
+    def _queue_next_marquee_status_message(self) -> None:
+        message = random_marquee_message()
+        if len(self._marquee_status_text) > 1:
+            for _attempt in range(5):
+                if message != self._marquee_last_message:
+                    break
+                message = random_marquee_message()
+        self._marquee_last_message = message
+        self._marquee_status_text = f"     {message}     "
+        self._marquee_status_offset = 0
+
+    def _advance_marquee_status(self) -> None:
+        if not self._marquee_status_text:
+            self._queue_next_marquee_status_message()
+        visible_text = self._marquee_status_text[self._marquee_status_offset :]
+        self._marquee_status_label.setText(visible_text)
+        self._marquee_status_offset += 1
+        if self._marquee_status_offset >= len(self._marquee_status_text):
+            self._queue_next_marquee_status_message()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.controller is not None and hasattr(self.controller, "confirm_close"):
