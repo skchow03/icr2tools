@@ -1093,9 +1093,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_file_layout.setVerticalSpacing(6)
         mrk_file_layout.addWidget(self._generate_pitwall_button, 0, 0)
         mrk_file_layout.addWidget(self._mrk_generate_file_button, 0, 1)
-        mrk_file_layout.addWidget(self._mrk_export_locations_button, 1, 0, 1, 2)
+        mrk_file_layout.addWidget(self._mrk_export_locations_button, 0, 2)
         mrk_file_group.setLayout(mrk_file_layout)
-        mrk_layout.addWidget(mrk_file_group)
 
         mrk_buttons = QtWidgets.QGridLayout()
         mrk_buttons.setHorizontalSpacing(8)
@@ -1108,6 +1107,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
         mrk_layout.addWidget(self._mrk_entries_table)
+        mrk_layout.addWidget(mrk_file_group)
         mrk_layout.setStretchFactor(self._mrk_entries_table, 1)
         self._mrk_sidebar.setLayout(mrk_layout)
 
