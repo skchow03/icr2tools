@@ -46,22 +46,27 @@ def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(qapp
         window._marquee_status_label.resize(320, window._marquee_status_label.height())
         window._queue_next_marquee_status_message()
 
+        assert window._marquee_status_timer.interval() == 16
+
         space_width = window._marquee_status_label.fontMetrics().horizontalAdvance(" ")
         leading_spaces = len(window._marquee_status_text) - len(
             window._marquee_status_text.lstrip(" ")
         )
         assert leading_spaces * space_width >= window._marquee_status_label.width()
         assert "FIRST" in window._marquee_status_text
-        assert window._marquee_status_text.endswith("\t" * 5)
+        assert window._marquee_status_text.endswith(" " * 80)
 
-        for _ in range(len(window._marquee_status_text)):
+        window._advance_marquee_status()
+        assert window._marquee_status_offset_px == 1
+
+        for _ in range(window._remaining_marquee_width() + 1):
             window._advance_marquee_status()
             if "SECOND" in window._marquee_status_text:
                 break
 
         assert "SECOND" in window._marquee_status_text
         assert "FIRST" in window._marquee_status_text
-        assert window._marquee_status_text.split("FIRST", 1)[1].startswith("\t" * 5)
+        assert window._marquee_status_text.split("FIRST", 1)[1].startswith(" " * 80)
     finally:
         window.close()
 
