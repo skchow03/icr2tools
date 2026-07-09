@@ -84,6 +84,37 @@ class GeometryTabButton(QtWidgets.QPushButton):
         return self._requested_enabled
 
 
+class MarqueeStatusLabel(QtWidgets.QLabel):
+    """Status label that paints marquee text at a pixel offset for smooth motion."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._marquee_text = ""
+        self._marquee_offset_px = 0
+
+    def set_marquee_text(self, text: str, offset_px: int) -> None:
+        self._marquee_text = text
+        self._marquee_offset_px = max(0, offset_px)
+        self.setText(text)
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        if not self._marquee_text:
+            super().paintEvent(event)
+            return
+
+        painter = QtGui.QPainter(self)
+        painter.setFont(self.font())
+        painter.setPen(self.palette().color(QtGui.QPalette.WindowText))
+        text_rect = self.contentsRect()
+        text_rect.translate(-self._marquee_offset_px, 0)
+        painter.drawText(
+            text_rect,
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+            self._marquee_text,
+        )
+
+
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
 
@@ -131,7 +162,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._ruler_frozen = False
         self._sunny_palette_colors: list[QtGui.QColor] | None = None
         self._updating_land_polygon_color_cells = False
-        self._marquee_status_label = QtWidgets.QLabel()
+        self._marquee_status_label = MarqueeStatusLabel()
         self._marquee_status_label.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
         self._marquee_status_label.setAlignment(
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
@@ -142,10 +173,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_status_label.setMinimumWidth(200)
         self._marquee_status_text = ""
         self._marquee_status_offset = 0
+        self._marquee_status_offset_px = 0
         self._marquee_last_message = ""
-        self._marquee_entry_gap_spaces = 20
+        self._marquee_entry_gap_spaces = 80
         self._marquee_status_timer = QtCore.QTimer(self)
-        self._marquee_status_timer.setInterval(120)
+        self._marquee_status_timer.setInterval(16)
         self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
 
         shortcut_labels = {
@@ -1437,6 +1469,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         entry_padding = self._marquee_spaces_for_width(self._marquee_status_label.width())
         self._marquee_status_text = entry_padding
         self._marquee_status_offset = 0
+        self._marquee_status_offset_px = 0
         self._append_next_marquee_status_message()
 
     def _remaining_marquee_width(self) -> int:
@@ -1457,9 +1490,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._append_next_marquee_status_message()
 
         visible_text = self._marquee_status_text[self._marquee_status_offset :]
-        self._marquee_status_label.setText(visible_text)
-        self._marquee_status_offset += 1
+        self._marquee_status_label.set_marquee_text(
+            visible_text, self._marquee_status_offset_px
+        )
+        self._marquee_status_offset_px += 1
+        self._advance_marquee_character_offset()
         self._discard_scrolled_marquee_text()
+
+    def _advance_marquee_character_offset(self) -> None:
+        while self._marquee_status_offset < len(self._marquee_status_text):
+            current_character = self._marquee_status_text[self._marquee_status_offset]
+            character_width = max(
+                1,
+                self._marquee_status_label.fontMetrics().horizontalAdvance(
+                    current_character
+                ),
+            )
+            if self._marquee_status_offset_px < character_width:
+                return
+            self._marquee_status_offset_px -= character_width
+            self._marquee_status_offset += 1
 
     def _discard_scrolled_marquee_text(self) -> None:
         if self._marquee_status_offset <= 0:
