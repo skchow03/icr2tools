@@ -20,6 +20,8 @@ from sg_viewer.ui.fsection_type_utils import (
     fsect_type_options,
 )
 from sg_viewer.ui.window_title import build_window_title
+from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
+from sg_viewer.services import sg_rendering
 from sg_viewer.ui.altitude_units import (
     DEFAULT_ALTITUDE_MAX_FEET,
     DEFAULT_ALTITUDE_MIN_FEET,
@@ -787,6 +789,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._fsect_table.setMinimumHeight(160)
         self._fsect_table.cellChanged.connect(self._on_fsect_cell_changed)
+        self._fsect_table.currentCellChanged.connect(
+            self._on_fsect_current_cell_changed
+        )
         self._fsect_diagram = FsectDiagramWidget(
             on_dlat_changed=self._on_fsect_diagram_dlat_changed,
             on_drag_started=self._on_fsect_diagram_drag_started,
@@ -3711,6 +3716,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             for label, surface_type, type2 in fsect_type_options():
                 combo.addItem(label, (surface_type, type2))
             combo.setCurrentIndex(fsect_type_index(fsect.surface_type, fsect.type2))
+            self._apply_fsect_type_combo_color(combo)
             combo.currentIndexChanged.connect(
                 lambda _idx, index=fsect_index, widget=combo: self._on_fsect_type_changed(
                     index, widget
@@ -3766,6 +3772,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._fsect_table.setItem(4, column_index, start_delta_item)
 
         self._updating_fsect_table = False
+        self._update_fsect_selected_column_header()
         self._fsect_table.resizeColumnsToContents()
         prev_fsects: list[PreviewFSection] = []
         next_fsects: list[PreviewFSection] = []
@@ -5291,6 +5298,73 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ]
         )
 
+    def _on_fsect_current_cell_changed(
+        self,
+        current_row: int,
+        current_column: int,
+        previous_row: int,
+        previous_column: int,
+    ) -> None:
+        _ = (current_row, current_column, previous_row, previous_column)
+        self._update_fsect_selected_column_header()
+
+    def _update_fsect_selected_column_header(self) -> None:
+        selected_column = self._fsect_table.currentColumn()
+        for column_index in range(self._fsect_table.columnCount()):
+            item = self._fsect_table.horizontalHeaderItem(column_index)
+            if item is None:
+                item = QtWidgets.QTableWidgetItem(
+                    str(self._fsect_model_index_for_column(column_index))
+                )
+                self._fsect_table.setHorizontalHeaderItem(column_index, item)
+            if column_index == selected_column:
+                item.setBackground(QtGui.QColor(255, 230, 130))
+                item.setForeground(QtGui.QColor(0, 0, 0))
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            else:
+                item.setBackground(QtGui.QBrush())
+                item.setForeground(QtGui.QBrush())
+                font = item.font()
+                font.setBold(False)
+                item.setFont(font)
+        self._fsect_table.horizontalHeader().viewport().update()
+
+    @staticmethod
+    def _fsect_type_cell_color(surface_type: int, type2: int) -> QtGui.QColor:
+        style = resolve_fsection_style(surface_type, type2)
+        if (
+            style is not None
+            and style.role == "boundary"
+            and style.boundary_color is not None
+        ):
+            color = QtGui.QColor(style.boundary_color)
+        elif style is not None and style.surface_color is not None:
+            color = QtGui.QColor(style.surface_color)
+        else:
+            color = QtGui.QColor(sg_rendering.DEFAULT_SURFACE_COLOR)
+        return color.lighter(160)
+
+    def _apply_fsect_type_combo_color(self, combo: QtWidgets.QComboBox) -> None:
+        selection = combo.currentData()
+        if selection is None:
+            combo.setStyleSheet("")
+            return
+        surface_type, type2 = selection
+        color = self._fsect_type_cell_color(int(surface_type), int(type2))
+        text_color = "#000000" if color.lightness() >= 128 else "#ffffff"
+        combo.setStyleSheet(
+            "QComboBox { "
+            f"background-color: {color.name()}; "
+            f"color: {text_color}; "
+            "}"
+            "QComboBox QAbstractItemView { "
+            "background-color: palette(base); "
+            "color: palette(text); "
+            "}"
+        )
+
     def _fsect_model_index_for_column(self, column_index: int) -> int:
         return self._fsect_table.columnCount() - 1 - column_index
 
@@ -5384,6 +5458,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if selection is None:
             return
         surface_type, type2 = selection
+        self._apply_fsect_type_combo_color(widget)
         self._preview.update_fsection_type(
             section_index,
             row_index,
