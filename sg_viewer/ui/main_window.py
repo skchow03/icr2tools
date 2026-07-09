@@ -143,7 +143,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_status_text = ""
         self._marquee_status_offset = 0
         self._marquee_last_message = ""
-        self._marquee_entry_gap_px = 100
+        self._marquee_entry_gap_tabs = 5
         self._marquee_status_timer = QtCore.QTimer(self)
         self._marquee_status_timer.setInterval(120)
         self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
@@ -1415,27 +1415,54 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         space_width = max(1, self._marquee_status_label.fontMetrics().horizontalAdvance(" "))
         return " " * max(1, math.ceil(width_px / space_width))
 
-    def _queue_next_marquee_status_message(self) -> None:
+    def _marquee_message_gap(self) -> str:
+        return "\t" * self._marquee_entry_gap_tabs
+
+    def _next_marquee_status_message(self) -> str:
         message = random_marquee_message()
-        if len(self._marquee_status_text) > 1:
+        if self._marquee_last_message:
             for _attempt in range(5):
                 if message != self._marquee_last_message:
                     break
                 message = random_marquee_message()
         self._marquee_last_message = message
+        return message
+
+    def _append_next_marquee_status_message(self) -> None:
+        self._marquee_status_text += (
+            f"{self._next_marquee_status_message()}{self._marquee_message_gap()}"
+        )
+
+    def _queue_next_marquee_status_message(self) -> None:
         entry_padding = self._marquee_spaces_for_width(self._marquee_status_label.width())
-        trailing_gap = self._marquee_spaces_for_width(self._marquee_entry_gap_px)
-        self._marquee_status_text = f"{entry_padding}{message}{trailing_gap}"
+        self._marquee_status_text = entry_padding
         self._marquee_status_offset = 0
+        self._append_next_marquee_status_message()
+
+    def _remaining_marquee_width(self) -> int:
+        return self._marquee_status_label.fontMetrics().horizontalAdvance(
+            self._marquee_status_text[self._marquee_status_offset :]
+        )
 
     def _advance_marquee_status(self) -> None:
         if not self._marquee_status_text:
             self._queue_next_marquee_status_message()
+        if self._marquee_status_offset >= len(self._marquee_status_text):
+            self._queue_next_marquee_status_message()
+
+        gap_width = self._marquee_status_label.fontMetrics().horizontalAdvance(
+            self._marquee_message_gap()
+        )
+        if self._remaining_marquee_width() <= self._marquee_status_label.width() + gap_width:
+            self._append_next_marquee_status_message()
+
         visible_text = self._marquee_status_text[self._marquee_status_offset :]
         self._marquee_status_label.setText(visible_text)
         self._marquee_status_offset += 1
-        if self._marquee_status_offset >= len(self._marquee_status_text):
-            self._queue_next_marquee_status_message()
+
+        if self._marquee_status_offset > 1024:
+            self._marquee_status_text = self._marquee_status_text[self._marquee_status_offset :]
+            self._marquee_status_offset = 0
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.controller is not None and hasattr(self.controller, "confirm_close"):
