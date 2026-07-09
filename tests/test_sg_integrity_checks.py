@@ -497,3 +497,44 @@ def test_integrity_report_computed_curve_endpoint_gap_uses_angles_and_radius() -
 
     assert "Computed endpoint gaps > 1 500ths: 1" in report
     assert "gap=3 500ths" in report
+
+
+def test_integrity_memo_wraps_existing_findings_with_deterministic_author() -> None:
+    from datetime import datetime
+    from sg_viewer.services.sg_integrity_checks import (
+        INTEGRITY_MEMO_AUTHORS,
+        format_integrity_memo,
+    )
+
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
+    section_b = _section(
+        section_id=1,
+        start=(0.0, _ft_to_world(60.0)),
+        end=(_ft_to_world(200.0), _ft_to_world(60.0)),
+    )
+    report = build_integrity_report([section_a, section_b], [[], []])
+
+    memo = format_integrity_memo(
+        report,
+        INTEGRITY_MEMO_AUTHORS[0],
+        generated_at=datetime(2026, 7, 9, 12, 30, 0),
+    )
+
+    assert memo.startswith("MEMORANDUM\n\nFrom: Johan Hugenhaltz, Senior Circuit Geometry Consultant")
+    assert "To: SG CREATE Track Construction Department" in memo
+    assert "Summary:\nWarnings found." in memo
+    assert "Findings:" in memo
+    assert "Sections with < 80 ft perpendicular spacing: 2" in memo
+    assert "Sampling step: 10 ft" in memo
+    assert "Recommendations:" in memo
+    assert "Closing note:" in memo
+
+
+def test_choose_integrity_memo_author_can_be_seeded_for_tests() -> None:
+    import random
+    from sg_viewer.services.sg_integrity_checks import choose_integrity_memo_author
+
+    author_a = choose_integrity_memo_author(random.Random(2))
+    author_b = choose_integrity_memo_author(random.Random(2))
+
+    assert author_a == author_b

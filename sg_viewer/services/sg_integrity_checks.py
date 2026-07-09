@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import math
+import random
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable
 
 from sg_viewer.geometry.topology import is_closed_loop
@@ -92,6 +94,161 @@ def _effective_curve_radius(section: SectionPreview) -> float:
         )
 
     return 0.0
+
+
+
+
+@dataclass(frozen=True)
+class IntegrityMemoAuthor:
+    name: str
+    title: str
+    summary_clean: str
+    summary_minor: str
+    summary_warnings: str
+    summary_critical: str
+    recommendation_clean: str
+    recommendation_minor: str
+    recommendation_warnings: str
+    recommendation_critical: str
+    closing_notes: tuple[str, ...]
+
+
+INTEGRITY_MEMO_AUTHORS: tuple[IntegrityMemoAuthor, ...] = (
+    IntegrityMemoAuthor(
+        name="Johan Hugenhaltz",
+        title="Senior Circuit Geometry Consultant",
+        summary_clean="No issues found. The circuit reads coherently and the geometric rhythm is presently respectable.",
+        summary_minor="Minor issues found. The layout mostly respects its own intentions, with a few details requesting persuasion.",
+        summary_warnings="Warnings found. Several areas interrupt the circuit flow and should be reviewed before the landscape develops opinions.",
+        summary_critical="Critical errors found. The layout contains geometry that must be corrected before it can be considered a proper circuit.",
+        recommendation_clean="Maintain the current checks as the layout evolves; good rhythm is easier to preserve than to recover.",
+        recommendation_minor="Review the noted items and confirm the circuit remains continuous, legible, and willing to flow.",
+        recommendation_warnings="Prioritize the warning items below, especially clearances, boundaries, and any corner geometry that argues with its neighbors.",
+        recommendation_critical="Resolve the error items first, then rerun the integrity review before adjusting cambers, apexes, or other refinements.",
+        closing_notes=(
+            "The circuit may yet become respectable, provided the geometry is persuaded to behave.",
+            "A track must flow. This one currently negotiates with itself in several places.",
+        ),
+    ),
+    IntegrityMemoAuthor(
+        name="Herman Tinkerer",
+        title="Safety and Facilities Engineering Consultant",
+        summary_clean="No issues found. The layout is serviceable from an integrity standpoint, pending the usual paperwork and coffee.",
+        summary_minor="Minor issues found. The facility concept is sound, but a few practical details deserve a clipboard pass.",
+        summary_warnings="Warnings found. Some geometry, clearance, or boundary items should be corrected before homologation becomes dramatic.",
+        summary_critical="Critical errors found. Structural track data issues require repair before this layout is fit for operational review.",
+        recommendation_clean="Continue routine reviews after edits; service roads, runoff, and common sense all prefer early notice.",
+        recommendation_minor="Address the noted items and rerun the check before committing facility-side assumptions around them.",
+        recommendation_warnings="Correct warning items with particular attention to runoff logic, boundary ownership, and practical engineering tolerances.",
+        recommendation_critical="Stabilize the critical geometry first, then rerun the check before any safety or facility sign-off is attempted.",
+        closing_notes=(
+            "Additional runoff is recommended, preferably before the scenery begins arguing with the car.",
+            "The layout is serviceable, though several corners appear to have been approved by committee.",
+        ),
+    ),
+    IntegrityMemoAuthor(
+        name="Toby Curbman",
+        title="Temporary Circuit Operations Consultant",
+        summary_clean="No issues found. The course appears operational, assuming the cones arrive sober and in sufficient quantity.",
+        summary_minor="Minor issues found. The temporary works plan survives, though a few transitions should be checked before barriers appear.",
+        summary_warnings="Warnings found. Visibility, clearance, or boundary concerns need attention before anyone starts unloading concrete blocks.",
+        summary_critical="Critical errors found. The course has integrity issues that must be fixed before it can be dressed as a circuit.",
+        recommendation_clean="Keep the report with the event pack and rerun after any late-night chicane inspiration.",
+        recommendation_minor="Tidy the noted details and verify transitions, access, and section continuity before final setup.",
+        recommendation_warnings="Work through the warning items before placing barriers; paint and cones are not a substitute for sound geometry.",
+        recommendation_critical="Fix the critical items, then rerun the check before committing barriers, cones, or marshal posts.",
+        closing_notes=(
+            "Cones can solve many problems, but not all of these.",
+            "The course is close to operational, assuming the barriers are more confident than the geometry.",
+        ),
+    ),
+)
+
+
+def choose_integrity_memo_author(rng: random.Random | None = None) -> IntegrityMemoAuthor:
+    chooser = rng if rng is not None else random
+    return chooser.choice(INTEGRITY_MEMO_AUTHORS)
+
+
+def format_integrity_memo(
+    report: IntegrityReport,
+    author: IntegrityMemoAuthor | None = None,
+    *,
+    generated_at: datetime | None = None,
+    rng: random.Random | None = None,
+) -> str:
+    memo_author = author if author is not None else choose_integrity_memo_author(rng)
+    timestamp = generated_at if generated_at is not None else datetime.now().astimezone()
+    severity = _integrity_report_severity(report.text)
+    summary = _memo_summary(memo_author, severity)
+    recommendation = _memo_recommendation(memo_author, severity)
+    closing = memo_author.closing_notes[0] if len(memo_author.closing_notes) == 1 else (rng if rng is not None else random).choice(memo_author.closing_notes)
+
+    lines = [
+        "MEMORANDUM",
+        "",
+        f"From: {memo_author.name}, {memo_author.title}",
+        "To: SG CREATE Track Construction Department",
+        "Subject: SG Integrity Review",
+        f"Date: {timestamp.strftime('%Y-%m-%d %H:%M:%S %Z').rstrip()}",
+        "",
+        "Summary:",
+        summary,
+        "",
+        "Findings:",
+    ]
+    lines.extend(_format_memo_findings(report.text))
+    lines.extend([
+        "",
+        "Recommendations:",
+        recommendation,
+        "",
+        "Closing note:",
+        closing,
+    ])
+    return "\n".join(lines)
+
+
+def _integrity_report_severity(report_text: str) -> str:
+    if "No sections found." in report_text:
+        return "minor"
+    critical_markers = (
+        "Unconnected sections: none",
+        "Heading mismatches: none",
+        "Computed endpoint gaps > 1 500ths: none",
+    )
+    has_critical = any(marker.replace(": none", ": ") in report_text and marker not in report_text for marker in critical_markers)
+    warning_markers = (
+        "Curves with arc > 120°: ",
+        "Curves with radius < ",
+        "Sections with < ",
+        "Boundary points closer to a different centerline: ",
+    )
+    has_warning = False
+    for line in report_text.splitlines():
+        if any(line.startswith(marker) for marker in warning_markers) and not line.endswith(": none"):
+            if not line.startswith("No section had"):
+                has_warning = True
+    if has_critical:
+        return "critical"
+    if has_warning:
+        return "warnings"
+    return "clean"
+
+
+def _memo_summary(author: IntegrityMemoAuthor, severity: str) -> str:
+    return {"critical": author.summary_critical, "warnings": author.summary_warnings, "minor": author.summary_minor}.get(severity, author.summary_clean)
+
+
+def _memo_recommendation(author: IntegrityMemoAuthor, severity: str) -> str:
+    return {"critical": author.recommendation_critical, "warnings": author.recommendation_warnings, "minor": author.recommendation_minor}.get(severity, author.recommendation_clean)
+
+
+def _format_memo_findings(report_text: str) -> list[str]:
+    body = report_text.splitlines()
+    if len(body) >= 2 and body[0] == "SG Integrity Report":
+        body = body[2:]
+    return ["  " + line if line else "" for line in body]
 
 
 @dataclass(frozen=True)
