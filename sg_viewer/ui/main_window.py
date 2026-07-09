@@ -143,7 +143,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_status_text = ""
         self._marquee_status_offset = 0
         self._marquee_last_message = ""
-        self._marquee_entry_gap_tabs = 5
+        self._marquee_entry_gap_spaces = 20
         self._marquee_status_timer = QtCore.QTimer(self)
         self._marquee_status_timer.setInterval(120)
         self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
@@ -1416,7 +1416,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return " " * max(1, math.ceil(width_px / space_width))
 
     def _marquee_message_gap(self) -> str:
-        return "\t" * self._marquee_entry_gap_tabs
+        return " " * self._marquee_entry_gap_spaces
 
     def _next_marquee_status_message(self) -> str:
         message = random_marquee_message()
@@ -1459,10 +1459,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         visible_text = self._marquee_status_text[self._marquee_status_offset :]
         self._marquee_status_label.setText(visible_text)
         self._marquee_status_offset += 1
+        self._discard_scrolled_marquee_text()
 
-        if self._marquee_status_offset > 1024:
-            self._marquee_status_text = self._marquee_status_text[self._marquee_status_offset :]
-            self._marquee_status_offset = 0
+    def _discard_scrolled_marquee_text(self) -> None:
+        if self._marquee_status_offset <= 0:
+            return
+        self._marquee_status_text = self._marquee_status_text[self._marquee_status_offset :]
+        self._marquee_status_offset = 0
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.controller is not None and hasattr(self.controller, "confirm_close"):
