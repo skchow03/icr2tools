@@ -222,6 +222,9 @@ class MrkController:
             return
         self._manual_wall_height_overrides = dialog.overrides()
         self._persist_manual_wall_height_overrides_for_current_track()
+        self._window.set_wall_defaults_override_count(
+            len(self._manual_wall_height_overrides)
+        )
         self._window.show_status_message(
             f"Saved {len(self._manual_wall_height_overrides)} manual wall height override(s)."
         )
@@ -429,6 +432,7 @@ class MrkController:
     def _load_manual_wall_height_overrides_for_current_track(self) -> None:
         self._manual_wall_height_overrides = []
         if self._current_path is None:
+            self._window.set_wall_defaults_override_count(0)
             return
         self._manual_wall_height_overrides = [
             ManualWallHeightOverride(
@@ -439,6 +443,9 @@ class MrkController:
             )
             for entry in self._sg_settings_store.get_manual_wall_height_overrides(self._current_path)
         ]
+        self._window.set_wall_defaults_override_count(
+            len(self._manual_wall_height_overrides)
+        )
 
     def _persist_mrk_wall_heights_for_current_track(self) -> None:
         if self._current_path is None:
