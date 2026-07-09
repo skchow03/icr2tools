@@ -64,8 +64,8 @@ class SGFile:
             SGFile: A new SGFile instance with attributes populated from the SG file.
         """
 
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Opening SG file %s", file_name)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Opening SG file %s", file_name)
 
         a = np.fromfile(file_name, dtype=np.int32)
         if a.size < 6:
@@ -90,11 +90,11 @@ class SGFile:
                 f"'{file_name}': header expects {int(expected_size)} int32 values "
                 f"({int(num_sects)} sections, {int(num_xsects)} xsects), found {a.size}."
             )
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Header values: %s", header.tolist())
-            logger.info("num_sects=%s num_xsects=%s", int(num_sects), int(num_xsects))
-            logger.info("xsect_dlats=%s", xsect_dlats.tolist())
-            logger.info(
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Header values: %s", header.tolist())
+            logger.debug("num_sects=%s num_xsects=%s", int(num_sects), int(num_xsects))
+            logger.debug("xsect_dlats=%s", xsect_dlats.tolist())
+            logger.debug(
                 "sections_start=%s sections_length=%s",
                 int(sections_start),
                 int(sections_length),
@@ -112,10 +112,10 @@ class SGFile:
                     f"found {sec_data.size}."
                 )
             sects.append(cls.Section(sec_data, num_xsects))
-            if logger.isEnabledFor(logging.INFO):
+            if logger.isEnabledFor(logging.DEBUG):
                 section = sects[-1]
-                logger.info("Section %d raw data: %s", i, sec_data.tolist())
-                logger.info(
+                logger.debug("Section %d raw data: %s", i, sec_data.tolist())
+                logger.debug(
                     "Section %d parsed: type=%s sec_next=%s sec_prev=%s "
                     "start=(%s,%s) end=(%s,%s) start_dlong=%s length=%s "
                     "center=(%s,%s) sang=(%s,%s) eang=(%s,%s) radius=%s num1=%s "
