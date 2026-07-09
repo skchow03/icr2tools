@@ -524,10 +524,46 @@ def test_integrity_memo_wraps_existing_findings_with_deterministic_author() -> N
     assert "To: SG CREATE Track Construction Department" in memo
     assert "Summary:\nWarnings found." in memo
     assert "Findings:" in memo
+    assert ("Cartographer's aside:" in memo) or ("Continuity note:" in memo)
     assert "Sections with < 80 ft perpendicular spacing: 2" in memo
     assert "Sampling step: 10 ft" in memo
     assert "Recommendations:" in memo
     assert "Closing note:" in memo
+
+
+def test_integrity_memo_error_summary_is_softened() -> None:
+    from datetime import datetime
+    from sg_viewer.services.sg_integrity_checks import (
+        INTEGRITY_MEMO_AUTHORS,
+        IntegrityReport,
+        format_integrity_memo,
+    )
+
+    report = IntegrityReport(
+        text=(
+            "SG Integrity Report\n"
+            "========================================================================\n"
+            "Topology\n"
+            "------------------------------------------------------------------------\n"
+            "Unconnected sections: 1\n"
+            "  - section 0: next_id=-1\n"
+            "Join heading and boundary gap checks\n"
+            "------------------------------------------------------------------------\n"
+            "Heading mismatches: none\n"
+            "Computed endpoint gaps > 1 500ths: none"
+        )
+    )
+
+    memo = format_integrity_memo(
+        report,
+        INTEGRITY_MEMO_AUTHORS[0],
+        generated_at=datetime(2026, 7, 9, 12, 30, 0),
+    )
+
+    assert "Summary:\nErrors found. The layout has geometry issues that should be addressed" in memo
+    assert "Critical errors found" not in memo
+    assert "must be corrected" not in memo
+    assert "Recommendations:\nAddress the error items when practical" in memo
 
 
 def test_choose_integrity_memo_author_can_be_seeded_for_tests() -> None:

@@ -111,6 +111,7 @@ class IntegrityMemoAuthor:
     recommendation_warnings: str
     recommendation_critical: str
     closing_notes: tuple[str, ...]
+    finding_section_notes: dict[str, tuple[str, ...]]
 
 
 INTEGRITY_MEMO_AUTHORS: tuple[IntegrityMemoAuthor, ...] = (
@@ -120,15 +121,33 @@ INTEGRITY_MEMO_AUTHORS: tuple[IntegrityMemoAuthor, ...] = (
         summary_clean="No issues found. The circuit reads coherently and the geometric rhythm is presently respectable.",
         summary_minor="Minor issues found. The layout mostly respects its own intentions, with a few details requesting persuasion.",
         summary_warnings="Warnings found. Several areas interrupt the circuit flow and should be reviewed before the landscape develops opinions.",
-        summary_critical="Critical errors found. The layout contains geometry that must be corrected before it can be considered a proper circuit.",
+        summary_critical="Errors found. The layout has geometry issues that should be addressed before calling the circuit settled.",
         recommendation_clean="Maintain the current checks as the layout evolves; good rhythm is easier to preserve than to recover.",
         recommendation_minor="Review the noted items and confirm the circuit remains continuous, legible, and willing to flow.",
         recommendation_warnings="Prioritize the warning items below, especially clearances, boundaries, and any corner geometry that argues with its neighbors.",
-        recommendation_critical="Resolve the error items first, then rerun the integrity review before adjusting cambers, apexes, or other refinements.",
+        recommendation_critical="Address the error items when practical, then rerun the integrity review before leaning too hard on cambers, apexes, or other refinements.",
         closing_notes=(
             "The circuit may yet become respectable, provided the geometry is persuaded to behave.",
             "A track must flow. This one currently negotiates with itself in several places.",
         ),
+        finding_section_notes={
+            "Topology": (
+                "Cartographer's aside: the arrows should form a necklace, not a bowl of spaghetti.",
+                "Continuity note: every section deserves a neighbor; loneliness is poor circuit design.",
+            ),
+            "Join heading and boundary gap checks": (
+                "Transition gossip: the joins were asked to shake hands rather than exchange lawsuits.",
+                "Seam inspection: where one piece ends, the next should avoid arriving with jazz hands.",
+            ),
+            "Curve limits": (
+                "Radius etiquette: corners may be expressive, but they should not audition for modern art.",
+                "Arc commentary: enthusiasm is welcome; corkscrewing into mythology is optional.",
+            ),
+            "Centerline clearance and boundary ownership": (
+                "Personal space review: centerlines should not breathe directly into each other's helmets.",
+                "Boundary diplomacy: fences prefer clear jurisdiction before the tire marks arrive.",
+            ),
+        },
     ),
     IntegrityMemoAuthor(
         name="Herman Tinkerer",
@@ -136,15 +155,33 @@ INTEGRITY_MEMO_AUTHORS: tuple[IntegrityMemoAuthor, ...] = (
         summary_clean="No issues found. The layout is serviceable from an integrity standpoint, pending the usual paperwork and coffee.",
         summary_minor="Minor issues found. The facility concept is sound, but a few practical details deserve a clipboard pass.",
         summary_warnings="Warnings found. Some geometry, clearance, or boundary items should be corrected before homologation becomes dramatic.",
-        summary_critical="Critical errors found. Structural track data issues require repair before this layout is fit for operational review.",
+        summary_critical="Errors found. Structural track data issues should be addressed before this layout is treated as ready for operational review.",
         recommendation_clean="Continue routine reviews after edits; service roads, runoff, and common sense all prefer early notice.",
         recommendation_minor="Address the noted items and rerun the check before committing facility-side assumptions around them.",
         recommendation_warnings="Correct warning items with particular attention to runoff logic, boundary ownership, and practical engineering tolerances.",
-        recommendation_critical="Stabilize the critical geometry first, then rerun the check before any safety or facility sign-off is attempted.",
+        recommendation_critical="Review the error geometry first, then rerun the check before any safety or facility sign-off is attempted.",
         closing_notes=(
             "Additional runoff is recommended, preferably before the scenery begins arguing with the car.",
             "The layout is serviceable, though several corners appear to have been approved by committee.",
         ),
+        finding_section_notes={
+            "Topology": (
+                "Clipboard note: section references should point to reality, not to a tiny imaginary service road.",
+                "Facilities concern: the loop should close before anyone orders grandstands with confidence.",
+            ),
+            "Join heading and boundary gap checks": (
+                "Pavement meeting minutes: abrupt handoffs increase paperwork and reduce sandwich time.",
+                "Joint review: if the asphalt needs a running start to connect, maintenance will notice.",
+            ),
+            "Curve limits": (
+                "Engineering aside: tight radii are acceptable only when the coffee is stronger than the steering rack.",
+                "Corner audit: if a bend feels like a forklift test, perhaps widen the ambition.",
+            ),
+            "Centerline clearance and boundary ownership": (
+                "Runoff memo: personal space is cheaper than explaining tire barriers to accounting.",
+                "Boundary audit: ownership disputes are best settled before the walls become witnesses.",
+            ),
+        },
     ),
     IntegrityMemoAuthor(
         name="Toby Curbman",
@@ -152,15 +189,33 @@ INTEGRITY_MEMO_AUTHORS: tuple[IntegrityMemoAuthor, ...] = (
         summary_clean="No issues found. The course appears operational, assuming the cones arrive sober and in sufficient quantity.",
         summary_minor="Minor issues found. The temporary works plan survives, though a few transitions should be checked before barriers appear.",
         summary_warnings="Warnings found. Visibility, clearance, or boundary concerns need attention before anyone starts unloading concrete blocks.",
-        summary_critical="Critical errors found. The course has integrity issues that must be fixed before it can be dressed as a circuit.",
+        summary_critical="Errors found. The course has integrity issues that should be addressed before it gets dressed up as a circuit.",
         recommendation_clean="Keep the report with the event pack and rerun after any late-night chicane inspiration.",
         recommendation_minor="Tidy the noted details and verify transitions, access, and section continuity before final setup.",
         recommendation_warnings="Work through the warning items before placing barriers; paint and cones are not a substitute for sound geometry.",
-        recommendation_critical="Fix the critical items, then rerun the check before committing barriers, cones, or marshal posts.",
+        recommendation_critical="Work through the error items, then rerun the check before committing barriers, cones, or marshal posts.",
         closing_notes=(
             "Cones can solve many problems, but not all of these.",
             "The course is close to operational, assuming the barriers are more confident than the geometry.",
         ),
+        finding_section_notes={
+            "Topology": (
+                "Cone boss note: the route should loop without needing a volunteer to point dramatically.",
+                "Setup aside: if section IDs wander off, the forklift crew will follow them into legend.",
+            ),
+            "Join heading and boundary gap checks": (
+                "Barrier crew gossip: joins are easier when the pavement does not arrive wearing a fake mustache.",
+                "Temporary works note: gaps are where cones go to become folk heroes.",
+            ),
+            "Curve limits": (
+                "Chicane department: spice is good; making drivers fold the car in half is less good.",
+                "Corner note: the cones support creativity, but they have union limits.",
+            ),
+            "Centerline clearance and boundary ownership": (
+                "Marshal post aside: two lanes entering one personal bubble is how radios learn profanity.",
+                "Barrier placement note: boundaries should know whose lunch table they are guarding.",
+            ),
+        },
     ),
 )
 
@@ -197,7 +252,7 @@ def format_integrity_memo(
         "",
         "Findings:",
     ]
-    lines.extend(_format_memo_findings(report.text))
+    lines.extend(_format_memo_findings(report.text, memo_author, rng))
     lines.extend([
         "",
         "Recommendations:",
@@ -244,11 +299,25 @@ def _memo_recommendation(author: IntegrityMemoAuthor, severity: str) -> str:
     return {"critical": author.recommendation_critical, "warnings": author.recommendation_warnings, "minor": author.recommendation_minor}.get(severity, author.recommendation_clean)
 
 
-def _format_memo_findings(report_text: str) -> list[str]:
+def _format_memo_findings(
+    report_text: str,
+    author: IntegrityMemoAuthor | None = None,
+    rng: random.Random | None = None,
+) -> list[str]:
     body = report_text.splitlines()
     if len(body) >= 2 and body[0] == "SG Integrity Report":
         body = body[2:]
-    return ["  " + line if line else "" for line in body]
+
+    chooser = rng if rng is not None else random
+    formatted: list[str] = []
+    notes = author.finding_section_notes if author is not None else {}
+    for line in body:
+        formatted.append("  " + line if line else "")
+        section_notes = notes.get(line)
+        if section_notes:
+            note = section_notes[0] if len(section_notes) == 1 else chooser.choice(section_notes)
+            formatted.append(f"  ({note})")
+    return formatted
 
 
 @dataclass(frozen=True)
