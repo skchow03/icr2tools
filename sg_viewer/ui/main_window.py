@@ -3542,10 +3542,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_table.setColumnCount(len(fsects))
         self._update_fsect_table_headers()
         read_only_background = QtGui.QColor(230, 230, 230)
-        for column_index, fsect in enumerate(fsects):
+        for column_index in range(len(fsects)):
+            fsect_index = self._fsect_model_index_for_column(column_index)
+            fsect = fsects[fsect_index]
             next_fsect = (
-                fsects[column_index + 1]
-                if column_index < len(fsects) - 1
+                fsects[fsect_index + 1]
+                if fsect_index < len(fsects) - 1
                 else None
             )
 
@@ -3554,15 +3556,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 combo.addItem(label, (surface_type, type2))
             combo.setCurrentIndex(fsect_type_index(fsect.surface_type, fsect.type2))
             combo.currentIndexChanged.connect(
-                lambda _idx, column=column_index, widget=combo: self._on_fsect_type_changed(
-                    column, widget
+                lambda _idx, index=fsect_index, widget=combo: self._on_fsect_type_changed(
+                    index, widget
                 )
             )
             self._fsect_table.setCellWidget(0, column_index, combo)
 
             end_delta_item = QtWidgets.QTableWidgetItem(
                 format_fsect_delta(
-                    fsects, column_index, "end", unit=self._current_measurement_unit()
+                    fsects, fsect_index, "end", unit=self._current_measurement_unit()
                 )
             )
             end_delta_item.setBackground(read_only_background)
@@ -3594,7 +3596,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
             start_delta_item = QtWidgets.QTableWidgetItem(
                 format_fsect_delta(
-                    fsects, column_index, "start", unit=self._current_measurement_unit()
+                    fsects, fsect_index, "start", unit=self._current_measurement_unit()
                 )
             )
             start_delta_item.setBackground(read_only_background)
@@ -4971,7 +4973,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if section_index is None:
             return
         fsects = self._preview.get_section_fsects(section_index)
-        if column_index < 0 or column_index >= len(fsects):
+        fsect_index = self._fsect_model_index_for_column(column_index)
+        if fsect_index < 0 or fsect_index >= len(fsects):
             return
         item = self._fsect_table.item(row_index, column_index)
         if item is None:
@@ -4982,16 +4985,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         except ValueError:
             self._fsect_table.blockSignals(True)
             if row_index == 2:
-                item.setText(self._format_fsect_dlat(fsects[column_index].end_dlat))
+                item.setText(self._format_fsect_dlat(fsects[fsect_index].end_dlat))
             else:
-                item.setText(self._format_fsect_dlat(fsects[column_index].start_dlat))
+                item.setText(self._format_fsect_dlat(fsects[fsect_index].start_dlat))
             self._fsect_table.blockSignals(False)
             return
         new_value = self._fsect_dlat_from_display_units(new_value)
         if row_index == 2:
             self._preview.update_fsection_dlat(
                 section_index,
-                column_index,
+                fsect_index,
                 end_dlat=new_value,
                 refresh_preview=False,
                 emit_sections_changed=False,
@@ -4999,13 +5002,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         else:
             self._preview.update_fsection_dlat(
                 section_index,
-                column_index,
+                fsect_index,
                 start_dlat=new_value,
                 refresh_preview=False,
                 emit_sections_changed=False,
             )
         normalize_on_commit = text != self._format_fsect_dlat(new_value)
-        self._update_fsect_delta_cells(section_index, column_index)
+        self._update_fsect_delta_cells(section_index, fsect_index)
         self._schedule_fsect_table_commit(normalize_on_commit)
 
     def _schedule_fsect_table_commit(self, normalize_on_commit: bool) -> None:
@@ -5029,16 +5032,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         if section_index != self._selected_section_index:
             return
-        if row_index < 0 or row_index >= self._fsect_table.columnCount():
+        column_index = self._fsect_column_for_model_index(row_index)
+        if column_index < 0 or column_index >= self._fsect_table.columnCount():
             return
         table_row = 3 if endpoint == "start" else 2
-        item = self._fsect_table.item(table_row, row_index)
+        item = self._fsect_table.item(table_row, column_index)
         if item is None:
             item = QtWidgets.QTableWidgetItem("")
             item.setFlags(
                 item.flags() | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsSelectable
             )
-            self._fsect_table.setItem(table_row, row_index, item)
+            self._fsect_table.setItem(table_row, column_index, item)
         self._fsect_table.blockSignals(True)
         item.setText(self._format_fsect_dlat(new_dlat))
         self._fsect_table.blockSignals(False)
@@ -5048,7 +5052,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if section_index != self._selected_section_index:
             return
         fsects = self._preview.get_section_fsects(section_index)
-        for delta_column in (row_index - 1, row_index):
+        for delta_index in (row_index - 1, row_index):
+            delta_column = self._fsect_column_for_model_index(delta_index)
             if delta_column < 0 or delta_column >= self._fsect_table.columnCount():
                 continue
             set_fsect_delta_cell_text(
@@ -5056,7 +5061,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 4,
                 delta_column,
                 format_fsect_delta(
-                    fsects, delta_column, "start", unit=self._current_measurement_unit()
+                    fsects, delta_index, "start", unit=self._current_measurement_unit()
                 ),
             )
             set_fsect_delta_cell_text(
@@ -5064,7 +5069,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 1,
                 delta_column,
                 format_fsect_delta(
-                    fsects, delta_column, "end", unit=self._current_measurement_unit()
+                    fsects, delta_index, "end", unit=self._current_measurement_unit()
                 ),
             )
 
@@ -5115,7 +5120,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _update_fsect_table_headers(self) -> None:
         unit_label = self._fsect_dlat_units_label()
         self._fsect_table.setHorizontalHeaderLabels(
-            [str(index) for index in range(self._fsect_table.columnCount())]
+            [
+                str(self._fsect_model_index_for_column(column_index))
+                for column_index in range(self._fsect_table.columnCount())
+            ]
         )
         self._fsect_table.setVerticalHeaderLabels(
             [
@@ -5125,6 +5133,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 f"Start DLAT ({unit_label})",
                 f"Start to next ({unit_label})",
             ]
+        )
+
+    def _fsect_model_index_for_column(self, column_index: int) -> int:
+        return self._fsect_table.columnCount() - 1 - column_index
+
+    def _fsect_column_for_model_index(self, fsect_index: int) -> int:
+        return self._fsect_table.columnCount() - 1 - fsect_index
+
+    def selected_fsect_index(self) -> int:
+        return self._fsect_model_index_for_column(self._fsect_table.currentColumn())
+
+    def select_fsect_index(self, fsect_index: int) -> None:
+        self._fsect_table.setCurrentCell(
+            0, self._fsect_column_for_model_index(fsect_index)
         )
 
     def _fsect_dlat_units_label(self) -> str:
