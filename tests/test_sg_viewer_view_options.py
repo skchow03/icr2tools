@@ -630,25 +630,25 @@ def test_fsect_panel_places_left_move_button_before_right_move_button(qapp):
         panel.widget.close()
 
 
-def test_pitwall_controls_are_grouped_in_wall_heights_box(qapp):
+def test_pitwall_controls_use_compact_wall_defaults_summary(qapp):
     window = SGViewerWindow()
     try:
-        wall_heights_group = next(
-            group
+        assert not any(
+            group.title() == "Wall heights"
             for group in window.findChildren(QtWidgets.QGroupBox)
-            if group.title() == "Wall heights"
         )
 
-        layout = wall_heights_group.layout()
-        assert isinstance(layout, QtWidgets.QVBoxLayout)
-        assert layout.itemAt(0).layout() is not None
-        buttons_layout = layout.itemAt(2).layout()
-        assert buttons_layout is not None
-        assert buttons_layout.itemAt(0).widget() is window.generate_pitwall_button
-        assert (
-            buttons_layout.itemAt(1).widget()
-            is window.manual_wall_height_overrides_button
+        summary_row = window.findChild(QtWidgets.QFrame, "wallDefaultsSummaryRow")
+        assert summary_row is not None
+        assert window.wall_defaults_summary_label.text() == (
+            "Wall 21000 | Armco 18000 | Ratio 4.00 | Overrides: 0"
         )
+        assert window.wall_defaults_edit_button.text() == "Edit defaults…"
+
+        window.pitwall_wall_height_spin.setValue(12.0)
+        assert "Wall 12000" in window.wall_defaults_summary_label.text()
+        window.set_wall_defaults_override_count(3)
+        assert "Overrides: 3" in window.wall_defaults_summary_label.text()
     finally:
         window.close()
 

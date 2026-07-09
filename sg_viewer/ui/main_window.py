@@ -275,6 +275,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._pitwall_wall_height_spin = QtWidgets.QDoubleSpinBox()
         self._pitwall_armco_height_spin = QtWidgets.QDoubleSpinBox()
         self._pitwall_length_multiplier_spin = QtWidgets.QDoubleSpinBox()
+        self._wall_defaults_override_count = 0
+        self._wall_defaults_summary_label = QtWidgets.QLabel()
+        self._wall_defaults_edit_button = QtWidgets.QPushButton("Edit defaults…")
         self._tsd_add_line_button = QtWidgets.QPushButton("Add TSD line")
         self._tsd_delete_line_button = QtWidgets.QPushButton("Delete TSD line")
         self._tsd_move_line_up_button = QtWidgets.QPushButton("Move Up")
@@ -1065,27 +1068,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         self._mrk_sidebar = QtWidgets.QWidget()
         mrk_layout = QtWidgets.QVBoxLayout()
-        pitwall_height_group = QtWidgets.QGroupBox("Wall heights")
-        pitwall_height_layout = QtWidgets.QVBoxLayout()
-        pitwall_inputs_row = QtWidgets.QHBoxLayout()
-        pitwall_inputs_row.addWidget(QtWidgets.QLabel("Wall:"))
-        pitwall_inputs_row.addWidget(self._pitwall_wall_height_spin)
-        pitwall_inputs_row.addSpacing(12)
-        pitwall_inputs_row.addWidget(QtWidgets.QLabel("Armco:"))
-        pitwall_inputs_row.addWidget(self._pitwall_armco_height_spin)
-        pitwall_height_layout.addLayout(pitwall_inputs_row)
-        pitwall_multiplier_row = QtWidgets.QHBoxLayout()
-        pitwall_multiplier_row.addWidget(
-            QtWidgets.QLabel("Wall length to height ratio:")
-        )
-        pitwall_multiplier_row.addWidget(self._pitwall_length_multiplier_spin)
-        pitwall_multiplier_row.addStretch()
-        pitwall_height_layout.addLayout(pitwall_multiplier_row)
-        pitwall_buttons_row = QtWidgets.QHBoxLayout()
-        pitwall_buttons_row.addWidget(self._manual_wall_height_overrides_button)
-        pitwall_height_layout.addLayout(pitwall_buttons_row)
-        pitwall_height_group.setLayout(pitwall_height_layout)
-        mrk_layout.addWidget(pitwall_height_group)
+        wall_defaults_row = QtWidgets.QFrame()
+        wall_defaults_row.setObjectName("wallDefaultsSummaryRow")
+        wall_defaults_row.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        wall_defaults_layout = QtWidgets.QHBoxLayout()
+        wall_defaults_layout.setContentsMargins(6, 3, 6, 3)
+        wall_defaults_layout.setSpacing(6)
+        wall_defaults_title = QtWidgets.QLabel("Wall defaults:")
+        wall_defaults_title.setStyleSheet("font-weight: bold")
+        wall_defaults_layout.addWidget(wall_defaults_title)
+        wall_defaults_layout.addWidget(self._wall_defaults_summary_label, 1)
+        wall_defaults_layout.addWidget(self._wall_defaults_edit_button)
+        wall_defaults_row.setLayout(wall_defaults_layout)
+        mrk_layout.addWidget(wall_defaults_row)
 
         mrk_file_group = QtWidgets.QGroupBox("File")
         mrk_file_layout = QtWidgets.QGridLayout()
@@ -1122,6 +1117,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._pitwall_length_multiplier_spin.setRange(0.1, 1000.0)
         self._pitwall_length_multiplier_spin.setSingleStep(0.1)
         self._pitwall_length_multiplier_spin.setValue(4.0)
+        self._pitwall_wall_height_spin.valueChanged.connect(
+            self._refresh_wall_defaults_summary
+        )
+        self._pitwall_armco_height_spin.valueChanged.connect(
+            self._refresh_wall_defaults_summary
+        )
+        self._pitwall_length_multiplier_spin.valueChanged.connect(
+            self._refresh_wall_defaults_summary
+        )
+        self._wall_defaults_edit_button.clicked.connect(self._edit_wall_defaults)
+        self._refresh_wall_defaults_summary()
 
         self._tsd_sidebar = QtWidgets.QWidget()
         tsd_layout = QtWidgets.QVBoxLayout()
@@ -2237,6 +2243,90 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_load_button(self) -> QtWidgets.QPushButton:
         return self._mrk_load_button
+
+
+    @property
+    def wall_defaults_edit_button(self) -> QtWidgets.QPushButton:
+        return self._wall_defaults_edit_button
+
+    @property
+    def wall_defaults_summary_label(self) -> QtWidgets.QLabel:
+        return self._wall_defaults_summary_label
+
+    def set_wall_defaults_override_count(self, count: int) -> None:
+        self._wall_defaults_override_count = max(0, int(count))
+        self._refresh_wall_defaults_summary()
+
+    def _refresh_wall_defaults_summary(self) -> None:
+        self._wall_defaults_summary_label.setText(
+            "Wall {wall} | Armco {armco} | Ratio {ratio:.2f} | "
+            "Overrides: {overrides}".format(
+                wall=self.pitwall_wall_height_500ths(),
+                armco=self.pitwall_armco_height_500ths(),
+                ratio=self.pitwall_length_multiplier(),
+                overrides=self._wall_defaults_override_count,
+            )
+        )
+
+    def _edit_wall_defaults(self) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Edit wall defaults")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        form = QtWidgets.QFormLayout()
+
+        wall_spin = QtWidgets.QDoubleSpinBox(dialog)
+        armco_spin = QtWidgets.QDoubleSpinBox(dialog)
+        current_unit = self._current_measurement_unit()
+        decimals = self._measurement_unit_decimals(current_unit)
+        step = self._measurement_unit_step(current_unit)
+        suffix = f" {self._measurement_unit_label(current_unit)}"
+        maximum = units_from_500ths(999999999, current_unit)
+        for spin, source in (
+            (wall_spin, self._pitwall_wall_height_spin),
+            (armco_spin, self._pitwall_armco_height_spin),
+        ):
+            spin.setDecimals(decimals)
+            spin.setSingleStep(step)
+            spin.setRange(0.0, maximum)
+            spin.setSuffix(suffix)
+            spin.setValue(source.value())
+
+        ratio_spin = QtWidgets.QDoubleSpinBox(dialog)
+        ratio_spin.setDecimals(2)
+        ratio_spin.setRange(0.1, 1000.0)
+        ratio_spin.setSingleStep(0.1)
+        ratio_spin.setValue(self._pitwall_length_multiplier_spin.value())
+
+        form.addRow("Wall height:", wall_spin)
+        form.addRow("Armco height:", armco_spin)
+        form.addRow("Wall length-to-height ratio:", ratio_spin)
+        layout.addLayout(form)
+
+        overrides_button = QtWidgets.QPushButton(
+            "Manual wall height overrides…", dialog
+        )
+        overrides_button.setEnabled(
+            self._manual_wall_height_overrides_button.isEnabled()
+        )
+        overrides_button.clicked.connect(
+            self._manual_wall_height_overrides_button.click
+        )
+        layout.addWidget(overrides_button)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        self._pitwall_wall_height_spin.setValue(wall_spin.value())
+        self._pitwall_armco_height_spin.setValue(armco_spin.value())
+        self._pitwall_length_multiplier_spin.setValue(ratio_spin.value())
+        self._refresh_wall_defaults_summary()
 
     @property
     def generate_pitwall_button(self) -> QtWidgets.QPushButton:
@@ -5263,6 +5353,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_fsect_table(self._selected_section_index)
         self._update_boundary_dlat_labels(self._selected_section_index)
         self._refresh_query_track_info_label()
+        self._refresh_wall_defaults_summary()
 
     def _sync_pitwall_height_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()
