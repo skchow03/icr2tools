@@ -131,10 +131,10 @@ class FsectActions:
         for attr, text, button in (
             ("copy_fsects_prev_action", "Copy Fsects to Previous Section", self.parent.copy_fsects_prev_button),
             ("copy_fsects_next_action", "Copy Fsects to Next Section", self.parent.copy_fsects_next_button),
-            ("add_fsect_action", "Insert Fsect", self.parent.add_fsect_button),
+            ("add_fsect_action", "Insert New Fsect", self.parent.add_fsect_button),
             ("delete_fsect_action", "Delete Fsect", self.parent.delete_fsect_button),
-            ("move_fsect_up_action", "Move Fsect Up", self.parent.move_fsect_up_button),
-            ("move_fsect_down_action", "Move Fsect Down", self.parent.move_fsect_down_button),
+            ("move_fsect_up_action", "Move Fsect Right", self.parent.move_fsect_up_button),
+            ("move_fsect_down_action", "Move Fsect Left", self.parent.move_fsect_down_button),
             ("swap_fsect_types_action", "Swap Fsect Type Across All Sections…", self.parent.swap_fsect_types_button),
         ):
             object.__setattr__(self, attr, _action(text, self.parent, enabled=button.isEnabled()))
