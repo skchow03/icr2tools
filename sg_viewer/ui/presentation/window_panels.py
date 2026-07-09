@@ -42,7 +42,6 @@ def create_toolbar_navigation_panel(
 
 def create_fsect_panel(
     *,
-    live_preview_checkbox: QtWidgets.QCheckBox,
     copy_prev_button: QtWidgets.QPushButton,
     copy_next_button: QtWidgets.QPushButton,
     add_button: QtWidgets.QPushButton,
@@ -55,9 +54,6 @@ def create_fsect_panel(
 ) -> FsectPanel:
     widget = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
-    options = QtWidgets.QHBoxLayout()
-    options.addWidget(live_preview_checkbox)
-    layout.addLayout(options)
 
     copy_row = QtWidgets.QHBoxLayout()
     copy_row.addWidget(copy_prev_button)

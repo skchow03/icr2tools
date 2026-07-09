@@ -155,6 +155,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._runtime_api = ViewerRuntimeApi(preview_context=self._preview)
         self._right_sidebar_tabs = QtWidgets.QTabWidget()
         self._right_sidebar_tabs.currentChanged.connect(self._on_workflow_tab_changed)
+        self._current_section_banner = QtWidgets.QLabel(
+            "Currently selected section: – (Adjusted DLONG –)"
+        )
+        self._current_section_banner.setWordWrap(True)
+        self._current_section_banner.setAlignment(
+            QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
+        )
+        self._current_section_banner.setStyleSheet(
+            "font-weight: 700; padding: 6px 8px; "
+            "border: 1px solid palette(mid); border-radius: 4px; "
+            "background: palette(alternate-base);"
+        )
         self._sidebar_feature_tabs: dict[str, QtWidgets.QTabWidget] = {}
         self._sidebar_feature_tab_widgets: dict[str, QtWidgets.QWidget] = {}
         self._dirty_sidebar_features: set[str] = set()
@@ -543,13 +555,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._track_opacity_spin.setToolTip("Adjust track opacity from 0% to 100%.")
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("F-sections")
         self._sg_fsects_checkbox.setChecked(False)
-        self._live_fsect_drag_preview_checkbox = QtWidgets.QCheckBox(
-            "Live drag preview"
-        )
-        self._live_fsect_drag_preview_checkbox.setChecked(True)
-        self._live_fsect_drag_preview_checkbox.setToolTip(
-            "When enabled, dragging Fsect endpoints updates the track diagram in real time."
-        )
         self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox("X-sect DLAT")
         self._xsect_dlat_line_checkbox.setChecked(False)
         self._copy_fsects_prev_button = QtWidgets.QPushButton("Copy Fsects to Previous")
@@ -846,7 +851,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
         fsect_panel = create_fsect_panel(
-            live_preview_checkbox=self._live_fsect_drag_preview_checkbox,
             copy_prev_button=self._copy_fsects_prev_button,
             copy_next_button=self._copy_fsects_next_button,
             add_button=self._add_fsect_button,
@@ -1320,11 +1324,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             fsect_widget=fsect_panel.widget,
         )
         self._update_geometry_tab_button_state()
+        right_sidebar = QtWidgets.QWidget()
+        right_sidebar_layout = QtWidgets.QVBoxLayout()
+        right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        right_sidebar_layout.setSpacing(6)
+        right_sidebar_layout.addWidget(self._current_section_banner)
+        right_sidebar_layout.addWidget(self._right_sidebar_tabs, stretch=1)
+        right_sidebar.setLayout(right_sidebar_layout)
+        self._right_sidebar_container = right_sidebar
         # Keep the right sidebar width fixed so window resizing only grows/shrinks
         # the track-diagram side of the window.
-        sidebar_width = max(320, self._right_sidebar_tabs.sizeHint().width())
-        self._right_sidebar_tabs.setFixedWidth(sidebar_width)
-        self._right_sidebar_tabs.setSizePolicy(
+        sidebar_width = max(320, right_sidebar.sizeHint().width())
+        right_sidebar.setFixedWidth(sidebar_width)
+        right_sidebar.setSizePolicy(
             QtWidgets.QSizePolicy.Fixed,
             QtWidgets.QSizePolicy.Expanding,
         )
@@ -1334,7 +1346,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         splitter.addWidget(geometry_toolbar)
         splitter.addWidget(preview_column)
-        splitter.addWidget(self._right_sidebar_tabs)
+        splitter.addWidget(right_sidebar)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
@@ -1469,10 +1481,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
         return self._sg_fsects_checkbox
-
-    @property
-    def live_fsect_drag_preview_checkbox(self) -> QtWidgets.QCheckBox:
-        return self._live_fsect_drag_preview_checkbox
 
     @property
     def xsect_dlat_line_checkbox(self) -> QtWidgets.QCheckBox:
@@ -2939,6 +2947,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._section_delete_action_button.setEnabled(False)
             self._section_set_start_finish_action_button.setEnabled(False)
             self._section_index_label.setText("Current Section: –")
+            self._update_current_section_banner(None)
             self._section_start_dlong_label.setText("Starting DLONG: –")
             self._section_end_dlong_label.setText("Ending DLONG: –")
             self._radius_label.setText("Radius: –")
@@ -2981,6 +2990,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._set_start_finish_button.isEnabled()
         )
         self._section_index_label.setText(f"Current Section: {selection.index}")
+        self._update_current_section_banner(selection.index)
         self._section_start_dlong_label.setText(
             f"Starting DLONG: {self.format_length(selection.start_dlong)}"
         )
@@ -3356,6 +3366,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
             self._adjusted_section_end_dlong_label.setText("Adjusted Ending DLONG: –")
             self._adjusted_section_length_label.setText("Adjusted Section Length: –")
+            self._update_current_section_banner(self._selected_section_index)
             return
         start_dlong, end_dlong, length = adjusted
         self._adjusted_section_start_dlong_label.setText(
@@ -3366,6 +3377,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._adjusted_section_length_label.setText(
             f"Adjusted Section Length: {self.format_length_with_secondary(length)}"
+        )
+        self._update_current_section_banner(self._selected_section_index)
+
+    def _update_current_section_banner(self, section_index: int | None) -> None:
+        if section_index is None:
+            self._current_section_banner.setText(
+                "Currently selected section: – (Adjusted DLONG –)"
+            )
+            return
+        adjusted = self._adjusted_section_dlongs(section_index)
+        if adjusted is None:
+            adjusted_text = "–"
+        else:
+            start_dlong, end_dlong, _length = adjusted
+            adjusted_text = (
+                f"{self.format_length(start_dlong)}–{self.format_length(end_dlong)}"
+            )
+        self._current_section_banner.setText(
+            f"Currently selected section: {section_index} "
+            f"(Adjusted DLONG {adjusted_text})"
         )
 
     def _adjusted_section_dlongs(
@@ -5219,7 +5250,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self, section_index: int, row_index: int, endpoint: str, new_dlat: float
     ) -> None:
         if self._fsect_drag_active:
-            live_drag_preview = self._live_fsect_drag_preview_checkbox.isChecked()
             self.fsectDiagramDlatChangeRequested.emit(
                 section_index,
                 row_index,
@@ -5229,8 +5259,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 False,
             )
             self._fsect_drag_dirty = True
-            if live_drag_preview:
-                self._schedule_fsect_drag_refresh()
+            self._schedule_fsect_drag_refresh()
             self._update_fsect_dlat_cell(section_index, row_index, endpoint, new_dlat)
             return
         self.fsectDiagramDlatChangeRequested.emit(
@@ -5259,14 +5288,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if self._fsect_drag_timer.isActive():
             self._fsect_drag_timer.stop()
 
-        live_drag_preview = self._live_fsect_drag_preview_checkbox.isChecked()
-        if live_drag_preview or self._fsect_drag_dirty:
-            self.fsectDiagramDragCommitRequested.emit(
-                section_index,
-                row_index,
-                endpoint,
-                new_dlat,
-            )
+        self.fsectDiagramDragCommitRequested.emit(
+            section_index,
+            row_index,
+            endpoint,
+            new_dlat,
+        )
         self._fsect_drag_dirty = False
 
     def _schedule_fsect_drag_refresh(self) -> None:
