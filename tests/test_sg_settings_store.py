@@ -162,3 +162,23 @@ def test_tso_visibility_detail_lists_round_trip(tmp_path):
     assert store.get_tso_visibility_detail_lists(sg_path) == [
         {"section": 4, "sub_index": 0, "lod_suffix": "H", "tso_ids": [1, 2]}
     ]
+
+
+def test_mrk_export_locations_round_trip_relative_to_project(tmp_path):
+    sg_path = tmp_path / "speedway.sg"
+    sg_path.write_text("", encoding="utf-8")
+    store = SGSettingsStore()
+
+    pitwall_path = tmp_path / "exports" / "pitwall.txt"
+    mrk_path = tmp_path / "exports" / "speedway.mrk"
+    store.set_mrk_export_locations(sg_path, pitwall_path, mrk_path)
+
+    payload = store.load(sg_path)
+    assert payload["mrk_export_locations"] == {
+        "pitwall_txt": "exports/pitwall.txt",
+        "mrk_file": "exports/speedway.mrk",
+    }
+    assert store.get_mrk_export_locations(sg_path) == {
+        "pitwall_txt": pitwall_path.resolve(),
+        "mrk_file": mrk_path.resolve(),
+    }

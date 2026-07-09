@@ -35,6 +35,69 @@ from sg_viewer.ui.mrk_textures_dialog import (
 logger = logging.getLogger(__name__)
 
 
+class MrkExportLocationsDialog(QtWidgets.QDialog):
+    """Dialog for project-persisted MRK/pitwall export locations."""
+
+    def __init__(
+        self,
+        pitwall_path: Path,
+        mrk_path: Path,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("MRK Export Locations")
+        self._pitwall_edit = QtWidgets.QLineEdit(str(pitwall_path))
+        self._mrk_edit = QtWidgets.QLineEdit(str(mrk_path))
+
+        layout = QtWidgets.QVBoxLayout(self)
+        form = QtWidgets.QFormLayout()
+        form.addRow(
+            "pitwall.txt:",
+            self._path_row(
+                self._pitwall_edit,
+                "Select pitwall.txt Location",
+                "Text Files (*.txt);;All Files (*)",
+            ),
+        )
+        form.addRow(
+            "<track>.mrk:",
+            self._path_row(
+                self._mrk_edit,
+                "Select MRK File Location",
+                "MRK Files (*.mrk);;All Files (*)",
+            ),
+        )
+        layout.addLayout(form)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _path_row(
+        self, edit: QtWidgets.QLineEdit, title: str, file_filter: str
+    ) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget(self)
+        layout = QtWidgets.QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(edit)
+        button = QtWidgets.QPushButton("Browse...")
+        button.clicked.connect(lambda: self._browse(edit, title, file_filter))
+        layout.addWidget(button)
+        return widget
+
+    def _browse(self, edit: QtWidgets.QLineEdit, title: str, file_filter: str) -> None:
+        path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, title, edit.text(), file_filter
+        )
+        if path_str:
+            edit.setText(path_str)
+
+    def paths(self) -> tuple[Path, Path]:
+        return Path(self._pitwall_edit.text()).expanduser(), Path(self._mrk_edit.text()).expanduser()
+
+
 class _MrkTexturePatternDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(
         self,
@@ -128,6 +191,7 @@ class MrkController:
         w.mrk_move_down_button.clicked.connect(self._on_mrk_move_down_requested)
         w.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
         w.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
+        w.mrk_export_locations_button.clicked.connect(self._on_mrk_export_locations_requested)
         w.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         w.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
         w.mrk_texture_pattern_show_colors_checkbox.toggled.connect(self._on_mrk_texture_pattern_display_mode_changed)
@@ -162,6 +226,59 @@ class MrkController:
             f"Saved {len(self._manual_wall_height_overrides)} manual wall height override(s)."
         )
 
+    def _default_export_paths(self) -> tuple[Path, Path]:
+        base_dir = Path(self._dialog_default_directory())
+        track_name = self._current_path.stem if self._current_path is not None else "track"
+        return base_dir / "pitwall.txt", base_dir / f"{track_name}.mrk"
+
+    def _configured_export_paths(self) -> tuple[Path, Path]:
+        pitwall_path, mrk_path = self._default_export_paths()
+        if self._current_path is not None:
+            locations = self._sg_settings_store.get_mrk_export_locations(self._current_path)
+            pitwall_path = locations.get("pitwall_txt", pitwall_path)
+            mrk_path = locations.get("mrk_file", mrk_path)
+        return pitwall_path, mrk_path
+
+    def _persist_export_paths(self, pitwall_path: Path, mrk_path: Path) -> None:
+        if self._current_path is None:
+            return
+        self._sg_settings_store.set_mrk_export_locations(
+            self._current_path, pitwall_path, mrk_path
+        )
+
+    def _on_mrk_export_locations_requested(self) -> None:
+        pitwall_path, mrk_path = self._configured_export_paths()
+        dialog = MrkExportLocationsDialog(pitwall_path, mrk_path, self._window)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        pitwall_path, mrk_path = dialog.paths()
+        if not pitwall_path.suffix:
+            pitwall_path = pitwall_path.with_suffix(".txt")
+        if mrk_path.suffix.lower() != ".mrk":
+            mrk_path = mrk_path.with_suffix(".mrk")
+        self._persist_export_paths(pitwall_path, mrk_path)
+        self._window.show_status_message("Updated MRK export locations.")
+
+    def _pitwall_export_path(self) -> Path | None:
+        pitwall_path, _mrk_path = self._configured_export_paths()
+        return pitwall_path if pitwall_path.suffix else pitwall_path.with_suffix(".txt")
+
+    def _mrk_export_path(self) -> Path | None:
+        _pitwall_path, mrk_path = self._configured_export_paths()
+        return mrk_path if mrk_path.suffix.lower() == ".mrk" else mrk_path.with_suffix(".mrk")
+
+    def _confirm_export_overwrite(self, path: Path) -> bool:
+        if not path.exists():
+            return True
+        response = QtWidgets.QMessageBox.warning(
+            self._window,
+            "Overwrite Export File",
+            f"{path} already exists. Overwrite the previous version?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
     def _generate_pitwall_txt(self) -> None:
         sections, _ = self._window.preview.get_section_set()
         if not sections:
@@ -175,18 +292,9 @@ class MrkController:
         wall_height = self._window.pitwall_wall_height_500ths()
         armco_height = self._window.pitwall_armco_height_500ths()
 
-        output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self._window,
-            "Save pitwall.txt",
-            self._dialog_default_file_path("pitwall.txt"),
-            "Text Files (*.txt);;All Files (*)",
-        )
-        if not output_path:
+        path = self._pitwall_export_path()
+        if path is None or not self._confirm_export_overwrite(path):
             return
-
-        path = Path(output_path)
-        if not path.suffix:
-            path = path.with_suffix(".txt")
 
         generated_entries: list[tuple[int, int, int, int]] = []
         for section_index, _section in enumerate(sections):
@@ -757,17 +865,9 @@ class MrkController:
         self._window.show_status_message(f"Exported MRK data to {path.name}")
 
     def _on_mrk_generate_file_requested(self) -> None:
-        path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
-            self._window,
-            "Generate MRK File",
-            self._dialog_default_directory(),
-            "MRK Files (*.mrk)",
-        )
-        if not path_str:
+        path = self._mrk_export_path()
+        if path is None or not self._confirm_export_overwrite(path):
             return
-        path = Path(path_str)
-        if path.suffix.lower() != ".mrk":
-            path = path.with_suffix(".mrk")
 
         try:
             mark_file = self._build_mark_file_from_table()

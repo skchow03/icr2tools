@@ -263,6 +263,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._mrk_texture_pattern_show_colors_checkbox.setChecked(True)
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
+        self._mrk_export_locations_button = QtWidgets.QPushButton("Export locations...")
         self._mrk_save_button = QtWidgets.QPushButton("Export MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Import MRK entries")
         self._generate_pitwall_button = QtWidgets.QPushButton("Generate pitwall.txt")
@@ -1081,11 +1082,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         pitwall_multiplier_row.addStretch()
         pitwall_height_layout.addLayout(pitwall_multiplier_row)
         pitwall_buttons_row = QtWidgets.QHBoxLayout()
-        pitwall_buttons_row.addWidget(self._generate_pitwall_button)
         pitwall_buttons_row.addWidget(self._manual_wall_height_overrides_button)
         pitwall_height_layout.addLayout(pitwall_buttons_row)
         pitwall_height_group.setLayout(pitwall_height_layout)
         mrk_layout.addWidget(pitwall_height_group)
+
+        mrk_file_group = QtWidgets.QGroupBox("File")
+        mrk_file_layout = QtWidgets.QGridLayout()
+        mrk_file_layout.setHorizontalSpacing(8)
+        mrk_file_layout.setVerticalSpacing(6)
+        mrk_file_layout.addWidget(self._generate_pitwall_button, 0, 0)
+        mrk_file_layout.addWidget(self._mrk_generate_file_button, 0, 1)
+        mrk_file_layout.addWidget(self._mrk_export_locations_button, 1, 0, 1, 2)
+        mrk_file_group.setLayout(mrk_file_layout)
+        mrk_layout.addWidget(mrk_file_group)
 
         mrk_buttons = QtWidgets.QGridLayout()
         mrk_buttons.setHorizontalSpacing(8)
@@ -1095,7 +1105,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.addWidget(self._mrk_move_up_button, 0, 2)
         mrk_buttons.addWidget(self._mrk_move_down_button, 0, 3)
         mrk_buttons.addWidget(self._mrk_textures_button, 1, 0)
-        mrk_buttons.addWidget(self._mrk_generate_file_button, 1, 1)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
         mrk_layout.addWidget(self._mrk_entries_table)
@@ -2216,6 +2225,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_entries_table(self) -> QtWidgets.QTableWidget:
         return self._mrk_entries_table
+
+    @property
+    def mrk_export_locations_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_export_locations_button
 
     @property
     def mrk_save_button(self) -> QtWidgets.QPushButton:
