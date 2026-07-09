@@ -256,7 +256,7 @@ def build_viewer_menu_bar(window: QtWidgets.QMainWindow, groups: ViewerActionGro
     mrk_menu = tools_menu.addMenu("MRK")
     for act in (groups.mrk.mrk_add_entry_action, groups.mrk.mrk_delete_entry_action, groups.mrk.mrk_move_up_action, groups.mrk.mrk_move_down_action): mrk_menu.addAction(act)
     mrk_menu.addSeparator()
-    for act in (groups.mrk.mrk_textures_action, groups.mrk.mrk_generate_file_action, groups.mrk.mrk_save_entries_action, groups.mrk.mrk_load_entries_action): mrk_menu.addAction(act)
+    for act in (groups.mrk.mrk_textures_action, groups.mrk.mrk_generate_file_action): mrk_menu.addAction(act)
     tools_menu.addSeparator()
     for act in (groups.tsd.show_palette_colors_action, groups.tso.show_unique_tso_filenames_action, groups.track3d.three_d_tools_action): tools_menu.addAction(act)
     tools_menu.addSeparator(); tools_menu.addAction(groups.track3d.run_integrity_checks_action)

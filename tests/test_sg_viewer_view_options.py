@@ -11,6 +11,7 @@ try:
     from sg_viewer.ui.controllers.features.document_controller import DocumentController
     from sg_viewer.ui.app import SGViewerWindow
     from sg_viewer.ui.preview_widget_qt import PreviewWidgetQt
+    from sg_viewer.ui.presentation.window_panels import create_fsect_panel
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
@@ -574,11 +575,15 @@ def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
         window.close()
 
 
-def test_mrk_tab_buttons_use_entries_labels(qapp):
+def test_mrk_tab_buttons_hide_import_export_entries_controls(qapp):
     window = SGViewerWindow()
     try:
-        assert window.mrk_save_button.text() == "Save MRK entries"
-        assert window.mrk_load_button.text() == "Load MRK entries"
+        sidebar_buttons = {
+            button.text() for button in window._mrk_sidebar.findChildren(QtWidgets.QPushButton)
+        }
+
+        assert "Export MRK entries" not in sidebar_buttons
+        assert "Import MRK entries" not in sidebar_buttons
         assert window.mrk_move_up_button.text() == "Move Up"
         assert window.mrk_move_down_button.text() == "Move Down"
         assert window.generate_pitwall_button.text() == "Generate pitwall.txt"
@@ -586,6 +591,43 @@ def test_mrk_tab_buttons_use_entries_labels(qapp):
         assert window.pitwall_armco_height_500ths() == 18000
     finally:
         window.close()
+
+
+def test_fsect_panel_places_left_move_button_before_right_move_button(qapp):
+    buttons = {
+        name: QtWidgets.QPushButton(text)
+        for name, text in (
+            ("copy_prev", "Copy Previous"),
+            ("copy_next", "Copy Next"),
+            ("add", "Add"),
+            ("delete", "Delete"),
+            ("move_right", "Move Fsect Right"),
+            ("move_left", "Move Fsect Left"),
+            ("swap", "Swap"),
+        )
+    }
+    table = QtWidgets.QTableWidget()
+    diagram = QtWidgets.QWidget()
+
+    panel = create_fsect_panel(
+        copy_prev_button=buttons["copy_prev"],
+        copy_next_button=buttons["copy_next"],
+        add_button=buttons["add"],
+        delete_button=buttons["delete"],
+        move_up_button=buttons["move_right"],
+        move_down_button=buttons["move_left"],
+        swap_types_button=buttons["swap"],
+        table=table,
+        diagram=diagram,
+    )
+
+    try:
+        move_row = panel.layout.itemAt(2).layout()
+
+        assert move_row.itemAt(0).widget().text() == "Move Fsect Left"
+        assert move_row.itemAt(1).widget().text() == "Move Fsect Right"
+    finally:
+        panel.widget.close()
 
 
 def test_pitwall_controls_are_grouped_in_wall_heights_box(qapp):

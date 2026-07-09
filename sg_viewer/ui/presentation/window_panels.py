@@ -66,8 +66,8 @@ def create_fsect_panel(
     layout.addLayout(edit_row)
 
     move_row = QtWidgets.QHBoxLayout()
-    move_row.addWidget(move_up_button)
     move_row.addWidget(move_down_button)
+    move_row.addWidget(move_up_button)
     layout.addLayout(move_row)
     layout.addWidget(swap_types_button)
     layout.addWidget(QtWidgets.QLabel("Fsects"))

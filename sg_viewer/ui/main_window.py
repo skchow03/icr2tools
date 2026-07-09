@@ -1091,8 +1091,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.addWidget(self._mrk_move_down_button, 0, 3)
         mrk_buttons.addWidget(self._mrk_textures_button, 1, 0)
         mrk_buttons.addWidget(self._mrk_generate_file_button, 1, 1)
-        mrk_buttons.addWidget(self._mrk_save_button, 1, 2)
-        mrk_buttons.addWidget(self._mrk_load_button, 1, 3)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
         mrk_layout.addWidget(self._mrk_entries_table)
