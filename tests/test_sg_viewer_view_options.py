@@ -208,16 +208,18 @@ def test_fsect_delta_columns_follow_and_edit_next_fsect(qapp):
 
         window._update_fsect_table(0)
 
-        assert window.fsect_table.item(0, 3).text() == "0.1"
-        assert window.fsect_table.item(0, 4).text() == "0.1"
-        assert window.fsect_table.item(1, 3).text() == ""
-        assert window.fsect_table.item(1, 4).text() == ""
+        assert window.fsect_table.horizontalHeaderItem(0).text() == "1"
+        assert window.fsect_table.horizontalHeaderItem(1).text() == "0"
+        assert window.fsect_table.item(4, 1).text() == "0.1"
+        assert window.fsect_table.item(1, 1).text() == "0.1"
+        assert window.fsect_table.item(4, 0).text() == ""
+        assert window.fsect_table.item(1, 0).text() == ""
 
-        window.fsect_table.item(0, 3).setText("0.2")
-        window._on_fsect_cell_changed(0, 3)
+        window.fsect_table.item(3, 0).setText("0.2")
+        window._on_fsect_cell_changed(3, 0)
 
         assert window.preview.get_section_fsects(0)[1].start_dlat == 1500.0
-        assert window.fsect_table.item(0, 3).text() == "0.2"
+        assert window.fsect_table.item(3, 0).text() == "0.2"
     finally:
         window.close()
 

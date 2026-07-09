@@ -1614,7 +1614,7 @@ class SGViewerController:
         self._window.swap_fsect_types_button.setEnabled(True)
         self._swap_fsect_types_action.setEnabled(True)
         fsects = self._window.preview.get_section_fsects(selection.index)
-        row_index = self._window.fsect_table.currentColumn()
+        row_index = self._window.selected_fsect_index()
         delete_enabled = bool(fsects)
         move_up_enabled = bool(fsects) and row_index > 0
         move_down_enabled = bool(fsects) and 0 <= row_index < len(fsects) - 1
