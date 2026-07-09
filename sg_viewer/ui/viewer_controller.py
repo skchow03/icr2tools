@@ -56,9 +56,9 @@ from sg_viewer.services.trackside_objects import (
 from sg_viewer.model.sg_model import Point, SectionPreview
 from sg_viewer.model.selection import SectionSelection
 from sg_viewer.ui.altitude_units import (
-    feet_from_500ths,
     feet_from_slider_units,
     feet_to_500ths,
+    units_from_500ths,
     units_to_500ths,
 )
 from sg_viewer.ui.presentation.units_presenter import (
@@ -1335,25 +1335,29 @@ class SGViewerController:
         if sgfile is None:
             return
 
-        altitudes: list[int] = []
-        for section in sgfile.sects:
-            section_altitudes = list(getattr(section, "alt", []) or [])
-            altitudes.extend(section_altitudes)
+        bounds = self._window.preview.get_elevation_profile_bounds(
+            samples_per_section=self._current_samples_per_section(),
+            include_padding=False,
+        )
+        if bounds is None:
+            altitudes: list[int] = []
+            for section in sgfile.sects:
+                section_altitudes = list(getattr(section, "alt", []) or [])
+                altitudes.extend(section_altitudes)
+            if not altitudes:
+                return
+            bounds = (float(min(altitudes)), float(max(altitudes)))
 
-        if not altitudes:
-            return
+        self._reset_altitude_range_500ths(bounds[0], bounds[1])
 
-        min_altitude = feet_from_500ths(min(altitudes))
-        max_altitude = feet_from_500ths(max(altitudes))
-        self._reset_altitude_range(min_altitude, max_altitude)
-
-    def _reset_altitude_range(self, min_altitude: float, max_altitude: float) -> None:
+    def _reset_altitude_range_500ths(self, min_altitude: float, max_altitude: float) -> None:
         min_spin = self._window.altitude_min_spin
         max_spin = self._window.altitude_max_spin
-        min_value = min(min_altitude, max_altitude)
-        max_value = max(min_altitude, max_altitude)
+        unit = self._window.xsect_altitude_unit()
+        min_value = units_from_500ths(min(min_altitude, max_altitude), unit)
+        max_value = units_from_500ths(max(min_altitude, max_altitude), unit)
         if math.isclose(min_value, max_value):
-            max_value = min_value + 0.1
+            max_value = min_value + self._window.altitude_display_step()
 
         min_spin.blockSignals(True)
         max_spin.blockSignals(True)

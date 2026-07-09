@@ -373,7 +373,7 @@ class _RuntimePersistenceMixin:
         )
 
     def get_elevation_profile_bounds(
-        self, samples_per_section: int = 10
+        self, samples_per_section: int = 10, *, include_padding: bool = True
     ) -> tuple[float, float] | None:
         sgfile = self._profile_sgfile()
         if sgfile is None or self._track_length is None:
@@ -398,7 +398,7 @@ class _RuntimePersistenceMixin:
         if missing:
             dirty.update(missing)
 
-        if not dirty and cache_key in self._elevation_bounds_cache:
+        if include_padding and not dirty and cache_key in self._elevation_bounds_cache:
             return self._elevation_bounds_cache[cache_key]
 
         for xsect_index in sorted(dirty):
@@ -435,6 +435,9 @@ class _RuntimePersistenceMixin:
         if min_alt == max_alt:
             min_alt -= 1.0
             max_alt += 1.0
+
+        if not include_padding:
+            return (min_alt, max_alt)
 
         padding = max(1.0, (max_alt - min_alt) * 0.05)
         bounds = (min_alt - padding, max_alt + padding)
