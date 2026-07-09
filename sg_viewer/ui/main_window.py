@@ -64,6 +64,9 @@ from sg_viewer.ui.presentation.window_panels import (
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 
 
+MARQUEE_STATUS_INTERVAL_MS = 20
+
+
 class GeometryTabButton(QtWidgets.QPushButton):
     """Push button whose requested enabled state is gated by the Geometry tab."""
 
@@ -177,7 +180,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_last_message = ""
         self._marquee_entry_gap_spaces = 80
         self._marquee_status_timer = QtCore.QTimer(self)
-        self._marquee_status_timer.setInterval(16)
+        self._marquee_status_timer.setInterval(MARQUEE_STATUS_INTERVAL_MS)
         self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
 
         shortcut_labels = {

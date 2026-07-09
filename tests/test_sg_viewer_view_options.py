@@ -46,7 +46,10 @@ def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(qapp
         window._marquee_status_label.resize(320, window._marquee_status_label.height())
         window._queue_next_marquee_status_message()
 
-        assert window._marquee_status_timer.interval() == 16
+        assert (
+            window._marquee_status_timer.interval()
+            == main_window_module.MARQUEE_STATUS_INTERVAL_MS
+        )
 
         space_width = window._marquee_status_label.fontMetrics().horizontalAdvance(" ")
         leading_spaces = len(window._marquee_status_text) - len(
