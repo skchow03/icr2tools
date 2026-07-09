@@ -150,12 +150,18 @@ def test_viewport_toolbar_labels_and_mouse_hint(qapp):
         assert preview_layout.indexOf(
             window._quick_display_toolbar
         ) < preview_layout.indexOf(window.preview)
-        assert (
-            window._quick_display_toolbar.findChildren(
-                QtWidgets.QLabel, options=QtCore.Qt.FindChildrenRecursively
-            )[0].text()
-            == "Units:"
+        sidebar_layout = window._right_sidebar_container.layout()
+        sidebar_header = sidebar_layout.itemAt(0).widget()
+        assert sidebar_layout.indexOf(sidebar_header) < sidebar_layout.indexOf(
+            window.right_sidebar_tabs
         )
+        assert window.measurement_units_combo.parentWidget() is sidebar_header
+        assert [
+            label.text()
+            for label in sidebar_header.findChildren(
+                QtWidgets.QLabel, options=QtCore.Qt.FindChildrenRecursively
+            )
+        ][-1] == "Units:"
         assert window.xsect_dlat_line_checkbox.text() == "X-sect DLAT"
         assert window.sg_fsects_checkbox.text() == "F-sections"
         assert window.land_objects_overlay_checkbox.text() == "Land objects"
