@@ -312,6 +312,39 @@ class SGSettingsStore:
         visibility_state["detail_lists"] = detail_lists
         self.update(sg_path, tso_visibility=visibility_state)
 
+
+    def get_mrk_export_locations(self, sg_path: Path) -> dict[str, Path]:
+        payload = self.load(sg_path)
+        raw = payload.get("mrk_export_locations")
+        if not isinstance(raw, dict):
+            return {}
+        locations: dict[str, Path] = {}
+        for key in ("pitwall_txt", "mrk_file"):
+            value = raw.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            path = Path(value)
+            if not path.is_absolute():
+                path = (sg_path.parent / path).resolve()
+            locations[key] = path
+        return locations
+
+    def set_mrk_export_locations(
+        self, sg_path: Path, pitwall_txt: Path | None, mrk_file: Path | None
+    ) -> None:
+        values: dict[str, str] = {}
+        for key, path in (("pitwall_txt", pitwall_txt), ("mrk_file", mrk_file)):
+            if path is None:
+                continue
+            stored_path = path
+            if path.is_absolute():
+                try:
+                    stored_path = path.resolve().relative_to(sg_path.parent.resolve())
+                except ValueError:
+                    stored_path = path.resolve()
+            values[key] = str(stored_path)
+        self.update(sg_path, mrk_export_locations=values)
+
     def get_mrk_wall_heights(self, sg_path: Path) -> tuple[float, float, float] | None:
         payload = self.load(sg_path)
         raw = payload.get("mrk_wall_heights")
