@@ -556,7 +556,7 @@ class SectionsController:
             new_fsect = PreviewFSection(start_dlat=-300000, end_dlat=-300000, surface_type=7, type2=0)
             insert_index = 0
         else:
-            row_index = self._host._window.fsect_table.currentRow()
+            row_index = self._host._window.fsect_table.currentColumn()
             if row_index < 0 or row_index >= len(fsects):
                 self._host._window.show_status_message("Select an Fsect row to add below.")
                 return
@@ -566,7 +566,7 @@ class SectionsController:
         self._host._window.preview.insert_fsection(section_index, insert_index, new_fsect)
         self._host._mark_fsects_dirty(True)
         self._host._window.update_selection_sidebar(selection)
-        self._host._window.fsect_table.setCurrentCell(insert_index, 0)
+        self._host._window.fsect_table.setCurrentCell(0, insert_index)
         self._host._update_fsect_edit_buttons()
         self._host._window.show_status_message(f"Added fsect at row {insert_index}.")
 
@@ -574,7 +574,7 @@ class SectionsController:
         selection = self._host._active_selection
         if selection is None:
             return
-        row_index = self._host._window.fsect_table.currentRow()
+        row_index = self._host._window.fsect_table.currentColumn()
         fsects = self._host._window.preview.get_section_fsects(selection.index)
         if row_index < 0 or row_index >= len(fsects):
             self._host._window.show_status_message("Select an Fsect row to delete.")
@@ -584,7 +584,7 @@ class SectionsController:
         self._host._window.update_selection_sidebar(selection)
         remaining = len(self._host._window.preview.get_section_fsects(selection.index))
         if remaining:
-            self._host._window.fsect_table.setCurrentCell(min(row_index, remaining - 1), 0)
+            self._host._window.fsect_table.setCurrentCell(0, min(row_index, remaining - 1))
         self._host._update_fsect_edit_buttons()
         self._host._window.show_status_message(f"Deleted fsect row {row_index}.")
 
@@ -599,7 +599,7 @@ class SectionsController:
         if selection is None:
             return
         section_index = selection.index
-        row_index = self._host._window.fsect_table.currentRow()
+        row_index = self._host._window.fsect_table.currentColumn()
         fsects = list(self._host._window.preview.get_section_fsects(section_index))
         if row_index < 0 or row_index >= len(fsects):
             self._host._window.show_status_message("Select an Fsect row to move.")
@@ -618,7 +618,7 @@ class SectionsController:
 
         self._host._mark_fsects_dirty(True)
         self._host._window.update_selection_sidebar(selection)
-        self._host._window.fsect_table.setCurrentCell(target_index, 0)
+        self._host._window.fsect_table.setCurrentCell(0, target_index)
         self._host._update_fsect_edit_buttons()
         self._host._window.show_status_message(
             f"Moved fsect from row {row_index} to row {target_index}."
