@@ -143,6 +143,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_status_text = ""
         self._marquee_status_offset = 0
         self._marquee_last_message = ""
+        self._marquee_entry_gap_px = 100
         self._marquee_status_timer = QtCore.QTimer(self)
         self._marquee_status_timer.setInterval(120)
         self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
@@ -1410,6 +1411,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._queue_next_marquee_status_message()
         self._marquee_status_timer.start()
 
+    def _marquee_spaces_for_width(self, width_px: int) -> str:
+        space_width = max(1, self._marquee_status_label.fontMetrics().horizontalAdvance(" "))
+        return " " * max(1, math.ceil(width_px / space_width))
+
     def _queue_next_marquee_status_message(self) -> None:
         message = random_marquee_message()
         if len(self._marquee_status_text) > 1:
@@ -1418,7 +1423,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     break
                 message = random_marquee_message()
         self._marquee_last_message = message
-        self._marquee_status_text = f"     {message}     "
+        entry_padding = self._marquee_spaces_for_width(self._marquee_status_label.width())
+        trailing_gap = self._marquee_spaces_for_width(self._marquee_entry_gap_px)
+        self._marquee_status_text = f"{entry_padding}{message}{trailing_gap}"
         self._marquee_status_offset = 0
 
     def _advance_marquee_status(self) -> None:

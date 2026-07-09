@@ -33,6 +33,33 @@ def qapp():
     yield app
 
 
+def test_marquee_status_enters_from_right_edge_with_pixel_gap(qapp, monkeypatch):
+    import sg_viewer.ui.main_window as main_window_module
+
+    messages = iter(["FIRST", "SECOND"])
+    monkeypatch.setattr(
+        main_window_module, "random_marquee_message", lambda: next(messages)
+    )
+    window = SGViewerWindow()
+    try:
+        window._marquee_status_timer.stop()
+        window._marquee_status_label.resize(320, window._marquee_status_label.height())
+        window._queue_next_marquee_status_message()
+
+        space_width = window._marquee_status_label.fontMetrics().horizontalAdvance(" ")
+        leading_spaces = len(window._marquee_status_text) - len(
+            window._marquee_status_text.lstrip(" ")
+        )
+        assert leading_spaces * space_width >= window._marquee_status_label.width()
+        assert "FIRST" in window._marquee_status_text
+
+        after_message = window._marquee_status_text.split("FIRST", 1)[1]
+        trailing_spaces = len(after_message) - len(after_message.lstrip(" "))
+        assert trailing_spaces * space_width >= 100
+    finally:
+        window.close()
+
+
 def test_measurement_units_are_global(qapp):
     window = SGViewerWindow()
     try:
