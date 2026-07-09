@@ -778,8 +778,19 @@ def test_load_tsd_state_restores_preview_overlay_for_active_file_index(qapp, tmp
         window.controller._current_path = sg_path
         window.preview.set_show_tsd_lines(False)
 
-        window.controller._load_tsd_state_for_current_track()
+        progress_events = []
+        window.controller._load_tsd_state_for_current_track(
+            lambda stage, message: progress_events.append((stage, message))
+        )
 
+        assert (0, "Resetting TSD and object project state…") in progress_events
+        assert (1, "Restoring Track3D file and color settings…") in progress_events
+        assert (2, "Restoring TSD object definitions and skid marks…") in progress_events
+        assert (3, "Restoring trackside object definitions…") in progress_events
+        assert (4, "Restoring TSO visibility lists and land objects…") in progress_events
+        assert (5, "Loading TSD file 1 of 2: first.tsd…") in progress_events
+        assert (5, "Loading TSD file 2 of 2: second.tsd…") in progress_events
+        assert (6, "Activating restored TSD selection and overlays…") in progress_events
         assert window.controller._active_tsd_file_index == 1
         assert window.preview.show_tsd_lines is True
         assert len(window.preview.tsd_lines) == 1
@@ -2386,7 +2397,7 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
             progress.update(
                 kwargs["progress_offset"] + 8, "Restoring TSD files and project data…"
             )
-            progress.update(kwargs["progress_offset"] + 9, "Project loaded.")
+            progress.update(kwargs["progress_offset"] + 15, "Project loaded.")
 
         monkeypatch.setattr(
             "sg_viewer.ui.controllers.features.document_controller.ProjectLoadProgress",
@@ -2399,7 +2410,7 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         window.controller._document_controller.open_project_path(project_path)
 
         assert closed
-        assert events[0] == (0, "Loading SG CREATE Project:11")
+        assert events[0] == (0, "Loading SG CREATE Project:17")
         assert (0, "Opening project file track.sgc…") in events
         assert (1, "Resolving referenced SG file…") in events
         assert (4, "Applying loaded track state…") in events
@@ -2407,7 +2418,7 @@ def test_open_project_reports_progress_while_loading_sgc(qapp, monkeypatch, tmp_
         assert (8, "Restoring manual wall height overrides…") in events
         assert (9, "Restoring MRK objects and metadata…") in events
         assert (10, "Restoring TSD files and project data…") in events
-        assert (11, "Project loaded.") in events
+        assert (17, "Project loaded.") in events
     finally:
         window.close()
 
