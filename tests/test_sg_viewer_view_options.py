@@ -33,7 +33,7 @@ def qapp():
     yield app
 
 
-def test_marquee_status_enters_from_right_edge_with_pixel_gap(qapp, monkeypatch):
+def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(qapp, monkeypatch):
     import sg_viewer.ui.main_window as main_window_module
 
     messages = iter(["FIRST", "SECOND"])
@@ -52,10 +52,16 @@ def test_marquee_status_enters_from_right_edge_with_pixel_gap(qapp, monkeypatch)
         )
         assert leading_spaces * space_width >= window._marquee_status_label.width()
         assert "FIRST" in window._marquee_status_text
+        assert window._marquee_status_text.endswith("\t" * 5)
 
-        after_message = window._marquee_status_text.split("FIRST", 1)[1]
-        trailing_spaces = len(after_message) - len(after_message.lstrip(" "))
-        assert trailing_spaces * space_width >= 100
+        for _ in range(len(window._marquee_status_text)):
+            window._advance_marquee_status()
+            if "SECOND" in window._marquee_status_text:
+                break
+
+        assert "SECOND" in window._marquee_status_text
+        assert "FIRST" in window._marquee_status_text
+        assert window._marquee_status_text.split("FIRST", 1)[1].startswith("\t" * 5)
     finally:
         window.close()
 
