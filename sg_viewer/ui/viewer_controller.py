@@ -426,6 +426,7 @@ class SGViewerController:
                 self._choose_project_working_folder,
                 self._clear_project_working_folder,
                 self._show_track_section_dlongs_dialog,
+                self._window.set_studio_chatter_enabled,
             ),
             section_editing=SectionEditingActions(
                 self._window,

@@ -179,6 +179,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_status_offset_px = 0
         self._marquee_last_message = ""
         self._marquee_entry_gap_spaces = 80
+        self._studio_chatter_enabled = True
         self._marquee_status_timer = QtCore.QTimer(self)
         self._marquee_status_timer.setInterval(MARQUEE_STATUS_INTERVAL_MS)
         self._marquee_status_timer.timeout.connect(self._advance_marquee_status)
@@ -1445,6 +1446,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         status_bar.addPermanentWidget(self._marquee_status_label, 1)
         self._queue_next_marquee_status_message()
         self._marquee_status_timer.start()
+
+    @property
+    def studio_chatter_enabled(self) -> bool:
+        return self._studio_chatter_enabled
+
+    def set_studio_chatter_enabled(self, enabled: bool) -> None:
+        self._studio_chatter_enabled = enabled
+        self._marquee_status_label.setVisible(enabled)
+        if enabled:
+            if not self._marquee_status_text:
+                self._queue_next_marquee_status_message()
+            if not self._marquee_status_timer.isActive():
+                self._marquee_status_timer.start()
+            return
+        self._marquee_status_timer.stop()
+        self._marquee_status_label.set_marquee_text("", 0)
 
     def _marquee_spaces_for_width(self, width_px: int) -> str:
         space_width = max(1, self._marquee_status_label.fontMetrics().horizontalAdvance(" "))

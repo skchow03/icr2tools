@@ -60,6 +60,7 @@ class ViewActions:
     choose_project_working_folder: Callback
     clear_project_working_folder: Callback
     show_track_section_dlongs_dialog: Callback
+    set_studio_chatter_enabled: Callable[[bool], None]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "open_background_action", _action("Load Background Image…", self.parent, self.open_background_file_dialog, "Ctrl+B"))
@@ -68,6 +69,11 @@ class ViewActions:
         object.__setattr__(self, "set_project_working_folder_action", _action("Set Project Working Folder…", self.parent, self.choose_project_working_folder))
         object.__setattr__(self, "clear_project_working_folder_action", _action("Clear Project Working Folder", self.parent, self.clear_project_working_folder, enabled=False))
         object.__setattr__(self, "show_section_dlongs_action", _action("Track Section DLONGs…", self.parent, self.show_track_section_dlongs_dialog))
+        studio_chatter_action = _action("Studio chatter", self.parent)
+        studio_chatter_action.setCheckable(True)
+        studio_chatter_action.setChecked(self.parent.studio_chatter_enabled)
+        studio_chatter_action.toggled.connect(self.set_studio_chatter_enabled)
+        object.__setattr__(self, "studio_chatter_action", studio_chatter_action)
         for attr, text, checked in (
             ("show_radii_action", "Show Radii", self.parent.radii_button.isChecked()),
             ("show_axes_action", "Show Axes", self.parent.axes_button.isChecked()),
@@ -228,7 +234,7 @@ def build_viewer_menu_bar(window: QtWidgets.QMainWindow, groups: ViewerActionGro
     view_menu.addSeparator()
     for act in (groups.view.set_project_working_folder_action, groups.view.clear_project_working_folder_action): view_menu.addAction(act)
     view_menu.addSeparator()
-    for act in (groups.view.show_section_dlongs_action, groups.view.show_radii_action, groups.view.show_axes_action, groups.view.show_crosshair_action, groups.view.show_background_image_action): view_menu.addAction(act)
+    for act in (groups.view.show_section_dlongs_action, groups.view.studio_chatter_action, groups.view.show_radii_action, groups.view.show_axes_action, groups.view.show_crosshair_action, groups.view.show_background_image_action): view_menu.addAction(act)
 
     tools_menu = window.menuBar().addMenu("Tools")
     section_menu = tools_menu.addMenu("Section Editing")

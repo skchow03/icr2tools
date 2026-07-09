@@ -74,6 +74,33 @@ def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(qapp
         window.close()
 
 
+def test_view_menu_studio_chatter_toggles_marquee_status(qapp):
+    window = SGViewerWindow()
+    try:
+        action = window.controller._studio_chatter_action
+
+        assert action.text() == "Studio chatter"
+        assert action.isCheckable()
+        assert action.isChecked()
+        assert window.studio_chatter_enabled
+        assert window._marquee_status_timer.isActive()
+        assert not window._marquee_status_label.isHidden()
+
+        action.setChecked(False)
+
+        assert not window.studio_chatter_enabled
+        assert not window._marquee_status_timer.isActive()
+        assert window._marquee_status_label.isHidden()
+
+        action.setChecked(True)
+
+        assert window.studio_chatter_enabled
+        assert window._marquee_status_timer.isActive()
+        assert not window._marquee_status_label.isHidden()
+    finally:
+        window.close()
+
+
 def test_measurement_units_are_global(qapp):
     window = SGViewerWindow()
     try:
