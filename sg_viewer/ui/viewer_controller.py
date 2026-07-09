@@ -18,7 +18,11 @@ from sg_viewer.model.history import FileHistory
 from sg_viewer.services.sg_settings_store import SGSettingsStore
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
-from sg_viewer.services.sg_integrity_checks import IntegrityProgress, build_integrity_report
+from sg_viewer.services.sg_integrity_checks import (
+    IntegrityProgress,
+    build_integrity_report,
+    format_integrity_memo,
+)
 from sg_viewer.services.tsd_io import (
     TrackSurfaceDetailFile,
     TrackSurfaceDetailLine,
@@ -1824,17 +1828,22 @@ class SGViewerController:
             text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
             layout.addWidget(text_edit)
 
+            copy_button = QtWidgets.QPushButton("Copy Report", self._integrity_report_window)
+            copy_button.clicked.connect(text_edit.selectAll)
+            copy_button.clicked.connect(text_edit.copy)
+
             close_button = QtWidgets.QPushButton("Close", self._integrity_report_window)
             close_button.clicked.connect(self._integrity_report_window.close)
             self._integrity_report_window.finished.connect(lambda _result: self._on_integrity_report_window_hidden())
             button_row = QtWidgets.QHBoxLayout()
             button_row.addStretch(1)
+            button_row.addWidget(copy_button)
             button_row.addWidget(close_button)
             layout.addLayout(button_row)
 
         text_edit = self._integrity_report_window.findChild(QtWidgets.QPlainTextEdit, "integrityReportText")
         if text_edit is not None:
-            text_edit.setPlainText(report.text)
+            text_edit.setPlainText(format_integrity_memo(report))
         self._window.preview.set_integrity_boundary_violation_points(
             (
                 *report.boundary_ownership_violation_points,
