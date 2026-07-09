@@ -555,17 +555,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sg_fsects_checkbox.setChecked(False)
         self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox("X-sect DLAT")
         self._xsect_dlat_line_checkbox.setChecked(False)
-        self._copy_fsects_prev_button = QtWidgets.QPushButton("Copy Fsects to Previous")
+        self._copy_fsects_prev_button = QtWidgets.QPushButton("Copy Fsects to Previous Section")
         self._copy_fsects_prev_button.setEnabled(False)
-        self._copy_fsects_next_button = QtWidgets.QPushButton("Copy Fsects to Next")
+        self._copy_fsects_next_button = QtWidgets.QPushButton("Copy Fsects to Next Section")
         self._copy_fsects_next_button.setEnabled(False)
-        self._add_fsect_button = QtWidgets.QPushButton("Insert Fsect Below")
+        self._add_fsect_button = QtWidgets.QPushButton("Insert New Fsect")
         self._add_fsect_button.setEnabled(False)
         self._delete_fsect_button = QtWidgets.QPushButton("Delete Fsect")
         self._delete_fsect_button.setEnabled(False)
-        self._move_fsect_up_button = QtWidgets.QPushButton("Move Fsect Up")
+        self._move_fsect_up_button = QtWidgets.QPushButton("Move Fsect Right")
         self._move_fsect_up_button.setEnabled(False)
-        self._move_fsect_down_button = QtWidgets.QPushButton("Move Fsect Down")
+        self._move_fsect_down_button = QtWidgets.QPushButton("Move Fsect Left")
         self._move_fsect_down_button.setEnabled(False)
         self._swap_fsect_types_button = QtWidgets.QPushButton(
             "Swap Type Across All Sections…"
@@ -727,7 +727,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._fsect_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
-        self._fsect_table.horizontalHeader().setStretchLastSection(True)
+        self._fsect_table.horizontalHeader().setStretchLastSection(False)
         self._fsect_table.setSizeAdjustPolicy(
             QtWidgets.QAbstractScrollArea.AdjustToContents
         )
