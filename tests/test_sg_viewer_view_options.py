@@ -15,7 +15,10 @@ try:
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
-    from sg_viewer.services.trackside_objects import TracksideObject
+    from sg_viewer.services.trackside_objects import (
+        TracksideObject,
+        normalize_trackside_filename,
+    )
     from sg_viewer.services.tsd_objects import (
         TsdZebraCrossingObject,
         tsd_object_to_payload,
@@ -4659,5 +4662,182 @@ def test_tsd_object_distance_spin_uses_window_measurement_unit(qapp):
         assert spin.value() == pytest.approx(0.3048)
         spin.setValue(1.0)
         assert spin.value_500ths() == units_to_500ths(1.0, "meter")
+    finally:
+        window.close()
+
+
+def test_tso_attributes_update_syncs_shape_to_matching_filenames(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="cone",
+                x=10,
+                y=20,
+                z=1,
+                yaw=2,
+                pitch=3,
+                tilt=4,
+                description="a",
+                bbox_length=100,
+                bbox_width=200,
+                rotation_point="center",
+                is_sprite=False,
+                sprite_width=0,
+            ),
+            TracksideObject(
+                filename="cone.3do",
+                x=30,
+                y=40,
+                z=5,
+                yaw=6,
+                pitch=7,
+                tilt=8,
+                description="b",
+                bbox_length=300,
+                bbox_width=400,
+                rotation_point="top_left",
+                is_sprite=False,
+                sprite_width=0,
+            ),
+        ]
+
+        window.controller._on_tso_attributes_updated(
+            0,
+            TracksideObject(
+                filename="cone",
+                x=11,
+                y=22,
+                z=2,
+                yaw=3,
+                pitch=4,
+                tilt=5,
+                description="updated",
+                bbox_length=777,
+                bbox_width=888,
+                rotation_point="bottom_right",
+                is_sprite=True,
+                sprite_width=999,
+            ),
+        )
+
+        assert window.controller._trackside_objects[0].x == 11
+        assert window.controller._trackside_objects[0].description == "updated"
+        assert window.controller._trackside_objects[1].x == 30
+        assert window.controller._trackside_objects[1].description == "b"
+        for obj in window.controller._trackside_objects:
+            assert obj.bbox_length == 777
+            assert obj.bbox_width == 888
+            assert obj.rotation_point == "bottom_right"
+            assert obj.is_sprite is True
+            assert obj.sprite_width == 999
+    finally:
+        window.close()
+
+
+def test_tso_filename_change_inherits_existing_shape_attributes(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="tree",
+                x=10,
+                y=20,
+                z=1,
+                yaw=2,
+                pitch=3,
+                tilt=4,
+                description="a",
+                bbox_length=100,
+                bbox_width=200,
+                rotation_point="center",
+                is_sprite=False,
+                sprite_width=0,
+            ),
+            TracksideObject(
+                filename="cone",
+                x=30,
+                y=40,
+                z=5,
+                yaw=6,
+                pitch=7,
+                tilt=8,
+                description="b",
+                bbox_length=777,
+                bbox_width=888,
+                rotation_point="bottom_right",
+                is_sprite=True,
+                sprite_width=999,
+            ),
+        ]
+
+        window.controller._on_tso_attributes_updated(
+            0,
+            TracksideObject(
+                filename="cone.3do",
+                x=11,
+                y=22,
+                z=2,
+                yaw=3,
+                pitch=4,
+                tilt=5,
+                description="renamed",
+                bbox_length=1,
+                bbox_width=2,
+                rotation_point="top_left",
+                is_sprite=False,
+                sprite_width=3,
+            ),
+        )
+
+        renamed = window.controller._trackside_objects[0]
+        assert normalize_trackside_filename(renamed.filename) == "cone"
+        assert renamed.x == 11
+        assert renamed.description == "renamed"
+        assert renamed.bbox_length == 777
+        assert renamed.bbox_width == 888
+        assert renamed.rotation_point == "bottom_right"
+        assert renamed.is_sprite is True
+        assert renamed.sprite_width == 999
+    finally:
+        window.close()
+
+
+def test_new_tso_inherits_existing_shape_attributes_for_filename(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="cone",
+                x=10,
+                y=20,
+                z=1,
+                yaw=2,
+                pitch=3,
+                tilt=4,
+                description="a",
+                bbox_length=777,
+                bbox_width=888,
+                rotation_point="bottom_right",
+                is_sprite=True,
+                sprite_width=999,
+            ),
+        ]
+        monkeypatch.setattr(
+            window.controller,
+            "_closest_boundary_elevation_for_tso",
+            lambda obj: None,
+        )
+
+        new_object = window.controller._build_default_tso(
+            x=100, y=200, filename="cone.3do"
+        )
+
+        assert new_object.filename == "cone.3do"
+        assert new_object.bbox_length == 777
+        assert new_object.bbox_width == 888
+        assert new_object.rotation_point == "bottom_right"
+        assert new_object.is_sprite is True
+        assert new_object.sprite_width == 999
     finally:
         window.close()

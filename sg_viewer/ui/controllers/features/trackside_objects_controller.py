@@ -359,6 +359,61 @@ class TracksideObjectsController:
     def _on_tso_visibility_lists_changed(self) -> None:
         self._set_tso_visibility_dirty(True)
 
+    def _tso_shape_attributes_for_filename(
+        self, filename: str, *, exclude_row: int | None = None
+    ) -> tuple[int, int, str, bool, int] | None:
+        target_filename = normalize_trackside_filename(filename)
+        if not target_filename:
+            return None
+        for index, existing in enumerate(self._trackside_objects):
+            if exclude_row is not None and index == exclude_row:
+                continue
+            if normalize_trackside_filename(existing.filename) == target_filename:
+                return (
+                    max(0, int(existing.bbox_length)),
+                    max(0, int(existing.bbox_width)),
+                    normalize_rotation_point(existing.rotation_point),
+                    bool(existing.is_sprite),
+                    max(0, int(existing.sprite_width)),
+                )
+        return None
+
+    def _with_tso_shape_attributes(
+        self, obj: TracksideObject, attributes: tuple[int, int, str, bool, int]
+    ) -> TracksideObject:
+        bbox_length, bbox_width, rotation_point, is_sprite, sprite_width = attributes
+        return TracksideObject(
+            filename=obj.filename,
+            x=obj.x,
+            y=obj.y,
+            z=obj.z,
+            yaw=obj.yaw,
+            pitch=obj.pitch,
+            tilt=obj.tilt,
+            description=obj.description,
+            bbox_length=bbox_length,
+            bbox_width=bbox_width,
+            rotation_point=normalize_rotation_point(rotation_point),
+            is_sprite=bool(is_sprite),
+            sprite_width=sprite_width,
+        )
+
+    def _sync_tso_shape_attributes_for_filename(
+        self, filename: str, attributes: tuple[int, int, str, bool, int]
+    ) -> bool:
+        target_filename = normalize_trackside_filename(filename)
+        if not target_filename:
+            return False
+        updated_any = False
+        for index, existing in enumerate(self._trackside_objects):
+            if normalize_trackside_filename(existing.filename) != target_filename:
+                continue
+            updated = self._with_tso_shape_attributes(existing, attributes)
+            if updated != existing:
+                self._trackside_objects[index] = updated
+                updated_any = True
+        return updated_any
+
     def _on_tso_visibility_lists_saved(self) -> None:
         self._set_tso_visibility_dirty(False)
 
@@ -396,7 +451,25 @@ class TracksideObjectsController:
             return
         if row < 0 or row >= len(self._trackside_objects):
             return
-        self._trackside_objects[row] = obj
+        target_filename = normalize_trackside_filename(obj.filename)
+        previous_filename = normalize_trackside_filename(
+            self._trackside_objects[row].filename
+        )
+        if target_filename != previous_filename:
+            existing_attributes = self._tso_shape_attributes_for_filename(
+                target_filename, exclude_row=row
+            )
+        else:
+            existing_attributes = None
+        attributes = existing_attributes or (
+            max(0, int(obj.bbox_length)),
+            max(0, int(obj.bbox_width)),
+            normalize_rotation_point(obj.rotation_point),
+            bool(obj.is_sprite),
+            max(0, int(obj.sprite_width)),
+        )
+        self._trackside_objects[row] = self._with_tso_shape_attributes(obj, attributes)
+        self._sync_tso_shape_attributes_for_filename(target_filename, attributes)
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
@@ -426,28 +499,14 @@ class TracksideObjectsController:
         if not target_filename:
             return
 
-        updated_any = False
-        for index, existing in enumerate(self._trackside_objects):
-            if normalize_trackside_filename(existing.filename) != target_filename:
-                continue
-            self._trackside_objects[index] = TracksideObject(
-                filename=existing.filename,
-                x=existing.x,
-                y=existing.y,
-                z=existing.z,
-                yaw=existing.yaw,
-                pitch=existing.pitch,
-                tilt=existing.tilt,
-                description=existing.description,
-                bbox_length=obj.bbox_length,
-                bbox_width=obj.bbox_width,
-                rotation_point=obj.rotation_point,
-                is_sprite=obj.is_sprite,
-                sprite_width=obj.sprite_width,
-            )
-            updated_any = True
-
-        if not updated_any:
+        attributes = (
+            max(0, int(obj.bbox_length)),
+            max(0, int(obj.bbox_width)),
+            normalize_rotation_point(obj.rotation_point),
+            bool(obj.is_sprite),
+            max(0, int(obj.sprite_width)),
+        )
+        if not self._sync_tso_shape_attributes_for_filename(target_filename, attributes):
             return
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
         self._refresh_tso_table()
@@ -679,7 +738,7 @@ class TracksideObjectsController:
             rotation_point="center",
         )
         boundary_elevation = self._closest_boundary_elevation_for_tso(candidate)
-        return TracksideObject(
+        obj = TracksideObject(
             filename=default_filename,
             x=x,
             y=y,
@@ -692,6 +751,8 @@ class TracksideObjectsController:
             bbox_width=0,
             rotation_point="center",
         )
+        attributes = self._tso_shape_attributes_for_filename(default_filename)
+        return self._with_tso_shape_attributes(obj, attributes) if attributes else obj
 
     def _set_tso_add_mode_active(self, active: bool) -> None:
         self._tso_add_mode_active = bool(active)
@@ -1457,6 +1518,11 @@ class TracksideObjectsController:
                 is_sprite=existing.is_sprite,
                 sprite_width=existing.sprite_width,
             )
+            inherited_attributes = self._tso_shape_attributes_for_filename(
+                filename, exclude_row=row
+            )
+            if inherited_attributes is not None:
+                obj = self._with_tso_shape_attributes(obj, inherited_attributes)
             if item.column() == 5:
                 relative_z = self._parse_tso_distance_from_display(
                     table.item(row, 5).text() if table.item(row, 5) else "0"
