@@ -1437,6 +1437,27 @@ def test_mrk_table_selection_updates_selected_wall_preview(qapp):
         window.close()
 
 
+def test_mrk_selected_wall_preview_refreshes_when_selected_entry_changes(qapp):
+    window = SGViewerWindow()
+    try:
+        table = window.mrk_entries_table
+        table.setRowCount(1)
+        values = [11, 5, 2, 6]
+        for column, value in enumerate(values):
+            table.setItem(0, column, QtWidgets.QTableWidgetItem(str(value)))
+
+        table.selectRow(0)
+        table.item(0, 0).setText("12")
+        table.item(0, 1).setText("6")
+        table.item(0, 2).setText("4")
+        table.item(0, 3).setText("3")
+
+        assert window.preview.selected_mrk_wall == (6, 12, 4)
+        assert window.preview.selected_mrk_wall_range == (6, 12, 4, 12, 6)
+    finally:
+        window.close()
+
+
 def test_mrk_texture_pattern_defaults_to_color_boxes(qapp):
     window = SGViewerWindow()
     try:
