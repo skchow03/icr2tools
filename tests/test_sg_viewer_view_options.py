@@ -15,6 +15,7 @@ try:
     from sg_viewer.model.preview_fsection import PreviewFSection
     from sg_viewer.model.selection import SectionSelection
     from sg_viewer.ui.about import ABOUT_DIALOG_TITLE, about_dialog_html
+    from sg_viewer.io.track3d_parser import Track3DDetailList, Track3DObjectList
     from sg_viewer.services.trackside_objects import (
         TracksideObject,
         normalize_trackside_filename,
@@ -3592,6 +3593,55 @@ def test_add_tso_defaults_filename_to_previous_tso(qapp):
         window.controller._on_preview_tso_map_clicked(10, 20)
 
         assert window.controller._trackside_objects[1].filename == "grandstand"
+    finally:
+        window.close()
+
+
+def test_delete_tso_remaps_object_and_detail_list_tso_ids(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(filename="tree", x=0, y=0),
+            TracksideObject(filename="sign", x=10, y=10),
+            TracksideObject(filename="cone", x=20, y=20),
+            TracksideObject(filename="wall", x=30, y=30),
+        ]
+        sidebar = window.tso_visibility_sidebar
+        sidebar.object_lists = [
+            Track3DObjectList("L", 0, 0, [0, 1, 2, 3]),
+            Track3DObjectList("R", 0, 0, [2, 3]),
+        ]
+        sidebar.detail_lists = [
+            Track3DDetailList(0, 0, "H", [1, 2, 3]),
+            Track3DDetailList(0, 0, "M", [0, 3]),
+        ]
+        sidebar.available_tso_ids = [0, 1, 2, 3]
+        sidebar._detail_list_tso_ids = {0, 1, 2, 3}
+        sidebar._tso_display_metadata = {
+            0: ("tree", ""),
+            1: ("sign", ""),
+            2: ("cone", ""),
+            3: ("wall", ""),
+        }
+
+        window.controller._refresh_tso_table()
+        window.tso_table.selectRow(1)
+        window.controller._on_tso_delete_requested()
+
+        assert [obj.filename for obj in window.controller._trackside_objects] == [
+            "tree",
+            "cone",
+            "wall",
+        ]
+        assert [entry.tso_ids for entry in sidebar.object_lists] == [[0, 1, 2], [1, 2]]
+        assert [entry.tso_ids for entry in sidebar.detail_lists] == [[1, 2], [0, 2]]
+        assert sidebar.available_tso_ids == [0, 1, 2]
+        assert sidebar._detail_list_tso_ids == {0, 1, 2}
+        assert sidebar._tso_display_metadata == {
+            0: ("tree", ""),
+            1: ("cone", ""),
+            2: ("wall", ""),
+        }
     finally:
         window.close()
 

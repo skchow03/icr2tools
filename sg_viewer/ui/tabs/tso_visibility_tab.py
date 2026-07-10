@@ -1414,21 +1414,77 @@ class TSOVisibilityTab(QWidget):
         finally:
             progress.close()
 
-    def remap_tso_ids(self, remap: dict[int, int]) -> None:
+    def remap_tso_ids(self, remap: dict[int, int | None]) -> None:
         if not remap:
             return
         changed = False
-        for object_list in self.object_lists:
+
+        def _remap_ids(tso_ids: list[int]) -> tuple[list[int], bool]:
             updated_ids: list[int] = []
-            row_changed = False
-            for tso_id in object_list.tso_ids:
+            ids_changed = False
+            for tso_id in tso_ids:
                 mapped = remap.get(tso_id, tso_id)
+                if mapped is None:
+                    ids_changed = True
+                    continue
                 updated_ids.append(mapped)
                 if mapped != tso_id:
-                    row_changed = True
+                    ids_changed = True
+            return updated_ids, ids_changed
+
+        for object_list in self.object_lists:
+            updated_ids, row_changed = _remap_ids(object_list.tso_ids)
             if row_changed:
                 object_list.tso_ids = updated_ids
                 changed = True
+        for detail_list in self.detail_lists:
+            updated_ids, row_changed = _remap_ids(detail_list.tso_ids)
+            if row_changed:
+                detail_list.tso_ids = updated_ids
+                changed = True
+
+        remapped_available_ids: set[int] = set()
+        available_changed = False
+        for tso_id in self.available_tso_ids:
+            mapped = remap.get(tso_id, tso_id)
+            if mapped is None:
+                available_changed = True
+                continue
+            remapped_available_ids.add(mapped)
+            if mapped != tso_id:
+                available_changed = True
+        if available_changed:
+            self.available_tso_ids = sorted(remapped_available_ids)
+            changed = True
+
+        remapped_metadata: dict[int, tuple[str, str]] = {}
+        metadata_changed = False
+        for tso_id, metadata in self._tso_display_metadata.items():
+            mapped = remap.get(tso_id, tso_id)
+            if mapped is None:
+                metadata_changed = True
+                continue
+            remapped_metadata[mapped] = metadata
+            if mapped != tso_id:
+                metadata_changed = True
+        if metadata_changed:
+            self._tso_display_metadata = remapped_metadata
+            changed = True
+
+        remapped_detail_ids: set[int] = set()
+        detail_ids_changed = False
+        for tso_id in self._detail_list_tso_ids:
+            mapped = remap.get(tso_id, tso_id)
+            if mapped is None:
+                detail_ids_changed = True
+                continue
+            remapped_detail_ids.add(mapped)
+            if mapped != tso_id:
+                detail_ids_changed = True
+        if detail_ids_changed:
+            self._detail_list_tso_ids = remapped_detail_ids
+            changed = True
+
         if not changed:
             return
         self._emit_object_lists_changed()

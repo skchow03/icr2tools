@@ -1066,9 +1066,21 @@ class TracksideObjectsController:
         )
         if not rows:
             return
+        deleted_rows = sorted(
+            {row for row in rows if 0 <= row < len(self._trackside_objects)}
+        )
+        remap: dict[int, int | None] = {}
+        for old_index in range(len(self._trackside_objects)):
+            if old_index in deleted_rows:
+                remap[old_index] = None
+                continue
+            shift = sum(1 for deleted_row in deleted_rows if deleted_row < old_index)
+            if shift:
+                remap[old_index] = old_index - shift
         for row in rows:
             if 0 <= row < len(self._trackside_objects):
                 del self._trackside_objects[row]
+        self._window.tso_visibility_sidebar.remap_tso_ids(remap)
         self._selected_trackside_object_indices = []
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
