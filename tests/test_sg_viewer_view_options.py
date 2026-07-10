@@ -34,6 +34,19 @@ def qapp():
     yield app
 
 
+def test_preview_widget_initializes_mrk_preview_state(qapp):
+    widget = PreviewWidgetQt()
+    try:
+        assert widget.selected_mrk_wall_range is None
+        assert widget.mrk_wall_height_500ths == 21000.0
+        assert widget.mrk_armco_height_500ths == 18000.0
+        assert widget.mrk_length_multiplier == 4.0
+        assert widget.trackside_move_enabled_indices == ()
+        assert widget.last_elevation_recalc_message() is None
+    finally:
+        widget.close()
+
+
 def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(qapp, monkeypatch):
     import sg_viewer.ui.main_window as main_window_module
 
