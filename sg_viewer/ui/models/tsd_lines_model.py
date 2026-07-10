@@ -39,12 +39,12 @@ class TsdLineRow:
 class TsdLinesTableModel(QtCore.QAbstractTableModel):
     COLUMN_LABELS = (
         "Command",
-        "Color Index",
-        "Width (500ths)",
-        "Start DLONG",
-        "Start DLAT",
-        "End DLONG",
-        "End DLAT",
+        "Color",
+        "Width",
+        "Start\nDLONG",
+        "Start\nDLAT",
+        "End\nDLONG",
+        "End\nDLAT",
     )
 
     def __init__(self, parent: QtCore.QObject | None = None) -> None:
@@ -75,10 +75,10 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             self.COLUMN_LABELS
         ):
             if section == 2:
-                return f"Width ({measurement_unit_label(self._display_unit)})"
+                return f"Width\n({measurement_unit_label(self._display_unit)})"
             if 3 <= section <= 6:
-                base = self.COLUMN_LABELS[section].split(" (")[0]
-                return f"{base} ({measurement_unit_label(self._display_unit)})"
+                unit_label = measurement_unit_label(self._display_unit)
+                return f"{self.COLUMN_LABELS[section]}\n({unit_label})"
             return self.COLUMN_LABELS[section]
         return str(section + 1)
 
