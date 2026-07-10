@@ -137,6 +137,11 @@ class PreviewPresenter:
                     if self._runtime.show_land_objects
                     else ()
                 ),
+                land_object_vertex_points=(
+                    self._runtime.land_object_vertex_points_overlay
+                    if self._runtime.show_land_objects
+                    else ()
+                ),
                 xsect_dlat=self._runtime.selected_xsect_dlat
                 if self._runtime.show_sg_fsects
                 else None,

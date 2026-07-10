@@ -110,6 +110,7 @@ class BasePreviewState:
     xsect_dlat_line_color: QtGui.QColor
     integrity_boundary_violation_points: tuple[Point, ...]
     show_centerline_and_nodes: bool = True
+    land_object_vertex_points: tuple[Point, ...] = ()
 
 
 @dataclass
@@ -259,12 +260,13 @@ def paint_preview(
                 transform,
                 widget_height,
             )
-            _draw_land_object_points_overlay(
-                painter,
-                base_state.land_object_points,
-                transform,
-                widget_height,
-            )
+            if base_state.land_object_vertex_points:
+                _draw_land_object_points_overlay(
+                    painter,
+                    base_state.land_object_vertex_points,
+                    transform,
+                    widget_height,
+                )
         if sg_preview_state and sg_preview_state.trackside_objects:
             _draw_trackside_objects(
                 painter,
