@@ -3794,7 +3794,7 @@ def test_tso_stamp_uses_closest_boundary_elevation_for_each_new_object(
         window.close()
 
 
-def test_tso_attributes_apply_bbox_rotation_to_matching_filename_only(qapp):
+def test_tso_attributes_update_syncs_shape_attributes_to_matching_filename_only(qapp):
     window = SGViewerWindow()
     try:
         window.controller._trackside_objects = [
@@ -3853,17 +3853,21 @@ def test_tso_attributes_apply_bbox_rotation_to_matching_filename_only(qapp):
             bbox_length=777,
             bbox_width=888,
             rotation_point="bottom_right",
+            is_sprite=True,
+            sprite_width=999,
         )
-        window.controller._on_tso_attributes_apply_bbox_rotation_to_matching_filename(
-            0, apply_from_dialog
-        )
+        window.controller._on_tso_attributes_updated(0, apply_from_dialog)
 
         assert window.controller._trackside_objects[0].bbox_length == 777
         assert window.controller._trackside_objects[0].bbox_width == 888
         assert window.controller._trackside_objects[0].rotation_point == "bottom_right"
+        assert window.controller._trackside_objects[0].is_sprite is True
+        assert window.controller._trackside_objects[0].sprite_width == 999
         assert window.controller._trackside_objects[1].bbox_length == 777
         assert window.controller._trackside_objects[1].bbox_width == 888
         assert window.controller._trackside_objects[1].rotation_point == "bottom_right"
+        assert window.controller._trackside_objects[1].is_sprite is True
+        assert window.controller._trackside_objects[1].sprite_width == 999
         assert window.controller._trackside_objects[2].bbox_length == 500
         assert window.controller._trackside_objects[2].bbox_width == 600
         assert window.controller._trackside_objects[2].rotation_point == "bottom_left"

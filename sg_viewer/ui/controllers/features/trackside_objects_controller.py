@@ -429,9 +429,6 @@ class TracksideObjectsController:
             self._tso_attributes_dialog.objectUpdated.connect(
                 self._on_tso_attributes_updated
             )
-            self._tso_attributes_dialog.matchingFilenameBBoxRotationApplyRequested.connect(
-                self._on_tso_attributes_apply_bbox_rotation_to_matching_filename
-            )
             self._tso_attributes_dialog.objectPreviewUpdated.connect(
                 self._on_tso_attributes_preview_updated
             )
@@ -486,32 +483,6 @@ class TracksideObjectsController:
 
     def _on_tso_attributes_preview_ended(self) -> None:
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
-
-    def _on_tso_attributes_apply_bbox_rotation_to_matching_filename(
-        self, row: int, obj: object
-    ) -> None:
-        if not isinstance(obj, TracksideObject):
-            return
-        if row < 0 or row >= len(self._trackside_objects):
-            return
-
-        target_filename = normalize_trackside_filename(obj.filename)
-        if not target_filename:
-            return
-
-        attributes = (
-            max(0, int(obj.bbox_length)),
-            max(0, int(obj.bbox_width)),
-            normalize_rotation_point(obj.rotation_point),
-            bool(obj.is_sprite),
-            max(0, int(obj.sprite_width)),
-        )
-        if not self._sync_tso_shape_attributes_for_filename(target_filename, attributes):
-            return
-        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
-        self._refresh_tso_table()
-        self._set_trackside_objects_dirty(True)
-        self._persist_tsd_state_for_current_track()
 
     def _on_preview_tso_dragged(
         self, anchor_index: int, delta_x: int, delta_y: int
