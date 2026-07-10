@@ -36,6 +36,7 @@ ICR2_UNITS_PER_FOOT = 500.0 * 12.0
 MIN_TSD_SAMPLE_STEP = ICR2_UNITS_PER_FOOT
 TARGET_TSD_PIXELS_PER_SAMPLE = 6.0
 
+
 @dataclass
 class PreviewColors:
     background: QtGui.QColor
@@ -373,7 +374,9 @@ def paint_preview(
                 widget_height,
             )
 
-    _draw_creation_overlays(painter, base_state.rect, creation_state, transform, widget_height)
+    _draw_creation_overlays(
+        painter, base_state.rect, creation_state, transform, widget_height
+    )
     _draw_drag_heading_guide(
         painter,
         base_state.rect,
@@ -436,7 +439,9 @@ def _draw_land_object_points_overlay(
         painter.setBrush(marker_brush)
         painter.drawEllipse(mapped, radius, radius)
         painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawText(QtCore.QPointF(mapped.x() - 3.0, mapped.y() + 14.0), str(index))
+        painter.drawText(
+            QtCore.QPointF(mapped.x() - 3.0, mapped.y() + 14.0), str(index)
+        )
     painter.restore()
 
 
@@ -511,7 +516,9 @@ def _draw_ruler_overlay(
         mid_y = (start_y + end_y) * 0.5
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 255), 1.0))
         text_rect = QtCore.QRectF(mid_x + 8.0, mid_y - 20.0, 160.0, 20.0)
-        painter.fillRect(text_rect.adjusted(-4.0, -2.0, 4.0, 2.0), QtGui.QColor(0, 0, 0, 170))
+        painter.fillRect(
+            text_rect.adjusted(-4.0, -2.0, 4.0, 2.0), QtGui.QColor(0, 0, 0, 170)
+        )
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, label)
     painter.restore()
 
@@ -587,7 +594,11 @@ def _draw_boundaries(painter, model: SgPreviewModel, transform: ViewTransform) -
         for boundary in fsect.boundaries:
             attrs = boundary.attrs or {}
             style = resolve_fsection_style(attrs.get("type1"), attrs.get("type2"))
-            if style is None or style.role != "boundary" or style.boundary_color is None:
+            if (
+                style is None
+                or style.role != "boundary"
+                or style.boundary_color is None
+            ):
                 continue
             pen = sg_rendering.make_boundary_pen(
                 style.boundary_color,
@@ -601,7 +612,9 @@ def _draw_boundaries(painter, model: SgPreviewModel, transform: ViewTransform) -
             painter.drawPolyline(points)
 
 
-def _draw_fsect_outlines(painter, model: SgPreviewModel, transform: ViewTransform) -> None:
+def _draw_fsect_outlines(
+    painter, model: SgPreviewModel, transform: ViewTransform
+) -> None:
     color = _make_color(painter, *_FSECT_OUTLINE_RGBA)
     _set_pen(painter, color, 1.0)
     for fsect in model.fsects:
@@ -635,7 +648,13 @@ def _draw_mrk_notches(
     selected_end_sample: tuple[list[Point], float] | None = None
 
     highlighted_lookup: dict[tuple[int, int], dict[int, str]] = {}
-    for boundary_index, section_index, start_wall, wall_count, color in highlighted_walls:
+    for (
+        boundary_index,
+        section_index,
+        start_wall,
+        wall_count,
+        color,
+    ) in highlighted_walls:
         if wall_count <= 0:
             continue
         key = (section_index, boundary_index)
@@ -657,7 +676,11 @@ def _draw_mrk_notches(
             notch_points = _division_points_for_polyline(
                 points,
                 target_length=_mrk_target_length_for_surface_type(
-                    int(boundary.attrs.get("type1", 0)) if boundary.attrs is not None else 0,
+                    (
+                        int(boundary.attrs.get("type1", 0))
+                        if boundary.attrs is not None
+                        else 0
+                    ),
                     wall_height_500ths,
                     armco_height_500ths,
                     length_multiplier,
@@ -681,10 +704,22 @@ def _draw_mrk_notches(
                     selected_end_wall,
                 ) = selected_wall_range
                 if boundary_index == selected_boundary:
-                    if section_index == selected_start_section and selected_start_wall < len(wall_ranges):
-                        selected_start_sample = (points, wall_ranges[selected_start_wall][0])
-                    if section_index == selected_end_section and selected_end_wall < len(wall_ranges):
-                        selected_end_sample = (points, wall_ranges[selected_end_wall][1])
+                    if (
+                        section_index == selected_start_section
+                        and selected_start_wall < len(wall_ranges)
+                    ):
+                        selected_start_sample = (
+                            points,
+                            wall_ranges[selected_start_wall][0],
+                        )
+                    if (
+                        section_index == selected_end_section
+                        and selected_end_wall < len(wall_ranges)
+                    ):
+                        selected_end_sample = (
+                            points,
+                            wall_ranges[selected_end_wall][1],
+                        )
             requested_indices = _resolve_mrk_highlight_indices(
                 highlighted_lookup,
                 section_index=section_index,
@@ -718,10 +753,18 @@ def _draw_mrk_notches(
         bracket_pen.setJoinStyle(QtCore.Qt.MiterJoin)
         painter.setPen(bracket_pen)
         _draw_polyline_endpoint_bracket(
-            painter, transform, selected_start_sample[0], selected_start_sample[1], inward_sign=1.0
+            painter,
+            transform,
+            selected_start_sample[0],
+            selected_start_sample[1],
+            inward_sign=1.0,
         )
         _draw_polyline_endpoint_bracket(
-            painter, transform, selected_end_sample[0], selected_end_sample[1], inward_sign=-1.0
+            painter,
+            transform,
+            selected_end_sample[0],
+            selected_end_sample[1],
+            inward_sign=-1.0,
         )
 
 
@@ -785,10 +828,7 @@ def _division_wall_ranges(
     if total <= 0.0:
         return []
     cuts = [0.0, *notch_points, total]
-    return [
-        (cuts[index], cuts[index + 1])
-        for index in range(len(cuts) - 1)
-    ]
+    return [(cuts[index], cuts[index + 1]) for index in range(len(cuts) - 1)]
 
 
 def _draw_polyline_segment(
@@ -807,7 +847,9 @@ def _draw_polyline_segment(
     path = QtGui.QPainterPath()
     sx, sy = transform.world_to_screen(start_point)
     path.moveTo(sx, sy)
-    for waypoint in _polyline_points_between_distances(points, start_distance, end_distance):
+    for waypoint in _polyline_points_between_distances(
+        points, start_distance, end_distance
+    ):
         wx, wy = transform.world_to_screen(waypoint)
         path.lineTo(wx, wy)
     ex, ey = transform.world_to_screen(end_point)
@@ -825,7 +867,10 @@ def _polyline_points_between_distances(
     output: list[Point] = []
     distance_cursor = 0.0
     for index in range(len(points) - 1):
-        seg_len = math.hypot(points[index + 1][0] - points[index][0], points[index + 1][1] - points[index][1])
+        seg_len = math.hypot(
+            points[index + 1][0] - points[index][0],
+            points[index + 1][1] - points[index][1],
+        )
         next_distance = distance_cursor + seg_len
         if seg_len > 1e-9 and start_distance < next_distance <= end_distance:
             output.append(points[index + 1])
@@ -1060,7 +1105,6 @@ def _draw_axes(
     painter.restore()
 
 
-
 def _draw_trackside_objects(
     painter: QtGui.QPainter,
     trackside_objects: tuple[object, ...],
@@ -1103,15 +1147,54 @@ def _draw_trackside_objects(
             )
         )
         painter.save()
-        painter.setPen(QtGui.QPen(color, 2.0 if (is_highlighted or is_selected) else 1.25))
+        painter.setPen(
+            QtGui.QPen(color, 2.0 if (is_highlighted or is_selected) else 1.25)
+        )
         painter.setBrush(QtCore.Qt.NoBrush)
 
+        is_sprite = bool(getattr(obj, "is_sprite", False))
+        sprite_radius = max(0.0, float(getattr(obj, "sprite_width", 0.0)) * 0.5)
+        if is_sprite:
+            center = sg_rendering.map_point(
+                float(obj.x), float(obj.y), transform, widget_height
+            )
+            edge = sg_rendering.map_point(
+                float(obj.x) + sprite_radius, float(obj.y), transform, widget_height
+            )
+            screen_radius = abs(float(edge.x()) - float(center.x()))
+            marker_size = max(4.0, screen_radius)
+            painter.drawEllipse(center, marker_size, marker_size)
+            if is_selected:
+                painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(pivot_color)))
+                painter.drawEllipse(center, 4.0, 4.0)
+            order = order_by_index.get(index)
+            if order is not None:
+                painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
+                painter.drawText(
+                    QtCore.QPointF(
+                        float(center.x()) - 3.0, float(center.y()) + marker_size + 14.0
+                    ),
+                    str(order),
+                )
+            painter.restore()
+            continue
+
         if half_length <= 0.0 or half_width <= 0.0:
-            point = sg_rendering.map_point(float(obj.x), float(obj.y), transform, widget_height)
+            point = sg_rendering.map_point(
+                float(obj.x), float(obj.y), transform, widget_height
+            )
             sx = float(point.x())
             sy = float(point.y())
             marker_size = 4.0
-            painter.drawRect(QtCore.QRectF(sx - marker_size, sy - marker_size, marker_size * 2.0, marker_size * 2.0))
+            painter.drawRect(
+                QtCore.QRectF(
+                    sx - marker_size,
+                    sy - marker_size,
+                    marker_size * 2.0,
+                    marker_size * 2.0,
+                )
+            )
             if is_selected:
                 painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
                 painter.setBrush(QtGui.QBrush(QtGui.QColor(pivot_color)))
@@ -1119,7 +1202,9 @@ def _draw_trackside_objects(
             order = order_by_index.get(index)
             if order is not None:
                 painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
-                painter.drawText(QtCore.QPointF(sx - 3.0, sy + marker_size + 14.0), str(order))
+                painter.drawText(
+                    QtCore.QPointF(sx - 3.0, sy + marker_size + 14.0), str(order)
+                )
             painter.restore()
             continue
 
@@ -1146,7 +1231,9 @@ def _draw_trackside_objects(
         painter.drawPolygon(polygon)
 
         if is_selected:
-            anchor = sg_rendering.map_point(float(obj.x), float(obj.y), transform, widget_height)
+            anchor = sg_rendering.map_point(
+                float(obj.x), float(obj.y), transform, widget_height
+            )
             painter.setPen(QtGui.QPen(QtGui.QColor("#FFFFFF"), 1.0))
             painter.setBrush(QtGui.QBrush(QtGui.QColor(pivot_color)))
             painter.drawEllipse(anchor, 4.0, 4.0)
@@ -1160,7 +1247,9 @@ def _draw_trackside_objects(
         painter.restore()
 
 
-def _rotation_pivot_local_offsets(rotation_point: str, half_length: float, half_width: float) -> tuple[float, float]:
+def _rotation_pivot_local_offsets(
+    rotation_point: str, half_length: float, half_width: float
+) -> tuple[float, float]:
     if rotation_point == "top_left":
         return -half_length, half_width
     if rotation_point == "top_right":
@@ -1229,8 +1318,6 @@ def _is_long_curve_section(section: SectionPreview) -> bool:
     return arc_degrees > 120.0
 
 
-
-
 def _draw_tsd_lines(
     painter: QtGui.QPainter,
     tsd_lines: tuple[TrackSurfaceDetailLine, ...],
@@ -1251,7 +1338,11 @@ def _draw_tsd_lines(
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     section_list = [section for section in sections if section.length > 0]
     track_length = _track_length_from_sections(section_list)
-    section_lookup = build_dlong_section_lookup(section_list, track_length) if track_length > 0 else None
+    section_lookup = (
+        build_dlong_section_lookup(section_list, track_length)
+        if track_length > 0
+        else None
+    )
     closed_loop = bool(section_list) and is_closed_loop(section_list)
     sampling_bucket = _tsd_sampling_bucket(transform[0])
     cache = _GLOBAL_TSD_GEOMETRY_CACHE
@@ -1281,7 +1372,9 @@ def _draw_tsd_lines(
             float(selected_section.start_dlong) + float(selected_section.length),
         )
 
-    viewport_bbox = _world_bbox_for_painter_rect(painter.viewport(), transform, widget_height)
+    viewport_bbox = _world_bbox_for_painter_rect(
+        painter.viewport(), transform, widget_height
+    )
 
     for line in tsd_lines:
         color_index = max(0, min(255, int(line.color_index)))
@@ -1348,13 +1441,10 @@ def _draw_tsd_lines(
                     section_lookup=section_lookup,
                 )
                 cache.bbox_by_key[segment_cache_key] = estimated_bbox
-            if (
-                estimated_bbox is not None
-                and not _bbox_intersects(
-                    estimated_bbox,
-                    viewport_bbox,
-                    margin=cull_margin_world,
-                )
+            if estimated_bbox is not None and not _bbox_intersects(
+                estimated_bbox,
+                viewport_bbox,
+                margin=cull_margin_world,
             ):
                 continue
 
@@ -1524,7 +1614,9 @@ def _estimate_tsd_segment_world_bbox(
     if math.isclose(span, 0.0):
         return None
 
-    checkpoint_count = max(4, min(32, int(math.ceil(span / (50.0 * MIN_TSD_SAMPLE_STEP)))))
+    checkpoint_count = max(
+        4, min(32, int(math.ceil(span / (50.0 * MIN_TSD_SAMPLE_STEP))))
+    )
     sampled_points: list[Point] = []
     for index in range(checkpoint_count + 1):
         fraction = index / checkpoint_count
@@ -1658,7 +1750,9 @@ def _point_on_track_at_dlong(
     track_length: float,
     section_lookup: DlongSectionLookup | None = None,
 ) -> Point | None:
-    position = dlong_to_section_position(sections, dlong, track_length, lookup=section_lookup)
+    position = dlong_to_section_position(
+        sections, dlong, track_length, lookup=section_lookup
+    )
     if position is None:
         return None
 
@@ -1728,6 +1822,8 @@ def _angle_delta(start_angle: float, end_angle: float, ccw: bool) -> float:
         while delta >= 0:
             delta -= math.tau
     return delta
+
+
 def _draw_xsect_dlat_line(
     painter: QtGui.QPainter,
     sections: Iterable[SectionPreview],
@@ -1860,7 +1956,10 @@ def _draw_new_straight(
     transform: Transform,
     widget_height: int,
 ) -> None:
-    if not creation_state.new_straight_active or creation_state.new_straight_start is None:
+    if (
+        not creation_state.new_straight_active
+        or creation_state.new_straight_start is None
+    ):
         return
 
     start = creation_state.new_straight_start
@@ -1897,7 +1996,9 @@ def _draw_new_curve(
         end_point = creation_state.new_curve_end or creation_state.new_curve_start
         polyline_points = [creation_state.new_curve_start, end_point]
 
-    qp_points = [_map_point(point, transform, widget_height) for point in polyline_points]
+    qp_points = [
+        _map_point(point, transform, widget_height) for point in polyline_points
+    ]
 
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -1984,8 +2085,6 @@ def _draw_nodes(
                 node_state.node_radius_px + 12,
             )
 
-
-
     painter.restore()
 
 
@@ -2053,7 +2152,11 @@ def _draw_query_track_overlay(
         message,
     )
     box = QtCore.QRect(
-        rect.right() - offset.x() - text_rect.width() - padding.left() - padding.right(),
+        rect.right()
+        - offset.x()
+        - text_rect.width()
+        - padding.left()
+        - padding.right(),
         rect.top() + offset.y(),
         text_rect.width() + padding.left() + padding.right(),
         text_rect.height() + padding.top() + padding.bottom(),
@@ -2085,7 +2188,11 @@ def _draw_curve_heading_line(
     end_point: QtCore.QPointF | None,
     transform: Transform,
 ) -> None:
-    if preview_section is None or preview_section.end_heading is None or end_point is None:
+    if (
+        preview_section is None
+        or preview_section.end_heading is None
+        or end_point is None
+    ):
         return
 
     scale, _ = transform

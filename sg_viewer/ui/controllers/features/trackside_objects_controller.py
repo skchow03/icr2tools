@@ -80,39 +80,48 @@ class TracksideObjectsController:
         setattr(self._host, name, value)
 
     def _get_state_value(self, name: str):
-        return getattr(self._state, {
-            "_trackside_objects": "trackside_objects",
-            "_selected_trackside_object_indices": "selected_trackside_object_indices",
-            "_objects_tab_selected_trackside_object_indices": "objects_tab_selected_trackside_object_indices",
-            "_tso_add_mode_active": "add_mode_active",
-            "_tso_stamp_mode_active": "stamp_mode_active",
-            "_tso_box_select_mode_active": "box_select_mode_active",
-            "_tso_stamp_filename": "stamp_filename",
-            "_auto_update_tso_relative_z": "auto_update_relative_z",
-            "_tso_persist_timer": "persist_timer",
-            "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
-            "_tso_visibility_sidebar_refresh_pending": "visibility_sidebar_refresh_pending",
-        }[name])
+        return getattr(
+            self._state,
+            {
+                "_trackside_objects": "trackside_objects",
+                "_selected_trackside_object_indices": "selected_trackside_object_indices",
+                "_objects_tab_selected_trackside_object_indices": "objects_tab_selected_trackside_object_indices",
+                "_tso_add_mode_active": "add_mode_active",
+                "_tso_stamp_mode_active": "stamp_mode_active",
+                "_tso_box_select_mode_active": "box_select_mode_active",
+                "_tso_stamp_filename": "stamp_filename",
+                "_auto_update_tso_relative_z": "auto_update_relative_z",
+                "_tso_persist_timer": "persist_timer",
+                "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
+                "_tso_visibility_sidebar_refresh_pending": "visibility_sidebar_refresh_pending",
+            }[name],
+        )
 
     def _set_state_value(self, name: str, value: object) -> None:
-        setattr(self._state, {
-            "_trackside_objects": "trackside_objects",
-            "_selected_trackside_object_indices": "selected_trackside_object_indices",
-            "_objects_tab_selected_trackside_object_indices": "objects_tab_selected_trackside_object_indices",
-            "_tso_add_mode_active": "add_mode_active",
-            "_tso_stamp_mode_active": "stamp_mode_active",
-            "_tso_box_select_mode_active": "box_select_mode_active",
-            "_tso_stamp_filename": "stamp_filename",
-            "_auto_update_tso_relative_z": "auto_update_relative_z",
-            "_tso_persist_timer": "persist_timer",
-            "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
-            "_tso_visibility_sidebar_refresh_pending": "visibility_sidebar_refresh_pending",
-        }[name], value)
+        setattr(
+            self._state,
+            {
+                "_trackside_objects": "trackside_objects",
+                "_selected_trackside_object_indices": "selected_trackside_object_indices",
+                "_objects_tab_selected_trackside_object_indices": "objects_tab_selected_trackside_object_indices",
+                "_tso_add_mode_active": "add_mode_active",
+                "_tso_stamp_mode_active": "stamp_mode_active",
+                "_tso_box_select_mode_active": "box_select_mode_active",
+                "_tso_stamp_filename": "stamp_filename",
+                "_auto_update_tso_relative_z": "auto_update_relative_z",
+                "_tso_persist_timer": "persist_timer",
+                "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
+                "_tso_visibility_sidebar_refresh_pending": "visibility_sidebar_refresh_pending",
+            }[name],
+            value,
+        )
 
     def connect_signals(self) -> None:
         h = self
         w = self._window
-        h._tso_persist_timer.timeout.connect(h._persist_trackside_objects_for_current_track)
+        h._tso_persist_timer.timeout.connect(
+            h._persist_trackside_objects_for_current_track
+        )
         w.tso_add_button.clicked.connect(h._on_tso_add_requested)
         w.tso_stamp_button.clicked.connect(h._on_tso_stamp_requested)
         w.tso_box_select_button.clicked.connect(h._on_tso_box_select_requested)
@@ -121,20 +130,40 @@ class TracksideObjectsController:
         w.tso_move_down_button.clicked.connect(h._on_tso_move_down_requested)
         w.tso_import_from_3d_button.clicked.connect(h._on_tso_import_from_3d_requested)
         w.tso_delete_all_button.clicked.connect(h._on_tso_delete_all_requested)
-        w.tso_modify_elevations_button.clicked.connect(h._on_tso_modify_elevations_requested)
-        w.tso_refresh_relative_boundary_button.clicked.connect(h._on_tso_refresh_relative_boundary_requested)
-        w.tso_auto_update_relative_z_checkbox.toggled.connect(h._on_tso_auto_update_relative_z_toggled)
+        w.tso_modify_elevations_button.clicked.connect(
+            h._on_tso_modify_elevations_requested
+        )
+        w.tso_refresh_relative_boundary_button.clicked.connect(
+            h._on_tso_refresh_relative_boundary_requested
+        )
+        w.tso_auto_update_relative_z_checkbox.toggled.connect(
+            h._on_tso_auto_update_relative_z_toggled
+        )
         w.tso_generate_file_button.clicked.connect(h._on_tso_generate_file_requested)
-        w.tso_write_to_3d_file_button.clicked.connect(h._on_tso_write_to_3d_file_requested)
+        w.tso_write_to_3d_file_button.clicked.connect(
+            h._on_tso_write_to_3d_file_requested
+        )
         w.tso_table.itemChanged.connect(h._on_tso_item_changed)
         w.tso_table.itemSelectionChanged.connect(h._on_tso_selection_changed)
         w.tso_table.cellClicked.connect(h._on_tso_table_cell_clicked)
-        w.tso_visibility_sidebar.selectedTSOsChanged.connect(h._on_tso_visibility_row_selected)
-        w.tso_visibility_sidebar.selectedTSOPillChanged.connect(h._on_tso_visibility_pill_selected)
-        w.tso_visibility_sidebar.selectedTrackSectionChanged.connect(h._on_tso_visibility_track_section_selected)
-        w.tso_visibility_sidebar.selectedTSOOrderChanged.connect(h._on_tso_visibility_order_changed)
-        w.tso_visibility_sidebar.objectListsChanged.connect(h._on_tso_visibility_lists_changed)
-        w.tso_visibility_sidebar.objectListsSaved.connect(h._on_tso_visibility_lists_saved)
+        w.tso_visibility_sidebar.selectedTSOsChanged.connect(
+            h._on_tso_visibility_row_selected
+        )
+        w.tso_visibility_sidebar.selectedTSOPillChanged.connect(
+            h._on_tso_visibility_pill_selected
+        )
+        w.tso_visibility_sidebar.selectedTrackSectionChanged.connect(
+            h._on_tso_visibility_track_section_selected
+        )
+        w.tso_visibility_sidebar.selectedTSOOrderChanged.connect(
+            h._on_tso_visibility_order_changed
+        )
+        w.tso_visibility_sidebar.objectListsChanged.connect(
+            h._on_tso_visibility_lists_changed
+        )
+        w.tso_visibility_sidebar.objectListsSaved.connect(
+            h._on_tso_visibility_lists_saved
+        )
         w.preview.set_trackside_object_drag_callback(h._on_preview_tso_dragged)
         w.preview.set_trackside_object_drag_end_callback(h._on_preview_tso_drag_ended)
         w.preview.set_trackside_map_click_callback(h._on_preview_tso_map_clicked)
@@ -144,8 +173,14 @@ class TracksideObjectsController:
         start = perf_counter()
         table = self._window.tso_table
         self._update_tso_table_headers()
-        boundary_context = self._build_tso_boundary_elevation_context() if self._auto_update_tso_relative_z else None
-        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {} if self._auto_update_tso_relative_z else {}
+        boundary_context = (
+            self._build_tso_boundary_elevation_context()
+            if self._auto_update_tso_relative_z
+            else None
+        )
+        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = (
+            {} if self._auto_update_tso_relative_z else {}
+        )
         previous_state = table.blockSignals(True)
         try:
             expected_row_count = len(self._trackside_objects)
@@ -183,9 +218,15 @@ class TracksideObjectsController:
                     else:
                         item.setText(value)
                     if column == 0:
-                        item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                        item.setFlags(
+                            QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                        )
                     else:
-                        item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
+                        item.setFlags(
+                            QtCore.Qt.ItemIsSelectable
+                            | QtCore.Qt.ItemIsEnabled
+                            | QtCore.Qt.ItemIsEditable
+                        )
                 self._ensure_tso_table_row_button(row)
         finally:
             table.blockSignals(previous_state)
@@ -197,7 +238,8 @@ class TracksideObjectsController:
                     row_index = table.model().index(index, 0)
                     selection_model.select(
                         row_index,
-                        QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+                        QtCore.QItemSelectionModel.Select
+                        | QtCore.QItemSelectionModel.Rows,
                     )
             if self._selected_trackside_object_indices:
                 first_selected_index = self._selected_trackside_object_indices[0]
@@ -208,32 +250,57 @@ class TracksideObjectsController:
                             selected_item,
                             QtWidgets.QAbstractItemView.PositionAtCenter,
                         )
-        self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
-        selected_index = self._selected_trackside_object_indices[0] if self._selected_trackside_object_indices else None
+        self._window.preview.set_selected_trackside_object_indices(
+            tuple(self._selected_trackside_object_indices)
+        )
+        selected_index = (
+            self._selected_trackside_object_indices[0]
+            if self._selected_trackside_object_indices
+            else None
+        )
         self._window.preview.set_selected_trackside_object_index(selected_index)
         self._window.tso_visibility_sidebar.update_available_tso_metadata(
             tuple(range(len(self._trackside_objects))),
             {
-                index: (normalize_trackside_filename(obj.filename), obj.description.strip())
+                index: (
+                    normalize_trackside_filename(obj.filename),
+                    obj.description.strip(),
+                )
                 for index, obj in enumerate(self._trackside_objects)
             },
             refresh=True,
         )
-        logger.debug("Refreshed TSO table in %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "Refreshed TSO table in %.3f ms", (perf_counter() - start) * 1000.0
+        )
 
     def _on_tso_selection_changed(self) -> None:
         table = self._window.tso_table
-        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
-        selected_indices = sorted({model_index.row() for model_index in selected_rows if model_index.row() >= 0})
+        selected_rows = (
+            table.selectionModel().selectedRows()
+            if table.selectionModel() is not None
+            else []
+        )
+        selected_indices = sorted(
+            {
+                model_index.row()
+                for model_index in selected_rows
+                if model_index.row() >= 0
+            }
+        )
         self._objects_tab_selected_trackside_object_indices = selected_indices
         self._selected_trackside_object_indices = selected_indices
         selected_index = selected_indices[0] if selected_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
-        self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+        self._window.preview.set_selected_trackside_object_indices(
+            tuple(selected_indices)
+        )
         self._center_viewport_on_selected_tso(selected_index)
         self._apply_trackside_drag_scope()
         if selected_indices:
-            self._window.show_status_message("TSO selected: right-click and drag in the preview to move selected TSOs.")
+            self._window.show_status_message(
+                "TSO selected: right-click and drag in the preview to move selected TSOs."
+            )
 
     def _center_viewport_on_selected_tso(self, selected_index: int | None) -> None:
         if selected_index is None:
@@ -241,16 +308,22 @@ class TracksideObjectsController:
         if selected_index < 0 or selected_index >= len(self._trackside_objects):
             return
         selected_object = self._trackside_objects[selected_index]
-        self._window.preview.center_view_on_point((float(selected_object.x), float(selected_object.y)))
+        self._window.preview.center_view_on_point(
+            (float(selected_object.x), float(selected_object.y))
+        )
 
     def _on_tso_visibility_row_selected(self, tso_ids: tuple[int, ...]) -> None:
         if not self._is_tso_visibility_tab_active():
             return
-        selected_indices = sorted({index for index in tso_ids if 0 <= index < len(self._trackside_objects)})
+        selected_indices = sorted(
+            {index for index in tso_ids if 0 <= index < len(self._trackside_objects)}
+        )
         self._selected_trackside_object_indices = selected_indices
         selected_index = selected_indices[0] if selected_indices else None
         self._window.preview.set_selected_trackside_object_index(selected_index)
-        self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+        self._window.preview.set_selected_trackside_object_indices(
+            tuple(selected_indices)
+        )
         self._apply_trackside_drag_scope()
 
     def _on_tso_visibility_pill_selected(self, tso_id: int | None) -> None:
@@ -258,7 +331,9 @@ class TracksideObjectsController:
 
     def _on_tso_visibility_track_section_selected(self, section_data: object) -> None:
         if isinstance(section_data, int):
-            self._window.preview.selection_manager.set_selected_section(int(section_data))
+            self._window.preview.selection_manager.set_selected_section(
+                int(section_data)
+            )
             return
         if not isinstance(section_data, dict):
             return
@@ -271,8 +346,12 @@ class TracksideObjectsController:
         start_dlong = section_data.get("start_dlong")
         end_dlong = section_data.get("end_dlong")
         if isinstance(start_dlong, (int, float)):
-            end_value = float(end_dlong) if isinstance(end_dlong, (int, float)) else None
-            self._window.preview.selection_manager.set_selected_dlong_range(float(start_dlong), end_value)
+            end_value = (
+                float(end_dlong) if isinstance(end_dlong, (int, float)) else None
+            )
+            self._window.preview.selection_manager.set_selected_dlong_range(
+                float(start_dlong), end_value
+            )
 
     def _on_tso_visibility_order_changed(self, order_map: dict[int, int]) -> None:
         self._window.preview.set_trackside_order_labels(order_map)
@@ -292,13 +371,21 @@ class TracksideObjectsController:
             return
         if self._tso_attributes_dialog is None:
             self._tso_attributes_dialog = TracksideObjectAttributesDialog(self._window)
-            self._tso_attributes_dialog.objectUpdated.connect(self._on_tso_attributes_updated)
+            self._tso_attributes_dialog.objectUpdated.connect(
+                self._on_tso_attributes_updated
+            )
             self._tso_attributes_dialog.matchingFilenameBBoxRotationApplyRequested.connect(
                 self._on_tso_attributes_apply_bbox_rotation_to_matching_filename
             )
-            self._tso_attributes_dialog.objectPreviewUpdated.connect(self._on_tso_attributes_preview_updated)
-            self._tso_attributes_dialog.previewEnded.connect(self._on_tso_attributes_preview_ended)
-        self._tso_attributes_dialog.set_measurement_unit(self._window.current_measurement_unit())
+            self._tso_attributes_dialog.objectPreviewUpdated.connect(
+                self._on_tso_attributes_preview_updated
+            )
+            self._tso_attributes_dialog.previewEnded.connect(
+                self._on_tso_attributes_preview_ended
+            )
+        self._tso_attributes_dialog.set_measurement_unit(
+            self._window.current_measurement_unit()
+        )
         self._tso_attributes_dialog.edit_object(row, self._trackside_objects[row])
         self._tso_attributes_dialog.show()
         self._tso_attributes_dialog.raise_()
@@ -327,7 +414,9 @@ class TracksideObjectsController:
     def _on_tso_attributes_preview_ended(self) -> None:
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
 
-    def _on_tso_attributes_apply_bbox_rotation_to_matching_filename(self, row: int, obj: object) -> None:
+    def _on_tso_attributes_apply_bbox_rotation_to_matching_filename(
+        self, row: int, obj: object
+    ) -> None:
         if not isinstance(obj, TracksideObject):
             return
         if row < 0 or row >= len(self._trackside_objects):
@@ -353,6 +442,8 @@ class TracksideObjectsController:
                 bbox_length=obj.bbox_length,
                 bbox_width=obj.bbox_width,
                 rotation_point=obj.rotation_point,
+                is_sprite=obj.is_sprite,
+                sprite_width=obj.sprite_width,
             )
             updated_any = True
 
@@ -363,7 +454,9 @@ class TracksideObjectsController:
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
 
-    def _on_preview_tso_dragged(self, anchor_index: int, delta_x: int, delta_y: int) -> None:
+    def _on_preview_tso_dragged(
+        self, anchor_index: int, delta_x: int, delta_y: int
+    ) -> None:
         move_indices = sorted(
             index
             for index in self._selected_trackside_object_indices
@@ -388,6 +481,8 @@ class TracksideObjectsController:
                 bbox_length=obj.bbox_length,
                 bbox_width=obj.bbox_width,
                 rotation_point=obj.rotation_point,
+                is_sprite=obj.is_sprite,
+                sprite_width=obj.sprite_width,
             )
             moved = True
         if not moved:
@@ -398,13 +493,18 @@ class TracksideObjectsController:
 
     def _on_preview_tso_drag_ended(self, _anchor_index: int | None = None) -> None:
         start = perf_counter()
-        if _anchor_index is not None and _anchor_index not in self._selected_trackside_object_indices:
+        if (
+            _anchor_index is not None
+            and _anchor_index not in self._selected_trackside_object_indices
+        ):
             if 0 <= _anchor_index < len(self._trackside_objects):
                 self._selected_trackside_object_indices = [_anchor_index]
         self._update_tso_table_position_cells(self._selected_trackside_object_indices)
         self._set_trackside_objects_dirty(True)
         self._schedule_trackside_objects_persist()
-        logger.debug("Handled preview TSO drag end in %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "Handled preview TSO drag end in %.3f ms", (perf_counter() - start) * 1000.0
+        )
 
     def _update_tso_table_position_cells(
         self,
@@ -414,8 +514,16 @@ class TracksideObjectsController:
         include_relative_z: bool | None = None,
     ) -> None:
         table = self._window.tso_table
-        should_update_relative_z = self._auto_update_tso_relative_z if include_relative_z is None else include_relative_z
-        boundary_context = self._build_tso_boundary_elevation_context() if should_update_relative_z else None
+        should_update_relative_z = (
+            self._auto_update_tso_relative_z
+            if include_relative_z is None
+            else include_relative_z
+        )
+        boundary_context = (
+            self._build_tso_boundary_elevation_context()
+            if should_update_relative_z
+            else None
+        )
         boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
         previous_state = table.blockSignals(True)
         try:
@@ -432,7 +540,9 @@ class TracksideObjectsController:
                 if include_z:
                     z_item = table.item(index, 4)
                     if z_item is not None:
-                        z_item.setText(self._format_tso_distance_for_display(int(obj.z)))
+                        z_item.setText(
+                            self._format_tso_distance_for_display(int(obj.z))
+                        )
                 relative_z_item = table.item(index, 5)
                 if relative_z_item is not None and should_update_relative_z:
                     relative_z = self._tso_relative_boundary_elevation(
@@ -441,7 +551,9 @@ class TracksideObjectsController:
                         memo=boundary_cache,
                     )
                     relative_z_item.setText(
-                        self._format_tso_distance_for_display(relative_z) if relative_z is not None else ""
+                        self._format_tso_distance_for_display(relative_z)
+                        if relative_z is not None
+                        else ""
                     )
         finally:
             table.blockSignals(previous_state)
@@ -465,7 +577,8 @@ class TracksideObjectsController:
                 (
                     self._format_tso_distance_for_display(relative_z)
                     if self._auto_update_tso_relative_z
-                    and (relative_z := self._tso_relative_boundary_elevation(obj)) is not None
+                    and (relative_z := self._tso_relative_boundary_elevation(obj))
+                    is not None
                     else ""
                 ),
             ]
@@ -479,7 +592,11 @@ class TracksideObjectsController:
                 if column == 0:
                     item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                 else:
-                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
+                    item.setFlags(
+                        QtCore.Qt.ItemIsSelectable
+                        | QtCore.Qt.ItemIsEnabled
+                        | QtCore.Qt.ItemIsEditable
+                    )
             self._ensure_tso_table_row_button(row)
             self._update_tso_table_position_cells(
                 [row],
@@ -492,7 +609,11 @@ class TracksideObjectsController:
     def _ensure_tso_table_row_button(self, row: int) -> None:
         table = self._window.tso_table
         existing_widget = table.cellWidget(row, 6)
-        button = existing_widget if isinstance(existing_widget, QtWidgets.QPushButton) else None
+        button = (
+            existing_widget
+            if isinstance(existing_widget, QtWidgets.QPushButton)
+            else None
+        )
         if button is None:
             button = QtWidgets.QPushButton("Edit…")
             table.setCellWidget(row, 6, button)
@@ -535,10 +656,15 @@ class TracksideObjectsController:
         unit = self._window.current_measurement_unit()
         return int(units_to_500ths(float(text.strip()), unit))
 
-    def _build_default_tso(self, *, x: int, y: int, filename: str | None = None) -> TracksideObject:
+    def _build_default_tso(
+        self, *, x: int, y: int, filename: str | None = None
+    ) -> TracksideObject:
         default_filename = filename or "object"
         if filename is None and self._trackside_objects:
-            default_filename = normalize_trackside_filename(self._trackside_objects[-1].filename) or "object"
+            default_filename = (
+                normalize_trackside_filename(self._trackside_objects[-1].filename)
+                or "object"
+            )
         candidate = TracksideObject(
             filename=default_filename,
             x=x,
@@ -577,10 +703,14 @@ class TracksideObjectsController:
         if self._tso_add_mode_active and self._tso_box_select_mode_active:
             self._set_tso_box_select_mode_active(False)
 
-    def _set_tso_stamp_mode_active(self, active: bool, *, filename: str | None = None) -> None:
+    def _set_tso_stamp_mode_active(
+        self, active: bool, *, filename: str | None = None
+    ) -> None:
         self._tso_stamp_mode_active = bool(active)
         if self._tso_stamp_mode_active:
-            self._tso_stamp_filename = normalize_trackside_filename(filename or "") or "object"
+            self._tso_stamp_filename = (
+                normalize_trackside_filename(filename or "") or "object"
+            )
             if self._tso_add_mode_active:
                 self._set_tso_add_mode_active(False)
             if self._tso_box_select_mode_active:
@@ -596,7 +726,9 @@ class TracksideObjectsController:
         self._window.tso_box_select_button.blockSignals(True)
         self._window.tso_box_select_button.setChecked(self._tso_box_select_mode_active)
         self._window.tso_box_select_button.blockSignals(False)
-        self._window.preview.set_trackside_box_select_enabled(self._tso_box_select_mode_active)
+        self._window.preview.set_trackside_box_select_enabled(
+            self._tso_box_select_mode_active
+        )
         if self._tso_box_select_mode_active and self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
         if self._tso_box_select_mode_active and self._tso_stamp_mode_active:
@@ -606,7 +738,9 @@ class TracksideObjectsController:
     def _on_tso_add_requested(self) -> None:
         self._set_tso_add_mode_active(self._window.tso_add_button.isChecked())
         if self._tso_add_mode_active:
-            self._window.show_status_message("Add TSO active: click on the map to place one TSO.")
+            self._window.show_status_message(
+                "Add TSO active: click on the map to place one TSO."
+            )
 
     def _on_tso_stamp_requested(self) -> None:
         if self._tso_stamp_mode_active:
@@ -626,18 +760,26 @@ class TracksideObjectsController:
             return
         normalized = normalize_trackside_filename(text)
         if not normalized:
-            QtWidgets.QMessageBox.warning(self._window, "Stamp TSOs", "Filename is required.")
+            QtWidgets.QMessageBox.warning(
+                self._window, "Stamp TSOs", "Filename is required."
+            )
             self._window.tso_stamp_button.blockSignals(True)
             self._window.tso_stamp_button.setChecked(False)
             self._window.tso_stamp_button.blockSignals(False)
             return
         self._set_tso_stamp_mode_active(True, filename=normalized)
-        self._window.show_status_message("Stamp mode active: click the map to place TSOs. Click Stamp again to stop.")
+        self._window.show_status_message(
+            "Stamp mode active: click the map to place TSOs. Click Stamp again to stop."
+        )
 
     def _on_tso_box_select_requested(self) -> None:
-        self._set_tso_box_select_mode_active(self._window.tso_box_select_button.isChecked())
+        self._set_tso_box_select_mode_active(
+            self._window.tso_box_select_button.isChecked()
+        )
         if self._tso_box_select_mode_active:
-            self._window.show_status_message("Box Select active: drag a rectangle on the track diagram to select TSOs.")
+            self._window.show_status_message(
+                "Box Select active: drag a rectangle on the track diagram to select TSOs."
+            )
         else:
             self._window.show_status_message("Box Select deactivated.")
 
@@ -652,7 +794,9 @@ class TracksideObjectsController:
             self._selected_trackside_object_indices = list(selected_indices)
             selected_index = selected_indices[0] if selected_indices else None
             self._window.preview.set_selected_trackside_object_index(selected_index)
-            self._window.preview.set_selected_trackside_object_indices(tuple(selected_indices))
+            self._window.preview.set_selected_trackside_object_indices(
+                tuple(selected_indices)
+            )
 
             table = self._window.tso_table
             selection_model = table.selectionModel()
@@ -663,7 +807,8 @@ class TracksideObjectsController:
                     row_index = table.model().index(selected_indices[0], 0)
                     selection_model.select(
                         row_index,
-                        QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
+                        QtCore.QItemSelectionModel.Select
+                        | QtCore.QItemSelectionModel.Rows,
                     )
                 del signal_blocker
 
@@ -672,27 +817,46 @@ class TracksideObjectsController:
                 self._window.show_status_message(
                     "TSO selected: right-click and drag in the preview to move selected TSOs."
                 )
-            logger.debug("Handled preview TSO map click in %.3f ms", (perf_counter() - start) * 1000.0)
+            logger.debug(
+                "Handled preview TSO map click in %.3f ms",
+                (perf_counter() - start) * 1000.0,
+            )
             return True
         filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
         step_start = perf_counter()
-        self._trackside_objects.append(self._build_default_tso(x=x, y=y, filename=filename))
-        logger.debug("TSO add click: build/append object %.3f ms", (perf_counter() - step_start) * 1000.0)
+        self._trackside_objects.append(
+            self._build_default_tso(x=x, y=y, filename=filename)
+        )
+        logger.debug(
+            "TSO add click: build/append object %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
         new_row_index = len(self._trackside_objects) - 1
         self._selected_trackside_object_indices = [new_row_index]
 
         step_start = perf_counter()
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
-        logger.debug("TSO add click: preview set_trackside_objects %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: preview set_trackside_objects %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
 
         step_start = perf_counter()
         self._upsert_tso_table_row(new_row_index)
-        logger.debug("TSO add click: upsert table row %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: upsert table row %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
 
         step_start = perf_counter()
-        self._window.preview.set_selected_trackside_object_indices(tuple(self._selected_trackside_object_indices))
+        self._window.preview.set_selected_trackside_object_indices(
+            tuple(self._selected_trackside_object_indices)
+        )
         self._window.preview.set_selected_trackside_object_index(new_row_index)
-        logger.debug("TSO add click: preview selection %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: preview selection %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
 
         step_start = perf_counter()
         selection_model = self._window.tso_table.selectionModel()
@@ -700,9 +864,13 @@ class TracksideObjectsController:
             row_index = self._window.tso_table.model().index(new_row_index, 0)
             selection_model.select(
                 row_index,
-                QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows,
+                QtCore.QItemSelectionModel.ClearAndSelect
+                | QtCore.QItemSelectionModel.Rows,
             )
-        logger.debug("TSO add click: table selection %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: table selection %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
 
         step_start = perf_counter()
         selected_item = self._window.tso_table.item(new_row_index, 0)
@@ -711,28 +879,52 @@ class TracksideObjectsController:
                 selected_item,
                 QtWidgets.QAbstractItemView.PositionAtCenter,
             )
-        logger.debug("TSO add click: table scroll %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: table scroll %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
 
         step_start = perf_counter()
         self._mark_tso_visibility_sidebar_dirty()
         self._schedule_tso_visibility_sidebar_refresh()
-        logger.debug("TSO add click: visibility sidebar deferred mark/schedule %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: visibility sidebar deferred mark/schedule %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
 
         step_start = perf_counter()
         self._set_trackside_objects_dirty(True)
         self._schedule_trackside_objects_persist()
-        logger.debug("TSO add click: dirty + persist schedule %.3f ms", (perf_counter() - step_start) * 1000.0)
+        logger.debug(
+            "TSO add click: dirty + persist schedule %.3f ms",
+            (perf_counter() - step_start) * 1000.0,
+        )
         if self._tso_add_mode_active:
             self._set_tso_add_mode_active(False)
-        logger.debug("Handled preview TSO map click in %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "Handled preview TSO map click in %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
         return True
 
     def _find_trackside_object_at_point(self, x: float, y: float) -> int | None:
-        transform = self._window.preview.current_transform(self._window.preview.widget_size())
+        transform = self._window.preview.current_transform(
+            self._window.preview.widget_size()
+        )
         scale = float(transform[0]) if transform is not None else 1.0
         apparent_half_extent = 4.0 / max(scale, 1e-9)
         for index in range(len(self._trackside_objects) - 1, -1, -1):
             obj = self._trackside_objects[index]
+            if bool(getattr(obj, "is_sprite", False)):
+                radius = max(
+                    apparent_half_extent, float(getattr(obj, "sprite_width", 0.0)) * 0.5
+                )
+                if (
+                    math.hypot(float(x) - float(obj.x), float(y) - float(obj.y))
+                    <= radius
+                ):
+                    return index
+                continue
             yaw_radians = math.radians(float(obj.yaw) / 10.0)
             half_length = max(apparent_half_extent, float(obj.bbox_length) * 0.5)
             half_width = max(apparent_half_extent, float(obj.bbox_width) * 0.5)
@@ -742,10 +934,12 @@ class TracksideObjectsController:
                 half_width,
             )
             center_x = float(obj.x) - (
-                pivot_local_x * math.cos(yaw_radians) - pivot_local_y * math.sin(yaw_radians)
+                pivot_local_x * math.cos(yaw_radians)
+                - pivot_local_y * math.sin(yaw_radians)
             )
             center_y = float(obj.y) - (
-                pivot_local_x * math.sin(yaw_radians) + pivot_local_y * math.cos(yaw_radians)
+                pivot_local_x * math.sin(yaw_radians)
+                + pivot_local_y * math.cos(yaw_radians)
             )
             dx = float(x) - center_x
             dy = float(y) - center_y
@@ -776,7 +970,9 @@ class TracksideObjectsController:
         }
         return mapping.get(rotation_point, (0.0, 0.0))
 
-    def _on_preview_tso_box_selected(self, min_x: int, min_y: int, max_x: int, max_y: int) -> None:
+    def _on_preview_tso_box_selected(
+        self, min_x: int, min_y: int, max_x: int, max_y: int
+    ) -> None:
         selected_indices = [
             index
             for index, obj in enumerate(self._trackside_objects)
@@ -786,15 +982,27 @@ class TracksideObjectsController:
         self._refresh_tso_table()
         if self._tso_box_select_mode_active:
             self._set_tso_box_select_mode_active(False)
-        self._window.show_status_message(f"Selected {len(selected_indices)} TSO(s) with box selection.")
-
+        self._window.show_status_message(
+            f"Selected {len(selected_indices)} TSO(s) with box selection."
+        )
 
     def _on_tso_delete_requested(self) -> None:
         table = self._window.tso_table
-        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        selected_rows = (
+            table.selectionModel().selectedRows()
+            if table.selectionModel() is not None
+            else []
+        )
         if not selected_rows:
             return
-        rows = sorted({model_index.row() for model_index in selected_rows if model_index.row() >= 0}, reverse=True)
+        rows = sorted(
+            {
+                model_index.row()
+                for model_index in selected_rows
+                if model_index.row() >= 0
+            },
+            reverse=True,
+        )
         if not rows:
             return
         for row in rows:
@@ -807,7 +1015,11 @@ class TracksideObjectsController:
 
     def _move_tso(self, *, direction: int) -> None:
         table = self._window.tso_table
-        selected_rows = table.selectionModel().selectedRows() if table.selectionModel() is not None else []
+        selected_rows = (
+            table.selectionModel().selectedRows()
+            if table.selectionModel() is not None
+            else []
+        )
         if not selected_rows:
             return
         source_row = min(model_index.row() for model_index in selected_rows)
@@ -836,7 +1048,9 @@ class TracksideObjectsController:
         self._move_tso(direction=1)
 
     @staticmethod
-    def _trackside_object_catalog_key(obj: TracksideObject) -> tuple[str, int, int, int, int, int, int]:
+    def _trackside_object_catalog_key(
+        obj: TracksideObject,
+    ) -> tuple[str, int, int, int, int, int, int]:
         return (
             normalize_trackside_filename(obj.filename).lower(),
             int(obj.x),
@@ -848,9 +1062,13 @@ class TracksideObjectsController:
         )
 
     @staticmethod
-    def _trackside_objects_from_track3d_catalog(catalog: Track3DCatalog) -> list[TracksideObject]:
+    def _trackside_objects_from_track3d_catalog(
+        catalog: Track3DCatalog,
+    ) -> list[TracksideObject]:
         parsed_objects: list[TracksideObject] = []
-        for _label, definition in sorted(catalog.tsos.items(), key=lambda item: item[1].span.start_offset or 0):
+        for _label, definition in sorted(
+            catalog.tsos.items(), key=lambda item: item[1].span.start_offset or 0
+        ):
             filename = normalize_trackside_filename(definition.extern)
             if not filename:
                 continue
@@ -861,7 +1079,9 @@ class TracksideObjectsController:
                     y=int(definition.y),
                     z=int(definition.z),
                     yaw=int(definition.rot),
-                    pitch=int(definition.params[4]) if len(definition.params) > 4 else 0,
+                    pitch=(
+                        int(definition.params[4]) if len(definition.params) > 4 else 0
+                    ),
                     tilt=int(definition.params[5]) if len(definition.params) > 5 else 0,
                 )
             )
@@ -871,11 +1091,15 @@ class TracksideObjectsController:
         """Compatibility adapter for tests; UI workflows parse the selected file directly."""
         from tempfile import NamedTemporaryFile
 
-        with NamedTemporaryFile("w", suffix=".3d", encoding="utf-8", delete=False) as temp_file:
+        with NamedTemporaryFile(
+            "w", suffix=".3d", encoding="utf-8", delete=False
+        ) as temp_file:
             temp_file.write(text)
             temp_path = Path(temp_file.name)
         try:
-            return self._trackside_objects_from_track3d_catalog(parse_track3d_catalog(temp_path))
+            return self._trackside_objects_from_track3d_catalog(
+                parse_track3d_catalog(temp_path)
+            )
         finally:
             temp_path.unlink(missing_ok=True)
 
@@ -894,7 +1118,9 @@ class TracksideObjectsController:
             return
 
         default_path = ""
-        selected_track3d = self._host._track3d_tools_controller._track3d_path_for_current_project()
+        selected_track3d = (
+            self._host._track3d_tools_controller._track3d_path_for_current_project()
+        )
         if selected_track3d is not None:
             default_path = str(selected_track3d)
 
@@ -933,7 +1159,9 @@ class TracksideObjectsController:
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
-        self._window.show_status_message(f"Imported {len(parsed_objects)} TSO(s) from {path.name}.")
+        self._window.show_status_message(
+            f"Imported {len(parsed_objects)} TSO(s) from {path.name}."
+        )
 
     def _on_tso_delete_all_requested(self) -> None:
         if not self._trackside_objects:
@@ -965,7 +1193,10 @@ class TracksideObjectsController:
             )
             return
 
-        if self._tso_modify_elevations_dialog is not None and self._tso_modify_elevations_dialog.isVisible():
+        if (
+            self._tso_modify_elevations_dialog is not None
+            and self._tso_modify_elevations_dialog.isVisible()
+        ):
             self._tso_modify_elevations_dialog.raise_()
             self._tso_modify_elevations_dialog.activateWindow()
             return
@@ -1086,6 +1317,8 @@ class TracksideObjectsController:
                     bbox_length=obj.bbox_length,
                     bbox_width=obj.bbox_width,
                     rotation_point=obj.rotation_point,
+                    is_sprite=obj.is_sprite,
+                    sprite_width=obj.sprite_width,
                 )
                 changed = True
 
@@ -1101,7 +1334,9 @@ class TracksideObjectsController:
             self._refresh_tso_table()
             self._set_trackside_objects_dirty(True)
             self._persist_tsd_state_for_current_track()
-            target_label = "selected TSOs" if apply_selected_radio.isChecked() else "all TSOs"
+            target_label = (
+                "selected TSOs" if apply_selected_radio.isChecked() else "all TSOs"
+            )
             if raise_lower_radio.isChecked():
                 self._window.show_status_message(
                     f"Adjusted {target_label} elevations by {value_spin.value():g} {unit_label}."
@@ -1122,9 +1357,11 @@ class TracksideObjectsController:
             )
 
         buttons.clicked.connect(
-            lambda button: _apply_changes()
-            if buttons.standardButton(button) == QtWidgets.QDialogButtonBox.Apply
-            else None
+            lambda button: (
+                _apply_changes()
+                if buttons.standardButton(button) == QtWidgets.QDialogButtonBox.Apply
+                else None
+            )
         )
         dialog.show()
 
@@ -1132,17 +1369,22 @@ class TracksideObjectsController:
         self._tso_modify_elevations_dialog = None
 
     @staticmethod
-
     def _closest_boundary_elevation_for_tso(self, obj: TracksideObject) -> int | None:
         context = self._build_tso_boundary_elevation_context()
-        return self._closest_boundary_elevation_for_tso_with_context(obj, context=context)
+        return self._closest_boundary_elevation_for_tso_with_context(
+            obj, context=context
+        )
 
-    def _build_tso_boundary_elevation_context(self) -> TsoBoundaryElevationContext | None:
+    def _build_tso_boundary_elevation_context(
+        self,
+    ) -> TsoBoundaryElevationContext | None:
         section_manager = self._window.preview.section_manager
         centerline_index = section_manager.centerline_index
         sampled_dlongs = section_manager.sampled_dlongs
         sections = section_manager.sections
-        track_length = float(sum(max(0.0, float(section.length)) for section in sections))
+        track_length = float(
+            sum(max(0.0, float(section.length)) for section in sections)
+        )
         if centerline_index is None or not sampled_dlongs or track_length <= 0.0:
             return None
         return TsoBoundaryElevationContext(
@@ -1161,7 +1403,9 @@ class TracksideObjectsController:
         context: TsoBoundaryElevationContext | None,
         memo: dict[tuple[int, int, int, int, int], int | None] | None = None,
     ) -> int | None:
-        return closest_boundary_elevation_for_tso_with_context(obj, context=context, memo=memo)
+        return closest_boundary_elevation_for_tso_with_context(
+            obj, context=context, memo=memo
+        )
 
     def _tso_relative_boundary_elevation(
         self,
@@ -1172,7 +1416,11 @@ class TracksideObjectsController:
     ) -> int | None:
         return tso_relative_boundary_elevation(
             obj,
-            context=context if context is not None else self._build_tso_boundary_elevation_context(),
+            context=(
+                context
+                if context is not None
+                else self._build_tso_boundary_elevation_context()
+            ),
             memo=memo,
         )
 
@@ -1182,15 +1430,23 @@ class TracksideObjectsController:
             return
         table = self._window.tso_table
         try:
-            filename = normalize_trackside_filename((table.item(row, 1).text() if table.item(row, 1) else ""))
+            filename = normalize_trackside_filename(
+                (table.item(row, 1).text() if table.item(row, 1) else "")
+            )
             if not filename:
                 raise ValueError
             existing = self._trackside_objects[row]
             obj = TracksideObject(
                 filename=filename,
-                x=self._parse_tso_distance_from_display(table.item(row, 2).text() if table.item(row, 2) else "0"),
-                y=self._parse_tso_distance_from_display(table.item(row, 3).text() if table.item(row, 3) else "0"),
-                z=self._parse_tso_distance_from_display(table.item(row, 4).text() if table.item(row, 4) else "0"),
+                x=self._parse_tso_distance_from_display(
+                    table.item(row, 2).text() if table.item(row, 2) else "0"
+                ),
+                y=self._parse_tso_distance_from_display(
+                    table.item(row, 3).text() if table.item(row, 3) else "0"
+                ),
+                z=self._parse_tso_distance_from_display(
+                    table.item(row, 4).text() if table.item(row, 4) else "0"
+                ),
                 yaw=existing.yaw,
                 pitch=existing.pitch,
                 tilt=existing.tilt,
@@ -1198,12 +1454,18 @@ class TracksideObjectsController:
                 bbox_length=max(0, int(existing.bbox_length)),
                 bbox_width=max(0, int(existing.bbox_width)),
                 rotation_point=existing.rotation_point,
+                is_sprite=existing.is_sprite,
+                sprite_width=existing.sprite_width,
             )
             if item.column() == 5:
-                relative_z = self._parse_tso_distance_from_display(table.item(row, 5).text() if table.item(row, 5) else "0")
-                boundary_elevation = self._closest_boundary_elevation_for_tso_with_context(
-                    obj,
-                    context=self._build_tso_boundary_elevation_context(),
+                relative_z = self._parse_tso_distance_from_display(
+                    table.item(row, 5).text() if table.item(row, 5) else "0"
+                )
+                boundary_elevation = (
+                    self._closest_boundary_elevation_for_tso_with_context(
+                        obj,
+                        context=self._build_tso_boundary_elevation_context(),
+                    )
                 )
                 if boundary_elevation is None:
                     raise ValueError
@@ -1218,7 +1480,11 @@ class TracksideObjectsController:
         self._persist_tsd_state_for_current_track()
 
     def _on_tso_refresh_relative_boundary_requested(self) -> None:
-        self._update_tso_table_position_cells(list(range(len(self._trackside_objects))), include_z=False, include_relative_z=True)
+        self._update_tso_table_position_cells(
+            list(range(len(self._trackside_objects))),
+            include_z=False,
+            include_relative_z=True,
+        )
 
     def _on_tso_auto_update_relative_z_toggled(self, checked: bool) -> None:
         self._auto_update_tso_relative_z = bool(checked)
@@ -1229,11 +1495,15 @@ class TracksideObjectsController:
             )
         if self._auto_update_tso_relative_z:
             self._refresh_tso_table()
-        self._window.show_status_message("Refreshed Z rel. boundary values from current track geometry.")
+        self._window.show_status_message(
+            "Refreshed Z rel. boundary values from current track geometry."
+        )
 
     def _on_tso_generate_file_requested(self) -> None:
         if not self._trackside_objects:
-            QtWidgets.QMessageBox.information(self._window, "Generate objects.txt", "No TSOs to export.")
+            QtWidgets.QMessageBox.information(
+                self._window, "Generate objects.txt", "No TSOs to export."
+            )
             return
         path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self._window,
@@ -1245,7 +1515,9 @@ class TracksideObjectsController:
             return
         path = Path(path_str)
         try:
-            path.write_text(serialize_objects_txt(self._trackside_objects), encoding="utf-8")
+            path.write_text(
+                serialize_objects_txt(self._trackside_objects), encoding="utf-8"
+            )
         except OSError as exc:
             QtWidgets.QMessageBox.critical(
                 self._window,
@@ -1268,13 +1540,18 @@ class TracksideObjectsController:
         text: str,
         catalog: Track3DCatalog | None = None,
     ) -> tuple[str, int, int]:
-        return replace_tso_dynamic_section_in_3d_text(text, self._trackside_objects, catalog)
+        return replace_tso_dynamic_section_in_3d_text(
+            text, self._trackside_objects, catalog
+        )
 
     def _on_tso_write_to_3d_file_requested(self) -> None:
         path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
             self._window,
             "Select track .3D file to update",
-            str(self._host._track3d_tools_controller._track3d_path_for_current_project() or ""),
+            str(
+                self._host._track3d_tools_controller._track3d_path_for_current_project()
+                or ""
+            ),
             "Track 3D Files (*.3d *.3D);;All Files (*)",
         )
         if not path_str:
@@ -1290,9 +1567,13 @@ class TracksideObjectsController:
                 f"Could not read file:\n{exc}",
             )
             return
-        project_keys = {self._trackside_object_catalog_key(obj) for obj in self._trackside_objects}
+        project_keys = {
+            self._trackside_object_catalog_key(obj) for obj in self._trackside_objects
+        }
         deleted_labels: list[str] = []
-        for label, definition in sorted(catalog.tsos.items(), key=lambda item: int(item[0][5:])):
+        for label, definition in sorted(
+            catalog.tsos.items(), key=lambda item: int(item[0][5:])
+        ):
             obj = TracksideObject(
                 filename=normalize_trackside_filename(definition.extern),
                 x=int(definition.x),
@@ -1318,9 +1599,11 @@ class TracksideObjectsController:
             )
             if proceed != QtWidgets.QMessageBox.Yes:
                 return
-        updated_text, replaced_count, _deleted_count = self._replace_tso_dynamic_section_in_3d_text(
-            original_text,
-            catalog,
+        updated_text, replaced_count, _deleted_count = (
+            self._replace_tso_dynamic_section_in_3d_text(
+                original_text,
+                catalog,
+            )
         )
         if replaced_count <= 0:
             QtWidgets.QMessageBox.information(

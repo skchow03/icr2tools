@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 ROTATION_POINT_CENTER = "center"
 ROTATION_POINT_TOP_LEFT = "top_left"
 ROTATION_POINT_TOP_RIGHT = "top_right"
@@ -31,10 +30,12 @@ class TracksideObject:
     bbox_length: int = 0
     bbox_width: int = 0
     rotation_point: str = ROTATION_POINT_CENTER
+    is_sprite: bool = False
+    sprite_width: int = 0
 
     def to_objects_txt_line(self, index: int) -> str:
         return (
-            f'__TSO{index}: DYNAMIC {self.x}, {self.y}, {self.z}, {self.yaw}, '
+            f"__TSO{index}: DYNAMIC {self.x}, {self.y}, {self.z}, {self.yaw}, "
             f'{self.pitch}, {self.tilt}, 1, EXTERN "{normalize_trackside_filename(self.filename)}";'
         )
 
@@ -59,6 +60,8 @@ def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
         "bbox_length": obj.bbox_length,
         "bbox_width": obj.bbox_width,
         "rotation_point": normalize_rotation_point(obj.rotation_point),
+        "is_sprite": bool(obj.is_sprite),
+        "sprite_width": max(0, int(obj.sprite_width)),
     }
 
 
@@ -77,7 +80,13 @@ def trackside_object_from_payload(payload: dict[str, object]) -> TracksideObject
         description=str(payload.get("description", "")),
         bbox_length=max(0, int(payload.get("bbox_length", 0))),
         bbox_width=max(0, int(payload.get("bbox_width", 0))),
-        rotation_point=normalize_rotation_point(str(payload.get("rotation_point", ROTATION_POINT_CENTER))),
+        rotation_point=normalize_rotation_point(
+            str(payload.get("rotation_point", ROTATION_POINT_CENTER))
+        ),
+        is_sprite=bool(payload.get("is_sprite", False)),
+        sprite_width=max(
+            0, int(payload.get("sprite_width", payload.get("bbox_width", 0)))
+        ),
     )
 
 
@@ -89,4 +98,6 @@ def normalize_rotation_point(rotation_point: str) -> str:
 
 
 def serialize_objects_txt(objects: list[TracksideObject]) -> str:
-    return "\n".join(obj.to_objects_txt_line(index) for index, obj in enumerate(objects))
+    return "\n".join(
+        obj.to_objects_txt_line(index) for index, obj in enumerate(objects)
+    )

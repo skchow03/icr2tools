@@ -66,3 +66,25 @@ def test_trackside_rotation_point_defaults_to_center_for_invalid_values() -> Non
         }
     )
     assert restored.rotation_point == ROTATION_POINT_CENTER
+
+
+def test_trackside_sprite_shape_roundtrips_through_payload() -> None:
+    obj = TracksideObject(
+        filename="tree",
+        x=1,
+        y=2,
+        z=3,
+        yaw=4,
+        pitch=5,
+        tilt=6,
+        is_sprite=True,
+        sprite_width=42,
+    )
+
+    payload = trackside_object_to_payload(obj)
+    assert payload["is_sprite"] is True
+    assert payload["sprite_width"] == 42
+
+    restored = trackside_object_from_payload(payload)
+    assert restored.is_sprite is True
+    assert restored.sprite_width == 42

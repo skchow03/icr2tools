@@ -47,6 +47,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._description_edit = QtWidgets.QLineEdit()
         self._bbox_length_spin = QtWidgets.QDoubleSpinBox()
         self._bbox_width_spin = QtWidgets.QDoubleSpinBox()
+        self._is_sprite_checkbox = QtWidgets.QCheckBox("Sprite object")
+        self._sprite_width_spin = QtWidgets.QDoubleSpinBox()
         self._rotation_point_combo = QtWidgets.QComboBox()
 
         for spin in (
@@ -67,14 +69,22 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._yaw_spin.valueChanged.connect(self._yaw_slider.setValue)
         self._yaw_spin.valueChanged.connect(self._emit_preview_update)
 
-        for spin in (self._bbox_length_spin, self._bbox_width_spin):
+        for spin in (
+            self._bbox_length_spin,
+            self._bbox_width_spin,
+            self._sprite_width_spin,
+        ):
             spin.setRange(0, 1_000_000_000)
 
         self._rotation_point_combo.addItem("Center", ROTATION_POINT_CENTER)
         self._rotation_point_combo.addItem("Top-left corner", ROTATION_POINT_TOP_LEFT)
         self._rotation_point_combo.addItem("Top-right corner", ROTATION_POINT_TOP_RIGHT)
-        self._rotation_point_combo.addItem("Bottom-left corner", ROTATION_POINT_BOTTOM_LEFT)
-        self._rotation_point_combo.addItem("Bottom-right corner", ROTATION_POINT_BOTTOM_RIGHT)
+        self._rotation_point_combo.addItem(
+            "Bottom-left corner", ROTATION_POINT_BOTTOM_LEFT
+        )
+        self._rotation_point_combo.addItem(
+            "Bottom-right corner", ROTATION_POINT_BOTTOM_RIGHT
+        )
 
         yaw_layout = QtWidgets.QHBoxLayout()
         yaw_layout.setContentsMargins(0, 0, 0, 0)
@@ -95,14 +105,22 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._bbox_width_label = QtWidgets.QLabel()
         form.addRow(self._bbox_length_label, self._bbox_length_spin)
         form.addRow(self._bbox_width_label, self._bbox_width_spin)
+        self._sprite_width_label = QtWidgets.QLabel()
+        form.addRow("Shape", self._is_sprite_checkbox)
+        form.addRow(self._sprite_width_label, self._sprite_width_spin)
         form.addRow("Rotation point", self._rotation_point_combo)
+        self._is_sprite_checkbox.toggled.connect(self._update_shape_controls)
 
         buttons = QtWidgets.QDialogButtonBox()
         apply_button = buttons.addButton("Apply", QtWidgets.QDialogButtonBox.ApplyRole)
-        apply_matching_button = buttons.addButton("Apply BBox/Pivot to matches", QtWidgets.QDialogButtonBox.ActionRole)
+        apply_matching_button = buttons.addButton(
+            "Apply BBox/Pivot to matches", QtWidgets.QDialogButtonBox.ActionRole
+        )
         close_button = buttons.addButton(QtWidgets.QDialogButtonBox.Close)
         apply_button.clicked.connect(self._apply_changes)
-        apply_matching_button.clicked.connect(self._apply_bbox_rotation_to_matching_filename)
+        apply_matching_button.clicked.connect(
+            self._apply_bbox_rotation_to_matching_filename
+        )
         close_button.clicked.connect(self.close)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -112,8 +130,15 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
 
     def set_measurement_unit(self, unit: str) -> None:
         previous_unit = self._measurement_unit
-        bbox_length_500ths = units_to_500ths(float(self._bbox_length_spin.value()), previous_unit)
-        bbox_width_500ths = units_to_500ths(float(self._bbox_width_spin.value()), previous_unit)
+        bbox_length_500ths = units_to_500ths(
+            float(self._bbox_length_spin.value()), previous_unit
+        )
+        bbox_width_500ths = units_to_500ths(
+            float(self._bbox_width_spin.value()), previous_unit
+        )
+        sprite_width_500ths = units_to_500ths(
+            float(self._sprite_width_spin.value()), previous_unit
+        )
 
         self._measurement_unit = unit
         unit_label = measurement_unit_label(unit)
@@ -121,12 +146,25 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         step = measurement_unit_step(unit)
         self._bbox_length_label.setText(f"BBox Length ({unit_label})")
         self._bbox_width_label.setText(f"BBox Width ({unit_label})")
-        for spin in (self._bbox_length_spin, self._bbox_width_spin):
+        self._sprite_width_label.setText(f"Sprite Width ({unit_label})")
+        for spin in (
+            self._bbox_length_spin,
+            self._bbox_width_spin,
+            self._sprite_width_spin,
+        ):
             spin.setDecimals(decimals)
             spin.setSingleStep(step)
 
-        self._bbox_length_spin.setValue(units_from_500ths(float(bbox_length_500ths), unit))
-        self._bbox_width_spin.setValue(units_from_500ths(float(bbox_width_500ths), unit))
+        self._bbox_length_spin.setValue(
+            units_from_500ths(float(bbox_length_500ths), unit)
+        )
+        self._bbox_width_spin.setValue(
+            units_from_500ths(float(bbox_width_500ths), unit)
+        )
+        self._sprite_width_spin.setValue(
+            units_from_500ths(float(sprite_width_500ths), unit)
+        )
+        self._update_shape_controls()
 
     def edit_object(self, row_index: int, obj: TracksideObject) -> None:
         self._row_index = row_index
@@ -138,11 +176,20 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._pitch_spin.setValue(int(obj.pitch))
         self._tilt_spin.setValue(int(obj.tilt))
         self._description_edit.setText(obj.description)
-        self._bbox_length_spin.setValue(units_from_500ths(float(obj.bbox_length), self._measurement_unit))
-        self._bbox_width_spin.setValue(units_from_500ths(float(obj.bbox_width), self._measurement_unit))
+        self._bbox_length_spin.setValue(
+            units_from_500ths(float(obj.bbox_length), self._measurement_unit)
+        )
+        self._bbox_width_spin.setValue(
+            units_from_500ths(float(obj.bbox_width), self._measurement_unit)
+        )
+        self._is_sprite_checkbox.setChecked(bool(obj.is_sprite))
+        self._sprite_width_spin.setValue(
+            units_from_500ths(float(obj.sprite_width), self._measurement_unit)
+        )
         rotation_point = normalize_rotation_point(obj.rotation_point)
         index = self._rotation_point_combo.findData(rotation_point)
         self._rotation_point_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._update_shape_controls()
         self.setWindowTitle(f"TSO Attributes — __TSO{row_index}")
 
     def _apply_changes(self) -> None:
@@ -161,7 +208,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             self,
             "Apply BBox/Pivot to Matches",
             (
-                "This will copy BBox Length, BBox Width, and Rotation point "
+                "This will copy BBox/sprite shape settings and Rotation point "
                 f'to every TSO with filename "{obj.filename}". Continue?'
             ),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
@@ -173,13 +220,17 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self.matchingFilenameBBoxRotationApplyRequested.emit(int(self._row_index), obj)
         self._applying_changes = False
 
-    def _build_object_from_form(self, *, warn_on_missing_filename: bool = True) -> TracksideObject | None:
+    def _build_object_from_form(
+        self, *, warn_on_missing_filename: bool = True
+    ) -> TracksideObject | None:
         if self._row_index is None:
             return None
         filename = normalize_trackside_filename(self._filename_edit.text())
         if not filename:
             if warn_on_missing_filename:
-                QtWidgets.QMessageBox.warning(self, "TSO Attributes", "Filename is required.")
+                QtWidgets.QMessageBox.warning(
+                    self, "TSO Attributes", "Filename is required."
+                )
             return None
         return TracksideObject(
             filename=filename,
@@ -190,10 +241,42 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             pitch=int(self._pitch_spin.value()),
             tilt=int(self._tilt_spin.value()),
             description=self._description_edit.text().strip(),
-            bbox_length=max(0, units_to_500ths(float(self._bbox_length_spin.value()), self._measurement_unit)),
-            bbox_width=max(0, units_to_500ths(float(self._bbox_width_spin.value()), self._measurement_unit)),
-            rotation_point=normalize_rotation_point(str(self._rotation_point_combo.currentData() or "")),
+            bbox_length=max(
+                0,
+                units_to_500ths(
+                    float(self._bbox_length_spin.value()), self._measurement_unit
+                ),
+            ),
+            bbox_width=max(
+                0,
+                units_to_500ths(
+                    float(self._bbox_width_spin.value()), self._measurement_unit
+                ),
+            ),
+            rotation_point=normalize_rotation_point(
+                str(self._rotation_point_combo.currentData() or "")
+            ),
+            is_sprite=bool(self._is_sprite_checkbox.isChecked()),
+            sprite_width=max(
+                0,
+                units_to_500ths(
+                    float(self._sprite_width_spin.value()), self._measurement_unit
+                ),
+            ),
         )
+
+    def _update_shape_controls(self) -> None:
+        is_sprite = bool(self._is_sprite_checkbox.isChecked())
+        for widget in (
+            self._bbox_length_label,
+            self._bbox_length_spin,
+            self._bbox_width_label,
+            self._bbox_width_spin,
+            self._rotation_point_combo,
+        ):
+            widget.setEnabled(not is_sprite)
+        self._sprite_width_label.setEnabled(is_sprite)
+        self._sprite_width_spin.setEnabled(is_sprite)
 
     def _emit_preview_update(self) -> None:
         obj = self._build_object_from_form(warn_on_missing_filename=False)
