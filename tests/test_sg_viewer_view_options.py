@@ -1455,6 +1455,72 @@ def test_mrk_table_columns_default_to_resize_to_contents(qapp):
         window.close()
 
 
+def _set_mrk_rows(table, rows):
+    table.setRowCount(len(rows))
+    for row_index, row_values in enumerate(rows):
+        for column, value in enumerate(row_values):
+            table.setItem(row_index, column, QtWidgets.QTableWidgetItem(str(value)))
+
+
+def _mrk_row_keys(table):
+    return [
+        tuple(int(table.item(row, column).text()) for column in range(3))
+        for row in range(table.rowCount())
+    ]
+
+
+def test_mrk_sort_by_section_button_orders_rows_by_section_boundary_and_starting_wall(qapp):
+    window = SGViewerWindow()
+    try:
+        table = window.mrk_entries_table
+        _set_mrk_rows(
+            table,
+            [
+                (2, 0, 3, 1, "Left", "", ""),
+                (1, 2, 5, 1, "Left", "", ""),
+                (1, 1, 4, 1, "Left", "", ""),
+                (1, 1, 2, 1, "Left", "", ""),
+            ],
+        )
+
+        window.mrk_sort_by_section_button.click()
+
+        assert _mrk_row_keys(table) == [
+            (1, 1, 2),
+            (1, 1, 4),
+            (1, 2, 5),
+            (2, 0, 3),
+        ]
+    finally:
+        window.close()
+
+
+def test_mrk_sort_by_boundary_button_orders_rows_by_boundary_section_and_starting_wall(qapp):
+    window = SGViewerWindow()
+    try:
+        table = window.mrk_entries_table
+        _set_mrk_rows(
+            table,
+            [
+                (2, 1, 3, 1, "Left", "", ""),
+                (1, 0, 5, 1, "Left", "", ""),
+                (3, 0, 2, 1, "Left", "", ""),
+                (1, 0, 1, 1, "Left", "", ""),
+            ],
+        )
+
+        window.mrk_sort_by_boundary_button.click()
+
+        assert _mrk_row_keys(table) == [
+            (1, 0, 1),
+            (1, 0, 5),
+            (3, 0, 2),
+            (2, 1, 3),
+        ]
+    finally:
+        window.close()
+
+
 def test_mrk_add_entry_starts_with_blank_texture_pattern(qapp):
     window = SGViewerWindow()
     try:
