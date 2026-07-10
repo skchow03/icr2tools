@@ -20,6 +20,7 @@ from sg_viewer.ui.fsection_type_utils import (
     fsect_type_options,
 )
 from sg_viewer.ui.window_title import build_window_title
+from sg_viewer.ui.models.tsd_lines_model import TSD_COMMAND_CHOICES
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.altitude_units import (
@@ -87,6 +88,44 @@ class GeometryTabButton(QtWidgets.QPushButton):
 
     def requested_enabled(self) -> bool:
         return self._requested_enabled
+
+
+class TsdCommandDelegate(QtWidgets.QStyledItemDelegate):
+    """Combo-box editor for TSD line command cells."""
+
+    def createEditor(
+        self,
+        parent: QtWidgets.QWidget,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> QtWidgets.QWidget | None:
+        if index.column() != 0:
+            return super().createEditor(parent, option, index)
+        combo = QtWidgets.QComboBox(parent)
+        combo.addItems(TSD_COMMAND_CHOICES)
+        return combo
+
+    def setEditorData(
+        self, editor: QtWidgets.QWidget, index: QtCore.QModelIndex
+    ) -> None:
+        if isinstance(editor, QtWidgets.QComboBox):
+            current = str(index.data(QtCore.Qt.EditRole) or TSD_COMMAND_CHOICES[0])
+            editor.setCurrentText(
+                current if current in TSD_COMMAND_CHOICES else TSD_COMMAND_CHOICES[0]
+            )
+            return
+        super().setEditorData(editor, index)
+
+    def setModelData(
+        self,
+        editor: QtWidgets.QWidget,
+        model: QtCore.QAbstractItemModel,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        if isinstance(editor, QtWidgets.QComboBox):
+            model.setData(index, editor.currentText(), QtCore.Qt.EditRole)
+            return
+        super().setModelData(editor, model, index)
 
 
 class MarqueeStatusLabel(QtWidgets.QLabel):
@@ -480,10 +519,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tsd_files_combo.setEnabled(False)
         self._tsd_files_combo.setToolTip("Select a loaded TSD file to edit.")
         self._tsd_lines_table = QtWidgets.QTableView()
+        self._tsd_command_delegate = TsdCommandDelegate(self._tsd_lines_table)
         self._tsd_lines_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
-        self._tsd_lines_table.horizontalHeader().setStretchLastSection(False)
+        self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
+        self._tsd_lines_table.setItemDelegateForColumn(0, self._tsd_command_delegate)
+        self._tsd_lines_table.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
         self._tsd_lines_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectRows
         )
@@ -1152,9 +1196,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_buttons.addWidget(self._tsd_move_line_down_button)
         tsd_lines_layout.addLayout(tsd_buttons)
         tsd_lines_layout.addWidget(self._tsd_hide_centerline_nodes_checkbox)
-        tsd_lines_layout.addWidget(self._tsd_lines_table)
+        tsd_lines_layout.addWidget(self._tsd_lines_table, 1)
         tsd_lines_group.setLayout(tsd_lines_layout)
-        tsd_layout.addWidget(tsd_lines_group)
+        tsd_lines_group.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+        tsd_layout.addWidget(tsd_lines_group, 1)
         tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
         tsd_objects_layout = QtWidgets.QVBoxLayout()
         tsd_objects_layout.addWidget(
@@ -4213,6 +4260,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         """Update SUNNY.PCX colors used for land polygon color cells."""
         self._sunny_palette_colors = list(palette) if palette is not None else None
         self._refresh_land_polygon_color_cells()
+        model = self._tsd_lines_table.model()
+        if hasattr(model, "set_palette_colors"):
+            model.set_palette_colors(self._sunny_palette_colors)
 
     @staticmethod
     def _parse_land_polygon_color_index(text: str) -> int | None:
