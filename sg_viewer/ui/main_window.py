@@ -962,7 +962,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._query_track_button,
             self._ruler_button,
         )
-        geometry_toolbar = self._create_geometry_toolbar()
         elevation_layout = QtWidgets.QFormLayout()
         altitude_container = QtWidgets.QWidget()
         altitude_layout = QtWidgets.QVBoxLayout()
@@ -1503,14 +1502,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         container = QtWidgets.QWidget()
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(geometry_toolbar)
         splitter.addWidget(preview_column)
         splitter.addWidget(right_sidebar)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
-        splitter.setCollapsible(0, False)
-        splitter.setCollapsible(2, False)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setCollapsible(1, False)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(splitter)
         container.setLayout(layout)
@@ -1984,36 +1980,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return "–"
         return f"({heading[0]:.4f}, {heading[1]:.4f})"
 
-    def _create_geometry_toolbar(self) -> QtWidgets.QWidget:
-        toolbar = QtWidgets.QFrame()
-        toolbar.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        toolbar.setSizePolicy(
-            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding
-        )
-        layout = QtWidgets.QVBoxLayout(toolbar)
+    def _create_tab_button_panel(
+        self,
+        title: str,
+        buttons: tuple[QtWidgets.QPushButton, ...],
+    ) -> QtWidgets.QFrame:
+        panel = QtWidgets.QFrame()
+        panel.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
-        title = QtWidgets.QLabel("Geometry")
-        title.setAlignment(QtCore.Qt.AlignCenter)
-        title.setStyleSheet("font-weight: bold;")
-        layout.addWidget(title)
-        for button in self._geometry_tab_buttons():
-            button.setSizePolicy(
-                QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
-            )
-            layout.addWidget(button)
 
-        elevation_title = QtWidgets.QLabel("Elevations")
-        elevation_title.setAlignment(QtCore.Qt.AlignCenter)
-        elevation_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(elevation_title)
-        for button in self._elevation_toolbar_buttons():
+        title_label = QtWidgets.QLabel(title)
+        title_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(title_label)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(6)
+        for button in buttons:
             button.setSizePolicy(
                 QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
             )
-            layout.addWidget(button)
-        layout.addStretch(1)
-        return toolbar
+            button_row.addWidget(button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+        return panel
+
+    def _create_tab_with_button_panel(
+        self,
+        *,
+        title: str,
+        buttons: tuple[QtWidgets.QPushButton, ...],
+        content: QtWidgets.QWidget,
+    ) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._create_tab_button_panel(title, buttons))
+        layout.addWidget(content, stretch=1)
+        return widget
 
     def _geometry_tab_buttons(self) -> tuple[GeometryTabButton, ...]:
         return (
@@ -2099,10 +2106,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._right_sidebar_tabs.addTab(tab_widget, label)
             return tab_widget
 
-        self._right_sidebar_tabs.addTab(section_widget, "Geometry")
+        geometry_widget = self._create_tab_with_button_panel(
+            title="Geometry Tools",
+            buttons=self._geometry_tab_buttons(),
+            content=section_widget,
+        )
+        self._right_sidebar_tabs.addTab(geometry_widget, "Geometry")
         self._sidebar_feature_tab_widgets["Geometry"] = section_widget
 
-        self._right_sidebar_tabs.addTab(elevation_widget, "Elevation")
+        elevation_tab_widget = self._create_tab_with_button_panel(
+            title="Elevation Tools",
+            buttons=self._elevation_toolbar_buttons(),
+            content=elevation_widget,
+        )
+        self._right_sidebar_tabs.addTab(elevation_tab_widget, "Elevation")
         self._sidebar_feature_tab_widgets["Elevation"] = elevation_widget
 
         for workflow_label, panels in (
