@@ -47,7 +47,9 @@ def test_preview_widget_initializes_mrk_preview_state(qapp):
         widget.close()
 
 
-def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(qapp, monkeypatch):
+def test_marquee_status_enters_from_right_edge_and_allows_multiple_messages(
+    qapp, monkeypatch
+):
     import sg_viewer.ui.main_window as main_window_module
 
     messages = iter(["FIRST", "SECOND"])
@@ -592,7 +594,8 @@ def test_mrk_tab_buttons_hide_import_export_entries_controls(qapp):
     window = SGViewerWindow()
     try:
         sidebar_buttons = {
-            button.text() for button in window._mrk_sidebar.findChildren(QtWidgets.QPushButton)
+            button.text()
+            for button in window._mrk_sidebar.findChildren(QtWidgets.QPushButton)
         }
 
         assert "Export MRK entries" not in sidebar_buttons
@@ -758,6 +761,51 @@ def test_tsd_color_index_uses_sunny_palette_background(qapp):
     finally:
         window.close()
 
+
+def test_tsd_lines_table_uses_current_measurement_units(qapp):
+    window = SGViewerWindow()
+    try:
+        model = window.controller._tsd_lines_model
+        model.add_default_row()
+
+        window.measurement_units_combo.setCurrentIndex(1)  # meter
+
+        width_index = model.index(0, 2)
+        assert model.headerData(2, QtCore.Qt.Horizontal) == "Width (m)"
+        assert model.data(width_index, QtCore.Qt.DisplayRole) == "0.203"
+
+        assert model.setData(width_index, "1.000")
+        assert model.line_at(0).width_500ths == units_to_500ths(1.0, "meter")
+    finally:
+        window.close()
+
+
+def test_tsd_color_index_click_opens_palette_picker(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        model = window.controller._tsd_lines_model
+        model.add_default_row()
+        window.set_sunny_palette_colors([QtGui.QColor(i, i, i) for i in range(256)])
+
+        class FakePaletteDialog:
+            selected_index = 42
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec_(self):
+                return QtWidgets.QDialog.Accepted
+
+        monkeypatch.setattr(
+            "sg_viewer.ui.main_window.PaletteColorDialog", FakePaletteDialog
+        )
+        window._choose_tsd_line_color(0)
+
+        assert model.line_at(0).color_index == 42
+    finally:
+        window.close()
+
+
 def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
@@ -838,7 +886,9 @@ def test_generate_skid_marks_enables_preview_overlay(qapp):
         window.preview.set_show_tsd_lines(False)
 
         window.controller._on_tsd_skid_marks_requested()
-        buttons = window.controller._skid_marks_dialog.findChildren(QtWidgets.QPushButton)
+        buttons = window.controller._skid_marks_dialog.findChildren(
+            QtWidgets.QPushButton
+        )
         randomize_button = next(
             button for button in buttons if button.text() == "Randomize skid marks"
         )
@@ -948,9 +998,15 @@ def test_load_tsd_state_restores_preview_overlay_for_active_file_index(qapp, tmp
 
         assert (0, "Resetting TSD and object project state…") in progress_events
         assert (1, "Restoring Track3D file and color settings…") in progress_events
-        assert (2, "Restoring TSD object definitions and skid marks…") in progress_events
+        assert (
+            2,
+            "Restoring TSD object definitions and skid marks…",
+        ) in progress_events
         assert (3, "Restoring trackside object definitions…") in progress_events
-        assert (4, "Restoring TSO visibility lists and land objects…") in progress_events
+        assert (
+            4,
+            "Restoring TSO visibility lists and land objects…",
+        ) in progress_events
         assert (5, "Loading TSD file 1 of 2: first.tsd…") in progress_events
         assert (5, "Loading TSD file 2 of 2: second.tsd…") in progress_events
         assert (6, "Activating restored TSD selection and overlays…") in progress_events
@@ -1536,7 +1592,9 @@ def _mrk_row_keys(table):
     ]
 
 
-def test_mrk_sort_by_section_button_orders_rows_by_section_boundary_and_starting_wall(qapp):
+def test_mrk_sort_by_section_button_orders_rows_by_section_boundary_and_starting_wall(
+    qapp,
+):
     window = SGViewerWindow()
     try:
         table = window.mrk_entries_table
@@ -1562,7 +1620,9 @@ def test_mrk_sort_by_section_button_orders_rows_by_section_boundary_and_starting
         window.close()
 
 
-def test_mrk_sort_by_boundary_button_orders_rows_by_boundary_section_and_starting_wall(qapp):
+def test_mrk_sort_by_boundary_button_orders_rows_by_boundary_section_and_starting_wall(
+    qapp,
+):
     window = SGViewerWindow()
     try:
         table = window.mrk_entries_table
@@ -3382,6 +3442,7 @@ def test_move_selected_tsd_line_up_and_down(qapp):
         assert window.controller._tsd_lines_model.line_at(1).start_dlong == 20
     finally:
         window.close()
+
 
 def test_tsd_lines_table_header_uses_resize_to_contents(qapp):
     window = SGViewerWindow()
