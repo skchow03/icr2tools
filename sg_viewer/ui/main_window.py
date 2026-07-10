@@ -524,7 +524,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
         self._tsd_lines_table.horizontalHeader().setDefaultAlignment(
-            QtCore.Qt.AlignCenter | QtCore.Qt.TextWordWrap
+            QtCore.Qt.Alignment(QtCore.Qt.AlignCenter | QtCore.Qt.TextWordWrap)
         )
         self._tsd_lines_table.horizontalHeader().setMinimumSectionSize(56)
         self._tsd_lines_table.setItemDelegateForColumn(0, self._tsd_command_delegate)
