@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PyQt5 import QtCore, QtWidgets
 
+from sg_viewer.io.track3d_parser import calculate_track3d_xy_bounding_box
 from sg_viewer.services.trackside_objects import (
     ROTATION_POINT_BOTTOM_LEFT,
     ROTATION_POINT_BOTTOM_RIGHT,
@@ -103,8 +104,16 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow("Description", self._description_edit)
         self._bbox_length_label = QtWidgets.QLabel()
         self._bbox_width_label = QtWidgets.QLabel()
-        form.addRow(self._bbox_length_label, self._bbox_length_spin)
+        bbox_length_layout = QtWidgets.QHBoxLayout()
+        bbox_length_layout.setContentsMargins(0, 0, 0, 0)
+        bbox_length_layout.addWidget(self._bbox_length_spin)
+        self._bbox_from_3d_button = QtWidgets.QPushButton("Load from .3D…")
+        bbox_length_layout.addWidget(self._bbox_from_3d_button)
+        bbox_length_widget = QtWidgets.QWidget()
+        bbox_length_widget.setLayout(bbox_length_layout)
+        form.addRow(self._bbox_length_label, bbox_length_widget)
         form.addRow(self._bbox_width_label, self._bbox_width_spin)
+        self._bbox_from_3d_button.clicked.connect(self._load_bbox_from_track3d)
         self._sprite_width_label = QtWidgets.QLabel()
         form.addRow("Shape", self._is_sprite_checkbox)
         form.addRow(self._sprite_width_label, self._sprite_width_spin)
@@ -192,6 +201,48 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._update_shape_controls()
         self.setWindowTitle(f"TSO Attributes — __TSO{row_index}")
 
+    def _load_bbox_from_track3d(self) -> None:
+        path, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open .3D File",
+            "",
+            "ICR2 3D Files (*.3D *.3d);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            bbox = calculate_track3d_xy_bounding_box(path)
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Load BBox from .3D", f"Could not read bounding box:\n{exc}"
+            )
+            return
+
+        unit_label = measurement_unit_label(self._measurement_unit)
+        length_value = units_from_500ths(float(bbox.length), self._measurement_unit)
+        width_value = units_from_500ths(float(bbox.width), self._measurement_unit)
+        confirmation = QtWidgets.QMessageBox.question(
+            self,
+            "Use .3D Bounding Box",
+            (
+                "The selected .3D file contains these X/Y extents:\n\n"
+                f"Minimum X: {bbox.min_x:g}\n"
+                f"Maximum X: {bbox.max_x:g}\n"
+                f"Minimum Y: {bbox.min_y:g}\n"
+                f"Maximum Y: {bbox.max_y:g}\n\n"
+                f"Set BBox Length to {length_value:g} {unit_label} and "
+                f"BBox Width to {width_value:g} {unit_label} for this object?"
+            ),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirmation != QtWidgets.QMessageBox.Yes:
+            return
+
+        self._bbox_length_spin.setValue(length_value)
+        self._bbox_width_spin.setValue(width_value)
+        self._apply_changes()
+
     def _apply_changes(self) -> None:
         obj = self._build_object_from_form()
         if obj is None or self._row_index is None:
@@ -270,6 +321,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         for widget in (
             self._bbox_length_label,
             self._bbox_length_spin,
+            self._bbox_from_3d_button,
             self._bbox_width_label,
             self._bbox_width_spin,
             self._rotation_point_combo,

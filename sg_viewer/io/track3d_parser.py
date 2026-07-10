@@ -1,3 +1,4 @@
+import re
 import shutil
 from datetime import datetime
 from dataclasses import dataclass
@@ -36,10 +37,49 @@ class Track3DDetailListDlongRange:
 
 
 @dataclass(frozen=True)
+class Track3DBoundingBox:
+    min_x: float
+    min_y: float
+    max_x: float
+    max_y: float
+
+    @property
+    def length(self) -> float:
+        return self.max_x - self.min_x
+
+    @property
+    def width(self) -> float:
+        return self.max_y - self.min_y
+
+
+@dataclass(frozen=True)
 class Track3DSectionDlongList:
     section: int
     sub_index: int
     dlongs: tuple[int, ...]
+
+
+_TRACK3D_VERTEX_RE = re.compile(
+    r"\[<\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*>\]"
+)
+
+
+def calculate_track3d_xy_bounding_box(path: str | Path) -> Track3DBoundingBox:
+    """Return the X/Y bounding box for vertex definitions in a text .3D file."""
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    xs: list[float] = []
+    ys: list[float] = []
+    for match in _TRACK3D_VERTEX_RE.finditer(text):
+        xs.append(float(match.group(1)))
+        ys.append(float(match.group(2)))
+    if not xs or not ys:
+        raise ValueError("No vertex coordinates were found in the selected .3D file.")
+    return Track3DBoundingBox(
+        min_x=min(xs),
+        min_y=min(ys),
+        max_x=max(xs),
+        max_y=max(ys),
+    )
 
 
 def parse_track3d(path: str | Path) -> list[Track3DObjectList]:

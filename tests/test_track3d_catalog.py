@@ -154,3 +154,38 @@ DetailList_12-0H: LIST { __TSO1, DetailO_263-0 };
     assert detail_item.foreground(1).color().name() == "#0057d8"
     assert tso_item.text(1) == "__TSO1"
     assert tso_item.foreground(1).color().name() == "#0057d8"
+
+
+def test_calculate_track3d_xy_bounding_box_uses_vertex_extents(tmp_path: Path):
+    from sg_viewer.io.track3d_parser import calculate_track3d_xy_bounding_box
+
+    path = tmp_path / "object.3D"
+    path.write_text(
+        """3D VERSION 3.0;
+a: [<-10, 25, 0>];
+b: [<40, -5, 10>];
+c: [<15, 35, -2>];
+poly: POLY <1> {a, b, c};
+""",
+        encoding="utf-8",
+    )
+
+    bbox = calculate_track3d_xy_bounding_box(path)
+
+    assert bbox.min_x == -10
+    assert bbox.max_x == 40
+    assert bbox.min_y == -5
+    assert bbox.max_y == 35
+    assert bbox.length == 50
+    assert bbox.width == 40
+
+
+def test_calculate_track3d_xy_bounding_box_rejects_files_without_vertices(tmp_path: Path):
+    import pytest
+    from sg_viewer.io.track3d_parser import calculate_track3d_xy_bounding_box
+
+    path = tmp_path / "empty.3D"
+    path.write_text("nil: NIL;\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="No vertex coordinates"):
+        calculate_track3d_xy_bounding_box(path)
