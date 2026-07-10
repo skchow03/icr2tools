@@ -73,7 +73,10 @@ from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
-from sg_viewer.io.track3d_parser import parse_track3d_detail_list_dlong_ranges, parse_track3d_section_dlongs
+from sg_viewer.io.track3d_parser import (
+    parse_track3d_detail_list_dlong_ranges,
+    parse_track3d_section_dlongs,
+)
 from sg_viewer.ui.controllers import (
     BackgroundController,
     BackgroundUiCoordinator,
@@ -89,7 +92,10 @@ from sg_viewer.ui.controllers import (
     Track3DController,
 )
 from sg_viewer.model.track_model import TrackModel
-from sg_viewer.ui.controllers.features.setup_builders import ViewerActionBuilder, ViewerMenuBuilder
+from sg_viewer.ui.controllers.features.setup_builders import (
+    ViewerActionBuilder,
+    ViewerMenuBuilder,
+)
 from sg_viewer.ui.actions import (
     FileActions,
     FsectActions,
@@ -105,8 +111,12 @@ from sg_viewer.ui.actions import (
 )
 from sg_viewer.ui.controllers.features.mrk_controller import MrkController
 from sg_viewer.ui.controllers.features.tsd_controller import TsdController
-from sg_viewer.ui.controllers.features.trackside_objects_controller import TracksideObjectsController
-from sg_viewer.ui.controllers.features.track3d_tools_controller import Track3DToolsController
+from sg_viewer.ui.controllers.features.trackside_objects_controller import (
+    TracksideObjectsController,
+)
+from sg_viewer.ui.controllers.features.track3d_tools_controller import (
+    Track3DToolsController,
+)
 from sg_viewer.ui.controllers.features.state_controllers import (
     MrkFeatureState,
     Track3dPaletteFeatureState,
@@ -117,15 +127,12 @@ from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 logger = logging.getLogger(__name__)
 
 _TSO_DYNAMIC_LINE_PATTERN = re.compile(
-    r'^\s*__TSO\d+:\s*DYNAMIC\s+'
-    r'(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*'
-    r'(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*'
+    r"^\s*__TSO\d+:\s*DYNAMIC\s+"
+    r"(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*"
+    r"(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*"
     r'-?\d+\s*,\s*EXTERN\s*"([^"]+)"\s*;\s*$',
     re.IGNORECASE,
 )
-
-
-
 
 
 class SGViewerController:
@@ -168,10 +175,18 @@ class SGViewerController:
         self._background_controller = BackgroundController(self, logger)
         self._elevation_panel_controller = ElevationPanelController(self)
         self._sections_controller = SectionsController(self)
-        self._file_menu_coordinator = FileMenuCoordinator(self, self._document_controller)
-        self._section_editing_coordinator = SectionEditingCoordinator(self, self._sections_controller)
-        self._elevation_ui_coordinator = ElevationUiCoordinator(self, self._elevation_panel_controller)
-        self._background_ui_coordinator = BackgroundUiCoordinator(self._background_controller)
+        self._file_menu_coordinator = FileMenuCoordinator(
+            self, self._document_controller
+        )
+        self._section_editing_coordinator = SectionEditingCoordinator(
+            self, self._sections_controller
+        )
+        self._elevation_ui_coordinator = ElevationUiCoordinator(
+            self, self._elevation_panel_controller
+        )
+        self._background_ui_coordinator = BackgroundUiCoordinator(
+            self._background_controller
+        )
         self._mrk_controller = MrkController(self)
         self._tsd_controller = TsdController(self)
         self._tsd_signal_controller = TsdSignalController(self)
@@ -197,7 +212,9 @@ class SGViewerController:
             self._window.background_brightness_spin.value()
         )
         self._on_mrk_wall_height_changed(self._window.pitwall_wall_height_spin.value())
-        self._on_mrk_armco_height_changed(self._window.pitwall_armco_height_spin.value())
+        self._on_mrk_armco_height_changed(
+            self._window.pitwall_armco_height_spin.value()
+        )
         self._autosize_mrk_table_columns()
         self._load_measurement_unit_from_history()
         self._load_preview_colors_from_history()
@@ -212,9 +229,7 @@ class SGViewerController:
         self._window.preview.set_section_drag_enabled(
             self._window.move_section_button.isChecked()
         )
-        self._on_move_section_mode_changed(
-            self._window.move_section_button.isChecked()
-        )
+        self._on_move_section_mode_changed(self._window.move_section_button.isChecked())
         self._file_menu_coordinator.refresh_recent_menu()
         self._start_new_track(confirm=False)
         self._window.show_status_message(
@@ -223,7 +238,16 @@ class SGViewerController:
         self._update_track_length_display()
 
     def __getattr__(self, name: str):
-        if name.startswith(("_on_tsd_", "_refresh_tsd_", "_build_tsd_", "_convert_tsd_", "_open_tsd_", "_schedule_tsd_")) or name in {
+        if name.startswith(
+            (
+                "_on_tsd_",
+                "_refresh_tsd_",
+                "_build_tsd_",
+                "_convert_tsd_",
+                "_open_tsd_",
+                "_schedule_tsd_",
+            )
+        ) or name in {
             "_save_tsd_to_path",
             "_move_tsd_line",
             "_confirm_tsd_file_removal",
@@ -251,31 +275,29 @@ class SGViewerController:
             "_move_tsd_object",
         }:
             return getattr(self._tsd_controller, name)
-        if (
-            name.startswith(("_on_mrk_", "_mrk_", "_manual_wall_"))
-            or name in {
-                "_generate_pitwall_txt",
-                "_confirm_discard_unsaved_mrk",
-                "_set_mrk_dirty",
-                "_persist_mrk_state_for_current_track",
-                "_load_mrk_state_for_current_track",
-                "_pitwall_lines_with_manual_overrides",
-                "_persist_manual_wall_height_overrides_for_current_track",
-                "_load_manual_wall_height_overrides_for_current_track",
-                "_persist_mrk_wall_heights_for_current_track",
-                "_load_mrk_wall_heights_for_current_track",
-                "_collect_mrk_state",
-                "_apply_mrk_state",
-                "_build_mark_file_from_table",
-                "_update_mrk_highlights_from_table",
-                "_autosize_mrk_table_columns",
-            }
-        ):
+        if name.startswith(("_on_mrk_", "_mrk_", "_manual_wall_")) or name in {
+            "_generate_pitwall_txt",
+            "_confirm_discard_unsaved_mrk",
+            "_set_mrk_dirty",
+            "_persist_mrk_state_for_current_track",
+            "_load_mrk_state_for_current_track",
+            "_pitwall_lines_with_manual_overrides",
+            "_persist_manual_wall_height_overrides_for_current_track",
+            "_load_manual_wall_height_overrides_for_current_track",
+            "_persist_mrk_wall_heights_for_current_track",
+            "_load_mrk_wall_heights_for_current_track",
+            "_collect_mrk_state",
+            "_apply_mrk_state",
+            "_build_mark_file_from_table",
+            "_update_mrk_highlights_from_table",
+            "_autosize_mrk_table_columns",
+        }:
             return getattr(self._mrk_controller, name)
         if (
             name.startswith(("_on_tso_", "_refresh_tso_", "_set_tso_", "_tso_"))
             or name.startswith(("_on_preview_tso_", "_trackside_"))
-            or name in {
+            or name
+            in {
                 "_trackside_objects",
                 "_selected_trackside_object_indices",
                 "_objects_tab_selected_trackside_object_indices",
@@ -306,7 +328,15 @@ class SGViewerController:
         raise AttributeError(name)
 
     def __setattr__(self, name: str, value: object) -> None:
-        if name in {"_mrk_texture_definitions", "_mrk_is_dirty", "_manual_wall_height_overrides"} and "_mrk_controller" in self.__dict__:
+        if (
+            name
+            in {
+                "_mrk_texture_definitions",
+                "_mrk_is_dirty",
+                "_manual_wall_height_overrides",
+            }
+            and "_mrk_controller" in self.__dict__
+        ):
             setattr(self._mrk_controller, name, value)
             return
         if name.startswith("_") and "_trackside_objects_controller" in self.__dict__:
@@ -332,71 +362,133 @@ class SGViewerController:
         self._document_controller.load_sg(path)
 
     @property
-    def _loaded_tsd_files(self): return self._tsd_state.loaded_files
+    def _loaded_tsd_files(self):
+        return self._tsd_state.loaded_files
+
     @_loaded_tsd_files.setter
-    def _loaded_tsd_files(self, value): self._tsd_state.loaded_files = value
+    def _loaded_tsd_files(self, value):
+        self._tsd_state.loaded_files = value
+
     @property
-    def _tsd_objects(self): return self._tsd_state.objects
+    def _tsd_objects(self):
+        return self._tsd_state.objects
+
     @_tsd_objects.setter
-    def _tsd_objects(self, value): self._tsd_state.objects = value
+    def _tsd_objects(self, value):
+        self._tsd_state.objects = value
+
     @property
-    def _tsd_lines_model(self): return self._tsd_state.lines_model
+    def _tsd_lines_model(self):
+        return self._tsd_state.lines_model
+
     @_tsd_lines_model.setter
-    def _tsd_lines_model(self, value): self._tsd_state.lines_model = value
+    def _tsd_lines_model(self, value):
+        self._tsd_state.lines_model = value
+
     @property
-    def _tsd_preview_refresh_timer(self): return self._tsd_state.preview_refresh_timer
+    def _tsd_preview_refresh_timer(self):
+        return self._tsd_state.preview_refresh_timer
+
     @_tsd_preview_refresh_timer.setter
-    def _tsd_preview_refresh_timer(self, value): self._tsd_state.preview_refresh_timer = value
+    def _tsd_preview_refresh_timer(self, value):
+        self._tsd_state.preview_refresh_timer = value
+
     @property
-    def _tsd_is_dirty(self): return self._tsd_state.is_dirty
+    def _tsd_is_dirty(self):
+        return self._tsd_state.is_dirty
+
     @_tsd_is_dirty.setter
-    def _tsd_is_dirty(self, value): self._tsd_state.is_dirty = value
+    def _tsd_is_dirty(self, value):
+        self._tsd_state.is_dirty = value
+
     @property
-    def _tsd_object_dialog_preview_object(self): return self._tsd_state.object_dialog_preview_object
+    def _tsd_object_dialog_preview_object(self):
+        return self._tsd_state.object_dialog_preview_object
+
     @_tsd_object_dialog_preview_object.setter
-    def _tsd_object_dialog_preview_object(self, value): self._tsd_state.object_dialog_preview_object = value
+    def _tsd_object_dialog_preview_object(self, value):
+        self._tsd_state.object_dialog_preview_object = value
+
     @property
-    def _editing_tsd_object_index(self): return self._tsd_state.editing_object_index
+    def _editing_tsd_object_index(self):
+        return self._tsd_state.editing_object_index
+
     @_editing_tsd_object_index.setter
-    def _editing_tsd_object_index(self, value): self._tsd_state.editing_object_index = value
+    def _editing_tsd_object_index(self, value):
+        self._tsd_state.editing_object_index = value
+
     @property
-    def _active_tsd_file_index(self): return self._tsd_state.active_file_index
+    def _active_tsd_file_index(self):
+        return self._tsd_state.active_file_index
+
     @_active_tsd_file_index.setter
-    def _active_tsd_file_index(self, value): self._tsd_state.active_file_index = value
+    def _active_tsd_file_index(self, value):
+        self._tsd_state.active_file_index = value
+
     @property
-    def _suspend_tsd_preview_refresh(self): return self._tsd_state.suspend_preview_refresh
+    def _suspend_tsd_preview_refresh(self):
+        return self._tsd_state.suspend_preview_refresh
+
     @_suspend_tsd_preview_refresh.setter
-    def _suspend_tsd_preview_refresh(self, value): self._tsd_state.suspend_preview_refresh = value
+    def _suspend_tsd_preview_refresh(self, value):
+        self._tsd_state.suspend_preview_refresh = value
+
     @property
-    def _debug_tsd_perf(self): return self._tsd_state.debug_perf
+    def _debug_tsd_perf(self):
+        return self._tsd_state.debug_perf
+
     @_debug_tsd_perf.setter
-    def _debug_tsd_perf(self, value): self._tsd_state.debug_perf = value
+    def _debug_tsd_perf(self, value):
+        self._tsd_state.debug_perf = value
+
     @property
-    def _last_tsd_preview_lines(self): return self._tsd_state.last_preview_lines
+    def _last_tsd_preview_lines(self):
+        return self._tsd_state.last_preview_lines
+
     @_last_tsd_preview_lines.setter
-    def _last_tsd_preview_lines(self, value): self._tsd_state.last_preview_lines = value
+    def _last_tsd_preview_lines(self, value):
+        self._tsd_state.last_preview_lines = value
+
     @property
-    def _last_tsd_adjusted_to_sg_ranges(self): return self._tsd_state.last_adjusted_to_sg_ranges
+    def _last_tsd_adjusted_to_sg_ranges(self):
+        return self._tsd_state.last_adjusted_to_sg_ranges
+
     @_last_tsd_adjusted_to_sg_ranges.setter
-    def _last_tsd_adjusted_to_sg_ranges(self, value): self._tsd_state.last_adjusted_to_sg_ranges = value
+    def _last_tsd_adjusted_to_sg_ranges(self, value):
+        self._tsd_state.last_adjusted_to_sg_ranges = value
 
     @property
     @property
-    def _skid_marks_dialog(self): return self._track3d_palette_state.skid_marks_dialog
+    def _skid_marks_dialog(self):
+        return self._track3d_palette_state.skid_marks_dialog
+
     @_skid_marks_dialog.setter
-    def _skid_marks_dialog(self, value): self._track3d_palette_state.skid_marks_dialog = value
+    def _skid_marks_dialog(self, value):
+        self._track3d_palette_state.skid_marks_dialog = value
+
     @property
-    def _generated_skid_mark_lines(self): return self._track3d_palette_state.generated_skid_mark_lines
+    def _generated_skid_mark_lines(self):
+        return self._track3d_palette_state.generated_skid_mark_lines
+
     @_generated_skid_mark_lines.setter
-    def _generated_skid_mark_lines(self, value): self._track3d_palette_state.generated_skid_mark_lines = value
+    def _generated_skid_mark_lines(self, value):
+        self._track3d_palette_state.generated_skid_mark_lines = value
+
     @property
-    def _skid_marks_rows_text(self): return self._track3d_palette_state.skid_marks_rows_text
+    def _skid_marks_rows_text(self):
+        return self._track3d_palette_state.skid_marks_rows_text
+
     @_skid_marks_rows_text.setter
-    def _skid_marks_rows_text(self, value): self._track3d_palette_state.skid_marks_rows_text = value
+    def _skid_marks_rows_text(self, value):
+        self._track3d_palette_state.skid_marks_rows_text = value
+
     @property
-    def _skid_marks_colors(self): return self._track3d_palette_state.skid_marks_colors
+    def _skid_marks_colors(self):
+        return self._track3d_palette_state.skid_marks_colors
+
     @_skid_marks_colors.setter
-    def _skid_marks_colors(self, value): self._track3d_palette_state.skid_marks_colors = value
+    def _skid_marks_colors(self, value):
+        self._track3d_palette_state.skid_marks_colors = value
 
     def _create_actions(self) -> None:
         self._action_builder.create_actions()
@@ -446,7 +538,9 @@ class SGViewerController:
                 self._generate_pitwall_txt,
             ),
             mrk=MrkActions(self._window),
-            tsd=TsdActions(self._window, self._track3d_tools_controller._show_palette_colors_dialog),
+            tsd=TsdActions(
+                self._window, self._track3d_tools_controller._show_palette_colors_dialog
+            ),
             tso=TsoActions(
                 self._window,
                 self._launch_tso_generator,
@@ -460,7 +554,9 @@ class SGViewerController:
             ),
             help=HelpActions(self._window, self._show_about_dialog),
         )
-        self._window.run_full_integrity_check_button.clicked.connect(self._run_sg_integrity_checks)
+        self._window.run_full_integrity_check_button.clicked.connect(
+            self._run_sg_integrity_checks
+        )
         self._window.raise_lower_elevations_button.clicked.connect(
             self._open_raise_lower_elevations_dialog
         )
@@ -501,7 +597,9 @@ class SGViewerController:
             return filename
         return str(Path(default_directory) / filename)
 
-    def _set_project_working_directory(self, directory: Path | None, *, persist: bool = True) -> None:
+    def _set_project_working_directory(
+        self, directory: Path | None, *, persist: bool = True
+    ) -> None:
         if directory is None:
             self._project_working_directory = None
             self._clear_project_working_folder_action.setEnabled(False)
@@ -525,7 +623,9 @@ class SGViewerController:
             return
         selected_path = Path(selected).resolve()
         self._set_project_working_directory(selected_path, persist=True)
-        self._window.show_status_message(f"Project working folder set to {selected_path}")
+        self._window.show_status_message(
+            f"Project working folder set to {selected_path}"
+        )
 
     def _clear_project_working_folder(self) -> None:
         self._set_project_working_directory(None, persist=True)
@@ -549,7 +649,9 @@ class SGViewerController:
             text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
             layout.addWidget(text_edit)
 
-            close_button = QtWidgets.QPushButton("Close", self._unique_tso_filenames_window)
+            close_button = QtWidgets.QPushButton(
+                "Close", self._unique_tso_filenames_window
+            )
             close_button.clicked.connect(self._unique_tso_filenames_window.close)
             button_row = QtWidgets.QHBoxLayout()
             button_row.addStretch(1)
@@ -645,9 +747,6 @@ class SGViewerController:
         self._section_dlongs_window.raise_()
         self._section_dlongs_window.activateWindow()
 
-
-
-
     def _connect_signals(self) -> None:
         self._sections_controller.connect_signals()
         self._section_editing_coordinator.connect_signals()
@@ -681,12 +780,16 @@ class SGViewerController:
             confirm_text=confirm_text,
         )
 
-    def _confirm_discard_dialog(self, title: str, message: str, confirm_text: str) -> bool:
+    def _confirm_discard_dialog(
+        self, title: str, message: str, confirm_text: str
+    ) -> bool:
         dialog = QtWidgets.QMessageBox(self._window)
         dialog.setIcon(QtWidgets.QMessageBox.Warning)
         dialog.setWindowTitle(title)
         dialog.setText(message)
-        discard_button = dialog.addButton(confirm_text, QtWidgets.QMessageBox.DestructiveRole)
+        discard_button = dialog.addButton(
+            confirm_text, QtWidgets.QMessageBox.DestructiveRole
+        )
         cancel_button = dialog.addButton("Cancel", QtWidgets.QMessageBox.RejectRole)
         dialog.setDefaultButton(cancel_button)
         dialog.exec()
@@ -705,8 +808,6 @@ class SGViewerController:
             QtWidgets.QMessageBox.No,
         )
         return response == QtWidgets.QMessageBox.Yes
-
-
 
     def _set_tsd_dirty(self, dirty: bool) -> None:
         self._tsd_is_dirty = dirty
@@ -755,9 +856,6 @@ class SGViewerController:
     def mark_fsects_dirty(self, dirty: bool) -> None:
         self._mark_fsects_dirty(dirty)
 
-
-
-
     def _persist_tsd_state_for_current_track(self) -> None:
         start = perf_counter()
         if self._current_path is None:
@@ -767,7 +865,9 @@ class SGViewerController:
             for loaded in self._loaded_tsd_files
             if loaded.source_path is not None
         ]
-        self._sg_settings_store.set_tsd_files(self._current_path, files, self._active_tsd_file_index)
+        self._sg_settings_store.set_tsd_files(
+            self._current_path, files, self._active_tsd_file_index
+        )
         self._sg_settings_store.set_tsd_objects(
             self._current_path,
             [tsd_object_to_payload(obj) for obj in self._tsd_objects],
@@ -799,7 +899,9 @@ class SGViewerController:
             self._current_path,
             self._auto_update_tso_relative_z,
         )
-        logger.debug("Persisted full TSD state in %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "Persisted full TSD state in %.3f ms", (perf_counter() - start) * 1000.0
+        )
 
     def _persist_trackside_objects_for_current_track(self) -> None:
         start = perf_counter()
@@ -809,14 +911,18 @@ class SGViewerController:
             self._current_path,
             [trackside_object_to_payload(obj) for obj in self._trackside_objects],
         )
-        logger.debug("Persisted trackside objects in %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "Persisted trackside objects in %.3f ms", (perf_counter() - start) * 1000.0
+        )
 
     def _schedule_trackside_objects_persist(self) -> None:
         if self._current_path is None:
             return
         self._tso_persist_timer.start()
 
-    def _load_tsd_state_for_current_track(self, progress_callback: Callable[[int, str], None] | None = None) -> None:
+    def _load_tsd_state_for_current_track(
+        self, progress_callback: Callable[[int, str], None] | None = None
+    ) -> None:
         self._clear_loaded_tsd_files()
         self._window.load_land_objects([])
         self._generated_skid_mark_lines = ()
@@ -832,15 +938,23 @@ class SGViewerController:
         if self._current_path is None:
             self.set_land_objects_dirty(False)
             return
-        persisted_auto_update_relative_z = self._sg_settings_store.get_tso_auto_update_relative_z(self._current_path)
-        self._auto_update_tso_relative_z = bool(persisted_auto_update_relative_z) if persisted_auto_update_relative_z is not None else False
+        persisted_auto_update_relative_z = (
+            self._sg_settings_store.get_tso_auto_update_relative_z(self._current_path)
+        )
+        self._auto_update_tso_relative_z = (
+            bool(persisted_auto_update_relative_z)
+            if persisted_auto_update_relative_z is not None
+            else False
+        )
         checkbox = self._window.tso_auto_update_relative_z_checkbox
         previous_state = checkbox.blockSignals(True)
         checkbox.setChecked(self._auto_update_tso_relative_z)
         checkbox.blockSignals(previous_state)
         if progress_callback is not None:
             progress_callback(1, "Restoring Track3D file and color settings…")
-        persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(self._current_path)
+        persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(
+            self._current_path
+        )
         if isinstance(persisted_track3d_colors, dict):
             merged_colors = dict(DEFAULT_TRACK3D_COLORS)
             for name, value in persisted_track3d_colors.items():
@@ -848,13 +962,21 @@ class SGViewerController:
                     merged_colors[name] = int(value)
             self._track3d_tools_controller._track3d_colors = merged_colors
             self._window.set_selected_colors_path_text("custom")
-        persisted_track3d_path = self._sg_settings_store.get_track3d_file(self._current_path)
+        persisted_track3d_path = self._sg_settings_store.get_track3d_file(
+            self._current_path
+        )
         if persisted_track3d_path is not None:
-            self._track3d_tools_controller._set_selected_track3d_path(persisted_track3d_path, persist=False)
+            self._track3d_tools_controller._set_selected_track3d_path(
+                persisted_track3d_path, persist=False
+            )
         else:
-            auto_track3d_path = self._track3d_tools_controller._track3d_path_for_current_project()
+            auto_track3d_path = (
+                self._track3d_tools_controller._track3d_path_for_current_project()
+            )
             if auto_track3d_path is not None:
-                self._track3d_tools_controller._set_selected_track3d_path(auto_track3d_path, persist=False)
+                self._track3d_tools_controller._set_selected_track3d_path(
+                    auto_track3d_path, persist=False
+                )
         files, active_index = self._sg_settings_store.get_tsd_files(self._current_path)
         if progress_callback is not None:
             progress_callback(2, "Restoring TSD object definitions and skid marks…")
@@ -864,8 +986,12 @@ class SGViewerController:
             try:
                 self._tsd_objects.append(tsd_object_from_payload(raw_object))
             except (ValueError, TypeError, KeyError):
-                logger.warning("Unable to restore TSD object %s", raw_object, exc_info=True)
-        skid_state = self._sg_settings_store.get_tsd_skid_marks_state(self._current_path)
+                logger.warning(
+                    "Unable to restore TSD object %s", raw_object, exc_info=True
+                )
+        skid_state = self._sg_settings_store.get_tsd_skid_marks_state(
+            self._current_path
+        )
         if isinstance(skid_state, dict):
             raw_rows = skid_state.get("rows_csv")
             raw_colors = skid_state.get("colors_csv")
@@ -883,9 +1009,13 @@ class SGViewerController:
         if progress_callback is not None:
             progress_callback(3, "Restoring trackside object definitions…")
         self._trackside_objects = []
-        for raw_object in self._sg_settings_store.get_trackside_objects(self._current_path):
+        for raw_object in self._sg_settings_store.get_trackside_objects(
+            self._current_path
+        ):
             try:
-                self._trackside_objects.append(trackside_object_from_payload(raw_object))
+                self._trackside_objects.append(
+                    trackside_object_from_payload(raw_object)
+                )
             except ValueError:
                 continue
         self._refresh_tso_table()
@@ -897,11 +1027,15 @@ class SGViewerController:
         self._window.tso_visibility_sidebar.load_detail_lists_from_payload(
             self._sg_settings_store.get_tso_visibility_detail_lists(self._current_path)
         )
-        self._window.load_land_objects(self._sg_settings_store.get_land_objects(self._current_path))
+        self._window.load_land_objects(
+            self._sg_settings_store.get_land_objects(self._current_path)
+        )
         total_files = len(files)
         for index, path in enumerate(files, start=1):
             if progress_callback is not None:
-                progress_callback(5, f"Loading TSD file {index} of {total_files}: {path.name}…")
+                progress_callback(
+                    5, f"Loading TSD file {index} of {total_files}: {path.name}…"
+                )
             if not path.exists():
                 continue
             try:
@@ -909,12 +1043,22 @@ class SGViewerController:
             except (OSError, ValueError):
                 logger.warning("Unable to restore TSD file %s", path, exc_info=True)
                 continue
-            self._add_loaded_tsd_file(path.name, tuple(detail_file.lines), select=False, source_path=path.resolve())
+            self._add_loaded_tsd_file(
+                path.name,
+                tuple(detail_file.lines),
+                select=False,
+                source_path=path.resolve(),
+            )
         if progress_callback is not None:
             progress_callback(6, "Activating restored TSD selection and overlays…")
         if self._loaded_tsd_files:
             self._enable_tsd_preview_overlay()
-            target_index = active_index if isinstance(active_index, int) and 0 <= active_index < len(self._loaded_tsd_files) else None
+            target_index = (
+                active_index
+                if isinstance(active_index, int)
+                and 0 <= active_index < len(self._loaded_tsd_files)
+                else None
+            )
             if target_index is None:
                 self._window.tsd_files_combo.setCurrentIndex(0)
                 self._on_tsd_file_selection_changed(0)
@@ -925,70 +1069,47 @@ class SGViewerController:
         self._set_trackside_objects_dirty(False)
         self.set_land_objects_dirty(False)
 
-
     def _sync_tso_visibility_section_dlongs(self) -> None:
-        track3d_path = self._track3d_tools_controller._track3d_path_for_current_project()
-        rows = parse_track3d_section_dlongs(track3d_path) if track3d_path is not None else []
+        track3d_path = (
+            self._track3d_tools_controller._track3d_path_for_current_project()
+        )
+        rows = (
+            parse_track3d_section_dlongs(track3d_path)
+            if track3d_path is not None
+            else []
+        )
         self._window.tso_visibility_sidebar.set_section_dlong_rows(rows)
         if track3d_path is not None:
-            self._window.tso_visibility_sidebar.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(track3d_path))
-            self._window.tso_visibility_sidebar.load_detail_lists_from_track3d_if_empty(str(track3d_path))
+            self._window.tso_visibility_sidebar.set_detail_list_dlong_rows(
+                parse_track3d_detail_list_dlong_ranges(track3d_path)
+            )
+            self._window.tso_visibility_sidebar.load_detail_lists_from_track3d_if_empty(
+                str(track3d_path)
+            )
 
         starts_by_section: dict[int, tuple[int, ...]] = {}
         grouped: dict[int, list[tuple[int, int]]] = {}
         for row in rows:
             if not row.dlongs:
                 continue
-            grouped.setdefault(int(row.section), []).append((int(row.sub_index), int(row.dlongs[0])))
+            grouped.setdefault(int(row.section), []).append(
+                (int(row.sub_index), int(row.dlongs[0]))
+            )
         for section, values in grouped.items():
-            starts_by_section[section] = tuple(start for _, start in sorted(values, key=lambda item: item[0]))
+            starts_by_section[section] = tuple(
+                start for _, start in sorted(values, key=lambda item: item[0])
+            )
         self._window.set_section_subindex_metadata(starts_by_section)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     def _on_right_sidebar_tab_changed(self, index: int) -> None:
         tab_name = self._window.active_sidebar_tab_name()
         self._window.update_mouse_usage_text()
         if tab_name != self._ELEVATION_TAB_BASE_LABEL:
             self._elevation_panel_controller.cancel_live_edits()
-        if tab_name in {"Fsects", "Walls"} and not self._window.sg_fsects_checkbox.isChecked():
+        if (
+            tab_name in {"Fsects", "Walls"}
+            and not self._window.sg_fsects_checkbox.isChecked()
+        ):
             self._window.sg_fsects_checkbox.setChecked(True)
         is_mrk_tab = tab_name == "Walls"
         is_tsd_tab = tab_name == "TSD"
@@ -1013,7 +1134,6 @@ class SGViewerController:
         if is_tso_visibility_tab:
             self._flush_tso_visibility_sidebar_refresh_if_needed()
 
-
     def _on_trackside_objects_overlay_toggled(self, checked: bool) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()
         tab_name = self._window.active_sidebar_tab_name() if current_index >= 0 else ""
@@ -1036,7 +1156,8 @@ class SGViewerController:
         self._window.preview.set_show_centerline_and_nodes(not hide_centerline_nodes)
         geometry_active = (
             current_index >= 0
-            and self._window.right_sidebar_tabs.tabText(current_index).rstrip("*") == "Geometry"
+            and self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
+            == "Geometry"
         )
         self._window.preview.set_centerline_editing_enabled(
             geometry_active and not hide_centerline_nodes
@@ -1063,7 +1184,9 @@ class SGViewerController:
         if self._tso_visibility_sidebar_refresh_pending:
             return
         self._tso_visibility_sidebar_refresh_pending = True
-        QtCore.QTimer.singleShot(0, self._flush_tso_visibility_sidebar_refresh_if_needed)
+        QtCore.QTimer.singleShot(
+            0, self._flush_tso_visibility_sidebar_refresh_if_needed
+        )
 
     def _flush_tso_visibility_sidebar_refresh_if_needed(self) -> None:
         self._tso_visibility_sidebar_refresh_pending = False
@@ -1084,7 +1207,10 @@ class SGViewerController:
             refresh=True,
         )
         self._tso_visibility_sidebar_dirty = False
-        logger.debug("TSO visibility sidebar deferred refresh %.3f ms", (perf_counter() - start) * 1000.0)
+        logger.debug(
+            "TSO visibility sidebar deferred refresh %.3f ms",
+            (perf_counter() - start) * 1000.0,
+        )
 
     def _apply_trackside_drag_scope(self) -> None:
         if self._is_objects_tab_active():
@@ -1093,11 +1219,6 @@ class SGViewerController:
             )
             return
         self._window.preview.set_trackside_move_enabled_indices(())
-
-
-
-
-
 
     def _autosize_tsd_lines_table_columns(self) -> None:
         self._window.tsd_lines_table.resizeColumnsToContents()
@@ -1161,7 +1282,6 @@ class SGViewerController:
         self._window.preview.refresh_fsections_preview()
         self._window.update_selected_section_fsect_table()
 
-
     def _load_measurement_unit_from_history(self) -> None:
         unit = self._history.get_measurement_unit()
         if unit is None:
@@ -1189,7 +1309,11 @@ class SGViewerController:
     def _current_preview_color_for_key(self, key: str) -> QtGui.QColor:
         if key.startswith("fsect_"):
             surface_id = int(key.split("_", maxsplit=1)[1])
-            return QtGui.QColor(sg_rendering.SURFACE_COLORS.get(surface_id, sg_rendering.DEFAULT_SURFACE_COLOR))
+            return QtGui.QColor(
+                sg_rendering.SURFACE_COLORS.get(
+                    surface_id, sg_rendering.DEFAULT_SURFACE_COLOR
+                )
+            )
         return self._window.preview.preview_color(key)
 
     def _apply_preview_color(
@@ -1302,7 +1426,11 @@ class SGViewerController:
         if getattr(sys, "frozen", False):
             command = [sys.executable, "--launch-tso-generator"]
         else:
-            script_path = Path(__file__).resolve().parents[2] / "tso_generator" / "tso_generator.py"
+            script_path = (
+                Path(__file__).resolve().parents[2]
+                / "tso_generator"
+                / "tso_generator.py"
+            )
             if not script_path.is_file():
                 QtWidgets.QMessageBox.warning(
                     self._window,
@@ -1360,7 +1488,9 @@ class SGViewerController:
         """
         self._reset_altitude_range_500ths(min_altitude, max_altitude)
 
-    def _reset_altitude_range_500ths(self, min_altitude: float, max_altitude: float) -> None:
+    def _reset_altitude_range_500ths(
+        self, min_altitude: float, max_altitude: float
+    ) -> None:
         min_spin = self._window.altitude_min_spin
         max_spin = self._window.altitude_max_spin
         unit = self._window.xsect_altitude_unit()
@@ -1376,8 +1506,6 @@ class SGViewerController:
         min_spin.blockSignals(False)
         max_spin.blockSignals(False)
         self._elevation_ui_coordinator.on_altitude_range_changed()
-
-
 
     def _save_to_path(self, path: Path) -> None:
         self._file_menu_coordinator.save_to_path(path)
@@ -1409,7 +1537,6 @@ class SGViewerController:
         self._window.show_status_message(
             "Unable to recalculate elevations for this track."
         )
-
 
     def _convert_sg_to_csv(self, sg_path: Path) -> None:
         self._document_controller.convert_sg_to_csv(sg_path)
@@ -1494,12 +1621,24 @@ class SGViewerController:
     def _sync_section_editing_menu_actions(self) -> None:
         self._previous_section_action.setEnabled(self._window.prev_button.isEnabled())
         self._next_section_action.setEnabled(self._window.next_button.isEnabled())
-        self._new_straight_mode_action.setEnabled(self._window.new_straight_button.isEnabled())
-        self._new_curve_mode_action.setEnabled(self._window.new_curve_button.isEnabled())
-        self._split_section_mode_action.setEnabled(self._window.split_section_button.isEnabled())
-        self._move_section_mode_action.setEnabled(self._window.move_section_button.isEnabled())
-        self._delete_section_mode_action.setEnabled(self._window.delete_section_button.isEnabled())
-        self._set_start_finish_action.setEnabled(self._window.set_start_finish_button.isEnabled())
+        self._new_straight_mode_action.setEnabled(
+            self._window.new_straight_button.isEnabled()
+        )
+        self._new_curve_mode_action.setEnabled(
+            self._window.new_curve_button.isEnabled()
+        )
+        self._split_section_mode_action.setEnabled(
+            self._window.split_section_button.isEnabled()
+        )
+        self._move_section_mode_action.setEnabled(
+            self._window.move_section_button.isEnabled()
+        )
+        self._delete_section_mode_action.setEnabled(
+            self._window.delete_section_button.isEnabled()
+        )
+        self._set_start_finish_action.setEnabled(
+            self._window.set_start_finish_button.isEnabled()
+        )
 
     def _update_section_table(self) -> None:
         self._section_editing_coordinator.update_section_table()
@@ -1522,8 +1661,12 @@ class SGViewerController:
     def _open_rotate_track_dialog(self) -> None:
         self._sections_controller.open_rotate_track_dialog()
 
-    def _apply_track_rotation_preview(self, base_sections: list[SectionPreview], angle_degrees: float) -> None:
-        self._sections_controller.apply_track_rotation_preview(base_sections, angle_degrees)
+    def _apply_track_rotation_preview(
+        self, base_sections: list[SectionPreview], angle_degrees: float
+    ) -> None:
+        self._sections_controller.apply_track_rotation_preview(
+            base_sections, angle_degrees
+        )
 
     def _open_generate_fsects_dialog(self) -> None:
         self._sections_controller.open_generate_fsects_dialog()
@@ -1532,11 +1675,32 @@ class SGViewerController:
         self._sections_controller.reverse_track()
 
     @staticmethod
-    def _build_generated_fsects(*, template: str, track_width: float, left_grass: float, right_grass: float, grass_surface_type: int, wall_surface_type: int, wall_width: float, fence_enabled: bool) -> list[PreviewFSection]:
-        return build_generated_fsects(template=template, track_width=track_width, left_grass=left_grass, right_grass=right_grass, grass_surface_type=grass_surface_type, wall_surface_type=wall_surface_type, wall_width=wall_width, fence_enabled=fence_enabled)
+    def _build_generated_fsects(
+        *,
+        template: str,
+        track_width: float,
+        left_grass: float,
+        right_grass: float,
+        grass_surface_type: int,
+        wall_surface_type: int,
+        wall_width: float,
+        fence_enabled: bool,
+    ) -> list[PreviewFSection]:
+        return build_generated_fsects(
+            template=template,
+            track_width=track_width,
+            left_grass=left_grass,
+            right_grass=right_grass,
+            grass_surface_type=grass_surface_type,
+            wall_surface_type=wall_surface_type,
+            wall_width=wall_width,
+            fence_enabled=fence_enabled,
+        )
 
     def _populate_xsect_choices(self, preferred_index: int | None = None) -> None:
-        self._elevation_panel_controller.populate_xsect_choices(preferred_index=preferred_index)
+        self._elevation_panel_controller.populate_xsect_choices(
+            preferred_index=preferred_index
+        )
 
     def _refresh_elevation_profile(self) -> None:
         self._elevation_panel_controller.refresh_elevation_profile()
@@ -1546,7 +1710,8 @@ class SGViewerController:
 
     def _clear_background_state(self) -> None:
         self._background_ui_coordinator.clear_background_state()
-#        self._calibrate_background_action.setEnabled(False)
+
+    #        self._calibrate_background_action.setEnabled(False)
 
     def _apply_saved_background(self, sg_path: Path | None = None) -> None:
         self._background_ui_coordinator.apply_saved_background(sg_path)
@@ -1561,7 +1726,10 @@ class SGViewerController:
             return
 
         metrics = self._runtime_api.track_metrics_intent(sections)
-        if metrics.status_messages and metrics.status_messages[0] == "Track Length: Not a closed loop":
+        if (
+            metrics.status_messages
+            and metrics.status_messages[0] == "Track Length: Not a closed loop"
+        ):
             self._window.update_track_length_label("Track Length: Not a closed loop")
             return
 
@@ -1572,9 +1740,7 @@ class SGViewerController:
         total_length = float(metrics.status_messages[0])
 
         length_value = self._window.format_length_with_secondary(total_length)
-        self._window.update_track_length_label(
-            f"Track Length: {length_value}"
-        )
+        self._window.update_track_length_label(f"Track Length: {length_value}")
 
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
         self._active_selection = selection
@@ -1675,7 +1841,9 @@ class SGViewerController:
         self._elevation_panel_controller.open_raise_lower_elevations_dialog()
 
     def _open_flatten_all_elevations_and_grade_dialog(self) -> None:
-        if self._elevation_panel_controller.open_flatten_all_elevations_and_grade_dialog():
+        if (
+            self._elevation_panel_controller.open_flatten_all_elevations_and_grade_dialog()
+        ):
             self._reset_altitude_range_for_track()
             self._refresh_elevation_profile()
             self._refresh_xsect_elevation_panel()
@@ -1698,7 +1866,9 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
         self._refresh_xsect_elevation_table()
 
-    def _apply_altitude_edit(self, live: bool = False, slider_value: int | None = None) -> None:
+    def _apply_altitude_edit(
+        self, live: bool = False, slider_value: int | None = None
+    ) -> None:
         if not self._is_elevation_tab_active():
             return
         selection = self._active_selection
@@ -1707,7 +1877,9 @@ class SGViewerController:
             return
 
         altitude_slider_value = (
-            self._window.altitude_slider.value() if slider_value is None else slider_value
+            self._window.altitude_slider.value()
+            if slider_value is None
+            else slider_value
         )
         altitude_feet = feet_from_slider_units(altitude_slider_value)
         altitude = feet_to_500ths(altitude_feet)
@@ -1719,7 +1891,9 @@ class SGViewerController:
             else:
                 self._sync_after_xsect_value_change()
 
-    def _apply_grade_edit(self, live: bool = False, grade_value: int | None = None) -> None:
+    def _apply_grade_edit(
+        self, live: bool = False, grade_value: int | None = None
+    ) -> None:
         if not self._is_elevation_tab_active():
             return
         selection = self._active_selection
@@ -1814,7 +1988,9 @@ class SGViewerController:
             report = build_integrity_report(
                 sections,
                 fsects_by_section,
-                measurement_unit=str(self._window.measurement_units_combo.currentData()),
+                measurement_unit=str(
+                    self._window.measurement_units_combo.currentData()
+                ),
                 on_progress=_on_progress,
             )
         except RuntimeError as exc:
@@ -1833,7 +2009,9 @@ class SGViewerController:
             self._integrity_report_window = QtWidgets.QDialog(self._window)
             self._integrity_report_window.setWindowTitle("SG Integrity Checks")
             self._integrity_report_window.setWindowModality(QtCore.Qt.NonModal)
-            self._integrity_report_window.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+            self._integrity_report_window.setAttribute(
+                QtCore.Qt.WA_DeleteOnClose, False
+            )
             self._integrity_report_window.resize(920, 640)
 
             layout = QtWidgets.QVBoxLayout(self._integrity_report_window)
@@ -1843,20 +2021,26 @@ class SGViewerController:
             text_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
             layout.addWidget(text_edit)
 
-            copy_button = QtWidgets.QPushButton("Copy Report", self._integrity_report_window)
+            copy_button = QtWidgets.QPushButton(
+                "Copy Report", self._integrity_report_window
+            )
             copy_button.clicked.connect(text_edit.selectAll)
             copy_button.clicked.connect(text_edit.copy)
 
             close_button = QtWidgets.QPushButton("Close", self._integrity_report_window)
             close_button.clicked.connect(self._integrity_report_window.close)
-            self._integrity_report_window.finished.connect(lambda _result: self._on_integrity_report_window_hidden())
+            self._integrity_report_window.finished.connect(
+                lambda _result: self._on_integrity_report_window_hidden()
+            )
             button_row = QtWidgets.QHBoxLayout()
             button_row.addStretch(1)
             button_row.addWidget(copy_button)
             button_row.addWidget(close_button)
             layout.addLayout(button_row)
 
-        text_edit = self._integrity_report_window.findChild(QtWidgets.QPlainTextEdit, "integrityReportText")
+        text_edit = self._integrity_report_window.findChild(
+            QtWidgets.QPlainTextEdit, "integrityReportText"
+        )
         if text_edit is not None:
             text_edit.setPlainText(format_integrity_memo(report))
         self._window.preview.set_integrity_boundary_violation_points(
@@ -1868,7 +2052,6 @@ class SGViewerController:
         self._integrity_report_window.show()
         self._integrity_report_window.raise_()
         self._integrity_report_window.activateWindow()
-
 
     def _on_integrity_report_window_hidden(self) -> None:
         self._window.preview.clear_integrity_boundary_violation_points()
@@ -1886,7 +2069,9 @@ class SGViewerController:
         self._update_copy_fsects_buttons()
         self._update_fsect_edit_buttons()
         sections, _ = self._window.preview.get_section_set()
-        self._window.tso_visibility_sidebar.set_current_track_section_count(len(sections))
+        self._window.tso_visibility_sidebar.set_current_track_section_count(
+            len(sections)
+        )
         self._run_integrity_checks_action.setEnabled(bool(sections))
 
     def _sync_after_xsect_value_change(self) -> None:
@@ -1924,16 +2109,25 @@ class SGViewerController:
         self._refresh_xsect_elevation_panel()
         self._update_track_length_display()
         self._refresh_tso_table()
+        if hasattr(self._tsd_lines_model, "set_display_unit"):
+            self._tsd_lines_model.set_display_unit(
+                self._window.current_measurement_unit()
+            )
+        self._autosize_tsd_lines_table_columns()
         self._window.update_selection_sidebar(self._active_selection)
         if self._tso_attributes_dialog is not None:
-            self._tso_attributes_dialog.set_measurement_unit(self._window.current_measurement_unit())
+            self._tso_attributes_dialog.set_measurement_unit(
+                self._window.current_measurement_unit()
+            )
 
     def _on_measurement_units_changed(self) -> None:
         self._elevation_ui_coordinator.on_measurement_units_changed()
         self._sync_after_measurement_unit_change()
 
     def _on_xsect_table_cell_changed(self, row_index: int, column_index: int) -> None:
-        self._elevation_panel_controller.on_xsect_table_cell_changed(row_index, column_index)
+        self._elevation_panel_controller.on_xsect_table_cell_changed(
+            row_index, column_index
+        )
 
     def _on_xsect_table_selection_changed(self) -> None:
         if self._window.is_updating_xsect_table:

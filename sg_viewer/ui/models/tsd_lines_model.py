@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from PyQt5 import QtCore, QtGui
 
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine, normalize_tsd_command
-
+from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
+from sg_viewer.ui.presentation.units_presenter import (
+    measurement_unit_decimals,
+    measurement_unit_label,
+)
 
 TSD_COMMAND_CHOICES = ("Detail", "Detail_Dash")
 
@@ -47,6 +51,7 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
         super().__init__(parent)
         self._rows: list[TsdLineRow] = []
         self._palette_colors: tuple[QtGui.QColor, ...] = ()
+        self._display_unit = "500ths"
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         if parent.isValid():
@@ -66,7 +71,14 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
     ) -> str | None:
         if role != QtCore.Qt.DisplayRole:
             return None
-        if orientation == QtCore.Qt.Horizontal and 0 <= section < len(self.COLUMN_LABELS):
+        if orientation == QtCore.Qt.Horizontal and 0 <= section < len(
+            self.COLUMN_LABELS
+        ):
+            if section == 2:
+                return f"Width ({measurement_unit_label(self._display_unit)})"
+            if 3 <= section <= 6:
+                base = self.COLUMN_LABELS[section].split(" (")[0]
+                return f"{base} ({measurement_unit_label(self._display_unit)})"
             return self.COLUMN_LABELS[section]
         return str(section + 1)
 
@@ -77,18 +89,9 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             return None
 
         row = self._rows[index.row()]
-        column_values: tuple[str | int, ...] = (
-            row.command,
-            row.color_index,
-            row.width_500ths,
-            row.start_dlong,
-            row.start_dlat,
-            row.end_dlong,
-            row.end_dlat,
-        )
-
         if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
-            return str(column_values[index.column()])
+            value = self._display_value(row, index.column())
+            return str(value)
         if role == QtCore.Qt.TextAlignmentRole:
             return int(QtCore.Qt.AlignCenter)
         if index.column() == 1:
@@ -199,9 +202,41 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             except ValueError:
                 return None
         try:
+            if 2 <= column <= 6:
+                return units_to_500ths(float(text), self._display_unit)
             return int(text)
         except ValueError:
             return None
+
+    def _display_value(self, row: TsdLineRow, column: int) -> str | int:
+        raw_values: tuple[str | int, ...] = (
+            row.command,
+            row.color_index,
+            row.width_500ths,
+            row.start_dlong,
+            row.start_dlat,
+            row.end_dlong,
+            row.end_dlat,
+        )
+        raw_value = raw_values[column]
+        if 2 <= column <= 6:
+            display = units_from_500ths(float(raw_value), self._display_unit)
+            decimals = measurement_unit_decimals(self._display_unit)
+            return f"{display:.{decimals}f}" if decimals > 0 else int(round(display))
+        return raw_value
+
+    def set_display_unit(self, unit: str) -> None:
+        if unit == self._display_unit:
+            return
+        self._display_unit = str(unit)
+        self.headerDataChanged.emit(QtCore.Qt.Horizontal, 2, 6)
+        if not self._rows:
+            return
+        self.dataChanged.emit(
+            self.index(0, 2),
+            self.index(len(self._rows) - 1, 6),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole],
+        )
 
     def set_palette_colors(
         self, palette: list[QtGui.QColor] | tuple[QtGui.QColor, ...] | None
@@ -266,7 +301,9 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
         )
         top_left = self.index(min(source_row, target_row), 0)
         bottom_right = self.index(max(source_row, target_row), self.columnCount() - 1)
-        self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        self.dataChanged.emit(
+            top_left, bottom_right, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         return True
 
     def replace_lines(self, lines: tuple[TrackSurfaceDetailLine, ...]) -> None:
@@ -290,7 +327,9 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             return None
         return self._rows[row].to_track_surface_detail_line()
 
-    def lines_for_rows(self, rows: list[int] | range | None = None) -> list[TrackSurfaceDetailLine]:
+    def lines_for_rows(
+        self, rows: list[int] | range | None = None
+    ) -> list[TrackSurfaceDetailLine]:
         if rows is None:
             selected_rows = range(len(self._rows))
         else:

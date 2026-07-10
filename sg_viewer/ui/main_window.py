@@ -66,7 +66,6 @@ from sg_viewer.ui.presentation.window_panels import (
 )
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 
-
 MARQUEE_STATUS_INTERVAL_MS = 20
 
 
@@ -525,6 +524,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
         self._tsd_lines_table.setItemDelegateForColumn(0, self._tsd_command_delegate)
+        self._tsd_lines_table.viewport().installEventFilter(self)
         self._tsd_lines_table.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
@@ -661,9 +661,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sg_fsects_checkbox.setChecked(False)
         self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox("X-sect DLAT")
         self._xsect_dlat_line_checkbox.setChecked(False)
-        self._copy_fsects_prev_button = QtWidgets.QPushButton("Copy Fsects to Previous Section")
+        self._copy_fsects_prev_button = QtWidgets.QPushButton(
+            "Copy Fsects to Previous Section"
+        )
         self._copy_fsects_prev_button.setEnabled(False)
-        self._copy_fsects_next_button = QtWidgets.QPushButton("Copy Fsects to Next Section")
+        self._copy_fsects_next_button = QtWidgets.QPushButton(
+            "Copy Fsects to Next Section"
+        )
         self._copy_fsects_next_button.setEnabled(False)
         self._add_fsect_button = QtWidgets.QPushButton("Insert New Fsect")
         self._add_fsect_button.setEnabled(False)
@@ -687,16 +691,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._edit_xsect_list_button = QtWidgets.QPushButton("Edit Xsect data...")
         self._edit_xsect_list_button.setEnabled(False)
         self._copy_xsect_button = QtWidgets.QPushButton("Copy Xsect")
-        self._copy_xsect_button.setToolTip("Copy selected Xsect data to other sections.")
+        self._copy_xsect_button.setToolTip(
+            "Copy selected Xsect data to other sections."
+        )
         self._copy_xsect_button.setEnabled(False)
-        self._generate_elevation_change_button = QtWidgets.QPushButton("Generate Change")
-        self._generate_elevation_change_button.setToolTip("Generate an elevation change for the selected Xsect.")
+        self._generate_elevation_change_button = QtWidgets.QPushButton(
+            "Generate Change"
+        )
+        self._generate_elevation_change_button.setToolTip(
+            "Generate an elevation change for the selected Xsect."
+        )
         self._generate_elevation_change_button.setEnabled(False)
         self._raise_lower_elevations_button = QtWidgets.QPushButton("Raise/Lower")
         self._raise_lower_elevations_button.setToolTip("Raise or lower all elevations.")
         self._raise_lower_elevations_button.setEnabled(False)
         self._flatten_elevations_button = QtWidgets.QPushButton("Flatten")
-        self._flatten_elevations_button.setToolTip("Flatten all elevations and grade values.")
+        self._flatten_elevations_button.setToolTip(
+            "Flatten all elevations and grade values."
+        )
         self._flatten_elevations_button.setEnabled(False)
         self._generate_elevation_change_dialog: QtWidgets.QDialog | None = None
         self._elevation_summary_label = QtWidgets.QLabel(
@@ -1542,7 +1554,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._marquee_status_label.set_marquee_text("", 0)
 
     def _marquee_spaces_for_width(self, width_px: int) -> str:
-        space_width = max(1, self._marquee_status_label.fontMetrics().horizontalAdvance(" "))
+        space_width = max(
+            1, self._marquee_status_label.fontMetrics().horizontalAdvance(" ")
+        )
         return " " * max(1, math.ceil(width_px / space_width))
 
     def _marquee_message_gap(self) -> str:
@@ -1564,7 +1578,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _queue_next_marquee_status_message(self) -> None:
-        entry_padding = self._marquee_spaces_for_width(self._marquee_status_label.width())
+        entry_padding = self._marquee_spaces_for_width(
+            self._marquee_status_label.width()
+        )
         self._marquee_status_text = entry_padding
         self._marquee_status_offset = 0
         self._marquee_status_offset_px = 0
@@ -1584,7 +1600,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         gap_width = self._marquee_status_label.fontMetrics().horizontalAdvance(
             self._marquee_message_gap()
         )
-        if self._remaining_marquee_width() <= self._marquee_status_label.width() + gap_width:
+        if (
+            self._remaining_marquee_width()
+            <= self._marquee_status_label.width() + gap_width
+        ):
             self._append_next_marquee_status_message()
 
         visible_text = self._marquee_status_text[self._marquee_status_offset :]
@@ -1612,7 +1631,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _discard_scrolled_marquee_text(self) -> None:
         if self._marquee_status_offset <= 0:
             return
-        self._marquee_status_text = self._marquee_status_text[self._marquee_status_offset :]
+        self._marquee_status_text = self._marquee_status_text[
+            self._marquee_status_offset :
+        ]
         self._marquee_status_offset = 0
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
@@ -2302,7 +2323,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_load_button(self) -> QtWidgets.QPushButton:
         return self._mrk_load_button
-
 
     @property
     def wall_defaults_edit_button(self) -> QtWidgets.QPushButton:
@@ -3869,9 +3889,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             fsect_index = self._fsect_model_index_for_column(column_index)
             fsect = fsects[fsect_index]
             next_fsect = (
-                fsects[fsect_index + 1]
-                if fsect_index < len(fsects) - 1
-                else None
+                fsects[fsect_index + 1] if fsect_index < len(fsects) - 1 else None
             )
 
             combo = QtWidgets.QComboBox()
@@ -3892,9 +3910,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
             )
             end_delta_item.setBackground(read_only_background)
-            end_delta_item.setFlags(
-                end_delta_item.flags() & ~QtCore.Qt.ItemIsEditable
-            )
+            end_delta_item.setFlags(end_delta_item.flags() & ~QtCore.Qt.ItemIsEditable)
 
             end_item = QtWidgets.QTableWidgetItem(
                 self._format_fsect_dlat(fsect.end_dlat)
@@ -3902,9 +3918,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if next_fsect is not None and fsect.end_dlat > next_fsect.end_dlat:
                 end_item.setBackground(QtGui.QColor("salmon"))
             end_item.setFlags(
-                end_item.flags()
-                | QtCore.Qt.ItemIsEditable
-                | QtCore.Qt.ItemIsSelectable
+                end_item.flags() | QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsSelectable
             )
 
             start_item = QtWidgets.QTableWidgetItem(
@@ -4255,6 +4269,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
         self._preview.set_land_object_points_overlay(tuple(overlay_points))
         self._sync_land_polygons_overlay()
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if (
+            watched is self._tsd_lines_table.viewport()
+            and event.type() == QtCore.QEvent.MouseButtonRelease
+            and isinstance(event, QtGui.QMouseEvent)
+        ):
+            index = self._tsd_lines_table.indexAt(event.pos())
+            if index.isValid() and index.column() == 1:
+                self._choose_tsd_line_color(index.row())
+                return True
+        return super().eventFilter(watched, event)
+
+    def _choose_tsd_line_color(self, row: int) -> None:
+        if row < 0:
+            return
+        if not self._sunny_palette_colors:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Choose TSD Line Color",
+                "Load SUNNY.PCX first from File → Import → Import SUNNY.PCX…",
+            )
+            return
+        model = self._tsd_lines_table.model()
+        index = model.index(row, 1)
+        try:
+            current_index = int(model.data(index, QtCore.Qt.EditRole) or 0)
+        except (TypeError, ValueError):
+            current_index = 0
+        dialog = PaletteColorDialog(
+            self._sunny_palette_colors,
+            self,
+            selection_mode=True,
+            initial_index=current_index,
+        )
+        if (
+            dialog.exec_() != QtWidgets.QDialog.Accepted
+            or dialog.selected_index is None
+        ):
+            return
+        model.setData(index, int(dialog.selected_index), QtCore.Qt.EditRole)
 
     def set_sunny_palette_colors(self, palette: list[QtGui.QColor] | None) -> None:
         """Update SUNNY.PCX colors used for land polygon color cells."""
@@ -5416,6 +5471,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_boundary_dlat_labels(self._selected_section_index)
         self._refresh_query_track_info_label()
         self._refresh_wall_defaults_summary()
+        model = self._tsd_lines_table.model()
+        if hasattr(model, "set_display_unit"):
+            model.set_display_unit(self._current_measurement_unit())
 
     def _sync_pitwall_height_spin_units(self, previous_unit: str) -> None:
         current_unit = self._current_measurement_unit()
