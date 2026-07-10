@@ -4640,3 +4640,24 @@ def test_pitwall_manual_height_overrides_split_generated_ranges(qapp):
         ]
     finally:
         window.close()
+
+
+def test_tsd_object_distance_spin_uses_window_measurement_unit(qapp):
+    from sg_viewer.ui.dialogs.tsd_object_dialog import _create_distance_spin
+    from sg_viewer.ui.altitude_units import units_to_500ths
+
+    window = SGViewerWindow()
+    try:
+        window.measurement_units_combo.setCurrentIndex(1)  # meter
+        dialog = QtWidgets.QDialog(window)
+        spin = _create_distance_spin(dialog)
+
+        spin.setRange(0, 12000)
+        spin.setValue(6000)
+
+        assert spin.decimals() == 3
+        assert spin.value() == pytest.approx(0.3048)
+        spin.setValue(1.0)
+        assert spin.value_500ths() == units_to_500ths(1.0, "meter")
+    finally:
+        window.close()
