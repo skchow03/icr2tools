@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtGui
 
 from sg_viewer.services.tsd_io import TrackSurfaceDetailLine, normalize_tsd_command
+
+
+TSD_COMMAND_CHOICES = ("Detail", "Detail_Dash")
 
 
 @dataclass(frozen=True)
@@ -43,6 +46,7 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
     def __init__(self, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
         self._rows: list[TsdLineRow] = []
+        self._palette_colors: tuple[QtGui.QColor, ...] = ()
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         if parent.isValid():
@@ -66,7 +70,9 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             return self.COLUMN_LABELS[section]
         return str(section + 1)
 
-    def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole) -> str | int | None:
+    def data(
+        self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole
+    ) -> str | int | QtGui.QBrush | None:
         if not index.isValid() or not (0 <= index.row() < len(self._rows)):
             return None
 
@@ -85,6 +91,30 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             return str(column_values[index.column()])
         if role == QtCore.Qt.TextAlignmentRole:
             return int(QtCore.Qt.AlignCenter)
+        if index.column() == 1:
+            if role == QtCore.Qt.BackgroundRole:
+                color = self._color_for_index(row.color_index)
+                return QtGui.QBrush(color) if color is not None else None
+            if role == QtCore.Qt.ForegroundRole:
+                color = self._color_for_index(row.color_index)
+                if color is None:
+                    return None
+                luminance = (
+                    (0.299 * color.red())
+                    + (0.587 * color.green())
+                    + (0.114 * color.blue())
+                )
+                return QtGui.QBrush(
+                    QtGui.QColor("black") if luminance >= 140 else QtGui.QColor("white")
+                )
+            if role == QtCore.Qt.ToolTipRole:
+                color = self._color_for_index(row.color_index)
+                if color is not None:
+                    return (
+                        f"SUNNY.PCX palette index {row.color_index}: "
+                        f"rgb({color.red()}, {color.green()}, {color.blue()})"
+                    )
+                return "Load SUNNY.PCX to preview this palette index color."
         return None
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
@@ -148,20 +178,52 @@ class TsdLinesTableModel(QtCore.QAbstractTableModel):
             return False
 
         self._rows[index.row()] = candidate
-        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        self.dataChanged.emit(
+            index,
+            index,
+            [
+                QtCore.Qt.DisplayRole,
+                QtCore.Qt.EditRole,
+                QtCore.Qt.BackgroundRole,
+                QtCore.Qt.ForegroundRole,
+                QtCore.Qt.ToolTipRole,
+            ],
+        )
         return True
 
     def _parse_value(self, column: int, value: object) -> str | int | None:
         text = "" if value is None else str(value).strip()
         if column == 0:
             try:
-                return normalize_tsd_command(text or "Detail")
+                return normalize_tsd_command(text or TSD_COMMAND_CHOICES[0])
             except ValueError:
                 return None
         try:
             return int(text)
         except ValueError:
             return None
+
+    def set_palette_colors(
+        self, palette: list[QtGui.QColor] | tuple[QtGui.QColor, ...] | None
+    ) -> None:
+        self._palette_colors = tuple(QtGui.QColor(color) for color in (palette or ()))
+        if not self._rows:
+            return
+        top_left = self.index(0, 1)
+        bottom_right = self.index(len(self._rows) - 1, 1)
+        self.dataChanged.emit(
+            top_left,
+            bottom_right,
+            [QtCore.Qt.BackgroundRole, QtCore.Qt.ForegroundRole, QtCore.Qt.ToolTipRole],
+        )
+
+    def _color_for_index(self, color_index: int) -> QtGui.QColor | None:
+        if not self._palette_colors:
+            return None
+        clamped_index = max(0, min(255, int(color_index)))
+        if clamped_index >= len(self._palette_colors):
+            return None
+        return QtGui.QColor(self._palette_colors[clamped_index])
 
     def add_default_row(self) -> int:
         return self.add_row(

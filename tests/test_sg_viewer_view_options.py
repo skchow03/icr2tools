@@ -726,6 +726,38 @@ def test_tsd_tab_exists(qapp):
         window.close()
 
 
+def test_tsd_lines_table_uses_command_combo_and_expands(qapp):
+    window = SGViewerWindow()
+    try:
+        table = window.tsd_lines_table
+        assert isinstance(table.itemDelegateForColumn(0), QtWidgets.QStyledItemDelegate)
+        assert table.horizontalHeader().stretchLastSection()
+        assert table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Expanding
+        assert table.sizePolicy().verticalPolicy() == QtWidgets.QSizePolicy.Expanding
+    finally:
+        window.close()
+
+
+def test_tsd_color_index_uses_sunny_palette_background(qapp):
+    window = SGViewerWindow()
+    try:
+        model = window.controller._tsd_lines_model
+        model.add_default_row()
+        window.set_sunny_palette_colors(
+            [QtGui.QColor(0, 0, 0)] * 36 + [QtGui.QColor(10, 20, 30)]
+        )
+
+        color_index = model.index(0, 1)
+        background = model.data(color_index, QtCore.Qt.BackgroundRole)
+
+        assert isinstance(background, QtGui.QBrush)
+        assert background.color() == QtGui.QColor(10, 20, 30)
+        assert "SUNNY.PCX palette index 36" in model.data(
+            color_index, QtCore.Qt.ToolTipRole
+        )
+    finally:
+        window.close()
+
 def test_generate_tsd_file_from_current_lines(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
@@ -3350,7 +3382,6 @@ def test_move_selected_tsd_line_up_and_down(qapp):
         assert window.controller._tsd_lines_model.line_at(1).start_dlong == 20
     finally:
         window.close()
-
 
 def test_tsd_lines_table_header_uses_resize_to_contents(qapp):
     window = SGViewerWindow()
