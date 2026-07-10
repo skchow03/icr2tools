@@ -179,6 +179,7 @@ def test_viewport_toolbar_labels_and_mouse_hint(qapp):
             )
         ][-1] == "Units:"
         assert window.xsect_dlat_line_checkbox.text() == "X-sect DLAT"
+        assert window.centerline_nodes_checkbox.text() == "Centerline + nodes"
         assert window.sg_fsects_checkbox.text() == "F-sections"
         assert window.land_objects_overlay_checkbox.text() == "Land objects"
         assert window.trackside_objects_overlay_checkbox.text() == "TSOs"
@@ -189,6 +190,56 @@ def test_viewport_toolbar_labels_and_mouse_hint(qapp):
             window.preview.status_message
             == "Mouse: left click selects · left drag pans · wheel zooms"
         )
+    finally:
+        window.close()
+
+
+def test_centerline_nodes_toolbar_checkbox_required_only_for_core_edit_tabs(qapp):
+    from sg_viewer.ui.viewer_controller import SGViewerController
+
+    window = SGViewerWindow()
+    try:
+        SGViewerController(window)
+        tabs = window.right_sidebar_tabs
+        checkbox = window.centerline_nodes_checkbox
+
+        geometry_index = next(
+            i for i in range(tabs.count()) if tabs.tabText(i).rstrip("*") == "Geometry"
+        )
+        tabs.setCurrentIndex(geometry_index)
+        assert checkbox.isChecked()
+        assert not checkbox.isEnabled()
+        assert window.preview.show_centerline_and_nodes
+
+        surface_index = next(
+            i for i in range(tabs.count()) if tabs.tabText(i).rstrip("*") == "Surface"
+        )
+        surface_tabs = tabs.widget(surface_index)
+        assert isinstance(surface_tabs, QtWidgets.QTabWidget)
+        features_index = next(
+            i
+            for i in range(surface_tabs.count())
+            if surface_tabs.tabText(i).rstrip("*") == "Features"
+        )
+        surface_detail_index = next(
+            i
+            for i in range(surface_tabs.count())
+            if surface_tabs.tabText(i).rstrip("*") == "Surface Detail"
+        )
+
+        checkbox.blockSignals(True)
+        checkbox.setChecked(False)
+        checkbox.blockSignals(False)
+        tabs.setCurrentIndex(surface_index)
+        surface_tabs.setCurrentIndex(features_index)
+        assert checkbox.isChecked()
+        assert not checkbox.isEnabled()
+        assert window.preview.show_centerline_and_nodes
+
+        surface_tabs.setCurrentIndex(surface_detail_index)
+        assert checkbox.isEnabled()
+        checkbox.setChecked(False)
+        assert not window.preview.show_centerline_and_nodes
     finally:
         window.close()
 

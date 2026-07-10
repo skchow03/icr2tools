@@ -1125,7 +1125,7 @@ class SGViewerController:
             or is_tso_visibility_tab
             or self._window.trackside_objects_overlay_checkbox.isChecked()
         )
-        self._apply_tsd_centerline_visibility_mode()
+        self._apply_centerline_nodes_visibility_mode()
         self._apply_trackside_drag_scope()
         if is_mrk_tab:
             self._update_mrk_highlights_from_table()
@@ -1141,26 +1141,27 @@ class SGViewerController:
             bool(checked) or tab_name in {"Objects", "TSO Visibility"}
         )
 
-    def _on_tsd_hide_centerline_nodes_toggled(self, _checked: bool) -> None:
-        self._apply_tsd_centerline_visibility_mode()
+    def _on_centerline_nodes_toggled(self, _checked: bool) -> None:
+        self._apply_centerline_nodes_visibility_mode()
 
-    def _apply_tsd_centerline_visibility_mode(self) -> None:
+    def _apply_centerline_nodes_visibility_mode(self) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()
         tab_name = self._window.active_sidebar_tab_name() if current_index >= 0 else ""
-        hide_centerline_nodes = (
-            tab_name == "TSD"
-            and self._window.tsd_hide_centerline_nodes_checkbox.isChecked()
-        )
-        if tab_name == "Draw land objects":
-            hide_centerline_nodes = True
-        self._window.preview.set_show_centerline_and_nodes(not hide_centerline_nodes)
-        geometry_active = (
-            current_index >= 0
-            and self._window.right_sidebar_tabs.tabText(current_index).rstrip("*")
-            == "Geometry"
-        )
+        centerline_required = tab_name in {"Geometry", "Elevation", "Features", "Fsects"}
+        checkbox = self._window.centerline_nodes_checkbox
+        if centerline_required:
+            if not checkbox.isChecked():
+                checkbox.blockSignals(True)
+                checkbox.setChecked(True)
+                checkbox.blockSignals(False)
+            checkbox.setEnabled(False)
+        else:
+            checkbox.setEnabled(True)
+        show_centerline_nodes = centerline_required or checkbox.isChecked()
+        self._window.preview.set_show_centerline_and_nodes(show_centerline_nodes)
+        geometry_active = tab_name == "Geometry"
         self._window.preview.set_centerline_editing_enabled(
-            geometry_active and not hide_centerline_nodes
+            geometry_active and show_centerline_nodes
         )
 
     def _is_tso_visibility_tab_active(self) -> bool:

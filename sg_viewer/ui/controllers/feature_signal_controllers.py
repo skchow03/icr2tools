@@ -26,7 +26,6 @@ class TsdSignalController:
         w.tsd_move_object_down_button.clicked.connect(c._on_tsd_move_object_down_requested)
         w.tsd_export_objects_button.clicked.connect(c._on_tsd_export_objects_requested)
         w.tsd_skid_marks_button.clicked.connect(c._on_tsd_skid_marks_requested)
-        w.tsd_hide_centerline_nodes_checkbox.toggled.connect(h._on_tsd_hide_centerline_nodes_toggled)
         w.tsd_objects_table.itemSelectionChanged.connect(c._on_tsd_object_selection_changed)
         w.tsd_objects_table.cellClicked.connect(c._on_tsd_objects_table_cell_clicked)
         h._tsd_lines_model.dataChanged.connect(c._on_tsd_data_changed)
