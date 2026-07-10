@@ -124,7 +124,11 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_sg_fsects = False
         self._show_mrk_notches = False
         self._selected_mrk_wall: tuple[int, int, int] = (0, 0, 0)
+        self._selected_mrk_wall_range: tuple[int, int, int, int, int] | None = None
         self._highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
+        self._mrk_wall_height_500ths = 21000.0
+        self._mrk_armco_height_500ths = 18000.0
+        self._mrk_length_multiplier = 4.0
         self._show_tsd_lines = False
         self._show_tsd_selected_section_only = False
         self._show_centerline_and_nodes = True
@@ -136,6 +140,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._selected_trackside_object_index: int | None = None
         self._selected_trackside_object_indices: tuple[int, ...] = ()
         self._focused_trackside_object_index: int | None = None
+        self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._trackside_order_labels: tuple[tuple[int, int], ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
@@ -151,6 +156,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._show_xsect_dlat_line = False
         self._selected_xsect_index: int | None = None
         self._fsects_by_section: list[list[PreviewFSection]] = []
+        self._last_elevation_recalc_message: str | None = None
 
         self._selection = selection.SelectionManager()
         self._selection.selectionChanged.connect(self._on_selection_changed)
