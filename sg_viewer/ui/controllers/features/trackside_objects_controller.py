@@ -1429,7 +1429,6 @@ class TracksideObjectsController:
     def _on_tso_modify_elevations_dialog_closed(self) -> None:
         self._tso_modify_elevations_dialog = None
 
-    @staticmethod
     def _closest_boundary_elevation_for_tso(self, obj: TracksideObject) -> int | None:
         context = self._build_tso_boundary_elevation_context()
         return self._closest_boundary_elevation_for_tso_with_context(
