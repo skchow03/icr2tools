@@ -1419,6 +1419,7 @@ def test_mrk_table_selection_updates_selected_wall_preview(qapp):
         table.selectRow(0)
 
         assert window.preview.selected_mrk_wall == (5, 11, 2)
+        assert window.preview.selected_mrk_wall_range == (5, 11, 2, 11, 7)
     finally:
         window.close()
 

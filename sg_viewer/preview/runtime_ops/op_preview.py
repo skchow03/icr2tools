@@ -221,6 +221,10 @@ class _RuntimeCoreMixin(
         return self._selected_mrk_wall
 
     @property
+    def selected_mrk_wall_range(self) -> tuple[int, int, int, int, int] | None:
+        return self._selected_mrk_wall_range
+
+    @property
     def highlighted_mrk_walls(self) -> tuple[tuple[int, int, int, int, str], ...]:
         return self._highlighted_mrk_walls
 
@@ -568,12 +572,35 @@ class _RuntimeCoreMixin(
             self._trackside_box_select_drag_current_screen = None
         self._context.request_repaint()
 
-    def set_selected_mrk_wall(self, boundary_index: int, section_index: int, wall_index: int) -> None:
-        self._selected_mrk_wall = (
-            max(0, int(boundary_index)),
-            max(0, int(section_index)),
-            max(0, int(wall_index)),
-        )
+    def set_selected_mrk_wall(self, boundary_index: int | None, section_index: int | None, wall_index: int | None) -> None:
+        if None in {boundary_index, section_index, wall_index}:
+            self._selected_mrk_wall = (0, 0, 0)
+        else:
+            self._selected_mrk_wall = (
+                max(0, int(boundary_index)),
+                max(0, int(section_index)),
+                max(0, int(wall_index)),
+            )
+        self._context.request_repaint()
+
+    def set_selected_mrk_wall_range(
+        self,
+        boundary_index: int | None,
+        start_section_index: int | None,
+        start_wall_index: int | None,
+        end_section_index: int | None,
+        end_wall_index: int | None,
+    ) -> None:
+        if None in {boundary_index, start_section_index, start_wall_index, end_section_index, end_wall_index}:
+            self._selected_mrk_wall_range = None
+        else:
+            self._selected_mrk_wall_range = (
+                max(0, int(boundary_index)),
+                max(0, int(start_section_index)),
+                max(0, int(start_wall_index)),
+                max(0, int(end_section_index)),
+                max(0, int(end_wall_index)),
+            )
         self._context.request_repaint()
 
     def set_highlighted_mrk_walls(self, entries: list[tuple[int, int, int, int, str]] | tuple[tuple[int, int, int, int, str], ...]) -> None:

@@ -476,16 +476,43 @@ class MrkController:
         selected_rows = table.selectionModel().selectedRows()
         if not selected_rows:
             self._window.preview.set_selected_mrk_wall(None, None, None)
+            self._window.preview.set_selected_mrk_wall_range(None, None, None, None, None)
             self._update_mrk_highlights_from_table()
             return
         row = selected_rows[0].row()
         section_index = self._table_int_value(table, row, 0)
         boundary_index = self._table_int_value(table, row, 1)
         wall_index = self._table_int_value(table, row, 2)
+        wall_count = max(1, self._table_int_value(table, row, 3))
         self._window.preview.set_selected_mrk_wall(
             boundary_index,
             section_index,
             wall_index,
+        )
+        model = self._window.preview.sg_preview_model
+        end_section = section_index
+        end_wall = wall_index + wall_count - 1
+        if model is not None:
+            try:
+                positions = list(
+                    self._iter_mrk_wall_positions(
+                        model,
+                        section_index=section_index,
+                        boundary_index=boundary_index,
+                        wall_index=wall_index,
+                        wall_count=wall_count,
+                    )
+                )
+            except ValueError:
+                positions = []
+            if positions:
+                end_section, end_wall, _wall_ranges = positions[-1]
+        self._window.preview.set_selected_mrk_wall_range(
+            boundary_index,
+            section_index,
+            wall_index,
+            end_section,
+            end_wall,
         )
         self._update_mrk_highlights_from_table()
 

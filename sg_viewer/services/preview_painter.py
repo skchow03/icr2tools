@@ -148,6 +148,7 @@ class SgPreviewState:
     enabled: bool
     show_mrk_notches: bool = False
     selected_mrk_wall: tuple[int, int, int] | None = None
+    selected_mrk_wall_range: tuple[int, int, int, int, int] | None = None
     highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = ()
     mrk_wall_height_500ths: float = _MRK_DEFAULT_WALL_HEIGHT
     mrk_armco_height_500ths: float = _MRK_DEFAULT_ARMCO_HEIGHT
@@ -243,6 +244,7 @@ def paint_preview(
                 sg_preview_state.view_state,
                 show_mrk_notches=sg_preview_state.show_mrk_notches,
                 selected_mrk_wall=sg_preview_state.selected_mrk_wall,
+                selected_mrk_wall_range=sg_preview_state.selected_mrk_wall_range,
                 highlighted_mrk_walls=sg_preview_state.highlighted_mrk_walls,
                 mrk_wall_height_500ths=sg_preview_state.mrk_wall_height_500ths,
                 mrk_armco_height_500ths=sg_preview_state.mrk_armco_height_500ths,
@@ -520,6 +522,7 @@ def render_sg_preview(
     *,
     show_mrk_notches: bool = False,
     selected_mrk_wall: tuple[int, int, int] | None = None,
+    selected_mrk_wall_range: tuple[int, int, int, int, int] | None = None,
     highlighted_mrk_walls: tuple[tuple[int, int, int, int, str], ...] = (),
     mrk_wall_height_500ths: float = _MRK_DEFAULT_WALL_HEIGHT,
     mrk_armco_height_500ths: float = _MRK_DEFAULT_ARMCO_HEIGHT,
@@ -542,6 +545,7 @@ def render_sg_preview(
                 model,
                 transform,
                 selected_wall=selected_mrk_wall,
+                selected_wall_range=selected_mrk_wall_range,
                 highlighted_walls=highlighted_mrk_walls,
                 wall_height_500ths=mrk_wall_height_500ths,
                 armco_height_500ths=mrk_armco_height_500ths,
@@ -612,6 +616,7 @@ def _draw_mrk_notches(
     transform: ViewTransform,
     *,
     selected_wall: tuple[int, int, int] | None,
+    selected_wall_range: tuple[int, int, int, int, int] | None,
     highlighted_walls: tuple[tuple[int, int, int, int, str], ...],
     wall_height_500ths: float,
     armco_height_500ths: float,
@@ -624,6 +629,8 @@ def _draw_mrk_notches(
     painter.setPen(notch_pen)
 
     highlight_samples: list[tuple[list[Point], float, float, str]] = []
+    selected_start_sample: tuple[list[Point], float] | None = None
+    selected_end_sample: tuple[list[Point], float] | None = None
 
     highlighted_lookup: dict[tuple[int, int], dict[int, str]] = {}
     for boundary_index, section_index, start_wall, wall_count, color in highlighted_walls:
@@ -662,22 +669,30 @@ def _draw_mrk_notches(
                     notch,
                     half_length_px=_MRK_NOTCH_HALF_LENGTH_PX,
                 )
+            wall_ranges = _division_wall_ranges(points, notch_points)
+            if selected_wall_range is not None:
+                (
+                    selected_boundary,
+                    selected_start_section,
+                    selected_start_wall,
+                    selected_end_section,
+                    selected_end_wall,
+                ) = selected_wall_range
+                if boundary_index == selected_boundary:
+                    if section_index == selected_start_section and selected_start_wall < len(wall_ranges):
+                        selected_start_sample = (points, wall_ranges[selected_start_wall][0])
+                    if section_index == selected_end_section and selected_end_wall < len(wall_ranges):
+                        selected_end_sample = (points, wall_ranges[selected_end_wall][1])
             requested_indices = _resolve_mrk_highlight_indices(
                 highlighted_lookup,
                 section_index=section_index,
                 boundary_index=boundary_index,
             )
-            if not requested_indices:
-                continue
-            wall_ranges = _division_wall_ranges(points, notch_points)
             for wall_index, color in requested_indices.items():
                 if wall_index >= len(wall_ranges):
                     continue
                 wall_range = wall_ranges[wall_index]
                 highlight_samples.append((points, wall_range[0], wall_range[1], color))
-
-    if not highlight_samples:
-        return
 
     for points, start_distance, end_distance, color in highlight_samples:
         highlight_pen = QtGui.QPen(QtGui.QColor(color))
@@ -691,6 +706,20 @@ def _draw_mrk_notches(
             points,
             start_distance,
             end_distance,
+        )
+
+    if selected_start_sample is not None and selected_end_sample is not None:
+        bracket_pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 255))
+        bracket_pen.setWidthF(3.0)
+        bracket_pen.setCosmetic(True)
+        bracket_pen.setCapStyle(QtCore.Qt.SquareCap)
+        bracket_pen.setJoinStyle(QtCore.Qt.MiterJoin)
+        painter.setPen(bracket_pen)
+        _draw_polyline_endpoint_bracket(
+            painter, transform, selected_start_sample[0], selected_start_sample[1], inward_sign=1.0
+        )
+        _draw_polyline_endpoint_bracket(
+            painter, transform, selected_end_sample[0], selected_end_sample[1], inward_sign=-1.0
         )
 
 
@@ -800,6 +829,37 @@ def _polyline_points_between_distances(
             output.append(points[index + 1])
         distance_cursor = next_distance
     return output[:-1] if output else output
+
+
+def _draw_polyline_endpoint_bracket(
+    painter: QtGui.QPainter,
+    transform: ViewTransform,
+    points: list[Point],
+    distance_along: float,
+    *,
+    inward_sign: float,
+) -> None:
+    sample = _sample_polyline_with_tangent(points, distance_along)
+    if sample is None:
+        return
+    (x, y), (tx, ty) = sample
+    tx_len = math.hypot(tx, ty)
+    if tx_len <= 1e-9:
+        return
+    ux = tx / tx_len
+    uy = -ty / tx_len
+    nx = -ty / tx_len
+    ny = -tx / tx_len
+    sx, sy = transform.world_to_screen((x, y))
+    half = 11.0
+    depth = 10.0
+    top = QtCore.QPointF(sx - nx * half, sy + ny * half)
+    bottom = QtCore.QPointF(sx + nx * half, sy - ny * half)
+    top_in = QtCore.QPointF(top.x() + ux * inward_sign * depth, top.y() + uy * inward_sign * depth)
+    bottom_in = QtCore.QPointF(bottom.x() + ux * inward_sign * depth, bottom.y() + uy * inward_sign * depth)
+    painter.drawLine(top, bottom)
+    painter.drawLine(top, top_in)
+    painter.drawLine(bottom, bottom_in)
 
 
 def _draw_polyline_notch(
