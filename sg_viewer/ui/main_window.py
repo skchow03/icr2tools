@@ -329,10 +329,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Remove .TSD file from project"
         )
         self._tsd_remove_file_button.setEnabled(False)
-        self._tsd_hide_centerline_nodes_checkbox = QtWidgets.QCheckBox(
-            "Hide centerline + nodes (lock editing)"
-        )
-        self._tsd_hide_centerline_nodes_checkbox.setChecked(False)
+        self._centerline_nodes_checkbox = QtWidgets.QCheckBox("Centerline + nodes")
+        self._centerline_nodes_checkbox.setChecked(True)
         self._tsd_add_object_button = QtWidgets.QPushButton("Add TSD Object")
         self._tsd_duplicate_object_button = QtWidgets.QPushButton(
             "Duplicate TSD Object"
@@ -807,6 +805,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._sg_fsects_checkbox.setToolTip("Show generated/preview f-section spans.")
         self._background_image_checkbox.setToolTip("Show calibrated background image.")
+        self._centerline_nodes_checkbox.setToolTip(
+            "Show centerline and endpoint nodes in the track diagram. "
+            "This overlay is required in Geometry, Elevation, and Surface/Features."
+        )
         self._quick_display_toolbar = self._build_viewport_toolbar()
         self.update_visual_intensity_controls()
         self.update_mouse_usage_text()
@@ -1211,7 +1213,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_buttons.addWidget(self._tsd_move_line_up_button)
         tsd_buttons.addWidget(self._tsd_move_line_down_button)
         tsd_lines_layout.addLayout(tsd_buttons)
-        tsd_lines_layout.addWidget(self._tsd_hide_centerline_nodes_checkbox)
         tsd_lines_layout.addWidget(self._tsd_lines_table, 1)
         tsd_lines_group.setLayout(tsd_lines_layout)
         tsd_lines_group.setSizePolicy(
@@ -1275,10 +1276,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Export all TSD objects as .TSD files."
         )
         self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
-        self._tsd_hide_centerline_nodes_checkbox.setToolTip(
-            "Hide centerline and endpoint nodes in the track diagram while editing TSDs, "
-            "and disable centerline editing interactions."
-        )
         self._tsd_sidebar.setLayout(tsd_layout)
 
         self._tso_sidebar = QtWidgets.QWidget()
@@ -2130,6 +2127,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self._ruler_button)
         layout.addSpacing(14)
         layout.addWidget(QtWidgets.QLabel("Overlays:"))
+        layout.addWidget(self._centerline_nodes_checkbox)
         layout.addWidget(self._xsect_dlat_line_checkbox)
         layout.addWidget(self._sg_fsects_checkbox)
         layout.addWidget(self._land_objects_overlay_checkbox)
@@ -2532,8 +2530,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._tsd_skid_marks_button
 
     @property
-    def tsd_hide_centerline_nodes_checkbox(self) -> QtWidgets.QCheckBox:
-        return self._tsd_hide_centerline_nodes_checkbox
+    def centerline_nodes_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._centerline_nodes_checkbox
 
     @property
     def tso_add_button(self) -> QtWidgets.QPushButton:
