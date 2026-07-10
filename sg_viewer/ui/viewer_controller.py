@@ -856,7 +856,9 @@ class SGViewerController:
     def mark_fsects_dirty(self, dirty: bool) -> None:
         self._mark_fsects_dirty(dirty)
 
-    def _persist_tsd_state_for_current_track(self) -> None:
+    def _persist_tsd_state_for_current_track(self, *, explicit_save: bool = False) -> None:
+        if not explicit_save:
+            return
         start = perf_counter()
         if self._current_path is None:
             return
@@ -903,7 +905,9 @@ class SGViewerController:
             "Persisted full TSD state in %.3f ms", (perf_counter() - start) * 1000.0
         )
 
-    def _persist_trackside_objects_for_current_track(self) -> None:
+    def _persist_trackside_objects_for_current_track(self, *, explicit_save: bool = False) -> None:
+        if not explicit_save:
+            return
         start = perf_counter()
         if self._current_path is None:
             return
@@ -916,9 +920,7 @@ class SGViewerController:
         )
 
     def _schedule_trackside_objects_persist(self) -> None:
-        if self._current_path is None:
-            return
-        self._tso_persist_timer.start()
+        return
 
     def _load_tsd_state_for_current_track(
         self, progress_callback: Callable[[int, str], None] | None = None
