@@ -4,6 +4,8 @@ from typing import TypeAlias
 
 from PyQt5 import QtCore, QtWidgets
 
+from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
+from sg_viewer.ui.presentation.units_presenter import measurement_unit_decimals, measurement_unit_label
 from sg_viewer.services.tsd_objects import (
     TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
@@ -19,6 +21,51 @@ TsdObjectPayload: TypeAlias = (
     | TsdDashedLinesObject
     | TsdPitStallsObject
 )
+
+
+class _DistanceSpinBox(QtWidgets.QDoubleSpinBox):
+    def __init__(self, unit: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._unit = unit
+        self.setDecimals(measurement_unit_decimals(unit))
+        self.setSingleStep(1.0)
+
+    def setRange(self, minimum: float, maximum: float) -> None:  # noqa: N802 - Qt override
+        super().setRange(
+            units_from_500ths(float(minimum), self._unit),
+            units_from_500ths(float(maximum), self._unit),
+        )
+
+    def setValue(self, value: float) -> None:  # noqa: N802 - Qt override
+        super().setValue(units_from_500ths(float(value), self._unit))
+
+    def value_500ths(self) -> int:
+        return units_to_500ths(float(super().value()), self._unit)
+
+
+def _measurement_unit_for_parent(parent: QtWidgets.QWidget) -> str:
+    widget: QtWidgets.QWidget | None = parent
+    while widget is not None:
+        current_unit = getattr(widget, "current_measurement_unit", None)
+        if callable(current_unit):
+            return str(current_unit())
+        combo = getattr(widget, "measurement_units_combo", None)
+        if combo is not None:
+            if callable(combo):
+                combo = combo()
+            current_data = getattr(combo, "currentData", None)
+            if callable(current_data):
+                return str(current_data())
+        widget = widget.parentWidget()
+    return "500ths"
+
+
+def _create_distance_spin(parent: QtWidgets.QWidget) -> _DistanceSpinBox:
+    return _DistanceSpinBox(_measurement_unit_for_parent(parent), parent)
+
+
+def _distance_value_500ths(spin: _DistanceSpinBox) -> int:
+    return spin.value_500ths()
 
 
 class TsdObjectDialog:
@@ -77,28 +124,28 @@ class TsdObjectDialog:
             type_combo.setCurrentIndex(4)
             type_combo.setEnabled(False)
         name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
-        start_dlong_spin = QtWidgets.QSpinBox(dialog)
+        start_dlong_spin = _create_distance_spin(dialog)
         start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdZebraCrossingObject) else 0)
-        right_dlat_spin = QtWidgets.QSpinBox(dialog)
+        right_dlat_spin = _create_distance_spin(dialog)
         right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdZebraCrossingObject) else -20000)
-        left_dlat_spin = QtWidgets.QSpinBox(dialog)
+        left_dlat_spin = _create_distance_spin(dialog)
         left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdZebraCrossingObject) else 20000)
-        stripe_width_spin = QtWidgets.QSpinBox(dialog)
+        stripe_width_spin = _create_distance_spin(dialog)
         stripe_width_spin.setRange(1, 2_000_000_000)
         stripe_width_spin.setValue(existing.stripe_width_500ths if isinstance(existing, TsdZebraCrossingObject) else 4000)
-        stripe_length_spin = QtWidgets.QSpinBox(dialog)
+        stripe_length_spin = _create_distance_spin(dialog)
         stripe_length_spin.setRange(1, 2_000_000_000)
         stripe_length_spin.setValue(existing.stripe_length_500ths if isinstance(existing, TsdZebraCrossingObject) else 28000)
-        stripe_spacing_spin = QtWidgets.QSpinBox(dialog)
+        stripe_spacing_spin = _create_distance_spin(dialog)
         stripe_spacing_spin.setRange(0, 2_000_000_000)
         stripe_spacing_spin.setValue(existing.stripe_spacing_500ths if isinstance(existing, TsdZebraCrossingObject) else 3000)
-        right_margin_spin = QtWidgets.QSpinBox(dialog)
+        right_margin_spin = _create_distance_spin(dialog)
         right_margin_spin.setRange(0, 2_000_000_000)
         right_margin_spin.setValue(existing.right_margin_500ths if isinstance(existing, TsdZebraCrossingObject) else 0)
-        left_margin_spin = QtWidgets.QSpinBox(dialog)
+        left_margin_spin = _create_distance_spin(dialog)
         left_margin_spin.setRange(0, 2_000_000_000)
         left_margin_spin.setValue(existing.left_margin_500ths if isinstance(existing, TsdZebraCrossingObject) else 0)
         transverse_line_enabled = QtWidgets.QCheckBox("Draw at crosswalk ends", dialog)
@@ -106,72 +153,72 @@ class TsdObjectDialog:
             isinstance(existing, TsdZebraCrossingObject)
             and int(existing.transverse_line_thickness_500ths) > 0
         )
-        transverse_line_thickness_spin = QtWidgets.QSpinBox(dialog)
+        transverse_line_thickness_spin = _create_distance_spin(dialog)
         transverse_line_thickness_spin.setRange(1, 2_000_000_000)
         transverse_line_thickness_spin.setValue(
             existing.transverse_line_thickness_500ths
             if isinstance(existing, TsdZebraCrossingObject) and int(existing.transverse_line_thickness_500ths) > 0
             else 4000
         )
-        adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
+        adjusted_dlong_spin = _create_distance_spin(dialog)
         adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         adjusted_dlong_spin.setValue(existing.adjusted_dlong if isinstance(existing, TsdTransverseLineObject) else 0)
-        start_adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
+        start_adjusted_dlong_spin = _create_distance_spin(dialog)
         start_adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         start_adjusted_dlong_spin.setValue(
             existing.start_adjusted_dlong if isinstance(existing, TsdDoubleSolidLineObject) else 0
         )
-        end_adjusted_dlong_spin = QtWidgets.QSpinBox(dialog)
+        end_adjusted_dlong_spin = _create_distance_spin(dialog)
         end_adjusted_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         end_adjusted_dlong_spin.setValue(
             existing.end_adjusted_dlong if isinstance(existing, TsdDoubleSolidLineObject) else 20000
         )
-        dlat_spin = QtWidgets.QSpinBox(dialog)
+        dlat_spin = _create_distance_spin(dialog)
         dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         dlat_spin.setValue(existing.dlat if isinstance(existing, TsdDoubleSolidLineObject) else 0)
-        right_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
+        right_dlat_bound_spin = _create_distance_spin(dialog)
         right_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
         right_dlat_bound_spin.setValue(
             existing.right_dlat_bound if isinstance(existing, TsdTransverseLineObject) else -20000
         )
-        left_dlat_bound_spin = QtWidgets.QSpinBox(dialog)
+        left_dlat_bound_spin = _create_distance_spin(dialog)
         left_dlat_bound_spin.setRange(-2_000_000_000, 2_000_000_000)
         left_dlat_bound_spin.setValue(
             existing.left_dlat_bound if isinstance(existing, TsdTransverseLineObject) else 20000
         )
-        line_width_spin = QtWidgets.QSpinBox(dialog)
+        line_width_spin = _create_distance_spin(dialog)
         line_width_spin.setRange(1, 2_000_000_000)
         line_width_spin.setValue(
             existing.line_width_500ths
             if isinstance(existing, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
             else 5000
         )
-        dashed_line_thickness_spin = QtWidgets.QSpinBox(dialog)
+        dashed_line_thickness_spin = _create_distance_spin(dialog)
         dashed_line_thickness_spin.setRange(1, 2_000_000_000)
         dashed_line_thickness_spin.setValue(
             existing.line_thickness_500ths if isinstance(existing, TsdDashedLinesObject) else 3000
         )
-        dashed_start_dlong_spin = QtWidgets.QSpinBox(dialog)
+        dashed_start_dlong_spin = _create_distance_spin(dialog)
         dashed_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         dashed_start_dlong_spin.setValue(
             existing.start_adjusted_dlong if isinstance(existing, TsdDashedLinesObject) else 0
         )
-        dashed_end_dlong_spin = QtWidgets.QSpinBox(dialog)
+        dashed_end_dlong_spin = _create_distance_spin(dialog)
         dashed_end_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         dashed_end_dlong_spin.setValue(
             existing.end_adjusted_dlong if isinstance(existing, TsdDashedLinesObject) else 20000
         )
-        dashed_start_dlat_spin = QtWidgets.QSpinBox(dialog)
+        dashed_start_dlat_spin = _create_distance_spin(dialog)
         dashed_start_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         dashed_start_dlat_spin.setValue(
             existing.start_dlat if isinstance(existing, TsdDashedLinesObject) else 0
         )
-        dashed_end_dlat_spin = QtWidgets.QSpinBox(dialog)
+        dashed_end_dlat_spin = _create_distance_spin(dialog)
         dashed_end_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         dashed_end_dlat_spin.setValue(
             existing.end_dlat if isinstance(existing, TsdDashedLinesObject) else 0
         )
-        dashed_line_length_spin = QtWidgets.QSpinBox(dialog)
+        dashed_line_length_spin = _create_distance_spin(dialog)
         dashed_line_length_spin.setRange(1, 2_000_000_000)
         dashed_line_length_spin.setValue(
             existing.line_length_500ths if isinstance(existing, TsdDashedLinesObject) else 60000
@@ -183,21 +230,21 @@ class TsdObjectDialog:
         dashed_gap_ratio_spin.setValue(
             existing.gap_to_line_ratio if isinstance(existing, TsdDashedLinesObject) else 3.0
         )
-        pit_stalls_start_dlong_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_start_dlong_spin = _create_distance_spin(dialog)
         pit_stalls_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         pit_stalls_start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdPitStallsObject) else 0)
-        pit_stalls_left_dlat_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_left_dlat_spin = _create_distance_spin(dialog)
         pit_stalls_left_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         pit_stalls_left_dlat_spin.setValue(existing.left_dlat if isinstance(existing, TsdPitStallsObject) else 20000)
-        pit_stalls_right_dlat_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_right_dlat_spin = _create_distance_spin(dialog)
         pit_stalls_right_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
         pit_stalls_right_dlat_spin.setValue(existing.right_dlat if isinstance(existing, TsdPitStallsObject) else -20000)
-        pit_stalls_line_thickness_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_line_thickness_spin = _create_distance_spin(dialog)
         pit_stalls_line_thickness_spin.setRange(1, 2_000_000_000)
         pit_stalls_line_thickness_spin.setValue(
             existing.line_thickness_500ths if isinstance(existing, TsdPitStallsObject) else 2000
         )
-        pit_stalls_spacing_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_spacing_spin = _create_distance_spin(dialog)
         pit_stalls_spacing_spin.setRange(0, 2_000_000_000)
         pit_stalls_spacing_spin.setValue(existing.dlong_spacing_500ths if isinstance(existing, TsdPitStallsObject) else 4000)
         pit_stalls_line_count_spin = QtWidgets.QSpinBox(dialog)
@@ -216,7 +263,7 @@ class TsdObjectDialog:
         pit_stalls_border_color_spin.setValue(
             existing.border_color_index if isinstance(existing, TsdPitStallsObject) else 36
         )
-        pit_stalls_border_thickness_spin = QtWidgets.QSpinBox(dialog)
+        pit_stalls_border_thickness_spin = _create_distance_spin(dialog)
         pit_stalls_border_thickness_spin.setRange(1, 2_000_000_000)
         pit_stalls_border_thickness_spin.setValue(
             existing.border_line_thickness_500ths if isinstance(existing, TsdPitStallsObject) else 500
@@ -229,42 +276,43 @@ class TsdObjectDialog:
         transverse_line_color_spin.setValue(
             existing.transverse_line_color_index if isinstance(existing, TsdZebraCrossingObject) else 36
         )
+        unit_label = measurement_unit_label(_measurement_unit_for_parent(self._parent))
         layout.addRow("Type", type_combo)
         layout.addRow("Name", name_edit)
-        layout.addRow("Start DLONG", start_dlong_spin)
-        layout.addRow("Right DLAT", right_dlat_spin)
-        layout.addRow("Left DLAT", left_dlat_spin)
-        layout.addRow("Stripe Width", stripe_width_spin)
-        layout.addRow("Stripe Length", stripe_length_spin)
-        layout.addRow("Stripe Spacing", stripe_spacing_spin)
-        layout.addRow("Right Margin from Bound", right_margin_spin)
-        layout.addRow("Left Margin from Bound", left_margin_spin)
+        layout.addRow(f"Start DLONG ({unit_label})", start_dlong_spin)
+        layout.addRow(f"Right DLAT ({unit_label})", right_dlat_spin)
+        layout.addRow(f"Left DLAT ({unit_label})", left_dlat_spin)
+        layout.addRow(f"Stripe Width ({unit_label})", stripe_width_spin)
+        layout.addRow(f"Stripe Length ({unit_label})", stripe_length_spin)
+        layout.addRow(f"Stripe Spacing ({unit_label})", stripe_spacing_spin)
+        layout.addRow(f"Right Margin from Bound ({unit_label})", right_margin_spin)
+        layout.addRow(f"Left Margin from Bound ({unit_label})", left_margin_spin)
         layout.addRow("End Transverse Lines", transverse_line_enabled)
-        layout.addRow("End Line Thickness", transverse_line_thickness_spin)
-        layout.addRow("Adjusted DLONG", adjusted_dlong_spin)
-        layout.addRow("Start Adjusted DLONG", start_adjusted_dlong_spin)
-        layout.addRow("End Adjusted DLONG", end_adjusted_dlong_spin)
-        layout.addRow("DLAT", dlat_spin)
-        layout.addRow("Right DLAT Bound", right_dlat_bound_spin)
-        layout.addRow("Left DLAT Bound", left_dlat_bound_spin)
-        layout.addRow("Line Width", line_width_spin)
-        layout.addRow("Dashed Line Thickness", dashed_line_thickness_spin)
-        layout.addRow("Dashed Start DLONG", dashed_start_dlong_spin)
-        layout.addRow("Dashed End DLONG", dashed_end_dlong_spin)
-        layout.addRow("Dashed Start DLAT", dashed_start_dlat_spin)
-        layout.addRow("Dashed End DLAT", dashed_end_dlat_spin)
-        layout.addRow("Dashed Line Length", dashed_line_length_spin)
+        layout.addRow(f"End Line Thickness ({unit_label})", transverse_line_thickness_spin)
+        layout.addRow(f"Adjusted DLONG ({unit_label})", adjusted_dlong_spin)
+        layout.addRow(f"Start Adjusted DLONG ({unit_label})", start_adjusted_dlong_spin)
+        layout.addRow(f"End Adjusted DLONG ({unit_label})", end_adjusted_dlong_spin)
+        layout.addRow(f"DLAT ({unit_label})", dlat_spin)
+        layout.addRow(f"Right DLAT Bound ({unit_label})", right_dlat_bound_spin)
+        layout.addRow(f"Left DLAT Bound ({unit_label})", left_dlat_bound_spin)
+        layout.addRow(f"Line Width ({unit_label})", line_width_spin)
+        layout.addRow(f"Dashed Line Thickness ({unit_label})", dashed_line_thickness_spin)
+        layout.addRow(f"Dashed Start DLONG ({unit_label})", dashed_start_dlong_spin)
+        layout.addRow(f"Dashed End DLONG ({unit_label})", dashed_end_dlong_spin)
+        layout.addRow(f"Dashed Start DLAT ({unit_label})", dashed_start_dlat_spin)
+        layout.addRow(f"Dashed End DLAT ({unit_label})", dashed_end_dlat_spin)
+        layout.addRow(f"Dashed Line Length ({unit_label})", dashed_line_length_spin)
         layout.addRow("Gap-to-Line Ratio", dashed_gap_ratio_spin)
-        layout.addRow("Pit Start DLONG", pit_stalls_start_dlong_spin)
-        layout.addRow("Pit Left DLAT", pit_stalls_left_dlat_spin)
-        layout.addRow("Pit Right DLAT", pit_stalls_right_dlat_spin)
-        layout.addRow("Pit Line Thickness", pit_stalls_line_thickness_spin)
-        layout.addRow("Pit Line DLONG Spacing", pit_stalls_spacing_spin)
+        layout.addRow(f"Pit Start DLONG ({unit_label})", pit_stalls_start_dlong_spin)
+        layout.addRow(f"Pit Left DLAT ({unit_label})", pit_stalls_left_dlat_spin)
+        layout.addRow(f"Pit Right DLAT ({unit_label})", pit_stalls_right_dlat_spin)
+        layout.addRow(f"Pit Line Thickness ({unit_label})", pit_stalls_line_thickness_spin)
+        layout.addRow(f"Pit Line DLONG Spacing ({unit_label})", pit_stalls_spacing_spin)
         layout.addRow("Pit Number of Lines", pit_stalls_line_count_spin)
         layout.addRow("Pit Left Border", pit_stalls_left_border_checkbox)
         layout.addRow("Pit Right Border", pit_stalls_right_border_checkbox)
         layout.addRow("Pit Border Color", pit_stalls_border_color_spin)
-        layout.addRow("Pit Border Thickness", pit_stalls_border_thickness_spin)
+        layout.addRow(f"Pit Border Thickness ({unit_label})", pit_stalls_border_thickness_spin)
         layout.addRow("Stripe Color", color_spin)
         layout.addRow("End Line Color", transverse_line_color_spin)
         zebra_only_fields = (
@@ -355,27 +403,27 @@ class TsdObjectDialog:
                 name = name_edit.text().strip() or f"Pit Stalls {default_index}"
                 return TsdPitStallsObject(
                     name=name,
-                    start_dlong=pit_stalls_start_dlong_spin.value(),
-                    left_dlat=pit_stalls_left_dlat_spin.value(),
-                    right_dlat=pit_stalls_right_dlat_spin.value(),
-                    line_thickness_500ths=pit_stalls_line_thickness_spin.value(),
-                    dlong_spacing_500ths=pit_stalls_spacing_spin.value(),
+                    start_dlong=_distance_value_500ths(pit_stalls_start_dlong_spin),
+                    left_dlat=_distance_value_500ths(pit_stalls_left_dlat_spin),
+                    right_dlat=_distance_value_500ths(pit_stalls_right_dlat_spin),
+                    line_thickness_500ths=_distance_value_500ths(pit_stalls_line_thickness_spin),
+                    dlong_spacing_500ths=_distance_value_500ths(pit_stalls_spacing_spin),
                     color_index=color_spin.value(),
                     line_count=pit_stalls_line_count_spin.value(),
                     draw_left_border=pit_stalls_left_border_checkbox.isChecked(),
                     draw_right_border=pit_stalls_right_border_checkbox.isChecked(),
                     border_color_index=pit_stalls_border_color_spin.value(),
-                    border_line_thickness_500ths=pit_stalls_border_thickness_spin.value(),
+                    border_line_thickness_500ths=_distance_value_500ths(pit_stalls_border_thickness_spin),
                     command="Detail",
                 )
             if object_type == "double_solid_line":
                 name = name_edit.text().strip() or f"Double Solid Line {default_index}"
                 return TsdDoubleSolidLineObject(
                     name=name,
-                    start_adjusted_dlong=start_adjusted_dlong_spin.value(),
-                    end_adjusted_dlong=end_adjusted_dlong_spin.value(),
-                    dlat=dlat_spin.value(),
-                    line_width_500ths=line_width_spin.value(),
+                    start_adjusted_dlong=_distance_value_500ths(start_adjusted_dlong_spin),
+                    end_adjusted_dlong=_distance_value_500ths(end_adjusted_dlong_spin),
+                    dlat=_distance_value_500ths(dlat_spin),
+                    line_width_500ths=_distance_value_500ths(line_width_spin),
                     color_index=color_spin.value(),
                     command="Detail",
                 )
@@ -383,12 +431,12 @@ class TsdObjectDialog:
                 name = name_edit.text().strip() or f"Dashed Lines {default_index}"
                 return TsdDashedLinesObject(
                     name=name,
-                    start_adjusted_dlong=dashed_start_dlong_spin.value(),
-                    end_adjusted_dlong=dashed_end_dlong_spin.value(),
-                    start_dlat=dashed_start_dlat_spin.value(),
-                    end_dlat=dashed_end_dlat_spin.value(),
-                    line_thickness_500ths=dashed_line_thickness_spin.value(),
-                    line_length_500ths=dashed_line_length_spin.value(),
+                    start_adjusted_dlong=_distance_value_500ths(dashed_start_dlong_spin),
+                    end_adjusted_dlong=_distance_value_500ths(dashed_end_dlong_spin),
+                    start_dlat=_distance_value_500ths(dashed_start_dlat_spin),
+                    end_dlat=_distance_value_500ths(dashed_end_dlat_spin),
+                    line_thickness_500ths=_distance_value_500ths(dashed_line_thickness_spin),
+                    line_length_500ths=_distance_value_500ths(dashed_line_length_spin),
                     gap_to_line_ratio=dashed_gap_ratio_spin.value(),
                     color_index=color_spin.value(),
                     command="Detail",
@@ -403,26 +451,26 @@ class TsdObjectDialog:
                 return TsdTransverseLineObject(
                     name=name,
                     section_index=section_index,
-                    adjusted_dlong=adjusted_dlong_spin.value(),
-                    line_width_500ths=line_width_spin.value(),
-                    right_dlat_bound=right_dlat_bound_spin.value(),
-                    left_dlat_bound=left_dlat_bound_spin.value(),
+                    adjusted_dlong=_distance_value_500ths(adjusted_dlong_spin),
+                    line_width_500ths=_distance_value_500ths(line_width_spin),
+                    right_dlat_bound=_distance_value_500ths(right_dlat_bound_spin),
+                    left_dlat_bound=_distance_value_500ths(left_dlat_bound_spin),
                     color_index=color_spin.value(),
                     command="Detail",
                 )
             name = name_edit.text().strip() or f"Zebra Crossing {default_index}"
             return TsdZebraCrossingObject(
                 name=name,
-                start_dlong=start_dlong_spin.value(),
-                right_dlat=right_dlat_spin.value(),
-                left_dlat=left_dlat_spin.value(),
-                stripe_width_500ths=stripe_width_spin.value(),
-                stripe_length_500ths=stripe_length_spin.value(),
-                stripe_spacing_500ths=stripe_spacing_spin.value(),
-                right_margin_500ths=right_margin_spin.value(),
-                left_margin_500ths=left_margin_spin.value(),
+                start_dlong=_distance_value_500ths(start_dlong_spin),
+                right_dlat=_distance_value_500ths(right_dlat_spin),
+                left_dlat=_distance_value_500ths(left_dlat_spin),
+                stripe_width_500ths=_distance_value_500ths(stripe_width_spin),
+                stripe_length_500ths=_distance_value_500ths(stripe_length_spin),
+                stripe_spacing_500ths=_distance_value_500ths(stripe_spacing_spin),
+                right_margin_500ths=_distance_value_500ths(right_margin_spin),
+                left_margin_500ths=_distance_value_500ths(left_margin_spin),
                 transverse_line_thickness_500ths=(
-                    transverse_line_thickness_spin.value() if transverse_line_enabled.isChecked() else 0
+                    _distance_value_500ths(transverse_line_thickness_spin) if transverse_line_enabled.isChecked() else 0
                 ),
                 color_index=color_spin.value(),
                 transverse_line_color_index=(
