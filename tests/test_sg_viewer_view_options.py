@@ -2038,6 +2038,75 @@ def test_mrk_highlight_lookup_does_not_match_previous_boundary_pair():
     assert resolved == {}
 
 
+def test_mrk_endpoint_brackets_use_screen_space_wall_tangent(qapp):
+    from sg_viewer.preview.transform import ViewTransform
+    from sg_viewer.services import preview_painter
+
+    class CapturePainter:
+        def __init__(self):
+            self.lines = []
+
+        def drawLine(self, start, end):
+            self.lines.append((start, end))
+
+    def _vector(line):
+        start, end = line
+        return (end.x() - start.x(), end.y() - start.y())
+
+    painter = CapturePainter()
+    transform = ViewTransform(scale=1.0, offset=(0.0, 0.0))
+    points = [(0.0, 0.0), (10.0, 10.0)]
+
+    preview_painter._draw_polyline_endpoint_bracket(
+        painter, transform, points, 5.0, inward_sign=1.0
+    )
+    preview_painter._draw_polyline_endpoint_bracket(
+        painter, transform, points, 5.0, inward_sign=-1.0
+    )
+
+    start_cross = _vector(painter.lines[0])
+    start_short = _vector(painter.lines[1])
+    end_cross = _vector(painter.lines[3])
+    end_short = _vector(painter.lines[4])
+
+    assert start_cross[0] == pytest.approx(start_cross[1])
+    assert (
+        start_cross[0] * start_short[0] + start_cross[1] * start_short[1]
+    ) == pytest.approx(0.0)
+    assert start_short[0] > 0
+    assert start_short[1] < 0
+    assert end_cross[0] == pytest.approx(end_cross[1])
+    assert end_short[0] < 0
+    assert end_short[1] > 0
+
+
+def test_mrk_notches_use_screen_space_wall_normal(qapp):
+    from sg_viewer.preview.transform import ViewTransform
+    from sg_viewer.services import preview_painter
+
+    class CapturePainter:
+        def __init__(self):
+            self.lines = []
+
+        def drawLine(self, start, end):
+            self.lines.append((start, end))
+
+    painter = CapturePainter()
+    transform = ViewTransform(scale=1.0, offset=(0.0, 0.0))
+
+    preview_painter._draw_polyline_notch(
+        painter, transform, [(0.0, 0.0), (10.0, 10.0)], 5.0, half_length_px=4.0
+    )
+
+    start, end = painter.lines[0]
+    notch_vector = (end.x() - start.x(), end.y() - start.y())
+    screen_tangent = (1.0, -1.0)
+    assert notch_vector[0] == pytest.approx(notch_vector[1])
+    assert (
+        notch_vector[0] * screen_tangent[0] + notch_vector[1] * screen_tangent[1]
+    ) == pytest.approx(0.0)
+
+
 def test_paint_preview_passes_mrk_highlight_walls_to_renderer(monkeypatch):
     from sg_viewer.services import preview_painter
 

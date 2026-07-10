@@ -848,15 +848,21 @@ def _draw_polyline_endpoint_bracket(
         return
     ux = tx / tx_len
     uy = -ty / tx_len
-    nx = -ty / tx_len
-    ny = -tx / tx_len
+    nx = -uy
+    ny = ux
     sx, sy = transform.world_to_screen((x, y))
     half = 11.0
     depth = 10.0
-    top = QtCore.QPointF(sx - nx * half, sy + ny * half)
-    bottom = QtCore.QPointF(sx + nx * half, sy - ny * half)
-    top_in = QtCore.QPointF(top.x() + ux * inward_sign * depth, top.y() + uy * inward_sign * depth)
-    bottom_in = QtCore.QPointF(bottom.x() + ux * inward_sign * depth, bottom.y() + uy * inward_sign * depth)
+    top = QtCore.QPointF(sx + nx * half, sy + ny * half)
+    bottom = QtCore.QPointF(sx - nx * half, sy - ny * half)
+    top_in = QtCore.QPointF(
+        top.x() + ux * inward_sign * depth,
+        top.y() + uy * inward_sign * depth,
+    )
+    bottom_in = QtCore.QPointF(
+        bottom.x() + ux * inward_sign * depth,
+        bottom.y() + uy * inward_sign * depth,
+    )
     painter.drawLine(top, bottom)
     painter.drawLine(top, top_in)
     painter.drawLine(bottom, bottom_in)
@@ -877,11 +883,13 @@ def _draw_polyline_notch(
     tx_len = math.hypot(tx, ty)
     if tx_len <= 1e-9:
         return
-    nx = -ty / tx_len
-    ny = tx / tx_len
+    ux = tx / tx_len
+    uy = -ty / tx_len
+    nx = -uy
+    ny = ux
     sx, sy = transform.world_to_screen((x, y))
-    start = QtCore.QPointF(sx - nx * half_length_px, sy + ny * half_length_px)
-    end = QtCore.QPointF(sx + nx * half_length_px, sy - ny * half_length_px)
+    start = QtCore.QPointF(sx - nx * half_length_px, sy - ny * half_length_px)
+    end = QtCore.QPointF(sx + nx * half_length_px, sy + ny * half_length_px)
     painter.drawLine(start, end)
 
 
