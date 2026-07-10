@@ -178,6 +178,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._ruler_label: str = ""
         self._land_object_points_overlay: tuple[Point, ...] = ()
         self._land_object_polygons_overlay: tuple[tuple[tuple[int, ...], int, bool], ...] = ()
+        self._land_object_vertex_points_overlay: tuple[Point, ...] = ()
         self._show_land_objects = True
 
 
@@ -691,6 +692,17 @@ class PreviewRuntime(PreviewRuntimeOps):
         if normalized == self._land_object_polygons_overlay:
             return
         self._land_object_polygons_overlay = normalized
+        self._context.request_repaint()
+
+    @property
+    def land_object_vertex_points_overlay(self) -> tuple[Point, ...]:
+        return self._land_object_vertex_points_overlay
+
+    def set_land_object_vertex_points_overlay(self, points: tuple[Point, ...]) -> None:
+        normalized = tuple((float(point[0]), float(point[1])) for point in points)
+        if normalized == self._land_object_vertex_points_overlay:
+            return
+        self._land_object_vertex_points_overlay = normalized
         self._context.request_repaint()
 
 

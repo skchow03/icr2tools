@@ -2020,6 +2020,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _on_workflow_tab_changed(self, _index: int) -> None:
         self._update_geometry_tab_button_state()
+        self._sync_land_vertex_points_overlay()
+        self.update_mouse_usage_text()
+
+    def _on_sidebar_feature_tab_changed(self) -> None:
+        self._sync_land_vertex_points_overlay()
         self.update_mouse_usage_text()
 
     def _update_geometry_tab_button_state(self) -> None:
@@ -2069,7 +2074,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         def add_workflow_tab(label: str) -> QtWidgets.QTabWidget:
             tab_widget = QtWidgets.QTabWidget()
             tab_widget.currentChanged.connect(
-                lambda _index: self.update_mouse_usage_text()
+                lambda _index: self._on_sidebar_feature_tab_changed()
             )
             self._right_sidebar_tabs.addTab(tab_widget, label)
             return tab_widget
@@ -4264,18 +4269,111 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 )
 
     def _sync_land_points_overlay(self) -> None:
-        overlay_points: list[tuple[float, float]] = []
+        selected_points: list[tuple[float, float]] = []
         for row in range(self._land_points_table.rowCount()):
             x_item = self._land_points_table.item(row, 1)
             y_item = self._land_points_table.item(row, 2)
             if x_item is None or y_item is None:
                 continue
             try:
-                overlay_points.append((float(x_item.text()), float(y_item.text())))
+                selected_points.append((float(x_item.text()), float(y_item.text())))
             except ValueError:
                 continue
-        self._preview.set_land_object_points_overlay(tuple(overlay_points))
+        self._preview.set_land_object_vertex_points_overlay(
+            tuple(selected_points) if self._draw_land_objects_tab_active() else ()
+        )
+        self._sync_all_land_objects_overlay()
         self._sync_land_polygons_overlay()
+
+    def _sync_land_vertex_points_overlay(self) -> None:
+        if not self._draw_land_objects_tab_active():
+            self._preview.set_land_object_vertex_points_overlay(())
+            return
+        selected_points: list[tuple[float, float]] = []
+        for row in range(self._land_points_table.rowCount()):
+            x_item = self._land_points_table.item(row, 1)
+            y_item = self._land_points_table.item(row, 2)
+            if x_item is None or y_item is None:
+                continue
+            try:
+                selected_points.append((float(x_item.text()), float(y_item.text())))
+            except ValueError:
+                continue
+        self._preview.set_land_object_vertex_points_overlay(tuple(selected_points))
+
+    def _parse_land_object_overlay(
+        self, payload: dict[str, object]
+    ) -> tuple[
+        list[tuple[float, float]],
+        list[tuple[tuple[int, ...], int, bool]],
+        list[str],
+    ]:
+        points: list[tuple[float, float]] = []
+        polygons: list[tuple[tuple[int, ...], int, bool]] = []
+        errors: list[str] = []
+        raw_points = payload.get("points", [])
+        if not isinstance(raw_points, list):
+            return points, polygons, ["invalid point list"]
+        for point_row in raw_points:
+            if not (isinstance(point_row, (list, tuple)) and len(point_row) >= 2):
+                errors.append("invalid point row")
+                continue
+            try:
+                points.append((float(str(point_row[0])), float(str(point_row[1]))))
+            except ValueError:
+                errors.append("invalid point coordinates")
+        raw_polygons = payload.get("polygons", [])
+        if not isinstance(raw_polygons, list):
+            return points, polygons, errors + ["invalid polygon list"]
+        for polygon_row in raw_polygons:
+            if not (isinstance(polygon_row, (list, tuple)) and len(polygon_row) >= 2):
+                errors.append("invalid polygon row")
+                continue
+            try:
+                indices = tuple(
+                    int(token.strip())
+                    for token in str(polygon_row[0]).split(",")
+                    if token.strip()
+                )
+            except ValueError:
+                errors.append("invalid polygon point list")
+                continue
+            mode_text = str(polygon_row[2]).strip() if len(polygon_row) > 2 else "Land"
+            is_wall = mode_text.lower() == "wall"
+            min_points = 2 if is_wall else 3
+            if len(indices) < min_points:
+                errors.append("polygon has too few points")
+                continue
+            if any(index < 0 or index >= len(points) for index in indices):
+                errors.append("polygon references a missing point")
+                continue
+            try:
+                color_index = int(str(polygon_row[1]).strip() or "0")
+            except ValueError:
+                errors.append("invalid polygon color")
+                continue
+            polygons.append((indices, color_index, is_wall))
+        return points, polygons, errors
+
+    def _sync_all_land_objects_overlay(self) -> None:
+        all_points: list[tuple[float, float]] = []
+        all_polygons: list[tuple[tuple[int, ...], int, bool]] = []
+        for payload in self._land_saved_objects:
+            if not isinstance(payload, dict):
+                continue
+            points, polygons, _errors = self._parse_land_object_overlay(payload)
+            point_offset = len(all_points)
+            all_points.extend(points)
+            all_polygons.extend(
+                (
+                    tuple(point_offset + index for index in indices),
+                    color_index,
+                    is_wall,
+                )
+                for indices, color_index, is_wall in polygons
+            )
+        self._preview.set_land_object_points_overlay(tuple(all_points))
+        self._preview.set_land_object_polygons_overlay(tuple(all_polygons))
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if (
@@ -4471,7 +4569,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
             is_wall = mode_text.lower() == "wall"
             polygons.append((indices, color_index, is_wall))
-        self._preview.set_land_object_polygons_overlay(tuple(polygons))
+        selected_row = self._land_objects_table.currentRow()
+        if 0 <= selected_row < len(self._land_saved_objects):
+            self._sync_all_land_objects_overlay()
+        else:
+            self._preview.set_land_object_polygons_overlay(tuple(polygons))
         if errors:
             self.show_status_message(
                 "Land polygon preview skipped invalid rows: " + "; ".join(errors[:3])
@@ -4619,6 +4721,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ),
         )
         self._mark_land_objects_dirty()
+        self._sync_all_land_objects_overlay()
 
     def _save_current_land_object(self) -> None:
         name = self._land_object_name_edit.text().strip()
