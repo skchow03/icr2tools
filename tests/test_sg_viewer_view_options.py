@@ -3597,6 +3597,37 @@ def test_add_tso_defaults_filename_to_previous_tso(qapp):
         window.close()
 
 
+def test_delete_tso_does_not_auto_save_project(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "loaded.sg"
+        project_path = tmp_path / "loaded.sgc"
+        project_path.write_text(
+            (
+                '{"sg_file": "loaded.sg", '
+                '"trackside_objects": [{"filename": "tree", "x": 0, "y": 0}]}'
+            ),
+            encoding="utf-8",
+        )
+        original_project_text = project_path.read_text(encoding="utf-8")
+        window.controller._current_path = sg_path
+        window.controller._trackside_objects = [
+            TracksideObject(filename="tree", x=0, y=0),
+            TracksideObject(filename="sign", x=10, y=10),
+        ]
+
+        window.controller._refresh_tso_table()
+        window.tso_table.selectRow(0)
+        window.controller._on_tso_delete_requested()
+
+        assert [obj.filename for obj in window.controller._trackside_objects] == [
+            "sign"
+        ]
+        assert project_path.read_text(encoding="utf-8") == original_project_text
+        assert window.controller._trackside_objects_is_dirty is True
+    finally:
+        window.close()
+
 def test_delete_tso_remaps_object_and_detail_list_tso_ids(qapp):
     window = SGViewerWindow()
     try:
