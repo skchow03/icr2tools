@@ -688,6 +688,7 @@ class MrkController:
 
     def _on_mrk_side_changed(self) -> None:
         self._set_mrk_dirty(True)
+        self._refresh_selected_mrk_wall_from_table()
         self._update_mrk_highlights_from_table()
 
     def _mrk_side_for_row(self, row: int) -> str:
@@ -704,8 +705,16 @@ class MrkController:
         selected_rows = table.selectionModel().selectedRows()
         if not selected_rows:
             return
-        row = selected_rows[0].row()
         self._on_mrk_wall_select_requested()
+
+    def _refresh_selected_mrk_wall_from_table(self) -> None:
+        """Refresh viewport MRK brackets when the selected table row changes in-place."""
+        table = self._window.mrk_entries_table
+        selection_model = table.selectionModel()
+        if selection_model is None:
+            return
+        if selection_model.selectedRows():
+            self._on_mrk_wall_select_requested()
 
     def _allowed_mrk_texture_names(self) -> set[str]:
         return {definition.texture_name for definition in self._mrk_texture_definitions}
@@ -777,6 +786,8 @@ class MrkController:
                 )
                 table.blockSignals(False)
         self._set_mrk_dirty(True)
+        if column in {0, 1, 2, 3, 4}:
+            self._refresh_selected_mrk_wall_from_table()
         self._update_mrk_highlights_from_table()
         self._autosize_mrk_table_columns()
 
