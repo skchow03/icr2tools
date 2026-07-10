@@ -282,8 +282,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Features": "Features",
             "Fsects": "Features",
             "Walls": "Walls",
-            "Track Surface Markings": "Track Surface Markings",
-            "TSD": "Track Surface Markings",
+            "Track Surface Markings": "Surface Detail",
+            "TSD": "Surface Detail",
             "Objects": "Objects",
             "TSO Visibility": "TSO Visibility",
             "Draw land objects": "Draw land objects",
@@ -523,6 +523,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtWidgets.QHeaderView.ResizeToContents
         )
         self._tsd_lines_table.horizontalHeader().setStretchLastSection(True)
+        self._tsd_lines_table.horizontalHeader().setDefaultAlignment(
+            QtCore.Qt.AlignCenter | QtCore.Qt.TextWordWrap
+        )
+        self._tsd_lines_table.horizontalHeader().setMinimumSectionSize(56)
         self._tsd_lines_table.setItemDelegateForColumn(0, self._tsd_command_delegate)
         self._tsd_lines_table.viewport().installEventFilter(self)
         self._tsd_lines_table.setSizePolicy(
@@ -2100,7 +2104,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         ):
             tab_widget = add_workflow_tab(workflow_label)
             for panel_widget, feature_label in panels:
-                tab_widget.addTab(panel_widget, feature_label)
+                display_label = (
+                    "Surface Detail"
+                    if feature_label == "Track Surface Markings"
+                    else feature_label
+                )
+                tab_widget.addTab(panel_widget, display_label)
                 self._sidebar_feature_tabs[feature_label] = tab_widget
                 self._sidebar_feature_tab_widgets[feature_label] = panel_widget
                 if feature_label == "Features":

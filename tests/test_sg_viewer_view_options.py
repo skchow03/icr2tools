@@ -771,7 +771,8 @@ def test_tsd_lines_table_uses_current_measurement_units(qapp):
         window.measurement_units_combo.setCurrentIndex(1)  # meter
 
         width_index = model.index(0, 2)
-        assert model.headerData(2, QtCore.Qt.Horizontal) == "Width (m)"
+        assert model.headerData(1, QtCore.Qt.Horizontal) == "Color"
+        assert model.headerData(2, QtCore.Qt.Horizontal) == "Width\n(m)"
         assert model.data(width_index, QtCore.Qt.DisplayRole) == "0.203"
 
         assert model.setData(width_index, "1.000")

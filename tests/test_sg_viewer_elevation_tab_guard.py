@@ -259,7 +259,7 @@ def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
         assert [
             window._sidebar_feature_tabs["Features"].tabText(index)
             for index in range(window._sidebar_feature_tabs["Features"].count())
-        ] == ["Features", "Walls", "Track Surface Markings"]
+        ] == ["Features", "Walls", "Surface Detail"]
         assert [
             window._sidebar_feature_tabs["Objects"].tabText(index)
             for index in range(window._sidebar_feature_tabs["Objects"].count())
@@ -267,6 +267,6 @@ def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
         assert [
             window._sidebar_feature_tabs["Track Surface Markings"].tabText(index)
             for index in range(window._sidebar_feature_tabs["Track Surface Markings"].count())
-        ] == ["Features", "Walls", "Track Surface Markings"]
+        ] == ["Features", "Walls", "Surface Detail"]
     finally:
         window.close()
