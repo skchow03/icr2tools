@@ -69,6 +69,7 @@ class PreviewPresenter:
             enabled=self._runtime.show_sg_fsects,
             show_mrk_notches=self._runtime.show_mrk_notches,
             selected_mrk_wall=self._runtime.selected_mrk_wall,
+            selected_mrk_wall_range=self._runtime.selected_mrk_wall_range,
             highlighted_mrk_walls=self._runtime.highlighted_mrk_walls,
             mrk_wall_height_500ths=self._runtime.mrk_wall_height_500ths,
             mrk_armco_height_500ths=self._runtime.mrk_armco_height_500ths,
