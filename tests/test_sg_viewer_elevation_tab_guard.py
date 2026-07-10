@@ -248,6 +248,63 @@ def test_xsect_table_selection_ignores_programmatic_table_refresh(qapp, monkeypa
         window.close()
 
 
+def test_workflow_toolbar_buttons_hidden_outside_matching_tabs(qapp):
+    window = SGViewerWindow()
+    try:
+        tabs = window.right_sidebar_tabs
+        geometry_buttons = window._geometry_tab_buttons()
+        elevation_buttons = window._elevation_toolbar_buttons()
+
+        geometry_index = next(
+            index
+            for index in range(tabs.count())
+            if tabs.tabText(index).rstrip("*") == "Geometry"
+        )
+        elevation_index = next(
+            index
+            for index in range(tabs.count())
+            if tabs.tabText(index).rstrip("*") == "Elevation"
+        )
+        surface_index = next(
+            index
+            for index in range(tabs.count())
+            if tabs.tabText(index).rstrip("*") == "Surface"
+        )
+
+        for button in (*geometry_buttons, *elevation_buttons):
+            button.setEnabled(True)
+
+        tabs.setCurrentIndex(geometry_index)
+        assert all(
+            button.isVisible() and button.isEnabled() for button in geometry_buttons
+        )
+        assert all(
+            not button.isVisible() and not button.isEnabled()
+            for button in elevation_buttons
+        )
+
+        tabs.setCurrentIndex(elevation_index)
+        assert all(
+            not button.isVisible() and not button.isEnabled()
+            for button in geometry_buttons
+        )
+        assert all(
+            button.isVisible() and button.isEnabled() for button in elevation_buttons
+        )
+
+        tabs.setCurrentIndex(surface_index)
+        assert all(
+            not button.isVisible() and not button.isEnabled()
+            for button in geometry_buttons
+        )
+        assert all(
+            not button.isVisible() and not button.isEnabled()
+            for button in elevation_buttons
+        )
+    finally:
+        window.close()
+
+
 def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
     window = SGViewerWindow()
     try:

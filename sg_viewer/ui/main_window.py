@@ -69,24 +69,40 @@ from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 MARQUEE_STATUS_INTERVAL_MS = 20
 
 
-class GeometryTabButton(QtWidgets.QPushButton):
-    """Push button whose requested enabled state is gated by the Geometry tab."""
+class WorkflowTabButton(QtWidgets.QPushButton):
+    """Push button whose requested enabled state is gated by a workflow tab."""
 
     def __init__(self, text: str = "", parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(text, parent)
         self._requested_enabled = True
-        self._geometry_tab_active = False
+        self._workflow_tab_active = False
+        self.setVisible(False)
 
     def setEnabled(self, enabled: bool) -> None:  # noqa: N802 - Qt API override
         self._requested_enabled = enabled
-        super().setEnabled(enabled and self._geometry_tab_active)
+        super().setEnabled(enabled and self._workflow_tab_active)
 
-    def set_geometry_tab_active(self, active: bool) -> None:
-        self._geometry_tab_active = active
+    def set_workflow_tab_active(self, active: bool) -> None:
+        self._workflow_tab_active = active
+        self.setVisible(active)
         super().setEnabled(self._requested_enabled and active)
 
     def requested_enabled(self) -> bool:
         return self._requested_enabled
+
+
+class GeometryTabButton(WorkflowTabButton):
+    """Push button whose requested enabled state is gated by the Geometry tab."""
+
+    def set_geometry_tab_active(self, active: bool) -> None:
+        self.set_workflow_tab_active(active)
+
+
+class ElevationTabButton(WorkflowTabButton):
+    """Push button whose requested enabled state is gated by the Elevation tab."""
+
+    def set_elevation_tab_active(self, active: bool) -> None:
+        self.set_workflow_tab_active(active)
 
 
 class TsdCommandDelegate(QtWidgets.QStyledItemDelegate):
@@ -690,24 +706,24 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_elevation_widget = XsectElevationWidget()
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
-        self._edit_xsect_list_button = QtWidgets.QPushButton("Edit Xsect data...")
+        self._edit_xsect_list_button = ElevationTabButton("Edit Xsect data...")
         self._edit_xsect_list_button.setEnabled(False)
-        self._copy_xsect_button = QtWidgets.QPushButton("Copy Xsect")
+        self._copy_xsect_button = ElevationTabButton("Copy Xsect")
         self._copy_xsect_button.setToolTip(
             "Copy selected Xsect data to other sections."
         )
         self._copy_xsect_button.setEnabled(False)
-        self._generate_elevation_change_button = QtWidgets.QPushButton(
+        self._generate_elevation_change_button = ElevationTabButton(
             "Generate Change"
         )
         self._generate_elevation_change_button.setToolTip(
             "Generate an elevation change for the selected Xsect."
         )
         self._generate_elevation_change_button.setEnabled(False)
-        self._raise_lower_elevations_button = QtWidgets.QPushButton("Raise/Lower")
+        self._raise_lower_elevations_button = ElevationTabButton("Raise/Lower")
         self._raise_lower_elevations_button.setToolTip("Raise or lower all elevations.")
         self._raise_lower_elevations_button.setEnabled(False)
-        self._flatten_elevations_button = QtWidgets.QPushButton("Flatten")
+        self._flatten_elevations_button = ElevationTabButton("Flatten")
         self._flatten_elevations_button.setToolTip(
             "Flatten all elevations and grade values."
         )
@@ -2029,13 +2045,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _update_geometry_tab_button_state(self) -> None:
         current_index = self._right_sidebar_tabs.currentIndex()
-        geometry_active = (
-            current_index >= 0
-            and self._right_sidebar_tabs.tabText(current_index).rstrip("*")
-            == "Geometry"
+        current_tab = (
+            self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+            if current_index >= 0
+            else ""
         )
+        geometry_active = current_tab == "Geometry"
+        elevation_active = current_tab == "Elevation"
         for button in self._geometry_tab_buttons():
             button.set_geometry_tab_active(geometry_active)
+        for button in self._elevation_toolbar_buttons():
+            button.set_elevation_tab_active(elevation_active)
         self._preview.set_centerline_editing_enabled(geometry_active)
         self._preview.set_section_drag_enabled(
             geometry_active and self._move_section_button.isChecked()
