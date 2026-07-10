@@ -189,6 +189,8 @@ class MrkController:
         w.mrk_delete_entry_button.clicked.connect(self._on_mrk_delete_entry_requested)
         w.mrk_move_up_button.clicked.connect(self._on_mrk_move_up_requested)
         w.mrk_move_down_button.clicked.connect(self._on_mrk_move_down_requested)
+        w.mrk_sort_by_section_button.clicked.connect(self._on_mrk_sort_by_section_requested)
+        w.mrk_sort_by_boundary_button.clicked.connect(self._on_mrk_sort_by_boundary_requested)
         w.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
         w.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         w.mrk_export_locations_button.clicked.connect(self._on_mrk_export_locations_requested)
@@ -563,6 +565,58 @@ class MrkController:
 
     def _on_mrk_move_down_requested(self) -> None:
         self._move_mrk_entry(direction=1)
+
+    def _sort_mrk_entries(self, sort_columns: tuple[int, ...]) -> None:
+        table = self._window.mrk_entries_table
+        row_count = table.rowCount()
+        if row_count < 2:
+            return
+
+        rows = [
+            [self._table_text_value(table, row, column) for column in range(7)]
+            for row in range(row_count)
+        ]
+
+        def _sort_key(row_values: list[str]) -> tuple[object, ...]:
+            key: list[object] = []
+            for column in sort_columns:
+                if column in {0, 1, 2, 3}:
+                    try:
+                        key.append(int(row_values[column].strip()))
+                    except (TypeError, ValueError):
+                        key.append(0)
+                else:
+                    key.append(row_values[column].casefold())
+            return tuple(key)
+
+        sorted_rows = sorted(rows, key=_sort_key)
+        if sorted_rows == rows:
+            return
+
+        table.blockSignals(True)
+        for row, row_values in enumerate(sorted_rows):
+            for column, value in enumerate(row_values):
+                if column == 4:
+                    self._set_mrk_side_cell(row, value)
+                    continue
+                item = table.item(row, column)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem()
+                    table.setItem(row, column, item)
+                item.setText(value)
+                if column in {0, 1, 2, 3}:
+                    item.setTextAlignment(int(QtCore.Qt.AlignCenter))
+        table.blockSignals(False)
+        table.selectRow(0)
+        self._set_mrk_dirty(True)
+        self._update_mrk_highlights_from_table()
+        self._autosize_mrk_table_columns()
+
+    def _on_mrk_sort_by_section_requested(self) -> None:
+        self._sort_mrk_entries((0, 1, 2))
+
+    def _on_mrk_sort_by_boundary_requested(self) -> None:
+        self._sort_mrk_entries((1, 0, 2))
 
     def _on_mrk_textures_requested(self) -> None:
         dialog = MrkTexturesDialog(self._window, self._mrk_texture_definitions)

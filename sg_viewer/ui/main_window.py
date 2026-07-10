@@ -257,6 +257,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mrk_delete_entry_button = QtWidgets.QPushButton("Delete MRK Entry")
         self._mrk_move_up_button = QtWidgets.QPushButton("Move Up")
         self._mrk_move_down_button = QtWidgets.QPushButton("Move Down")
+        self._mrk_sort_by_section_button = QtWidgets.QPushButton("Sort by Section")
+        self._mrk_sort_by_boundary_button = QtWidgets.QPushButton("Sort by Boundary")
         self._mrk_textures_button = QtWidgets.QPushButton("Manage textures...")
         self._mrk_texture_pattern_show_colors_checkbox = QtWidgets.QCheckBox(
             "Show texture color boxes"
@@ -1098,7 +1100,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         mrk_buttons.addWidget(self._mrk_delete_entry_button, 0, 1)
         mrk_buttons.addWidget(self._mrk_move_up_button, 0, 2)
         mrk_buttons.addWidget(self._mrk_move_down_button, 0, 3)
-        mrk_buttons.addWidget(self._mrk_textures_button, 1, 0)
+        mrk_buttons.addWidget(self._mrk_sort_by_section_button, 1, 0)
+        mrk_buttons.addWidget(self._mrk_sort_by_boundary_button, 1, 1)
+        mrk_buttons.addWidget(self._mrk_textures_button, 1, 2)
         mrk_layout.addLayout(mrk_buttons)
         mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
         mrk_layout.addWidget(self._mrk_entries_table)
@@ -2215,6 +2219,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def mrk_move_down_button(self) -> QtWidgets.QPushButton:
         return self._mrk_move_down_button
+
+    @property
+    def mrk_sort_by_section_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_sort_by_section_button
+
+    @property
+    def mrk_sort_by_boundary_button(self) -> QtWidgets.QPushButton:
+        return self._mrk_sort_by_boundary_button
 
     @property
     def mrk_textures_button(self) -> QtWidgets.QPushButton:
