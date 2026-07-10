@@ -23,7 +23,6 @@ from sg_viewer.ui.presentation.units_presenter import (
 
 class TracksideObjectAttributesDialog(QtWidgets.QDialog):
     objectUpdated = QtCore.pyqtSignal(int, object)
-    matchingFilenameBBoxRotationApplyRequested = QtCore.pyqtSignal(int, object)
     objectPreviewUpdated = QtCore.pyqtSignal(int, object)
     previewEnded = QtCore.pyqtSignal()
 
@@ -120,20 +119,21 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow("Rotation point", self._rotation_point_combo)
         self._is_sprite_checkbox.toggled.connect(self._update_shape_controls)
 
+        self._matching_filename_note = QtWidgets.QLabel(
+            "BBox, sprite, and rotation point fields apply to all TSOs with the "
+            "same filename."
+        )
+        self._matching_filename_note.setWordWrap(True)
+
         buttons = QtWidgets.QDialogButtonBox()
         apply_button = buttons.addButton("Apply", QtWidgets.QDialogButtonBox.ApplyRole)
-        apply_matching_button = buttons.addButton(
-            "Apply BBox/Pivot to matches", QtWidgets.QDialogButtonBox.ActionRole
-        )
         close_button = buttons.addButton(QtWidgets.QDialogButtonBox.Close)
         apply_button.clicked.connect(self._apply_changes)
-        apply_matching_button.clicked.connect(
-            self._apply_bbox_rotation_to_matching_filename
-        )
         close_button.clicked.connect(self.close)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(self._matching_filename_note)
         layout.addWidget(buttons)
         self.set_measurement_unit(self._measurement_unit)
 
@@ -308,26 +308,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             return
         self._applying_changes = True
         self.objectUpdated.emit(int(self._row_index), obj)
-        self._applying_changes = False
-
-    def _apply_bbox_rotation_to_matching_filename(self) -> None:
-        obj = self._build_object_from_form()
-        if obj is None or self._row_index is None:
-            return
-        confirmation = QtWidgets.QMessageBox.question(
-            self,
-            "Apply BBox/Pivot to Matches",
-            (
-                "This will copy BBox/sprite shape settings and Rotation point "
-                f'to every TSO with filename "{obj.filename}". Continue?'
-            ),
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if confirmation != QtWidgets.QMessageBox.Yes:
-            return
-        self._applying_changes = True
-        self.matchingFilenameBBoxRotationApplyRequested.emit(int(self._row_index), obj)
         self._applying_changes = False
 
     def _build_object_from_form(

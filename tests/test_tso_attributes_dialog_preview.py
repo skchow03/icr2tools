@@ -93,46 +93,19 @@ def test_bbox_values_follow_current_measurement_unit(qapp):
         dialog.close()
 
 
-def test_apply_bbox_pivot_to_matches_confirms_before_emitting(qapp, monkeypatch):
+def test_tso_attributes_dialog_notes_matching_filename_fields_and_has_no_manual_apply_button(qapp):
     dialog = TracksideObjectAttributesDialog()
     try:
-        obj = TracksideObject(
-            filename="tower.3do",
-            x=1,
-            y=2,
-            z=3,
-            yaw=0,
-            pitch=0,
-            tilt=0,
-            description="",
-            bbox_length=6000,
-            bbox_width=12000,
-            rotation_point="center",
+        assert (
+            dialog._matching_filename_note.text()
+            == "BBox, sprite, and rotation point fields apply to all TSOs with the same filename."
         )
-        dialog.edit_object(2, obj)
-        dialog._bbox_length_spin.setValue(3.0)
-        dialog._bbox_width_spin.setValue(4.0)
-        dialog._rotation_point_combo.setCurrentIndex(dialog._rotation_point_combo.findData("top_left"))
-
-        emitted: list[tuple[int, TracksideObject]] = []
-        dialog.matchingFilenameBBoxRotationApplyRequested.connect(lambda row, updated: emitted.append((row, updated)))
-
-        monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *args, **kwargs: QtWidgets.QMessageBox.No)
-        dialog._apply_bbox_rotation_to_matching_filename()
-        assert emitted == []
-
-        monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *args, **kwargs: QtWidgets.QMessageBox.Yes)
-        dialog._apply_bbox_rotation_to_matching_filename()
-        assert len(emitted) == 1
-        row, updated = emitted[0]
-        assert row == 2
-        assert updated.filename == "tower"
-        assert updated.bbox_length == 18000
-        assert updated.bbox_width == 24000
-        assert updated.rotation_point == "top_left"
+        assert not any(
+            button.text() == "Apply BBox/Pivot to matches"
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+        )
     finally:
         dialog.close()
-
 
 def test_track3d_bbox_import_converts_from_selected_source_unit(qapp):
     from sg_viewer.io.track3d_parser import Track3DBoundingBox
