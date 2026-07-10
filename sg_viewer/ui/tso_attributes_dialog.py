@@ -218,30 +218,89 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             )
             return
 
-        unit_label = measurement_unit_label(self._measurement_unit)
-        length_value = units_from_500ths(float(bbox.length), self._measurement_unit)
-        width_value = units_from_500ths(float(bbox.width), self._measurement_unit)
-        confirmation = QtWidgets.QMessageBox.question(
-            self,
-            "Use .3D Bounding Box",
-            (
-                "The selected .3D file contains these X/Y extents:\n\n"
-                f"Minimum X: {bbox.min_x:g}\n"
-                f"Maximum X: {bbox.max_x:g}\n"
-                f"Minimum Y: {bbox.min_y:g}\n"
-                f"Maximum Y: {bbox.max_y:g}\n\n"
-                f"Set BBox Length to {length_value:g} {unit_label} and "
-                f"BBox Width to {width_value:g} {unit_label} for this object?"
-            ),
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if confirmation != QtWidgets.QMessageBox.Yes:
+        selected_values = self._confirm_track3d_bbox_units(bbox)
+        if selected_values is None:
             return
 
+        length_value, width_value = selected_values
         self._bbox_length_spin.setValue(length_value)
         self._bbox_width_spin.setValue(width_value)
         self._apply_changes()
+
+    def _confirm_track3d_bbox_units(self, bbox) -> tuple[float, float] | None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Use .3D Bounding Box")
+
+        unit_combo = QtWidgets.QComboBox(dialog)
+        unit_options = (
+            ("500ths", "500ths"),
+            ("Feet", "feet"),
+            ("Inches", "inch"),
+            ("Meters", "meter"),
+        )
+        for label, unit in unit_options:
+            unit_combo.addItem(label, unit)
+
+        current_index = unit_combo.findData(self._measurement_unit)
+        unit_combo.setCurrentIndex(current_index if current_index >= 0 else 0)
+
+        extents_label = QtWidgets.QLabel(
+            "The selected .3D file contains these X/Y extents:\n\n"
+            f"Minimum X: {bbox.min_x:g}\n"
+            f"Maximum X: {bbox.max_x:g}\n"
+            f"Minimum Y: {bbox.min_y:g}\n"
+            f"Maximum Y: {bbox.max_y:g}"
+        )
+        extents_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        result_label = QtWidgets.QLabel()
+        result_label.setWordWrap(True)
+
+        def update_result_label() -> None:
+            source_unit = str(unit_combo.currentData() or "500ths")
+            length_value, width_value = self._track3d_bbox_values_for_source_unit(
+                bbox, source_unit
+            )
+            display_unit_label = measurement_unit_label(self._measurement_unit)
+            result_label.setText(
+                f"Set BBox Length to {length_value:g} {display_unit_label} and "
+                f"BBox Width to {width_value:g} {display_unit_label} for this object?"
+            )
+
+        unit_combo.currentIndexChanged.connect(update_result_label)
+        update_result_label()
+
+        form = QtWidgets.QFormLayout()
+        form.addRow(".3D file units", unit_combo)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(extents_label)
+        layout.addLayout(form)
+        layout.addWidget(result_label)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return None
+
+        source_unit = str(unit_combo.currentData() or "500ths")
+        return self._track3d_bbox_values_for_source_unit(bbox, source_unit)
+
+    def _track3d_bbox_values_for_source_unit(
+        self, bbox, source_unit: str
+    ) -> tuple[float, float]:
+        length_500ths = units_to_500ths(float(bbox.length), source_unit)
+        width_500ths = units_to_500ths(float(bbox.width), source_unit)
+        return (
+            units_from_500ths(float(length_500ths), self._measurement_unit),
+            units_from_500ths(float(width_500ths), self._measurement_unit),
+        )
 
     def _apply_changes(self) -> None:
         obj = self._build_object_from_form()

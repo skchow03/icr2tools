@@ -132,3 +132,28 @@ def test_apply_bbox_pivot_to_matches_confirms_before_emitting(qapp, monkeypatch)
         assert updated.rotation_point == "top_left"
     finally:
         dialog.close()
+
+
+def test_track3d_bbox_import_converts_from_selected_source_unit(qapp):
+    from sg_viewer.io.track3d_parser import Track3DBoundingBox
+
+    dialog = TracksideObjectAttributesDialog()
+    try:
+        bbox = Track3DBoundingBox(min_x=0, min_y=0, max_x=2, max_y=3)
+
+        dialog.set_measurement_unit("500ths")
+        assert dialog._track3d_bbox_values_for_source_unit(bbox, "feet") == (
+            12000,
+            18000,
+        )
+        assert dialog._track3d_bbox_values_for_source_unit(bbox, "inch") == (
+            1000,
+            1500,
+        )
+
+        dialog.set_measurement_unit("feet")
+        length, width = dialog._track3d_bbox_values_for_source_unit(bbox, "meter")
+        assert length == pytest.approx(6.5616666667)
+        assert width == pytest.approx(9.8425)
+    finally:
+        dialog.close()
