@@ -176,6 +176,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._ruler_start_point: Point | None = None
         self._ruler_end_point: Point | None = None
         self._ruler_label: str = ""
+        self._ruler_notch_interval: float | None = None
         self._land_object_points_overlay: tuple[Point, ...] = ()
         self._land_object_polygons_overlay: tuple[tuple[tuple[int, ...], int, bool], ...] = ()
         self._land_object_vertex_points_overlay: tuple[Point, ...] = ()
@@ -643,22 +644,34 @@ class PreviewRuntime(PreviewRuntimeOps):
     def ruler_label(self) -> str:
         return self._ruler_label
 
+    @property
+    def ruler_notch_interval(self) -> float | None:
+        return self._ruler_notch_interval
+
     def set_ruler_overlay(
         self,
         start_point: Point | None,
         end_point: Point | None,
         label: str,
+        notch_interval: float | None = None,
     ) -> None:
         normalized_label = str(label)
+        normalized_notch_interval = (
+            float(notch_interval)
+            if notch_interval is not None and float(notch_interval) > 0.0
+            else None
+        )
         if (
             start_point == self._ruler_start_point
             and end_point == self._ruler_end_point
             and normalized_label == self._ruler_label
+            and normalized_notch_interval == self._ruler_notch_interval
         ):
             return
         self._ruler_start_point = start_point
         self._ruler_end_point = end_point
         self._ruler_label = normalized_label
+        self._ruler_notch_interval = normalized_notch_interval
         self._context.request_repaint()
 
     @property
