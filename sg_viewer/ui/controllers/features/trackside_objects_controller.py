@@ -8,6 +8,8 @@ from time import perf_counter
 from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
+from sg_viewer.io.track3d_parser import Track3DObjectList
+from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.services.track3d_tso_writer import (
     format_tso_dynamic_line,
     replace_tso_dynamic_section_in_3d_text,
@@ -16,6 +18,7 @@ from sg_viewer.services.track3d_tso_writer import (
 from sg_viewer.services.trackside_elevation import (
     TsoBoundaryElevationContext,
     closest_boundary_elevation_for_tso_with_context,
+    point_on_section,
     tso_relative_boundary_elevation,
 )
 from sg_viewer.services.trackside_objects import (
@@ -32,6 +35,7 @@ from sg_viewer.ui.presentation.units_presenter import (
 )
 from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
 from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
+from track_viewer.geometry import project_point_to_centerline
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +161,9 @@ class TracksideObjectsController:
         )
         w.tso_visibility_sidebar.objectListsSaved.connect(
             h._on_tso_visibility_lists_saved
+        )
+        w.tso_visibility_sidebar.autoAssignObjectListsRequested.connect(
+            h._on_tso_visibility_auto_assign_requested
         )
         w.preview.set_trackside_object_drag_callback(h._on_preview_tso_dragged)
         w.preview.set_trackside_object_drag_end_callback(h._on_preview_tso_drag_ended)
@@ -330,6 +337,184 @@ class TracksideObjectsController:
 
     def _on_tso_visibility_lists_changed(self) -> None:
         self._set_tso_visibility_dirty(True)
+
+    def _on_tso_visibility_auto_assign_requested(self) -> None:
+        dialog = QtWidgets.QMessageBox(self._window)
+        dialog.setIcon(QtWidgets.QMessageBox.Question)
+        dialog.setWindowTitle("Auto Assign ObjectLists")
+        dialog.setText(
+            "This will delete all existing ObjectList assignments and recreate them automatically from the current TSO positions.\n\nContinue?"
+        )
+        dialog.addButton("Cancel", QtWidgets.QMessageBox.RejectRole)
+        assign_button = dialog.addButton(
+            "Auto Assign", QtWidgets.QMessageBox.AcceptRole
+        )
+        dialog.setDefaultButton(assign_button)
+        dialog.exec_()
+        if dialog.clickedButton() is not assign_button:
+            return
+        result = self._auto_assign_object_lists()
+        if result is None:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Auto Assign ObjectLists",
+                "Auto assignment requires existing ObjectLists, section DLONG ranges, and current centerline data.",
+            )
+            return
+        assigned_count, object_list_count = result
+        self._window.preview.update()
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Auto Assignment Complete",
+            f"Assigned {assigned_count} TSOs to {object_list_count} ObjectLists.",
+        )
+
+    def _auto_assign_object_lists(self) -> tuple[int, int] | None:
+        sidebar = self._window.tso_visibility_sidebar
+        if not sidebar.object_lists:
+            return None
+        context = self._build_tso_boundary_elevation_context()
+        if context is None:
+            return None
+        ranges = getattr(sidebar, "_subsection_dlong_ranges", {})
+        if not ranges:
+            return None
+
+        rebuilt = [
+            Track3DObjectList(entry.side, int(entry.section), int(entry.sub_index), [])
+            for entry in sidebar.object_lists
+        ]
+        by_key = {
+            (entry.side, entry.section, entry.sub_index): entry for entry in rebuilt
+        }
+        sort_data: dict[int, tuple[float, float, int]] = {}
+        assigned_count = 0
+
+        for tso_id, obj in enumerate(self._trackside_objects):
+            projection = self._project_tso_for_object_list(obj, context)
+            if projection is None:
+                continue
+            dlong, dlat, wall_distance = projection
+            target = self._object_list_for_dlong(
+                by_key, ranges, dlong, "L" if dlat >= 0 else "R"
+            )
+            if target is None:
+                continue
+            target.tso_ids.append(tso_id)
+            sort_data[tso_id] = (wall_distance, dlong, tso_id)
+            assigned_count += 1
+
+        for entry in rebuilt:
+            entry.tso_ids.sort(
+                key=lambda tso_id: self._tso_painter_sort_key(tso_id, sort_data)
+            )
+
+        sidebar.apply_auto_assigned_object_lists(rebuilt)
+        return assigned_count, sum(1 for entry in rebuilt if entry.tso_ids)
+
+    def _project_tso_for_object_list(
+        self, obj: TracksideObject, context: TsoBoundaryElevationContext
+    ) -> tuple[float, float, float] | None:
+        projected_point, projected_dlong, _distance_sq = project_point_to_centerline(
+            (float(obj.x), float(obj.y)),
+            context.centerline_index,
+            context.sampled_dlongs,
+            context.track_length,
+        )
+        if projected_point is None or projected_dlong is None:
+            return None
+        mapped = dlong_to_section_position(
+            context.sections, projected_dlong, context.track_length
+        )
+        if mapped is None:
+            return None
+        section_index = int(mapped.section_index)
+        if section_index < 0 or section_index >= len(context.sections):
+            return None
+        progress = max(0.0, min(1.0, float(mapped.fraction)))
+        dlat = self._tso_dlat(context.sections[section_index], progress, obj)
+        wall_distance = self._distance_to_relevant_wall(
+            context, section_index, progress, obj, dlat
+        )
+        return float(projected_dlong), dlat, wall_distance
+
+    def _tso_dlat(
+        self, section: object, progress: float, obj: TracksideObject
+    ) -> float:
+        center = getattr(section, "center", None)
+        sx, sy = section.start
+        ex, ey = section.end
+        if center is None:
+            dx = ex - sx
+            dy = ey - sy
+            length = math.hypot(dx, dy)
+            if length <= 0:
+                return 0.0
+            cx, cy = point_on_section(section, progress, 0.0)
+            return ((float(obj.x) - cx) * (-dy / length)) + (
+                (float(obj.y) - cy) * (dx / length)
+            )
+        cx, cy = center
+        start_vec = (sx - cx, sy - cy)
+        heading = getattr(section, "start_heading", None)
+        if heading is not None:
+            ccw = start_vec[0] * heading[1] - start_vec[1] * heading[0] > 0
+        else:
+            end_vec = (ex - cx, ey - cy)
+            ccw = start_vec[0] * end_vec[1] - start_vec[1] * end_vec[0] > 0
+        radius_delta = math.hypot(float(obj.x) - cx, float(obj.y) - cy) - math.hypot(
+            *start_vec
+        )
+        return radius_delta / (-1.0 if ccw else 1.0)
+
+    def _distance_to_relevant_wall(
+        self,
+        context,
+        section_index: int,
+        progress: float,
+        obj: TracksideObject,
+        dlat: float,
+    ) -> float:
+        fsects = context.get_section_fsects(section_index)
+        candidates = [
+            fs
+            for fs in fsects
+            if fs.surface_type in {7, 8}
+            and ((fs.start_dlat + fs.end_dlat) * 0.5 >= 0) == (dlat >= 0)
+        ]
+        if not candidates:
+            candidates = [fs for fs in fsects if fs.surface_type in {7, 8}]
+        best = float("inf")
+        for fs in candidates:
+            wall_dlat = (
+                float(fs.start_dlat)
+                + (float(fs.end_dlat) - float(fs.start_dlat)) * progress
+            )
+            wx, wy = point_on_section(
+                context.sections[section_index], progress, wall_dlat
+            )
+            best = min(best, math.hypot(float(obj.x) - wx, float(obj.y) - wy))
+        return best
+
+    def _object_list_for_dlong(self, by_key, ranges, dlong: float, side: str):
+        for (section, sub_index), (start, end) in ranges.items():
+            if end is None:
+                in_range = dlong >= start
+            else:
+                in_range = (
+                    start <= dlong < end
+                    if end >= start
+                    else dlong >= start or dlong < end
+                )
+            if in_range:
+                return by_key.get((side, int(section), int(sub_index)))
+        return None
+
+    def _tso_painter_sort_key(
+        self, tso_id: int, sort_data: dict[int, tuple[float, float, int]]
+    ):
+        wall_distance, dlong, original = sort_data.get(tso_id, (0.0, 0.0, tso_id))
+        return (-wall_distance, -dlong, original)
 
     def _tso_shape_attributes_for_filename(
         self, filename: str, *, exclude_row: int | None = None

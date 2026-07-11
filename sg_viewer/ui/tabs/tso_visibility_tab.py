@@ -565,6 +565,7 @@ class TSOVisibilityTab(QWidget):
     selectedTSOOrderChanged = QtCore.pyqtSignal(object)
     objectListsChanged = QtCore.pyqtSignal()
     objectListsSaved = QtCore.pyqtSignal()
+    autoAssignObjectListsRequested = QtCore.pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -579,6 +580,7 @@ class TSOVisibilityTab(QWidget):
             "Save DetailLists to track.3D"
         )
         self.export_button = QPushButton("Export ObjectLists to File")
+        self.auto_assign_button = QPushButton("Auto Assign")
         self.add_tso_button = QPushButton("Add selected TSO to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
@@ -600,6 +602,9 @@ class TSOVisibilityTab(QWidget):
         )
         self.export_button.setToolTip(
             "Export the current ObjectLists to a standalone text file."
+        )
+        self.auto_assign_button.setToolTip(
+            "Automatically rebuild ObjectList TSO assignments from current TSO positions."
         )
         self.add_tso_button.setToolTip(
             "Add the selected TSO from the filter list to the currently selected section/sub-index."
@@ -626,6 +631,7 @@ class TSOVisibilityTab(QWidget):
             self.save_to_track3d_button,
             self.save_detail_lists_to_track3d_button,
             self.export_button,
+            self.auto_assign_button,
         ):
             bottom_button_row.addWidget(button)
         button_rows.addLayout(bottom_button_row)
@@ -709,6 +715,9 @@ class TSOVisibilityTab(QWidget):
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.reconcile_button.clicked.connect(self._on_reconcile_requested)
         self.export_button.clicked.connect(self._on_export_requested)
+        self.auto_assign_button.clicked.connect(
+            self.autoAssignObjectListsRequested.emit
+        )
         self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
         self.save_detail_lists_to_track3d_button.clicked.connect(
             self._on_save_detail_lists_to_track3d_requested
@@ -744,6 +753,18 @@ class TSOVisibilityTab(QWidget):
     def _on_visibility_mode_changed(self) -> None:
         self.copy_prev_button.setEnabled(not self._is_detail_mode())
         self.populate_table()
+
+    def apply_auto_assigned_object_lists(
+        self, object_lists: list[Track3DObjectList]
+    ) -> None:
+        self.object_lists = list(object_lists)
+        self.visibility_mode_combo.setCurrentIndex(0)
+        self._refresh_tso_filter_list()
+        self.populate_table()
+        self.selectedTSOsChanged.emit(tuple())
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTSOOrderChanged.emit({})
+        self.objectListsChanged.emit()
 
     def set_detail_lists(self, detail_lists: list[Track3DDetailList]) -> None:
         self.detail_lists = list(detail_lists)
