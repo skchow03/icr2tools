@@ -250,6 +250,60 @@ def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex
 from sg_viewer.io.track3d_parser import Track3DDetailList
 
 
+def test_clear_all_object_lists_removes_tsos_but_keeps_lists() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1, 2, 3])
+    tab.set_object_lists(
+        [
+            Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1, 2]),
+            Track3DObjectList(side="R", section=2, sub_index=1, tso_ids=[3]),
+        ]
+    )
+    tab._subsection_dlong_ranges[(1, 0)] = (10, 20)
+    tab._section_subindex_starts[1] = (0,)
+
+    tab.clear_all_object_lists()
+
+    assert [
+        (entry.side, entry.section, entry.sub_index) for entry in tab.object_lists
+    ] == [
+        ("L", 1, 0),
+        ("R", 2, 1),
+    ]
+    assert [entry.tso_ids for entry in tab.object_lists] == [[], []]
+    assert tab._subsection_dlong_ranges == {(1, 0): (10, 20)}
+    assert tab._section_subindex_starts == {1: (0,)}
+    assert tab.section_list.count() == 2
+    tab.section_list.setCurrentRow(0)
+    assert tab.tso_list.count() == 0
+
+
+def test_clear_all_detail_lists_removes_tsos_but_keeps_lists() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1, 2, 3])
+    tab.set_detail_lists(
+        [
+            Track3DDetailList(section=3, sub_index=0, lod_suffix="H", tso_ids=[1, 2]),
+            Track3DDetailList(section=4, sub_index=1, lod_suffix="M", tso_ids=[3]),
+        ]
+    )
+    tab._detail_list_dlong_ranges[(3, 0, "H")] = (30, 40)
+
+    tab.clear_all_detail_lists()
+
+    assert [
+        (entry.section, entry.sub_index, entry.lod_suffix) for entry in tab.detail_lists
+    ] == [(3, 0, "H"), (4, 1, "M")]
+    assert [entry.tso_ids for entry in tab.detail_lists] == [[], []]
+    assert tab._detail_list_tso_ids == set()
+    assert tab._detail_list_dlong_ranges == {(3, 0, "H"): (30, 40)}
+    assert tab.section_list.count() == 2
+    tab.section_list.setCurrentRow(0)
+    assert tab.tso_list.count() == 0
+
+
 def test_object_and_detail_lists_show_in_parallel_section_table() -> None:
     _app()
     tab = TSOVisibilityTab()
