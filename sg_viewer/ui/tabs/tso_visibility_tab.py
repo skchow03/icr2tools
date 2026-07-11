@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from time import perf_counter
 
 from PyQt5 import QtCore
@@ -10,7 +11,6 @@ from PyQt5.QtWidgets import (
     QDialog,
     QComboBox,
     QDialogButtonBox,
-    QFileDialog,
     QGridLayout,
     QHeaderView,
     QProgressDialog,
@@ -566,6 +566,7 @@ class TSOVisibilityTab(QWidget):
     objectListsChanged = QtCore.pyqtSignal()
     objectListsSaved = QtCore.pyqtSignal()
     autoAssignObjectListsRequested = QtCore.pyqtSignal()
+    exportLocationsRequested = QtCore.pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -579,7 +580,7 @@ class TSOVisibilityTab(QWidget):
         self.save_detail_lists_to_track3d_button = QPushButton(
             "Save DetailLists to track.3D"
         )
-        self.export_button = QPushButton("Export ObjectLists to File")
+        self.set_export_locations_button = QPushButton("Set export locations...")
         self.auto_assign_button = QPushButton("Auto Assign")
         self.add_tso_button = QPushButton("Add selected TSO to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
@@ -595,13 +596,13 @@ class TSOVisibilityTab(QWidget):
             "Compare current ObjectLists with another track.3D file and copy/add matching rows."
         )
         self.save_to_track3d_button.setToolTip(
-            "Write the current ObjectLists back into a selected track.3D file."
+            "Write the current ObjectLists back into the configured <track>.3D file."
         )
         self.save_detail_lists_to_track3d_button.setToolTip(
-            "Write current DetailList TSO assignments to a selected track.3D file while preserving TSD entries."
+            "Write current DetailList TSO assignments to the configured <track>.3D file while preserving TSD entries."
         )
-        self.export_button.setToolTip(
-            "Export the current ObjectLists to a standalone text file."
+        self.set_export_locations_button.setToolTip(
+            "Open Set export locations to choose the <track>.3D file used by these load/save actions."
         )
         self.auto_assign_button.setToolTip(
             "Automatically rebuild ObjectList TSO assignments from current TSO positions."
@@ -615,27 +616,6 @@ class TSOVisibilityTab(QWidget):
         self.copy_prev_button.setToolTip(
             "Copy the previous section's visible TSO list into the currently selected section/sub-index."
         )
-
-        button_rows = QVBoxLayout()
-        top_button_row = QHBoxLayout()
-        for button in (
-            self.load_button,
-            self.load_detail_lists_button,
-            self.reconcile_button,
-        ):
-            top_button_row.addWidget(button)
-        button_rows.addLayout(top_button_row)
-
-        bottom_button_row = QHBoxLayout()
-        for button in (
-            self.save_to_track3d_button,
-            self.save_detail_lists_to_track3d_button,
-            self.export_button,
-            self.auto_assign_button,
-        ):
-            bottom_button_row.addWidget(button)
-        button_rows.addLayout(bottom_button_row)
-        layout.addLayout(button_rows)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Visibility list type"))
@@ -684,6 +664,7 @@ class TSOVisibilityTab(QWidget):
         left_panel.addWidget(self.tso_filter_list)
 
         center_panel.addStretch(1)
+        center_panel.addWidget(self.auto_assign_button)
         center_panel.addWidget(self.add_tso_button)
         center_panel.addWidget(self.delete_tso_button)
         center_panel.addWidget(self.copy_prev_button)
@@ -714,7 +695,9 @@ class TSOVisibilityTab(QWidget):
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.reconcile_button.clicked.connect(self._on_reconcile_requested)
-        self.export_button.clicked.connect(self._on_export_requested)
+        self.set_export_locations_button.clicked.connect(
+            self.exportLocationsRequested.emit
+        )
         self.auto_assign_button.clicked.connect(
             self.autoAssignObjectListsRequested.emit
         )
@@ -742,7 +725,51 @@ class TSOVisibilityTab(QWidget):
         )
         self._section_subindex_starts: dict[int, tuple[int, ...]] = {}
         self._current_track_section_count: int | None = None
+        self._track3d_path_provider: Callable[[], object | None] | None = None
+
+        file_group = QVBoxLayout()
+        file_group.addWidget(QLabel("File"))
+        file_button_row = QHBoxLayout()
+        for button in (
+            self.set_export_locations_button,
+            self.load_button,
+            self.load_detail_lists_button,
+            self.reconcile_button,
+            self.save_to_track3d_button,
+            self.save_detail_lists_to_track3d_button,
+        ):
+            file_button_row.addWidget(button)
+        file_group.addLayout(file_button_row)
+        layout.addLayout(file_group)
+
         QtCore.QTimer.singleShot(0, self._resize_section_list)
+
+    def set_track3d_path_provider(
+        self, provider: Callable[[], object | None] | None
+    ) -> None:
+        self._track3d_path_provider = provider
+
+    def _configured_track3d_path(self, action_title: str) -> str | None:
+        if self._track3d_path_provider is None:
+            path = None
+        else:
+            path = self._track3d_path_provider()
+        if path is None or not str(path).strip():
+            QMessageBox.information(
+                self,
+                action_title,
+                "Set the <track>.3D file in Set export locations before using this action.",
+            )
+            return None
+        resolved = Path(path).expanduser()
+        if not resolved.exists():
+            QMessageBox.warning(
+                self,
+                action_title,
+                f"Configured <track>.3D file not found:\n{resolved}\n\nUse Set export locations to choose the file.",
+            )
+            return None
+        return str(resolved)
 
     def _is_detail_mode(self) -> bool:
         return self.visibility_mode_combo.currentData() == "detail"
@@ -1237,13 +1264,7 @@ class TSOVisibilityTab(QWidget):
         self._refresh_visible_tso_column(refresh_table=False)
 
     def load_detail_lists_file(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open track.3D",
-            "",
-            "3D Files (*.3D *.3d);;All Files (*)",
-        )
-
+        path = self._configured_track3d_path("Load DetailLists")
         if not path:
             return
 
@@ -1282,13 +1303,7 @@ class TSOVisibilityTab(QWidget):
         self._emit_object_lists_changed()
 
     def load_file(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open track.3D",
-            "",
-            "3D Files (*.3D *.3d);;All Files (*)",
-        )
-
+        path = self._configured_track3d_path("Load track.3D")
         if not path:
             return
 
@@ -1745,38 +1760,12 @@ class TSOVisibilityTab(QWidget):
         self._emit_track_section_and_order(row)
         self.populate_table()
 
-    def _on_export_requested(self) -> None:
-        if not self.object_lists:
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export ObjectLists",
-            "object_lists.txt",
-            "Text Files (*.txt);;All Files (*)",
-        )
-        if not path:
-            return
-
-        lines: list[str] = []
-        for entry in self.object_lists:
-            tso_parts = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids)
-            lines.append(
-                f"ObjectList_{entry.side}{entry.section}_{entry.sub_index}: LIST {{ {tso_parts} }};"
-            )
-        with open(path, "w", encoding="utf-8") as output_file:
-            output_file.write("\n".join(lines) + "\n")
-
     def _on_save_to_track3d_requested(self) -> None:
         if not self.object_lists:
             QMessageBox.information(self, "Save ObjectLists", "No ObjectLists to save.")
             return
 
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select track.3D to update",
-            "",
-            "3D Files (*.3D *.3d);;All Files (*)",
-        )
+        path = self._configured_track3d_path("Save ObjectLists")
         if not path:
             return
         if not track3d_has_object_lists(path):
@@ -1831,12 +1820,7 @@ class TSOVisibilityTab(QWidget):
             QMessageBox.information(self, "Save DetailLists", "No DetailLists to save.")
             return
 
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select track.3D to update",
-            "",
-            "3D Files (*.3D *.3d);;All Files (*)",
-        )
+        path = self._configured_track3d_path("Save DetailLists")
         if not path:
             return
         if not track3d_has_detail_lists(path):
@@ -1895,12 +1879,7 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
 
     def _on_reconcile_requested(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open track.3D to reconcile",
-            "",
-            "3D Files (*.3D *.3d);;All Files (*)",
-        )
+        path = self._configured_track3d_path("Reconcile track.3D")
         if not path:
             return
         if not track3d_has_object_lists(path):
