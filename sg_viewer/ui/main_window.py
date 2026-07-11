@@ -1466,6 +1466,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         preview_column_layout = QtWidgets.QVBoxLayout()
         preview_column_layout.addWidget(toolbar_panel.widget)
         preview_column_layout.addWidget(self._quick_display_toolbar)
+        self._geometry_viewport_toolbar = self._create_tab_button_panel(
+            None, self._geometry_tab_buttons()
+        )
+        self._geometry_viewport_toolbar.setVisible(False)
+        preview_column_layout.addWidget(self._geometry_viewport_toolbar)
         preview_column_layout.addWidget(self._preview, stretch=5)
         stats_panel = self._create_section_inspector_panel()
         self._stats_sidebar_panel = stats_panel
@@ -1982,7 +1987,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _create_tab_button_panel(
         self,
-        title: str,
+        title: str | None,
         buttons: tuple[QtWidgets.QPushButton, ...],
     ) -> QtWidgets.QFrame:
         panel = QtWidgets.QFrame()
@@ -1991,9 +1996,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        title_label = QtWidgets.QLabel(title)
-        title_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(title_label)
+        if title:
+            title_label = QtWidgets.QLabel(title)
+            title_label.setStyleSheet("font-weight: bold;")
+            layout.addWidget(title_label)
 
         button_row = QtWidgets.QHBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
@@ -2010,16 +2016,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _create_tab_with_button_panel(
         self,
         *,
-        title: str,
+        title: str | None,
         buttons: tuple[QtWidgets.QPushButton, ...],
         content: QtWidgets.QWidget,
+        panel_position: str = "top",
     ) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        layout.addWidget(self._create_tab_button_panel(title, buttons))
-        layout.addWidget(content, stretch=1)
+        button_panel = self._create_tab_button_panel(title, buttons)
+        if panel_position == "bottom":
+            layout.addWidget(content, stretch=1)
+            layout.addWidget(button_panel)
+        else:
+            layout.addWidget(button_panel)
+            layout.addWidget(content, stretch=1)
         return widget
 
     def _geometry_tab_buttons(self) -> tuple[GeometryTabButton, ...]:
@@ -2063,6 +2075,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             button.set_geometry_tab_active(geometry_active)
         for button in self._elevation_toolbar_buttons():
             button.set_elevation_tab_active(elevation_active)
+        geometry_toolbar = getattr(self, "_geometry_viewport_toolbar", None)
+        if geometry_toolbar is not None:
+            geometry_toolbar.setVisible(geometry_active)
         self._preview.set_centerline_editing_enabled(geometry_active)
         self._preview.set_section_drag_enabled(
             geometry_active and self._move_section_button.isChecked()
@@ -2106,18 +2121,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._right_sidebar_tabs.addTab(tab_widget, label)
             return tab_widget
 
-        geometry_widget = self._create_tab_with_button_panel(
-            title="Geometry Tools",
-            buttons=self._geometry_tab_buttons(),
-            content=section_widget,
-        )
-        self._right_sidebar_tabs.addTab(geometry_widget, "Geometry")
+        self._right_sidebar_tabs.addTab(section_widget, "Geometry")
         self._sidebar_feature_tab_widgets["Geometry"] = section_widget
 
         elevation_tab_widget = self._create_tab_with_button_panel(
-            title="Elevation Tools",
+            title=None,
             buttons=self._elevation_toolbar_buttons(),
             content=elevation_widget,
+            panel_position="bottom",
         )
         self._right_sidebar_tabs.addTab(elevation_tab_widget, "Elevation")
         self._sidebar_feature_tab_widgets["Elevation"] = elevation_widget
