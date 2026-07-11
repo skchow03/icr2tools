@@ -357,3 +357,47 @@ def test_detail_list_mode_disables_copy_previous_and_emits_dlong_range() -> None
     assert sections[-1]["sub_index"] == 1
     assert sections[-1]["start_dlong"] == 100
     assert sections[-1]["end_dlong"] == 200
+
+
+def test_unassigned_tso_memo_reports_tsos_missing_from_object_and_detail_lists() -> (
+    None
+):
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_tso_display_metadata(
+        {1: ("tree", "oak"), 4: ("marshal", ""), 5: ("sign", "brake")}
+    )
+    tab.set_available_tso_ids([1, 2, 3, 4, 5])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
+    tab.set_detail_lists(
+        [Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[3])]
+    )
+
+    memo = tab.build_unassigned_tso_memo()
+
+    assert "Subject: TSO Visibility Assignment Review" in memo
+    assert "Unassigned TSOs: 3" in memo
+    assert "__TSO2" in memo
+    assert "__TSO4 (marshal)" in memo
+    assert "__TSO5 (sign — brake)" in memo
+    assert "__TSO1 (tree — oak)" not in memo.split("Findings:", 1)[1]
+    assert "__TSO3" not in memo.split("Findings:", 1)[1]
+
+
+def test_unassigned_tso_memo_reports_clean_assignment() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1, 2])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
+    tab.set_detail_lists(
+        [Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[2])]
+    )
+
+    memo = tab.build_unassigned_tso_memo()
+
+    assert "Unassigned TSOs: 0" in memo
+    assert "No unassigned TSOs found." in memo
