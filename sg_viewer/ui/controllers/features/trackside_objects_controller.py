@@ -1652,7 +1652,13 @@ class TracksideObjectsController:
                 f"Could not save objects file:\n{exc}",
             )
             return
+        message = f"Saved objects.txt to:\n{path}"
         self._window.show_status_message(f"Saved objects.txt to {path}")
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Generate objects.txt",
+            message,
+        )
 
     @staticmethod
     def _track3d_newline_style(text: str) -> str:
@@ -1737,6 +1743,13 @@ class TracksideObjectsController:
                 f"Could not write file:\n{exc}",
             )
             return
-        self._window.show_status_message(
-            f"Updated {path.name}: replaced {replaced_count} TSO line(s) with {len(self._trackside_objects)} project TSO(s)."
+        message = (
+            f"Updated {path.name}: replaced {replaced_count} TSO line(s) "
+            f"with {len(self._trackside_objects)} project TSO(s)."
+        )
+        self._window.show_status_message(message)
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Write to .3D file",
+            message,
         )

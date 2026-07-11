@@ -3141,6 +3141,77 @@ def test_show_unique_tso_list_dialog_shows_empty_message_when_no_tsos(qapp):
         window.close()
 
 
+def test_generate_objects_txt_reports_success_dialog(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    messages: list[tuple[str, str]] = []
+    try:
+        objects_path = tmp_path / "objects.txt"
+        window.controller._trackside_objects = [
+            TracksideObject("cone.3do", 1, 2, 3, 4, 5, 6)
+        ]
+        monkeypatch.setattr(
+            window.controller,
+            "_configured_tso_export_paths",
+            lambda: (tmp_path / "track.3d", objects_path),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "information",
+            lambda _parent, title, text, *args, **kwargs: messages.append(
+                (title, text)
+            ),
+        )
+
+        window.controller._on_tso_generate_file_requested()
+
+        assert objects_path.exists()
+        assert messages == [
+            ("Generate objects.txt", f"Saved objects.txt to:\n{objects_path}")
+        ]
+    finally:
+        window.close()
+
+
+def test_write_tso_to_3d_file_reports_success_dialog(qapp, tmp_path, monkeypatch):
+    window = SGViewerWindow()
+    messages: list[tuple[str, str]] = []
+    try:
+        track3d_path = tmp_path / "track.3d"
+        track3d_path.write_text(
+            '__TSO0: DYNAMIC 1, 2, 3, 4, 5, 6, 1, EXTERN "old";\n',
+            encoding="utf-8",
+        )
+        window.controller._trackside_objects = [
+            TracksideObject("cone", 10, 20, 30, 40, 50, 60)
+        ]
+        monkeypatch.setattr(
+            window.controller,
+            "_configured_tso_export_paths",
+            lambda: (track3d_path, tmp_path / "objects.txt"),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "information",
+            lambda _parent, title, text, *args, **kwargs: messages.append(
+                (title, text)
+            ),
+        )
+
+        window.controller._on_tso_write_to_3d_file_requested()
+
+        assert '__TSO0: DYNAMIC 10, 20, 30, 40, 50, 60, 1, EXTERN "cone";' in (
+            track3d_path.read_text(encoding="utf-8")
+        )
+        assert messages == [
+            (
+                "Write to .3D file",
+                "Updated track.3d: replaced 1 TSO line(s) with 1 project TSO(s).",
+            )
+        ]
+    finally:
+        window.close()
+
+
 def test_fsect_diagram_uses_wrapped_neighbor_sections(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
