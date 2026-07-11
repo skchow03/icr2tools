@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
 
@@ -168,14 +167,6 @@ class TracksideObjectsController:
         start = perf_counter()
         table = self._window.tso_table
         self._update_tso_table_headers()
-        boundary_context = (
-            self._build_tso_boundary_elevation_context()
-            if self._auto_update_tso_relative_z
-            else None
-        )
-        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = (
-            {} if self._auto_update_tso_relative_z else {}
-        )
         previous_state = table.blockSignals(True)
         try:
             expected_row_count = len(self._trackside_objects)
@@ -184,26 +175,12 @@ class TracksideObjectsController:
                 table.setRowCount(expected_row_count)
             self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
             for row, obj in enumerate(self._trackside_objects):
-                relative_z = (
-                    self._tso_relative_boundary_elevation(
-                        obj,
-                        context=boundary_context,
-                        memo=boundary_cache,
-                    )
-                    if self._auto_update_tso_relative_z
-                    else None
-                )
                 values = [
                     f"__TSO{row}",
                     normalize_trackside_filename(obj.filename),
                     self._format_tso_distance_for_display(int(obj.x)),
                     self._format_tso_distance_for_display(int(obj.y)),
                     self._format_tso_distance_for_display(int(obj.z)),
-                    (
-                        self._format_tso_distance_for_display(relative_z)
-                        if relative_z is not None
-                        else ""
-                    ),
                 ]
                 for column, value in enumerate(values):
                     item = table.item(row, column)
@@ -413,7 +390,7 @@ class TracksideObjectsController:
         self._set_tso_visibility_dirty(False)
 
     def _on_tso_table_cell_clicked(self, row: int, column: int) -> None:
-        if column == 6:
+        if column == 5:
             self._open_tso_attributes_dialog(row)
 
     def _open_tso_attributes_dialog(self, row: int) -> None:
@@ -539,17 +516,6 @@ class TracksideObjectsController:
         include_relative_z: bool | None = None,
     ) -> None:
         table = self._window.tso_table
-        should_update_relative_z = (
-            self._auto_update_tso_relative_z
-            if include_relative_z is None
-            else include_relative_z
-        )
-        boundary_context = (
-            self._build_tso_boundary_elevation_context()
-            if should_update_relative_z
-            else None
-        )
-        boundary_cache: dict[tuple[int, int, int, int, int], int | None] = {}
         previous_state = table.blockSignals(True)
         try:
             for index in indices:
@@ -568,18 +534,6 @@ class TracksideObjectsController:
                         z_item.setText(
                             self._format_tso_distance_for_display(int(obj.z))
                         )
-                relative_z_item = table.item(index, 5)
-                if relative_z_item is not None and should_update_relative_z:
-                    relative_z = self._tso_relative_boundary_elevation(
-                        obj,
-                        context=boundary_context,
-                        memo=boundary_cache,
-                    )
-                    relative_z_item.setText(
-                        self._format_tso_distance_for_display(relative_z)
-                        if relative_z is not None
-                        else ""
-                    )
         finally:
             table.blockSignals(previous_state)
 
@@ -599,13 +553,6 @@ class TracksideObjectsController:
                 self._format_tso_distance_for_display(int(obj.x)),
                 self._format_tso_distance_for_display(int(obj.y)),
                 self._format_tso_distance_for_display(int(obj.z)),
-                (
-                    self._format_tso_distance_for_display(relative_z)
-                    if self._auto_update_tso_relative_z
-                    and (relative_z := self._tso_relative_boundary_elevation(obj))
-                    is not None
-                    else ""
-                ),
             ]
             for column, value in enumerate(values):
                 item = table.item(row, column)
@@ -633,7 +580,7 @@ class TracksideObjectsController:
 
     def _ensure_tso_table_row_button(self, row: int) -> None:
         table = self._window.tso_table
-        existing_widget = table.cellWidget(row, 6)
+        existing_widget = table.cellWidget(row, 5)
         button = (
             existing_widget
             if isinstance(existing_widget, QtWidgets.QPushButton)
@@ -641,7 +588,7 @@ class TracksideObjectsController:
         )
         if button is None:
             button = QtWidgets.QPushButton("Edit…")
-            table.setCellWidget(row, 6, button)
+            table.setCellWidget(row, 5, button)
         try:
             button.clicked.disconnect(self._on_tso_attributes_button_clicked)
         except TypeError:
@@ -667,7 +614,6 @@ class TracksideObjectsController:
                 f"X ({unit_label})",
                 f"Y ({unit_label})",
                 f"Z ({unit_label})",
-                f"Z rel. boundary ({unit_label})",
                 "Attributes",
             ]
         )
@@ -1484,19 +1430,6 @@ class TracksideObjectsController:
             )
             if inherited_attributes is not None:
                 obj = self._with_tso_shape_attributes(obj, inherited_attributes)
-            if item.column() == 5:
-                relative_z = self._parse_tso_distance_from_display(
-                    table.item(row, 5).text() if table.item(row, 5) else "0"
-                )
-                boundary_elevation = (
-                    self._closest_boundary_elevation_for_tso_with_context(
-                        obj,
-                        context=self._build_tso_boundary_elevation_context(),
-                    )
-                )
-                if boundary_elevation is None:
-                    raise ValueError
-                obj = replace(obj, z=int(boundary_elevation) + relative_z)
         except ValueError:
             self._refresh_tso_table()
             return
