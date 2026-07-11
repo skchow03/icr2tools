@@ -899,7 +899,7 @@ class SGViewerController:
         )
         self._sg_settings_store.set_tso_auto_update_relative_z(
             self._current_path,
-            self._auto_update_tso_relative_z,
+            False,
         )
         logger.debug(
             "Persisted full TSD state in %.3f ms", (perf_counter() - start) * 1000.0
@@ -940,18 +940,7 @@ class SGViewerController:
         if self._current_path is None:
             self.set_land_objects_dirty(False)
             return
-        persisted_auto_update_relative_z = (
-            self._sg_settings_store.get_tso_auto_update_relative_z(self._current_path)
-        )
-        self._auto_update_tso_relative_z = (
-            bool(persisted_auto_update_relative_z)
-            if persisted_auto_update_relative_z is not None
-            else False
-        )
-        checkbox = self._window.tso_auto_update_relative_z_checkbox
-        previous_state = checkbox.blockSignals(True)
-        checkbox.setChecked(self._auto_update_tso_relative_z)
-        checkbox.blockSignals(previous_state)
+        self._auto_update_tso_relative_z = False
         if progress_callback is not None:
             progress_callback(1, "Restoring Track3D file and color settings…")
         persisted_track3d_colors = self._sg_settings_store.get_track3d_colors(
