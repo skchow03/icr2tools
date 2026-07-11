@@ -590,6 +590,8 @@ class TSOVisibilityTab(QWidget):
         self.add_tso_button = QPushButton("Add selected TSO to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
+        self.clear_all_object_lists_button = QPushButton("Clear all ObjectLists")
+        self.clear_all_detail_lists_button = QPushButton("Clear all DetailLists")
 
         self.load_button.setToolTip(
             "Load ObjectLists from a track.3D file. This replaces the current TSO visibility data."
@@ -620,6 +622,12 @@ class TSOVisibilityTab(QWidget):
         )
         self.copy_prev_button.setToolTip(
             "Copy the previous section's visible TSO list into the currently selected section/sub-index."
+        )
+        self.clear_all_object_lists_button.setToolTip(
+            "Clear all ObjectList entries from the TSO Visibility tab."
+        )
+        self.clear_all_detail_lists_button.setToolTip(
+            "Clear all DetailList entries from the TSO Visibility tab."
         )
 
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
@@ -665,6 +673,8 @@ class TSOVisibilityTab(QWidget):
         center_panel.addWidget(self.add_tso_button)
         center_panel.addWidget(self.delete_tso_button)
         center_panel.addWidget(self.copy_prev_button)
+        center_panel.addWidget(self.clear_all_object_lists_button)
+        center_panel.addWidget(self.clear_all_detail_lists_button)
         center_panel.addStretch(1)
 
         right_panel.addWidget(QLabel("Visible TSOs (drag to reorder)"))
@@ -691,6 +701,8 @@ class TSOVisibilityTab(QWidget):
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
+        self.clear_all_object_lists_button.clicked.connect(self.clear_all_object_lists)
+        self.clear_all_detail_lists_button.clicked.connect(self.clear_all_detail_lists)
         self.reconcile_button.clicked.connect(self._on_reconcile_requested)
         self.set_export_locations_button.clicked.connect(
             self.exportLocationsRequested.emit
@@ -1006,6 +1018,28 @@ class TSOVisibilityTab(QWidget):
         if tso_id not in assigned_ids:
             return f"{label} *"
         return label
+
+    def _refresh_after_clearing_visibility_lists(self) -> None:
+        self._refresh_tso_filter_list()
+        self.populate_table()
+        self.tso_list.clear()
+        self.selectedTSOsChanged.emit(tuple())
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTrackSectionChanged.emit(None)
+        self.selectedTSOOrderChanged.emit({})
+        self.objectListsChanged.emit()
+
+    def clear_all_object_lists(self) -> None:
+        self.object_lists = []
+        self._subsection_dlong_ranges = {}
+        self._section_subindex_starts = {}
+        self._refresh_after_clearing_visibility_lists()
+
+    def clear_all_detail_lists(self) -> None:
+        self.detail_lists = []
+        self._detail_list_tso_ids = set()
+        self._detail_list_dlong_ranges = {}
+        self._refresh_after_clearing_visibility_lists()
 
     def clear_object_lists(self) -> None:
         self.object_lists = []
