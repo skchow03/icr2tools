@@ -319,7 +319,7 @@ class SGSettingsStore:
         if not isinstance(raw, dict):
             return {}
         locations: dict[str, Path] = {}
-        for key in ("pitwall_txt", "mrk_file"):
+        for key in ("pitwall_txt", "mrk_file", "track_3d", "objects_txt"):
             value = raw.get(key)
             if not isinstance(value, str) or not value.strip():
                 continue
@@ -330,10 +330,20 @@ class SGSettingsStore:
         return locations
 
     def set_mrk_export_locations(
-        self, sg_path: Path, pitwall_txt: Path | None, mrk_file: Path | None
+        self,
+        sg_path: Path,
+        pitwall_txt: Path | None,
+        mrk_file: Path | None,
+        track_3d: Path | None = None,
+        objects_txt: Path | None = None,
     ) -> None:
         values: dict[str, str] = {}
-        for key, path in (("pitwall_txt", pitwall_txt), ("mrk_file", mrk_file)):
+        for key, path in (
+            ("pitwall_txt", pitwall_txt),
+            ("mrk_file", mrk_file),
+            ("track_3d", track_3d),
+            ("objects_txt", objects_txt),
+        ):
             if path is None:
                 continue
             stored_path = path

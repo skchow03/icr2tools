@@ -320,7 +320,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._mrk_texture_pattern_show_colors_checkbox.setChecked(True)
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
-        self._mrk_export_locations_button = QtWidgets.QPushButton("Export locations...")
+        self._mrk_export_locations_button = QtWidgets.QPushButton("Set export locations...")
         self._mrk_save_button = QtWidgets.QPushButton("Export MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Import MRK entries")
         self._generate_pitwall_button = QtWidgets.QPushButton("Generate pitwall.txt")
@@ -406,6 +406,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tso_write_to_3d_file_button = QtWidgets.QPushButton(
             "Write to .3D file (in place)"
+        )
+        self._tso_export_locations_button = QtWidgets.QPushButton(
+            "Set export locations..."
         )
         self._land_objects_table = QtWidgets.QTableWidget(0, 2)
         self._land_object_name_edit = QtWidgets.QLineEdit()
@@ -1333,17 +1336,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_buttons.addWidget(self._tso_delete_button, 0, 3)
         tso_buttons.addWidget(self._tso_move_up_button, 0, 4)
         tso_buttons.addWidget(self._tso_move_down_button, 0, 5)
-        tso_buttons.addWidget(self._tso_import_from_3d_button, 1, 0)
-        tso_buttons.addWidget(self._tso_delete_all_button, 1, 1)
-        tso_buttons.addWidget(self._tso_modify_elevations_button, 1, 2)
-        tso_buttons.addWidget(self._tso_refresh_relative_boundary_button, 1, 3)
-        tso_buttons.addWidget(self._tso_auto_update_relative_z_checkbox, 1, 4, 1, 2)
+        tso_buttons.addWidget(self._tso_delete_all_button, 1, 0)
+        tso_buttons.addWidget(self._tso_modify_elevations_button, 1, 1)
+        tso_buttons.addWidget(self._tso_refresh_relative_boundary_button, 1, 2)
+        tso_buttons.addWidget(self._tso_auto_update_relative_z_checkbox, 1, 3, 1, 3)
         tso_layout.addLayout(tso_buttons)
-        tso_export_buttons = QtWidgets.QHBoxLayout()
-        tso_export_buttons.addWidget(self._tso_generate_file_button)
-        tso_export_buttons.addWidget(self._tso_write_to_3d_file_button)
-        tso_layout.addLayout(tso_export_buttons)
         tso_layout.addWidget(self._tso_table)
+        tso_files_group = QtWidgets.QGroupBox("Files")
+        tso_files_layout = QtWidgets.QGridLayout()
+        tso_files_layout.setHorizontalSpacing(8)
+        tso_files_layout.setVerticalSpacing(6)
+        tso_files_layout.addWidget(self._tso_import_from_3d_button, 0, 0)
+        tso_files_layout.addWidget(self._tso_generate_file_button, 0, 1)
+        tso_files_layout.addWidget(self._tso_write_to_3d_file_button, 0, 2)
+        tso_files_layout.addWidget(self._tso_export_locations_button, 1, 0, 1, 3)
+        tso_files_group.setLayout(tso_files_layout)
+        tso_layout.addWidget(tso_files_group)
         self._tso_sidebar.setLayout(tso_layout)
         self._tso_import_from_3d_button.setToolTip(
             "Import TSOs from an existing .3D file and replace all current TSOs."
@@ -2656,6 +2664,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_generate_file_button(self) -> QtWidgets.QPushButton:
         return self._tso_generate_file_button
+
+    @property
+    def tso_export_locations_button(self) -> QtWidgets.QPushButton:
+        return self._tso_export_locations_button
 
     @property
     def tso_write_to_3d_file_button(self) -> QtWidgets.QPushButton:

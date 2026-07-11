@@ -36,18 +36,22 @@ logger = logging.getLogger(__name__)
 
 
 class MrkExportLocationsDialog(QtWidgets.QDialog):
-    """Dialog for project-persisted MRK/pitwall export locations."""
+    """Dialog for project-persisted export locations."""
 
     def __init__(
         self,
         pitwall_path: Path,
         mrk_path: Path,
+        track3d_path: Path,
+        objects_path: Path,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("MRK Export Locations")
+        self.setWindowTitle("Set export locations")
         self._pitwall_edit = QtWidgets.QLineEdit(str(pitwall_path))
         self._mrk_edit = QtWidgets.QLineEdit(str(mrk_path))
+        self._track3d_edit = QtWidgets.QLineEdit(str(track3d_path))
+        self._objects_edit = QtWidgets.QLineEdit(str(objects_path))
 
         layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
@@ -65,6 +69,22 @@ class MrkExportLocationsDialog(QtWidgets.QDialog):
                 self._mrk_edit,
                 "Select MRK File Location",
                 "MRK Files (*.mrk);;All Files (*)",
+            ),
+        )
+        form.addRow(
+            "<track>.3d:",
+            self._path_row(
+                self._track3d_edit,
+                "Select Track .3D File Location",
+                "Track 3D Files (*.3d *.3D);;All Files (*)",
+            ),
+        )
+        form.addRow(
+            "objects.txt:",
+            self._path_row(
+                self._objects_edit,
+                "Select objects.txt Location",
+                "Text Files (*.txt);;All Files (*)",
             ),
         )
         layout.addLayout(form)
@@ -94,8 +114,13 @@ class MrkExportLocationsDialog(QtWidgets.QDialog):
         if path_str:
             edit.setText(path_str)
 
-    def paths(self) -> tuple[Path, Path]:
-        return Path(self._pitwall_edit.text()).expanduser(), Path(self._mrk_edit.text()).expanduser()
+    def paths(self) -> tuple[Path, Path, Path, Path]:
+        return (
+            Path(self._pitwall_edit.text()).expanduser(),
+            Path(self._mrk_edit.text()).expanduser(),
+            Path(self._track3d_edit.text()).expanduser(),
+            Path(self._objects_edit.text()).expanduser(),
+        )
 
 
 class _MrkTexturePatternDelegate(QtWidgets.QStyledItemDelegate):
@@ -194,6 +219,7 @@ class MrkController:
         w.mrk_textures_button.clicked.connect(self._on_mrk_textures_requested)
         w.mrk_generate_file_button.clicked.connect(self._on_mrk_generate_file_requested)
         w.mrk_export_locations_button.clicked.connect(self._on_mrk_export_locations_requested)
+        w.tso_export_locations_button.clicked.connect(self._on_mrk_export_locations_requested)
         w.mrk_save_button.clicked.connect(self._on_mrk_save_requested)
         w.mrk_load_button.clicked.connect(self._on_mrk_load_requested)
         w.mrk_texture_pattern_show_colors_checkbox.toggled.connect(self._on_mrk_texture_pattern_display_mode_changed)
@@ -231,38 +257,62 @@ class MrkController:
             f"Saved {len(self._manual_wall_height_overrides)} manual wall height override(s)."
         )
 
-    def _default_export_paths(self) -> tuple[Path, Path]:
+    def _default_export_paths(self) -> tuple[Path, Path, Path, Path]:
         base_dir = Path(self._dialog_default_directory())
         track_name = self._current_path.stem if self._current_path is not None else "track"
-        return base_dir / "pitwall.txt", base_dir / f"{track_name}.mrk"
+        track3d_path = self._host._track3d_tools_controller._track3d_path_for_current_project()
+        return (
+            base_dir / "pitwall.txt",
+            base_dir / f"{track_name}.mrk",
+            track3d_path or base_dir / f"{track_name}.3d",
+            base_dir / "objects.txt",
+        )
 
-    def _configured_export_paths(self) -> tuple[Path, Path]:
-        pitwall_path, mrk_path = self._default_export_paths()
+    def _configured_all_export_paths(self) -> tuple[Path, Path, Path, Path]:
+        pitwall_path, mrk_path, track3d_path, objects_path = self._default_export_paths()
         if self._current_path is not None:
             locations = self._sg_settings_store.get_mrk_export_locations(self._current_path)
             pitwall_path = locations.get("pitwall_txt", pitwall_path)
             mrk_path = locations.get("mrk_file", mrk_path)
+            track3d_path = locations.get("track_3d", track3d_path)
+            objects_path = locations.get("objects_txt", objects_path)
+        return pitwall_path, mrk_path, track3d_path, objects_path
+
+    def _configured_export_paths(self) -> tuple[Path, Path]:
+        pitwall_path, mrk_path, _track3d_path, _objects_path = self._configured_all_export_paths()
         return pitwall_path, mrk_path
 
-    def _persist_export_paths(self, pitwall_path: Path, mrk_path: Path) -> None:
+    def _persist_export_paths(
+        self,
+        pitwall_path: Path,
+        mrk_path: Path,
+        track3d_path: Path,
+        objects_path: Path,
+    ) -> None:
         if self._current_path is None:
             return
         self._sg_settings_store.set_mrk_export_locations(
-            self._current_path, pitwall_path, mrk_path
+            self._current_path, pitwall_path, mrk_path, track3d_path, objects_path
         )
 
     def _on_mrk_export_locations_requested(self) -> None:
-        pitwall_path, mrk_path = self._configured_export_paths()
-        dialog = MrkExportLocationsDialog(pitwall_path, mrk_path, self._window)
+        pitwall_path, mrk_path, track3d_path, objects_path = self._configured_all_export_paths()
+        dialog = MrkExportLocationsDialog(
+            pitwall_path, mrk_path, track3d_path, objects_path, self._window
+        )
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
-        pitwall_path, mrk_path = dialog.paths()
+        pitwall_path, mrk_path, track3d_path, objects_path = dialog.paths()
         if not pitwall_path.suffix:
             pitwall_path = pitwall_path.with_suffix(".txt")
         if mrk_path.suffix.lower() != ".mrk":
             mrk_path = mrk_path.with_suffix(".mrk")
-        self._persist_export_paths(pitwall_path, mrk_path)
-        self._window.show_status_message("Updated MRK export locations.")
+        if track3d_path.suffix.lower() != ".3d":
+            track3d_path = track3d_path.with_suffix(".3d")
+        if not objects_path.suffix:
+            objects_path = objects_path.with_suffix(".txt")
+        self._persist_export_paths(pitwall_path, mrk_path, track3d_path, objects_path)
+        self._window.show_status_message("Updated export locations.")
 
     def _pitwall_export_path(self) -> Path | None:
         pitwall_path, _mrk_path = self._configured_export_paths()

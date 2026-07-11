@@ -1153,7 +1153,7 @@ class TracksideObjectsController:
             "Import TSOs from .3D",
             (
                 "This will clear and replace the current TSO list with TSOs parsed from "
-                "the selected .3D file. Continue?"
+                "the configured .3D file. Continue?"
             ),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No,
@@ -1161,23 +1161,7 @@ class TracksideObjectsController:
         if proceed != QtWidgets.QMessageBox.Yes:
             return
 
-        default_path = ""
-        selected_track3d = (
-            self._host._track3d_tools_controller._track3d_path_for_current_project()
-        )
-        if selected_track3d is not None:
-            default_path = str(selected_track3d)
-
-        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
-            self._window,
-            "Open track .3D file",
-            default_path,
-            "Track 3D Files (*.3d *.3D);;All Files (*)",
-        )
-        if not path_str:
-            return
-
-        path = Path(path_str)
+        path, _objects_path = self._configured_tso_export_paths()
         try:
             catalog = parse_track3d_catalog(path)
         except OSError as exc:
@@ -1547,21 +1531,23 @@ class TracksideObjectsController:
             "Refreshed Z rel. boundary values from current track geometry."
         )
 
+    def _configured_tso_export_paths(self) -> tuple[Path, Path]:
+        _pitwall_path, _mrk_path, track3d_path, objects_path = (
+            self._host._mrk_controller._configured_all_export_paths()
+        )
+        if track3d_path.suffix.lower() != ".3d":
+            track3d_path = track3d_path.with_suffix(".3d")
+        if not objects_path.suffix:
+            objects_path = objects_path.with_suffix(".txt")
+        return track3d_path, objects_path
+
     def _on_tso_generate_file_requested(self) -> None:
         if not self._trackside_objects:
             QtWidgets.QMessageBox.information(
                 self._window, "Generate objects.txt", "No TSOs to export."
             )
             return
-        path_str, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
-            self._window,
-            "Save objects.txt",
-            self._dialog_default_file_path("objects.txt"),
-            "Text Files (*.txt);;All files (*)",
-        )
-        if not path_str:
-            return
-        path = Path(path_str)
+        _track3d_path, path = self._configured_tso_export_paths()
         try:
             path.write_text(
                 serialize_objects_txt(self._trackside_objects), encoding="utf-8"
@@ -1593,18 +1579,7 @@ class TracksideObjectsController:
         )
 
     def _on_tso_write_to_3d_file_requested(self) -> None:
-        path_str, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(
-            self._window,
-            "Select track .3D file to update",
-            str(
-                self._host._track3d_tools_controller._track3d_path_for_current_project()
-                or ""
-            ),
-            "Track 3D Files (*.3d *.3D);;All Files (*)",
-        )
-        if not path_str:
-            return
-        path = Path(path_str)
+        path, _objects_path = self._configured_tso_export_paths()
         try:
             original_text = path.read_text(encoding="utf-8", errors="ignore")
             catalog = parse_track3d_catalog(path)
