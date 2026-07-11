@@ -348,29 +348,31 @@ class TracksideObjectsController:
         options = self._prompt_auto_assign_object_lists_options()
         if options is None:
             return
-        selected_tso_ids, clear_existing = options
-        result = self._auto_assign_object_lists(
+        selected_tso_ids, clear_existing, target_lists = options
+        result = self._auto_assign_visibility_lists(
             selected_tso_ids=selected_tso_ids,
             clear_existing=clear_existing,
+            target_lists=target_lists,
         )
+        target_label = "DetailLists" if target_lists == "detail" else "ObjectLists"
         if result is None:
             QtWidgets.QMessageBox.warning(
                 self._window,
-                "Auto Assign ObjectLists",
-                "Auto assignment requires existing ObjectLists, section DLONG ranges, and current centerline data.",
+                f"Auto Assign {target_label}",
+                f"Auto assignment requires existing {target_label}, DLONG ranges, and current centerline data.",
             )
             return
-        assigned_count, object_list_count = result
+        assigned_count, assigned_list_count = result
         self._window.preview.update()
         QtWidgets.QMessageBox.information(
             self._window,
             "Auto Assignment Complete",
-            f"Assigned {assigned_count} TSOs to {object_list_count} ObjectLists.",
+            f"Assigned {assigned_count} TSOs to {assigned_list_count} {target_label}.",
         )
 
     def _prompt_auto_assign_object_lists_options(
         self,
-    ) -> tuple[set[int], bool] | None:
+    ) -> tuple[set[int], bool, str] | None:
         sidebar = self._window.tso_visibility_sidebar
         available_tso_ids = sorted(
             {
@@ -388,11 +390,13 @@ class TracksideObjectsController:
             )
         )
 
-        all_radio = QtWidgets.QRadioButton("Assign all TSOs")
-        selected_radio = QtWidgets.QRadioButton("Assign only checked TSOs")
-        all_radio.setChecked(True)
-        layout.addWidget(all_radio)
-        layout.addWidget(selected_radio)
+        selection_row = QtWidgets.QHBoxLayout()
+        select_all_button = QtWidgets.QPushButton("Select All")
+        deselect_all_button = QtWidgets.QPushButton("Deselect All")
+        selection_row.addWidget(select_all_button)
+        selection_row.addWidget(deselect_all_button)
+        selection_row.addStretch(1)
+        layout.addLayout(selection_row)
 
         tso_list = QtWidgets.QListWidget()
         for tso_id in available_tso_ids:
@@ -409,49 +413,67 @@ class TracksideObjectsController:
         clear_checkbox.setChecked(True)
         layout.addWidget(clear_checkbox)
 
+        def set_all_tso_checks(check_state: QtCore.Qt.CheckState) -> None:
+            for row in range(tso_list.count()):
+                tso_list.item(row).setCheckState(check_state)
+
+        select_all_button.clicked.connect(lambda: set_all_tso_checks(QtCore.Qt.Checked))
+        deselect_all_button.clicked.connect(
+            lambda: set_all_tso_checks(QtCore.Qt.Unchecked)
+        )
+
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Cancel)
-        clear_assign_button = buttons.addButton(
-            "Clear ObjectLists and DetailLists and Auto Assign",
+        object_lists_button = buttons.addButton(
+            "Auto Assign to ObjectLists",
             QtWidgets.QDialogButtonBox.AcceptRole,
         )
-        assign_button = buttons.addButton(
-            "Auto Assign",
+        detail_lists_button = buttons.addButton(
+            "Auto Assign to DetailLists",
             QtWidgets.QDialogButtonBox.AcceptRole,
         )
         layout.addWidget(buttons)
 
+        selected_target = {"value": ""}
         buttons.rejected.connect(dialog.reject)
-        clear_assign_button.clicked.connect(lambda: clear_checkbox.setChecked(True))
-        assign_button.clicked.connect(lambda: clear_checkbox.setChecked(False))
-        clear_assign_button.clicked.connect(dialog.accept)
-        assign_button.clicked.connect(dialog.accept)
+        object_lists_button.clicked.connect(
+            lambda: selected_target.update(value="object")
+        )
+        detail_lists_button.clicked.connect(
+            lambda: selected_target.update(value="detail")
+        )
+        object_lists_button.clicked.connect(dialog.accept)
+        detail_lists_button.clicked.connect(dialog.accept)
 
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return None
-        if all_radio.isChecked():
-            selected_tso_ids = set(available_tso_ids)
-        else:
-            selected_tso_ids = {
-                int(tso_list.item(row).data(QtCore.Qt.UserRole))
-                for row in range(tso_list.count())
-                if tso_list.item(row).checkState() == QtCore.Qt.Checked
-            }
-        return selected_tso_ids, clear_checkbox.isChecked()
+        selected_tso_ids = {
+            int(tso_list.item(row).data(QtCore.Qt.UserRole))
+            for row in range(tso_list.count())
+            if tso_list.item(row).checkState() == QtCore.Qt.Checked
+        }
+        return selected_tso_ids, clear_checkbox.isChecked(), selected_target["value"]
 
-    def _auto_assign_object_lists(
+    def _auto_assign_visibility_lists(
         self,
         *,
         selected_tso_ids: set[int] | None = None,
         clear_existing: bool = True,
+        target_lists: str = "object",
     ) -> tuple[int, int] | None:
         sidebar = self._window.tso_visibility_sidebar
-        if not sidebar.object_lists:
+        if target_lists == "detail":
+            if not sidebar.detail_lists:
+                return None
+        elif not sidebar.object_lists:
             return None
         context = self._build_tso_boundary_elevation_context()
         if context is None:
             return None
-        ranges = getattr(sidebar, "_subsection_dlong_ranges", {})
-        if not ranges:
+        object_ranges = getattr(sidebar, "_subsection_dlong_ranges", {})
+        detail_ranges = getattr(sidebar, "_detail_list_dlong_ranges", {})
+        if target_lists == "object" and not object_ranges:
+            return None
+        if target_lists == "detail" and not detail_ranges:
             return None
 
         selected_ids = (
@@ -486,8 +508,12 @@ class TracksideObjectsController:
             )
             for entry in sidebar.detail_lists
         ]
-        by_key = {
+        object_by_key = {
             (entry.side, entry.section, entry.sub_index): entry for entry in rebuilt
+        }
+        detail_by_key = {
+            (entry.section, entry.sub_index, entry.lod_suffix): entry
+            for entry in detail_lists
         }
         sort_data: dict[int, tuple[float, float, int]] = {}
         assigned_count = 0
@@ -499,22 +525,28 @@ class TracksideObjectsController:
             if projection is None:
                 continue
             dlong, dlat, wall_distance = projection
-            target = self._object_list_for_dlong(
-                by_key, ranges, dlong, "L" if dlat >= 0 else "R"
-            )
+            if target_lists == "detail":
+                target = self._detail_list_for_dlong(
+                    detail_by_key, detail_ranges, dlong
+                )
+            else:
+                target = self._object_list_for_dlong(
+                    object_by_key, object_ranges, dlong, "L" if dlat >= 0 else "R"
+                )
             if target is None:
                 continue
             target.tso_ids.append(tso_id)
             sort_data[tso_id] = (wall_distance, dlong, tso_id)
             assigned_count += 1
 
-        for entry in rebuilt:
+        assigned_lists = detail_lists if target_lists == "detail" else rebuilt
+        for entry in assigned_lists:
             entry.tso_ids.sort(
                 key=lambda tso_id: self._tso_painter_sort_key(tso_id, sort_data)
             )
 
         sidebar.apply_auto_assigned_visibility_lists(rebuilt, detail_lists)
-        return assigned_count, sum(1 for entry in rebuilt if entry.tso_ids)
+        return assigned_count, sum(1 for entry in assigned_lists if entry.tso_ids)
 
     def _project_tso_for_object_list(
         self, obj: TracksideObject, context: TsoBoundaryElevationContext
@@ -612,6 +644,24 @@ class TracksideObjectsController:
                 )
             if in_range:
                 return by_key.get((side, int(section), int(sub_index)))
+        return None
+
+    def _detail_list_for_dlong(self, by_key, ranges, dlong: float):
+        for (section, sub_index, lod_suffix), (start, end) in ranges.items():
+            if start is None and end is None:
+                continue
+            if start is None:
+                in_range = dlong < end
+            elif end is None:
+                in_range = dlong >= start
+            else:
+                in_range = (
+                    start <= dlong < end
+                    if end >= start
+                    else dlong >= start or dlong < end
+                )
+            if in_range:
+                return by_key.get((int(section), int(sub_index), str(lod_suffix)))
         return None
 
     def _tso_painter_sort_key(
