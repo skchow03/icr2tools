@@ -348,10 +348,16 @@ class TracksideObjectsController:
         options = self._prompt_auto_assign_object_lists_options()
         if options is None:
             return
-        selected_tso_ids, clear_existing, target_lists = options
+        (
+            selected_tso_ids,
+            clear_object_lists,
+            clear_detail_lists,
+            target_lists,
+        ) = options
         result = self._auto_assign_visibility_lists(
             selected_tso_ids=selected_tso_ids,
-            clear_existing=clear_existing,
+            clear_object_lists=clear_object_lists,
+            clear_detail_lists=clear_detail_lists,
             target_lists=target_lists,
         )
         target_label = "DetailLists" if target_lists == "detail" else "ObjectLists"
@@ -372,7 +378,7 @@ class TracksideObjectsController:
 
     def _prompt_auto_assign_object_lists_options(
         self,
-    ) -> tuple[set[int], bool, str] | None:
+    ) -> tuple[set[int], bool, bool, str] | None:
         sidebar = self._window.tso_visibility_sidebar
         available_tso_ids = sorted(
             {
@@ -407,11 +413,17 @@ class TracksideObjectsController:
             tso_list.addItem(item)
         layout.addWidget(tso_list)
 
-        clear_checkbox = QtWidgets.QCheckBox(
-            "Clear ObjectLists and DetailLists before auto assigning"
+        clear_object_lists_checkbox = QtWidgets.QCheckBox(
+            "Clear ObjectLists before auto assigning"
         )
-        clear_checkbox.setChecked(True)
-        layout.addWidget(clear_checkbox)
+        clear_object_lists_checkbox.setChecked(True)
+        layout.addWidget(clear_object_lists_checkbox)
+
+        clear_detail_lists_checkbox = QtWidgets.QCheckBox(
+            "Clear DetailLists before auto assigning"
+        )
+        clear_detail_lists_checkbox.setChecked(True)
+        layout.addWidget(clear_detail_lists_checkbox)
 
         def set_all_tso_checks(check_state: QtCore.Qt.CheckState) -> None:
             for row in range(tso_list.count()):
@@ -451,13 +463,19 @@ class TracksideObjectsController:
             for row in range(tso_list.count())
             if tso_list.item(row).checkState() == QtCore.Qt.Checked
         }
-        return selected_tso_ids, clear_checkbox.isChecked(), selected_target["value"]
+        return (
+            selected_tso_ids,
+            clear_object_lists_checkbox.isChecked(),
+            clear_detail_lists_checkbox.isChecked(),
+            selected_target["value"],
+        )
 
     def _auto_assign_visibility_lists(
         self,
         *,
         selected_tso_ids: set[int] | None = None,
-        clear_existing: bool = True,
+        clear_object_lists: bool = True,
+        clear_detail_lists: bool = True,
         target_lists: str = "object",
     ) -> tuple[int, int] | None:
         sidebar = self._window.tso_visibility_sidebar
@@ -489,7 +507,7 @@ class TracksideObjectsController:
                 int(entry.sub_index),
                 (
                     []
-                    if clear_existing
+                    if clear_object_lists
                     else [tso for tso in entry.tso_ids if tso not in selected_ids]
                 ),
             )
@@ -502,7 +520,7 @@ class TracksideObjectsController:
                 str(entry.lod_suffix),
                 (
                     []
-                    if clear_existing
+                    if clear_detail_lists
                     else [tso for tso in entry.tso_ids if tso not in selected_ids]
                 ),
             )
