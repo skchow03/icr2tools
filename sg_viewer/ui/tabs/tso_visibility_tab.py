@@ -624,10 +624,10 @@ class TSOVisibilityTab(QWidget):
             "Copy the previous section's visible TSO list into the currently selected section/sub-index."
         )
         self.clear_all_object_lists_button.setToolTip(
-            "Clear all ObjectList entries from the TSO Visibility tab."
+            "Remove all TSOs from every ObjectList while keeping the ObjectLists."
         )
         self.clear_all_detail_lists_button.setToolTip(
-            "Clear all DetailList entries from the TSO Visibility tab."
+            "Remove all TSOs from every DetailList while keeping the DetailLists."
         )
 
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
@@ -1030,15 +1030,14 @@ class TSOVisibilityTab(QWidget):
         self.objectListsChanged.emit()
 
     def clear_all_object_lists(self) -> None:
-        self.object_lists = []
-        self._subsection_dlong_ranges = {}
-        self._section_subindex_starts = {}
+        for object_list in self.object_lists:
+            object_list.tso_ids = []
         self._refresh_after_clearing_visibility_lists()
 
     def clear_all_detail_lists(self) -> None:
-        self.detail_lists = []
+        for detail_list in self.detail_lists:
+            detail_list.tso_ids = []
         self._detail_list_tso_ids = set()
-        self._detail_list_dlong_ranges = {}
         self._refresh_after_clearing_visibility_lists()
 
     def clear_object_lists(self) -> None:
