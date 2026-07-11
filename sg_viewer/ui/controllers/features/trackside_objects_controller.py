@@ -134,12 +134,6 @@ class TracksideObjectsController:
         w.tso_modify_elevations_button.clicked.connect(
             h._on_tso_modify_elevations_requested
         )
-        w.tso_refresh_relative_boundary_button.clicked.connect(
-            h._on_tso_refresh_relative_boundary_requested
-        )
-        w.tso_auto_update_relative_z_checkbox.toggled.connect(
-            h._on_tso_auto_update_relative_z_toggled
-        )
         w.tso_generate_file_button.clicked.connect(h._on_tso_generate_file_requested)
         w.tso_write_to_3d_file_button.clicked.connect(
             h._on_tso_write_to_3d_file_requested
@@ -1511,26 +1505,6 @@ class TracksideObjectsController:
         self._update_tso_table_position_cells([row], include_z=True)
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
-
-    def _on_tso_refresh_relative_boundary_requested(self) -> None:
-        self._update_tso_table_position_cells(
-            list(range(len(self._trackside_objects))),
-            include_z=False,
-            include_relative_z=True,
-        )
-
-    def _on_tso_auto_update_relative_z_toggled(self, checked: bool) -> None:
-        self._auto_update_tso_relative_z = bool(checked)
-        if self._current_path is not None:
-            self._sg_settings_store.set_tso_auto_update_relative_z(
-                self._current_path,
-                self._auto_update_tso_relative_z,
-            )
-        if self._auto_update_tso_relative_z:
-            self._refresh_tso_table()
-        self._window.show_status_message(
-            "Refreshed Z rel. boundary values from current track geometry."
-        )
 
     def _configured_tso_export_paths(self) -> tuple[Path, Path]:
         _pitwall_path, _mrk_path, track3d_path, objects_path = (

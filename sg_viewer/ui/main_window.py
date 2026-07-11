@@ -394,13 +394,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_modify_elevations_button = QtWidgets.QPushButton(
             "Modify elevations..."
         )
-        self._tso_refresh_relative_boundary_button = QtWidgets.QPushButton(
-            "Refresh Z rel. boundary"
-        )
-        self._tso_auto_update_relative_z_checkbox = QtWidgets.QCheckBox(
-            "Auto-update Z rel. boundary"
-        )
-        self._tso_auto_update_relative_z_checkbox.setChecked(False)
         self._tso_generate_file_button = QtWidgets.QPushButton(
             "Generate objects.txt file"
         )
@@ -1336,12 +1329,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_buttons.addWidget(self._tso_delete_button, 0, 3)
         tso_buttons.addWidget(self._tso_move_up_button, 0, 4)
         tso_buttons.addWidget(self._tso_move_down_button, 0, 5)
-        tso_buttons.addWidget(self._tso_delete_all_button, 1, 0)
-        tso_buttons.addWidget(self._tso_modify_elevations_button, 1, 1)
-        tso_buttons.addWidget(self._tso_refresh_relative_boundary_button, 1, 2)
-        tso_buttons.addWidget(self._tso_auto_update_relative_z_checkbox, 1, 3, 1, 3)
         tso_layout.addLayout(tso_buttons)
         tso_layout.addWidget(self._tso_table)
+        tso_advanced_group = QtWidgets.QGroupBox("Advanced")
+        tso_advanced_layout = QtWidgets.QHBoxLayout()
+        tso_advanced_layout.addWidget(self._tso_delete_all_button)
+        tso_advanced_layout.addWidget(self._tso_modify_elevations_button)
+        tso_advanced_layout.addStretch(1)
+        tso_advanced_group.setLayout(tso_advanced_layout)
+        tso_layout.addWidget(tso_advanced_group)
         tso_files_group = QtWidgets.QGroupBox("Files")
         tso_files_layout = QtWidgets.QGridLayout()
         tso_files_layout.setHorizontalSpacing(8)
@@ -2676,14 +2672,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_modify_elevations_button(self) -> QtWidgets.QPushButton:
         return self._tso_modify_elevations_button
-
-    @property
-    def tso_refresh_relative_boundary_button(self) -> QtWidgets.QPushButton:
-        return self._tso_refresh_relative_boundary_button
-
-    @property
-    def tso_auto_update_relative_z_checkbox(self) -> QtWidgets.QCheckBox:
-        return self._tso_auto_update_relative_z_checkbox
 
     @property
     def tso_import_from_3d_button(self) -> QtWidgets.QPushButton:

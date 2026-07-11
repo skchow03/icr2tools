@@ -54,8 +54,6 @@ class TracksideObjectsController:
         w.tso_import_from_3d_button.clicked.connect(h._on_tso_import_from_3d_requested)
         w.tso_delete_all_button.clicked.connect(h._on_tso_delete_all_requested)
         w.tso_modify_elevations_button.clicked.connect(h._on_tso_modify_elevations_requested)
-        w.tso_refresh_relative_boundary_button.clicked.connect(h._on_tso_refresh_relative_boundary_requested)
-        w.tso_auto_update_relative_z_checkbox.toggled.connect(h._on_tso_auto_update_relative_z_toggled)
         w.tso_generate_file_button.clicked.connect(h._on_tso_generate_file_requested)
         w.tso_write_to_3d_file_button.clicked.connect(h._on_tso_write_to_3d_file_requested)
         w.tso_table.itemChanged.connect(h._on_tso_item_changed)
