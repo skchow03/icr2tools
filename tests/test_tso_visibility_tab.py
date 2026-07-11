@@ -250,9 +250,15 @@ def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex
 from sg_viewer.io.track3d_parser import Track3DDetailList
 
 
-def test_detail_list_mode_shows_only_h_lod_in_single_column() -> None:
+def test_object_and_detail_lists_show_in_parallel_section_table() -> None:
     _app()
     tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [
+            Track3DObjectList(side="L", section=4, sub_index=0, tso_ids=[7]),
+            Track3DObjectList(side="R", section=5, sub_index=1, tso_ids=[8]),
+        ]
+    )
     tab.set_detail_lists(
         [
             Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[1]),
@@ -261,21 +267,23 @@ def test_detail_list_mode_shows_only_h_lod_in_single_column() -> None:
         ]
     )
 
-    tab.visibility_mode_combo.setCurrentIndex(1)
-
-    assert tab.section_list.columnCount() == 1
-    assert tab.section_list.horizontalHeaderItem(0).text() == "DetailLists"
-    assert tab.section_list.count() == 2
+    assert tab.section_list.columnCount() == 3
+    assert tab.section_list.horizontalHeaderItem(0).text() == "ObjectLists L sections"
+    assert tab.section_list.horizontalHeaderItem(1).text() == "ObjectLists R sections"
+    assert tab.section_list.horizontalHeaderItem(2).text() == "DetailLists"
+    assert tab.section_list.count() == 4
     assert [
         tab.section_list.item(row).text() for row in range(tab.section_list.count())
     ] == [
+        "4 / 0",
+        "5 / 1",
         "1 / 0H",
         "2 / 0H",
     ]
     assert [
         tab.section_list.item(row).data(QtCore.Qt.UserRole)
         for row in range(tab.section_list.count())
-    ] == [0, 2]
+    ] == [("object", 0), ("object", 1), ("detail", 0), ("detail", 2)]
 
 
 def test_detail_list_mode_disables_copy_previous_and_emits_dlong_range() -> None:
@@ -288,7 +296,6 @@ def test_detail_list_mode_disables_copy_previous_and_emits_dlong_range() -> None
     sections: list[object] = []
     tab.selectedTrackSectionChanged.connect(sections.append)
 
-    tab.visibility_mode_combo.setCurrentIndex(1)
     tab.section_list.setCurrentRow(0)
 
     assert not tab.copy_prev_button.isEnabled()

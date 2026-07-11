@@ -17,19 +17,26 @@ def _app() -> QtWidgets.QApplication:
     return app
 
 
-def test_load_track3d_warns_before_overwriting_existing_data(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_load_track3d_warns_before_overwriting_existing_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _app()
     tab = TSOVisibilityTab()
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
 
     path = tmp_path / "track.3d"
     path.write_text(
-        "ObjectList_L0_0: LIST {__TSO0};\n"
-        "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
+        "ObjectList_L0_0: LIST {__TSO0};\n" "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(path), ""),
+    )
     warnings: list[tuple[str, str]] = []
 
     def _fake_warning(_parent, title, text, *args, **kwargs):
@@ -41,7 +48,10 @@ def test_load_track3d_warns_before_overwriting_existing_data(monkeypatch: pytest
     tab.load_file()
 
     assert warnings == [
-        ("Load track.3D", "Loading track.3D will overwrite the current TSO Visibility data. Continue?"),
+        (
+            "Load track.3D",
+            "Loading track.3D will overwrite the current TSO Visibility data. Continue?",
+        ),
     ]
     assert tab.object_lists[0].tso_ids == [1]
 
@@ -61,7 +71,11 @@ def test_load_track3d_warns_when_section_count_does_not_match(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(path), ""),
+    )
     warnings: list[tuple[str, str]] = []
 
     def _fake_warning(_parent, title, text, *args, **kwargs):
@@ -92,7 +106,11 @@ def test_load_track3d_warns_when_object_lists_are_missing(
     path = tmp_path / "track.3d"
     path.write_text("sec0_l0: LIST { DATA { 0, 10, 20 } };\n", encoding="utf-8")
 
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(path), ""),
+    )
     warnings: list[tuple[str, str]] = []
 
     def _fake_warning(_parent, title, text, *args, **kwargs):
@@ -104,15 +122,22 @@ def test_load_track3d_warns_when_object_lists_are_missing(
     tab.load_file()
 
     assert warnings == [
-        ("Load track.3D", "The selected track.3D file does not contain any ObjectLists."),
+        (
+            "Load track.3D",
+            "The selected track.3D file does not contain any ObjectLists.",
+        ),
     ]
 
 
 def test_refresh_tso_filter_reports_detailed_progress() -> None:
     _app()
     tab = TSOVisibilityTab()
-    tab.object_lists = [Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[1, 2])]
-    tab.detail_lists = [Track3DDetailList(section=0, sub_index=0, lod_suffix="H", tso_ids=[3])]
+    tab.object_lists = [
+        Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[1, 2])
+    ]
+    tab.detail_lists = [
+        Track3DDetailList(section=0, sub_index=0, lod_suffix="H", tso_ids=[3])
+    ]
     tab.set_detail_list_tso_ids({3})
     tab.available_tso_ids = [4]
     tab.set_tso_display_metadata({5: ("grandstand.3do", "Grandstand")})
@@ -138,16 +163,21 @@ def test_save_track3d_warns_when_layout_does_not_match(
 ) -> None:
     _app()
     tab = TSOVisibilityTab()
-    tab.set_object_lists([Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])])
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[1])]
+    )
 
     path = tmp_path / "track.3d"
     path.write_text(
-        "ObjectList_L0_0: LIST {__TSO0};\n"
-        "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
+        "ObjectList_L0_0: LIST {__TSO0};\n" "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(path), ""),
+    )
     warnings: list[tuple[str, str]] = []
 
     def _fake_warning(_parent, title, text, *args, **kwargs):
@@ -175,18 +205,22 @@ def test_load_detail_lists_button_imports_only_tso_items_from_detail_lists(
 
     path = tmp_path / "track.3d"
     path.write_text(
-        "__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN \"tree\";\n"
-        "__TSO2: DYNAMIC 1, 2, 3, 4, EXTERN \"sign\";\n"
+        '__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN "tree";\n'
+        '__TSO2: DYNAMIC 1, 2, 3, 4, EXTERN "sign";\n'
         "DetailList_4-0H: LIST { DetailO_1-0, __TSO1, DetailN_1-0, __TSO2 };\n",
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(path), ""),
+    )
 
     tab.load_detail_lists_file()
 
     assert [entry.tso_ids for entry in tab.detail_lists] == [[1, 2]]
-    assert tab.visibility_mode_combo.currentData() == "detail"
+    assert tab.section_list.currentItem().data(QtCore.Qt.UserRole) == ("detail", 0)
     assert tab.tso_list.item(0).data(QtCore.Qt.UserRole) == 1
     assert tab.tso_list.item(1).data(QtCore.Qt.UserRole) == 2
 
@@ -196,11 +230,17 @@ def test_load_detail_lists_button_warns_before_overwriting_existing_detail_lists
 ) -> None:
     _app()
     tab = TSOVisibilityTab()
-    tab.set_detail_lists([Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[7])])
+    tab.set_detail_lists(
+        [Track3DDetailList(section=1, sub_index=0, lod_suffix="H", tso_ids=[7])]
+    )
 
     path = tmp_path / "track.3d"
     path.write_text("DetailList_4-0H: LIST { __TSO1 };\n", encoding="utf-8")
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(path), ""))
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(path), ""),
+    )
     warnings: list[tuple[str, str]] = []
 
     def _fake_warning(_parent, title, text, *args, **kwargs):
@@ -212,6 +252,9 @@ def test_load_detail_lists_button_warns_before_overwriting_existing_detail_lists
     tab.load_detail_lists_file()
 
     assert warnings == [
-        ("Load DetailLists", "Loading DetailLists will overwrite the current DetailList visibility data. Continue?"),
+        (
+            "Load DetailLists",
+            "Loading DetailLists will overwrite the current DetailList visibility data. Continue?",
+        ),
     ]
     assert tab.detail_lists[0].tso_ids == [7]
