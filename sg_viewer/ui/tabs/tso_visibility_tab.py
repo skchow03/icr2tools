@@ -9,7 +9,6 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
-    QComboBox,
     QDialogButtonBox,
     QGridLayout,
     QGroupBox,
@@ -153,8 +152,10 @@ class TrackSectionListWidget(QTableWidget):
 
     def __init__(self):
         super().__init__()
-        self.setColumnCount(2)
-        self.setHorizontalHeaderLabels(["L sections", "R sections"])
+        self.setColumnCount(3)
+        self.setHorizontalHeaderLabels(
+            ["ObjectLists L sections", "ObjectLists R sections", "DetailLists"]
+        )
         self.verticalHeader().setVisible(False)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
@@ -168,9 +169,16 @@ class TrackSectionListWidget(QTableWidget):
         if item is None:
             self.rowSelectionChanged.emit(-1)
             return
-        object_index = item.data(QtCore.Qt.UserRole)
-        if isinstance(object_index, int):
-            self.rowSelectionChanged.emit(object_index)
+        selection = item.data(QtCore.Qt.UserRole)
+        if (
+            isinstance(selection, tuple)
+            and len(selection) == 2
+            and isinstance(selection[1], int)
+        ):
+            self.rowSelectionChanged.emit(selection[1])
+            return
+        if isinstance(selection, int):
+            self.rowSelectionChanged.emit(selection)
             return
         self.rowSelectionChanged.emit(-1)
 
@@ -198,11 +206,14 @@ class TrackSectionListWidget(QTableWidget):
         self,
         left_entries: list[QTableWidgetItem],
         right_entries: list[QTableWidgetItem],
+        detail_entries: list[QTableWidgetItem],
     ) -> None:
-        self.setColumnCount(2)
-        self.setHorizontalHeaderLabels(["L sections", "R sections"])
+        self.setColumnCount(3)
+        self.setHorizontalHeaderLabels(
+            ["ObjectLists L sections", "ObjectLists R sections", "DetailLists"]
+        )
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        row_count = max(len(left_entries), len(right_entries))
+        row_count = max(len(left_entries), len(right_entries), len(detail_entries))
         self.clear()
         self.setRowCount(row_count)
         self._flat_items = []
@@ -215,17 +226,10 @@ class TrackSectionListWidget(QTableWidget):
                 item = right_entries[row]
                 self.setItem(row, 1, item)
                 self._flat_items.append(item)
-
-    def set_detail_entries(self, entries: list[QTableWidgetItem]) -> None:
-        self.setColumnCount(1)
-        self.setHorizontalHeaderLabels(["DetailLists"])
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.clear()
-        self.setRowCount(len(entries))
-        self._flat_items = []
-        for row, item in enumerate(entries):
-            self.setItem(row, 0, item)
-            self._flat_items.append(item)
+            if row < len(detail_entries):
+                item = detail_entries[row]
+                self.setItem(row, 2, item)
+                self._flat_items.append(item)
 
 
 class TSOVisibilityReconcileDialog(QDialog):
@@ -618,14 +622,6 @@ class TSOVisibilityTab(QWidget):
             "Copy the previous section's visible TSO list into the currently selected section/sub-index."
         )
 
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("Visibility list type"))
-        self.visibility_mode_combo = QComboBox()
-        self.visibility_mode_combo.addItem("ObjectLists", "object")
-        self.visibility_mode_combo.addItem("DetailLists", "detail")
-        mode_row.addWidget(self.visibility_mode_combo, 1)
-        layout.addLayout(mode_row)
-
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
         self.section_list = TrackSectionListWidget()
         layout.addWidget(self.section_list, 0)
@@ -706,9 +702,6 @@ class TSOVisibilityTab(QWidget):
         self.save_detail_lists_to_track3d_button.clicked.connect(
             self._on_save_detail_lists_to_track3d_requested
         )
-        self.visibility_mode_combo.currentIndexChanged.connect(
-            self._on_visibility_mode_changed
-        )
         self.section_list.rowSelectionChanged.connect(self._emit_selected_tsos)
         self.tso_list.orderChanged.connect(self._on_tso_order_changed)
         self.tso_list.itemClicked.connect(self._on_tso_pill_selected)
@@ -770,21 +763,32 @@ class TSOVisibilityTab(QWidget):
             return None
         return str(resolved)
 
+    def _current_selection_kind_index(self) -> tuple[str, int]:
+        item = self.section_list.currentItem()
+        if item is None:
+            return ("", -1)
+        mapped = item.data(QtCore.Qt.UserRole)
+        if (
+            isinstance(mapped, tuple)
+            and len(mapped) == 2
+            and mapped[0] in {"object", "detail"}
+            and isinstance(mapped[1], int)
+        ):
+            return (mapped[0], mapped[1])
+        if isinstance(mapped, int):
+            return ("object", mapped)
+        return ("", -1)
+
     def _is_detail_mode(self) -> bool:
-        return self.visibility_mode_combo.currentData() == "detail"
+        return self._current_selection_kind_index()[0] == "detail"
 
     def _active_lists(self):
         return self.detail_lists if self._is_detail_mode() else self.object_lists
-
-    def _on_visibility_mode_changed(self) -> None:
-        self.copy_prev_button.setEnabled(not self._is_detail_mode())
-        self.populate_table()
 
     def apply_auto_assigned_object_lists(
         self, object_lists: list[Track3DObjectList]
     ) -> None:
         self.object_lists = list(object_lists)
-        self.visibility_mode_combo.setCurrentIndex(0)
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
@@ -835,8 +839,7 @@ class TSOVisibilityTab(QWidget):
         }
         self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
         self._refresh_tso_filter_list()
-        if self._is_detail_mode():
-            self.populate_table()
+        self.populate_table()
 
     def set_section_dlong_rows(self, rows: list[Track3DSectionDlongList]) -> None:
         ranges, subindex_starts = build_subsection_dlong_metadata(rows)
@@ -847,10 +850,8 @@ class TSOVisibilityTab(QWidget):
         item = self.section_list.currentItem()
         if item is None:
             return -1
-        mapped_index = item.data(QtCore.Qt.UserRole)
-        if isinstance(mapped_index, int) and 0 <= mapped_index < len(
-            self._active_lists()
-        ):
+        _kind, mapped_index = self._current_selection_kind_index()
+        if 0 <= mapped_index < len(self._active_lists()):
             return mapped_index
         return -1
 
@@ -1294,9 +1295,6 @@ class TSOVisibilityTab(QWidget):
             for tso_id in entry.tso_ids
             if tso_id >= 0
         }
-        self.visibility_mode_combo.setCurrentIndex(
-            self.visibility_mode_combo.findData("detail")
-        )
         self._refresh_tso_filter_list()
         self.populate_table()
         self._emit_object_lists_changed()
@@ -1531,38 +1529,40 @@ class TSOVisibilityTab(QWidget):
 
     def populate_table(self):
         start = perf_counter()
-        current_object_index = self._find_object_list_index_for_current_selection()
+        current_selection = self._current_selection_kind_index()
         selected_tso_ids = self._selected_filter_tso_ids()
         left_section_items: list[QTableWidgetItem] = []
         right_section_items: list[QTableWidgetItem] = []
         detail_section_items: list[QTableWidgetItem] = []
-        for object_list_index, entry in enumerate(self._active_lists()):
+        for object_list_index, entry in enumerate(self.object_lists):
             if selected_tso_ids and not any(
                 tso_id in selected_tso_ids for tso_id in entry.tso_ids
             ):
                 continue
-            if isinstance(entry, Track3DDetailList):
-                if str(entry.lod_suffix).strip().upper() != "H":
-                    continue
-                label = f"{entry.section} / {entry.sub_index}{entry.lod_suffix}"
-                item = QTableWidgetItem(label)
-                item.setData(QtCore.Qt.UserRole, object_list_index)
-                detail_section_items.append(item)
-                continue
-
             label = f"{entry.section} / {entry.sub_index}"
             item = QTableWidgetItem(label)
-            item.setData(QtCore.Qt.UserRole, object_list_index)
+            item.setData(QtCore.Qt.UserRole, ("object", object_list_index))
             if str(entry.side).strip().upper() == "R":
                 right_section_items.append(item)
             else:
                 left_section_items.append(item)
 
+        for detail_list_index, entry in enumerate(self.detail_lists):
+            if selected_tso_ids and not any(
+                tso_id in selected_tso_ids for tso_id in entry.tso_ids
+            ):
+                continue
+            if str(entry.lod_suffix).strip().upper() != "H":
+                continue
+            label = f"{entry.section} / {entry.sub_index}{entry.lod_suffix}"
+            item = QTableWidgetItem(label)
+            item.setData(QtCore.Qt.UserRole, ("detail", detail_list_index))
+            detail_section_items.append(item)
+
         with QtCore.QSignalBlocker(self.section_list):
-            if self._is_detail_mode():
-                self.section_list.set_detail_entries(detail_section_items)
-            else:
-                self.section_list.set_entries(left_section_items, right_section_items)
+            self.section_list.set_entries(
+                left_section_items, right_section_items, detail_section_items
+            )
 
         if self.section_list.count() == 0:
             self.tso_list.clear()
@@ -1573,12 +1573,12 @@ class TSOVisibilityTab(QWidget):
             return
 
         preferred_row = 0
-        if current_object_index >= 0:
+        if current_selection[1] >= 0:
             for row in range(self.section_list.count()):
                 item = self.section_list.item(row)
                 if item is None:
                     continue
-                if item.data(QtCore.Qt.UserRole) == current_object_index:
+                if item.data(QtCore.Qt.UserRole) == current_selection:
                     preferred_row = row
                     break
         with QtCore.QSignalBlocker(self.section_list):
@@ -1635,6 +1635,7 @@ class TSOVisibilityTab(QWidget):
         start = perf_counter()
         row = self._find_object_list_index_for_current_selection()
         active_lists = self._active_lists()
+        self.copy_prev_button.setEnabled(not self._is_detail_mode())
         if row < 0 or row >= len(active_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
