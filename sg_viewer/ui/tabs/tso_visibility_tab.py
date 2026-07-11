@@ -1,4 +1,5 @@
 import logging
+import random
 from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
@@ -42,6 +43,30 @@ from sg_viewer.io.track3d_parser import (
 )
 from sg_viewer.io.track3d_catalog import parse_track3d_catalog
 from sg_viewer.services.sg_integrity_checks import choose_integrity_memo_author
+
+
+UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES: tuple[str, ...] = (
+    "Reminder: scenery without an assignment may begin freelancing as modern art.",
+    "The ObjectList clerk reports that several decorative items arrived with snacks but no paperwork.",
+    "Please do not let unassigned TSOs form a small advisory neighborhood near Turn 3.",
+    "If a billboard asks where it should stand, answer with data rather than enthusiasm.",
+    "Loose trackside objects have been known to migrate toward cameras during lunch breaks.",
+    "A hay bale without a DetailList is just a square sheep with ambition.",
+    "The grandstand insists it was invited; the manifest remains emotionally unavailable.",
+    "Assign every scenic doodad before the paddock invents a committee to admire it.",
+    "Uncredentialed palm trees are charming until they start voting on sight lines.",
+    "The cone department denies responsibility for any object not wearing a cone hat.",
+    "A lonely marshal post is still a marshal post, but now it has opinions about zoning.",
+    "If the scenery looks smug, it may already know it is not in an ObjectList.",
+    "Trackside props prefer clear instructions, mild weather, and not being forgotten in binary.",
+    "Any object found wandering after midnight should be assigned, cataloged, or offered coffee.",
+    "The timing stand has requested fewer surprise neighbors and more predictable geometry.",
+    "Please seat all TSOs before the invisible usher starts charging admission.",
+    "Decorative assets left unattended may become load-bearing rumors.",
+    "An unassigned sign can still point somewhere, but legal would prefer it did not improvise.",
+    "The landscape committee recommends a place for everything and everything not clipping through a wall.",
+    "If a tree falls outside every list, the renderer may still hear the paperwork.",
+)
 from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
 
 logger = logging.getLogger(__name__)
@@ -1056,6 +1081,14 @@ class TSOVisibilityTab(QWidget):
             lines.append(
                 f"{len(unassigned_ids)} of {len(all_tso_ids)} known TSOs are standing in the paddock without an ObjectList or DetailList credential."
             )
+
+        lines.extend(
+            [
+                "",
+                "Department note:",
+                f"  {random.choice(UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES)}",
+            ]
+        )
 
         lines.extend(
             [

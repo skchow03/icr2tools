@@ -8,6 +8,7 @@ from sg_viewer.io.track3d_parser import Track3DObjectList
 from sg_viewer.ui.tabs.tso_visibility_tab import (
     TSOVisibilityReconcileDialog,
     TSOVisibilityTab,
+    UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES,
 )
 
 
@@ -401,3 +402,17 @@ def test_unassigned_tso_memo_reports_clean_assignment() -> None:
 
     assert "Unassigned TSOs: 0" in memo
     assert "No unassigned TSOs found." in memo
+
+
+def test_unassigned_tso_memo_has_twenty_random_flavor_messages() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_available_tso_ids([1])
+
+    memo = tab.build_unassigned_tso_memo()
+
+    assert len(UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES) == 20
+    assert "Department note:" in memo
+    assert any(
+        message in memo for message in UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES
+    )
