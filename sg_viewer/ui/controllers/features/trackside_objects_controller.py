@@ -165,6 +165,12 @@ class TracksideObjectsController:
         w.tso_visibility_sidebar.autoAssignObjectListsRequested.connect(
             h._on_tso_visibility_auto_assign_requested
         )
+        w.tso_visibility_sidebar.exportLocationsRequested.connect(
+            h._mrk_controller._on_mrk_export_locations_requested
+        )
+        w.tso_visibility_sidebar.set_track3d_path_provider(
+            lambda: h._mrk_controller._configured_all_export_paths()[2]
+        )
         w.preview.set_trackside_object_drag_callback(h._on_preview_tso_dragged)
         w.preview.set_trackside_object_drag_end_callback(h._on_preview_tso_drag_ended)
         w.preview.set_trackside_map_click_callback(h._on_preview_tso_map_clicked)
