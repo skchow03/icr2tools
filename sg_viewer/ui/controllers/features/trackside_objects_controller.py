@@ -29,6 +29,7 @@ from sg_viewer.ui.controllers.features.state_controllers import TsoFeatureState
 from sg_viewer.ui.presentation.units_presenter import (
     measurement_unit_decimals,
     measurement_unit_label,
+    measurement_unit_step,
 )
 from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
 from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
