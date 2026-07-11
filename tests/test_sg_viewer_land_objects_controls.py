@@ -266,6 +266,7 @@ def test_paint_preview_draws_land_objects_before_tsos(qapp, monkeypatch):
                 ruler_start_point=None,
                 ruler_end_point=None,
                 ruler_label="",
+                ruler_notch_interval=None,
                 land_object_points=((1.0, 1.0), (2.0, 1.0), (1.0, 2.0)),
                 land_object_polygons=(((0, 1, 2), 1, False),),
                 xsect_dlat=None,

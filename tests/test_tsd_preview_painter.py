@@ -213,6 +213,7 @@ def test_draw_ruler_overlay_uses_tuple_transform(qapp) -> None:
         (10.0, 10.0),
         (20.0, 20.0),
         "14.1 ft",
+        None,
         (2.0, (5.0, 5.0)),
         widget_height=120,
     )

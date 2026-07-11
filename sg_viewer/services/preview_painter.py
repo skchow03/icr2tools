@@ -99,6 +99,7 @@ class BasePreviewState:
     ruler_start_point: Point | None
     ruler_end_point: Point | None
     ruler_label: str
+    ruler_notch_interval: float | None
     land_object_points: tuple[Point, ...]
     land_object_polygons: tuple[tuple[tuple[int, ...], int, bool], ...]
     xsect_dlat: float | None
@@ -370,6 +371,7 @@ def paint_preview(
                 base_state.ruler_start_point,
                 base_state.ruler_end_point,
                 base_state.ruler_label,
+                base_state.ruler_notch_interval,
                 transform,
                 widget_height,
             )
@@ -492,6 +494,7 @@ def _draw_ruler_overlay(
     start_point: Point,
     end_point: Point,
     label: str,
+    notch_interval: float | None,
     transform: Transform,
     widget_height: int,
 ) -> None:
@@ -511,6 +514,36 @@ def _draw_ruler_overlay(
     painter.setBrush(QtGui.QColor(100, 220, 255, 180))
     painter.drawEllipse(QtCore.QPointF(start_x, start_y), 4.0, 4.0)
     painter.drawEllipse(QtCore.QPointF(end_x, end_y), 4.0, 4.0)
+    dx = end_x - start_x
+    dy = end_y - start_y
+    screen_length = (dx * dx + dy * dy) ** 0.5
+    world_dx = float(end_point[0]) - float(start_point[0])
+    world_dy = float(end_point[1]) - float(start_point[1])
+    world_length = (world_dx * world_dx + world_dy * world_dy) ** 0.5
+    if notch_interval is not None and notch_interval > 0.0 and world_length > 0.0:
+        notch_count = int(world_length // notch_interval)
+        if notch_count > 0:
+            normal_x = -dy / max(screen_length, 1e-9)
+            normal_y = dx / max(screen_length, 1e-9)
+            notch_half_length = 6.0
+            painter.setPen(QtGui.QPen(QtGui.QColor(100, 220, 255, 230), 1.5))
+            for index in range(1, notch_count + 1):
+                distance = index * notch_interval
+                if distance >= world_length:
+                    continue
+                fraction = distance / world_length
+                notch_x = start_x + dx * fraction
+                notch_y = start_y + dy * fraction
+                painter.drawLine(
+                    QtCore.QPointF(
+                        notch_x - normal_x * notch_half_length,
+                        notch_y - normal_y * notch_half_length,
+                    ),
+                    QtCore.QPointF(
+                        notch_x + normal_x * notch_half_length,
+                        notch_y + normal_y * notch_half_length,
+                    ),
+                )
     if label.strip():
         mid_x = (start_x + end_x) * 0.5
         mid_y = (start_y + end_y) * 0.5

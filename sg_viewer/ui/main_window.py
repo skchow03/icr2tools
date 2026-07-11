@@ -219,6 +219,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._ruler_start_point: tuple[float, float] | None = None
         self._ruler_end_point: tuple[float, float] | None = None
         self._ruler_frozen = False
+        self._ruler_notch_interval_500ths: float | None = None
         self._sunny_palette_colors: list[QtGui.QColor] | None = None
         self._updating_land_polygon_color_cells = False
         self._marquee_status_label = MarqueeStatusLabel()
@@ -642,6 +643,30 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._query_track_button.setEnabled(False)
         self._ruler_button = QtWidgets.QPushButton("Ruler")
         self._ruler_button.setEnabled(False)
+        self._ruler_notch_panel = QtWidgets.QFrame()
+        self._ruler_notch_panel.setObjectName("rulerNotchPanel")
+        self._ruler_notch_panel.setStyleSheet(
+            "QFrame#rulerNotchPanel { background: rgba(0, 0, 0, 170); "
+            "border: 1px solid rgba(255, 255, 255, 110); border-radius: 4px; }"
+        )
+        ruler_notch_layout = QtWidgets.QHBoxLayout()
+        ruler_notch_layout.setContentsMargins(6, 4, 6, 4)
+        ruler_notch_layout.setSpacing(4)
+        self._ruler_notch_label = QtWidgets.QLabel("Notches every")
+        self._ruler_notch_label.setStyleSheet("color: white;")
+        self._ruler_notch_spin = QtWidgets.QDoubleSpinBox()
+        self._ruler_notch_spin.setRange(0.0, 100000000.0)
+        self._ruler_notch_spin.setDecimals(1)
+        self._ruler_notch_spin.setValue(100.0)
+        self._ruler_notch_spin.setMinimumWidth(92)
+        self._ruler_notch_spin.setSpecialValueText("Off")
+        self._ruler_notch_spin.setToolTip(
+            "Distance between ruler notches in the current measurement unit. Set to 0 to hide notches."
+        )
+        ruler_notch_layout.addWidget(self._ruler_notch_label)
+        ruler_notch_layout.addWidget(self._ruler_notch_spin)
+        self._ruler_notch_panel.setLayout(ruler_notch_layout)
+        self._ruler_notch_panel.setVisible(False)
         self._radii_button = QtWidgets.QCheckBox("Show Radii")
         self._radii_button.setChecked(True)
         self._axes_button = QtWidgets.QCheckBox("Show Axes")
@@ -1471,7 +1496,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._geometry_viewport_toolbar.setVisible(False)
         preview_column_layout.addWidget(self._geometry_viewport_toolbar)
-        preview_column_layout.addWidget(self._preview, stretch=5)
+        self._preview_stack = QtWidgets.QWidget()
+        preview_stack_layout = QtWidgets.QGridLayout()
+        preview_stack_layout.setContentsMargins(0, 0, 0, 0)
+        preview_stack_layout.addWidget(self._preview, 0, 0)
+        preview_stack_layout.addWidget(
+            self._ruler_notch_panel,
+            0,
+            0,
+            QtCore.Qt.AlignTop | QtCore.Qt.AlignRight,
+        )
+        self._preview_stack.setLayout(preview_stack_layout)
+        preview_column_layout.addWidget(self._preview_stack, stretch=5)
         stats_panel = self._create_section_inspector_panel()
         self._stats_sidebar_panel = stats_panel
         self._build_grouped_sidebar_tabs(
@@ -1533,6 +1569,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._query_track_button.toggled.connect(self._on_query_track_toggled)
         self._ruler_button.clicked.connect(self._on_ruler_button_clicked)
+        self._ruler_notch_spin.valueChanged.connect(
+            self._on_ruler_notch_interval_changed
+        )
         self._view_preset_combo.currentTextChanged.connect(self._on_view_preset_changed)
         self._background_image_checkbox.toggled.connect(
             lambda _checked: self.update_visual_intensity_controls()
@@ -5341,6 +5380,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_ruler_button_state()
         self.update_mouse_usage_text()
 
+    def _on_ruler_notch_interval_changed(self) -> None:
+        self._sync_ruler_notch_interval()
+        if self._ruler_start_point is not None and self._ruler_end_point is not None:
+            self._update_ruler_overlay(self._ruler_start_point, self._ruler_end_point)
+
+    def _sync_ruler_notch_interval(self) -> None:
+        value = float(self._ruler_notch_spin.value())
+        unit = self.current_measurement_unit()
+        self._ruler_notch_interval_500ths = (
+            float(units_to_500ths(value, unit)) if value > 0.0 else None
+        )
+
     def _update_ruler_overlay(
         self,
         start_point: tuple[float, float],
@@ -5351,8 +5402,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         dx = float(end_point[0]) - float(start_point[0])
         dy = float(end_point[1]) - float(start_point[1])
         length = (dx * dx + dy * dy) ** 0.5
+        self._sync_ruler_notch_interval()
         self._preview.set_ruler_overlay(
-            start_point, end_point, self.format_length(length)
+            start_point,
+            end_point,
+            self.format_length(length),
+            self._ruler_notch_interval_500ths,
         )
 
     def _clear_ruler(self) -> None:
@@ -5366,6 +5421,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.update_mouse_usage_text()
 
     def _update_ruler_button_state(self) -> None:
+        ruler_visible = self._ruler_mode_active or self._ruler_frozen
+        self._ruler_notch_panel.setVisible(ruler_visible)
+        self._ruler_notch_spin.setSuffix(
+            f" {measurement_unit_label(self.current_measurement_unit())}"
+        )
+        self._ruler_notch_spin.setDecimals(
+            measurement_unit_decimals(self.current_measurement_unit())
+        )
         if self._ruler_frozen:
             self._ruler_button.setText("Clear Ruler")
             return
@@ -5629,6 +5692,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_boundary_dlat_labels(self._selected_section_index)
         self._refresh_query_track_info_label()
         self._refresh_wall_defaults_summary()
+        self._update_ruler_button_state()
+        if self._ruler_start_point is not None and self._ruler_end_point is not None:
+            self._update_ruler_overlay(self._ruler_start_point, self._ruler_end_point)
         model = self._tsd_lines_table.model()
         if hasattr(model, "set_display_unit"):
             model.set_display_unit(self._current_measurement_unit())
