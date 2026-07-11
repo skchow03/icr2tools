@@ -59,7 +59,7 @@ UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES: tuple[str, ...] = (
 "A lonely marshal post is still a marshal post, but now it has opinions about placement.",
 "If the scenery looks smug, it may already know it is not in an ObjectList.",
 "Trackside props prefer clear instructions, mild weather, and not being forgotten in binary.",
-"Any object found wandering after midnight should be assigned, cataloged, or offered coffee.",
+"Any object found wandering after midnight should be provided an ObjectList to call home.",
 "The timing stand has requested fewer surprise neighbors and more predictable geometry.",
 "Please seat all TSOs before the invisible usher starts charging admission.",
 "Decorative assets left unattended may become load-bearing rumors.",
