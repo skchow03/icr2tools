@@ -788,7 +788,16 @@ class TSOVisibilityTab(QWidget):
     def apply_auto_assigned_object_lists(
         self, object_lists: list[Track3DObjectList]
     ) -> None:
+        self.apply_auto_assigned_visibility_lists(object_lists, self.detail_lists)
+
+    def apply_auto_assigned_visibility_lists(
+        self,
+        object_lists: list[Track3DObjectList],
+        detail_lists: list[Track3DDetailList],
+    ) -> None:
         self.object_lists = list(object_lists)
+        self.detail_lists = list(detail_lists)
+        self._remove_duplicate_visibility_tsos()
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
@@ -1178,6 +1187,23 @@ class TSOVisibilityTab(QWidget):
             )
 
         self.set_object_lists(parsed_lists)
+
+    def _remove_duplicate_visibility_tsos(self) -> None:
+        seen: set[int] = set()
+
+        def _unique_ids(tso_ids: list[int]) -> list[int]:
+            unique_ids: list[int] = []
+            for tso_id in tso_ids:
+                if tso_id < 0 or tso_id in seen:
+                    continue
+                seen.add(tso_id)
+                unique_ids.append(tso_id)
+            return unique_ids
+
+        for entry in self.object_lists:
+            entry.tso_ids = _unique_ids(entry.tso_ids)
+        for entry in self.detail_lists:
+            entry.tso_ids = _unique_ids(entry.tso_ids)
 
     def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
         self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})

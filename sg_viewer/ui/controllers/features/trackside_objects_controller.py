@@ -8,7 +8,7 @@ from time import perf_counter
 from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
-from sg_viewer.io.track3d_parser import Track3DObjectList
+from sg_viewer.io.track3d_parser import Track3DDetailList, Track3DObjectList
 from sg_viewer.model.dlong_mapping import dlong_to_section_position
 from sg_viewer.services.track3d_tso_writer import (
     format_tso_dynamic_line,
@@ -345,21 +345,14 @@ class TracksideObjectsController:
         self._set_tso_visibility_dirty(True)
 
     def _on_tso_visibility_auto_assign_requested(self) -> None:
-        dialog = QtWidgets.QMessageBox(self._window)
-        dialog.setIcon(QtWidgets.QMessageBox.Question)
-        dialog.setWindowTitle("Auto Assign ObjectLists")
-        dialog.setText(
-            "This will delete all existing ObjectList assignments and recreate them automatically from the current TSO positions.\n\nContinue?"
-        )
-        dialog.addButton("Cancel", QtWidgets.QMessageBox.RejectRole)
-        assign_button = dialog.addButton(
-            "Auto Assign", QtWidgets.QMessageBox.AcceptRole
-        )
-        dialog.setDefaultButton(assign_button)
-        dialog.exec_()
-        if dialog.clickedButton() is not assign_button:
+        options = self._prompt_auto_assign_object_lists_options()
+        if options is None:
             return
-        result = self._auto_assign_object_lists()
+        selected_tso_ids, clear_existing = options
+        result = self._auto_assign_object_lists(
+            selected_tso_ids=selected_tso_ids,
+            clear_existing=clear_existing,
+        )
         if result is None:
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -375,7 +368,82 @@ class TracksideObjectsController:
             f"Assigned {assigned_count} TSOs to {object_list_count} ObjectLists.",
         )
 
-    def _auto_assign_object_lists(self) -> tuple[int, int] | None:
+    def _prompt_auto_assign_object_lists_options(
+        self,
+    ) -> tuple[set[int], bool] | None:
+        sidebar = self._window.tso_visibility_sidebar
+        available_tso_ids = sorted(
+            {
+                *getattr(sidebar, "available_tso_ids", []),
+                *range(len(self._trackside_objects)),
+            }
+        )
+
+        dialog = QtWidgets.QDialog(self._window)
+        dialog.setWindowTitle("Auto Assign ObjectLists")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(
+            QtWidgets.QLabel(
+                "Choose which TSOs to auto assign from their current positions."
+            )
+        )
+
+        all_radio = QtWidgets.QRadioButton("Assign all TSOs")
+        selected_radio = QtWidgets.QRadioButton("Assign only checked TSOs")
+        all_radio.setChecked(True)
+        layout.addWidget(all_radio)
+        layout.addWidget(selected_radio)
+
+        tso_list = QtWidgets.QListWidget()
+        for tso_id in available_tso_ids:
+            item = QtWidgets.QListWidgetItem(sidebar._build_tso_pill_text(tso_id))
+            item.setData(QtCore.Qt.UserRole, tso_id)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Checked)
+            tso_list.addItem(item)
+        layout.addWidget(tso_list)
+
+        clear_checkbox = QtWidgets.QCheckBox(
+            "Clear ObjectLists and DetailLists before auto assigning"
+        )
+        clear_checkbox.setChecked(True)
+        layout.addWidget(clear_checkbox)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Cancel)
+        clear_assign_button = buttons.addButton(
+            "Clear ObjectLists and DetailLists and Auto Assign",
+            QtWidgets.QDialogButtonBox.AcceptRole,
+        )
+        assign_button = buttons.addButton(
+            "Auto Assign",
+            QtWidgets.QDialogButtonBox.AcceptRole,
+        )
+        layout.addWidget(buttons)
+
+        buttons.rejected.connect(dialog.reject)
+        clear_assign_button.clicked.connect(lambda: clear_checkbox.setChecked(True))
+        assign_button.clicked.connect(lambda: clear_checkbox.setChecked(False))
+        clear_assign_button.clicked.connect(dialog.accept)
+        assign_button.clicked.connect(dialog.accept)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return None
+        if all_radio.isChecked():
+            selected_tso_ids = set(available_tso_ids)
+        else:
+            selected_tso_ids = {
+                int(tso_list.item(row).data(QtCore.Qt.UserRole))
+                for row in range(tso_list.count())
+                if tso_list.item(row).checkState() == QtCore.Qt.Checked
+            }
+        return selected_tso_ids, clear_checkbox.isChecked()
+
+    def _auto_assign_object_lists(
+        self,
+        *,
+        selected_tso_ids: set[int] | None = None,
+        clear_existing: bool = True,
+    ) -> tuple[int, int] | None:
         sidebar = self._window.tso_visibility_sidebar
         if not sidebar.object_lists:
             return None
@@ -386,9 +454,37 @@ class TracksideObjectsController:
         if not ranges:
             return None
 
+        selected_ids = (
+            set(range(len(self._trackside_objects)))
+            if selected_tso_ids is None
+            else {int(tso_id) for tso_id in selected_tso_ids if int(tso_id) >= 0}
+        )
+
         rebuilt = [
-            Track3DObjectList(entry.side, int(entry.section), int(entry.sub_index), [])
+            Track3DObjectList(
+                entry.side,
+                int(entry.section),
+                int(entry.sub_index),
+                (
+                    []
+                    if clear_existing
+                    else [tso for tso in entry.tso_ids if tso not in selected_ids]
+                ),
+            )
             for entry in sidebar.object_lists
+        ]
+        detail_lists = [
+            Track3DDetailList(
+                int(entry.section),
+                int(entry.sub_index),
+                str(entry.lod_suffix),
+                (
+                    []
+                    if clear_existing
+                    else [tso for tso in entry.tso_ids if tso not in selected_ids]
+                ),
+            )
+            for entry in sidebar.detail_lists
         ]
         by_key = {
             (entry.side, entry.section, entry.sub_index): entry for entry in rebuilt
@@ -397,6 +493,8 @@ class TracksideObjectsController:
         assigned_count = 0
 
         for tso_id, obj in enumerate(self._trackside_objects):
+            if tso_id not in selected_ids:
+                continue
             projection = self._project_tso_for_object_list(obj, context)
             if projection is None:
                 continue
@@ -415,7 +513,7 @@ class TracksideObjectsController:
                 key=lambda tso_id: self._tso_painter_sort_key(tso_id, sort_data)
             )
 
-        sidebar.apply_auto_assigned_object_lists(rebuilt)
+        sidebar.apply_auto_assigned_visibility_lists(rebuilt, detail_lists)
         return assigned_count, sum(1 for entry in rebuilt if entry.tso_ids)
 
     def _project_tso_for_object_list(
