@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialogButtonBox,
     QGridLayout,
+    QGroupBox,
     QHeaderView,
     QProgressDialog,
     QMessageBox,
@@ -727,20 +728,18 @@ class TSOVisibilityTab(QWidget):
         self._current_track_section_count: int | None = None
         self._track3d_path_provider: Callable[[], object | None] | None = None
 
-        file_group = QVBoxLayout()
-        file_group.addWidget(QLabel("File"))
-        file_button_row = QHBoxLayout()
-        for button in (
-            self.set_export_locations_button,
-            self.load_button,
-            self.load_detail_lists_button,
-            self.reconcile_button,
-            self.save_to_track3d_button,
-            self.save_detail_lists_to_track3d_button,
-        ):
-            file_button_row.addWidget(button)
-        file_group.addLayout(file_button_row)
-        layout.addLayout(file_group)
+        file_group = QGroupBox("Files")
+        file_group_layout = QGridLayout()
+        file_group_layout.setHorizontalSpacing(8)
+        file_group_layout.setVerticalSpacing(6)
+        file_group_layout.addWidget(self.load_button, 0, 0)
+        file_group_layout.addWidget(self.load_detail_lists_button, 0, 1)
+        file_group_layout.addWidget(self.reconcile_button, 0, 2)
+        file_group_layout.addWidget(self.save_to_track3d_button, 1, 0)
+        file_group_layout.addWidget(self.save_detail_lists_to_track3d_button, 1, 1)
+        file_group_layout.addWidget(self.set_export_locations_button, 1, 2)
+        file_group.setLayout(file_group_layout)
+        layout.addWidget(file_group)
 
         QtCore.QTimer.singleShot(0, self._resize_section_list)
 
