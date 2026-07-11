@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +41,7 @@ from sg_viewer.io.track3d_parser import (
     track3d_has_object_lists,
 )
 from sg_viewer.io.track3d_catalog import parse_track3d_catalog
+from sg_viewer.services.sg_integrity_checks import choose_integrity_memo_author
 from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
 
 logger = logging.getLogger(__name__)
@@ -587,6 +589,7 @@ class TSOVisibilityTab(QWidget):
         )
         self.set_export_locations_button = QPushButton("Set export locations...")
         self.auto_assign_button = QPushButton("Auto Assign")
+        self.assignment_check_button = QPushButton("Check unassigned TSOs")
         self.add_tso_button = QPushButton("Add selected TSO to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
@@ -613,6 +616,9 @@ class TSOVisibilityTab(QWidget):
         )
         self.auto_assign_button.setToolTip(
             "Automatically rebuild ObjectList TSO assignments from current TSO positions."
+        )
+        self.assignment_check_button.setToolTip(
+            "Report TSOs that are not assigned to any ObjectList or DetailList."
         )
         self.add_tso_button.setToolTip(
             "Add the selected TSO from the filter list to the currently selected section/sub-index."
@@ -670,6 +676,7 @@ class TSOVisibilityTab(QWidget):
 
         center_panel.addStretch(1)
         center_panel.addWidget(self.auto_assign_button)
+        center_panel.addWidget(self.assignment_check_button)
         center_panel.addWidget(self.add_tso_button)
         center_panel.addWidget(self.delete_tso_button)
         center_panel.addWidget(self.copy_prev_button)
@@ -710,6 +717,7 @@ class TSOVisibilityTab(QWidget):
         self.auto_assign_button.clicked.connect(
             self.autoAssignObjectListsRequested.emit
         )
+        self.assignment_check_button.clicked.connect(self.show_unassigned_tso_report)
         self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
         self.save_detail_lists_to_track3d_button.clicked.connect(
             self._on_save_detail_lists_to_track3d_requested
@@ -1012,6 +1020,90 @@ class TSOVisibilityTab(QWidget):
             for tso_id in object_list.tso_ids
             if tso_id >= 0
         }
+
+    def _unassigned_tso_ids(self) -> list[int]:
+        assigned_ids = self._assigned_tso_ids()
+        return [
+            tso_id
+            for tso_id in self._collect_all_tso_ids()
+            if tso_id not in assigned_ids
+        ]
+
+    def build_unassigned_tso_memo(self) -> str:
+        author = choose_integrity_memo_author()
+        all_tso_ids = self._collect_all_tso_ids()
+        assigned_ids = self._assigned_tso_ids()
+        unassigned_ids = self._unassigned_tso_ids()
+
+        lines = [
+            "MEMORANDUM",
+            "",
+            f"From: {author.name}, {author.title}",
+            "To: SG CREATE Track Construction Department",
+            "Subject: TSO Visibility Assignment Review",
+            "",
+            "Summary:",
+        ]
+        if not all_tso_ids:
+            lines.append(
+                "No TSOs are currently known to this project. This is admirably tidy, but difficult to race past."
+            )
+        elif not unassigned_ids:
+            lines.append(
+                f"All {len(all_tso_ids)} known TSOs have seats in at least one ObjectList or DetailList. The furniture plan is unusually convincing."
+            )
+        else:
+            lines.append(
+                f"{len(unassigned_ids)} of {len(all_tso_ids)} known TSOs are standing in the paddock without an ObjectList or DetailList credential."
+            )
+
+        lines.extend(
+            [
+                "",
+                "Assignment roll call:",
+                f"  Known TSOs: {len(all_tso_ids)}",
+                f"  Assigned TSOs: {len(assigned_ids)}",
+                f"  Unassigned TSOs: {len(unassigned_ids)}",
+                "",
+                "Findings:",
+            ]
+        )
+        if unassigned_ids:
+            for tso_id in unassigned_ids:
+                lines.append(f"  - {self._build_tso_pill_text(tso_id)}")
+            lines.extend(
+                [
+                    "",
+                    "Recommendation:",
+                    "Please assign these wandering scenic assets to at least one ObjectList or DetailList before they unionize behind the timing stand.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "  No unassigned TSOs found.",
+                    "",
+                    "Recommendation:",
+                    "Proceed with cautious optimism. If the scenery starts applauding, check that it is not merely clipping through a grandstand.",
+                ]
+            )
+        return "\n".join(lines)
+
+    def show_unassigned_tso_report(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("TSO Assignment Check")
+        dialog.resize(720, 520)
+
+        layout = QVBoxLayout(dialog)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(self.build_unassigned_tso_memo())
+        layout.addWidget(text)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec_()
 
     def _build_add_tso_dialog_label(self, tso_id: int, assigned_ids: set[int]) -> str:
         label = self._build_tso_pill_text(tso_id)
