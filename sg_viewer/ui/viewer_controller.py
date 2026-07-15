@@ -2073,12 +2073,14 @@ class SGViewerController:
         self._refresh_elevation_profile()
         self._refresh_xsect_elevation_panel()
         self._refresh_xsect_elevation_table()
+        self._section_editing_coordinator.update_xsect_table()
 
     def _sync_after_xsect_value_change_lightweight(self) -> None:
         """Keep live slider edits responsive while still updating elevation graphs live."""
         self._window.invalidate_adjusted_section_range_cache()
         self._last_tsd_adjusted_to_sg_ranges = ([], [])
         self._elevation_panel_controller.refresh_elevation_profile(refresh_table=False)
+        self._section_editing_coordinator.update_xsect_table()
         if hasattr(self._window.preview, "request_repaint"):
             self._window.preview.request_repaint_throttled(min_interval_ms=33)
 
