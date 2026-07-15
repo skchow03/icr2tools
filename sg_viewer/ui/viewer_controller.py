@@ -137,7 +137,7 @@ _TSO_DYNAMIC_LINE_PATTERN = re.compile(
 
 class SGViewerController:
     _TSD_SHOW_ALL_LABEL = "Show all TSDs"
-    _ELEVATION_TAB_BASE_LABEL = "Elevation/Grade"
+    _ELEVATION_TAB_BASE_LABEL = "Elevation"
 
     """Coordinates actions, menus, and dialogs for the SG viewer window."""
 
