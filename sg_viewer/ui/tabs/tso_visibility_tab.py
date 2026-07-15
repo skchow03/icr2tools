@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QGridLayout,
     QGroupBox,
+    QFrame,
     QHeaderView,
     QProgressDialog,
     QMessageBox,
@@ -615,7 +616,7 @@ class TSOVisibilityTab(QWidget):
         self.set_export_locations_button = QPushButton("Set export locations...")
         self.auto_assign_button = QPushButton("Auto Assign")
         self.assignment_check_button = QPushButton("Check unassigned TSOs")
-        self.add_tso_button = QPushButton("Add selected TSO to section")
+        self.add_tso_button = QPushButton("Add selected TSO to section >>")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
         self.clear_all_object_lists_button = QPushButton("Clear all ObjectLists")
@@ -700,11 +701,17 @@ class TSOVisibilityTab(QWidget):
         left_panel.addWidget(self.tso_filter_list)
 
         center_panel.addStretch(1)
-        center_panel.addWidget(self.auto_assign_button)
-        center_panel.addWidget(self.assignment_check_button)
         center_panel.addWidget(self.add_tso_button)
         center_panel.addWidget(self.delete_tso_button)
         center_panel.addWidget(self.copy_prev_button)
+
+        less_used_actions_divider = QFrame()
+        less_used_actions_divider.setFrameShape(QFrame.HLine)
+        less_used_actions_divider.setFrameShadow(QFrame.Sunken)
+        center_panel.addWidget(less_used_actions_divider)
+
+        center_panel.addWidget(self.auto_assign_button)
+        center_panel.addWidget(self.assignment_check_button)
         center_panel.addWidget(self.clear_all_object_lists_button)
         center_panel.addWidget(self.clear_all_detail_lists_button)
         center_panel.addStretch(1)
