@@ -74,6 +74,25 @@ def test_altitude_edit_is_ignored_when_elevation_tab_not_active(qapp, monkeypatc
         window.close()
 
 
+def test_elevation_workflow_tab_is_treated_as_active_for_slider_edits(qapp):
+    window = SGViewerWindow()
+    try:
+        controller = window.controller
+        assert controller is not None
+
+        elevation_tab_index = next(
+            index
+            for index in range(window.right_sidebar_tabs.count())
+            if window.right_sidebar_tabs.tabText(index) == "Elevation"
+        )
+        window.right_sidebar_tabs.setCurrentIndex(elevation_tab_index)
+
+        assert window.active_sidebar_tab_name() == "Elevation"
+        assert controller._is_elevation_tab_active() is True
+    finally:
+        window.close()
+
+
 def test_grade_edit_is_ignored_when_elevation_tab_not_active(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
