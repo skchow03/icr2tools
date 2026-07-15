@@ -57,6 +57,13 @@ class XsectTableWindow(QtWidgets.QDialog):
         self._apply_timer.timeout.connect(self._apply_pending_edits)
 
         layout = QtWidgets.QVBoxLayout()
+        self._section_label = QtWidgets.QLabel("Section: none selected")
+        self._section_label.setObjectName("xsectTableSectionLabel")
+        font = self._section_label.font()
+        font.setBold(True)
+        self._section_label.setFont(font)
+        layout.addWidget(self._section_label)
+
         self._table = QtWidgets.QTableWidget()
         self._table.setColumnCount(4)
         self._table.setRowCount(10)
@@ -113,7 +120,9 @@ class XsectTableWindow(QtWidgets.QDialog):
         metadata: list[tuple[int, float]],
         altitudes: list[int | None] | None = None,
         grades: list[int | None] | None = None,
+        section_index: int | None = None,
     ) -> None:
+        self.set_section_header(section_index)
         altitudes = altitudes or []
         grades = grades or []
         self._entries = []
@@ -137,6 +146,12 @@ class XsectTableWindow(QtWidgets.QDialog):
             self._populate_rows()
         finally:
             self._is_updating = False
+
+    def set_section_header(self, section_index: int | None) -> None:
+        if section_index is None:
+            self._section_label.setText("Section: none selected")
+        else:
+            self._section_label.setText(f"Section: {section_index}")
 
     def on_xsects_edited(self, callback: Callable[[list[XsectEntry]], None]) -> None:
         self.xsectsEdited.connect(callback)

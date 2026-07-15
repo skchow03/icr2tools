@@ -144,8 +144,11 @@ class SectionEditingCoordinator:
             altitude_to_display_units=self._host._window.xsect_altitude_to_display_units,
             altitude_from_display_units=self._host._window.xsect_altitude_from_display_units,
         )
+        section_index = self._current_section_index()
         altitudes, grades = self._current_section_xsect_values()
-        self._host._xsect_table_window.set_xsects(metadata, altitudes, grades)
+        self._host._xsect_table_window.set_xsects(
+            metadata, altitudes, grades, section_index=section_index
+        )
         self._host._xsect_table_window.show()
         self._host._xsect_table_window.raise_()
         self._host._xsect_table_window.activateWindow()
@@ -164,8 +167,17 @@ class SectionEditingCoordinator:
             altitude_to_display_units=self._host._window.xsect_altitude_to_display_units,
             altitude_from_display_units=self._host._window.xsect_altitude_from_display_units,
         )
+        section_index = self._current_section_index()
         altitudes, grades = self._current_section_xsect_values()
-        self._host._xsect_table_window.set_xsects(metadata, altitudes, grades)
+        self._host._xsect_table_window.set_xsects(
+            metadata, altitudes, grades, section_index=section_index
+        )
+
+    def _current_section_index(self) -> int | None:
+        selection = self._host._active_selection
+        if selection is None:
+            return None
+        return selection.index
 
     def _current_section_xsect_values(
         self,
