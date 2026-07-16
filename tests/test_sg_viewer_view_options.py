@@ -317,6 +317,11 @@ def test_viewport_intensity_controls_and_presets(qapp):
         window.update_visual_intensity_controls()
         assert not window.background_brightness_spin.isEnabled()
         assert not window.track_opacity_spin.isEnabled()
+        assert not window.track_opacity_button.isEnabled()
+        assert window.track_opacity_button.text() == "100%"
+
+        window.track_opacity_spin.setValue(40)
+        assert window.track_opacity_button.text() == "40%"
 
         window._view_preset_combo.setCurrentText("Construction")
         assert window.sg_fsects_checkbox.isChecked()
@@ -3730,6 +3735,7 @@ def test_delete_tso_does_not_auto_save_project(qapp, tmp_path):
         assert window.controller._trackside_objects_is_dirty is True
     finally:
         window.close()
+
 
 def test_delete_tso_remaps_object_and_detail_list_tso_ids(qapp):
     window = SGViewerWindow()

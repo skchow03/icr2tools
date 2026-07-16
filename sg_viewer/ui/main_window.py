@@ -320,7 +320,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._mrk_texture_pattern_show_colors_checkbox.setChecked(True)
         self._mrk_generate_file_button = QtWidgets.QPushButton("Generate .MRK file")
-        self._mrk_export_locations_button = QtWidgets.QPushButton("Set export locations...")
+        self._mrk_export_locations_button = QtWidgets.QPushButton(
+            "Set export locations..."
+        )
         self._mrk_save_button = QtWidgets.QPushButton("Export MRK entries")
         self._mrk_load_button = QtWidgets.QPushButton("Import MRK entries")
         self._generate_pitwall_button = QtWidgets.QPushButton("Generate pitwall.txt")
@@ -688,13 +690,36 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._background_brightness_spin.setToolTip(
             "Adjust background image brightness from -100 to 100."
         )
-        self._track_opacity_spin = QtWidgets.QSpinBox()
-        self._track_opacity_spin.setRange(0, 100)
-        self._track_opacity_spin.setValue(100)
-        self._track_opacity_spin.setSingleStep(1)
-        self._track_opacity_spin.setSuffix("%")
-        self._track_opacity_spin.setMinimumWidth(72)
-        self._track_opacity_spin.setToolTip("Adjust track opacity from 0% to 100%.")
+        self._track_opacity_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._track_opacity_slider.setRange(0, 100)
+        self._track_opacity_slider.setValue(100)
+        self._track_opacity_slider.setSingleStep(1)
+        self._track_opacity_slider.setPageStep(10)
+        self._track_opacity_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._track_opacity_slider.setTickInterval(25)
+        self._track_opacity_slider.setMinimumWidth(180)
+        self._track_opacity_slider.setToolTip("Adjust track opacity from 0% to 100%.")
+        self._track_opacity_button = QtWidgets.QToolButton()
+        self._track_opacity_button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self._track_opacity_button.setMinimumWidth(84)
+        self._track_opacity_button.setToolTip("Open track opacity slider.")
+        self._track_opacity_menu = QtWidgets.QMenu(self._track_opacity_button)
+        self._track_opacity_panel = QtWidgets.QWidget(self._track_opacity_menu)
+        track_opacity_layout = QtWidgets.QVBoxLayout(self._track_opacity_panel)
+        track_opacity_layout.setContentsMargins(10, 8, 10, 8)
+        track_opacity_layout.setSpacing(6)
+        self._track_opacity_value_label = QtWidgets.QLabel()
+        self._track_opacity_value_label.setAlignment(QtCore.Qt.AlignCenter)
+        track_opacity_layout.addWidget(self._track_opacity_value_label)
+        track_opacity_layout.addWidget(self._track_opacity_slider)
+        track_opacity_action = QtWidgets.QWidgetAction(self._track_opacity_menu)
+        track_opacity_action.setDefaultWidget(self._track_opacity_panel)
+        self._track_opacity_menu.addAction(track_opacity_action)
+        self._track_opacity_button.setMenu(self._track_opacity_menu)
+        self._track_opacity_slider.valueChanged.connect(
+            self._update_track_opacity_selector_label
+        )
+        self._update_track_opacity_selector_label(self._track_opacity_slider.value())
         self._sg_fsects_checkbox = QtWidgets.QCheckBox("F-sections")
         self._sg_fsects_checkbox.setChecked(False)
         self._xsect_dlat_line_checkbox = QtWidgets.QCheckBox("X-sect DLAT")
@@ -733,9 +758,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Copy selected Xsect data to other sections."
         )
         self._copy_xsect_button.setEnabled(False)
-        self._generate_elevation_change_button = ElevationTabButton(
-            "Generate Change"
-        )
+        self._generate_elevation_change_button = ElevationTabButton("Generate Change")
         self._generate_elevation_change_button.setToolTip(
             "Generate an elevation change for the selected Xsect."
         )
@@ -1784,8 +1807,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._background_brightness_spin
 
     @property
-    def track_opacity_spin(self) -> QtWidgets.QSpinBox:
-        return self._track_opacity_spin
+    def track_opacity_spin(self) -> QtWidgets.QSlider:
+        return self._track_opacity_slider
+
+    @property
+    def track_opacity_button(self) -> QtWidgets.QToolButton:
+        return self._track_opacity_button
 
     @property
     def sg_fsects_checkbox(self) -> QtWidgets.QCheckBox:
@@ -2234,7 +2261,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self._background_brightness_spin)
         layout.addSpacing(8)
         layout.addWidget(QtWidgets.QLabel("Track opacity:"))
-        layout.addWidget(self._track_opacity_spin)
+        layout.addWidget(self._track_opacity_button)
         toolbar.setLayout(layout)
         return toolbar
 
@@ -2246,8 +2273,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for widget in (self._background_brightness_spin,):
             widget.setEnabled(background_active)
         has_track = bool(self._preview.section_manager.sections)
-        for widget in (self._track_opacity_spin,):
+        for widget in (self._track_opacity_button, self._track_opacity_slider):
             widget.setEnabled(has_track)
+
+    def _update_track_opacity_selector_label(self, value: int) -> None:
+        text = f"{max(0, min(100, int(value)))}%"
+        self._track_opacity_button.setText(text)
+        self._track_opacity_value_label.setText(f"Track opacity: {text}")
 
     def _on_view_preset_changed(self, preset: str) -> None:
         if preset == "Geometry":
@@ -4387,9 +4419,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 continue
         self._preview.set_land_object_vertex_points_overlay(tuple(selected_points))
 
-    def _parse_land_object_overlay(
-        self, payload: dict[str, object]
-    ) -> tuple[
+    def _parse_land_object_overlay(self, payload: dict[str, object]) -> tuple[
         list[tuple[float, float]],
         list[tuple[tuple[int, ...], int, bool]],
         list[str],
