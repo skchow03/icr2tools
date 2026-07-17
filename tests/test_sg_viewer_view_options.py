@@ -650,6 +650,31 @@ def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
         window.close()
 
 
+def test_surface_features_tab_enables_sg_fsects(qapp):
+    window = SGViewerWindow()
+    try:
+        window.sg_fsects_checkbox.setChecked(False)
+
+        surface_index = next(
+            index
+            for index in range(window.right_sidebar_tabs.count())
+            if window.right_sidebar_tabs.tabText(index) == "Surface"
+        )
+        window.right_sidebar_tabs.setCurrentIndex(surface_index)
+        surface_tabs = window.right_sidebar_tabs.widget(surface_index)
+        features_index = next(
+            index
+            for index in range(surface_tabs.count())
+            if surface_tabs.tabText(index).rstrip("*") == "Features"
+        )
+        surface_tabs.setCurrentIndex(features_index)
+
+        assert window.active_sidebar_tab_name() == "Features"
+        assert window.sg_fsects_checkbox.isChecked() is True
+    finally:
+        window.close()
+
+
 def test_mrk_tab_buttons_hide_import_export_entries_controls(qapp):
     window = SGViewerWindow()
     try:
