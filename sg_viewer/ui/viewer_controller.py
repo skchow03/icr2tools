@@ -1098,7 +1098,7 @@ class SGViewerController:
         if tab_name != self._ELEVATION_TAB_BASE_LABEL:
             self._elevation_panel_controller.cancel_live_edits()
         if (
-            tab_name in {"Fsects", "Walls"}
+            tab_name in {"Features", "Fsects", "Walls"}
             and not self._window.sg_fsects_checkbox.isChecked()
         ):
             self._window.sg_fsects_checkbox.setChecked(True)
