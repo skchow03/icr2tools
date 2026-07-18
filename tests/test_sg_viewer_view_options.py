@@ -1848,6 +1848,43 @@ def test_mrk_patterns_use_texture_names_not_mip_names(qapp):
         window.close()
 
 
+def test_files_tab_create_empty_mrk_file_uses_track_name(qapp, tmp_path):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "monza.sg"
+        window.controller._current_path = sg_path
+
+        window.controller._track3d_tools_controller._on_create_empty_mrk_requested()
+
+        assert (tmp_path / "monza.mrk").read_text(encoding="utf-8") == "MARK_V1\n"
+    finally:
+        window.close()
+
+
+def test_files_tab_create_empty_mrk_file_refuses_existing_file(
+    qapp, tmp_path, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        sg_path = tmp_path / "monza.sg"
+        mrk_path = tmp_path / "monza.mrk"
+        mrk_path.write_text("EXISTING\n", encoding="utf-8")
+        window.controller._current_path = sg_path
+        warnings = []
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+
+        window.controller._track3d_tools_controller._on_create_empty_mrk_requested()
+
+        assert mrk_path.read_text(encoding="utf-8") == "EXISTING\n"
+        assert warnings
+        assert "already exists" in warnings[0][2]
+    finally:
+        window.close()
+
 def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:

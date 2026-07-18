@@ -471,6 +471,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._files_create_run_bat_button = QtWidgets.QPushButton(
             "Create run .bat file..."
         )
+        self._files_create_mrk_button = QtWidgets.QPushButton(
+            "Create empty .mrk file"
+        )
         self._three_d_set_export_locations_button = QtWidgets.QPushButton(
             "Set export locations..."
         )
@@ -1524,6 +1527,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         project_files_layout.addWidget(project_files_note)
         project_files_layout.addWidget(self._files_copy_template_button)
         project_files_layout.addWidget(self._files_create_run_bat_button)
+        project_files_layout.addWidget(self._files_create_mrk_button)
         project_files_group.setLayout(project_files_layout)
         three_d_layout.addWidget(project_files_group)
 
@@ -2813,6 +2817,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def files_create_run_bat_button(self) -> QtWidgets.QPushButton:
         return self._files_create_run_bat_button
+
+    @property
+    def files_create_mrk_button(self) -> QtWidgets.QPushButton:
+        return self._files_create_mrk_button
 
     @property
     def three_d_set_export_locations_button(self) -> QtWidgets.QPushButton:
