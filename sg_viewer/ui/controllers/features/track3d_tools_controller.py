@@ -7,7 +7,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.services.pcx_palette import read_pcx_256_palette
 
 from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
-from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS, replace_color_section_from_indices
+from sg_viewer.replacecolors import (
+    DEFAULT_TRACK3D_COLORS,
+    replace_color_section_from_indices,
+)
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.track3d_colors_dialog import Track3DColorDefinitionsDialog
 from sg_viewer.ui.track3d_catalog_dialog import Track3DCatalogInspectorDialog
@@ -25,38 +28,68 @@ class Track3DToolsController:
         self._host = host
 
     @property
-    def _window(self): return self._host._window
-    @property
-    def _sg_settings_store(self): return self._host._sg_settings_store
-    @property
-    def _current_path(self): return self._host._current_path
-    @property
-    def _project_working_directory(self): return self._host._project_working_directory
-    @property
-    def _active_selection(self): return self._host._active_selection
-    @property
-    def _trackside_objects(self): return self._host._trackside_objects
+    def _window(self):
+        return self._host._window
 
     @property
-    def _selected_track3d_path(self): return self._host._track3d_palette_state.selected_track3d_path
+    def _sg_settings_store(self):
+        return self._host._sg_settings_store
+
+    @property
+    def _current_path(self):
+        return self._host._current_path
+
+    @property
+    def _project_working_directory(self):
+        return self._host._project_working_directory
+
+    @property
+    def _active_selection(self):
+        return self._host._active_selection
+
+    @property
+    def _trackside_objects(self):
+        return self._host._trackside_objects
+
+    @property
+    def _selected_track3d_path(self):
+        return self._host._track3d_palette_state.selected_track3d_path
+
     @_selected_track3d_path.setter
-    def _selected_track3d_path(self, value): self._host._track3d_palette_state.selected_track3d_path = value
+    def _selected_track3d_path(self, value):
+        self._host._track3d_palette_state.selected_track3d_path = value
+
     @property
-    def _track3d_colors(self): return self._host._track3d_palette_state.track3d_colors
+    def _track3d_colors(self):
+        return self._host._track3d_palette_state.track3d_colors
+
     @_track3d_colors.setter
-    def _track3d_colors(self, value): self._host._track3d_palette_state.track3d_colors = value
+    def _track3d_colors(self, value):
+        self._host._track3d_palette_state.track3d_colors = value
+
     @property
-    def _sunny_palette(self): return self._host._track3d_palette_state.sunny_palette
+    def _sunny_palette(self):
+        return self._host._track3d_palette_state.sunny_palette
+
     @_sunny_palette.setter
-    def _sunny_palette(self, value): self._host._track3d_palette_state.sunny_palette = value
+    def _sunny_palette(self, value):
+        self._host._track3d_palette_state.sunny_palette = value
+
     @property
-    def _sunny_palette_path(self): return self._host._track3d_palette_state.sunny_palette_path
+    def _sunny_palette_path(self):
+        return self._host._track3d_palette_state.sunny_palette_path
+
     @_sunny_palette_path.setter
-    def _sunny_palette_path(self, value): self._host._track3d_palette_state.sunny_palette_path = value
+    def _sunny_palette_path(self, value):
+        self._host._track3d_palette_state.sunny_palette_path = value
+
     @property
-    def _palette_colors_dialog(self): return self._host._track3d_palette_state.palette_colors_dialog
+    def _palette_colors_dialog(self):
+        return self._host._track3d_palette_state.palette_colors_dialog
+
     @_palette_colors_dialog.setter
-    def _palette_colors_dialog(self, value): self._host._track3d_palette_state.palette_colors_dialog = value
+    def _palette_colors_dialog(self, value):
+        self._host._track3d_palette_state.palette_colors_dialog = value
 
     def _dialog_default_directory(self) -> str:
         return self._host._dialog_default_directory()
@@ -66,6 +99,7 @@ class Track3DToolsController:
 
     def _sync_tso_visibility_section_dlongs(self) -> None:
         self._host._sync_tso_visibility_section_dlongs()
+
     _read_pcx_256_palette = staticmethod(read_pcx_256_palette)
 
     @staticmethod
@@ -84,7 +118,9 @@ class Track3DToolsController:
 
         self._load_sunny_palette(Path(path_str))
 
-    def _load_sunny_palette(self, path: Path, *, persist_for_current_track: bool = True) -> bool:
+    def _load_sunny_palette(
+        self, path: Path, *, persist_for_current_track: bool = True
+    ) -> bool:
         resolved_path = path.resolve()
         try:
             colors = self._read_pcx_256_palette(resolved_path)
@@ -120,10 +156,14 @@ class Track3DToolsController:
             return
 
         if self._palette_colors_dialog is None:
-            self._palette_colors_dialog = PaletteColorDialog(self._sunny_palette, self._window)
+            self._palette_colors_dialog = PaletteColorDialog(
+                self._sunny_palette, self._window
+            )
         else:
             self._palette_colors_dialog.close()
-            self._palette_colors_dialog = PaletteColorDialog(self._sunny_palette, self._window)
+            self._palette_colors_dialog = PaletteColorDialog(
+                self._sunny_palette, self._window
+            )
 
         self._palette_colors_dialog.show()
         self._palette_colors_dialog.raise_()
@@ -177,7 +217,9 @@ class Track3DToolsController:
             "3D Tools - Inspect Report",
             "\n".join(report.summary_lines()),
         )
-        self._window.show_status_message(f"3D tools inspection complete: {input_path.name}")
+        self._window.show_status_message(
+            f"3D tools inspection complete: {input_path.name}"
+        )
 
     def _run_three_d_fix(self, input_path: Path, *, in_place: bool) -> None:
         output_path: Path | None = None
@@ -185,7 +227,9 @@ class Track3DToolsController:
             output_text, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
                 self._window,
                 "Save fixed 3D file",
-                str(input_path.with_name(f"{input_path.stem}_fixed{input_path.suffix}")),
+                str(
+                    input_path.with_name(f"{input_path.stem}_fixed{input_path.suffix}")
+                ),
                 "Track 3D Files (*.3d *.3D);;All Files (*)",
             )
             if not output_text:
@@ -234,7 +278,10 @@ class Track3DToolsController:
         self._window.show_status_message(f"3D tools fix complete: {input_path.name}")
 
     def _track3d_path_for_current_project(self) -> Path | None:
-        if self._selected_track3d_path is not None and self._selected_track3d_path.exists():
+        if (
+            self._selected_track3d_path is not None
+            and self._selected_track3d_path.exists()
+        ):
             return self._selected_track3d_path
         if self._current_path is None:
             return None
@@ -249,7 +296,9 @@ class Track3DToolsController:
     def _set_selected_track3d_path(self, path: Path | None, *, persist: bool) -> None:
         resolved = path.resolve() if path is not None else None
         self._selected_track3d_path = resolved
-        self._window.set_selected_track3d_path_text(str(resolved) if resolved is not None else "none")
+        self._window.set_selected_track3d_path_text(
+            str(resolved) if resolved is not None else "none"
+        )
         if persist and self._current_path is not None:
             self._sg_settings_store.set_track3d_file(self._current_path, resolved)
         self._sync_tso_visibility_section_dlongs()
@@ -282,7 +331,9 @@ class Track3DToolsController:
             return
         selected_path = Path(path_str)
         if not selected_path.exists():
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"File not found:\n{selected_path}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"File not found:\n{selected_path}"
+            )
             return
         self._set_selected_track3d_path(selected_path, persist=True)
         self._window.show_status_message(f"Selected .3D file: {selected_path.name}")
@@ -294,15 +345,21 @@ class Track3DToolsController:
         try:
             catalog = parse_track3d_catalog(input_path)
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Catalog Inspector", f"Could not read 3D file:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Catalog Inspector", f"Could not read 3D file:\n{exc}"
+            )
             return
-        current_section = self._active_selection.index if self._active_selection is not None else None
+        current_section = (
+            self._active_selection.index if self._active_selection is not None else None
+        )
 
         def jump_to_section(section: int) -> None:
             sections, _xsects = self._window.preview.get_section_set()
             if 0 <= section < len(sections):
                 self._window.preview.selection_manager.set_selected_section(section)
-                self._window.show_status_message(f"Jumped to SG section {section} from .3D catalog inspector.")
+                self._window.show_status_message(
+                    f"Jumped to SG section {section} from .3D catalog inspector."
+                )
             else:
                 QtWidgets.QMessageBox.information(
                     self._window,
@@ -344,12 +401,16 @@ class Track3DToolsController:
             return None
         section = self._selected_sg_section_index()
         if section is None:
-            QtWidgets.QMessageBox.information(self._window, "3D section tools", "Select an SG section first.")
+            QtWidgets.QMessageBox.information(
+                self._window, "3D section tools", "Select an SG section first."
+            )
             return None
         try:
             return input_path, parse_track3d_catalog(input_path), int(section)
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D section tools", f"Could not read 3D file:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D section tools", f"Could not read 3D file:\n{exc}"
+            )
             return None
 
     def _on_three_d_show_selected_section_entries(self) -> None:
@@ -358,36 +419,70 @@ class Track3DToolsController:
             return
         path, catalog, section = payload
         faces = [face for face in catalog.faces if face.section == section]
-        section_lists = [label for label, item in catalog.section_lists.items() if item.section == section]
+        section_lists = [
+            label
+            for label, item in catalog.section_lists.items()
+            if item.section == section
+        ]
         object_lists = sorted({name for face in faces for name in face.object_lists})
         lines = [f".3D entries for SG section {section} in {path}", "", "FACE blocks:"]
-        lines.extend(f"  {face.label} (lines {face.span.start_line}-{face.span.end_line}, LOD {face.lod})" for face in faces)
+        lines.extend(
+            f"  {face.label} (lines {face.span.start_line}-{face.span.end_line}, LOD {face.lod})"
+            for face in faces
+        )
         lines.append("Section lists:")
         lines.extend(f"  {label}" for label in section_lists)
         lines.append("ObjectLists referenced:")
         lines.extend(f"  {label}" for label in object_lists)
-        self._show_track3d_text_report(".3D entries for selected SG section", "\n".join(lines) if faces or section_lists or object_lists else "No .3D entries found.")
+        self._show_track3d_text_report(
+            ".3D entries for selected SG section",
+            (
+                "\n".join(lines)
+                if faces or section_lists or object_lists
+                else "No .3D entries found."
+            ),
+        )
 
     def _on_three_d_show_selected_section_object_lists(self) -> None:
         payload = self._selected_section_catalog()
         if payload is None:
             return
         _path, catalog, section = payload
-        refs = sorted({name for face in catalog.faces if face.section == section for name in face.object_lists})
+        refs = sorted(
+            {
+                name
+                for face in catalog.faces
+                if face.section == section
+                for name in face.object_lists
+            }
+        )
         rows = []
         for name in refs:
             obj = catalog.object_lists.get(name)
-            rows.append(f"{name}: missing definition" if obj is None else f"{name} (line {obj.line}): {', '.join(obj.items) or '(empty)'}")
-        self._show_track3d_text_report("ObjectLists referenced by selected section", "\n".join(rows) or "No ObjectLists referenced by selected section.")
+            rows.append(
+                f"{name}: missing definition"
+                if obj is None
+                else f"{name} (line {obj.line}): {', '.join(obj.items) or '(empty)'}"
+            )
+        self._show_track3d_text_report(
+            "ObjectLists referenced by selected section",
+            "\n".join(rows) or "No ObjectLists referenced by selected section.",
+        )
 
-    def _tso_labels_for_section(self, catalog: Track3DCatalog, section: int) -> list[str]:
+    def _tso_labels_for_section(
+        self, catalog: Track3DCatalog, section: int
+    ) -> list[str]:
         return sorted(
             {
                 item
                 for face in catalog.faces
                 if face.section == section
                 for name in face.object_lists
-                for item in (catalog.object_lists.get(name).items if catalog.object_lists.get(name) else [])
+                for item in (
+                    catalog.object_lists.get(name).items
+                    if catalog.object_lists.get(name)
+                    else []
+                )
                 if item.startswith("__TSO")
             },
             key=lambda x: int(x[5:]) if x[5:].isdigit() else x,
@@ -401,19 +496,32 @@ class Track3DToolsController:
         rows = []
         for label in self._tso_labels_for_section(catalog, section):
             tso = catalog.tsos.get(label)
-            rows.append(f'{label}: EXTERN "{tso.extern}" at ({tso.x}, {tso.y}, {tso.z})' if tso else f"{label}: missing definition")
-        self._show_track3d_text_report("TSOs used by selected section", "\n".join(rows) or "No TSOs used by selected section.")
+            rows.append(
+                f'{label}: EXTERN "{tso.extern}" at ({tso.x}, {tso.y}, {tso.z})'
+                if tso
+                else f"{label}: missing definition"
+            )
+        self._show_track3d_text_report(
+            "TSOs used by selected section",
+            "\n".join(rows) or "No TSOs used by selected section.",
+        )
 
     def _selected_section_object_list_plan(self) -> Track3DEditPlan | None:
         payload = self._selected_section_catalog()
         if payload is None:
             return None
         path, _catalog, section = payload
-        return build_selected_object_list_edit_plan(path, self._window.tso_visibility_sidebar.object_lists, section=section)
+        return build_selected_object_list_edit_plan(
+            path, self._window.tso_visibility_sidebar.object_lists, section=section
+        )
 
-    def _confirm_and_apply_track3d_plan(self, title: str, plan: Track3DEditPlan) -> bool:
+    def _confirm_and_apply_track3d_plan(
+        self, title: str, plan: Track3DEditPlan
+    ) -> bool:
         if not plan.edits:
-            QtWidgets.QMessageBox.information(self._window, title, "No changes are available for the selected scope.")
+            QtWidgets.QMessageBox.information(
+                self._window, title, "No changes are available for the selected scope."
+            )
             return False
         diff = plan.preview_unified_diff(context=3)
         warning_text = "\n".join(plan.warnings)
@@ -432,19 +540,29 @@ class Track3DToolsController:
         try:
             backup_path = plan.write()
         except OSError as exc:
-            QtWidgets.QMessageBox.critical(self._window, title, f"Could not apply edits:\n{exc}")
+            QtWidgets.QMessageBox.critical(
+                self._window, title, f"Could not apply edits:\n{exc}"
+            )
             return False
-        self._window.show_status_message(f"Updated {plan.original_path.name}; backup saved to {backup_path.name}.")
+        self._window.show_status_message(
+            f"Updated {plan.original_path.name}; backup saved to {backup_path.name}."
+        )
         return True
 
     def _on_three_d_preview_selected_object_lists(self) -> None:
         plan = self._selected_section_object_list_plan()
         if plan is None:
             return
-        diff = plan.preview_unified_diff(context=3) if plan.edits else "No ObjectList changes for selected section."
+        diff = (
+            plan.preview_unified_diff(context=3)
+            if plan.edits
+            else "No ObjectList changes for selected section."
+        )
         if plan.warnings:
             diff = "Warnings:\n" + "\n".join(plan.warnings) + "\n\n" + diff
-        self._show_track3d_text_report("Preview ObjectList changes for selected section", diff)
+        self._show_track3d_text_report(
+            "Preview ObjectList changes for selected section", diff
+        )
 
     def _on_three_d_apply_selected_object_lists(self) -> None:
         plan = self._selected_section_object_list_plan()
@@ -463,7 +581,9 @@ class Track3DToolsController:
                 continue
             index = int(index_text)
             if 0 <= index < len(self._trackside_objects):
-                replacements[label] = self._format_tso_dynamic_line(label, self._trackside_objects[index])
+                replacements[label] = self._format_tso_dynamic_line(
+                    label, self._trackside_objects[index]
+                )
         plan = build_selected_tso_definition_edit_plan(path, replacements)
         self._confirm_and_apply_track3d_plan("Apply selected TSO definitions", plan)
 
@@ -488,10 +608,18 @@ class Track3DToolsController:
             if old and new:
                 replacements[old] = new
         if not replacements:
-            QtWidgets.QMessageBox.information(self._window, "Replace materials", "No material replacements were entered.")
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Replace materials",
+                "No material replacements were entered.",
+            )
             return
-        plan = build_selected_face_material_edit_plan(path, section=section, material_replacements=replacements)
-        self._confirm_and_apply_track3d_plan("Replace materials in selected FACE spans", plan)
+        plan = build_selected_face_material_edit_plan(
+            path, section=section, material_replacements=replacements
+        )
+        self._confirm_and_apply_track3d_plan(
+            "Replace materials in selected FACE spans", plan
+        )
 
     def _on_edit_track3d_colors_requested(self) -> None:
         dialog = Track3DColorDefinitionsDialog(
@@ -504,7 +632,9 @@ class Track3DToolsController:
         self._track3d_colors = dialog.selected_colors()
         self._window.set_selected_colors_path_text("custom")
         if self._current_path is not None:
-            self._sg_settings_store.set_track3d_colors(self._current_path, self._track3d_colors)
+            self._sg_settings_store.set_track3d_colors(
+                self._current_path, self._track3d_colors
+            )
         self._window.show_status_message("Updated 3D polygon color mappings.")
 
     def _on_three_d_inspect_requested(self) -> None:
@@ -514,9 +644,13 @@ class Track3DToolsController:
         try:
             self._run_three_d_inspect(input_path)
         except ToolError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"3D tools failed:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"3D tools failed:\n{exc}"
+            )
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not read 3D file:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"Could not read 3D file:\n{exc}"
+            )
 
     def _on_three_d_fix_copy_requested(self) -> None:
         input_path = self._ensure_selected_track3d_file()
@@ -525,9 +659,13 @@ class Track3DToolsController:
         try:
             self._run_three_d_fix(input_path, in_place=False)
         except ToolError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"3D tools failed:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"3D tools failed:\n{exc}"
+            )
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}"
+            )
 
     def _on_three_d_fix_in_place_requested(self) -> None:
         input_path = self._ensure_selected_track3d_file()
@@ -545,18 +683,26 @@ class Track3DToolsController:
         try:
             self._run_three_d_fix(input_path, in_place=True)
         except ToolError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"3D tools failed:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"3D tools failed:\n{exc}"
+            )
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}"
+            )
 
     def _on_three_d_apply_color_replacements_requested(self) -> None:
         input_path = self._ensure_selected_track3d_file()
         if input_path is None:
             return
         try:
-            replacement_count = replace_color_section_from_indices(input_path, self._track3d_colors)
+            replacement_count = replace_color_section_from_indices(
+                input_path, self._track3d_colors
+            )
         except OSError as exc:
-            QtWidgets.QMessageBox.warning(self._window, "3D Tools", f"Could not update colors:\n{exc}")
+            QtWidgets.QMessageBox.warning(
+                self._window, "3D Tools", f"Could not update colors:\n{exc}"
+            )
             return
         QtWidgets.QMessageBox.information(
             self._window,
@@ -565,6 +711,37 @@ class Track3DToolsController:
         )
         self._window.show_status_message(
             f"3D tools color fix complete: {input_path.name} ({replacement_count} updated)"
+        )
+
+    def _run_three_d_workflow_steps(self, steps: tuple[str, ...]) -> None:
+        if not steps:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Apply Selected to .3D",
+                "Select at least one standard workflow step to apply.",
+            )
+            return
+        step_actions = {
+            "tso": self._host._trackside_objects_controller._on_tso_write_to_3d_file_requested,
+            "object_lists": self._window.tso_visibility_sidebar._on_save_to_track3d_requested,
+            "detail_lists": self._window.tso_visibility_sidebar._on_save_detail_lists_to_track3d_requested,
+            "see_through": self._on_three_d_fix_in_place_requested,
+            "colors": self._on_three_d_apply_color_replacements_requested,
+        }
+        for step in steps:
+            action = step_actions.get(step)
+            if action is not None:
+                action()
+        self._window.show_status_message(
+            "Applied selected standard .3D workflow steps."
+        )
+
+    def _on_three_d_apply_selected_workflow_requested(self) -> None:
+        self._run_three_d_workflow_steps(self._window.selected_three_d_workflow_steps())
+
+    def _on_three_d_apply_all_workflow_requested(self) -> None:
+        self._run_three_d_workflow_steps(
+            ("tso", "object_lists", "detail_lists", "see_through", "colors")
         )
 
     def _apply_saved_sunny_palette(self, sg_path: Path | None = None) -> None:

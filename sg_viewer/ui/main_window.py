@@ -465,6 +465,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_select_button = QtWidgets.QPushButton(
             "Select track .3D file..."
         )
+        self._three_d_set_export_locations_button = QtWidgets.QPushButton(
+            "Set export locations..."
+        )
         self._three_d_file_catalog_inspector_button = QtWidgets.QPushButton(
             "Open catalog inspector (read-only)"
         )
@@ -507,6 +510,34 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._three_d_file_apply_colors_button = QtWidgets.QPushButton(
             "Apply color replacements"
+        )
+        self._three_d_workflow_tso_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_object_lists_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_detail_lists_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_see_through_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_colors_checkbox = QtWidgets.QCheckBox()
+        for checkbox in (
+            self._three_d_workflow_tso_checkbox,
+            self._three_d_workflow_object_lists_checkbox,
+            self._three_d_workflow_detail_lists_checkbox,
+            self._three_d_workflow_see_through_checkbox,
+            self._three_d_workflow_colors_checkbox,
+        ):
+            checkbox.setChecked(True)
+        self._three_d_apply_selected_workflow_button = QtWidgets.QPushButton(
+            "Apply Selected to .3D"
+        )
+        self._three_d_workflow_save_tso_button = QtWidgets.QPushButton(
+            "Save TSOs to .3D file"
+        )
+        self._three_d_workflow_save_object_lists_button = QtWidgets.QPushButton(
+            "Save ObjectLists"
+        )
+        self._three_d_workflow_save_detail_lists_button = QtWidgets.QPushButton(
+            "Save DetailLists"
+        )
+        self._three_d_apply_all_workflow_button = QtWidgets.QPushButton(
+            "Apply all to .3D"
         )
         self._tso_table = QtWidgets.QTableWidget(0, 6)
         self._tso_table.setHorizontalHeaderLabels(
@@ -1467,49 +1498,81 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         three_d_intro.setWordWrap(True)
         three_d_layout.addWidget(three_d_intro)
 
-        track_group = QtWidgets.QGroupBox("1) Track .3D file")
+        track_group = QtWidgets.QGroupBox("1) Export locations")
         track_group_layout = QtWidgets.QVBoxLayout()
         track_group_layout.addWidget(self._three_d_file_selected_path_label)
-        track_group_layout.addWidget(self._three_d_file_select_button)
-        track_group_layout.addWidget(self._three_d_file_catalog_inspector_button)
-        track_group_layout.addWidget(self._three_d_show_section_entries_button)
-        track_group_layout.addWidget(self._three_d_show_section_object_lists_button)
-        track_group_layout.addWidget(self._three_d_show_section_tsos_button)
-        track_group_layout.addWidget(self._three_d_preview_object_list_changes_button)
-        track_group_layout.addWidget(self._three_d_apply_object_list_changes_button)
-        track_group_layout.addWidget(self._three_d_apply_tso_definitions_button)
-        track_group_layout.addWidget(self._three_d_apply_face_materials_button)
+        track_group_buttons = QtWidgets.QHBoxLayout()
+        track_group_buttons.addWidget(self._three_d_set_export_locations_button)
+        track_group_buttons.addWidget(self._three_d_file_select_button)
+        track_group_layout.addLayout(track_group_buttons)
         track_group.setLayout(track_group_layout)
         three_d_layout.addWidget(track_group)
 
-        elevation_group = QtWidgets.QGroupBox("2) Fix see-through elevations")
-        elevation_group_layout = QtWidgets.QVBoxLayout()
-        elevation_note = QtWidgets.QLabel(
-            "Inspect first to preview candidates. Then apply fix either to a new copy or directly in place."
+        workflow_group = QtWidgets.QGroupBox("2) Standard workflow")
+        workflow_layout = QtWidgets.QVBoxLayout()
+        workflow_note = QtWidgets.QLabel(
+            "Select the updates to run, or apply the complete standard .3D workflow."
         )
-        elevation_note.setWordWrap(True)
-        elevation_group_layout.addWidget(elevation_note)
-        elevation_buttons = QtWidgets.QGridLayout()
-        elevation_buttons.addWidget(self._three_d_file_inspect_button, 0, 0)
-        elevation_buttons.addWidget(self._three_d_file_fix_copy_button, 0, 1)
-        elevation_buttons.addWidget(self._three_d_file_fix_in_place_button, 1, 0, 1, 2)
-        elevation_group_layout.addLayout(elevation_buttons)
-        elevation_group.setLayout(elevation_group_layout)
-        three_d_layout.addWidget(elevation_group)
+        workflow_note.setWordWrap(True)
+        workflow_layout.addWidget(workflow_note)
+        workflow_grid = QtWidgets.QGridLayout()
+        workflow_rows = (
+            (self._three_d_workflow_tso_checkbox, self._three_d_workflow_save_tso_button),
+            (
+                self._three_d_workflow_object_lists_checkbox,
+                self._three_d_workflow_save_object_lists_button,
+            ),
+            (
+                self._three_d_workflow_detail_lists_checkbox,
+                self._three_d_workflow_save_detail_lists_button,
+            ),
+            (
+                self._three_d_workflow_see_through_checkbox,
+                self._three_d_file_fix_in_place_button,
+            ),
+            (
+                self._three_d_workflow_colors_checkbox,
+                self._three_d_file_apply_colors_button,
+            ),
+        )
+        workflow_labels = (
+            "Save TSOs to .3D file",
+            "Save ObjectLists",
+            "Save DetailLists",
+            "Fix see-through (in place)",
+            "Apply color replacements",
+        )
+        for row, ((checkbox, button), label) in enumerate(
+            zip(workflow_rows, workflow_labels)
+        ):
+            checkbox.setToolTip(
+                f"Include '{label}' when applying selected workflow steps."
+            )
+            button.setText(label)
+            workflow_grid.addWidget(checkbox, row, 0)
+            workflow_grid.addWidget(button, row, 1)
+        workflow_layout.addLayout(workflow_grid)
+        workflow_buttons = QtWidgets.QHBoxLayout()
+        workflow_buttons.addWidget(self._three_d_apply_selected_workflow_button)
+        workflow_buttons.addWidget(self._three_d_apply_all_workflow_button)
+        workflow_layout.addLayout(workflow_buttons)
+        workflow_group.setLayout(workflow_layout)
+        three_d_layout.addWidget(workflow_group)
 
-        colors_group = QtWidgets.QGroupBox("3) Fix colors")
-        colors_group_layout = QtWidgets.QVBoxLayout()
-        colors_note = QtWidgets.QLabel(
-            "Edit the default polygon color mappings (name + SUNNY.PCX index + swatch), "
-            "store them with the project, then apply to the selected .3D file."
-        )
-        colors_note.setWordWrap(True)
-        colors_group_layout.addWidget(colors_note)
-        colors_group_layout.addWidget(self._three_d_file_colors_path_label)
-        colors_group_layout.addWidget(self._three_d_file_select_colors_button)
-        colors_group_layout.addWidget(self._three_d_file_apply_colors_button)
-        colors_group.setLayout(colors_group_layout)
-        three_d_layout.addWidget(colors_group)
+        other_group = QtWidgets.QGroupBox("3) Other tools")
+        other_layout = QtWidgets.QVBoxLayout()
+        other_layout.addWidget(self._three_d_file_catalog_inspector_button)
+        other_layout.addWidget(self._three_d_show_section_entries_button)
+        other_layout.addWidget(self._three_d_show_section_object_lists_button)
+        other_layout.addWidget(self._three_d_show_section_tsos_button)
+        other_layout.addWidget(self._three_d_preview_object_list_changes_button)
+        other_layout.addWidget(self._three_d_file_inspect_button)
+        other_layout.addWidget(self._three_d_file_fix_copy_button)
+        other_layout.addWidget(self._three_d_apply_face_materials_button)
+        other_layout.addWidget(self._three_d_file_colors_path_label)
+        other_layout.addWidget(self._three_d_file_select_colors_button)
+        other_group.setLayout(other_layout)
+        three_d_layout.addWidget(other_group)
         three_d_layout.addStretch(1)
         self._three_d_file_sidebar.setLayout(three_d_layout)
 
@@ -2725,6 +2788,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._three_d_file_select_button
 
     @property
+    def three_d_set_export_locations_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_set_export_locations_button
+
+    @property
     def three_d_file_catalog_inspector_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_catalog_inspector_button
 
@@ -2775,6 +2842,40 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_file_apply_colors_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_apply_colors_button
+
+    @property
+    def three_d_workflow_save_tso_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_workflow_save_tso_button
+
+    @property
+    def three_d_workflow_save_object_lists_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_workflow_save_object_lists_button
+
+    @property
+    def three_d_workflow_save_detail_lists_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_workflow_save_detail_lists_button
+
+    @property
+    def three_d_apply_selected_workflow_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_apply_selected_workflow_button
+
+    @property
+    def three_d_apply_all_workflow_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_apply_all_workflow_button
+
+    def selected_three_d_workflow_steps(self) -> tuple[str, ...]:
+        steps: list[str] = []
+        if self._three_d_workflow_tso_checkbox.isChecked():
+            steps.append("tso")
+        if self._three_d_workflow_object_lists_checkbox.isChecked():
+            steps.append("object_lists")
+        if self._three_d_workflow_detail_lists_checkbox.isChecked():
+            steps.append("detail_lists")
+        if self._three_d_workflow_see_through_checkbox.isChecked():
+            steps.append("see_through")
+        if self._three_d_workflow_colors_checkbox.isChecked():
+            steps.append("colors")
+        return tuple(steps)
 
     def set_selected_track3d_path_text(self, text: str) -> None:
         self._three_d_file_selected_path_label.setText(f"Selected .3D file: {text}")
