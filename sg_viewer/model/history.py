@@ -53,6 +53,7 @@ class FileHistory:
     MAX_RECENT = 10
     PREVIEW_COLORS_SECTION = "preview_colors"
     VIEW_SECTION = "view"
+    FILES_SECTION = "files_tab"
 
     def __init__(self, path: Path | None = None) -> None:
         # Path resolves differently for source vs frozen executable
@@ -121,6 +122,21 @@ class FileHistory:
         if candidate not in _ALLOWED_MEASUREMENT_UNITS:
             return None
         return candidate
+
+    def get_template_folder(self) -> Path | None:
+        if not self._config.has_section(self.FILES_SECTION):
+            return None
+        value = self._config[self.FILES_SECTION].get("template_folder", "").strip()
+        return Path(value) if value else None
+
+    def set_template_folder(self, folder: Path) -> None:
+        if not self._config.has_section(self.FILES_SECTION):
+            self._config.add_section(self.FILES_SECTION)
+        normalized = str(Path(folder).resolve())
+        if self._config[self.FILES_SECTION].get("template_folder") == normalized:
+            return
+        self._config[self.FILES_SECTION]["template_folder"] = normalized
+        self._save()
 
     def set_measurement_unit(self, unit: str) -> None:
         normalized = str(unit).strip().lower()

@@ -108,6 +108,12 @@ class Track3DController:
         w.three_d_file_select_button.clicked.connect(
             c._on_select_track3d_file_requested
         )
+        w.files_copy_template_button.clicked.connect(
+            c._on_copy_template_files_requested
+        )
+        w.files_create_run_bat_button.clicked.connect(
+            c._on_create_run_bat_requested
+        )
         w.three_d_set_export_locations_button.clicked.connect(
             h._mrk_controller._on_mrk_export_locations_requested
         )
