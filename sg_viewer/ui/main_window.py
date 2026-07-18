@@ -465,6 +465,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_select_button = QtWidgets.QPushButton(
             "Select track .3D file..."
         )
+        self._files_copy_template_button = QtWidgets.QPushButton(
+            "Copy template files to project folder..."
+        )
+        self._files_create_run_bat_button = QtWidgets.QPushButton(
+            "Create run .bat file..."
+        )
         self._three_d_set_export_locations_button = QtWidgets.QPushButton(
             "Set export locations..."
         )
@@ -1508,7 +1514,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         track_group.setLayout(track_group_layout)
         three_d_layout.addWidget(track_group)
 
-        workflow_group = QtWidgets.QGroupBox("2) Standard workflow")
+        project_files_group = QtWidgets.QGroupBox("2) Project files")
+        project_files_layout = QtWidgets.QVBoxLayout()
+        project_files_note = QtWidgets.QLabel(
+            "Copy reusable template files into the project folder, or generate "
+            "a build batch file for the current SG track."
+        )
+        project_files_note.setWordWrap(True)
+        project_files_layout.addWidget(project_files_note)
+        project_files_layout.addWidget(self._files_copy_template_button)
+        project_files_layout.addWidget(self._files_create_run_bat_button)
+        project_files_group.setLayout(project_files_layout)
+        three_d_layout.addWidget(project_files_group)
+
+        workflow_group = QtWidgets.QGroupBox("3) Standard workflow")
         workflow_layout = QtWidgets.QVBoxLayout()
         workflow_note = QtWidgets.QLabel(
             "Select the updates to run, or apply the complete standard .3D workflow."
@@ -1559,7 +1578,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         workflow_group.setLayout(workflow_layout)
         three_d_layout.addWidget(workflow_group)
 
-        other_group = QtWidgets.QGroupBox("3) Other tools")
+        other_group = QtWidgets.QGroupBox("4) Other tools")
         other_layout = QtWidgets.QVBoxLayout()
         other_layout.addWidget(self._three_d_file_catalog_inspector_button)
         other_layout.addWidget(self._three_d_show_section_entries_button)
@@ -2786,6 +2805,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_file_select_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_select_button
+
+    @property
+    def files_copy_template_button(self) -> QtWidgets.QPushButton:
+        return self._files_copy_template_button
+
+    @property
+    def files_create_run_bat_button(self) -> QtWidgets.QPushButton:
+        return self._files_create_run_bat_button
 
     @property
     def three_d_set_export_locations_button(self) -> QtWidgets.QPushButton:

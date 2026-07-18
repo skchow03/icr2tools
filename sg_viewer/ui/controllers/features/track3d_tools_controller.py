@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -101,6 +102,111 @@ class Track3DToolsController:
         self._host._sync_tso_visibility_section_dlongs()
 
     _read_pcx_256_palette = staticmethod(read_pcx_256_palette)
+
+    def _project_folder(self) -> Path | None:
+        if self._project_working_directory is not None:
+            return Path(self._project_working_directory)
+        if self._current_path is not None:
+            return Path(self._current_path).parent
+        return None
+
+    def _on_copy_template_files_requested(self) -> None:
+        project_folder = self._project_folder()
+        if project_folder is None:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Copy Template Files",
+                "Open or save an SG file before copying template files.",
+            )
+            return
+
+        default_template = self._host._history.get_template_folder()
+        start_dir = (
+            str(default_template)
+            if default_template is not None
+            else self._dialog_default_directory()
+        )
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            self._window,
+            "Select Template Folder",
+            start_dir,
+        )
+        if not selected:
+            return
+
+        template_folder = Path(selected).resolve()
+        if not template_folder.is_dir():
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Copy Template Files",
+                f"Template folder does not exist:\n{template_folder}",
+            )
+            return
+
+        project_folder.mkdir(parents=True, exist_ok=True)
+        copied_count = 0
+        try:
+            for source in template_folder.rglob("*"):
+                if not source.is_file():
+                    continue
+                destination = project_folder / source.relative_to(template_folder)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+                copied_count += 1
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Copy Template Files",
+                f"Could not copy template files:\n{exc}",
+            )
+            return
+
+        self._host._history.set_template_folder(template_folder)
+        self._window.show_status_message(
+            f"Copied {copied_count} template file(s) to {project_folder}"
+        )
+
+    def _on_create_run_bat_requested(self) -> None:
+        project_folder = self._project_folder()
+        if project_folder is None or self._current_path is None:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Create run .bat",
+                "Open or save an SG file before creating a run batch file.",
+            )
+            return
+
+        default_path = project_folder / "run.bat"
+        file_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
+            self._window,
+            "Create run .bat",
+            str(default_path),
+            "Batch files (*.bat);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        track_name = Path(self._current_path).stem
+        batch_text = self._build_run_bat_text(track_name)
+        try:
+            Path(file_path).write_text(batch_text, encoding="utf-8", newline="\r\n")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Create run .bat",
+                f"Could not save batch file:\n{exc}",
+            )
+            return
+        self._window.show_status_message(f"Created {file_path}")
+
+    @staticmethod
+    def _build_run_bat_text(track_name: str) -> str:
+        return (
+            f"sg2trk {track_name}\n"
+            f"trk23d -al -pit {track_name}\n"
+            f"3d23do {track_name}\n"
+            f"ope {track_name}\n"
+        )
 
     @staticmethod
     def _as_qcolors(colors: list[tuple[int, int, int]]) -> list[QtGui.QColor]:
