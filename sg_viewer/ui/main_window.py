@@ -1278,12 +1278,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addWidget(self._right_sidebar_tabs, stretch=1)
         right_sidebar.setLayout(right_sidebar_layout)
         self._right_sidebar_container = right_sidebar
-        # Keep the right sidebar width fixed so window resizing only grows/shrinks
-        # the track-diagram side of the window.
-        sidebar_width = max(320, right_sidebar.sizeHint().width())
-        right_sidebar.setFixedWidth(sidebar_width)
+        # Give the sidebar a sensible default/minimum width, but leave it
+        # horizontally resizable through the splitter handle.
+        right_sidebar.setMinimumWidth(320)
         right_sidebar.setSizePolicy(
-            QtWidgets.QSizePolicy.Fixed,
+            QtWidgets.QSizePolicy.Preferred,
             QtWidgets.QSizePolicy.Expanding,
         )
         preview_column.setLayout(preview_column_layout)
