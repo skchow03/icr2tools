@@ -1228,376 +1228,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._view_options_dialog.setLayout(view_options_dialog_layout)
         self._view_options_dialog.resize(480, 640)
 
-        self._mrk_sidebar = QtWidgets.QWidget()
-        mrk_layout = QtWidgets.QVBoxLayout()
-        wall_defaults_row = QtWidgets.QFrame()
-        wall_defaults_row.setObjectName("wallDefaultsSummaryRow")
-        wall_defaults_row.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        wall_defaults_layout = QtWidgets.QHBoxLayout()
-        wall_defaults_layout.setContentsMargins(6, 3, 6, 3)
-        wall_defaults_layout.setSpacing(6)
-        wall_defaults_title = QtWidgets.QLabel("Wall defaults:")
-        wall_defaults_title.setStyleSheet("font-weight: bold")
-        wall_defaults_layout.addWidget(wall_defaults_title)
-        wall_defaults_layout.addWidget(self._wall_defaults_summary_label, 1)
-        wall_defaults_layout.addWidget(self._wall_defaults_edit_button)
-        wall_defaults_row.setLayout(wall_defaults_layout)
-        mrk_layout.addWidget(wall_defaults_row)
-
-        mrk_file_group = QtWidgets.QGroupBox("File")
-        mrk_file_layout = QtWidgets.QGridLayout()
-        mrk_file_layout.setHorizontalSpacing(8)
-        mrk_file_layout.setVerticalSpacing(6)
-        mrk_file_layout.addWidget(self._generate_pitwall_button, 0, 0)
-        mrk_file_layout.addWidget(self._mrk_generate_file_button, 0, 1)
-        mrk_file_layout.addWidget(self._mrk_export_locations_button, 0, 2)
-        mrk_file_group.setLayout(mrk_file_layout)
-
-        mrk_buttons = QtWidgets.QGridLayout()
-        mrk_buttons.setHorizontalSpacing(8)
-        mrk_buttons.setVerticalSpacing(6)
-        mrk_buttons.addWidget(self._mrk_add_entry_button, 0, 0)
-        mrk_buttons.addWidget(self._mrk_delete_entry_button, 0, 1)
-        mrk_buttons.addWidget(self._mrk_move_up_button, 0, 2)
-        mrk_buttons.addWidget(self._mrk_move_down_button, 0, 3)
-        mrk_buttons.addWidget(self._mrk_sort_by_section_button, 1, 0)
-        mrk_buttons.addWidget(self._mrk_sort_by_boundary_button, 1, 1)
-        mrk_buttons.addWidget(self._mrk_textures_button, 1, 2)
-        mrk_layout.addLayout(mrk_buttons)
-        mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
-        mrk_layout.addWidget(self._mrk_entries_table)
-        mrk_layout.addWidget(mrk_file_group)
-        mrk_layout.setStretchFactor(self._mrk_entries_table, 1)
-        self._mrk_sidebar.setLayout(mrk_layout)
-
-        self._sync_pitwall_height_spin_units(previous_unit="500ths")
-        self._pitwall_wall_height_spin.setValue(
-            self._fsect_dlat_to_display_units(21000.0)
-        )
-        self._pitwall_armco_height_spin.setValue(
-            self._fsect_dlat_to_display_units(18000.0)
-        )
-        self._pitwall_length_multiplier_spin.setDecimals(2)
-        self._pitwall_length_multiplier_spin.setRange(0.1, 1000.0)
-        self._pitwall_length_multiplier_spin.setSingleStep(0.1)
-        self._pitwall_length_multiplier_spin.setValue(4.0)
-        self._pitwall_wall_height_spin.valueChanged.connect(
-            self._refresh_wall_defaults_summary
-        )
-        self._pitwall_armco_height_spin.valueChanged.connect(
-            self._refresh_wall_defaults_summary
-        )
-        self._pitwall_length_multiplier_spin.valueChanged.connect(
-            self._refresh_wall_defaults_summary
-        )
-        self._wall_defaults_edit_button.clicked.connect(self._edit_wall_defaults)
-        self._refresh_wall_defaults_summary()
-
-        self._tsd_sidebar = QtWidgets.QWidget()
-        tsd_layout = QtWidgets.QVBoxLayout()
-        tsd_lines_group = QtWidgets.QGroupBox("TSD Lines")
-        tsd_lines_layout = QtWidgets.QVBoxLayout()
-        tsd_file_row = QtWidgets.QHBoxLayout()
-        tsd_file_row.addWidget(QtWidgets.QLabel("Loaded TSD file:"))
-        tsd_file_row.addWidget(self._tsd_files_combo)
-        tsd_file_row.addWidget(self._tsd_save_file_button)
-        tsd_file_row.addWidget(self._tsd_generate_file_button)
-        tsd_file_row.addWidget(self._tsd_load_file_button)
-        tsd_file_row.addWidget(self._tsd_remove_file_button)
-        tsd_lines_layout.addLayout(tsd_file_row)
-        tsd_buttons = QtWidgets.QHBoxLayout()
-        tsd_buttons.addWidget(self._tsd_add_line_button)
-        tsd_buttons.addWidget(self._tsd_delete_line_button)
-        tsd_buttons.addWidget(self._tsd_move_line_up_button)
-        tsd_buttons.addWidget(self._tsd_move_line_down_button)
-        tsd_lines_layout.addLayout(tsd_buttons)
-        tsd_lines_layout.addWidget(self._tsd_lines_table, 1)
-        tsd_lines_group.setLayout(tsd_lines_layout)
-        tsd_lines_group.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-        )
-        tsd_layout.addWidget(tsd_lines_group, 1)
-        tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
-        tsd_objects_layout = QtWidgets.QVBoxLayout()
-        tsd_objects_layout.addWidget(
-            QtWidgets.QLabel(
-                "Create higher-level patterns that generate multiple TSD lines."
-            )
-        )
-        tsd_object_buttons = QtWidgets.QGridLayout()
-        tsd_object_buttons.addWidget(self._tsd_add_object_button, 0, 0)
-        tsd_object_buttons.addWidget(self._tsd_duplicate_object_button, 0, 1)
-        tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button, 0, 2)
-        tsd_object_buttons.addWidget(self._tsd_move_object_up_button, 1, 0)
-        tsd_object_buttons.addWidget(self._tsd_move_object_down_button, 1, 1)
-        tsd_object_buttons.addWidget(self._tsd_export_objects_button, 1, 2)
-        tsd_object_buttons.addWidget(self._tsd_skid_marks_button, 1, 3)
-        tsd_objects_layout.addLayout(tsd_object_buttons)
-        tsd_objects_layout.addWidget(self._tsd_objects_table)
-        tsd_objects_group.setLayout(tsd_objects_layout)
-        tsd_layout.addWidget(tsd_objects_group)
-
-        self._tsd_add_line_button.setToolTip("Add a new TSD line row.")
-        self._tsd_delete_line_button.setToolTip("Delete the selected TSD line row.")
-        self._tsd_move_line_up_button.setToolTip(
-            "Move the selected TSD line up one row."
-        )
-        self._tsd_move_line_down_button.setToolTip(
-            "Move the selected TSD line down one row."
-        )
-        self._tsd_save_file_button.setToolTip(
-            "Save current TSD lines to the selected loaded .TSD file."
-        )
-        self._tsd_generate_file_button.setToolTip(
-            "Choose a file path and save current TSD lines as a .TSD file."
-        )
-        self._tsd_load_file_button.setToolTip(
-            "Load a .TSD file and add it to the loaded list."
-        )
-        self._tsd_remove_file_button.setToolTip(
-            "Remove selected .TSD file(s) from this project without deleting files from disk."
-        )
-        self._tsd_add_object_button.setToolTip("Create a new TSD object pattern.")
-        self._tsd_duplicate_object_button.setToolTip(
-            "Duplicate the selected TSD object below it."
-        )
-        self._tsd_remove_selected_object_button.setToolTip(
-            "Remove the selected TSD object."
-        )
-        self._tsd_move_object_up_button.setToolTip(
-            "Move the selected TSD object up one row."
-        )
-        self._tsd_move_object_down_button.setToolTip(
-            "Move the selected TSD object down one row."
-        )
-        self._tsd_export_objects_button.setToolTip(
-            "Export all TSD objects as .TSD files."
-        )
-        self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
-        self._tsd_sidebar.setLayout(tsd_layout)
-
-        self._tso_sidebar = QtWidgets.QWidget()
-        tso_layout = QtWidgets.QVBoxLayout()
-        tso_info = QtWidgets.QLabel(
-            "Trackside objects (TSOs) are exported to objects.txt entries named __TSOn.\n"
-            "Position values use 500ths and rotations use tenths of angles."
-        )
-        tso_info.setWordWrap(True)
-        tso_layout.addWidget(tso_info)
-        tso_buttons = QtWidgets.QGridLayout()
-        tso_buttons.addWidget(self._tso_add_button, 0, 0)
-        tso_buttons.addWidget(self._tso_stamp_button, 0, 1)
-        tso_buttons.addWidget(self._tso_box_select_button, 0, 2)
-        tso_buttons.addWidget(self._tso_delete_button, 0, 3)
-        tso_buttons.addWidget(self._tso_move_up_button, 0, 4)
-        tso_buttons.addWidget(self._tso_move_down_button, 0, 5)
-        tso_layout.addLayout(tso_buttons)
-        tso_layout.addWidget(self._tso_table)
-        tso_advanced_group = QtWidgets.QGroupBox("Advanced")
-        tso_advanced_layout = QtWidgets.QHBoxLayout()
-        tso_advanced_layout.addWidget(self._tso_delete_all_button)
-        tso_advanced_layout.addWidget(self._tso_modify_elevations_button)
-        tso_advanced_layout.addStretch(1)
-        tso_advanced_group.setLayout(tso_advanced_layout)
-        tso_layout.addWidget(tso_advanced_group)
-        tso_files_group = QtWidgets.QGroupBox("Files")
-        tso_files_layout = QtWidgets.QGridLayout()
-        tso_files_layout.setHorizontalSpacing(8)
-        tso_files_layout.setVerticalSpacing(6)
-        tso_files_layout.addWidget(self._tso_import_from_3d_button, 0, 0)
-        tso_files_layout.addWidget(self._tso_generate_file_button, 0, 1)
-        tso_files_layout.addWidget(self._tso_write_to_3d_file_button, 0, 2)
-        tso_files_layout.addWidget(self._tso_export_locations_button, 1, 0, 1, 3)
-        tso_files_group.setLayout(tso_files_layout)
-        tso_layout.addWidget(tso_files_group)
-        self._tso_sidebar.setLayout(tso_layout)
-        self._tso_import_from_3d_button.setToolTip(
-            "Import TSOs from an existing .3D file and replace all current TSOs."
-        )
-        self._tso_delete_all_button.setToolTip(
-            "Delete every TSO from the current project."
-        )
-        self._tso_visibility_sidebar = TSOVisibilityTab()
-        self._land_objects_sidebar = QtWidgets.QWidget()
-        land_layout = QtWidgets.QVBoxLayout()
-        land_layout.addWidget(QtWidgets.QLabel("Land objects:"))
-        land_object_header = QtWidgets.QHBoxLayout()
-        land_object_header.addWidget(self._land_object_name_edit, 1)
-        land_object_header.addWidget(self._land_add_object_button)
-        land_object_header.addWidget(self._land_save_object_button)
-        land_object_header.addWidget(self._land_export_object_button)
-        land_layout.addLayout(land_object_header)
-        land_layout.addWidget(self._land_objects_table)
-        land_layout.addWidget(QtWidgets.QLabel("Points"))
-        land_point_buttons = QtWidgets.QHBoxLayout()
-        land_point_buttons.addWidget(self._land_add_point_button)
-        land_point_buttons.addWidget(self._land_edit_point_button)
-        land_layout.addLayout(land_point_buttons)
-        land_layout.addWidget(self._land_points_table)
-        land_layout.addWidget(QtWidgets.QLabel("Polygons"))
-        land_polygon_buttons = QtWidgets.QHBoxLayout()
-        land_polygon_buttons.addWidget(self._land_add_polygon_button)
-        land_polygon_buttons.addWidget(self._land_delete_polygon_button)
-        land_polygon_buttons.addWidget(self._land_move_polygon_up_button)
-        land_polygon_buttons.addWidget(self._land_move_polygon_down_button)
-        land_layout.addLayout(land_polygon_buttons)
-        land_layout.addWidget(self._land_polygon_fill_checkbox)
-        land_layout.addWidget(self._land_polygons_table)
-        self._land_objects_sidebar.setLayout(land_layout)
-        self._land_add_polygon_button.setToolTip(
-            "Add a polygon row. Enter point numbers separated by commas (example: 0, 1, 2, 3)."
-        )
-        self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
-        self._land_move_polygon_up_button.setToolTip(
-            "Move the selected polygon row up one position."
-        )
-        self._land_move_polygon_down_button.setToolTip(
-            "Move the selected polygon row down one position."
-        )
-        self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
-        self._land_delete_polygon_button.clicked.connect(
-            self._delete_selected_land_polygon_row
-        )
-        self._land_move_polygon_up_button.clicked.connect(
-            lambda: self._move_selected_land_polygon_row(-1)
-        )
-        self._land_move_polygon_down_button.clicked.connect(
-            lambda: self._move_selected_land_polygon_row(1)
-        )
-        self._land_add_point_button.toggled.connect(
-            lambda checked: self._on_land_point_mode_toggled("add", checked)
-        )
-        self._land_edit_point_button.toggled.connect(
-            lambda checked: self._on_land_point_mode_toggled("edit", checked)
-        )
-        self._land_points_table.itemChanged.connect(
-            self._on_land_points_table_item_changed
-        )
-        self._land_save_object_button.clicked.connect(self._save_current_land_object)
-        self._land_add_object_button.clicked.connect(self._add_land_object)
-        self._land_export_object_button.clicked.connect(
-            self._export_selected_land_object_to_3d
-        )
-        self._land_objects_table.itemSelectionChanged.connect(
-            self._load_selected_land_object
-        )
-        self._land_objects_table.itemChanged.connect(
-            self._on_land_objects_table_item_changed
-        )
-        self._land_object_name_edit.textChanged.connect(
-            self._persist_selected_land_object
-        )
-        self._update_land_object_edit_controls()
-        self._land_polygons_table.itemChanged.connect(
-            self._on_land_polygons_table_item_changed
-        )
-        self._land_polygons_table.itemDoubleClicked.connect(
-            self._on_land_polygons_table_item_double_clicked
-        )
-        self._land_polygon_fill_checkbox.toggled.connect(
-            lambda _checked: self._sync_land_polygons_overlay()
-        )
-        self._three_d_file_sidebar = QtWidgets.QWidget()
-        three_d_layout = QtWidgets.QVBoxLayout()
-        three_d_intro = QtWidgets.QLabel(
-            "Use this tab to choose the project .3D file, then run tools that inspect/fix "
-            "see-through elevations and replace color definitions.\n"
-            "The selected paths are saved with the project."
-        )
-        three_d_intro.setWordWrap(True)
-        three_d_layout.addWidget(three_d_intro)
-
-        track_group = QtWidgets.QGroupBox("1) Export locations")
-        track_group_layout = QtWidgets.QVBoxLayout()
-        track_group_layout.addWidget(self._three_d_file_selected_path_label)
-        track_group_buttons = QtWidgets.QHBoxLayout()
-        track_group_buttons.addWidget(self._three_d_set_export_locations_button)
-        track_group_buttons.addWidget(self._three_d_file_select_button)
-        track_group_layout.addLayout(track_group_buttons)
-        track_group.setLayout(track_group_layout)
-        three_d_layout.addWidget(track_group)
-
-        project_files_group = QtWidgets.QGroupBox("2) Project files")
-        project_files_layout = QtWidgets.QVBoxLayout()
-        project_files_note = QtWidgets.QLabel(
-            "Copy reusable template files into the project folder, or generate "
-            "a build batch file for the current SG track."
-        )
-        project_files_note.setWordWrap(True)
-        project_files_layout.addWidget(project_files_note)
-        project_files_layout.addWidget(self._files_copy_template_button)
-        project_files_layout.addWidget(self._files_create_run_bat_button)
-        project_files_layout.addWidget(self._files_create_mrk_button)
-        project_files_group.setLayout(project_files_layout)
-        three_d_layout.addWidget(project_files_group)
-
-        workflow_group = QtWidgets.QGroupBox("3) Standard workflow")
-        workflow_layout = QtWidgets.QVBoxLayout()
-        workflow_note = QtWidgets.QLabel(
-            "Select the updates to run, or apply the complete standard .3D workflow."
-        )
-        workflow_note.setWordWrap(True)
-        workflow_layout.addWidget(workflow_note)
-        workflow_grid = QtWidgets.QGridLayout()
-        workflow_rows = (
-            (self._three_d_workflow_tso_checkbox, self._three_d_workflow_save_tso_button),
-            (
-                self._three_d_workflow_object_lists_checkbox,
-                self._three_d_workflow_save_object_lists_button,
-            ),
-            (
-                self._three_d_workflow_detail_lists_checkbox,
-                self._three_d_workflow_save_detail_lists_button,
-            ),
-            (
-                self._three_d_workflow_see_through_checkbox,
-                self._three_d_file_fix_in_place_button,
-            ),
-            (
-                self._three_d_workflow_colors_checkbox,
-                self._three_d_file_apply_colors_button,
-            ),
-        )
-        workflow_labels = (
-            "Save TSOs to .3D file",
-            "Save ObjectLists",
-            "Save DetailLists",
-            "Fix see-through (in place)",
-            "Apply color replacements",
-        )
-        for row, ((checkbox, button), label) in enumerate(
-            zip(workflow_rows, workflow_labels)
-        ):
-            checkbox.setToolTip(
-                f"Include '{label}' when applying selected workflow steps."
-            )
-            button.setText(label)
-            workflow_grid.addWidget(checkbox, row, 0)
-            workflow_grid.addWidget(button, row, 1)
-        workflow_layout.addLayout(workflow_grid)
-        workflow_buttons = QtWidgets.QHBoxLayout()
-        workflow_buttons.addWidget(self._three_d_apply_selected_workflow_button)
-        workflow_buttons.addWidget(self._three_d_apply_all_workflow_button)
-        workflow_layout.addLayout(workflow_buttons)
-        workflow_group.setLayout(workflow_layout)
-        three_d_layout.addWidget(workflow_group)
-
-        other_group = QtWidgets.QGroupBox("4) Other tools")
-        other_layout = QtWidgets.QVBoxLayout()
-        other_layout.addWidget(self._three_d_file_catalog_inspector_button)
-        other_layout.addWidget(self._three_d_show_section_entries_button)
-        other_layout.addWidget(self._three_d_show_section_object_lists_button)
-        other_layout.addWidget(self._three_d_show_section_tsos_button)
-        other_layout.addWidget(self._three_d_preview_object_list_changes_button)
-        other_layout.addWidget(self._three_d_file_inspect_button)
-        other_layout.addWidget(self._three_d_file_fix_copy_button)
-        other_layout.addWidget(self._three_d_apply_face_materials_button)
-        other_layout.addWidget(self._three_d_file_colors_path_label)
-        other_layout.addWidget(self._three_d_file_select_colors_button)
-        other_group.setLayout(other_layout)
-        three_d_layout.addWidget(other_group)
-        three_d_layout.addStretch(1)
-        self._three_d_file_sidebar.setLayout(three_d_layout)
+        self._lazy_sidebar_placeholders: dict[str, QtWidgets.QWidget] = {}
+        self._lazy_sidebar_tabs: dict[str, QtWidgets.QTabWidget] = {}
+        self._surface_sidebar_built = False
+        self._objects_sidebar_built = False
+        self._files_sidebar_built = False
 
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
@@ -2189,6 +1824,392 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             layout.addWidget(content, stretch=1)
         return widget
 
+    def _ensure_surface_sidebar_built(self) -> None:
+        if self._surface_sidebar_built:
+            return
+        self._mrk_sidebar = QtWidgets.QWidget()
+        mrk_layout = QtWidgets.QVBoxLayout()
+        wall_defaults_row = QtWidgets.QFrame()
+        wall_defaults_row.setObjectName("wallDefaultsSummaryRow")
+        wall_defaults_row.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        wall_defaults_layout = QtWidgets.QHBoxLayout()
+        wall_defaults_layout.setContentsMargins(6, 3, 6, 3)
+        wall_defaults_layout.setSpacing(6)
+        wall_defaults_title = QtWidgets.QLabel("Wall defaults:")
+        wall_defaults_title.setStyleSheet("font-weight: bold")
+        wall_defaults_layout.addWidget(wall_defaults_title)
+        wall_defaults_layout.addWidget(self._wall_defaults_summary_label, 1)
+        wall_defaults_layout.addWidget(self._wall_defaults_edit_button)
+        wall_defaults_row.setLayout(wall_defaults_layout)
+        mrk_layout.addWidget(wall_defaults_row)
+
+        mrk_file_group = QtWidgets.QGroupBox("File")
+        mrk_file_layout = QtWidgets.QGridLayout()
+        mrk_file_layout.setHorizontalSpacing(8)
+        mrk_file_layout.setVerticalSpacing(6)
+        mrk_file_layout.addWidget(self._generate_pitwall_button, 0, 0)
+        mrk_file_layout.addWidget(self._mrk_generate_file_button, 0, 1)
+        mrk_file_layout.addWidget(self._mrk_export_locations_button, 0, 2)
+        mrk_file_group.setLayout(mrk_file_layout)
+
+        mrk_buttons = QtWidgets.QGridLayout()
+        mrk_buttons.setHorizontalSpacing(8)
+        mrk_buttons.setVerticalSpacing(6)
+        mrk_buttons.addWidget(self._mrk_add_entry_button, 0, 0)
+        mrk_buttons.addWidget(self._mrk_delete_entry_button, 0, 1)
+        mrk_buttons.addWidget(self._mrk_move_up_button, 0, 2)
+        mrk_buttons.addWidget(self._mrk_move_down_button, 0, 3)
+        mrk_buttons.addWidget(self._mrk_sort_by_section_button, 1, 0)
+        mrk_buttons.addWidget(self._mrk_sort_by_boundary_button, 1, 1)
+        mrk_buttons.addWidget(self._mrk_textures_button, 1, 2)
+        mrk_layout.addLayout(mrk_buttons)
+        mrk_layout.addWidget(self._mrk_texture_pattern_show_colors_checkbox)
+        mrk_layout.addWidget(self._mrk_entries_table)
+        mrk_layout.addWidget(mrk_file_group)
+        mrk_layout.setStretchFactor(self._mrk_entries_table, 1)
+        self._mrk_sidebar.setLayout(mrk_layout)
+
+        self._sync_pitwall_height_spin_units(previous_unit="500ths")
+        self._pitwall_wall_height_spin.setValue(
+            self._fsect_dlat_to_display_units(21000.0)
+        )
+        self._pitwall_armco_height_spin.setValue(
+            self._fsect_dlat_to_display_units(18000.0)
+        )
+        self._pitwall_length_multiplier_spin.setDecimals(2)
+        self._pitwall_length_multiplier_spin.setRange(0.1, 1000.0)
+        self._pitwall_length_multiplier_spin.setSingleStep(0.1)
+        self._pitwall_length_multiplier_spin.setValue(4.0)
+        self._pitwall_wall_height_spin.valueChanged.connect(
+            self._refresh_wall_defaults_summary
+        )
+        self._pitwall_armco_height_spin.valueChanged.connect(
+            self._refresh_wall_defaults_summary
+        )
+        self._pitwall_length_multiplier_spin.valueChanged.connect(
+            self._refresh_wall_defaults_summary
+        )
+        self._wall_defaults_edit_button.clicked.connect(self._edit_wall_defaults)
+        self._refresh_wall_defaults_summary()
+
+        self._tsd_sidebar = QtWidgets.QWidget()
+        tsd_layout = QtWidgets.QVBoxLayout()
+        tsd_lines_group = QtWidgets.QGroupBox("TSD Lines")
+        tsd_lines_layout = QtWidgets.QVBoxLayout()
+        tsd_file_row = QtWidgets.QHBoxLayout()
+        tsd_file_row.addWidget(QtWidgets.QLabel("Loaded TSD file:"))
+        tsd_file_row.addWidget(self._tsd_files_combo)
+        tsd_file_row.addWidget(self._tsd_save_file_button)
+        tsd_file_row.addWidget(self._tsd_generate_file_button)
+        tsd_file_row.addWidget(self._tsd_load_file_button)
+        tsd_file_row.addWidget(self._tsd_remove_file_button)
+        tsd_lines_layout.addLayout(tsd_file_row)
+        tsd_buttons = QtWidgets.QHBoxLayout()
+        tsd_buttons.addWidget(self._tsd_add_line_button)
+        tsd_buttons.addWidget(self._tsd_delete_line_button)
+        tsd_buttons.addWidget(self._tsd_move_line_up_button)
+        tsd_buttons.addWidget(self._tsd_move_line_down_button)
+        tsd_lines_layout.addLayout(tsd_buttons)
+        tsd_lines_layout.addWidget(self._tsd_lines_table, 1)
+        tsd_lines_group.setLayout(tsd_lines_layout)
+        tsd_lines_group.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+        tsd_layout.addWidget(tsd_lines_group, 1)
+        tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
+        tsd_objects_layout = QtWidgets.QVBoxLayout()
+        tsd_objects_layout.addWidget(
+            QtWidgets.QLabel(
+                "Create higher-level patterns that generate multiple TSD lines."
+            )
+        )
+        tsd_object_buttons = QtWidgets.QGridLayout()
+        tsd_object_buttons.addWidget(self._tsd_add_object_button, 0, 0)
+        tsd_object_buttons.addWidget(self._tsd_duplicate_object_button, 0, 1)
+        tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button, 0, 2)
+        tsd_object_buttons.addWidget(self._tsd_move_object_up_button, 1, 0)
+        tsd_object_buttons.addWidget(self._tsd_move_object_down_button, 1, 1)
+        tsd_object_buttons.addWidget(self._tsd_export_objects_button, 1, 2)
+        tsd_object_buttons.addWidget(self._tsd_skid_marks_button, 1, 3)
+        tsd_objects_layout.addLayout(tsd_object_buttons)
+        tsd_objects_layout.addWidget(self._tsd_objects_table)
+        tsd_objects_group.setLayout(tsd_objects_layout)
+        tsd_layout.addWidget(tsd_objects_group)
+
+        self._tsd_add_line_button.setToolTip("Add a new TSD line row.")
+        self._tsd_delete_line_button.setToolTip("Delete the selected TSD line row.")
+        self._tsd_move_line_up_button.setToolTip(
+            "Move the selected TSD line up one row."
+        )
+        self._tsd_move_line_down_button.setToolTip(
+            "Move the selected TSD line down one row."
+        )
+        self._tsd_save_file_button.setToolTip(
+            "Save current TSD lines to the selected loaded .TSD file."
+        )
+        self._tsd_generate_file_button.setToolTip(
+            "Choose a file path and save current TSD lines as a .TSD file."
+        )
+        self._tsd_load_file_button.setToolTip(
+            "Load a .TSD file and add it to the loaded list."
+        )
+        self._tsd_remove_file_button.setToolTip(
+            "Remove selected .TSD file(s) from this project without deleting files from disk."
+        )
+        self._tsd_add_object_button.setToolTip("Create a new TSD object pattern.")
+        self._tsd_duplicate_object_button.setToolTip(
+            "Duplicate the selected TSD object below it."
+        )
+        self._tsd_remove_selected_object_button.setToolTip(
+            "Remove the selected TSD object."
+        )
+        self._tsd_move_object_up_button.setToolTip(
+            "Move the selected TSD object up one row."
+        )
+        self._tsd_move_object_down_button.setToolTip(
+            "Move the selected TSD object down one row."
+        )
+        self._tsd_export_objects_button.setToolTip(
+            "Export all TSD objects as .TSD files."
+        )
+        self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
+        self._tsd_sidebar.setLayout(tsd_layout)
+
+        self._surface_sidebar_built = True
+
+    def _ensure_objects_sidebar_built(self) -> None:
+        if self._objects_sidebar_built:
+            return
+        self._tso_sidebar = QtWidgets.QWidget()
+        tso_layout = QtWidgets.QVBoxLayout()
+        tso_info = QtWidgets.QLabel(
+            "Trackside objects (TSOs) are exported to objects.txt entries named __TSOn.\n"
+            "Position values use 500ths and rotations use tenths of angles."
+        )
+        tso_info.setWordWrap(True)
+        tso_layout.addWidget(tso_info)
+        tso_buttons = QtWidgets.QGridLayout()
+        tso_buttons.addWidget(self._tso_add_button, 0, 0)
+        tso_buttons.addWidget(self._tso_stamp_button, 0, 1)
+        tso_buttons.addWidget(self._tso_box_select_button, 0, 2)
+        tso_buttons.addWidget(self._tso_delete_button, 0, 3)
+        tso_buttons.addWidget(self._tso_move_up_button, 0, 4)
+        tso_buttons.addWidget(self._tso_move_down_button, 0, 5)
+        tso_layout.addLayout(tso_buttons)
+        tso_layout.addWidget(self._tso_table)
+        tso_advanced_group = QtWidgets.QGroupBox("Advanced")
+        tso_advanced_layout = QtWidgets.QHBoxLayout()
+        tso_advanced_layout.addWidget(self._tso_delete_all_button)
+        tso_advanced_layout.addWidget(self._tso_modify_elevations_button)
+        tso_advanced_layout.addStretch(1)
+        tso_advanced_group.setLayout(tso_advanced_layout)
+        tso_layout.addWidget(tso_advanced_group)
+        tso_files_group = QtWidgets.QGroupBox("Files")
+        tso_files_layout = QtWidgets.QGridLayout()
+        tso_files_layout.setHorizontalSpacing(8)
+        tso_files_layout.setVerticalSpacing(6)
+        tso_files_layout.addWidget(self._tso_import_from_3d_button, 0, 0)
+        tso_files_layout.addWidget(self._tso_generate_file_button, 0, 1)
+        tso_files_layout.addWidget(self._tso_write_to_3d_file_button, 0, 2)
+        tso_files_layout.addWidget(self._tso_export_locations_button, 1, 0, 1, 3)
+        tso_files_group.setLayout(tso_files_layout)
+        tso_layout.addWidget(tso_files_group)
+        self._tso_sidebar.setLayout(tso_layout)
+        self._tso_import_from_3d_button.setToolTip(
+            "Import TSOs from an existing .3D file and replace all current TSOs."
+        )
+        self._tso_delete_all_button.setToolTip(
+            "Delete every TSO from the current project."
+        )
+        self._tso_visibility_sidebar = TSOVisibilityTab()
+        self._land_objects_sidebar = QtWidgets.QWidget()
+        land_layout = QtWidgets.QVBoxLayout()
+        land_layout.addWidget(QtWidgets.QLabel("Land objects:"))
+        land_object_header = QtWidgets.QHBoxLayout()
+        land_object_header.addWidget(self._land_object_name_edit, 1)
+        land_object_header.addWidget(self._land_add_object_button)
+        land_object_header.addWidget(self._land_save_object_button)
+        land_object_header.addWidget(self._land_export_object_button)
+        land_layout.addLayout(land_object_header)
+        land_layout.addWidget(self._land_objects_table)
+        land_layout.addWidget(QtWidgets.QLabel("Points"))
+        land_point_buttons = QtWidgets.QHBoxLayout()
+        land_point_buttons.addWidget(self._land_add_point_button)
+        land_point_buttons.addWidget(self._land_edit_point_button)
+        land_layout.addLayout(land_point_buttons)
+        land_layout.addWidget(self._land_points_table)
+        land_layout.addWidget(QtWidgets.QLabel("Polygons"))
+        land_polygon_buttons = QtWidgets.QHBoxLayout()
+        land_polygon_buttons.addWidget(self._land_add_polygon_button)
+        land_polygon_buttons.addWidget(self._land_delete_polygon_button)
+        land_polygon_buttons.addWidget(self._land_move_polygon_up_button)
+        land_polygon_buttons.addWidget(self._land_move_polygon_down_button)
+        land_layout.addLayout(land_polygon_buttons)
+        land_layout.addWidget(self._land_polygon_fill_checkbox)
+        land_layout.addWidget(self._land_polygons_table)
+        self._land_objects_sidebar.setLayout(land_layout)
+        self._land_add_polygon_button.setToolTip(
+            "Add a polygon row. Enter point numbers separated by commas (example: 0, 1, 2, 3)."
+        )
+        self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
+        self._land_move_polygon_up_button.setToolTip(
+            "Move the selected polygon row up one position."
+        )
+        self._land_move_polygon_down_button.setToolTip(
+            "Move the selected polygon row down one position."
+        )
+        self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
+        self._land_delete_polygon_button.clicked.connect(
+            self._delete_selected_land_polygon_row
+        )
+        self._land_move_polygon_up_button.clicked.connect(
+            lambda: self._move_selected_land_polygon_row(-1)
+        )
+        self._land_move_polygon_down_button.clicked.connect(
+            lambda: self._move_selected_land_polygon_row(1)
+        )
+        self._land_add_point_button.toggled.connect(
+            lambda checked: self._on_land_point_mode_toggled("add", checked)
+        )
+        self._land_edit_point_button.toggled.connect(
+            lambda checked: self._on_land_point_mode_toggled("edit", checked)
+        )
+        self._land_points_table.itemChanged.connect(
+            self._on_land_points_table_item_changed
+        )
+        self._land_save_object_button.clicked.connect(self._save_current_land_object)
+        self._land_add_object_button.clicked.connect(self._add_land_object)
+        self._land_export_object_button.clicked.connect(
+            self._export_selected_land_object_to_3d
+        )
+        self._land_objects_table.itemSelectionChanged.connect(
+            self._load_selected_land_object
+        )
+        self._land_objects_table.itemChanged.connect(
+            self._on_land_objects_table_item_changed
+        )
+        self._land_object_name_edit.textChanged.connect(
+            self._persist_selected_land_object
+        )
+        self._update_land_object_edit_controls()
+        self._land_polygons_table.itemChanged.connect(
+            self._on_land_polygons_table_item_changed
+        )
+        self._land_polygons_table.itemDoubleClicked.connect(
+            self._on_land_polygons_table_item_double_clicked
+        )
+        self._land_polygon_fill_checkbox.toggled.connect(
+            lambda _checked: self._sync_land_polygons_overlay()
+        )
+        self._objects_sidebar_built = True
+
+    def _ensure_files_sidebar_built(self) -> None:
+        if self._files_sidebar_built:
+            return
+        self._three_d_file_sidebar = QtWidgets.QWidget()
+        three_d_layout = QtWidgets.QVBoxLayout()
+        three_d_intro = QtWidgets.QLabel(
+            "Use this tab to choose the project .3D file, then run tools that inspect/fix "
+            "see-through elevations and replace color definitions.\n"
+            "The selected paths are saved with the project."
+        )
+        three_d_intro.setWordWrap(True)
+        three_d_layout.addWidget(three_d_intro)
+
+        track_group = QtWidgets.QGroupBox("1) Export locations")
+        track_group_layout = QtWidgets.QVBoxLayout()
+        track_group_layout.addWidget(self._three_d_file_selected_path_label)
+        track_group_buttons = QtWidgets.QHBoxLayout()
+        track_group_buttons.addWidget(self._three_d_set_export_locations_button)
+        track_group_buttons.addWidget(self._three_d_file_select_button)
+        track_group_layout.addLayout(track_group_buttons)
+        track_group.setLayout(track_group_layout)
+        three_d_layout.addWidget(track_group)
+
+        project_files_group = QtWidgets.QGroupBox("2) Project files")
+        project_files_layout = QtWidgets.QVBoxLayout()
+        project_files_note = QtWidgets.QLabel(
+            "Copy reusable template files into the project folder, or generate "
+            "a build batch file for the current SG track."
+        )
+        project_files_note.setWordWrap(True)
+        project_files_layout.addWidget(project_files_note)
+        project_files_layout.addWidget(self._files_copy_template_button)
+        project_files_layout.addWidget(self._files_create_run_bat_button)
+        project_files_layout.addWidget(self._files_create_mrk_button)
+        project_files_group.setLayout(project_files_layout)
+        three_d_layout.addWidget(project_files_group)
+
+        workflow_group = QtWidgets.QGroupBox("3) Standard workflow")
+        workflow_layout = QtWidgets.QVBoxLayout()
+        workflow_note = QtWidgets.QLabel(
+            "Select the updates to run, or apply the complete standard .3D workflow."
+        )
+        workflow_note.setWordWrap(True)
+        workflow_layout.addWidget(workflow_note)
+        workflow_grid = QtWidgets.QGridLayout()
+        workflow_rows = (
+            (self._three_d_workflow_tso_checkbox, self._three_d_workflow_save_tso_button),
+            (
+                self._three_d_workflow_object_lists_checkbox,
+                self._three_d_workflow_save_object_lists_button,
+            ),
+            (
+                self._three_d_workflow_detail_lists_checkbox,
+                self._three_d_workflow_save_detail_lists_button,
+            ),
+            (
+                self._three_d_workflow_see_through_checkbox,
+                self._three_d_file_fix_in_place_button,
+            ),
+            (
+                self._three_d_workflow_colors_checkbox,
+                self._three_d_file_apply_colors_button,
+            ),
+        )
+        workflow_labels = (
+            "Save TSOs to .3D file",
+            "Save ObjectLists",
+            "Save DetailLists",
+            "Fix see-through (in place)",
+            "Apply color replacements",
+        )
+        for row, ((checkbox, button), label) in enumerate(
+            zip(workflow_rows, workflow_labels)
+        ):
+            checkbox.setToolTip(
+                f"Include '{label}' when applying selected workflow steps."
+            )
+            button.setText(label)
+            workflow_grid.addWidget(checkbox, row, 0)
+            workflow_grid.addWidget(button, row, 1)
+        workflow_layout.addLayout(workflow_grid)
+        workflow_buttons = QtWidgets.QHBoxLayout()
+        workflow_buttons.addWidget(self._three_d_apply_selected_workflow_button)
+        workflow_buttons.addWidget(self._three_d_apply_all_workflow_button)
+        workflow_layout.addLayout(workflow_buttons)
+        workflow_group.setLayout(workflow_layout)
+        three_d_layout.addWidget(workflow_group)
+
+        other_group = QtWidgets.QGroupBox("4) Other tools")
+        other_layout = QtWidgets.QVBoxLayout()
+        other_layout.addWidget(self._three_d_file_catalog_inspector_button)
+        other_layout.addWidget(self._three_d_show_section_entries_button)
+        other_layout.addWidget(self._three_d_show_section_object_lists_button)
+        other_layout.addWidget(self._three_d_show_section_tsos_button)
+        other_layout.addWidget(self._three_d_preview_object_list_changes_button)
+        other_layout.addWidget(self._three_d_file_inspect_button)
+        other_layout.addWidget(self._three_d_file_fix_copy_button)
+        other_layout.addWidget(self._three_d_apply_face_materials_button)
+        other_layout.addWidget(self._three_d_file_colors_path_label)
+        other_layout.addWidget(self._three_d_file_select_colors_button)
+        other_group.setLayout(other_layout)
+        three_d_layout.addWidget(other_group)
+        three_d_layout.addStretch(1)
+        self._three_d_file_sidebar.setLayout(three_d_layout)
+
+        self._files_sidebar_built = True
+
     def _geometry_tab_buttons(self) -> tuple[GeometryTabButton, ...]:
         return (
             self._new_straight_button,
@@ -2209,6 +2230,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
 
     def _on_workflow_tab_changed(self, _index: int) -> None:
+        current_index = self._right_sidebar_tabs.currentIndex()
+        workflow_label = (
+            self._right_sidebar_tabs.tabText(current_index).rstrip("*")
+            if current_index >= 0
+            else ""
+        )
+        if workflow_label == "Surface":
+            self._ensure_surface_sidebar_built()
+            self._populate_lazy_workflow_tab(
+                "Surface",
+                (
+                    (self._fsect_widget, "Features"),
+                    (self._mrk_sidebar, "Walls"),
+                    (self._tsd_sidebar, "Track Surface Markings"),
+                ),
+            )
+            controller = getattr(self, "controller", None)
+            if controller is not None:
+                controller.ensure_surface_sidebar_signals_connected()
+        elif workflow_label == "Objects":
+            self._ensure_objects_sidebar_built()
+            self._populate_lazy_workflow_tab(
+                "Objects",
+                (
+                    (self._tso_sidebar, "Objects"),
+                    (self._tso_visibility_sidebar, "TSO Visibility"),
+                    (self._land_objects_sidebar, "Draw land objects"),
+                ),
+            )
+            controller = getattr(self, "controller", None)
+            if controller is not None:
+                controller.ensure_objects_sidebar_signals_connected()
+        elif workflow_label == "Files":
+            self._ensure_files_sidebar_built()
+            self._populate_lazy_workflow_tab(
+                "Files",
+                ((self._three_d_file_sidebar, ".3D file"),),
+            )
+            controller = getattr(self, "controller", None)
+            if controller is not None:
+                controller.ensure_files_sidebar_signals_connected()
         self._update_geometry_tab_button_state()
         self._sync_land_vertex_points_overlay()
         self.update_mouse_usage_text()
@@ -2268,13 +2330,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         elevation_widget: QtWidgets.QWidget,
         fsect_widget: QtWidgets.QWidget,
     ) -> None:
-        def add_workflow_tab(label: str) -> QtWidgets.QTabWidget:
-            tab_widget = QtWidgets.QTabWidget()
-            tab_widget.currentChanged.connect(
-                lambda _index: self._on_sidebar_feature_tab_changed()
-            )
-            self._right_sidebar_tabs.addTab(tab_widget, label)
-            return tab_widget
+        self._fsect_widget = fsect_widget
 
         self._right_sidebar_tabs.addTab(section_widget, "Geometry")
         self._sidebar_feature_tab_widgets["Geometry"] = section_widget
@@ -2288,41 +2344,58 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._right_sidebar_tabs.addTab(elevation_tab_widget, "Elevation")
         self._sidebar_feature_tab_widgets["Elevation"] = elevation_widget
 
-        for workflow_label, panels in (
-            (
-                "Surface",
-                (
-                    (fsect_widget, "Features"),
-                    (self._mrk_sidebar, "Walls"),
-                    (self._tsd_sidebar, "Track Surface Markings"),
-                ),
-            ),
-            (
-                "Objects",
-                (
-                    (self._tso_sidebar, "Objects"),
-                    (self._tso_visibility_sidebar, "TSO Visibility"),
-                    (self._land_objects_sidebar, "Draw land objects"),
-                ),
-            ),
-            ("Files", ((self._three_d_file_sidebar, ".3D file"),)),
-        ):
-            tab_widget = add_workflow_tab(workflow_label)
-            for panel_widget, feature_label in panels:
-                display_label = (
-                    "Surface Detail"
-                    if feature_label == "Track Surface Markings"
-                    else feature_label
-                )
-                tab_widget.addTab(panel_widget, display_label)
-                self._sidebar_feature_tabs[feature_label] = tab_widget
-                self._sidebar_feature_tab_widgets[feature_label] = panel_widget
-                if feature_label == "Features":
-                    self._sidebar_feature_tabs["Fsects"] = tab_widget
-                    self._sidebar_feature_tab_widgets["Fsects"] = panel_widget
-                elif feature_label == "Track Surface Markings":
-                    self._sidebar_feature_tabs["TSD"] = tab_widget
-                    self._sidebar_feature_tab_widgets["TSD"] = panel_widget
+        for workflow_label in ("Surface", "Objects", "Files"):
+            tab_widget = QtWidgets.QTabWidget()
+            tab_widget.currentChanged.connect(
+                lambda _index: self._on_sidebar_feature_tab_changed()
+            )
+            placeholder = self._create_lazy_sidebar_placeholder(workflow_label)
+            tab_widget.addTab(placeholder, workflow_label)
+            self._right_sidebar_tabs.addTab(tab_widget, workflow_label)
+            self._lazy_sidebar_tabs[workflow_label] = tab_widget
+            self._lazy_sidebar_placeholders[workflow_label] = placeholder
+
+    def _create_lazy_sidebar_placeholder(self, workflow_label: str) -> QtWidgets.QWidget:
+        placeholder = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(placeholder)
+        layout.addStretch(1)
+        message = QtWidgets.QLabel(f"{workflow_label} tools load when this tab is opened.")
+        message.setAlignment(QtCore.Qt.AlignCenter)
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        layout.addStretch(1)
+        return placeholder
+
+    def _populate_lazy_workflow_tab(
+        self,
+        workflow_label: str,
+        panels: tuple[tuple[QtWidgets.QWidget, str], ...],
+    ) -> None:
+        tab_widget = self._lazy_sidebar_tabs[workflow_label]
+        placeholder = self._lazy_sidebar_placeholders.get(workflow_label)
+        if placeholder is not None:
+            index = tab_widget.indexOf(placeholder)
+            if index >= 0:
+                tab_widget.removeTab(index)
+            placeholder.deleteLater()
+            del self._lazy_sidebar_placeholders[workflow_label]
+        for panel_widget, feature_label in panels:
+            if tab_widget.indexOf(panel_widget) >= 0:
+                continue
+            display_label = (
+                "Surface Detail"
+                if feature_label == "Track Surface Markings"
+                else feature_label
+            )
+            tab_widget.addTab(panel_widget, display_label)
+            self._sidebar_feature_tabs[feature_label] = tab_widget
+            self._sidebar_feature_tab_widgets[feature_label] = panel_widget
+            if feature_label == "Features":
+                self._sidebar_feature_tabs["Fsects"] = tab_widget
+                self._sidebar_feature_tab_widgets["Fsects"] = panel_widget
+            elif feature_label == "Track Surface Markings":
+                self._sidebar_feature_tabs["TSD"] = tab_widget
+                self._sidebar_feature_tab_widgets["TSD"] = panel_widget
 
     def _build_viewport_toolbar(self) -> QtWidgets.QFrame:
         """Build the compact viewport display/options toolbar above the preview."""
