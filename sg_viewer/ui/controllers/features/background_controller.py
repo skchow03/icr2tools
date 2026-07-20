@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from PyQt5 import QtWidgets
 
 from sg_viewer.ui.background_image_dialog import BackgroundImageDialog
-from sg_viewer.ui.bg_calibrator_minimal import Calibrator
+
+
+if TYPE_CHECKING:
+    from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 
 
 class BackgroundControllerHost(Protocol):
@@ -15,7 +18,7 @@ class BackgroundControllerHost(Protocol):
     _sg_settings_store: object
     _current_path: Path | None
     _background_settings_action: QtWidgets.QAction
-    _calibrator_window: Calibrator | None
+    _calibrator_window: "Calibrator" | None
 
 
 class BackgroundController:
@@ -95,6 +98,8 @@ class BackgroundController:
             self.persist_background_state()
 
     def launch_background_calibrator(self) -> None:
+        from sg_viewer.ui.bg_calibrator_minimal import Calibrator
+
         background_image_path = self._host._window.preview.get_background_image_path()
         self._host._calibrator_window = Calibrator(
             initial_image_path=(

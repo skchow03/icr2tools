@@ -9,7 +9,7 @@ import sys
 from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -66,13 +66,8 @@ from sg_viewer.ui.presentation.units_presenter import (
     measurement_unit_label,
     measurement_unit_step,
 )
-from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
-from sg_viewer.ui.section_table_dialog import SectionTableWindow
-from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
-from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
-from sg_viewer.ui.bg_calibrator_minimal import Calibrator
 from sg_viewer.io.track3d_parser import (
     parse_track3d_detail_list_dlong_ranges,
     parse_track3d_section_dlongs,
@@ -124,6 +119,13 @@ from sg_viewer.ui.controllers.features.state_controllers import (
 )
 from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 
+if TYPE_CHECKING:
+    from sg_viewer.ui.bg_calibrator_minimal import Calibrator
+    from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
+    from sg_viewer.ui.section_table_dialog import SectionTableWindow
+    from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
+    from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
+
 logger = logging.getLogger(__name__)
 
 _TSO_DYNAMIC_LINE_PATTERN = re.compile(
@@ -143,10 +145,10 @@ class SGViewerController:
 
     def __init__(self, window: QtWidgets.QMainWindow) -> None:
         self._window = window
-        self._section_table_window: SectionTableWindow | None = None
-        self._heading_table_window: HeadingTableWindow | None = None
-        self._xsect_table_window: XsectTableWindow | None = None
-        self._tso_attributes_dialog: TracksideObjectAttributesDialog | None = None
+        self._section_table_window: "SectionTableWindow" | None = None
+        self._heading_table_window: "HeadingTableWindow" | None = None
+        self._xsect_table_window: "XsectTableWindow" | None = None
+        self._tso_attributes_dialog: "TracksideObjectAttributesDialog" | None = None
         self._integrity_report_window: QtWidgets.QDialog | None = None
         self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
         self._section_dlongs_window: QtWidgets.QDialog | None = None
@@ -163,7 +165,7 @@ class SGViewerController:
         self._is_untitled = False
         self._active_selection: SectionSelection | None = None
         self._elevation_controller = ElevationController()
-        self._calibrator_window: Calibrator | None = None
+        self._calibrator_window: "Calibrator" | None = None
         self._delete_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence(QtCore.Qt.Key_Delete),
             self._window,
@@ -1674,7 +1676,7 @@ class SGViewerController:
     def _update_xsect_table(self) -> None:
         self._section_editing_coordinator.update_xsect_table()
 
-    def _apply_xsect_table_edits(self, entries: list[XsectEntry]) -> None:
+    def _apply_xsect_table_edits(self, entries: list["XsectEntry"]) -> None:
         self._section_editing_coordinator.apply_xsect_table_edits(entries)
 
     def _scale_track(self) -> None:
