@@ -206,6 +206,9 @@ class SGViewerController:
         self._menu_builder = ViewerMenuBuilder(self)
         self._create_actions()
         self._create_menus()
+        self._lazy_surface_signals_connected = False
+        self._lazy_objects_signals_connected = False
+        self._lazy_files_signals_connected = False
         self._connect_signals()
         self._on_track_opacity_changed(self._window.track_opacity_spin.value())
         self._on_background_brightness_changed(
@@ -752,10 +755,37 @@ class SGViewerController:
         self._section_editing_coordinator.connect_signals()
         self._elevation_ui_coordinator.connect_signals()
         self._background_controller.connect_signals()
+        # Feature-specific sidebar signals are wired lazily once their panels exist.
+
+    def ensure_surface_sidebar_signals_connected(self) -> None:
+        if self._lazy_surface_signals_connected:
+            return
         self._mrk_controller.connect_signals()
         self._tsd_signal_controller.connect_signals()
+        self._lazy_surface_signals_connected = True
+
+    def ensure_objects_sidebar_signals_connected(self) -> None:
+        if self._lazy_objects_signals_connected:
+            return
         self._trackside_objects_controller.connect_signals()
+        self._lazy_objects_signals_connected = True
+
+    def ensure_files_sidebar_signals_connected(self) -> None:
+        if self._lazy_files_signals_connected:
+            return
+        # The Files workflow references the TSO visibility panel for .3D ObjectList saves.
+        self._window._ensure_objects_sidebar_built()
+        self._window._populate_lazy_workflow_tab(
+            "Objects",
+            (
+                (self._window._tso_sidebar, "Objects"),
+                (self._window._tso_visibility_sidebar, "TSO Visibility"),
+                (self._window._land_objects_sidebar, "Draw land objects"),
+            ),
+        )
+        self.ensure_objects_sidebar_signals_connected()
         self._track3d_controller.connect_signals()
+        self._lazy_files_signals_connected = True
 
     def confirm_close(self) -> bool:
         return self.confirm_discard_unsaved_for_action("Close SG Viewer")
