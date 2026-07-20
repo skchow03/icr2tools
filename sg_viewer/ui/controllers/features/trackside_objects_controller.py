@@ -33,7 +33,6 @@ from sg_viewer.ui.presentation.units_presenter import (
     measurement_unit_label,
     measurement_unit_step,
 )
-from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
 from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
 from track_viewer.geometry import project_point_to_centerline
 
@@ -754,6 +753,10 @@ class TracksideObjectsController:
         if row < 0 or row >= len(self._trackside_objects):
             return
         if self._tso_attributes_dialog is None:
+            from sg_viewer.ui.tso_attributes_dialog import (
+                TracksideObjectAttributesDialog,
+            )
+
             self._tso_attributes_dialog = TracksideObjectAttributesDialog(self._window)
             self._tso_attributes_dialog.objectUpdated.connect(
                 self._on_tso_attributes_updated

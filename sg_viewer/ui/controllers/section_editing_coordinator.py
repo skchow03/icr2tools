@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 from time import perf_counter
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from PyQt5 import QtWidgets
 
 from sg_viewer.model.sg_model import SectionPreview
 from sg_viewer.geometry.topology import infer_section_connectivity
-from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
-from sg_viewer.ui.section_table_dialog import SectionTableWindow
-from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
+
+
+if TYPE_CHECKING:
+    from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
+    from sg_viewer.ui.section_table_dialog import SectionTableWindow
+    from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
 
 
 class SectionEditingHost(Protocol):
     _window: QtWidgets.QMainWindow
-    _section_table_window: SectionTableWindow | None
-    _heading_table_window: HeadingTableWindow | None
-    _xsect_table_window: XsectTableWindow | None
+    _section_table_window: "SectionTableWindow" | None
+    _heading_table_window: "HeadingTableWindow" | None
+    _xsect_table_window: "XsectTableWindow" | None
 
     def _current_xsect_index(self) -> int | None: ...
     def _populate_xsect_choices(self, preferred_index: int | None = None) -> None: ...
@@ -37,6 +40,8 @@ class SectionEditingCoordinator:
             return
 
         if self._host._section_table_window is None:
+            from sg_viewer.ui.section_table_dialog import SectionTableWindow
+
             self._host._section_table_window = SectionTableWindow(self._host._window)
             self._host._section_table_window.on_sections_edited(
                 self.apply_section_table_edits
@@ -105,6 +110,8 @@ class SectionEditingCoordinator:
             return
 
         if self._host._heading_table_window is None:
+            from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
+
             self._host._heading_table_window = HeadingTableWindow(self._host._window)
 
         self._host._heading_table_window.set_headings(headings)
@@ -129,6 +136,8 @@ class SectionEditingCoordinator:
             return
 
         if self._host._xsect_table_window is None:
+            from sg_viewer.ui.xsect_table_dialog import XsectTableWindow
+
             self._host._xsect_table_window = XsectTableWindow(self._host._window)
             self._host._xsect_table_window.on_xsects_edited(
                 self.apply_xsect_table_edits
@@ -190,7 +199,7 @@ class SectionEditingCoordinator:
             self._host._window.preview.get_section_xsect_grades(selection.index),
         )
 
-    def apply_xsect_table_edits(self, entries: list[XsectEntry]) -> None:
+    def apply_xsect_table_edits(self, entries: list["XsectEntry"]) -> None:
         if not entries:
             return
         sorted_entries = sorted(entries, key=lambda entry: entry.dlat)
