@@ -2275,6 +2275,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.update_mouse_usage_text()
 
     def _on_sidebar_feature_tab_changed(self) -> None:
+        controller = getattr(self, "controller", None)
+        if controller is not None:
+            controller._on_right_sidebar_tab_changed(
+                self._right_sidebar_tabs.currentIndex()
+            )
+            return
         self._sync_land_vertex_points_overlay()
         self.update_mouse_usage_text()
 
