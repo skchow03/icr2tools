@@ -2877,6 +2877,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     @property
     def tso_visibility_sidebar(self) -> TSOVisibilityTab:
+        self._ensure_objects_sidebar_built()
         return self._tso_visibility_sidebar
 
     @property
@@ -4701,12 +4702,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._preview.set_land_object_polygons_overlay(tuple(all_polygons))
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        tsd_lines_table = getattr(self, "_tsd_lines_table", None)
+        if tsd_lines_table is None:
+            return super().eventFilter(watched, event)
+        try:
+            tsd_lines_viewport = tsd_lines_table.viewport()
+        except RuntimeError:
+            return super().eventFilter(watched, event)
         if (
-            watched is self._tsd_lines_table.viewport()
+            watched is tsd_lines_viewport
             and event.type() == QtCore.QEvent.MouseButtonRelease
             and isinstance(event, QtGui.QMouseEvent)
         ):
-            index = self._tsd_lines_table.indexAt(event.pos())
+            index = tsd_lines_table.indexAt(event.pos())
             if index.isValid() and index.column() == 1:
                 self._choose_tsd_line_color(index.row())
                 return True
