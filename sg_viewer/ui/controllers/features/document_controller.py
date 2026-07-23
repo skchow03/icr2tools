@@ -11,7 +11,11 @@ from icr2_core.dat.unpackdat import extract_file_bytes, list_dat_entries
 from icr2_core.trk.sg_classes import SGFile
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_classes import TRKFile
-from sg_viewer.services.export_service import ExportResult, export_sg_to_csv, export_sg_to_trk
+from sg_viewer.services.export_service import (
+    ExportResult,
+    export_sg_to_csv,
+    export_sg_to_trk,
+)
 
 
 class ProjectLoadProgress:
@@ -67,14 +71,20 @@ class DocumentControllerHost(Protocol):
     def _refresh_elevation_profile(self) -> None: ...
     def _reset_altitude_range_for_track(self) -> None: ...
     def _update_track_length_display(self) -> None: ...
-    def _reset_altitude_range(self, min_altitude: float, max_altitude: float) -> None: ...
+    def _reset_altitude_range(
+        self, min_altitude: float, max_altitude: float
+    ) -> None: ...
     def _persist_background_state(self) -> None: ...
     def _should_confirm_reset(self) -> bool: ...
     def _clear_loaded_tsd_files(self) -> None: ...
     def _load_mrk_state_for_current_track(self) -> None: ...
     def _persist_mrk_state_for_current_track(self) -> None: ...
-    def _load_tsd_state_for_current_track(self, progress_callback: Callable[[int, str], None] | None = None) -> None: ...
-    def _persist_tsd_state_for_current_track(self, *, explicit_save: bool = False) -> None: ...
+    def _load_tsd_state_for_current_track(
+        self, progress_callback: Callable[[int, str], None] | None = None
+    ) -> None: ...
+    def _persist_tsd_state_for_current_track(
+        self, *, explicit_save: bool = False
+    ) -> None: ...
     def _load_mrk_wall_heights_for_current_track(self) -> None: ...
     def _load_manual_wall_height_overrides_for_current_track(self) -> None: ...
     def _persist_mrk_wall_heights_for_current_track(self) -> None: ...
@@ -83,7 +93,9 @@ class DocumentControllerHost(Protocol):
     def _mark_elevation_grade_dirty(self, dirty: bool) -> None: ...
     def _mark_fsects_dirty(self, dirty: bool) -> None: ...
     def _settings_path_for(self, sg_path: Path) -> Path: ...
-    def _set_project_working_directory(self, directory: Path | None, *, persist: bool = True) -> None: ...
+    def _set_project_working_directory(
+        self, directory: Path | None, *, persist: bool = True
+    ) -> None: ...
     def _dialog_default_directory(self) -> str: ...
     def _dialog_default_file_path(self, filename: str) -> str: ...
 
@@ -115,7 +127,9 @@ class DocumentController:
         progress_offset: int = 0,
     ) -> None:
         path = path.resolve()
-        if confirm and not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
+        if confirm and not self._host.confirm_discard_unsaved_for_action(
+            "Load Another Track"
+        ):
             return
         if progress is not None:
             progress.update(progress_offset, f"Preparing to load {path.name}…")
@@ -123,11 +137,15 @@ class DocumentController:
         self._host._clear_loaded_tsd_files()
         self._logger.info("Loading SG file %s", path)
         if progress is not None:
-            progress.update(progress_offset + 1, f"Reading SG geometry from {path.name}…")
+            progress.update(
+                progress_offset + 1, f"Reading SG geometry from {path.name}…"
+            )
         try:
             self._host._window.preview.load_sg_file(path)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self._host._window, "Failed to load SG", str(exc))
+            QtWidgets.QMessageBox.critical(
+                self._host._window, "Failed to load SG", str(exc)
+            )
             self._logger.exception("Failed to load SG file")
             return
 
@@ -156,7 +174,11 @@ class DocumentController:
             self._host._history.record_open(path)
             loaded_working_directory = self._load_project_working_directory(path)
             self._host._set_project_working_directory(
-                loaded_working_directory if loaded_working_directory is not None else path.parent,
+                (
+                    loaded_working_directory
+                    if loaded_working_directory is not None
+                    else path.parent
+                ),
                 persist=False,
             )
         else:
@@ -168,7 +190,11 @@ class DocumentController:
 
         self._host._window.update_window_title(
             path=self._host._current_path,
-            project_path=self._host._settings_path_for(self._host._current_path) if self._host._current_path is not None else None,
+            project_path=(
+                self._host._settings_path_for(self._host._current_path)
+                if self._host._current_path is not None
+                else None
+            ),
             is_dirty=False,
             is_untitled=self._host._is_untitled,
         )
@@ -191,7 +217,9 @@ class DocumentController:
         if progress is not None:
             progress.update(progress_offset + 3, "Restoring saved project appearance…")
         self._host._apply_saved_background(path if attach_path else None)
-        self._host._track3d_tools_controller._apply_saved_sunny_palette(path if attach_path else None)
+        self._host._track3d_tools_controller._apply_saved_sunny_palette(
+            path if attach_path else None
+        )
         self._host._refresh_recent_menu()
         if progress is not None:
             progress.update(progress_offset + 4, "Refreshing section tables…")
@@ -206,24 +234,32 @@ class DocumentController:
         if progress is not None:
             progress.update(progress_offset + 15, "Project loaded.")
 
-    def _restore_mrk_and_tsd_project_data(self, progress: ProjectLoadProgress | None, progress_offset: int) -> None:
+    def _restore_mrk_and_tsd_project_data(
+        self, progress: ProjectLoadProgress | None, progress_offset: int
+    ) -> None:
         if progress is not None:
             progress.update(progress_offset, "Restoring MRK wall heights…")
         self._host._load_mrk_wall_heights_for_current_track()
         if progress is not None:
-            progress.update(progress_offset + 1, "Restoring manual wall height overrides…")
+            progress.update(
+                progress_offset + 1, "Restoring manual wall height overrides…"
+            )
         self._host._load_manual_wall_height_overrides_for_current_track()
         if progress is not None:
             progress.update(progress_offset + 2, "Restoring MRK objects and metadata…")
         self._host._load_mrk_state_for_current_track()
         if progress is not None:
-            progress.update(progress_offset + 3, "Restoring TSD files and project data…")
+            progress.update(
+                progress_offset + 3, "Restoring TSD files and project data…"
+            )
 
         def update_tsd_progress(stage: int, message: str) -> None:
             if progress is not None:
                 progress.update(progress_offset + 3 + min(max(stage, 0), 6), message)
 
-        self._host._load_tsd_state_for_current_track(update_tsd_progress if progress is not None else None)
+        self._host._load_tsd_state_for_current_track(
+            update_tsd_progress if progress is not None else None
+        )
 
     def import_trk_file_dialog(self) -> None:
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
@@ -260,7 +296,9 @@ class DocumentController:
         self._host._is_untitled = True
         self._host._elevation_controller.reset()
 
-        self._host._window.update_window_title(path=None, is_dirty=False, is_untitled=True)
+        self._host._window.update_window_title(
+            path=None, is_dirty=False, is_untitled=True
+        )
         self._host._window.set_table_actions_enabled(True)
         self._host._window.new_straight_button.setEnabled(True)
         self._host._window.new_curve_button.setEnabled(True)
@@ -375,15 +413,21 @@ class DocumentController:
         progress: ProjectLoadProgress | None = None
         raw_sg_file: object = None
         try:
-            progress = ProjectLoadProgress(self._host._window, "Loading SG CREATE Project", 17)
+            progress = ProjectLoadProgress(
+                self._host._window, "Loading SG CREATE Project", 17
+            )
             progress.update(0, f"Opening project file {project_path.name}…")
             payload = json.loads(project_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("Project file must contain a JSON object.")
             progress.update(1, "Resolving referenced SG file…")
             raw_sg_file = payload.get("sg_file")
-            if raw_sg_file is not None and (not isinstance(raw_sg_file, str) or not raw_sg_file.strip()):
-                raise ValueError("Project 'sg_file' path must be a non-empty string when provided.")
+            if raw_sg_file is not None and (
+                not isinstance(raw_sg_file, str) or not raw_sg_file.strip()
+            ):
+                raise ValueError(
+                    "Project 'sg_file' path must be a non-empty string when provided."
+                )
             if isinstance(raw_sg_file, str):
                 sg_path = Path(raw_sg_file)
                 if not sg_path.is_absolute():
@@ -395,34 +439,59 @@ class DocumentController:
 
             if not sg_path.exists():
                 raise ValueError(f"Referenced SG file does not exist: {sg_path}")
-            project_working_directory = self._decode_project_working_directory(project_path, payload)
+            project_working_directory = self._decode_project_working_directory(
+                project_path, payload
+            )
+            self._host._window.set_three_d_workflow_options(
+                payload.get("three_d_workflow_options")
+            )
 
             embedded_sg = payload.get("sg_data")
             if raw_sg_file is None:
                 if embedded_sg is not None:
                     try:
-                        self._load_project_embedded_sg(project_path, sg_path, embedded_sg, confirm=False, progress=progress)
+                        self._load_project_embedded_sg(
+                            project_path,
+                            sg_path,
+                            embedded_sg,
+                            confirm=False,
+                            progress=progress,
+                        )
                         return
                     finally:
                         if progress is not None:
                             progress.close()
-                raise ValueError("Project file must include either 'sg_data' or an 'sg_file' path.")
+                raise ValueError(
+                    "Project file must include either 'sg_data' or an 'sg_file' path."
+                )
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             if progress is not None:
                 progress.close()
-            QtWidgets.QMessageBox.critical(self._host._window, "Failed to open project", str(exc))
+            QtWidgets.QMessageBox.critical(
+                self._host._window, "Failed to open project", str(exc)
+            )
             self._logger.exception("Failed to open project file")
             return
-        self._host._set_project_working_directory(project_working_directory, persist=False)
+        self._host._set_project_working_directory(
+            project_working_directory, persist=False
+        )
         try:
-            self._load_sg(sg_path, attach_path=True, confirm=False, progress=progress, progress_offset=2)
+            self._load_sg(
+                sg_path,
+                attach_path=True,
+                confirm=False,
+                progress=progress,
+                progress_offset=2,
+            )
         finally:
             if progress is not None:
                 progress.close()
 
     def save_project_file_dialog(self) -> None:
         if self._host._window.preview.sgfile is None:
-            QtWidgets.QMessageBox.information(self._host._window, "No SG Loaded", "Load an SG file before saving.")
+            QtWidgets.QMessageBox.information(
+                self._host._window, "No SG Loaded", "Load an SG file before saving."
+            )
             return
         default_path = ""
         if self._host._current_path is not None:
@@ -456,7 +525,9 @@ class DocumentController:
         self.save_to_path(sg_path)
 
     def start_new_track(self, *, confirm: bool = True) -> None:
-        if confirm and not self._host.confirm_discard_unsaved_for_action("Start New Track"):
+        if confirm and not self._host.confirm_discard_unsaved_for_action(
+            "Start New Track"
+        ):
             return
 
         self._host._clear_background_state()
@@ -470,7 +541,9 @@ class DocumentController:
         self._host._xsect_table_action.setEnabled(True)
         self._host._window.delete_section_button.setEnabled(False)
         self._host._window.delete_section_button.setChecked(False)
-        self._host._window.delete_section_button.setStyleSheet(self._host._delete_default_style)
+        self._host._window.delete_section_button.setStyleSheet(
+            self._host._delete_default_style
+        )
         self._host._window.split_section_button.setChecked(False)
         self._host._window.split_section_button.setEnabled(False)
         self._host._window.set_start_finish_button.setEnabled(False)
@@ -493,9 +566,13 @@ class DocumentController:
         self._host._window.new_straight_button.setEnabled(True)
         self._host._window.new_curve_button.setEnabled(True)
         self._host._window.preview.set_trk_comparison(None)
-        self._host._window.show_status_message("New track ready. Click New Straight to start drawing.")
+        self._host._window.show_status_message(
+            "New track ready. Click New Straight to start drawing."
+        )
         self._host._is_untitled = True
-        self._host._window.update_window_title(path=None, is_dirty=False, is_untitled=True)
+        self._host._window.update_window_title(
+            path=None, is_dirty=False, is_untitled=True
+        )
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
         self._host._update_track_length_display()
@@ -506,14 +583,20 @@ class DocumentController:
 
     def save_file_dialog(self) -> None:
         if self._host._window.preview.sgfile is None:
-            QtWidgets.QMessageBox.information(self._host._window, "No SG Loaded", "Load an SG file before saving.")
+            QtWidgets.QMessageBox.information(
+                self._host._window, "No SG Loaded", "Load an SG file before saving."
+            )
             return
         default_path = str(self._host._current_path) if self._host._current_path else ""
         if not default_path and self._host._project_working_directory is not None:
             default_path = str(self._host._project_working_directory / "track.sg")
         options = QtWidgets.QFileDialog.Options()
         file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self._host._window, "Export to SG file", default_path, "SG files (*.sg *.SG);;All files (*)", options=options
+            self._host._window,
+            "Export to SG file",
+            default_path,
+            "SG files (*.sg *.SG);;All files (*)",
+            options=options,
         )
         if not file_path:
             return
@@ -532,13 +615,17 @@ class DocumentController:
         try:
             self._host._window.preview.save_sg(path)
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(self._host._window, "Failed to save SG", str(exc))
+            QtWidgets.QMessageBox.critical(
+                self._host._window, "Failed to save SG", str(exc)
+            )
             self._logger.exception("Failed to save SG file")
             return
         self._host._current_path = path
         if self._host._project_working_directory is None:
             self._host._set_project_working_directory(path.parent, persist=False)
-        self._host._window.show_status_message(f"Saved {path} and project {self._host._settings_path_for(path)}")
+        self._host._window.show_status_message(
+            f"Saved {path} and project {self._host._settings_path_for(path)}"
+        )
         self._host._history.record_save(path)
         self._host._refresh_recent_menu()
         self._host._persist_background_state()
@@ -555,7 +642,11 @@ class DocumentController:
         self._host._save_current_action.setEnabled(True)
         self._host._window.update_window_title(
             path=self._host._current_path,
-            project_path=self._host._settings_path_for(self._host._current_path) if self._host._current_path is not None else None,
+            project_path=(
+                self._host._settings_path_for(self._host._current_path)
+                if self._host._current_path is not None
+                else None
+            ),
             is_dirty=False,
         )
         self._host._mark_elevation_grade_dirty(False)
@@ -570,7 +661,9 @@ class DocumentController:
         confirm: bool = True,
         progress: ProjectLoadProgress | None = None,
     ) -> None:
-        if confirm and not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
+        if confirm and not self._host.confirm_discard_unsaved_for_action(
+            "Load Another Track"
+        ):
             return
         if progress is not None:
             progress.update(2, "Deserializing embedded SG geometry…")
@@ -590,9 +683,15 @@ class DocumentController:
         self._host._window.show_status_message(f"Loaded project {project_path}")
         self._host._current_path = sg_path
         self._host._is_untitled = False
-        project_working_directory = self._decode_project_working_directory(project_path, self._load_project_payload(project_path))
+        project_working_directory = self._decode_project_working_directory(
+            project_path, self._load_project_payload(project_path)
+        )
         self._host._set_project_working_directory(
-            project_working_directory if project_working_directory is not None else sg_path.parent,
+            (
+                project_working_directory
+                if project_working_directory is not None
+                else sg_path.parent
+            ),
             persist=False,
         )
         self._host._history.record_open(project_path)
@@ -649,13 +748,20 @@ class DocumentController:
                 payload = loaded_payload
 
         payload["sg_file"] = sg_path.name
-        encoded_working_directory = self._encode_project_working_directory(settings_path, self._host._project_working_directory)
+        payload["three_d_workflow_options"] = (
+            self._host._window.three_d_workflow_options()
+        )
+        encoded_working_directory = self._encode_project_working_directory(
+            settings_path, self._host._project_working_directory
+        )
         if encoded_working_directory is None:
             payload.pop("working_directory", None)
         else:
             payload["working_directory"] = encoded_working_directory
         payload.pop("sg_data", None)
-        settings_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        settings_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
     def persist_project_metadata(self) -> None:
         if self._host._current_path is None:
@@ -676,9 +782,14 @@ class DocumentController:
         return self._decode_project_working_directory(settings_path, payload)
 
     @staticmethod
-    def _decode_project_working_directory(project_path: Path, payload: dict[str, object]) -> Path | None:
+    def _decode_project_working_directory(
+        project_path: Path, payload: dict[str, object]
+    ) -> Path | None:
         raw_working_directory = payload.get("working_directory")
-        if not isinstance(raw_working_directory, str) or not raw_working_directory.strip():
+        if (
+            not isinstance(raw_working_directory, str)
+            or not raw_working_directory.strip()
+        ):
             return None
         directory = Path(raw_working_directory)
         if not directory.is_absolute():
@@ -690,11 +801,15 @@ class DocumentController:
         return directory
 
     @staticmethod
-    def _encode_project_working_directory(project_path: Path, working_directory: Path | None) -> str | None:
+    def _encode_project_working_directory(
+        project_path: Path, working_directory: Path | None
+    ) -> str | None:
         if working_directory is None:
             return None
         try:
-            return str(working_directory.resolve().relative_to(project_path.parent.resolve()))
+            return str(
+                working_directory.resolve().relative_to(project_path.parent.resolve())
+            )
         except ValueError:
             return str(working_directory.resolve())
 
@@ -724,9 +839,15 @@ class DocumentController:
                     "alt": [int(value) for value in list(section.alt)],
                     "grade": [int(value) for value in list(section.grade)],
                     "num_fsects": num_fsects,
-                    "ftype1": [int(value) for value in list(section.ftype1)[:num_fsects]],
-                    "ftype2": [int(value) for value in list(section.ftype2)[:num_fsects]],
-                    "fstart": [int(value) for value in list(section.fstart)[:num_fsects]],
+                    "ftype1": [
+                        int(value) for value in list(section.ftype1)[:num_fsects]
+                    ],
+                    "ftype2": [
+                        int(value) for value in list(section.ftype2)[:num_fsects]
+                    ],
+                    "fstart": [
+                        int(value) for value in list(section.fstart)[:num_fsects]
+                    ],
                     "fend": [int(value) for value in list(section.fend)[:num_fsects]],
                 }
             )
@@ -796,7 +917,9 @@ class DocumentController:
             altitudes = [int(value) for value in list(raw_section.get("alt", []))]
             grades = [int(value) for value in list(raw_section.get("grade", []))]
             if len(altitudes) != num_xsects or len(grades) != num_xsects:
-                raise ValueError("Each project section must include alt/grade values for every xsect.")
+                raise ValueError(
+                    "Each project section must include alt/grade values for every xsect."
+                )
             for xsect_index in range(num_xsects):
                 section_data[17 + 2 * xsect_index] = altitudes[xsect_index]
                 section_data[18 + 2 * xsect_index] = grades[xsect_index]
@@ -809,7 +932,14 @@ class DocumentController:
             ftype2 = [int(value) for value in list(raw_section.get("ftype2", []))]
             fstart = [int(value) for value in list(raw_section.get("fstart", []))]
             fend = [int(value) for value in list(raw_section.get("fend", []))]
-            actual_num_fsects = min(requested_num_fsects, len(ftype1), len(ftype2), len(fstart), len(fend), max_fsects)
+            actual_num_fsects = min(
+                requested_num_fsects,
+                len(ftype1),
+                len(ftype2),
+                len(fstart),
+                len(fend),
+                max_fsects,
+            )
             section_data[fsect_start] = actual_num_fsects
             for fsect_index in range(actual_num_fsects):
                 section_data[fsect_start + 1 + 4 * fsect_index] = ftype1[fsect_index]
@@ -827,12 +957,24 @@ class DocumentController:
 
     def ensure_saved_sg(self) -> Path | None:
         if self._host._window.preview.sgfile is None:
-            QtWidgets.QMessageBox.information(self._host._window, "No SG Loaded", "Load an SG file before exporting.")
+            QtWidgets.QMessageBox.information(
+                self._host._window, "No SG Loaded", "Load an SG file before exporting."
+            )
             return None
-        if self._host._current_path is None or self._host._window.preview.has_unsaved_changes:
-            QtWidgets.QMessageBox.information(self._host._window, "Save Required", "Save the SG file before converting to TRK.")
+        if (
+            self._host._current_path is None
+            or self._host._window.preview.has_unsaved_changes
+        ):
+            QtWidgets.QMessageBox.information(
+                self._host._window,
+                "Save Required",
+                "Save the SG file before converting to TRK.",
+            )
             self.save_file_dialog()
-        if self._host._current_path is None or self._host._window.preview.has_unsaved_changes:
+        if (
+            self._host._current_path is None
+            or self._host._window.preview.has_unsaved_changes
+        ):
             return None
         return self._host._current_path
 
@@ -852,7 +994,7 @@ class DocumentController:
             self._host._window.preview.enable_trk_overlay()
         except Exception as exc:
             self._logger.exception("Failed to build TRK overlay", exc_info=exc)
-        default_output = sg_path.with_suffix('.trk')
+        default_output = sg_path.with_suffix(".trk")
         options = QtWidgets.QFileDialog.Options()
         output_path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self._host._window,
@@ -864,8 +1006,8 @@ class DocumentController:
         if not output_path:
             return
         trk_path = Path(output_path)
-        if trk_path.suffix.lower() != '.trk':
-            trk_path = trk_path.with_suffix('.trk')
+        if trk_path.suffix.lower() != ".trk":
+            trk_path = trk_path.with_suffix(".trk")
         result = export_sg_to_trk(sg_path=sg_path, trk_path=trk_path)
         self._handle_export_result(
             result,
@@ -873,7 +1015,9 @@ class DocumentController:
             error_log="Failed to convert SG to TRK",
         )
 
-    def _handle_export_result(self, result: ExportResult, *, title: str, error_log: str) -> None:
+    def _handle_export_result(
+        self, result: ExportResult, *, title: str, error_log: str
+    ) -> None:
         if result.stdout:
             self._logger.info(result.stdout)
         if result.stderr:

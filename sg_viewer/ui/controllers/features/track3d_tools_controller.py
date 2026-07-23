@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -22,6 +23,53 @@ from sg_viewer.io.track3d_edit_plan import (
     build_selected_object_list_edit_plan,
     build_selected_tso_definition_edit_plan,
 )
+
+
+@contextmanager
+def _suppress_routine_workflow_messages(parent: QtWidgets.QWidget):
+    original_information = QtWidgets.QMessageBox.information
+    original_warning = QtWidgets.QMessageBox.warning
+
+    def show_status(_parent, _title, text, *args, **kwargs):
+        if hasattr(parent, "show_status_message"):
+            parent.show_status_message(str(text).replace("\n", " "))
+        buttons = args[0] if args else kwargs.get("buttons", QtWidgets.QMessageBox.Ok)
+        if buttons & QtWidgets.QMessageBox.Yes:
+            return QtWidgets.QMessageBox.Yes
+        return QtWidgets.QMessageBox.Ok
+
+    QtWidgets.QMessageBox.information = show_status
+    QtWidgets.QMessageBox.warning = show_status
+    try:
+        yield
+    finally:
+        QtWidgets.QMessageBox.information = original_information
+        QtWidgets.QMessageBox.warning = original_warning
+
+
+class Track3DWorkflowProgress:
+    """Modal progress dialog for the standard .3D workflow."""
+
+    def __init__(self, parent: QtWidgets.QWidget, maximum: int) -> None:
+        self._dialog = QtWidgets.QProgressDialog("", None, 0, maximum, parent)
+        self._dialog.setWindowTitle("Applying Standard .3D Workflow")
+        self._dialog.setWindowModality(QtCore.Qt.WindowModal)
+        self._dialog.setMinimumDuration(0)
+        self._dialog.setAutoClose(False)
+        self._dialog.setAutoReset(False)
+        self._dialog.setCancelButton(None)
+        self._dialog.setValue(0)
+
+    def update(self, value: int, message: str) -> None:
+        self._dialog.setLabelText(message)
+        self._dialog.setValue(value)
+        self._dialog.show()
+        QtWidgets.QApplication.processEvents()
+
+    def close(self) -> None:
+        self._dialog.close()
+        self._dialog.deleteLater()
+        QtWidgets.QApplication.processEvents()
 
 
 class Track3DToolsController:
@@ -393,6 +441,7 @@ class Track3DToolsController:
         QtWidgets.QApplication.processEvents()
 
         try:
+
             def _on_progress(current: int, total: int, message: str) -> None:
                 safe_total = max(total, 1)
                 value = int((current / safe_total) * 100)
@@ -806,19 +855,20 @@ class Track3DToolsController:
                 self._window, "3D Tools", f"Could not read or write 3D file:\n{exc}"
             )
 
-    def _on_three_d_fix_in_place_requested(self) -> None:
+    def _on_three_d_fix_in_place_requested(self, confirm: bool = True) -> None:
         input_path = self._ensure_selected_track3d_file()
         if input_path is None:
             return
-        proceed = QtWidgets.QMessageBox.warning(
-            self._window,
-            "3D Tools",
-            "This will edit the selected .3D file in place. Continue?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if proceed != QtWidgets.QMessageBox.Yes:
-            return
+        if confirm:
+            proceed = QtWidgets.QMessageBox.warning(
+                self._window,
+                "3D Tools",
+                "This will edit the selected .3D file in place. Continue?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if proceed != QtWidgets.QMessageBox.Yes:
+                return
         try:
             self._run_three_d_fix(input_path, in_place=True)
         except ToolError as exc:
@@ -864,16 +914,35 @@ class Track3DToolsController:
             "tso": self._host._trackside_objects_controller._on_tso_write_to_3d_file_requested,
             "object_lists": self._window.tso_visibility_sidebar._on_save_to_track3d_requested,
             "detail_lists": self._window.tso_visibility_sidebar._on_save_detail_lists_to_track3d_requested,
-            "see_through": self._on_three_d_fix_in_place_requested,
+            "see_through": lambda: self._on_three_d_fix_in_place_requested(
+                confirm=False
+            ),
             "colors": self._on_three_d_apply_color_replacements_requested,
         }
-        for step in steps:
-            action = step_actions.get(step)
-            if action is not None:
-                action()
-        self._window.show_status_message(
-            "Applied selected standard .3D workflow steps."
-        )
+        step_labels = {
+            "tso": "Saving TSOs",
+            "object_lists": "Saving ObjectLists",
+            "detail_lists": "Saving DetailLists",
+            "see_through": "Fixing see-through polygons",
+            "colors": "Applying color replacements",
+        }
+        progress = Track3DWorkflowProgress(self._window, len(steps))
+        progress.update(0, "Preparing standard .3D workflow…")
+        try:
+            with _suppress_routine_workflow_messages(self._window):
+                for index, step in enumerate(steps, start=1):
+                    action = step_actions.get(step)
+                    if action is not None:
+                        progress.update(index - 1, f"{step_labels.get(step, step)}…")
+                        action()
+                        progress.update(
+                            index, f"Finished {step_labels.get(step, step).lower()}."
+                        )
+            self._window.show_status_message(
+                "Applied selected standard .3D workflow steps."
+            )
+        finally:
+            progress.close()
 
     def _on_three_d_apply_selected_workflow_requested(self) -> None:
         self._run_three_d_workflow_steps(self._window.selected_three_d_workflow_steps())
