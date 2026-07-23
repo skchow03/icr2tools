@@ -405,8 +405,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_objects_table = QtWidgets.QTableWidget(0, 2)
         self._land_object_name_edit = QtWidgets.QLineEdit()
         self._land_object_name_edit.setPlaceholderText("Object name")
-        self._land_save_object_button = QtWidgets.QPushButton("Save Object")
+        self._land_save_object_button = QtWidgets.QPushButton("Save to Project")
         self._land_add_object_button = QtWidgets.QPushButton("Add Object")
+        self._land_remove_object_button = QtWidgets.QPushButton("Remove Object")
         self._land_export_object_button = QtWidgets.QPushButton("Export Object to .3D")
         self._land_saved_objects: list[dict[str, object]] = []
         self._land_objects_table.setHorizontalHeaderLabels(["Name", "Notes"])
@@ -1423,6 +1424,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_object_header.addWidget(self._land_object_name_edit, 1)
         land_object_header.addWidget(self._land_add_object_button)
         land_object_header.addWidget(self._land_save_object_button)
+        land_object_header.addWidget(self._land_remove_object_button)
         land_object_header.addWidget(self._land_export_object_button)
         land_layout.addLayout(land_object_header)
         land_layout.addWidget(self._land_objects_table)
@@ -1473,6 +1475,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._land_save_object_button.clicked.connect(self._save_current_land_object)
         self._land_add_object_button.clicked.connect(self._add_land_object)
+        self._land_remove_object_button.clicked.connect(
+            self._remove_selected_land_object
+        )
         self._land_export_object_button.clicked.connect(
             self._export_selected_land_object_to_3d
         )
@@ -5056,6 +5061,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._mark_land_objects_dirty()
         self.show_status_message(f"Added land object '{name}'.")
 
+    def _remove_selected_land_object(self) -> None:
+        row = self._land_objects_table.currentRow()
+        if row < 0 or row >= len(self._land_saved_objects):
+            self.show_status_message("Select a land object to remove.")
+            return
+        name = (
+            str(self._land_saved_objects[row].get("name", "")).strip()
+            or f"Object {row + 1}"
+        )
+        del self._land_saved_objects[row]
+        self._land_objects_table.removeRow(row)
+        if self._land_saved_objects:
+            next_row = min(row, len(self._land_saved_objects) - 1)
+            self._land_objects_table.selectRow(next_row)
+            self._load_selected_land_object()
+        else:
+            self._land_object_name_edit.clear()
+            self._land_points_table.setRowCount(0)
+            self._land_polygons_table.setRowCount(0)
+            self._update_land_object_edit_controls()
+            self._sync_land_points_overlay()
+        self._mark_land_objects_dirty()
+        self._sync_all_land_objects_overlay()
+        self.show_status_message(f"Removed land object '{name}' from the project.")
+
     def _load_selected_land_object(self) -> None:
         row = self._land_objects_table.currentRow()
         if row < 0 or row >= len(self._land_saved_objects):
@@ -5169,6 +5199,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_delete_polygon_button,
             self._land_move_polygon_up_button,
             self._land_move_polygon_down_button,
+            self._land_remove_object_button,
             self._land_export_object_button,
         ):
             button.setEnabled(has_selection)
