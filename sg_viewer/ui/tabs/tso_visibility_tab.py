@@ -631,15 +631,6 @@ class TSOVisibilityTab(QWidget):
         self.reconcile_button.setToolTip(
             "Compare current ObjectLists with another track.3D file and copy/add matching rows."
         )
-        self.save_to_track3d_button.setToolTip(
-            "Write the current ObjectLists back into the configured <track>.3D file."
-        )
-        self.save_detail_lists_to_track3d_button.setToolTip(
-            "Write current DetailList TSO assignments to the configured <track>.3D file while preserving TSD entries."
-        )
-        self.set_export_locations_button.setToolTip(
-            "Open Set export locations to choose the <track>.3D file used by these load/save actions."
-        )
         self.auto_assign_button.setToolTip(
             "Automatically rebuild ObjectList TSO assignments from current TSO positions."
         )
@@ -743,17 +734,10 @@ class TSOVisibilityTab(QWidget):
         self.clear_all_object_lists_button.clicked.connect(self.clear_all_object_lists)
         self.clear_all_detail_lists_button.clicked.connect(self.clear_all_detail_lists)
         self.reconcile_button.clicked.connect(self._on_reconcile_requested)
-        self.set_export_locations_button.clicked.connect(
-            self.exportLocationsRequested.emit
-        )
         self.auto_assign_button.clicked.connect(
             self.autoAssignObjectListsRequested.emit
         )
         self.assignment_check_button.clicked.connect(self.show_unassigned_tso_report)
-        self.save_to_track3d_button.clicked.connect(self._on_save_to_track3d_requested)
-        self.save_detail_lists_to_track3d_button.clicked.connect(
-            self._on_save_detail_lists_to_track3d_requested
-        )
         self.section_list.rowSelectionChanged.connect(self._emit_selected_tsos)
         self.tso_list.orderChanged.connect(self._on_tso_order_changed)
         self.tso_list.itemClicked.connect(self._on_tso_pill_selected)
@@ -780,9 +764,6 @@ class TSOVisibilityTab(QWidget):
         file_group_layout.addWidget(self.load_button, 0, 0)
         file_group_layout.addWidget(self.load_detail_lists_button, 0, 1)
         file_group_layout.addWidget(self.reconcile_button, 0, 2)
-        file_group_layout.addWidget(self.save_to_track3d_button, 1, 0)
-        file_group_layout.addWidget(self.save_detail_lists_to_track3d_button, 1, 1)
-        file_group_layout.addWidget(self.set_export_locations_button, 1, 2)
         file_group.setLayout(file_group_layout)
         layout.addWidget(file_group)
 
@@ -1951,7 +1932,7 @@ class TSOVisibilityTab(QWidget):
         self._emit_track_section_and_order(row)
         self.populate_table()
 
-    def _on_save_to_track3d_requested(self) -> None:
+    def _on_save_to_track3d_requested(self, *, create_backup: bool = True) -> None:
         if not self.object_lists:
             QMessageBox.information(self, "Save ObjectLists", "No ObjectLists to save.")
             return
@@ -1980,7 +1961,9 @@ class TSOVisibilityTab(QWidget):
             return
 
         try:
-            backup_path = save_object_lists_to_track3d(path, self.object_lists)
+            backup_path = save_object_lists_to_track3d(
+                path, self.object_lists, create_backup=create_backup
+            )
         except OSError as exc:
             QMessageBox.critical(
                 self,
@@ -1989,12 +1972,10 @@ class TSOVisibilityTab(QWidget):
             )
             return
 
-        QMessageBox.information(
-            self,
-            "Save ObjectLists",
-            "Updated track.3D with current ObjectList rows.\n"
-            f"Backup created at:\n{backup_path}",
-        )
+        message = "Updated track.3D with current ObjectList rows."
+        if backup_path is not None:
+            message += f"\nBackup created at:\n{backup_path}"
+        QMessageBox.information(self, "Save ObjectLists", message)
         self.objectListsSaved.emit()
 
     def _detail_list_layout_signature(
@@ -2006,7 +1987,7 @@ class TSOVisibilityTab(QWidget):
             for entry in detail_lists
         )
 
-    def _on_save_detail_lists_to_track3d_requested(self) -> None:
+    def _on_save_detail_lists_to_track3d_requested(self, *, create_backup: bool = True) -> None:
         if not self.detail_lists:
             QMessageBox.information(self, "Save DetailLists", "No DetailLists to save.")
             return
@@ -2034,7 +2015,9 @@ class TSOVisibilityTab(QWidget):
             return
 
         try:
-            backup_path = save_detail_lists_to_track3d(path, self.detail_lists)
+            backup_path = save_detail_lists_to_track3d(
+                path, self.detail_lists, create_backup=create_backup
+            )
         except OSError as exc:
             QMessageBox.critical(
                 self,
@@ -2043,12 +2026,13 @@ class TSOVisibilityTab(QWidget):
             )
             return
 
-        QMessageBox.information(
-            self,
-            "Save DetailLists",
-            "Updated track.3D with current DetailList TSO rows. Existing TSD entries were preserved.\n"
-            f"Backup created at:\n{backup_path}",
+        message = (
+            "Updated track.3D with current DetailList TSO rows. "
+            "Existing TSD entries were preserved."
         )
+        if backup_path is not None:
+            message += f"\nBackup created at:\n{backup_path}"
+        QMessageBox.information(self, "Save DetailLists", message)
         self.objectListsSaved.emit()
 
     def _on_copy_from_previous_requested(self) -> None:

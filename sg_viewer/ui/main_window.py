@@ -399,9 +399,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._tso_generate_file_button = QtWidgets.QPushButton(
             "Generate objects.txt file"
         )
-        self._tso_write_to_3d_file_button = QtWidgets.QPushButton(
-            "Write to .3D file (in place)"
-        )
         self._tso_export_locations_button = QtWidgets.QPushButton(
             "Set export locations..."
         )
@@ -523,12 +520,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_workflow_detail_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_see_through_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_colors_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_backup_checkbox = QtWidgets.QCheckBox(
+            "Create one backup of <track>.3D before applying updates"
+        )
         for checkbox in (
             self._three_d_workflow_tso_checkbox,
             self._three_d_workflow_object_lists_checkbox,
             self._three_d_workflow_detail_lists_checkbox,
             self._three_d_workflow_see_through_checkbox,
             self._three_d_workflow_colors_checkbox,
+            self._three_d_workflow_backup_checkbox,
         ):
             checkbox.setChecked(True)
         self._three_d_apply_selected_workflow_button = QtWidgets.QPushButton(
@@ -1404,8 +1405,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_files_layout.setVerticalSpacing(6)
         tso_files_layout.addWidget(self._tso_import_from_3d_button, 0, 0)
         tso_files_layout.addWidget(self._tso_generate_file_button, 0, 1)
-        tso_files_layout.addWidget(self._tso_write_to_3d_file_button, 0, 2)
-        tso_files_layout.addWidget(self._tso_export_locations_button, 1, 0, 1, 3)
+        tso_files_layout.addWidget(self._tso_export_locations_button, 1, 0, 1, 2)
         tso_files_group.setLayout(tso_files_layout)
         tso_layout.addWidget(tso_files_group)
         self._tso_sidebar.setLayout(tso_layout)
@@ -1576,6 +1576,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             workflow_grid.addWidget(checkbox, row, 0)
             workflow_grid.addWidget(button, row, 1)
         workflow_layout.addLayout(workflow_grid)
+        self._three_d_workflow_backup_checkbox.setToolTip(
+            "When using Apply Selected to .3D or Apply all to .3D, copy the selected <track>.3D file once before any selected update runs."
+        )
+        workflow_layout.addWidget(self._three_d_workflow_backup_checkbox)
         workflow_buttons = QtWidgets.QHBoxLayout()
         workflow_buttons.addWidget(self._three_d_apply_selected_workflow_button)
         workflow_buttons.addWidget(self._three_d_apply_all_workflow_button)
@@ -2784,10 +2788,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._tso_export_locations_button
 
     @property
-    def tso_write_to_3d_file_button(self) -> QtWidgets.QPushButton:
-        return self._tso_write_to_3d_file_button
-
-    @property
     def tso_modify_elevations_button(self) -> QtWidgets.QPushButton:
         return self._tso_modify_elevations_button
 
@@ -2906,6 +2906,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "detail_lists": self._three_d_workflow_detail_lists_checkbox.isChecked(),
             "see_through": self._three_d_workflow_see_through_checkbox.isChecked(),
             "colors": self._three_d_workflow_colors_checkbox.isChecked(),
+            "backup": self._three_d_workflow_backup_checkbox.isChecked(),
         }
 
     def set_three_d_workflow_options(self, options: object) -> None:
@@ -2917,6 +2918,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "detail_lists": self._three_d_workflow_detail_lists_checkbox,
             "see_through": self._three_d_workflow_see_through_checkbox,
             "colors": self._three_d_workflow_colors_checkbox,
+            "backup": self._three_d_workflow_backup_checkbox,
         }
         for key, checkbox in checkboxes.items():
             value = options.get(key)
@@ -2937,6 +2939,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if self._three_d_workflow_colors_checkbox.isChecked():
             steps.append("colors")
         return tuple(steps)
+
+    def three_d_workflow_create_backup(self) -> bool:
+        return self._three_d_workflow_backup_checkbox.isChecked()
 
     def set_selected_track3d_path_text(self, text: str) -> None:
         self._three_d_file_selected_path_label.setText(f"Selected .3D file: {text}")
