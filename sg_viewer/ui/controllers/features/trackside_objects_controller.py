@@ -20,6 +20,7 @@ from sg_viewer.services.trackside_elevation import (
     closest_boundary_elevation_for_tso_with_context,
     point_on_section,
     tso_relative_boundary_elevation,
+    track_orientation_for_tso_with_context,
 )
 from sg_viewer.services.trackside_objects import (
     TracksideObject,
@@ -764,6 +765,9 @@ class TracksideObjectsController:
             self._tso_attributes_dialog.previewEnded.connect(
                 self._on_tso_attributes_preview_ended
             )
+            self._tso_attributes_dialog.trackOrientationRequested.connect(
+                self._on_tso_track_orientation_requested
+            )
         self._tso_attributes_dialog.set_measurement_unit(
             self._window.current_measurement_unit()
         )
@@ -812,6 +816,30 @@ class TracksideObjectsController:
 
     def _on_tso_attributes_preview_ended(self) -> None:
         self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+
+    def _on_tso_track_orientation_requested(self, row: int, obj: object) -> None:
+        if not isinstance(obj, TracksideObject):
+            return
+        if row < 0 or row >= len(self._trackside_objects):
+            return
+        orientation = track_orientation_for_tso_with_context(
+            obj, context=self._build_tso_boundary_elevation_context()
+        )
+        if orientation is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Match track pitch/tilt",
+                "Could not determine track pitch and tilt at this TSO position.",
+            )
+            return
+        if self._tso_attributes_dialog is not None:
+            self._tso_attributes_dialog.set_pitch_tilt_values(
+                orientation.pitch, orientation.tilt
+            )
+        self._window.show_status_message(
+            f"Matched __TSO{row} pitch/tilt to track: "
+            f"{orientation.pitch}, {orientation.tilt} tenths."
+        )
 
     def _on_preview_tso_dragged(
         self, anchor_index: int, delta_x: int, delta_y: int

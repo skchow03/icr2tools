@@ -25,6 +25,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
     objectUpdated = QtCore.pyqtSignal(int, object)
     objectPreviewUpdated = QtCore.pyqtSignal(int, object)
     previewEnded = QtCore.pyqtSignal()
+    trackOrientationRequested = QtCore.pyqtSignal(int, object)
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -98,8 +99,20 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow("Y (500ths)", self._y_spin)
         form.addRow("Z (500ths)", self._z_spin)
         form.addRow("Yaw (tenths)", yaw_widget)
-        form.addRow("Pitch (tenths)", self._pitch_spin)
-        form.addRow("Tilt (tenths)", self._tilt_spin)
+        pitch_tilt_layout = QtWidgets.QHBoxLayout()
+        pitch_tilt_layout.setContentsMargins(0, 0, 0, 0)
+        pitch_tilt_layout.addWidget(self._pitch_spin)
+        pitch_tilt_layout.addWidget(self._tilt_spin)
+        self._match_track_orientation_button = QtWidgets.QPushButton(
+            "Match track pitch/tilt"
+        )
+        self._match_track_orientation_button.setToolTip(
+            "Set pitch and tilt from the track elevation under this TSO."
+        )
+        pitch_tilt_layout.addWidget(self._match_track_orientation_button)
+        pitch_tilt_widget = QtWidgets.QWidget()
+        pitch_tilt_widget.setLayout(pitch_tilt_layout)
+        form.addRow("Pitch / Tilt (tenths)", pitch_tilt_widget)
         form.addRow("Description", self._description_edit)
         self._bbox_length_label = QtWidgets.QLabel()
         self._bbox_width_label = QtWidgets.QLabel()
@@ -118,6 +131,9 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow(self._sprite_width_label, self._sprite_width_spin)
         form.addRow("Rotation point", self._rotation_point_combo)
         self._is_sprite_checkbox.toggled.connect(self._update_shape_controls)
+        self._match_track_orientation_button.clicked.connect(
+            self._request_track_orientation_match
+        )
 
         self._matching_filename_note = QtWidgets.QLabel(
             "BBox, sprite, and rotation point fields apply to all TSOs with the "
@@ -200,6 +216,17 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._rotation_point_combo.setCurrentIndex(index if index >= 0 else 0)
         self._update_shape_controls()
         self.setWindowTitle(f"TSO Attributes — __TSO{row_index}")
+
+    def set_pitch_tilt_values(self, pitch: int, tilt: int) -> None:
+        self._pitch_spin.setValue(int(pitch))
+        self._tilt_spin.setValue(int(tilt))
+        self._apply_changes()
+
+    def _request_track_orientation_match(self) -> None:
+        obj = self._build_object_from_form()
+        if obj is None or self._row_index is None:
+            return
+        self.trackOrientationRequested.emit(int(self._row_index), obj)
 
     def _load_bbox_from_track3d(self) -> None:
         path, _selected_filter = QtWidgets.QFileDialog.getOpenFileName(

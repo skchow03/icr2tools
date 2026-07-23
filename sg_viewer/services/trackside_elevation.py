@@ -38,7 +38,10 @@ def _boundary_numbers_for_fsects(fsects) -> dict[int, str]:
             row_fsect[0],
         )
     )
-    return {row_index: str(boundary_number) for boundary_number, (row_index, _fsect) in enumerate(boundary_rows)}
+    return {
+        row_index: str(boundary_number)
+        for boundary_number, (row_index, _fsect) in enumerate(boundary_rows)
+    }
 
 
 def point_on_section(section: SectionPreview, fraction: float, dlat: float) -> Point:
@@ -89,6 +92,119 @@ def point_on_section(section: SectionPreview, fraction: float, dlat: float) -> P
     )
 
 
+@dataclass(frozen=True)
+class TsoTrackOrientation:
+    pitch: int
+    tilt: int
+
+
+def _section_point_at_dlong(
+    context: TsoBoundaryElevationContext, dlong: float, dlat: float
+) -> tuple[Point, int, float] | None:
+    mapped = dlong_to_section_position(context.sections, dlong, context.track_length)
+    if mapped is None:
+        return None
+    section_index = int(mapped.section_index)
+    if section_index < 0 or section_index >= len(context.sections):
+        return None
+    progress = max(0.0, min(1.0, float(mapped.fraction)))
+    return (
+        point_on_section(context.sections[section_index], progress, dlat),
+        section_index,
+        progress,
+    )
+
+
+def _angle_tenths(rise: float, run: float) -> int:
+    if run <= 0.0:
+        return 0
+    return int(round(math.degrees(math.atan2(float(rise), float(run))) * 10.0))
+
+
+def track_orientation_for_tso_with_context(
+    obj: TracksideObject,
+    *,
+    context: TsoBoundaryElevationContext | None,
+) -> TsoTrackOrientation | None:
+    if context is None:
+        return None
+    projected_point, projected_dlong, _distance_sq = project_point_to_centerline(
+        (float(obj.x), float(obj.y)),
+        context.centerline_index,
+        context.sampled_dlongs,
+        context.track_length,
+    )
+    if projected_point is None or projected_dlong is None:
+        return None
+    mapped = dlong_to_section_position(
+        context.sections, projected_dlong, context.track_length
+    )
+    if mapped is None:
+        return None
+    section_index = int(mapped.section_index)
+    if section_index < 0 or section_index >= len(context.sections):
+        return None
+    progress = max(0.0, min(1.0, float(mapped.fraction)))
+    section = context.sections[section_index]
+    center_point = point_on_section(section, progress, 0.0)
+    normal_point = point_on_section(section, progress, 1.0)
+    normal_x = float(normal_point[0]) - float(center_point[0])
+    normal_y = float(normal_point[1]) - float(center_point[1])
+    normal_length = math.hypot(normal_x, normal_y)
+    if normal_length <= 0.0:
+        return None
+    dlat = (float(obj.x) - float(center_point[0])) * (normal_x / normal_length) + (
+        float(obj.y) - float(center_point[1])
+    ) * (normal_y / normal_length)
+
+    longitudinal_sample = max(1.0, min(50.0, context.track_length / 1000.0))
+    before = _section_point_at_dlong(
+        context, projected_dlong - longitudinal_sample, dlat
+    )
+    after = _section_point_at_dlong(
+        context, projected_dlong + longitudinal_sample, dlat
+    )
+    if before is None or after is None:
+        return None
+    before_point, before_section, before_progress = before
+    after_point, after_section, after_progress = after
+    before_elevation = context.sample_elevation_at_dlat(
+        before_section, before_progress, dlat
+    )
+    after_elevation = context.sample_elevation_at_dlat(
+        after_section, after_progress, dlat
+    )
+    if before_elevation is None or after_elevation is None:
+        return None
+    longitudinal_run = math.hypot(
+        float(after_point[0]) - float(before_point[0]),
+        float(after_point[1]) - float(before_point[1]),
+    )
+    pitch = _angle_tenths(
+        float(after_elevation) - float(before_elevation), longitudinal_run
+    )
+
+    lateral_sample = max(1.0, min(50.0, context.track_length / 1000.0))
+    inner_dlat = dlat - lateral_sample
+    outer_dlat = dlat + lateral_sample
+    inner_elevation = context.sample_elevation_at_dlat(
+        section_index, progress, inner_dlat
+    )
+    outer_elevation = context.sample_elevation_at_dlat(
+        section_index, progress, outer_dlat
+    )
+    if inner_elevation is None or outer_elevation is None:
+        return None
+    inner_point = point_on_section(section, progress, inner_dlat)
+    outer_point = point_on_section(section, progress, outer_dlat)
+    lateral_run = math.hypot(
+        float(outer_point[0]) - float(inner_point[0]),
+        float(outer_point[1]) - float(inner_point[1]),
+    )
+    tilt = _angle_tenths(float(outer_elevation) - float(inner_elevation), lateral_run)
+    return TsoTrackOrientation(pitch=pitch, tilt=tilt)
+
+
 def closest_boundary_elevation_for_tso_with_context(
     obj: TracksideObject,
     *,
@@ -113,7 +229,9 @@ def closest_boundary_elevation_for_tso_with_context(
     )
     if projected_point is None or projected_dlong is None:
         return None
-    mapped = dlong_to_section_position(context.sections, projected_dlong, context.track_length)
+    mapped = dlong_to_section_position(
+        context.sections, projected_dlong, context.track_length
+    )
     if mapped is None:
         return None
     section_index = int(mapped.section_index)
@@ -131,9 +249,14 @@ def closest_boundary_elevation_for_tso_with_context(
         if row_index < 0 or row_index >= len(fsects):
             continue
         fsect = fsects[row_index]
-        dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+        dlat = (
+            float(fsect.start_dlat)
+            + (float(fsect.end_dlat) - float(fsect.start_dlat)) * progress
+        )
         boundary_point = point_on_section(section, progress, dlat)
-        distance_sq = (boundary_point[0] - float(obj.x)) ** 2 + (boundary_point[1] - float(obj.y)) ** 2
+        distance_sq = (boundary_point[0] - float(obj.x)) ** 2 + (
+            boundary_point[1] - float(obj.y)
+        ) ** 2
         elevation = context.sample_elevation_at_dlat(section_index, progress, dlat)
         if elevation is None:
             continue
