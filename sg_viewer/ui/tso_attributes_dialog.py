@@ -101,8 +101,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow("Yaw (tenths)", yaw_widget)
         pitch_tilt_layout = QtWidgets.QHBoxLayout()
         pitch_tilt_layout.setContentsMargins(0, 0, 0, 0)
-        pitch_tilt_layout.addWidget(self._pitch_spin)
         pitch_tilt_layout.addWidget(self._tilt_spin)
+        pitch_tilt_layout.addWidget(self._pitch_spin)
         self._match_track_orientation_button = QtWidgets.QPushButton(
             "Match track pitch/tilt"
         )
@@ -112,7 +112,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         pitch_tilt_layout.addWidget(self._match_track_orientation_button)
         pitch_tilt_widget = QtWidgets.QWidget()
         pitch_tilt_widget.setLayout(pitch_tilt_layout)
-        form.addRow("Pitch / Tilt (tenths)", pitch_tilt_widget)
+        form.addRow("Tilt / Pitch (tenths)", pitch_tilt_widget)
         form.addRow("Description", self._description_edit)
         self._bbox_length_label = QtWidgets.QLabel()
         self._bbox_width_label = QtWidgets.QLabel()
