@@ -130,3 +130,24 @@ def test_track3d_bbox_import_converts_from_selected_source_unit(qapp):
         assert width == pytest.approx(9.8425)
     finally:
         dialog.close()
+
+
+def test_tso_attributes_dialog_shows_tilt_before_pitch(qapp):
+    dialog = TracksideObjectAttributesDialog()
+    try:
+        form = dialog.layout().itemAt(0).layout()
+        pitch_tilt_row = next(
+            row
+            for row in range(form.rowCount())
+            if form.itemAt(row, QtWidgets.QFormLayout.LabelRole).widget().text()
+            == "Tilt / Pitch (tenths)"
+        )
+        field_widget = form.itemAt(
+            pitch_tilt_row, QtWidgets.QFormLayout.FieldRole
+        ).widget()
+        field_layout = field_widget.layout()
+
+        assert field_layout.itemAt(0).widget() is dialog._tilt_spin
+        assert field_layout.itemAt(1).widget() is dialog._pitch_spin
+    finally:
+        dialog.close()
