@@ -111,9 +111,7 @@ class Track3DController:
         w.files_copy_template_button.clicked.connect(
             c._on_copy_template_files_requested
         )
-        w.files_create_run_bat_button.clicked.connect(
-            c._on_create_run_bat_requested
-        )
+        w.files_create_run_bat_button.clicked.connect(c._on_create_run_bat_requested)
         w.files_create_mrk_button.clicked.connect(c._on_create_empty_mrk_requested)
         w.three_d_set_export_locations_button.clicked.connect(
             h._mrk_controller._on_mrk_export_locations_requested
@@ -168,3 +166,13 @@ class Track3DController:
         w.three_d_apply_all_workflow_button.clicked.connect(
             c._on_three_d_apply_all_workflow_requested
         )
+        for checkbox in (
+            w._three_d_workflow_tso_checkbox,
+            w._three_d_workflow_object_lists_checkbox,
+            w._three_d_workflow_detail_lists_checkbox,
+            w._three_d_workflow_see_through_checkbox,
+            w._three_d_workflow_colors_checkbox,
+        ):
+            checkbox.toggled.connect(
+                lambda _checked: h._document_controller.persist_project_metadata()
+            )

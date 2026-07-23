@@ -471,9 +471,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._files_create_run_bat_button = QtWidgets.QPushButton(
             "Create run .bat file..."
         )
-        self._files_create_mrk_button = QtWidgets.QPushButton(
-            "Create empty .mrk file"
-        )
+        self._files_create_mrk_button = QtWidgets.QPushButton("Create empty .mrk file")
         self._three_d_set_export_locations_button = QtWidgets.QPushButton(
             "Set export locations..."
         )
@@ -1540,7 +1538,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         workflow_layout.addWidget(workflow_note)
         workflow_grid = QtWidgets.QGridLayout()
         workflow_rows = (
-            (self._three_d_workflow_tso_checkbox, self._three_d_workflow_save_tso_button),
+            (
+                self._three_d_workflow_tso_checkbox,
+                self._three_d_workflow_save_tso_button,
+            ),
             (
                 self._three_d_workflow_object_lists_checkbox,
                 self._three_d_workflow_save_object_lists_button,
@@ -2897,6 +2898,31 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_apply_all_workflow_button(self) -> QtWidgets.QPushButton:
         return self._three_d_apply_all_workflow_button
+
+    def three_d_workflow_options(self) -> dict[str, bool]:
+        return {
+            "tso": self._three_d_workflow_tso_checkbox.isChecked(),
+            "object_lists": self._three_d_workflow_object_lists_checkbox.isChecked(),
+            "detail_lists": self._three_d_workflow_detail_lists_checkbox.isChecked(),
+            "see_through": self._three_d_workflow_see_through_checkbox.isChecked(),
+            "colors": self._three_d_workflow_colors_checkbox.isChecked(),
+        }
+
+    def set_three_d_workflow_options(self, options: object) -> None:
+        if not isinstance(options, dict):
+            return
+        checkboxes = {
+            "tso": self._three_d_workflow_tso_checkbox,
+            "object_lists": self._three_d_workflow_object_lists_checkbox,
+            "detail_lists": self._three_d_workflow_detail_lists_checkbox,
+            "see_through": self._three_d_workflow_see_through_checkbox,
+            "colors": self._three_d_workflow_colors_checkbox,
+        }
+        for key, checkbox in checkboxes.items():
+            value = options.get(key)
+            if isinstance(value, bool):
+                with QtCore.QSignalBlocker(checkbox):
+                    checkbox.setChecked(value)
 
     def selected_three_d_workflow_steps(self) -> tuple[str, ...]:
         steps: list[str] = []
