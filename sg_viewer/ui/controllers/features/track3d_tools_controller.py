@@ -19,6 +19,7 @@ from sg_viewer.ui.track3d_catalog_dialog import Track3DCatalogInspectorDialog
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
 from sg_viewer.io.track3d_edit_plan import (
     Track3DEditPlan,
+    create_timestamped_backup,
     build_selected_face_material_edit_plan,
     build_selected_object_list_edit_plan,
     build_selected_tso_definition_edit_plan,
@@ -912,8 +913,12 @@ class Track3DToolsController:
             return
         step_actions = {
             "tso": self._host._trackside_objects_controller._on_tso_write_to_3d_file_requested,
-            "object_lists": self._window.tso_visibility_sidebar._on_save_to_track3d_requested,
-            "detail_lists": self._window.tso_visibility_sidebar._on_save_detail_lists_to_track3d_requested,
+            "object_lists": lambda: self._window.tso_visibility_sidebar._on_save_to_track3d_requested(
+                create_backup=False
+            ),
+            "detail_lists": lambda: self._window.tso_visibility_sidebar._on_save_detail_lists_to_track3d_requested(
+                create_backup=False
+            ),
             "see_through": lambda: self._on_three_d_fix_in_place_requested(
                 confirm=False
             ),
@@ -929,6 +934,20 @@ class Track3DToolsController:
         progress = Track3DWorkflowProgress(self._window, len(steps))
         progress.update(0, "Preparing standard .3D workflow…")
         try:
+            backup_path = None
+            if self._window.three_d_workflow_create_backup():
+                input_path = self._ensure_selected_track3d_file()
+                if input_path is None:
+                    return
+                try:
+                    backup_path = create_timestamped_backup(input_path)
+                except OSError as exc:
+                    QtWidgets.QMessageBox.warning(
+                        self._window,
+                        "Apply Selected to .3D",
+                        f"Could not create backup before applying workflow:\n{exc}",
+                    )
+                    return
             with _suppress_routine_workflow_messages(self._window):
                 for index, step in enumerate(steps, start=1):
                     action = step_actions.get(step)
@@ -938,9 +957,10 @@ class Track3DToolsController:
                         progress.update(
                             index, f"Finished {step_labels.get(step, step).lower()}."
                         )
-            self._window.show_status_message(
-                "Applied selected standard .3D workflow steps."
-            )
+            status = "Applied selected standard .3D workflow steps."
+            if backup_path is not None:
+                status += f" Backup created: {backup_path.name}."
+            self._window.show_status_message(status)
         finally:
             progress.close()
 

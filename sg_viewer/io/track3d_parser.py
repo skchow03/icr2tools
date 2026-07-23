@@ -254,14 +254,18 @@ def _insertion_text(row: str, mode: str, original_text: str, offset: int) -> str
 def save_object_lists_to_track3d(
     path: str | Path,
     object_lists: list[Track3DObjectList],
-) -> Path:
+    *,
+    create_backup: bool = True,
+) -> Path | None:
     track3d_path = Path(path)
     original_text = track3d_path.read_text(encoding="utf-8", errors="ignore")
     catalog = parse_track3d_catalog(track3d_path)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = track3d_path.with_suffix(f"{track3d_path.suffix}.bak_{timestamp}")
-    shutil.copy2(track3d_path, backup_path)
+    backup_path = None
+    if create_backup:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = track3d_path.with_suffix(f"{track3d_path.suffix}.bak_{timestamp}")
+        shutil.copy2(track3d_path, backup_path)
 
     replacements: list[tuple[int, int, str]] = []
     insertions: dict[tuple[int, str], list[str]] = {}
@@ -319,14 +323,18 @@ def _format_detail_list_row(
 def save_detail_lists_to_track3d(
     path: str | Path,
     detail_lists: list[Track3DDetailList],
-) -> Path:
+    *,
+    create_backup: bool = True,
+) -> Path | None:
     track3d_path = Path(path)
     original_text = track3d_path.read_text(encoding="utf-8", errors="ignore")
     catalog = parse_track3d_catalog(track3d_path)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = track3d_path.with_suffix(f"{track3d_path.suffix}.bak_{timestamp}")
-    shutil.copy2(track3d_path, backup_path)
+    backup_path = None
+    if create_backup:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = track3d_path.with_suffix(f"{track3d_path.suffix}.bak_{timestamp}")
+        shutil.copy2(track3d_path, backup_path)
 
     edits: list[tuple[int, int, str]] = []
     for entry in detail_lists:

@@ -67,9 +67,6 @@ class TracksideObjectsController:
             h._on_tso_modify_elevations_requested
         )
         w.tso_generate_file_button.clicked.connect(h._on_tso_generate_file_requested)
-        w.tso_write_to_3d_file_button.clicked.connect(
-            h._on_tso_write_to_3d_file_requested
-        )
         w.tso_table.itemChanged.connect(h._on_tso_item_changed)
         w.tso_table.itemSelectionChanged.connect(h._on_tso_selection_changed)
         w.tso_table.cellClicked.connect(h._on_tso_table_cell_clicked)
