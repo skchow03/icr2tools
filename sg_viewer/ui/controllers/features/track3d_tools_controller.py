@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.services.pcx_palette import read_pcx_256_palette
 from sg_viewer.services.template_files import (
+    copy_template_files_without_overwrite,
     parse_template_trackname_files,
     replace_template_trackname_placeholders,
 )
@@ -209,23 +209,23 @@ class Track3DToolsController:
         project_folder.mkdir(parents=True, exist_ok=True)
         copied_count = 0
         directory_count = 0
+        skipped_files: list[Path] = []
         replaced_count = 0
         try:
-            for source in template_folder.rglob("*"):
-                destination = project_folder / source.relative_to(template_folder)
-                if source.is_dir():
-                    destination.mkdir(parents=True, exist_ok=True)
-                    directory_count += 1
-                    continue
-                if not source.is_file():
-                    continue
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
-                copied_count += 1
+            copy_result = copy_template_files_without_overwrite(
+                template_folder, project_folder
+            )
+            copied_count = len(copy_result.copied_files)
+            directory_count = copy_result.directory_count
+            skipped_files = copy_result.skipped_files
             if trackname_files:
                 track_name = Path(self._current_path).stem
+                copied_paths = set(copy_result.copied_files)
+                replace_files = [
+                    path for path in trackname_files if path in copied_paths
+                ]
                 replaced_count = replace_template_trackname_placeholders(
-                    project_folder, trackname_files, track_name
+                    project_folder, replace_files, track_name
                 )
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
@@ -238,9 +238,20 @@ class Track3DToolsController:
         self._host._history.set_template_folder(template_folder)
         self._host._history.set_template_trackname_files(trackname_files_text)
         message = f"Copied {copied_count} template file(s) and {directory_count} folder(s) to {project_folder}"
+        if skipped_files:
+            message += f"; skipped {len(skipped_files)} existing file(s)"
         if trackname_files:
-            message += f"; replaced <<trackname>> in {replaced_count} file(s)"
+            message += f"; replaced <<trackname>> in {replaced_count} copied file(s)"
         self._window.show_status_message(message)
+
+        if skipped_files:
+            skipped_text = "\n".join(str(path) for path in skipped_files)
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Copy Template Files",
+                "These existing project files were not copied over:\n"
+                f"{skipped_text}",
+            )
 
     def _on_template_trackname_files_changed(self) -> None:
         self._host._history.set_template_trackname_files(
