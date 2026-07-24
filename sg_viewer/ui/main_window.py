@@ -24,6 +24,8 @@ from sg_viewer.ui.models.tsd_lines_model import TSD_COMMAND_CHOICES
 from sg_viewer.rendering.fsection_style_map import resolve_fsection_style
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.altitude_units import (
+    ALTITUDE_SLIDER_MAX_FEET,
+    ALTITUDE_SLIDER_MIN_FEET,
     DEFAULT_ALTITUDE_MAX_FEET,
     DEFAULT_ALTITUDE_MIN_FEET,
     feet_from_500ths,
@@ -994,8 +996,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._xsect_elevation_table.setMinimumHeight(140)
         self._altitude_slider = QtWidgets.QSlider(QtCore.Qt.Vertical)
-        min_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MIN)
-        max_altitude_feet = feet_from_500ths(SGDocument.ELEVATION_MAX)
         self._altitude_slider.setRange(
             feet_to_slider_units(DEFAULT_ALTITUDE_MIN_FEET),
             feet_to_slider_units(DEFAULT_ALTITUDE_MAX_FEET),
@@ -1011,13 +1011,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
         )
         self._altitude_min_spin = QtWidgets.QDoubleSpinBox()
-        self._altitude_min_spin.setRange(min_altitude_feet, max_altitude_feet - 0.1)
+        self._altitude_min_spin.setRange(
+            ALTITUDE_SLIDER_MIN_FEET, ALTITUDE_SLIDER_MAX_FEET
+        )
         self._altitude_min_spin.setDecimals(1)
         self._altitude_min_spin.setSingleStep(0.1)
         self._altitude_min_spin.setValue(DEFAULT_ALTITUDE_MIN_FEET)
         self._altitude_min_spin.setKeyboardTracking(False)
         self._altitude_max_spin = QtWidgets.QDoubleSpinBox()
-        self._altitude_max_spin.setRange(min_altitude_feet + 0.1, max_altitude_feet)
+        self._altitude_max_spin.setRange(
+            ALTITUDE_SLIDER_MIN_FEET, ALTITUDE_SLIDER_MAX_FEET
+        )
         self._altitude_max_spin.setDecimals(1)
         self._altitude_max_spin.setSingleStep(0.1)
         self._altitude_max_spin.setValue(DEFAULT_ALTITUDE_MAX_FEET)
@@ -6105,8 +6109,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         spin_decimals = self._measurement_unit_decimals(current_unit)
         spin_step = self._measurement_unit_step(current_unit)
-        spin_min = units_from_500ths(SGDocument.ELEVATION_MIN, current_unit)
-        spin_max = units_from_500ths(SGDocument.ELEVATION_MAX, current_unit)
+        spin_min = self.feet_to_altitude_display(ALTITUDE_SLIDER_MIN_FEET)
+        spin_max = self.feet_to_altitude_display(ALTITUDE_SLIDER_MAX_FEET)
         suffix = f" {self._measurement_unit_label(current_unit)}"
 
         for spin in (self._altitude_min_spin, self._altitude_max_spin):
@@ -6116,8 +6120,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             spin.setSuffix(suffix)
             spin.blockSignals(False)
 
-        self._altitude_min_spin.setRange(spin_min, spin_max - spin_step)
-        self._altitude_max_spin.setRange(spin_min + spin_step, spin_max)
+        self._altitude_min_spin.setRange(spin_min, spin_max)
+        self._altitude_max_spin.setRange(spin_min, spin_max)
         self._altitude_min_spin.setValue(
             min(max(current_min_display, spin_min), spin_max - spin_step)
         )

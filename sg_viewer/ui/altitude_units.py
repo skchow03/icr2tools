@@ -2,6 +2,10 @@ from __future__ import annotations
 
 ALTITUDE_UNITS_PER_FOOT = 6000
 ALTITUDE_SLIDER_SCALE = 10
+# QSlider stores its bounds as signed 32-bit integers.  These are the broadest
+# altitude bounds it can represent while retaining the tenth-of-a-foot scale.
+ALTITUDE_SLIDER_MIN_FEET = -(2**31) / ALTITUDE_SLIDER_SCALE
+ALTITUDE_SLIDER_MAX_FEET = ((2**31) - 1) / ALTITUDE_SLIDER_SCALE
 INCHES_PER_FOOT = 12.0
 METERS_PER_FOOT = 0.3048
 
