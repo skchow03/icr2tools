@@ -612,6 +612,7 @@ class DocumentController:
         self.save_to_path(self._host._current_path)
 
     def save_to_path(self, path: Path) -> None:
+        is_first_save = self._host._current_path is None
         try:
             self._host._window.preview.save_sg(path)
         except Exception as exc:
@@ -620,12 +621,24 @@ class DocumentController:
             )
             self._logger.exception("Failed to save SG file")
             return
+        created_mrk_path = None
+        if is_first_save:
+            try:
+                created_mrk_path = self._create_initial_mrk_file(path)
+            except OSError as exc:
+                QtWidgets.QMessageBox.warning(
+                    self._host._window,
+                    "Failed to create .mrk",
+                    f"Saved SG file, but could not create a matching .mrk file:\n{exc}",
+                )
+                self._logger.exception("Failed to create initial .mrk file")
         self._host._current_path = path
         if self._host._project_working_directory is None:
             self._host._set_project_working_directory(path.parent, persist=False)
-        self._host._window.show_status_message(
-            f"Saved {path} and project {self._host._settings_path_for(path)}"
-        )
+        status_message = f"Saved {path} and project {self._host._settings_path_for(path)}"
+        if created_mrk_path is not None:
+            status_message += f"; created {created_mrk_path}"
+        self._host._window.show_status_message(status_message)
         self._host._history.record_save(path)
         self._host._refresh_recent_menu()
         self._host._persist_background_state()
@@ -651,6 +664,13 @@ class DocumentController:
         )
         self._host._mark_elevation_grade_dirty(False)
         self._host._mark_fsects_dirty(False)
+
+    def _create_initial_mrk_file(self, sg_path: Path) -> Path | None:
+        if any(sg_path.parent.glob("*.mrk")):
+            return None
+        mrk_path = sg_path.with_suffix(".mrk")
+        mrk_path.write_text("MARK_V1\n", encoding="utf-8")
+        return mrk_path
 
     def _load_project_embedded_sg(
         self,
