@@ -1848,40 +1848,41 @@ def test_mrk_patterns_use_texture_names_not_mip_names(qapp):
         window.close()
 
 
-def test_files_tab_create_empty_mrk_file_uses_track_name(qapp, tmp_path):
+def test_files_tab_does_not_show_create_empty_mrk_button(qapp):
+    window = SGViewerWindow()
+    try:
+        assert not hasattr(window, "files_create_mrk_button")
+        buttons = window.findChildren(QtWidgets.QPushButton)
+        assert all(button.text() != "Create empty .mrk file" for button in buttons)
+    finally:
+        window.close()
+
+
+def test_first_sg_save_creates_matching_mrk_file(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
         sg_path = tmp_path / "monza.sg"
-        window.controller._current_path = sg_path
+        monkeypatch.setattr(window.preview, "save_sg", lambda _path: None)
 
-        window.controller._track3d_tools_controller._on_create_empty_mrk_requested()
+        window.controller._document_controller.save_to_path(sg_path)
 
         assert (tmp_path / "monza.mrk").read_text(encoding="utf-8") == "MARK_V1\n"
     finally:
         window.close()
 
 
-def test_files_tab_create_empty_mrk_file_refuses_existing_file(
-    qapp, tmp_path, monkeypatch
-):
+def test_first_sg_save_does_not_create_mrk_when_folder_already_has_one(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:
         sg_path = tmp_path / "monza.sg"
-        mrk_path = tmp_path / "monza.mrk"
-        mrk_path.write_text("EXISTING\n", encoding="utf-8")
-        window.controller._current_path = sg_path
-        warnings = []
-        monkeypatch.setattr(
-            QtWidgets.QMessageBox,
-            "warning",
-            lambda *args: warnings.append(args),
-        )
+        existing_mrk_path = tmp_path / "other.mrk"
+        existing_mrk_path.write_text("EXISTING\n", encoding="utf-8")
+        monkeypatch.setattr(window.preview, "save_sg", lambda _path: None)
 
-        window.controller._track3d_tools_controller._on_create_empty_mrk_requested()
+        window.controller._document_controller.save_to_path(sg_path)
 
-        assert mrk_path.read_text(encoding="utf-8") == "EXISTING\n"
-        assert warnings
-        assert "already exists" in warnings[0][2]
+        assert existing_mrk_path.read_text(encoding="utf-8") == "EXISTING\n"
+        assert not (tmp_path / "monza.mrk").exists()
     finally:
         window.close()
 

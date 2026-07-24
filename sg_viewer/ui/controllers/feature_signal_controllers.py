@@ -114,7 +114,6 @@ class Track3DController:
         w.files_trackname_replace_edit.editingFinished.connect(
             c._on_template_trackname_files_changed
         )
-        w.files_create_mrk_button.clicked.connect(c._on_create_empty_mrk_requested)
         w.three_d_set_export_locations_button.clicked.connect(
             h._mrk_controller._on_mrk_export_locations_requested
         )

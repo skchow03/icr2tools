@@ -474,7 +474,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Comma-separated template files where <<trackname>> will be replaced "
             "with the current SG filename after copying."
         )
-        self._files_create_mrk_button = QtWidgets.QPushButton("Create empty .mrk file")
         self._three_d_set_export_locations_button = QtWidgets.QPushButton(
             "Set export locations..."
         )
@@ -1540,7 +1539,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         project_files_layout.addLayout(trackname_replace_layout)
         project_files_layout.addWidget(self._files_copy_template_button)
-        project_files_layout.addWidget(self._files_create_mrk_button)
         project_files_group.setLayout(project_files_layout)
         three_d_layout.addWidget(project_files_group)
 
@@ -2833,10 +2831,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def files_trackname_replace_edit(self) -> QtWidgets.QLineEdit:
         return self._files_trackname_replace_edit
-
-    @property
-    def files_create_mrk_button(self) -> QtWidgets.QPushButton:
-        return self._files_create_mrk_button
 
     @property
     def three_d_set_export_locations_button(self) -> QtWidgets.QPushButton:

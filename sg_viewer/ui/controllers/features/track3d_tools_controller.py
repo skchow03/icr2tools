@@ -247,39 +247,6 @@ class Track3DToolsController:
             self._window.files_trackname_replace_edit.text()
         )
 
-    def _on_create_empty_mrk_requested(self) -> None:
-        project_folder = self._project_folder()
-        if project_folder is None or self._current_path is None:
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Create .mrk file",
-                "Open or save an SG file before creating a .mrk file.",
-            )
-            return
-
-        track_name = Path(self._current_path).stem
-        mrk_path = project_folder / f"{track_name}.mrk"
-        if mrk_path.exists():
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Create .mrk file",
-                f"A .mrk file already exists for this track:\n{mrk_path}",
-            )
-            return
-
-        try:
-            project_folder.mkdir(parents=True, exist_ok=True)
-            mrk_path.write_text("MARK_V1\n", encoding="utf-8")
-        except OSError as exc:
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Create .mrk file",
-                f"Could not create .mrk file:\n{exc}",
-            )
-            return
-
-        self._window.show_status_message(f"Created {mrk_path}")
-
     def _on_create_run_bat_requested(self) -> None:
         project_folder = self._project_folder()
         if project_folder is None or self._current_path is None:
