@@ -466,8 +466,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._files_copy_template_button = QtWidgets.QPushButton(
             "Copy template files to project folder..."
         )
-        self._files_create_run_bat_button = QtWidgets.QPushButton(
-            "Create run .bat file..."
+        self._files_trackname_replace_edit = QtWidgets.QLineEdit()
+        self._files_trackname_replace_edit.setPlaceholderText(
+            "Example: run.bat, scripts/build.txt"
+        )
+        self._files_trackname_replace_edit.setToolTip(
+            "Comma-separated template files where <<trackname>> will be replaced "
+            "with the current SG filename after copying."
         )
         self._files_create_mrk_button = QtWidgets.QPushButton("Create empty .mrk file")
         self._three_d_set_export_locations_button = QtWidgets.QPushButton(
@@ -1523,13 +1528,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         project_files_group = QtWidgets.QGroupBox("2) Project files")
         project_files_layout = QtWidgets.QVBoxLayout()
         project_files_note = QtWidgets.QLabel(
-            "Copy reusable template files into the project folder, or generate "
-            "a build batch file for the current SG track."
+            "Copy reusable template files and subfolders into the project folder. "
+            "Optionally list files where <<trackname>> should be replaced with "
+            "the current SG filename after copying."
         )
         project_files_note.setWordWrap(True)
         project_files_layout.addWidget(project_files_note)
+        trackname_replace_layout = QtWidgets.QFormLayout()
+        trackname_replace_layout.addRow(
+            "Replace <<trackname>> in:", self._files_trackname_replace_edit
+        )
+        project_files_layout.addLayout(trackname_replace_layout)
         project_files_layout.addWidget(self._files_copy_template_button)
-        project_files_layout.addWidget(self._files_create_run_bat_button)
         project_files_layout.addWidget(self._files_create_mrk_button)
         project_files_group.setLayout(project_files_layout)
         three_d_layout.addWidget(project_files_group)
@@ -2821,8 +2831,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._files_copy_template_button
 
     @property
-    def files_create_run_bat_button(self) -> QtWidgets.QPushButton:
-        return self._files_create_run_bat_button
+    def files_trackname_replace_edit(self) -> QtWidgets.QLineEdit:
+        return self._files_trackname_replace_edit
 
     @property
     def files_create_mrk_button(self) -> QtWidgets.QPushButton:

@@ -7,6 +7,10 @@ from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from sg_viewer.services.pcx_palette import read_pcx_256_palette
+from sg_viewer.services.template_files import (
+    parse_template_trackname_files,
+    replace_template_trackname_placeholders,
+)
 
 from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
 from sg_viewer.replacecolors import (
@@ -192,16 +196,37 @@ class Track3DToolsController:
             )
             return
 
+        trackname_files_text = self._window.files_trackname_replace_edit.text()
+        trackname_files = parse_template_trackname_files(trackname_files_text)
+        if trackname_files and self._current_path is None:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Copy Template Files",
+                "Open or save an SG file before replacing <<trackname>> placeholders.",
+            )
+            return
+
         project_folder.mkdir(parents=True, exist_ok=True)
         copied_count = 0
+        directory_count = 0
+        replaced_count = 0
         try:
             for source in template_folder.rglob("*"):
+                destination = project_folder / source.relative_to(template_folder)
+                if source.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                    directory_count += 1
+                    continue
                 if not source.is_file():
                     continue
-                destination = project_folder / source.relative_to(template_folder)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
                 copied_count += 1
+            if trackname_files:
+                track_name = Path(self._current_path).stem
+                replaced_count = replace_template_trackname_placeholders(
+                    project_folder, trackname_files, track_name
+                )
         except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -211,8 +236,15 @@ class Track3DToolsController:
             return
 
         self._host._history.set_template_folder(template_folder)
-        self._window.show_status_message(
-            f"Copied {copied_count} template file(s) to {project_folder}"
+        self._host._history.set_template_trackname_files(trackname_files_text)
+        message = f"Copied {copied_count} template file(s) and {directory_count} folder(s) to {project_folder}"
+        if trackname_files:
+            message += f"; replaced <<trackname>> in {replaced_count} file(s)"
+        self._window.show_status_message(message)
+
+    def _on_template_trackname_files_changed(self) -> None:
+        self._host._history.set_template_trackname_files(
+            self._window.files_trackname_replace_edit.text()
         )
 
     def _on_create_empty_mrk_requested(self) -> None:
