@@ -6,7 +6,6 @@ import sys
 from configparser import ConfigParser
 from pathlib import Path
 
-
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _ALLOWED_MEASUREMENT_UNITS = {"feet", "meter", "inch", "500ths"}
 _PREVIEW_COLOR_STORAGE_KEYS = {
@@ -138,6 +137,23 @@ class FileHistory:
         self._config[self.FILES_SECTION]["template_folder"] = normalized
         self._save()
 
+    def get_template_trackname_files(self) -> str:
+        if not self._config.has_section(self.FILES_SECTION):
+            return ""
+        return self._config[self.FILES_SECTION].get("template_trackname_files", "")
+
+    def set_template_trackname_files(self, files: str) -> None:
+        if not self._config.has_section(self.FILES_SECTION):
+            self._config.add_section(self.FILES_SECTION)
+        normalized = str(files).strip()
+        if (
+            self._config[self.FILES_SECTION].get("template_trackname_files")
+            == normalized
+        ):
+            return
+        self._config[self.FILES_SECTION]["template_trackname_files"] = normalized
+        self._save()
+
     def set_measurement_unit(self, unit: str) -> None:
         normalized = str(unit).strip().lower()
         if normalized not in _ALLOWED_MEASUREMENT_UNITS:
@@ -195,7 +211,10 @@ class FileHistory:
             if not image.is_absolute():
                 image = (sg_path.parent / image).resolve()
             scale = float(data["background_scale"])
-            origin = (float(data["background_upperleft_x"]), float(data["background_upperleft_y"]))
+            origin = (
+                float(data["background_upperleft_x"]),
+                float(data["background_upperleft_y"]),
+            )
             return image, scale, origin
         except KeyError:
             return None
