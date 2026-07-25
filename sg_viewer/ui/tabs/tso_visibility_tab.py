@@ -665,7 +665,7 @@ class TSOVisibilityTab(QWidget):
             "Automatically rebuild ObjectList TSO assignments from current TSO positions."
         )
         self.auto_add_to_section_button.setToolTip(
-            "Add nearby TSOs on the selected ObjectList's side and sort them in painter order."
+            "Add TSOs within a geometric distance of the selected ObjectList's centerline interval, on its left or right side, and sort them in painter order."
         )
         self.assignment_check_button.setToolTip(
             "Report TSOs that are not assigned to any ObjectList or DetailList."

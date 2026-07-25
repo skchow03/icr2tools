@@ -398,7 +398,7 @@ class TracksideObjectsController:
         distance, accepted = QtWidgets.QInputDialog.getDouble(
             self._window,
             "Auto Add to Section",
-            f"Maximum distance from the track section ({unit_label}):",
+            f"Maximum geometric distance from the selected centerline interval ({unit_label}):",
             100.0,
             0.0,
             1_000_000.0,
@@ -426,7 +426,7 @@ class TracksideObjectsController:
     def _auto_add_tsos_to_object_list(
         self, row: int, maximum_distance: float
     ) -> int | None:
-        """Add TSOs alongside one ObjectList without rebuilding any other list."""
+        """Add TSOs geometrically close to one ObjectList's centerline interval."""
         sidebar = self._window.tso_visibility_sidebar
         if row < 0 or row >= len(sidebar.object_lists):
             return None
@@ -439,26 +439,24 @@ class TracksideObjectsController:
             return None
 
         start, end = dlong_range
+        selected_segments = self._centerline_segments_for_dlong_range(
+            context, float(start), None if end is None else float(end)
+        )
+        if not selected_segments:
+            return None
         expected_left = str(entry.side).upper() == "L"
         existing_ids = {tso_id for tso_id in entry.tso_ids if isinstance(tso_id, int)}
         sort_data: dict[int, tuple[float, float, int]] = {}
         additions: list[int] = []
         for tso_id, obj in enumerate(self._trackside_objects):
-            projection = self._project_tso_for_object_list(obj, context)
+            projection = self._project_tso_to_selected_segments(
+                obj, context, selected_segments
+            )
             if projection is None:
                 continue
-            dlong, dlat, wall_distance = projection
-            in_range = (
-                dlong >= start
-                if end is None
-                else (
-                    start <= dlong < end
-                    if end >= start
-                    else dlong >= start or dlong < end
-                )
-            )
+            dlong, dlat, wall_distance, centerline_distance = projection
             on_expected_side = (dlat >= 0) == expected_left
-            if in_range and on_expected_side and abs(dlat) <= maximum_distance:
+            if on_expected_side and centerline_distance <= maximum_distance:
                 sort_data[tso_id] = (wall_distance, dlong, tso_id)
                 if tso_id not in existing_ids:
                     additions.append(tso_id)
@@ -476,6 +474,93 @@ class TracksideObjectsController:
             remove_duplicates=False,
         )
         return len(additions)
+
+    def _centerline_segments_for_dlong_range(
+        self,
+        context: TsoBoundaryElevationContext,
+        start: float,
+        end: float | None,
+    ) -> list[tuple[tuple[float, float], tuple[float, float], float, float]]:
+        """Clip sampled centerline segments to a (possibly wrapped) DLONG range."""
+        track_length = float(context.track_length)
+        if track_length <= 0.0:
+            return []
+        start %= track_length
+        if end is None:
+            intervals = [(start, track_length)]
+        else:
+            end %= track_length
+            intervals = (
+                [(start, end)] if end >= start else [(start, track_length), (0.0, end)]
+            )
+
+        segments = getattr(context.centerline_index, "segments", ())
+        dlongs = context.sampled_dlongs
+        selected = []
+        for segment_index, (point_a, point_b) in enumerate(segments):
+            if segment_index >= len(dlongs):
+                break
+            segment_start = float(dlongs[segment_index])
+            segment_end = float(dlongs[(segment_index + 1) % len(dlongs)])
+            delta = segment_end - segment_start
+            if delta <= 0.0:
+                delta += track_length
+            if delta <= 0.0 or point_a == point_b:
+                continue
+            for range_start, range_end in intervals:
+                for offset in (-track_length, 0.0, track_length):
+                    unwrapped_start = segment_start + offset
+                    clipped_start = max(unwrapped_start, range_start)
+                    clipped_end = min(unwrapped_start + delta, range_end)
+                    if clipped_end <= clipped_start:
+                        continue
+                    first = (clipped_start - unwrapped_start) / delta
+                    last = (clipped_end - unwrapped_start) / delta
+                    ax, ay = point_a
+                    bx, by = point_b
+                    clipped_a = (ax + (bx - ax) * first, ay + (by - ay) * first)
+                    clipped_b = (ax + (bx - ax) * last, ay + (by - ay) * last)
+                    selected.append((clipped_a, clipped_b, clipped_start, clipped_end))
+        return selected
+
+    def _project_tso_to_selected_segments(
+        self,
+        obj: TracksideObject,
+        context: TsoBoundaryElevationContext,
+        segments: list[tuple[tuple[float, float], tuple[float, float], float, float]],
+    ) -> tuple[float, float, float, float] | None:
+        """Project a TSO only onto pre-clipped selected-range centerline geometry."""
+        ox, oy = float(obj.x), float(obj.y)
+        best: tuple[float, float] | None = None
+        for (ax, ay), (bx, by), start_dlong, end_dlong in segments:
+            dx, dy = bx - ax, by - ay
+            length_sq = dx * dx + dy * dy
+            if length_sq <= 0.0:
+                continue
+            fraction = max(0.0, min(1.0, ((ox - ax) * dx + (oy - ay) * dy) / length_sq))
+            px, py = ax + dx * fraction, ay + dy * fraction
+            distance_sq = (ox - px) ** 2 + (oy - py) ** 2
+            dlong = start_dlong + (end_dlong - start_dlong) * fraction
+            if best is None or distance_sq < best[0]:
+                best = (distance_sq, dlong % context.track_length)
+        if best is None:
+            return None
+
+        distance_sq, projected_dlong = best
+        mapped = dlong_to_section_position(
+            context.sections, projected_dlong, context.track_length
+        )
+        if mapped is None:
+            return None
+        section_index = int(mapped.section_index)
+        if section_index < 0 or section_index >= len(context.sections):
+            return None
+        progress = max(0.0, min(1.0, float(mapped.fraction)))
+        dlat = self._tso_dlat(context.sections[section_index], progress, obj)
+        wall_distance = self._distance_to_relevant_wall(
+            context, section_index, progress, obj, dlat
+        )
+        return projected_dlong, dlat, wall_distance, math.sqrt(distance_sq)
 
     def _prompt_auto_assign_object_lists_options(
         self,
