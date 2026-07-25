@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 from pathlib import Path
 from time import perf_counter
 
@@ -55,6 +56,7 @@ class TracksideObjectsController:
             "_tso_stamp_mode_active",
             "_tso_box_select_mode_active",
             "_tso_stamp_filename",
+            "_tso_stamp_filenames",
             "_auto_update_tso_relative_z",
             "_tso_persist_timer",
             "_tso_visibility_sidebar_dirty",
@@ -75,6 +77,7 @@ class TracksideObjectsController:
             "_tso_stamp_mode_active",
             "_tso_box_select_mode_active",
             "_tso_stamp_filename",
+            "_tso_stamp_filenames",
             "_auto_update_tso_relative_z",
             "_tso_persist_timer",
             "_tso_visibility_sidebar_dirty",
@@ -95,6 +98,7 @@ class TracksideObjectsController:
                 "_tso_stamp_mode_active": "stamp_mode_active",
                 "_tso_box_select_mode_active": "box_select_mode_active",
                 "_tso_stamp_filename": "stamp_filename",
+                "_tso_stamp_filenames": "stamp_filenames",
                 "_auto_update_tso_relative_z": "auto_update_relative_z",
                 "_tso_persist_timer": "persist_timer",
                 "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
@@ -113,6 +117,7 @@ class TracksideObjectsController:
                 "_tso_stamp_mode_active": "stamp_mode_active",
                 "_tso_box_select_mode_active": "box_select_mode_active",
                 "_tso_stamp_filename": "stamp_filename",
+                "_tso_stamp_filenames": "stamp_filenames",
                 "_auto_update_tso_relative_z": "auto_update_relative_z",
                 "_tso_persist_timer": "persist_timer",
                 "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
@@ -1059,19 +1064,19 @@ class TracksideObjectsController:
             self._set_tso_box_select_mode_active(False)
 
     def _set_tso_stamp_mode_active(
-        self, active: bool, *, filename: str | None = None
+        self, active: bool, *, filenames: tuple[str, ...] = ()
     ) -> None:
         self._tso_stamp_mode_active = bool(active)
         if self._tso_stamp_mode_active:
-            self._tso_stamp_filename = (
-                normalize_trackside_filename(filename or "") or "object"
-            )
+            self._tso_stamp_filenames = filenames or ("object",)
+            self._tso_stamp_filename = ", ".join(self._tso_stamp_filenames)
             if self._tso_add_mode_active:
                 self._set_tso_add_mode_active(False)
             if self._tso_box_select_mode_active:
                 self._set_tso_box_select_mode_active(False)
         else:
             self._tso_stamp_filename = None
+            self._tso_stamp_filenames = ()
         self._window.tso_stamp_button.blockSignals(True)
         self._window.tso_stamp_button.setChecked(self._tso_stamp_mode_active)
         self._window.tso_stamp_button.blockSignals(False)
@@ -1105,7 +1110,7 @@ class TracksideObjectsController:
         text, ok = QtWidgets.QInputDialog.getText(
             self._window,
             "Stamp TSOs",
-            "Filename:",
+            "Filenames (comma separated):",
             text=self._tso_stamp_filename or "object",
         )
         if not ok:
@@ -1113,18 +1118,23 @@ class TracksideObjectsController:
             self._window.tso_stamp_button.setChecked(False)
             self._window.tso_stamp_button.blockSignals(False)
             return
-        normalized = normalize_trackside_filename(text)
-        if not normalized:
+        filenames = tuple(
+            normalized
+            for part in text.split(",")
+            if (normalized := normalize_trackside_filename(part.strip()))
+        )
+        if not filenames:
             QtWidgets.QMessageBox.warning(
-                self._window, "Stamp TSOs", "Filename is required."
+                self._window, "Stamp TSOs", "At least one filename is required."
             )
             self._window.tso_stamp_button.blockSignals(True)
             self._window.tso_stamp_button.setChecked(False)
             self._window.tso_stamp_button.blockSignals(False)
             return
-        self._set_tso_stamp_mode_active(True, filename=normalized)
+        self._set_tso_stamp_mode_active(True, filenames=filenames)
         self._window.show_status_message(
-            "Stamp mode active: click the map to place TSOs. Click Stamp again to stop."
+            "Stamp mode active: click the map to place a randomly selected TSO. "
+            "Click Stamp again to stop."
         )
 
     def _on_tso_box_select_requested(self) -> None:
@@ -1177,7 +1187,11 @@ class TracksideObjectsController:
                 (perf_counter() - start) * 1000.0,
             )
             return True
-        filename = self._tso_stamp_filename if self._tso_stamp_mode_active else None
+        filename = (
+            random.choice(self._tso_stamp_filenames)
+            if self._tso_stamp_mode_active
+            else None
+        )
         step_start = perf_counter()
         self._trackside_objects.append(
             self._build_default_tso(x=x, y=y, filename=filename)

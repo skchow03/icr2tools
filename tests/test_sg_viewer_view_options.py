@@ -3877,6 +3877,39 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
         window.close()
 
 
+def test_tso_stamp_mode_randomly_selects_from_comma_separated_filenames(
+    qapp, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        prompt = {}
+
+        def get_text(*args, **kwargs):
+            prompt["label"] = args[2]
+            return ("tree.3do, pine, oak.3do", True)
+
+        monkeypatch.setattr(QtWidgets.QInputDialog, "getText", get_text)
+        selections = iter(("oak", "tree", "pine"))
+        monkeypatch.setattr(
+            "sg_viewer.ui.controllers.features.trackside_objects_controller.random.choice",
+            lambda filenames: next(selections),
+        )
+
+        window.controller._on_tso_stamp_requested()
+        for x in (10, 20, 30):
+            assert window.controller._on_preview_tso_map_clicked(x, 40) is True
+
+        assert prompt["label"] == "Filenames (comma separated):"
+        assert window.controller._tso_stamp_filenames == ("tree", "pine", "oak")
+        assert [obj.filename for obj in window.controller._trackside_objects] == [
+            "oak",
+            "tree",
+            "pine",
+        ]
+    finally:
+        window.close()
+
+
 def test_objects_tab_map_click_selects_tso_inside_bbox(qapp):
     window = SGViewerWindow()
     try:

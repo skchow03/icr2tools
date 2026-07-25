@@ -86,6 +86,7 @@ class TsoFeatureState:
     stamp_mode_active: bool = False
     box_select_mode_active: bool = False
     stamp_filename: str | None = None
+    stamp_filenames: tuple[str, ...] = ()
     auto_update_relative_z: bool = False
     persist_timer: QtCore.QTimer = field(init=False)
     visibility_sidebar_dirty: bool = False
