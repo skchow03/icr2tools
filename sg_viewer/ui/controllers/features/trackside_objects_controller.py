@@ -168,6 +168,9 @@ class TracksideObjectsController:
         w.tso_visibility_sidebar.autoAssignObjectListsRequested.connect(
             h._on_tso_visibility_auto_assign_requested
         )
+        w.tso_visibility_sidebar.autoAddToSectionRequested.connect(
+            h._on_tso_visibility_auto_add_to_section_requested
+        )
         w.tso_visibility_sidebar.exportLocationsRequested.connect(
             h._mrk_controller._on_mrk_export_locations_requested
         )
@@ -378,6 +381,99 @@ class TracksideObjectsController:
             "Auto Assignment Complete",
             f"Assigned {assigned_count} TSOs to {assigned_list_count} {target_label}.",
         )
+
+    def _on_tso_visibility_auto_add_to_section_requested(self) -> None:
+        sidebar = self._window.tso_visibility_sidebar
+        kind, row = sidebar._current_selection_kind_index()
+        if kind != "object" or not (0 <= row < len(sidebar.object_lists)):
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Auto Add to Section",
+                "Select an ObjectList section first.",
+            )
+            return
+
+        unit = self._window.current_measurement_unit()
+        unit_label = measurement_unit_label(unit)
+        distance, accepted = QtWidgets.QInputDialog.getDouble(
+            self._window,
+            "Auto Add to Section",
+            f"Maximum distance from the track section ({unit_label}):",
+            100.0,
+            0.0,
+            1_000_000.0,
+            measurement_unit_decimals(unit),
+        )
+        if not accepted:
+            return
+        result = self._auto_add_tsos_to_object_list(
+            row, float(units_to_500ths(distance, unit))
+        )
+        if result is None:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Auto Add to Section",
+                "Auto add requires a DLONG range for the selected ObjectList and current centerline data.",
+            )
+            return
+        self._window.preview.update()
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Auto Add Complete",
+            f"Added {result} TSO{'s' if result != 1 else ''} to the selected ObjectList.",
+        )
+
+    def _auto_add_tsos_to_object_list(
+        self, row: int, maximum_distance: float
+    ) -> int | None:
+        """Add TSOs alongside one ObjectList without rebuilding any other list."""
+        sidebar = self._window.tso_visibility_sidebar
+        if row < 0 or row >= len(sidebar.object_lists):
+            return None
+        entry = sidebar.object_lists[row]
+        dlong_range = getattr(sidebar, "_subsection_dlong_ranges", {}).get(
+            (int(entry.section), int(entry.sub_index))
+        )
+        context = self._build_tso_boundary_elevation_context()
+        if dlong_range is None or context is None:
+            return None
+
+        start, end = dlong_range
+        expected_left = str(entry.side).upper() == "L"
+        existing_ids = {tso_id for tso_id in entry.tso_ids if isinstance(tso_id, int)}
+        sort_data: dict[int, tuple[float, float, int]] = {}
+        additions: list[int] = []
+        for tso_id, obj in enumerate(self._trackside_objects):
+            projection = self._project_tso_for_object_list(obj, context)
+            if projection is None:
+                continue
+            dlong, dlat, wall_distance = projection
+            in_range = (
+                dlong >= start
+                if end is None
+                else (
+                    start <= dlong < end
+                    if end >= start
+                    else dlong >= start or dlong < end
+                )
+            )
+            on_expected_side = (dlat >= 0) == expected_left
+            if in_range and on_expected_side and abs(dlat) <= maximum_distance:
+                sort_data[tso_id] = (wall_distance, dlong, tso_id)
+                if tso_id not in existing_ids:
+                    additions.append(tso_id)
+
+        numeric_ids = [tso_id for tso_id in entry.tso_ids if isinstance(tso_id, int)]
+        pointer_ids = [tso_id for tso_id in entry.tso_ids if isinstance(tso_id, str)]
+        numeric_ids.extend(additions)
+        numeric_ids.sort(
+            key=lambda tso_id: self._tso_painter_sort_key(tso_id, sort_data)
+        )
+        entry.tso_ids = numeric_ids + pointer_ids
+        sidebar.apply_auto_assigned_visibility_lists(
+            sidebar.object_lists, sidebar.detail_lists
+        )
+        return len(additions)
 
     def _prompt_auto_assign_object_lists_options(
         self,
@@ -1625,9 +1721,7 @@ class TracksideObjectsController:
                 value_spin.setEnabled(True)
             else:
                 value_spin.setEnabled(False)
-            adjust_sprite_elevation_checkbox.setEnabled(
-                set_boundary_radio.isChecked()
-            )
+            adjust_sprite_elevation_checkbox.setEnabled(set_boundary_radio.isChecked())
 
         raise_lower_radio.toggled.connect(_sync_value_input)
         set_absolute_radio.toggled.connect(_sync_value_input)
@@ -1675,10 +1769,7 @@ class TracksideObjectsController:
                         skipped_boundary_matches += 1
                         continue
                     z_value = int(boundary_elevation)
-                    if (
-                        adjust_sprite_elevation_checkbox.isChecked()
-                        and obj.is_sprite
-                    ):
+                    if adjust_sprite_elevation_checkbox.isChecked() and obj.is_sprite:
                         z_value += max(0, int(obj.sprite_width)) // 2
                 if obj.z == z_value:
                     continue
