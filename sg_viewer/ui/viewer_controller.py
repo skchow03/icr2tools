@@ -348,6 +348,7 @@ class SGViewerController:
                 "_tso_stamp_mode_active",
                 "_tso_box_select_mode_active",
                 "_tso_stamp_filename",
+                "_tso_stamp_filenames",
                 "_auto_update_tso_relative_z",
                 "_tso_persist_timer",
                 "_tso_visibility_sidebar_dirty",
