@@ -230,7 +230,10 @@ def build_selected_object_list_edit_plan(
         if existing is None:
             warnings.append(f"Skipped missing {label}; targeted ObjectList edits do not insert new rows.")
             continue
-        items = [f"__TSO{int(tso_id)}" for tso_id in getattr(entry, "tso_ids")]
+        items = [
+            item if isinstance(item, str) else f"__TSO{int(item)}"
+            for item in getattr(entry, "tso_ids")
+        ]
         edits.append(
             Track3DTextEdit.from_source_span(
                 existing.span,

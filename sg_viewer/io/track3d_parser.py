@@ -16,7 +16,10 @@ class Track3DObjectList:
     side: str
     section: int
     sub_index: int
-    tso_ids: list[int]
+    # ObjectLists may contain both ordinary __TSO pointers and pointers to other
+    # ObjectLists.  Keeping them in one ordered collection mirrors the LIST in
+    # track.3D and lets the visibility editor reorder either kind of entry.
+    tso_ids: list[int | str]
 
 
 @dataclass
@@ -87,8 +90,11 @@ def parse_track3d(path: str | Path) -> list[Track3DObjectList]:
     results: list[Track3DObjectList] = []
 
     for object_list in catalog.object_lists.values():
-        tso_ids: list[int] = []
+        tso_ids: list[int | str] = []
         for item in object_list.items:
+            if item.startswith("ObjectList_"):
+                tso_ids.append(item)
+                continue
             if not item.startswith("__TSO"):
                 continue
             try:
@@ -195,9 +201,13 @@ def _object_list_label(entry: Track3DObjectList) -> str:
 
 
 def _format_object_list_row(entry: Track3DObjectList) -> str:
+    items = [
+        item if isinstance(item, str) else f"__TSO{item}"
+        for item in entry.tso_ids
+    ]
     return (
         f"{_object_list_label(entry)}: LIST {{ "
-        f"{', '.join(f'__TSO{tso_id}' for tso_id in entry.tso_ids)} "
+        f"{', '.join(items)} "
         "};"
     )
 

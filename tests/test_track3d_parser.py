@@ -234,3 +234,19 @@ ObjectList_R1_0: LIST { __TSO20 };
     assert "ObjectList_L1_1: LIST { __TSO99 };" in updated
     assert "ObjectList_R1_0: LIST { __TSO20 };" in updated
     assert "__TSO11" not in updated
+
+
+def test_parse_and_save_object_list_pointers_in_order(tmp_path) -> None:
+    path = tmp_path / "track.3d"
+    path.write_text(
+        "ObjectList_L3_0: LIST { ObjectList_L12_0, __TSO38 };\n"
+        "ObjectList_L12_0: LIST { __TSO99 };\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_track3d(path)
+    assert parsed[0].tso_ids == ["ObjectList_L12_0", 38]
+
+    parsed[0].tso_ids.reverse()
+    save_object_lists_to_track3d(path, parsed, create_backup=False)
+    assert "ObjectList_L3_0: LIST { __TSO38, ObjectList_L12_0 };" in path.read_text()
