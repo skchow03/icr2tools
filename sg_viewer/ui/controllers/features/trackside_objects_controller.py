@@ -1595,9 +1595,13 @@ class TracksideObjectsController:
         set_boundary_radio = QtWidgets.QRadioButton(
             "Set each TSO elevation to the closest track boundary elevation"
         )
+        adjust_sprite_elevation_checkbox = QtWidgets.QCheckBox(
+            "Adjust elevation of sprites based on sprite width"
+        )
         options_layout.addWidget(raise_lower_radio)
         options_layout.addWidget(set_absolute_radio)
         options_layout.addWidget(set_boundary_radio)
+        options_layout.addWidget(adjust_sprite_elevation_checkbox)
         layout.addWidget(options_group)
 
         value_spin = QtWidgets.QDoubleSpinBox(dialog)
@@ -1621,6 +1625,9 @@ class TracksideObjectsController:
                 value_spin.setEnabled(True)
             else:
                 value_spin.setEnabled(False)
+            adjust_sprite_elevation_checkbox.setEnabled(
+                set_boundary_radio.isChecked()
+            )
 
         raise_lower_radio.toggled.connect(_sync_value_input)
         set_absolute_radio.toggled.connect(_sync_value_input)
@@ -1668,6 +1675,11 @@ class TracksideObjectsController:
                         skipped_boundary_matches += 1
                         continue
                     z_value = int(boundary_elevation)
+                    if (
+                        adjust_sprite_elevation_checkbox.isChecked()
+                        and obj.is_sprite
+                    ):
+                        z_value += max(0, int(obj.sprite_width)) // 2
                 if obj.z == z_value:
                     continue
                 self._trackside_objects[index] = TracksideObject(

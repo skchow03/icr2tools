@@ -4195,6 +4195,81 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         window.close()
 
 
+def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_width(
+    qapp, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename="sprite",
+                x=10,
+                y=20,
+                z=5,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+                is_sprite=True,
+                sprite_width=40,
+            ),
+            TracksideObject(
+                filename="object",
+                x=30,
+                y=40,
+                z=9,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=0,
+                bbox_width=0,
+                rotation_point="center",
+                is_sprite=False,
+                sprite_width=40,
+            ),
+        ]
+        window.controller._refresh_tso_table()
+        monkeypatch.setattr(
+            window.controller,
+            "_closest_boundary_elevation_for_tso",
+            lambda _obj: 123,
+        )
+
+        window.controller._on_tso_modify_elevations_requested()
+        dialog = window.controller._tso_modify_elevations_dialog
+        assert dialog is not None
+        checkbox = next(
+            checkbox
+            for checkbox in dialog.findChildren(QtWidgets.QCheckBox)
+            if checkbox.text()
+            == "Adjust elevation of sprites based on sprite width"
+        )
+        assert not checkbox.isEnabled()
+        boundary_radio = next(
+            radio
+            for radio in dialog.findChildren(QtWidgets.QRadioButton)
+            if "closest track boundary elevation" in radio.text()
+        )
+        boundary_radio.setChecked(True)
+        assert checkbox.isEnabled()
+        checkbox.setChecked(True)
+
+        buttons = dialog.findChild(QtWidgets.QDialogButtonBox)
+        assert buttons is not None
+        apply_button = buttons.button(QtWidgets.QDialogButtonBox.Apply)
+        assert apply_button is not None
+        apply_button.click()
+
+        assert window.controller._trackside_objects[0].z == 143
+        assert window.controller._trackside_objects[1].z == 123
+    finally:
+        window.close()
+
+
 def test_modify_tso_elevations_can_target_selected_tsos_only(qapp):
     window = SGViewerWindow()
     try:
