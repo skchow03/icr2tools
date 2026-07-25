@@ -471,7 +471,9 @@ class TracksideObjectsController:
         )
         entry.tso_ids = numeric_ids + pointer_ids
         sidebar.apply_auto_assigned_visibility_lists(
-            sidebar.object_lists, sidebar.detail_lists
+            sidebar.object_lists,
+            sidebar.detail_lists,
+            remove_duplicates=False,
         )
         return len(additions)
 

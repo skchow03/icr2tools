@@ -98,3 +98,41 @@ def test_auto_add_to_section_filters_side_and_distance_and_sorts(
         assert sidebar.object_lists[0].tso_ids == [1, 0]
     finally:
         window.close()
+
+
+def test_auto_add_to_section_adds_tso_already_in_another_object_list(
+    qapp, monkeypatch
+) -> None:
+    _ = qapp
+    window = SGViewerWindow()
+    controller = SGViewerController(window)
+    try:
+        controller._trackside_objects = [
+            TracksideObject(filename="shared", x=0, y=0, z=0)
+        ]
+        sidebar = window.tso_visibility_sidebar
+        sidebar.set_object_lists(
+            [
+                Track3DObjectList(side="L", section=1, sub_index=0, tso_ids=[0]),
+                Track3DObjectList(side="L", section=2, sub_index=0, tso_ids=[]),
+            ]
+        )
+        sidebar._subsection_dlong_ranges = {(2, 0): (100.0, 200.0)}
+        monkeypatch.setattr(
+            controller,
+            "_build_tso_boundary_elevation_context",
+            lambda: object(),
+        )
+        monkeypatch.setattr(
+            controller,
+            "_project_tso_for_object_list",
+            lambda _obj, _context: (150.0, 5.0, 10.0),
+        )
+
+        added = controller._auto_add_tsos_to_object_list(1, 20.0)
+
+        assert added == 1
+        assert sidebar.object_lists[0].tso_ids == [0]
+        assert sidebar.object_lists[1].tso_ids == [0]
+    finally:
+        window.close()
