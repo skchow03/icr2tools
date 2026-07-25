@@ -175,6 +175,31 @@ class TSOVisibilityListWidget(QListWidget):
         self.contentHeightChanged.emit()
 
 
+class ObjectListPickerDialog(QDialog):
+    """Select an ObjectList pointer to insert into another ObjectList."""
+
+    def __init__(self, labels: list[str], parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Add ObjectList to section")
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Select an ObjectList to add as a visible TSO:"))
+        self.object_list_widget = QListWidget()
+        self.object_list_widget.addItems(labels)
+        if labels:
+            self.object_list_widget.setCurrentRow(0)
+        self.object_list_widget.itemDoubleClicked.connect(lambda _item: self.accept())
+        layout.addWidget(self.object_list_widget)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        buttons.button(QDialogButtonBox.Ok).setEnabled(bool(labels))
+
+    def selected_label(self) -> str | None:
+        item = self.object_list_widget.currentItem()
+        return item.text() if item is not None else None
+
+
 class TrackSectionListWidget(QTableWidget):
     rowSelectionChanged = QtCore.pyqtSignal(int)
 
@@ -382,7 +407,10 @@ class TSOVisibilityReconcileDialog(QDialog):
     @classmethod
     def _format_entry(cls, entry: Track3DObjectList) -> str:
         tso_text = (
-            ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids)
+            ", ".join(
+                item if isinstance(item, str) else f"__TSO{item}"
+                for item in entry.tso_ids
+            )
             if entry.tso_ids
             else "(empty)"
         )
@@ -617,6 +645,7 @@ class TSOVisibilityTab(QWidget):
         self.auto_assign_button = QPushButton("Auto Assign")
         self.assignment_check_button = QPushButton("Check unassigned TSOs")
         self.add_tso_button = QPushButton("Add selected TSO to section >>")
+        self.add_object_list_button = QPushButton("Add ObjectList to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
         self.clear_all_object_lists_button = QPushButton("Clear all ObjectLists")
@@ -639,6 +668,9 @@ class TSOVisibilityTab(QWidget):
         )
         self.add_tso_button.setToolTip(
             "Add the selected TSO from the filter list to the currently selected section/sub-index."
+        )
+        self.add_object_list_button.setToolTip(
+            "Add a pointer to an ObjectList to the currently selected ObjectList."
         )
         self.delete_tso_button.setToolTip(
             "Remove the selected TSO pill from the currently selected section/sub-index."
@@ -693,6 +725,7 @@ class TSOVisibilityTab(QWidget):
 
         center_panel.addStretch(1)
         center_panel.addWidget(self.add_tso_button)
+        center_panel.addWidget(self.add_object_list_button)
         center_panel.addWidget(self.delete_tso_button)
         center_panel.addWidget(self.copy_prev_button)
 
@@ -729,6 +762,7 @@ class TSOVisibilityTab(QWidget):
         self.load_button.clicked.connect(self.load_file)
         self.load_detail_lists_button.clicked.connect(self.load_detail_lists_file)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
+        self.add_object_list_button.clicked.connect(self._on_add_object_list_requested)
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
         self.clear_all_object_lists_button.clicked.connect(self.clear_all_object_lists)
@@ -844,7 +878,7 @@ class TSOVisibilityTab(QWidget):
             tso_id
             for entry in self.detail_lists
             for tso_id in entry.tso_ids
-            if tso_id >= 0
+            if isinstance(tso_id, int) and tso_id >= 0
         }
         self._refresh_tso_filter_list()
         self.populate_table()
@@ -877,7 +911,7 @@ class TSOVisibilityTab(QWidget):
             tso_id
             for entry in self.detail_lists
             for tso_id in entry.tso_ids
-            if tso_id >= 0
+            if isinstance(tso_id, int) and tso_id >= 0
         }
         self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
         self._refresh_tso_filter_list()
@@ -905,7 +939,7 @@ class TSOVisibilityTab(QWidget):
             tso_id
             for object_list in (self.object_lists + self.detail_lists)
             for tso_id in object_list.tso_ids
-            if tso_id >= 0
+            if isinstance(tso_id, int) and tso_id >= 0
         }
         all_ids.update({tso_id for tso_id in self.available_tso_ids if tso_id >= 0})
         all_ids.update(
@@ -1021,8 +1055,9 @@ class TSOVisibilityTab(QWidget):
             return f"{label} ({' — '.join(details)})"
         return label
 
-    def _make_tso_list_item(self, tso_id: int) -> QListWidgetItem:
-        item = QListWidgetItem(self._build_tso_pill_text(tso_id))
+    def _make_tso_list_item(self, tso_id: int | str) -> QListWidgetItem:
+        text = tso_id if isinstance(tso_id, str) else self._build_tso_pill_text(tso_id)
+        item = QListWidgetItem(text)
         item.setData(QtCore.Qt.UserRole, tso_id)
         return item
 
@@ -1031,7 +1066,7 @@ class TSOVisibilityTab(QWidget):
             tso_id
             for object_list in (self.object_lists + self.detail_lists)
             for tso_id in object_list.tso_ids
-            if tso_id >= 0
+            if isinstance(tso_id, int) and tso_id >= 0
         }
 
     def _unassigned_tso_ids(self) -> list[int]:
@@ -1213,7 +1248,7 @@ class TSOVisibilityTab(QWidget):
         )
         order_map: dict[int, int] = {}
         for order, tso_id in enumerate(entry.tso_ids, start=1):
-            if tso_id < 0:
+            if not isinstance(tso_id, int) or tso_id < 0:
                 continue
             order_map[int(tso_id)] = order
         self.selectedTSOOrderChanged.emit(order_map)
@@ -1226,7 +1261,7 @@ class TSOVisibilityTab(QWidget):
                     "side": str(entry.side),
                     "section": int(entry.section),
                     "sub_index": int(entry.sub_index),
-                    "tso_ids": [int(tso_id) for tso_id in entry.tso_ids],
+                    "tso_ids": list(entry.tso_ids),
                 }
             )
         return payload
@@ -1282,7 +1317,7 @@ class TSOVisibilityTab(QWidget):
             tso_id
             for entry in self.detail_lists
             for tso_id in entry.tso_ids
-            if tso_id >= 0
+            if isinstance(tso_id, int) and tso_id >= 0
         }
         self._refresh_tso_filter_list()
         self.populate_table()
@@ -1314,9 +1349,12 @@ class TSOVisibilityTab(QWidget):
             except (TypeError, ValueError):
                 continue
             raw_tso_ids = raw_entry.get("tso_ids", [])
-            tso_ids: list[int] = []
+            tso_ids: list[int | str] = []
             if isinstance(raw_tso_ids, list):
                 for tso_id in raw_tso_ids:
+                    if isinstance(tso_id, str) and tso_id.startswith("ObjectList_"):
+                        tso_ids.append(tso_id)
+                        continue
                     try:
                         parsed_id = int(tso_id)
                     except (TypeError, ValueError):
@@ -1337,9 +1375,12 @@ class TSOVisibilityTab(QWidget):
     def _remove_duplicate_visibility_tsos(self) -> None:
         seen: set[int] = set()
 
-        def _unique_ids(tso_ids: list[int]) -> list[int]:
-            unique_ids: list[int] = []
+        def _unique_ids(tso_ids: list[int | str]) -> list[int | str]:
+            unique_ids: list[int | str] = []
             for tso_id in tso_ids:
+                if isinstance(tso_id, str):
+                    unique_ids.append(tso_id)
+                    continue
                 if tso_id < 0 or tso_id in seen:
                     continue
                 seen.add(tso_id)
@@ -1465,7 +1506,7 @@ class TSOVisibilityTab(QWidget):
             tso_id
             for entry in self.detail_lists
             for tso_id in entry.tso_ids
-            if tso_id >= 0
+            if isinstance(tso_id, int) and tso_id >= 0
         }
         self._refresh_tso_filter_list()
         self.populate_table()
@@ -1602,7 +1643,7 @@ class TSOVisibilityTab(QWidget):
                         tso_id
                         for object_list in (self.object_lists + self.detail_lists)
                         for tso_id in object_list.tso_ids
-                        if tso_id >= 0
+                        if isinstance(tso_id, int) and tso_id >= 0
                     }
                 )
                 update_progress(
@@ -1624,10 +1665,15 @@ class TSOVisibilityTab(QWidget):
             return
         changed = False
 
-        def _remap_ids(tso_ids: list[int]) -> tuple[list[int], bool]:
-            updated_ids: list[int] = []
+        def _remap_ids(
+            tso_ids: list[int | str],
+        ) -> tuple[list[int | str], bool]:
+            updated_ids: list[int | str] = []
             ids_changed = False
             for tso_id in tso_ids:
+                if isinstance(tso_id, str):
+                    updated_ids.append(tso_id)
+                    continue
                 mapped = remap.get(tso_id, tso_id)
                 if mapped is None:
                     ids_changed = True
@@ -1764,7 +1810,7 @@ class TSOVisibilityTab(QWidget):
         object_list_index = self._find_object_list_index_for_current_selection()
         if object_list_index < 0:
             return
-        reordered_ids: list[int] = []
+        reordered_ids: list[int | str] = []
         for index in range(self.tso_list.count()):
             item = self.tso_list.item(index)
             if item is None:
@@ -1773,6 +1819,8 @@ class TSOVisibilityTab(QWidget):
             item_tso_id = item.data(QtCore.Qt.UserRole)
             if isinstance(item_tso_id, int):
                 reordered_ids.append(item_tso_id)
+            elif isinstance(item_tso_id, str) and item_tso_id.startswith("ObjectList_"):
+                reordered_ids.append(item_tso_id)
             elif text.startswith("__TSO"):
                 try:
                     reordered_ids.append(int(text.replace("__TSO", "", 1)))
@@ -1780,7 +1828,9 @@ class TSOVisibilityTab(QWidget):
                     continue
         self._active_lists()[object_list_index].tso_ids = reordered_ids
         self._emit_object_lists_changed()
-        self.selectedTSOsChanged.emit(tuple(reordered_ids))
+        self.selectedTSOsChanged.emit(
+            tuple(item for item in reordered_ids if isinstance(item, int))
+        )
         self._emit_track_section_and_order(object_list_index)
         self.populate_table()
 
@@ -1808,13 +1858,16 @@ class TSOVisibilityTab(QWidget):
         row = self._find_object_list_index_for_current_selection()
         active_lists = self._active_lists()
         self.copy_prev_button.setEnabled(not self._is_detail_mode())
+        self.add_object_list_button.setEnabled(not self._is_detail_mode())
         if row < 0 or row >= len(active_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
             return
-        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
+        self.selectedTSOsChanged.emit(
+            tuple(item for item in active_lists[row].tso_ids if isinstance(item, int))
+        )
         selected_item = self.tso_list.currentItem()
         selected_tso_id = (
             selected_item.data(QtCore.Qt.UserRole)
@@ -1907,7 +1960,53 @@ class TSOVisibilityTab(QWidget):
         if item is not None:
             self.tso_list.setCurrentItem(item)
         self.selectedTSOPillChanged.emit(tso_id)
-        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
+        self.selectedTSOsChanged.emit(
+            tuple(item for item in active_lists[row].tso_ids if isinstance(item, int))
+        )
+        self._emit_track_section_and_order(row)
+        self.populate_table()
+
+    @staticmethod
+    def _object_list_pointer(entry: Track3DObjectList) -> str:
+        return f"ObjectList_{entry.side}{entry.section}_{entry.sub_index}"
+
+    def _on_add_object_list_requested(self) -> None:
+        row = self._find_object_list_index_for_current_selection()
+        if self._is_detail_mode() or row < 0 or row >= len(self.object_lists):
+            return
+        current_label = self._object_list_pointer(self.object_lists[row])
+        labels = sorted(
+            {
+                self._object_list_pointer(entry)
+                for entry in self.object_lists
+                if self._object_list_pointer(entry) != current_label
+            }
+        )
+        dialog = ObjectListPickerDialog(labels, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        label = dialog.selected_label()
+        if not label:
+            return
+
+        insert_index = len(self.object_lists[row].tso_ids)
+        selected_pill = self.tso_list.currentItem()
+        if selected_pill is not None:
+            selected_row = self.tso_list.row(selected_pill)
+            if selected_row >= 0:
+                insert_index = selected_row + 1
+        self.object_lists[row].tso_ids.insert(insert_index, label)
+        self._emit_object_lists_changed()
+        self._refresh_current_tso_list()
+        self.tso_list.setCurrentRow(insert_index)
+        self.selectedTSOPillChanged.emit(None)
+        self.selectedTSOsChanged.emit(
+            tuple(
+                item
+                for item in self.object_lists[row].tso_ids
+                if isinstance(item, int)
+            )
+        )
         self._emit_track_section_and_order(row)
         self.populate_table()
 
@@ -1928,7 +2027,7 @@ class TSOVisibilityTab(QWidget):
             self._emit_object_lists_changed()
         self.tso_list.update_item_widths()
         self.selectedTSOPillChanged.emit(None)
-        self.selectedTSOsChanged.emit(tuple(active_lists[row].tso_ids))
+        self.selectedTSOsChanged.emit(tuple(item for item in active_lists[row].tso_ids if isinstance(item, int)))
         self._emit_track_section_and_order(row)
         self.populate_table()
 

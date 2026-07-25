@@ -6,6 +6,7 @@ from PyQt5 import QtCore, QtWidgets
 
 from sg_viewer.io.track3d_parser import Track3DObjectList
 from sg_viewer.ui.tabs.tso_visibility_tab import (
+    ObjectListPickerDialog,
     TSOVisibilityReconcileDialog,
     TSOVisibilityTab,
     UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES,
@@ -416,3 +417,25 @@ def test_unassigned_tso_memo_has_twenty_random_flavor_messages() -> None:
     assert any(
         message in memo for message in UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES
     )
+
+
+def test_add_object_list_dialog_inserts_reorderable_pointer(monkeypatch) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [
+            Track3DObjectList("L", 3, 0, [38]),
+            Track3DObjectList("L", 12, 0, [99]),
+        ]
+    )
+    tab.section_list.setCurrentRow(0)
+
+    monkeypatch.setattr(ObjectListPickerDialog, "exec_", lambda self: self.Accepted)
+    tab.add_object_list_button.click()
+
+    assert tab.object_lists[0].tso_ids == [38, "ObjectList_L12_0"]
+    assert tab.tso_list.item(1).text() == "ObjectList_L12_0"
+    moved = tab.tso_list.takeItem(1)
+    tab.tso_list.insertItem(0, moved)
+    tab._on_tso_order_changed()
+    assert tab.object_lists[0].tso_ids == ["ObjectList_L12_0", 38]
