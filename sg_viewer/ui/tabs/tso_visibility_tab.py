@@ -869,10 +869,13 @@ class TSOVisibilityTab(QWidget):
         self,
         object_lists: list[Track3DObjectList],
         detail_lists: list[Track3DDetailList],
+        *,
+        remove_duplicates: bool = True,
     ) -> None:
         self.object_lists = list(object_lists)
         self.detail_lists = list(detail_lists)
-        self._remove_duplicate_visibility_tsos()
+        if remove_duplicates:
+            self._remove_duplicate_visibility_tsos()
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
