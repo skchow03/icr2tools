@@ -356,12 +356,16 @@ class TracksideObjectsController:
             clear_object_lists,
             clear_detail_lists,
             target_lists,
+            angle_sweep_degrees,
+            repeat_distance,
         ) = options
         result = self._auto_assign_visibility_lists(
             selected_tso_ids=selected_tso_ids,
             clear_object_lists=clear_object_lists,
             clear_detail_lists=clear_detail_lists,
             target_lists=target_lists,
+            angle_sweep_degrees=angle_sweep_degrees,
+            repeat_distance=repeat_distance,
         )
         target_label = "DetailLists" if target_lists == "detail" else "ObjectLists"
         if result is None:
@@ -381,7 +385,7 @@ class TracksideObjectsController:
 
     def _prompt_auto_assign_object_lists_options(
         self,
-    ) -> tuple[set[int], bool, bool, str] | None:
+    ) -> tuple[set[int], bool, bool, str, float, float] | None:
         sidebar = self._window.tso_visibility_sidebar
         available_tso_ids = sorted(
             {
@@ -428,6 +432,47 @@ class TracksideObjectsController:
         clear_detail_lists_checkbox.setChecked(True)
         layout.addWidget(clear_detail_lists_checkbox)
 
+        angle_sweep_checkbox = QtWidgets.QCheckBox(
+            "Extend ObjectLists past each end with an angle sweep"
+        )
+        layout.addWidget(angle_sweep_checkbox)
+        angle_sweep_spin = QtWidgets.QDoubleSpinBox()
+        angle_sweep_spin.setRange(0.0, 89.0)
+        angle_sweep_spin.setDecimals(1)
+        angle_sweep_spin.setValue(45.0)
+        angle_sweep_spin.setSuffix("°")
+        angle_sweep_spin.setEnabled(False)
+        angle_sweep_spin.setToolTip(
+            "Sweep forward from the section end and backward from its beginning, "
+            "measured away from the normal boundary."
+        )
+        angle_sweep_checkbox.toggled.connect(angle_sweep_spin.setEnabled)
+        angle_row = QtWidgets.QHBoxLayout()
+        angle_row.addWidget(QtWidgets.QLabel("Boundary sweep angle:"))
+        angle_row.addWidget(angle_sweep_spin)
+        layout.addLayout(angle_row)
+
+        repeat_distance_checkbox = QtWidgets.QCheckBox(
+            "Also include each TSO in every nearby ObjectList"
+        )
+        layout.addWidget(repeat_distance_checkbox)
+        repeat_distance_spin = QtWidgets.QDoubleSpinBox()
+        unit = self._window.current_measurement_unit()
+        repeat_distance_spin.setRange(0.0, 1_000_000.0)
+        repeat_distance_spin.setDecimals(measurement_unit_decimals(unit))
+        repeat_distance_spin.setSingleStep(measurement_unit_step(unit))
+        repeat_distance_spin.setValue(100.0)
+        repeat_distance_spin.setSuffix(f" {measurement_unit_label(unit)}")
+        repeat_distance_spin.setEnabled(False)
+        repeat_distance_spin.setToolTip(
+            "A nearby TSO may be included in more than one ObjectList."
+        )
+        repeat_distance_checkbox.toggled.connect(repeat_distance_spin.setEnabled)
+        distance_row = QtWidgets.QHBoxLayout()
+        distance_row.addWidget(QtWidgets.QLabel("Nearby distance:"))
+        distance_row.addWidget(repeat_distance_spin)
+        layout.addLayout(distance_row)
+
         def set_all_tso_checks(check_state: QtCore.Qt.CheckState) -> None:
             for row in range(tso_list.count()):
                 tso_list.item(row).setCheckState(check_state)
@@ -471,6 +516,12 @@ class TracksideObjectsController:
             clear_object_lists_checkbox.isChecked(),
             clear_detail_lists_checkbox.isChecked(),
             selected_target["value"],
+            angle_sweep_spin.value() if angle_sweep_checkbox.isChecked() else 0.0,
+            (
+                float(units_to_500ths(repeat_distance_spin.value(), unit))
+                if repeat_distance_checkbox.isChecked()
+                else 0.0
+            ),
         )
 
     def _auto_assign_visibility_lists(
@@ -480,6 +531,8 @@ class TracksideObjectsController:
         clear_object_lists: bool = True,
         clear_detail_lists: bool = True,
         target_lists: str = "object",
+        angle_sweep_degrees: float = 0.0,
+        repeat_distance: float = 0.0,
     ) -> tuple[int, int] | None:
         sidebar = self._window.tso_visibility_sidebar
         if target_lists == "detail":
@@ -551,12 +604,22 @@ class TracksideObjectsController:
                     detail_by_key, detail_ranges, dlong
                 )
             else:
-                target = self._object_list_for_dlong(
-                    object_by_key, object_ranges, dlong, "L" if dlat >= 0 else "R"
+                targets = self._object_lists_for_position(
+                    object_by_key,
+                    object_ranges,
+                    dlong,
+                    dlat,
+                    context.track_length,
+                    angle_sweep_degrees,
+                    repeat_distance,
                 )
+                target = targets[0] if targets else None
             if target is None:
                 continue
-            target.tso_ids.append(tso_id)
+            if target_lists == "detail":
+                targets = [target]
+            for target_entry in targets:
+                target_entry.tso_ids.append(tso_id)
             sort_data[tso_id] = (wall_distance, dlong, tso_id)
             assigned_count += 1
 
@@ -666,6 +729,78 @@ class TracksideObjectsController:
             if in_range:
                 return by_key.get((side, int(section), int(sub_index)))
         return None
+
+    def _object_lists_for_position(
+        self,
+        by_key,
+        ranges,
+        dlong: float,
+        dlat: float,
+        track_length: float,
+        angle_sweep_degrees: float = 0.0,
+        repeat_distance: float = 0.0,
+    ):
+        """Return ObjectLists whose longitudinal footprint contains a TSO.
+
+        The normal assignment is exclusive. Optional boundary sweeps widen the
+        footprint in proportion to lateral offset, while the nearby-distance
+        option deliberately permits the same TSO to appear in multiple lists.
+        """
+        side = "L" if dlat >= 0 else "R"
+        angle = max(0.0, min(89.0, float(angle_sweep_degrees)))
+        sweep = abs(float(dlat)) * math.tan(math.radians(angle))
+        radius = max(0.0, float(repeat_distance))
+        radial_longitudinal = (
+            math.sqrt(max(0.0, radius * radius - float(dlat) * float(dlat)))
+            if radius >= abs(float(dlat))
+            else -1.0
+        )
+
+        matches = []
+        for (section, sub_index), (start, end) in ranges.items():
+            target = by_key.get((side, int(section), int(sub_index)))
+            if target is None:
+                continue
+            gap = self._dlong_gap_to_range(dlong, start, end, track_length)
+            in_sweep = gap <= sweep
+            in_nearby_radius = (
+                radial_longitudinal >= 0.0 and gap <= radial_longitudinal
+            )
+            if in_sweep or in_nearby_radius:
+                matches.append(target)
+                if radius <= 0.0:
+                    break
+        return matches
+
+    @staticmethod
+    def _dlong_gap_to_range(
+        dlong: float, start: float, end: float | None, track_length: float
+    ) -> float:
+        if end is None:
+            return 0.0 if dlong >= start else float(start) - float(dlong)
+        length = float(track_length)
+        if length <= 0.0:
+            return (
+                0.0
+                if start <= dlong < end
+                else min(abs(dlong - start), abs(dlong - end))
+            )
+        point = float(dlong) % length
+        range_start = float(start) % length
+        range_end = float(end) % length
+        in_range = (
+            range_start <= point < range_end
+            if range_end >= range_start
+            else point >= range_start or point < range_end
+        )
+        if in_range:
+            return 0.0
+        return min(
+            (point - range_start) % length,
+            (range_start - point) % length,
+            (point - range_end) % length,
+            (range_end - point) % length,
+        )
 
     def _detail_list_for_dlong(self, by_key, ranges, dlong: float):
         for (section, sub_index, lod_suffix), (start, end) in ranges.items():
