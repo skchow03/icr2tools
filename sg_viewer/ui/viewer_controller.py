@@ -1131,6 +1131,7 @@ class SGViewerController:
             self._flush_tso_visibility_sidebar_refresh_if_needed()
         else:
             self._window.preview.set_trackside_ahead_indices(())
+            self._window.preview.set_trackside_ahead_referenced_indices(())
 
     def _on_trackside_objects_overlay_toggled(self, checked: bool) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()

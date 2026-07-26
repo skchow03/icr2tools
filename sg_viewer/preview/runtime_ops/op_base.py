@@ -108,6 +108,7 @@ class _RuntimeCoreBaseMixin:
         self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._trackside_referenced_indices: tuple[int, ...] = ()
         self._trackside_ahead_indices: tuple[int, ...] = ()
+        self._trackside_ahead_referenced_indices: tuple[int, ...] = ()
         self._trackside_order_labels: tuple[tuple[int, int], ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None

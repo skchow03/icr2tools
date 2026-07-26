@@ -318,6 +318,28 @@ def test_ahead_view_collects_next_eight_object_lists_on_each_side() -> None:
     assert tab._ahead_object_list_tso_ids(0) == ()
 
 
+def test_ahead_view_identifies_tsos_from_nested_object_lists() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [
+            Track3DObjectList("L", 1, 0, [10, "ObjectList_R9_0"]),
+            Track3DObjectList("L", 2, 0, [20, "ObjectList_L1_0"]),
+            Track3DObjectList("R", 2, 0, [30]),
+            Track3DObjectList("R", 9, 0, [91]),
+        ]
+    )
+    tab.show_ahead_object_lists_checkbox.setChecked(True)
+
+    assert tab._ahead_referenced_object_list_tso_ids(0) == (10, 91)
+    assert set(tab._ahead_referenced_object_list_tso_ids(0)).issubset(
+        tab._ahead_object_list_tso_ids(0)
+    )
+
+    tab.show_ahead_object_lists_checkbox.setChecked(False)
+    assert tab._ahead_referenced_object_list_tso_ids(0) == ()
+
+
 def test_clear_all_detail_lists_removes_tsos_but_keeps_lists() -> None:
     _app()
     tab = TSOVisibilityTab()

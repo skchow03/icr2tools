@@ -92,6 +92,7 @@ class PreviewPresenter:
             trackside_move_enabled_indices=self._runtime.trackside_move_enabled_indices,
             trackside_referenced_indices=self._runtime.trackside_referenced_indices,
             trackside_ahead_indices=self._runtime.trackside_ahead_indices,
+            trackside_ahead_referenced_indices=self._runtime.trackside_ahead_referenced_indices,
             trackside_order_labels=self._runtime.trackside_order_labels,
             section_geometry_version=self._runtime.section_geometry_version,
             tsd_lines_version=self._runtime.tsd_lines_version,
