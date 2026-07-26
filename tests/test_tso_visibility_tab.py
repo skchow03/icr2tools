@@ -281,6 +281,43 @@ def test_clear_all_object_lists_removes_tsos_but_keeps_lists() -> None:
     assert tab.tso_list.count() == 0
 
 
+def test_ahead_view_collects_next_eight_object_lists_on_each_side() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    lists = [Track3DObjectList("L", 5, 0, [500])]
+    lists.extend(
+        Track3DObjectList(side, section, 0, [offset + section])
+        for side, offset in (("L", 100), ("R", 200))
+        for section in range(12)
+    )
+    tab.set_object_lists(lists)
+    tab.show_ahead_object_lists_checkbox.setChecked(True)
+
+    highlighted = tab._ahead_object_list_tso_ids(0)
+
+    assert highlighted == (
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        100,
+        101,
+        206,
+        207,
+        208,
+        209,
+        210,
+        211,
+        200,
+        201,
+    )
+    assert 500 not in highlighted
+    tab.show_ahead_object_lists_checkbox.setChecked(False)
+    assert tab._ahead_object_list_tso_ids(0) == ()
+
+
 def test_clear_all_detail_lists_removes_tsos_but_keeps_lists() -> None:
     _app()
     tab = TSOVisibilityTab()

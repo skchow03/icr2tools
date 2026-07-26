@@ -281,6 +281,10 @@ class _RuntimeCoreMixin(
         return tuple(self._trackside_referenced_indices)
 
     @property
+    def trackside_ahead_indices(self) -> tuple[int, ...]:
+        return tuple(self._trackside_ahead_indices)
+
+    @property
     def trackside_order_labels(self) -> tuple[tuple[int, int], ...]:
         return tuple(self._trackside_order_labels)
 
@@ -490,6 +494,11 @@ class _RuntimeCoreMixin(
             for index in getattr(self, "_trackside_referenced_indices", ())
             if 0 <= index < len(self._trackside_objects)
         )
+        self._trackside_ahead_indices = tuple(
+            index
+            for index in getattr(self, "_trackside_ahead_indices", ())
+            if 0 <= index < len(self._trackside_objects)
+        )
         self._trackside_order_labels = tuple(
             (index, order)
             for index, order in getattr(self, "_trackside_order_labels", ())
@@ -563,6 +572,16 @@ class _RuntimeCoreMixin(
 
     def set_trackside_referenced_indices(self, indices: tuple[int, ...]) -> None:
         self._trackside_referenced_indices = tuple(
+            dict.fromkeys(
+                int(index)
+                for index in indices
+                if 0 <= int(index) < len(self._trackside_objects)
+            )
+        )
+        self._context.request_repaint()
+
+    def set_trackside_ahead_indices(self, indices: tuple[int, ...]) -> None:
+        self._trackside_ahead_indices = tuple(
             dict.fromkeys(
                 int(index)
                 for index in indices

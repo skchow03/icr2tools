@@ -107,6 +107,7 @@ class _RuntimeCoreBaseMixin:
         self._focused_trackside_object_index: int | None = None
         self._trackside_move_enabled_indices: tuple[int, ...] = ()
         self._trackside_referenced_indices: tuple[int, ...] = ()
+        self._trackside_ahead_indices: tuple[int, ...] = ()
         self._trackside_order_labels: tuple[tuple[int, int], ...] = ()
         self._show_trackside_objects = False
         self._trackside_object_drag_callback = None
@@ -160,7 +161,9 @@ class _RuntimeCoreBaseMixin:
         self._show_status = show_status or self.set_status_text
         self._sg_version = 0
         self._track_interaction_enabled = True
-        self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
+        self._elevation_bounds_cache: dict[
+            tuple[int, int], tuple[float, float] | None
+        ] = {}
         self._elevation_xsect_bounds_cache: dict[
             tuple[int, int], dict[int, tuple[float, float] | None]
         ] = {}
@@ -194,8 +197,7 @@ class _RuntimeCoreBaseMixin:
     @property
     def is_interaction_dragging(self) -> bool:
         return (
-            self._interaction.is_dragging_node
-            or self._interaction.is_dragging_section
+            self._interaction.is_dragging_node or self._interaction.is_dragging_section
         )
 
     def set_section_drag_enabled(self, enabled: bool) -> None:

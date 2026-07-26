@@ -153,6 +153,9 @@ class TracksideObjectsController:
         w.tso_visibility_sidebar.referencedObjectListTSOsChanged.connect(
             h._on_tso_visibility_referenced_list_selected
         )
+        w.tso_visibility_sidebar.aheadObjectListTSOsChanged.connect(
+            h._on_tso_visibility_ahead_lists_changed
+        )
         w.tso_visibility_sidebar.selectedTSOPillChanged.connect(
             h._on_tso_visibility_pill_selected
         )
@@ -323,6 +326,11 @@ class TracksideObjectsController:
         if not self._is_tso_visibility_tab_active():
             return
         self._window.preview.set_trackside_referenced_indices(tuple(tso_ids))
+
+    def _on_tso_visibility_ahead_lists_changed(self, tso_ids: tuple[int, ...]) -> None:
+        if not self._is_tso_visibility_tab_active():
+            return
+        self._window.preview.set_trackside_ahead_indices(tuple(tso_ids))
 
     def _on_tso_visibility_pill_selected(self, tso_id: int | None) -> None:
         self._window.preview.set_focused_trackside_object_index(tso_id)

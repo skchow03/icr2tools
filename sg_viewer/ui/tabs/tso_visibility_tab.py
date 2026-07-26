@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QCheckBox,
     QRadioButton,
     QTableWidget,
     QTableWidgetItem,
@@ -633,6 +634,7 @@ class TSOVisibilityReconcileDialog(QDialog):
 class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
     referencedObjectListTSOsChanged = QtCore.pyqtSignal(tuple)
+    aheadObjectListTSOsChanged = QtCore.pyqtSignal(tuple)
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
     selectedTrackSectionChanged = QtCore.pyqtSignal(object)
     selectedTSOOrderChanged = QtCore.pyqtSignal(object)
@@ -662,6 +664,13 @@ class TSOVisibilityTab(QWidget):
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
         self.clear_all_object_lists_button = QPushButton("Clear all ObjectLists")
         self.clear_all_detail_lists_button = QPushButton("Clear all DetailLists")
+        self.show_ahead_object_lists_checkbox = QCheckBox(
+            "Show next 8 ObjectLists per side in viewport"
+        )
+        self.show_ahead_object_lists_checkbox.setToolTip(
+            "Highlight in orange the TSOs the game will draw from the next eight "
+            "ObjectLists on both the left and right, beyond the selected subsection."
+        )
 
         self.load_button.setToolTip(
             "Load ObjectLists from a track.3D file. This replaces the current TSO visibility data."
@@ -698,6 +707,7 @@ class TSOVisibilityTab(QWidget):
         )
 
         layout.addWidget(QLabel("Sections / Side / SubIndex"))
+        layout.addWidget(self.show_ahead_object_lists_checkbox)
         self.section_list = TrackSectionListWidget()
         layout.addWidget(self.section_list, 0)
 
@@ -785,6 +795,9 @@ class TSOVisibilityTab(QWidget):
         )
         self.assignment_check_button.clicked.connect(self.show_unassigned_tso_report)
         self.section_list.rowSelectionChanged.connect(self._emit_selected_tsos)
+        self.show_ahead_object_lists_checkbox.toggled.connect(
+            lambda _checked: self._emit_selected_tsos()
+        )
         self.tso_list.orderChanged.connect(self._on_tso_order_changed)
         self.tso_list.itemClicked.connect(self._on_tso_pill_selected)
 
@@ -1803,6 +1816,7 @@ class TSOVisibilityTab(QWidget):
             self.tso_list.clear()
             self.selectedTSOsChanged.emit(tuple())
             self.referencedObjectListTSOsChanged.emit(tuple())
+            self.aheadObjectListTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
@@ -1880,6 +1894,7 @@ class TSOVisibilityTab(QWidget):
         if row < 0 or row >= len(active_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.referencedObjectListTSOsChanged.emit(tuple())
+            self.aheadObjectListTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
@@ -1890,6 +1905,7 @@ class TSOVisibilityTab(QWidget):
         self.referencedObjectListTSOsChanged.emit(
             self._referenced_object_list_tso_ids(active_lists[row])
         )
+        self.aheadObjectListTSOsChanged.emit(self._ahead_object_list_tso_ids(row))
         selected_item = self.tso_list.currentItem()
         selected_tso_id = (
             selected_item.data(QtCore.Qt.UserRole)
@@ -1942,6 +1958,46 @@ class TSOVisibilityTab(QWidget):
         for item in entry.tso_ids:
             if isinstance(item, str) and item.startswith("ObjectList_"):
                 visit(item)
+        return tuple(result)
+
+    def _ahead_object_list_tso_ids(self, selected_row: int) -> tuple[int, ...]:
+        """Return TSOs in the eight ObjectLists following this subsection per side."""
+        if (
+            not self.show_ahead_object_lists_checkbox.isChecked()
+            or self._is_detail_mode()
+        ):
+            return tuple()
+        if selected_row < 0 or selected_row >= len(self.object_lists):
+            return tuple()
+
+        selected = self.object_lists[selected_row]
+        selected_key = (selected.section, selected.sub_index)
+        result: list[int] = []
+        seen: set[int] = set()
+        for side in ("L", "R"):
+            entries = sorted(
+                (entry for entry in self.object_lists if entry.side.upper() == side),
+                key=lambda entry: (entry.section, entry.sub_index),
+            )
+            after = [
+                entry
+                for entry in entries
+                if (entry.section, entry.sub_index) > selected_key
+            ]
+            wrapped = [
+                entry
+                for entry in entries
+                if (entry.section, entry.sub_index) < selected_key
+            ]
+            following = (after + wrapped)[:8]
+            for entry in following:
+                values = list(
+                    item for item in entry.tso_ids if isinstance(item, int)
+                ) + list(self._referenced_object_list_tso_ids(entry))
+                for tso_id in values:
+                    if tso_id not in seen:
+                        seen.add(tso_id)
+                        result.append(tso_id)
         return tuple(result)
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:

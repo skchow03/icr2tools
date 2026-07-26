@@ -857,7 +857,9 @@ class SGViewerController:
     def mark_fsects_dirty(self, dirty: bool) -> None:
         self._mark_fsects_dirty(dirty)
 
-    def _persist_tsd_state_for_current_track(self, *, explicit_save: bool = False) -> None:
+    def _persist_tsd_state_for_current_track(
+        self, *, explicit_save: bool = False
+    ) -> None:
         if not explicit_save:
             return
         start = perf_counter()
@@ -906,7 +908,9 @@ class SGViewerController:
             "Persisted full TSD state in %.3f ms", (perf_counter() - start) * 1000.0
         )
 
-    def _persist_trackside_objects_for_current_track(self, *, explicit_save: bool = False) -> None:
+    def _persist_trackside_objects_for_current_track(
+        self, *, explicit_save: bool = False
+    ) -> None:
         if not explicit_save:
             return
         start = perf_counter()
@@ -1125,6 +1129,8 @@ class SGViewerController:
             self._window.preview.set_highlighted_mrk_walls(())
         if is_tso_visibility_tab:
             self._flush_tso_visibility_sidebar_refresh_if_needed()
+        else:
+            self._window.preview.set_trackside_ahead_indices(())
 
     def _on_trackside_objects_overlay_toggled(self, checked: bool) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()
@@ -1139,7 +1145,12 @@ class SGViewerController:
     def _apply_centerline_nodes_visibility_mode(self) -> None:
         current_index = self._window.right_sidebar_tabs.currentIndex()
         tab_name = self._window.active_sidebar_tab_name() if current_index >= 0 else ""
-        centerline_required = tab_name in {"Geometry", "Elevation", "Features", "Fsects"}
+        centerline_required = tab_name in {
+            "Geometry",
+            "Elevation",
+            "Features",
+            "Fsects",
+        }
         checkbox = self._window.centerline_nodes_checkbox
         if centerline_required:
             if not checkbox.isChecked():
